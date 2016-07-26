@@ -1,0 +1,33 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - facets.facet.category_taxonomy_term_name
+  module:
+    - facets
+    - system
+  theme:
+    - masradix
+id: categorytaxonomytermname
+theme: masradix
+region: navbar_left
+weight: 0
+provider: null
+plugin: 'facet_block:category_taxonomy_term_name'
+settings:
+  id: 'facet_block:category_taxonomy_term_name'
+  label: 'Category » Taxonomy term » Name'
+  provider: facets
+  label_display: '0'
+visibility:
+  other_facet:
+    id: other_facet
+    facets: ''
+    facet_value: ''
+    negate: false
+    context_mapping: {  }
+  request_path:
+    id: request_path
+    pages: /requests
+    negate: false
+    context_mapping: {  }

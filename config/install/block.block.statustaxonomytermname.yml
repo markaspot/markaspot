@@ -1,0 +1,33 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - facets.facet.status_taxonomy_term_name
+  module:
+    - facets
+    - system
+  theme:
+    - masradix
+id: statustaxonomytermname
+theme: masradix
+region: navbar_left
+weight: 1
+provider: null
+plugin: 'facet_block:status_taxonomy_term_name'
+settings:
+  id: 'facet_block:status_taxonomy_term_name'
+  label: 'Status » Taxonomy term » Name'
+  provider: facets
+  label_display: '0'
+visibility:
+  other_facet:
+    id: other_facet
+    facets: ''
+    facet_value: ''
+    negate: false
+    context_mapping: {  }
+  request_path:
+    id: request_path
+    pages: /requests
+    negate: false
+    context_mapping: {  }

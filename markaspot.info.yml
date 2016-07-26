@@ -1,0 +1,66 @@
+name: Mark-a-Spot
+type: profile
+project: markaspot
+description: 'Install with commonly used features pre-configured.'
+version: VERSION
+core: 8.x
+dependencies:
+  - node
+  - history
+  - block
+  - breakpoint
+  - ckeditor
+  - color_field
+  - config
+  - comment
+  - contextual
+  - contact
+  - menu_link_content
+  - datetime
+  - block_content
+  - quickedit
+  - editor
+  - exclude_node_title
+  - help
+  - image
+  - menu_ui
+  - options
+  - path
+  - page_cache
+  - dynamic_page_cache
+  - taxonomy
+  - dblog
+  - search_api
+  - search_api_db
+  - facets
+  - shortcut
+  - toolbar
+  - field_ui
+  - file
+  - pathauto
+  - rdf
+  - views
+  - views_ui
+  - automated_cron
+  - geolocation
+  - restui
+  - default_content
+  - api_key_auth
+  - markaspot_open311
+  - markaspot_map
+  - markaspot_uuid
+  - markaspot_ui
+  - markaspot_static_json
+  - service_request
+
+# dev modules
+
+  - admin_toolbar
+  - devel
+  - examples
+
+
+themes:
+  - bartik
+  - seven
+  - masradix
