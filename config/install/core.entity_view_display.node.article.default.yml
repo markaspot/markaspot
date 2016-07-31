@@ -1,3 +1,4 @@
+uuid: 3107201613994cfa0b-1f46-19586-96eb-cfa0b1f467c825296ebd693c8f95b31072016
 langcode: en
 status: true
 dependencies:
@@ -13,6 +14,8 @@ dependencies:
     - image
     - text
     - user
+_core:
+  default_config_hash: JtAg_-waIt1quMtdDtHIaXJMxvTuSmxW7bWyO6Zd68E
 id: node.article.default
 targetEntityType: node
 bundle: article
@@ -45,13 +48,6 @@ content:
     label: above
     settings:
       link: true
-    third_party_settings: {  }
-  comment:
-    label: above
-    type: comment_default
-    weight: 110
-    settings:
-      pager_id: 0
     third_party_settings: {  }
   links:
     weight: 100

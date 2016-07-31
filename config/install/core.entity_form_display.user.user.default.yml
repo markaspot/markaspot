@@ -1,3 +1,4 @@
+uuid: 31072016136b133efa-42ec-16756-9d3f-33efa42ec3174369d3f5d235051b731072016
 langcode: en
 status: true
 dependencies:
@@ -6,7 +7,10 @@ dependencies:
     - image.style.thumbnail
   module:
     - image
+    - path
     - user
+_core:
+  default_config_hash: LLAieeozVsoZDb-2PbFxRJpQqnKmpR7-4OoRJnduz-U
 id: user.user.default
 targetEntityType: user
 bundle: user
@@ -18,6 +22,11 @@ content:
     weight: 5
   language:
     weight: 0
+  path:
+    type: path
+    weight: 30
+    settings: {  }
+    third_party_settings: {  }
   timezone:
     weight: 6
   user_picture:

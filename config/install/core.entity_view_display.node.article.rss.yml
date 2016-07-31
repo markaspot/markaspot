@@ -1,3 +1,4 @@
+uuid: 31072016138ecda986-1a33-20147-9801-da9861a331eb30f9801f42659c09f31072016
 langcode: en
 status: true
 dependencies:
@@ -10,6 +11,8 @@ dependencies:
     - node.type.article
   module:
     - user
+_core:
+  default_config_hash: Q90X1FmFdOkTx8udckWPoAgleOstOerbgDnNpoP6PO4
 id: node.article.rss
 targetEntityType: node
 bundle: article
