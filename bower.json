@@ -1,0 +1,29 @@
+{
+  "name": "markaspot",
+  "authors": [
+    "markaspot <holger@markaspot.org>"
+  ],
+  "description": "",
+  "main": "",
+  "license": "MIT",
+  "homepage": "",
+  "private": true,
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "libraries",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "Leaflet.fullscreen": "Leaflet/Leaflet.fullscreen#^1.0.1",
+    "leaflet": "^0.7.7",
+    "leaflet.markercluster": "leaflet.markerclusterer#^0.5.0",
+    "waypoints": "jquery-waypoints#^4.0.0",
+    "Leaflet.awesome-markers": "^2.0.2",
+    "Leaflet.EasyButton": "^1.2.0",
+    "spin.js": "^2.3.2",
+    "font-awesome": "fontawesome#^4.6.3"
+  }
+}

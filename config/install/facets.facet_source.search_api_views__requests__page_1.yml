@@ -1,7 +1,0 @@
-langcode: en
-status: true
-dependencies: {  }
-id: search_api_views__requests__page_1
-name: 'search_api_views:requests:page_1'
-filter_key: null
-url_processor: query_string

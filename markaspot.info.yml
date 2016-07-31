@@ -40,6 +40,7 @@ dependencies:
   - pathauto
   - rdf
   - views
+  - views_infinite_scroll
   - views_ui
   - automated_cron
   - geolocation
@@ -51,13 +52,14 @@ dependencies:
   - markaspot_uuid
   - markaspot_ui
   - markaspot_static_json
+  - markaspot_stats
+  - markaspot_blocks
   - service_request
 
 # dev modules
 
   - admin_toolbar
   - devel
-  - examples
 
 
 themes:

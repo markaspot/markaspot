@@ -1,0 +1,93 @@
+{
+  "name": "drupal/markaspot",
+  "description": "A Drupal crowdmapping and public civic issue platform",
+  "type": "drupal-profile",
+  "license": "GPL-2.0+",
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "scripts": {
+    "post-install-cmd": [
+      "bower install"
+    ],
+    "post-update-cmd": [
+      "bower install"
+    ]
+  },
+  "require": {
+    "markaspot/api_key_auth": "*@dev",
+    "cweagans/composer-patches": "dev-master",
+    "composer/installers": "^1.0",
+    "drupal/core": "^8.1.0",
+    "drupal/embed": "8.1.0-rc2",
+    "drupal/entity_embed": "8.1.0-alpha1",
+    "drupal/media_entity": "8.1.0",
+    "drupal/media_entity_instagram": "8.1.0",
+    "drupal/media_entity_twitter": "8.1.0",
+    "drupal/media_entity_image": "8.1.0",
+    "drupal/ctools": "8.3.0-alpha25",
+    "drupal/panels": "8.3.0-beta4",
+    "drupal/page_manager": "8.1.0-alpha23",
+    "drupal/panelizer": "8.3.0-alpha2",
+    "drupal/scheduled_updates": "8.1.0-alpha5",
+    "drupal/workbench_moderation": "8.1.0",
+    "drupal/acquia_connector": "^8.1.1",
+    "drupal/config_update": "^8.1.1",
+    "drupal/features": "^8.3.0",
+    "drupal/inline_entity_form": "8.1.0-alpha6",
+    "drupal/metatag": "^8.1.0",
+    "drupal/token": "^8.1.0",
+    "drupal/services": "8.4.0-alpha3",
+    "drupal-composer/drupal-scaffold": "^1.2",
+    "drush/drush": "^9.0",
+    "drupal/pathauto": "^8.1.0",
+    "drupal/video_embed_field": "8.1.0-rc8"
+  },
+  "require-dev": {
+    "behat/behat": "3.0.*",
+    "behat/mink": "1.6@stable",
+    "behat/mink-extension": "*",
+    "behat/mink-goutte-driver": "*",
+    "behat/mink-selenium2-driver": "*",
+    "behat/mink-browserkit-driver": "*",
+    "drush/drush": "^9.0",
+    "drupal/drupal-extension": "~3.0",
+    "drupal/coder": "~8.2",
+    "phpunit/phpunit": "4.6.*",
+    "squizlabs/php_codesniffer": "2.*",
+    "phing/phing": "dev-master#0ef30e55bb5871cb38903cc0ee9d76074118a22c",
+    "jakoch/phantomjs-installer": "1.9.8",
+    "jarnaiz/behat-junit-formatter": "^1.2"
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Drupal\\Tests\\PHPUnit\\": "tests/phpunit/src/"
+    }
+  },
+  "extra": {
+    "installer-paths": {
+      "core": [
+        "type:drupal-core"
+      ],
+      "modules/contrib/{$name}": [
+        "type:drupal-module"
+      ],
+      "profiles/contrib/{$name}": [
+        "type:drupal-profile"
+      ],
+      "themes/contrib/{$name}": [
+        "type:drupal-theme"
+      ],
+      "drush/contrib/{$name}": [
+        "type:drupal-drush"
+      ]
+    },
+    "patches": {
+      "drupal/core": {
+        "Ignore front end vendor folders to improve directory search performance": "https://www.drupal.org/files/issues/ignore_front_end_vendor-2329453-116.patch"
+      }
+    }
+  },
+  "config": {
+    "vendor-dir": "../../modules"
+  }
+}
