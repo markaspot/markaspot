@@ -26,7 +26,6 @@ resources:
         - xml
         - json
       supported_auth:
-        - api_key_auth
         - cookie
     POST:
       supported_formats:
@@ -50,5 +49,3 @@ resources:
       supported_auth:
         - cookie
 link_domain: null
-_core:
-  default_config_hash: hJV-ROQtyt7SfMVxNXjj5OiUl5VAMsJLM6fnKsPGiIQ
