@@ -1,0 +1,30 @@
+uuid: 0108201613dba81206-ad2d-19973-96b3-81206ad2dde053756b3f72f0e946a01082016
+langcode: en
+status: true
+dependencies:
+  module:
+    - facets
+    - system
+  theme:
+    - masradix
+id: sitebranding
+theme: masradix
+region: navbar_left
+weight: -4
+provider: null
+plugin: system_branding_block
+settings:
+  id: system_branding_block
+  label: 'Site branding'
+  provider: system
+  label_display: '0'
+  use_site_logo: true
+  use_site_name: true
+  use_site_slogan: true
+visibility:
+  other_facet:
+    id: other_facet
+    facets: ''
+    facet_value: ''
+    negate: false
+    context_mapping: {  }
