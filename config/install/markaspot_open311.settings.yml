@@ -1,0 +1,32 @@
+status_open:
+  5: '5'
+status_closed:
+  6: '6'
+status_open_start:
+  5: '5'
+node_options_status: '1'
+changeset: ''
+key_service: ''
+type: ''
+contact: ''
+bundle: service_request
+tax_category: service_category
+tax_status: service_status
+# REST Resources
+resources:
+  'georeport_request_index_resource':
+    GET:
+      supported_formats:
+        - xml
+        - json
+      supported_auth:
+        - api_key_auth
+        - cookie
+    POST:
+      supported_formats:
+        - xml
+        - form
+        - json
+      supported_auth:
+        - api_key_auth
+link_domain: null
