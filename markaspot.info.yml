@@ -63,6 +63,5 @@ dependencies:
 
 
 themes:
-  - bartik
   - seven
   - masradix

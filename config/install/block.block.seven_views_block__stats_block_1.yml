@@ -1,0 +1,33 @@
+uuid: 3107201613a10a11ed-c74a-19265-b57a-a11edc74aab4180757a01012fdedd31072016
+langcode: en
+status: false
+dependencies:
+  config:
+    - views.view.stats
+  module:
+    - facets
+    - views
+  theme:
+    - seven
+_core:
+  default_config_hash: g4ybEdAOyagvqHZ2lBfbt98lF1Hg0G1g2Et330Ybw1I
+id: seven_views_block__stats_block_1
+theme: seven
+region: '-1'
+weight: -7
+provider: null
+plugin: 'views_block:stats-block_1'
+settings:
+  id: 'views_block:stats-block_1'
+  label: ''
+  provider: views
+  label_display: visible
+  views_label: ''
+  items_per_page: none
+visibility:
+  other_facet:
+    id: other_facet
+    facets: ''
+    facet_value: ''
+    negate: false
+    context_mapping: {  }
