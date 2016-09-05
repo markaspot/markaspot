@@ -12,9 +12,8 @@ contact: ''
 bundle: service_request
 tax_category: service_category
 tax_status: service_status
-# REST Resources
 resources:
-  'georeport_request_index_resource':
+  georeport_request_index_resource:
     GET:
       supported_formats:
         - xml

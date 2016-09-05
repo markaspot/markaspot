@@ -1,4 +1,3 @@
-uuid: 3107201613a10a11ed-c74a-19265-b57a-a11edc74aab4180757a01012fdedd31072016
 langcode: en
 status: false
 dependencies:
@@ -9,8 +8,6 @@ dependencies:
     - views
   theme:
     - seven
-_core:
-  default_config_hash: g4ybEdAOyagvqHZ2lBfbt98lF1Hg0G1g2Et330Ybw1I
 id: seven_views_block__stats_block_1
 theme: seven
 region: '-1'

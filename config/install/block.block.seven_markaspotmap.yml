@@ -1,0 +1,25 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - markaspot_map
+    - system
+  theme:
+    - seven
+id: seven_markaspotmap
+theme: seven
+region: header
+weight: -3
+provider: null
+plugin: markaspot_map_block
+settings:
+  id: markaspot_map_block
+  label: 'Markaspot Map'
+  provider: markaspot_map
+  label_display: '0'
+visibility:
+  request_path:
+    id: request_path
+    pages: "/requests\r\n<front>"
+    negate: false
+    context_mapping: {  }

@@ -3,23 +3,19 @@ status: true
 dependencies:
   module:
     - facets
-    - system
   theme:
     - masradix
-id: sitebranding
+id: pagetitle
 theme: masradix
-region: navbar_left
-weight: -4
+region: head
+weight: -3
 provider: null
-plugin: system_branding_block
+plugin: page_title_block
 settings:
-  id: system_branding_block
-  label: 'Site branding'
-  provider: system
+  id: page_title_block
+  label: 'Page title'
+  provider: core
   label_display: '0'
-  use_site_logo: true
-  use_site_name: true
-  use_site_slogan: true
 visibility:
   other_facet:
     id: other_facet

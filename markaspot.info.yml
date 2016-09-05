@@ -1,10 +1,9 @@
 name: Mark-a-Spot
-type: profile
-project: markaspot
 description: 'Install with commonly used features pre-configured.'
-version: VERSION
+type: profile
 core: 8.x
 dependencies:
+  - system
   - node
   - history
   - block
@@ -47,21 +46,24 @@ dependencies:
   - restui
   - default_content
   - api_key_auth
+  - markaspot_uuid
   - markaspot_open311
   - markaspot_map
-  - markaspot_uuid
   - markaspot_ui
   - markaspot_static_json
   - markaspot_stats
   - markaspot_blocks
+  - markaspot_page
+  - markaspot_article
   - service_request
-
-# dev modules
-
   - admin_toolbar
   - devel
-
+  - features_ui
 
 themes:
   - seven
   - masradix
+
+
+distribution:
+  name: Mark-a-Spot

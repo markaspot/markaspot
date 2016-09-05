@@ -1,9 +1,0 @@
-uuid: 0108201613a086d6b3-ffbf-18279-a872-6d6b3ffbf3767036872f8db7a00f501082016
-langcode: en
-status: true
-dependencies: {  }
-id: editorial_board
-label: 'Editorial board'
-weight: 4
-is_admin: null
-permissions: {  }

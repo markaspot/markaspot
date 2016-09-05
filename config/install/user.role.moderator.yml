@@ -1,9 +1,0 @@
-uuid: 0108201613ad65e6f4-4b91-19707-bb33-5e6f44b91acfbf3fb336cf24de14c01082016
-langcode: en
-status: true
-dependencies: {  }
-id: moderator
-label: Moderator
-weight: 3
-is_admin: null
-permissions: {  }

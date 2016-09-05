@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - facets
+    - markaspot_blocks
+  theme:
+    - radix
+id: radix_markaspotstageblock
+theme: radix
+region: content
+weight: null
+provider: null
+plugin: markaspot_base_block
+settings:
+  id: markaspot_base_block
+  label: 'Markaspot Stage block'
+  provider: markaspot_blocks
+  label_display: visible
+visibility:
+  other_facet:
+    id: other_facet
+    facets: ''
+    facet_value: ''
+    negate: false
+    context_mapping: {  }

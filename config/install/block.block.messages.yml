@@ -6,20 +6,17 @@ dependencies:
     - system
   theme:
     - masradix
-id: sitebranding
+id: messages
 theme: masradix
-region: navbar_left
-weight: -4
+region: head
+weight: -2
 provider: null
-plugin: system_branding_block
+plugin: system_messages_block
 settings:
-  id: system_branding_block
-  label: 'Site branding'
+  id: system_messages_block
+  label: Messages
   provider: system
   label_display: '0'
-  use_site_logo: true
-  use_site_name: true
-  use_site_slogan: true
 visibility:
   other_facet:
     id: other_facet
