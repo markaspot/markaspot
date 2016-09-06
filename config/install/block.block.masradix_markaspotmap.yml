@@ -5,9 +5,9 @@ dependencies:
     - markaspot_map
     - system
   theme:
-    - radix
-id: radix_markaspotmap
-theme: radix
+    - masradix
+id: masradix_markaspotmap
+theme: masradix
 region: content
 weight: -3
 provider: null

@@ -1,0 +1,33 @@
+uuid: 2607201638524dd88-3dfb-19524-ac46-4dd883dfb3c4400ac46df54b3dd7c26072016
+langcode: en
+status: true
+dependencies:
+  config:
+    - system.menu.main
+  module:
+    - facets
+    - system
+  theme:
+    - masradix
+_core:
+  default_config_hash: XcObpkm3jSp1CvmmMlYthgXfw4SN9iFJtLmwr0UbLpM
+id: mainnavigation
+theme: masradix
+region: navbar_left
+weight: -4
+provider: null
+plugin: 'system_menu_block:main'
+settings:
+  id: 'system_menu_block:main'
+  label: 'Main navigation'
+  provider: system
+  label_display: visible
+  level: 1
+  depth: 0
+visibility:
+  other_facet:
+    id: other_facet
+    facets: ''
+    facet_value: ''
+    negate: false
+    context_mapping: {  }

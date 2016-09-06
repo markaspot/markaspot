@@ -5,9 +5,9 @@ dependencies:
     - facets
     - markaspot_blocks
   theme:
-    - radix
-id: radix_markaspotstageblock
-theme: radix
+    - masradix
+id: masradix_markaspotstageblock
+theme: masradix
 region: content
 weight: null
 provider: null

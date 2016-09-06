@@ -6,9 +6,9 @@ dependencies:
     - markaspot_blocks
     - system
   theme:
-    - radix
-id: radix_markaspotstageaddblock
-theme: radix
+    - masradix
+id: masradix_markaspotstageaddblock
+theme: masradix
 region: content
 weight: null
 provider: null

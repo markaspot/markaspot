@@ -5,8 +5,10 @@ core: 8.x
 dependencies:
   - system
   - node
+  - user
   - history
   - block
+  - block_content
   - breakpoint
   - ckeditor
   - color_field
@@ -51,14 +53,15 @@ dependencies:
   - markaspot_map
   - markaspot_ui
   - markaspot_static_json
-  - markaspot_stats
   - markaspot_blocks
   - markaspot_page
+  - markaspot_comment
   - markaspot_article
   - service_request
   - admin_toolbar
   - devel
   - features_ui
+  - markaspot_stats
 
 themes:
   - seven
