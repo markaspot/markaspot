@@ -1,10 +1,12 @@
 langcode: en
 status: true
 dependencies: {  }
-id: moderator
-label: Moderator
-weight: 3
-is_admin: null
+_core:
+  default_config_hash: dJ0L2DNSj5q6XVZAGsuVDpJTh5UeYkIPwKrUOOpr8YI
+id: authenticated
+label: 'Authenticated user'
+weight: 1
+is_admin: false
 permissions:
   - 'access content'
   - 'use exclude node title'

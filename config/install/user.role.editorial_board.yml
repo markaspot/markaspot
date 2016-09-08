@@ -5,4 +5,13 @@ id: editorial_board
 label: 'Editorial board'
 weight: 4
 is_admin: null
-permissions: {  }
+permissions:
+  - 'access content'
+  - 'use exclude node title'
+  - 'access comments'
+  - 'post comments'
+  - 'skip comment approval'
+  - 'access site-wide contact form'
+  - 'access shortcuts'
+  - 'search content'
+  - 'access open311 extension'
