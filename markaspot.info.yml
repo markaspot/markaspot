@@ -3,70 +3,68 @@ description: 'Install with commonly used features pre-configured.'
 type: profile
 core: 8.x
 dependencies:
-  - system
-  - node
-  - user
-  - history
+  - admin_toolbar
+  - api_key_auth
+  - automated_cron
   - block
   - block_content
   - breakpoint
   - ckeditor
   - color_field
-  - config
   - comment
-  - contextual
+  - config
   - contact
-  - menu_link_content
+  - contextual
   - datetime
-  - block_content
-  - quickedit
+  - dblog
+  - default_content
+  - devel
+  - dynamic_page_cache
   - editor
   - exclude_node_title
-  - help
-  - image
-  - menu_ui
-  - options
-  - path
-  - page_cache
-  - dynamic_page_cache
-  - taxonomy
-  - dblog
-  - search_api
-  - search_api_db
   - facets
-  - shortcut
-  - toolbar
+  - features_ui
   - field_ui
   - file
+  - filter
+  - geolocation
+  - help
+  - history
+  - image
+  - markaspot_article
+  - markaspot_blocks
+  - markaspot_comment
+  - markaspot_map
+  - markaspot_open311
+  - markaspot_page
+  - markaspot_static_json
+  - markaspot_ui
+  - markaspot_user
+  - markaspot_uuid
+  - menu_link_content
+  - menu_ui
+  - node
+  - options
+  - page_cache
+  - path
   - pathauto
+  - quickedit
   - rdf
+  - restui
+  - search_api
+  - search_api_db
+  - service_request
+  - shortcut
+  - system
+  - taxonomy
+  - toolbar
+  - user
   - views
   - views_infinite_scroll
   - views_ui
-  - automated_cron
-  - geolocation
-  - restui
-  - default_content
-  - api_key_auth
-  - markaspot_uuid
-  - markaspot_open311
-  - markaspot_map
-  - markaspot_ui
-  - markaspot_static_json
-  - markaspot_blocks
-  - markaspot_page
-  - markaspot_comment
-  - markaspot_article
-  - service_request
-  - admin_toolbar
-  - devel
-  - features_ui
-  - markaspot_stats
-
+  - views_bootstrap
 themes:
-  - seven
   - masradix
-
-
+  - seven
 distribution:
   name: Mark-a-Spot

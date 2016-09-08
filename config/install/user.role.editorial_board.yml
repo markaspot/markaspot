@@ -1,0 +1,8 @@
+langcode: en
+status: true
+dependencies: {  }
+id: editorial_board
+label: 'Editorial board'
+weight: 4
+is_admin: null
+permissions: {  }
