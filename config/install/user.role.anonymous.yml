@@ -11,4 +11,4 @@ permissions:
   - 'access comments'
   - 'access site-wide contact form'
   - 'search content'
-  - 'access open311 extension'
+  - 'restful get georeport_request_index_resource'

@@ -1,17 +1,18 @@
-uuid: 090920161312c4d7c7-8c07-18119-9b8c-4d7c78c07b6c7969b8c4d4ab64da409092016
+uuid: 0909201613ce2e5adc-92fb-18415-96cc-e5adc92fbd7ef2396cc001054add509092016
 langcode: en
-status: true
+status: false
 dependencies:
   module:
+
     - system
   theme:
-    - masradix
+    - seven
 _core:
   default_config_hash: 3UmHED2ol1va1q85k_st959AzV9MgVXuRwOLZ3KNgPU
-id: sitebranding
-theme: masradix
-region: navbar_left
-weight: -10
+id: seven_sitebranding
+theme: seven
+region: '-1'
+weight: -6
 provider: null
 plugin: system_branding_block
 settings:

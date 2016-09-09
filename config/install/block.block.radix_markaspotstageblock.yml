@@ -1,17 +1,17 @@
-uuid: 0909201613b51445cc-83ea-17298-81a6-445cc83ea03923201a6cab67ff93709092016
+uuid: 09092016131d877ce3-51c5-20426-a334-77ce351c5efca2d2334ec05ba878f09092016
 langcode: en
-status: false
+status: true
 dependencies:
   module:
     - markaspot_blocks
   theme:
-    - seven
+    - radix
 _core:
   default_config_hash: cwZ6PGOIwuCwgWywUIhyRG9-oIIQZrxo27hpgEKPnXE
-id: seven_markaspotstageblock
-theme: seven
-region: '-1'
-weight: -2
+id: radix_markaspotstageblock
+theme: radix
+region: content
+weight: null
 provider: null
 plugin: markaspot_base_block
 settings:

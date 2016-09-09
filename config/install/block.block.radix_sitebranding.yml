@@ -1,16 +1,11 @@
-uuid: 090920161312c4d7c7-8c07-18119-9b8c-4d7c78c07b6c7969b8c4d4ab64da409092016
 langcode: en
 status: true
 dependencies:
-  module:
-    - system
   theme:
-    - masradix
-_core:
-  default_config_hash: 3UmHED2ol1va1q85k_st959AzV9MgVXuRwOLZ3KNgPU
-id: sitebranding
-theme: masradix
-region: navbar_left
+    - radix
+id: radix_sitebranding
+theme: radix
+region: content
 weight: -10
 provider: null
 plugin: system_branding_block

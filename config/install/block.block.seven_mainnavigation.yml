@@ -1,19 +1,19 @@
+uuid: 090920161341be5608-6e8b-20388-a424-e56086e8b4fa472a4243edd89187f09092016
 langcode: en
-status: true
+status: false
 dependencies:
   config:
     - system.menu.main
   module:
-    - facets
     - system
   theme:
-    - masradix
+    - seven
 _core:
-  default_config_hash: XcObpkm3jSp1CvmmMlYthgXfw4SN9iFJtLmwr0UbLpM
-id: mainnavigation
-theme: masradix
-region: navbar_left
-weight: -4
+  default_config_hash: kPyyx4mdt_dqB6JTX-ngrF9mQM6VZSYVEpJNwIu0R3c
+id: seven_mainnavigation
+theme: seven
+region: '-1'
+weight: -5
 provider: null
 plugin: 'system_menu_block:main'
 settings:
@@ -24,9 +24,3 @@ settings:
   level: 1
   depth: 0
 visibility:
-  other_facet:
-    id: other_facet
-    facets: ''
-    facet_value: ''
-    negate: false
-    context_mapping: {  }

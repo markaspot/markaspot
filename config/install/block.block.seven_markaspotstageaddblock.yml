@@ -1,16 +1,18 @@
+uuid: 09092016130e2772c9-3840-19416-93d8-772c93840ebd8ef53d8085237e2e109092016
 langcode: en
-status: false
+status: true
 dependencies:
   module:
-    - facets
     - markaspot_blocks
     - system
   theme:
     - seven
+_core:
+  default_config_hash: mA0IMJ2PNtzYF_cap4YMhtvVJ1x-WpoeoPs16-T6vcI
 id: seven_markaspotstageaddblock
 theme: seven
 region: content
-weight: null
+weight: -8
 provider: null
 plugin: markaspot_base_add_block
 settings:
@@ -19,12 +21,6 @@ settings:
   provider: markaspot_blocks
   label_display: '0'
 visibility:
-  other_facet:
-    id: other_facet
-    facets: ''
-    facet_value: ''
-    negate: false
-    context_mapping: {  }
   request_path:
     id: request_path
     pages: '<front>'

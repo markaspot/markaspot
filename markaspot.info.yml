@@ -6,6 +6,7 @@ dependencies:
   - admin_toolbar
   - api_key_auth
   - automated_cron
+  - better_normalizers
   - block
   - block_content
   - breakpoint
@@ -22,7 +23,6 @@ dependencies:
   - dynamic_page_cache
   - editor
   - exclude_node_title
-  - facets
   - features_ui
   - field_ui
   - file
@@ -41,6 +41,7 @@ dependencies:
   - markaspot_ui
   - markaspot_user
   - markaspot_uuid
+  - markaspot_message
   - menu_link_content
   - menu_ui
   - node
