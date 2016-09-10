@@ -1,4 +1,3 @@
-uuid: 0909201613e200d2c6-b0a6-18482-893a-0d2c6b0a678321b893a91215599d309092016
 langcode: en
 status: false
 dependencies:
@@ -7,12 +6,10 @@ dependencies:
     - system
   theme:
     - seven
-_core:
-  default_config_hash: jYlvXQBqpWwmxiG2mfEqvq4pCxTG3KHqlBQ-HHDPeIE
 id: seven_markaspotmap
 theme: seven
 region: '-1'
-weight: -4
+weight: -3
 provider: null
 plugin: markaspot_map_block
 settings:

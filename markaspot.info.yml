@@ -23,6 +23,7 @@ dependencies:
   - dynamic_page_cache
   - editor
   - exclude_node_title
+  - facets
   - features_ui
   - field_ui
   - file
@@ -54,6 +55,7 @@ dependencies:
   - restui
   - search_api
   - search_api_db
+  - search_api_views_taxonomy
   - service_request
   - shortcut
   - system

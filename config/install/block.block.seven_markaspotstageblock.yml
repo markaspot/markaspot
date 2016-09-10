@@ -1,4 +1,3 @@
-uuid: 0909201613b51445cc-83ea-17298-81a6-445cc83ea03923201a6cab67ff93709092016
 langcode: en
 status: false
 dependencies:
@@ -6,12 +5,10 @@ dependencies:
     - markaspot_blocks
   theme:
     - seven
-_core:
-  default_config_hash: cwZ6PGOIwuCwgWywUIhyRG9-oIIQZrxo27hpgEKPnXE
 id: seven_markaspotstageblock
 theme: seven
 region: '-1'
-weight: -2
+weight: null
 provider: null
 plugin: markaspot_base_block
 settings:
@@ -19,4 +16,4 @@ settings:
   label: 'Markaspot Stage block'
   provider: markaspot_blocks
   label_display: '0'
-visibility:
+visibility: {  }
