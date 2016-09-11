@@ -26,6 +26,7 @@ dependencies:
   - facets
   - features_ui
   - field_ui
+  - field_permissions
   - file
   - filter
   - geolocation
@@ -43,6 +44,7 @@ dependencies:
   - markaspot_user
   - markaspot_uuid
   - markaspot_message
+  - markaspot_stats
   - menu_link_content
   - menu_ui
   - node
