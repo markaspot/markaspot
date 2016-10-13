@@ -1,0 +1,445 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - search_api.index.service_requests
+    - system.menu.main
+    - taxonomy.vocabulary.service_category
+    - taxonomy.vocabulary.service_status
+  enforced:
+    module:
+      - service_request
+  module:
+    - better_exposed_filters
+    - search_api
+    - search_api_views_taxonomy
+    - views_bootstrap
+    - views_infinite_scroll
+id: requests
+label: Requests
+module: views
+description: ''
+tag: ''
+base_table: search_api_index_service_requests
+base_field: search_api_id
+core: 8.x
+display:
+  default:
+    display_plugin: default
+    id: default
+    display_title: Master
+    position: 0
+    display_options:
+      access:
+        type: none
+        options: {  }
+      cache:
+        type: tag
+        options: {  }
+      query:
+        type: views_query
+        options:
+          bypass_access: false
+          skip_access: false
+          parse_mode: terms
+      exposed_form:
+        type: bef
+        options:
+          submit_button: Apply
+          reset_button: 0
+          reset_button_label: Reset
+          exposed_sorts_label: 'Sort by'
+          expose_sort_order: 1
+          sort_asc_label: Asc
+          sort_desc_label: Desc
+          bef:
+            general:
+              allow_secondary: 0
+              secondary_label: 'Advanced options'
+            search_api_fulltext:
+              bef_format: default
+              more_options:
+                is_secondary: 0
+                rewrite:
+                  filter_rewrite_values: ''
+      pager:
+        type: infinite_scroll
+        options:
+          items_per_page: 12
+          offset: 0
+          id: 0
+          total_pages: null
+          tags:
+            previous: ‹‹
+            next: ››
+          expose:
+            items_per_page: false
+            items_per_page_label: 'Items per page'
+            items_per_page_options: '5, 10, 25, 50'
+            items_per_page_options_all: false
+            items_per_page_options_all_label: '- All -'
+            offset: false
+            offset_label: Offset
+          views_infinite_scroll:
+            button_text: 'Load More'
+            automatically_load_content: false
+      style:
+        type: default
+      row:
+        type: search_api
+        options:
+          view_modes:
+            'entity:node':
+              service_request: teaser
+      fields:
+        search_api_id:
+          table: search_api_index_service_requests
+          field: search_api_id
+          id: search_api_id
+          entity_type: null
+          entity_field: null
+          plugin_id: standard
+          relationship: none
+          group_type: group
+          admin_label: ''
+          label: ''
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+      filters:
+        search_api_fulltext:
+          id: search_api_fulltext
+          table: search_api_index_service_requests
+          field: search_api_fulltext
+          relationship: none
+          group_type: group
+          admin_label: ''
+          operator: and
+          value: ''
+          group: 1
+          exposed: true
+          expose:
+            operator_id: search_api_fulltext_op
+            label: 'Fulltext search'
+            description: ''
+            use_operator: false
+            operator: search_api_fulltext_op
+            identifier: search_api_fulltext
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+              anonymous: '0'
+              administrator: '0'
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          min_length: null
+          fields: {  }
+          plugin_id: search_api_fulltext
+        status:
+          id: status
+          table: search_api_index_service_requests
+          field: status
+          relationship: none
+          group_type: group
+          admin_label: ''
+          operator: '='
+          value: true
+          group: 1
+          exposed: false
+          expose:
+            operator_id: ''
+            label: ''
+            description: ''
+            use_operator: false
+            operator: ''
+            identifier: ''
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          plugin_id: search_api_boolean
+        field_category:
+          id: field_category
+          table: search_api_index_service_requests
+          field: field_category
+          relationship: none
+          group_type: group
+          admin_label: ''
+          operator: or
+          value: {  }
+          group: 1
+          exposed: true
+          expose:
+            operator_id: field_category_op
+            label: Category
+            description: ''
+            use_operator: false
+            operator: field_category_op
+            identifier: field_category
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+              anonymous: '0'
+              administrator: '0'
+            reduce: false
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          reduce_duplicates: false
+          type: select
+          limit: true
+          vid: service_category
+          hierarchy: false
+          error_message: true
+          plugin_id: search_api_term
+        field_status:
+          id: field_status
+          table: search_api_index_service_requests
+          field: field_status
+          relationship: none
+          group_type: group
+          admin_label: ''
+          operator: or
+          value: {  }
+          group: 1
+          exposed: true
+          expose:
+            operator_id: field_status_op
+            label: Status
+            description: ''
+            use_operator: false
+            operator: field_status_op
+            identifier: field_status
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+              anonymous: '0'
+              administrator: '0'
+            reduce: false
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          reduce_duplicates: false
+          type: select
+          limit: true
+          vid: service_status
+          hierarchy: false
+          error_message: true
+          plugin_id: search_api_term
+      sorts:
+        nid:
+          id: nid
+          table: search_api_index_service_requests
+          field: nid
+          relationship: none
+          group_type: group
+          admin_label: ''
+          order: DESC
+          exposed: false
+          expose:
+            label: ''
+          plugin_id: search_api
+      title: 'Service Requests List'
+      header:
+        result:
+          id: result
+          table: views
+          field: result
+          relationship: none
+          group_type: group
+          admin_label: ''
+          empty: true
+          content: '<span class="result-total">Showing <span class="badge">@total</span> Results.</span>'
+          plugin_id: result
+        area:
+          id: area
+          table: views
+          field: area
+          relationship: none
+          group_type: group
+          admin_label: ''
+          empty: true
+          tokenize: false
+          content:
+            value: '<span class="result-filter" data-toggle="filter">Refine Results: <span class="fa fa-sliders"><span></span>'
+            format: full_html
+          plugin_id: text
+      footer: {  }
+      empty:
+        result:
+          id: result
+          table: views
+          field: result
+          relationship: none
+          group_type: group
+          admin_label: ''
+          empty: true
+          content: '<span class="result-total">Showing <span class="badge">@total</span> Results.</span>'
+          plugin_id: result
+      relationships: {  }
+      arguments: {  }
+      display_extenders: {  }
+      use_ajax: true
+    cache_metadata:
+      max-age: 0
+      contexts:
+        - 'languages:language_interface'
+        - url.query_args
+      tags: {  }
+  block_1:
+    display_plugin: block
+    id: block_1
+    display_title: Block
+    position: 2
+    display_options:
+      display_extenders: {  }
+      style:
+        type: default
+      defaults:
+        style: false
+        row: false
+        pager: false
+      row:
+        type: search_api
+      pager:
+        type: some
+        options:
+          items_per_page: 10
+          offset: 0
+    cache_metadata:
+      max-age: 0
+      contexts:
+        - 'languages:language_interface'
+      tags: {  }
+  page_1:
+    display_plugin: page
+    id: page_1
+    display_title: Page
+    position: 1
+    display_options:
+      display_extenders: {  }
+      path: requests
+      menu:
+        type: normal
+        title: Requests
+        description: 'Show requests as list'
+        expanded: false
+        parent: ''
+        weight: 0
+        context: '0'
+        menu_name: main
+      cache:
+        type: none
+      defaults:
+        cache: false
+        style: false
+        row: false
+      exposed_block: false
+      style:
+        type: views_bootstrap_grid
+        options:
+          row_class: ''
+          default_row_class: true
+          uses_fields: false
+          alignment: horizontal
+          columns: '12'
+          col_xs: col-xs-12
+          col_sm: col-sm-12
+          col_md: col-md-12
+          col_lg: col-lg-12
+      row:
+        type: search_api
+        options:
+          view_modes:
+            'entity:node':
+              service_request: teaser
+    cache_metadata:
+      max-age: 0
+      contexts:
+        - 'languages:language_interface'
+        - url.query_args
+      tags: {  }

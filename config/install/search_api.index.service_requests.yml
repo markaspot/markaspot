@@ -1,0 +1,126 @@
+langcode: en
+status: true
+dependencies:
+  enforced: {  }
+  config:
+    - field.storage.node.field_geolocation
+    - field.storage.node.field_category
+    - field.storage.node.field_status
+    - field.storage.node.body
+    - field.storage.node.field_address
+    - search_api.server.database
+  module:
+    - search_api
+    - node
+id: service_requests
+name: service_requests
+description: ''
+read_only: false
+field_settings:
+  title:
+    label: Title
+    datasource_id: 'entity:node'
+    property_path: title
+    type: string
+  nid:
+    label: ID
+    datasource_id: 'entity:node'
+    property_path: nid
+    type: integer
+  status:
+    label: 'Publishing status'
+    datasource_id: 'entity:node'
+    property_path: status
+    type: boolean
+  changed:
+    label: Changed
+    datasource_id: 'entity:node'
+    property_path: changed
+    type: date
+  type:
+    label: 'Content type'
+    datasource_id: 'entity:node'
+    property_path: type
+    type: string
+  created:
+    label: 'Authored on'
+    datasource_id: 'entity:node'
+    property_path: created
+    type: date
+  lat:
+    label: 'Location » Latitude'
+    datasource_id: 'entity:node'
+    property_path: 'field_geolocation:lat'
+    type: decimal
+    dependencies:
+      config:
+        - field.storage.node.field_geolocation
+  lng:
+    label: 'Location » Longitude'
+    datasource_id: 'entity:node'
+    property_path: 'field_geolocation:lng'
+    type: decimal
+    dependencies:
+      config:
+        - field.storage.node.field_geolocation
+  field_category:
+    label: Category
+    datasource_id: 'entity:node'
+    property_path: field_category
+    type: integer
+    dependencies:
+      config:
+        - field.storage.node.field_category
+  field_status:
+    label: Status
+    datasource_id: 'entity:node'
+    property_path: field_status
+    type: integer
+    dependencies:
+      config:
+        - field.storage.node.field_status
+  body:
+    label: Body
+    datasource_id: 'entity:node'
+    property_path: body
+    type: text
+    dependencies:
+      config:
+        - field.storage.node.body
+  field_address:
+    label: Address
+    datasource_id: 'entity:node'
+    property_path: field_address
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+processor_settings:
+  add_url:
+    plugin_id: add_url
+    settings: {  }
+  aggregated_field:
+    plugin_id: aggregated_field
+    settings: {  }
+  rendered_item:
+    plugin_id: rendered_item
+    settings: {  }
+options:
+  index_directly: true
+  cron_limit: 50
+datasource_settings:
+  'entity:node':
+    plugin_id: 'entity:node'
+    settings:
+      bundles:
+        default: false
+        selected:
+          - service_request
+      languages:
+        default: true
+        selected: {  }
+tracker_settings:
+  default:
+    plugin_id: default
+    settings: {  }
+server: database
