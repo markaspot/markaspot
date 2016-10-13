@@ -3,6 +3,7 @@ description: 'Install with commonly used features pre-configured.'
 type: profile
 core: 8.x
 dependencies:
+
   - admin_toolbar
   - api_key_auth
   - automated_cron
@@ -22,8 +23,6 @@ dependencies:
   - devel
   - dynamic_page_cache
   - editor
-  - exclude_node_title
-  - facets
   - features_ui
   - field_ui
   - field_permissions
@@ -53,12 +52,15 @@ dependencies:
   - path
   - pathauto
   - quickedit
+  - r4032login
   - rdf
+  - responsive_image
   - restui
   - search_api
   - search_api_db
   - search_api_views_taxonomy
   - service_request
+  - shariff
   - shortcut
   - system
   - taxonomy
