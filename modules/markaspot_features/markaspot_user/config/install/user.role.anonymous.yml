@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies: {  }
+id: anonymous
+label: 'Anonymous user'
+weight: 0
+is_admin: false
+permissions:
+  - 'access content'
+  - 'use exclude node title'
+  - 'access comments'
+  - 'access site-wide contact form'
+  - 'search content'
+  - 'restful get georeport_request_index_resource'
+  - 'view own field_status'
+  - 'view field_status'
+  - 'create field_e_mail'
+  - 'create field_address'
+  - 'view own field_address'

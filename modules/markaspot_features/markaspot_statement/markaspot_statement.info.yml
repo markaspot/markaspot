@@ -1,0 +1,17 @@
+name: markaspot_statement
+description: 'Provide a statement stand alone field config'
+type: module
+core: 8.x
+dependencies:
+  - block
+  - field
+  - field_permissions
+  - geolocation
+  - image
+  - node
+  - path
+  - text
+  - user
+  - views
+version: 8.x-1.0
+package: Mark-a-Spot
