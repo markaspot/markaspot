@@ -1,7 +1,8 @@
 <?php
+
 /**
  * @file
- * Install, update and uninstall functions for the standard installation profile.
+ * Install, update and uninstall functions for the markaspot installation profile.
  */
 
 use Drupal\user\Entity\User;
