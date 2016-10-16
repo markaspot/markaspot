@@ -1,0 +1,13 @@
+{
+  "name": "markaspot/markaspot",
+  "description": "Installation profile of the Mark-a-Spot D8 Distribution",
+  "type": "drupal-profile",
+  "homepage": "https://github.com/markaspot/markaspot.git",
+  "authors": [
+    {
+      "name": "Holger Kreis (markaspot)",
+      "homepage": "https://www.drupal.org/u/markaspot",
+      "role": "Maintainer"
+    }
+  ]
+}
