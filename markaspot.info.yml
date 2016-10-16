@@ -21,7 +21,6 @@ dependencies:
   - datetime
   - dblog
   - default_content
-  - devel
   - dynamic_page_cache
   - editor
   - features_ui
@@ -43,7 +42,6 @@ dependencies:
   - markaspot_ui
   - markaspot_user
   - markaspot_uuid
-  - markaspot_message
   - markaspot_stats
   - menu_link_content
   - menu_ui
