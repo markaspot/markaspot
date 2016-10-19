@@ -34,4 +34,11 @@ resources:
         - json
       supported_auth:
         - api_key_auth
+  georeport_service_index_resource:
+    GET:
+      supported_formats:
+        - xml
+        - json
+      supported_auth:
+        - cookie
 link_domain: null
