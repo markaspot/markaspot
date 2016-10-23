@@ -95,6 +95,94 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.field_address
+  country_code:
+    label: 'Address » The two-letter country code.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:country_code'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  administrative_area:
+    label: 'Address » The top-level administrative subdivision of the country.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:administrative_area'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  locality:
+    label: 'Address » The locality (i.e. city).'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:locality'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  dependent_locality:
+    label: 'Address » The dependent locality (i.e. neighbourhood).'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:dependent_locality'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  postal_code:
+    label: 'Address » The postal code.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:postal_code'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  address_line1:
+    label: 'Address » The first line of the address block.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:address_line1'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  address_line2:
+    label: 'Address » The second line of the address block.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:address_line2'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  organization:
+    label: 'Address » The organization'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:organization'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  given_name:
+    label: 'Address » The given name.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:given_name'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  additional_name:
+    label: 'Address » The additional name.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:additional_name'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  family_name:
+    label: 'Address » The family name.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:family_name'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
 processor_settings:
   add_url:
     plugin_id: add_url

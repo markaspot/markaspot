@@ -5,6 +5,7 @@ core: 8.x
 dependencies:
 
   - admin_toolbar
+  - address
   - api_key_auth
   - automated_cron
   - better_normalizers
@@ -29,6 +30,7 @@ dependencies:
   - file
   - filter
   - geolocation
+  - geolocation_nominatim
   - help
   - history
   - image
