@@ -87,10 +87,10 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.body
-  field_address:
-    label: Address
+  langcode:
+    label: 'Address » The language code.'
     datasource_id: 'entity:node'
-    property_path: field_address
+    property_path: 'field_address:langcode'
     type: string
     dependencies:
       config:
@@ -131,6 +131,14 @@ field_settings:
     label: 'Address » The postal code.'
     datasource_id: 'entity:node'
     property_path: 'field_address:postal_code'
+    type: string
+    dependencies:
+      config:
+        - field.storage.node.field_address
+  sorting_code:
+    label: 'Address » The sorting code.'
+    datasource_id: 'entity:node'
+    property_path: 'field_address:sorting_code'
     type: string
     dependencies:
       config:
