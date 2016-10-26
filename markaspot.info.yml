@@ -45,6 +45,7 @@ dependencies:
   - markaspot_user
   - markaspot_uuid
   - markaspot_stats
+  - markaspot_validation
   - menu_link_content
   - menu_ui
   - node
