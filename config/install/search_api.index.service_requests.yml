@@ -32,6 +32,8 @@ field_settings:
     datasource_id: 'entity:node'
     property_path: status
     type: boolean
+    indexed_locked: true
+    type_locked: true
   changed:
     label: Changed
     datasource_id: 'entity:node'
@@ -191,6 +193,20 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.field_address
+  uid:
+    label: null
+    datasource_id: 'entity:node'
+    property_path: uid
+    type: integer
+    indexed_locked: true
+    type_locked: true
+  node_grants:
+    label: 'Node access information'
+    property_path: search_api_node_grants
+    type: string
+    indexed_locked: true
+    type_locked: true
+    hidden: true
 processor_settings:
   add_url:
     plugin_id: add_url
@@ -201,6 +217,101 @@ processor_settings:
   rendered_item:
     plugin_id: rendered_item
     settings: {  }
+  content_access:
+    plugin_id: content_access
+    settings:
+      weights:
+        preprocess_query: -10
+  highlight:
+    plugin_id: highlight
+    settings:
+      highlight: always
+      excerpt: true
+      excerpt_length: 256
+      exclude_fields: {  }
+      prefix: '<strong>'
+      suffix: '</strong>'
+      weights:
+        postprocess_query: 0
+  html_filter:
+    plugin_id: html_filter
+    settings:
+      fields:
+        - title
+        - type
+        - body
+        - langcode
+        - country_code
+        - administrative_area
+        - locality
+        - dependent_locality
+        - postal_code
+        - sorting_code
+        - address_line1
+        - address_line2
+        - organization
+        - given_name
+        - additional_name
+        - family_name
+      title: true
+      alt: true
+      tags:
+        h1: 5
+        h2: 3
+        h3: 2
+        strong: 2
+        b: 2
+        em: 1
+        u: 1
+      weights:
+        preprocess_index: -10
+        preprocess_query: -10
+  ignorecase:
+    plugin_id: ignorecase
+    settings:
+      fields:
+        - title
+        - type
+        - body
+        - langcode
+        - country_code
+        - administrative_area
+        - locality
+        - dependent_locality
+        - postal_code
+        - sorting_code
+        - address_line1
+        - address_line2
+        - organization
+        - given_name
+        - additional_name
+        - family_name
+      weights:
+        preprocess_index: -10
+        preprocess_query: -10
+  transliteration:
+    plugin_id: transliteration
+    settings:
+      fields:
+        - title
+        - type
+        - body
+        - langcode
+        - country_code
+        - administrative_area
+        - locality
+        - dependent_locality
+        - postal_code
+        - sorting_code
+        - address_line1
+        - address_line2
+        - organization
+        - given_name
+        - additional_name
+        - family_name
+      weights:
+        preprocess_index: -10
+        preprocess_query: -10
 options:
   index_directly: true
   cron_limit: 50
