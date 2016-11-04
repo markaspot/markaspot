@@ -405,7 +405,7 @@ display:
       path: requests
       menu:
         type: normal
-        title: Requests
+        title: Check Requests
         description: 'Show requests as list'
         expanded: false
         parent: ''
