@@ -72,6 +72,8 @@ dependencies:
   - views_infinite_scroll
   - views_ui
   - views_bootstrap
+  - markaspot_default_content
+
 themes:
   - masradix
   - seven
