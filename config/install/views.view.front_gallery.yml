@@ -164,26 +164,10 @@ display:
             group_items: {  }
           plugin_id: numeric
       pager:
-        type: full
+        type: some
         options:
-          items_per_page: 9
+          items_per_page: 3
           offset: 0
-          id: 0
-          total_pages: 0
-          tags:
-            previous: '‹ Previous'
-            next: 'Next ›'
-            first: '« First'
-            last: 'Last »'
-          expose:
-            items_per_page: false
-            items_per_page_label: 'Items per page'
-            items_per_page_options: '5, 10, 25, 50'
-            items_per_page_options_all: false
-            items_per_page_options_all_label: '- All -'
-            offset: false
-            offset_label: Offset
-          quantity: 3
       query:
         type: views_query
         options:
@@ -233,7 +217,7 @@ display:
           row_class: ''
           default_row_class: true
           uses_fields: false
-      title: ''
+      title: '311 City Services'
       header: {  }
       footer: {  }
       relationships: {  }
@@ -247,7 +231,6 @@ display:
     cache_metadata:
       contexts:
         - 'languages:language_interface'
-        - url.query_args
         - 'user.node_grants:view'
         - user.permissions
       max-age: -1
@@ -299,8 +282,8 @@ display:
           uses_fields: false
           alignment: horizontal
           columns: '3'
-          col_xs: col-xs-6
-          col_sm: col-sm-6
+          col_xs: col-xs-4
+          col_sm: col-sm-4
           col_md: col-md-4
           col_lg: col-lg-4
       defaults:
@@ -318,7 +301,6 @@ display:
     cache_metadata:
       contexts:
         - 'languages:language_interface'
-        - url.query_args
         - 'user.node_grants:view'
         - user.permissions
       max-age: -1
