@@ -348,7 +348,18 @@ display:
             value: '<span class="result-filter" data-toggle="filter">Refine Results: <span class="fa fa-sliders"><span></span>'
             format: full_html
           plugin_id: text
-      footer: {  }
+      footer:
+        area_text_custom:
+          id: area_text_custom
+          table: views
+          field: area_text_custom
+          relationship: none
+          group_type: group
+          admin_label: ''
+          empty: false
+          tokenize: false
+          content: '<a class="scroll-to-top btn btn-default btn-circle btn-md" href="#top"><i class="fa  fa-arrow-circle-up"></i><span>Top</span></a>'
+          plugin_id: text_custom
       empty:
         result:
           id: result
@@ -405,7 +416,7 @@ display:
       path: requests
       menu:
         type: normal
-        title: Check Requests
+        title: 'Check Requests'
         description: 'Show requests as list'
         expanded: false
         parent: ''
