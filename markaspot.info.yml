@@ -22,8 +22,10 @@ dependencies:
   - datetime
   - dblog
   - default_content
+  - diff
   - dynamic_page_cache
   - editor
+  - entity_reference_revisions
   - features_ui
   - field_ui
   - field_permissions
@@ -54,6 +56,7 @@ dependencies:
   - page_cache
   - path
   - pathauto
+  - paragraphs
   - quickedit
   - r4032login
   - rdf

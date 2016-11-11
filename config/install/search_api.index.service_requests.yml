@@ -5,11 +5,13 @@ dependencies:
   config:
     - field.storage.node.field_geolocation
     - field.storage.node.field_category
-    - field.storage.node.field_status
     - field.storage.node.body
     - field.storage.node.field_address
+    - field.storage.node.field_status_notes
+    - field.storage.paragraph.field_status_term
     - search_api.server.database
   module:
+    - paragraphs
     - search_api
     - node
 id: service_requests
@@ -17,6 +19,13 @@ name: service_requests
 description: ''
 read_only: false
 field_settings:
+  node_grants:
+    label: 'Node access information'
+    property_path: search_api_node_grants
+    type: string
+    indexed_locked: true
+    type_locked: true
+    hidden: true
   title:
     label: Title
     datasource_id: 'entity:node'
@@ -73,14 +82,6 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.field_category
-  field_status:
-    label: Status
-    datasource_id: 'entity:node'
-    property_path: field_status
-    type: integer
-    dependencies:
-      config:
-        - field.storage.node.field_status
   body:
     label: Body
     datasource_id: 'entity:node'
@@ -194,28 +195,29 @@ field_settings:
       config:
         - field.storage.node.field_address
   uid:
-    label: null
+    label: uid
     datasource_id: 'entity:node'
     property_path: uid
     type: integer
     indexed_locked: true
     type_locked: true
-  node_grants:
-    label: 'Node access information'
-    property_path: search_api_node_grants
-    type: string
-    indexed_locked: true
-    type_locked: true
-    hidden: true
+  field_status_term:
+    label: 'Status Notes / Change Status » Paragraph » Status'
+    datasource_id: 'entity:node'
+    property_path: 'field_status_notes:entity:field_status_term'
+    type: integer
+    dependencies:
+      config:
+        - field.storage.node.field_status_notes
+        - field.storage.paragraph.field_status_term
+      module:
+        - paragraphs
 processor_settings:
   add_url:
     plugin_id: add_url
     settings: {  }
   aggregated_field:
     plugin_id: aggregated_field
-    settings: {  }
-  rendered_item:
-    plugin_id: rendered_item
     settings: {  }
   content_access:
     plugin_id: content_access
@@ -289,6 +291,9 @@ processor_settings:
       weights:
         preprocess_index: -10
         preprocess_query: -10
+  rendered_item:
+    plugin_id: rendered_item
+    settings: {  }
   transliteration:
     plugin_id: transliteration
     settings:
