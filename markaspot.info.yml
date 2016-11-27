@@ -26,29 +26,21 @@ dependencies:
   - dynamic_page_cache
   - editor
   - entity_reference_revisions
+  - fa_icon_class
+  - facets
   - features_ui
+  - field_group
   - field_ui
   - field_permissions
   - file
   - filter
+  - form_mode_manager
   - geolocation
   - geolocation_nominatim
   - help
   - history
   - image
   - image_effects
-  - markaspot_article
-  - markaspot_blocks
-  - markaspot_comment
-  - markaspot_map
-  - markaspot_open311
-  - markaspot_page
-  - markaspot_static_json
-  - markaspot_ui
-  - markaspot_user
-  - markaspot_uuid
-  - markaspot_stats
-  - markaspot_validation
   - menu_link_content
   - menu_ui
   - node
@@ -65,7 +57,6 @@ dependencies:
   - search_api
   - search_api_db
   - search_api_views_taxonomy
-  - service_request
   - shariff
   - shortcut
   - system
@@ -76,7 +67,20 @@ dependencies:
   - views_infinite_scroll
   - views_ui
   - views_bootstrap
+  - markaspot_article
+  - markaspot_blocks
+  - markaspot_comment
+  - markaspot_open311
+  - markaspot_page
+  - markaspot_static_json
+  - markaspot_ui
+  - markaspot_user
+  - markaspot_uuid
+  - markaspot_stats
+  - markaspot_validation
+  - service_request
   - markaspot_default_content
+  - markaspot_map
 
 themes:
   - masradix

@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - node
+id: requests
+label: requests
+type: 'canonical_entities:node'
+pattern: '/requests/[node:nid]'
+selection_criteria:
+  56a8d215-6a30-17841-8aad-8d2156a3045b10d8aadc7b7d069cb:
+    id: node_type
+    bundles:
+      service_request: service_request
+    negate: false
+    context_mapping:
+      node: node
+    uuid: 56a8d215-6a30-17841-8aad-8d2156a3045b10d8aadc7b7d069cb
+selection_logic: and
+weight: -5
+relationships: {  }
