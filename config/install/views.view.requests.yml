@@ -380,16 +380,19 @@ display:
           content: '<a class="scroll-to-top btn btn-default btn-circle btn-md" href="#top"><i class="fa  fa-arrow-circle-up"></i><span>Top</span></a>'
           plugin_id: text_custom
       empty:
-        result:
-          id: result
+        area:
+          id: area
           table: views
-          field: result
+          field: area
           relationship: none
           group_type: group
           admin_label: ''
           empty: true
-          content: '<span class="result-total">Showing <span class="badge">@total</span> Results.</span>'
-          plugin_id: result
+          tokenize: false
+          content:
+            value: '<span class="results">No Results found.</span>'
+            format: basic_html
+          plugin_id: text
       relationships: {  }
       arguments: {  }
       display_extenders: {  }
