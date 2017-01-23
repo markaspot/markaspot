@@ -10,7 +10,6 @@ dependencies:
     module:
       - service_request
   module:
-    - better_exposed_filters
     - search_api
     - search_api_views_taxonomy
     - views_bootstrap
@@ -43,42 +42,15 @@ display:
           skip_access: false
           parse_mode: terms
       exposed_form:
-        type: bef
+        type: basic
         options:
           submit_button: Apply
-          reset_button: 1
+          reset_button: true
           reset_button_label: Reset
           exposed_sorts_label: 'Sort by'
-          expose_sort_order: 1
+          expose_sort_order: true
           sort_asc_label: Asc
           sort_desc_label: Desc
-          bef:
-            general:
-              allow_secondary: 0
-              secondary_label: 'Advanced options'
-            search_api_fulltext:
-              bef_format: default
-              more_options:
-                is_secondary: 0
-                rewrite:
-                  filter_rewrite_values: ''
-            field_category:
-              bef_format: default
-              more_options:
-                bef_select_all_none: false
-                bef_collapsible: 0
-                is_secondary: 0
-                rewrite:
-                  filter_rewrite_values: ''
-            field_status_term:
-              bef_format: default
-              more_options:
-                bef_select_all_none: false
-                bef_select_all_none_nested: 0
-                bef_collapsible: 0
-                is_secondary: 0
-                rewrite:
-                  filter_rewrite_values: ''
       pager:
         type: infinite_scroll
         options:
@@ -329,6 +301,45 @@ display:
           hierarchy: true
           error_message: true
           plugin_id: search_api_term
+        type:
+          id: type
+          table: search_api_index_service_requests
+          field: type
+          relationship: none
+          group_type: group
+          admin_label: ''
+          operator: or
+          value:
+            service_request: service_request
+          group: 1
+          exposed: false
+          expose:
+            operator_id: ''
+            label: ''
+            description: ''
+            use_operator: false
+            operator: ''
+            identifier: ''
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+            reduce: false
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          reduce_duplicates: false
+          plugin_id: search_api_options
       sorts:
         nid:
           id: nid
