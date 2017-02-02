@@ -19,7 +19,6 @@ dependencies:
       - service_request
   module:
     - address
-    - better_exposed_filters
     - entity_reference_revisions
     - search_api
     - search_api_views_taxonomy
@@ -57,42 +56,15 @@ display:
           skip_access: false
           parse_mode: terms
       exposed_form:
-        type: bef
+        type: basic
         options:
           submit_button: Apply
-          reset_button: 1
+          reset_button: true
           reset_button_label: Reset
           exposed_sorts_label: 'Sort by'
-          expose_sort_order: 1
+          expose_sort_order: true
           sort_asc_label: Asc
           sort_desc_label: Desc
-          bef:
-            general:
-              allow_secondary: 0
-              secondary_label: 'Advanced options'
-            search_api_fulltext:
-              bef_format: default
-              more_options:
-                is_secondary: 0
-                rewrite:
-                  filter_rewrite_values: ''
-            field_category:
-              bef_format: default
-              more_options:
-                bef_select_all_none: false
-                bef_collapsible: 0
-                is_secondary: 0
-                rewrite:
-                  filter_rewrite_values: ''
-            field_status_term:
-              bef_format: default
-              more_options:
-                bef_select_all_none: false
-                bef_select_all_none_nested: 0
-                bef_collapsible: 0
-                is_secondary: 0
-                rewrite:
-                  filter_rewrite_values: ''
       pager:
         type: full
         options:
