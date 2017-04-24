@@ -1,5 +1,5 @@
 {
-  "name": "markaspot/markaspot",
+  "name": "drupal/markaspot",
   "description": "Installation profile of the Mark-a-Spot D8 Distribution",
   "type": "drupal-profile",
   "homepage": "https://github.com/markaspot/markaspot.git",
@@ -9,5 +9,82 @@
       "homepage": "https://www.drupal.org/u/markaspot",
       "role": "Maintainer"
     }
-  ]
+  ],
+  "require": {
+    "composer/installers": "^1.2",
+    "drupal-composer/drupal-scaffold": "^2.2",
+    "cweagans/composer-patches": "~1.0",
+    "drush/drush": "~8.0",
+    "markaspot/markaspot_open311": "dev-8.x-3.x",
+    "markaspot/markaspot_blocks": "dev-master",
+    "markaspot/markaspot_uuid": "dev-master",
+    "markaspot/markaspot_ui": "dev-master",
+    "markaspot/markaspot_static_json": "dev-master",
+    "markaspot/markaspot_map": "dev-8.x-3.x",
+    "markaspot/markaspot_features": "dev-master",
+    "markaspot/markaspot_validation": "dev-master",
+    "markaspot/markaspot_default_content": "dev-master",
+    "markaspot/service_request": "dev-master",
+    "markaspot/masradix": "dev-master",
+    "drupal/address": "1.0.0-rc3",
+    "drupal/features": "3.0-beta9",
+    "drupal/core": "8.3.1",
+    "drupal/console": "1.0.0-rc15",
+    "drupal/radix": "3.x-dev",
+    "drupal/pathauto": "1.x-dev",
+    "drupal/admin_toolbar": "1.x-dev",
+    "drupal/restui": "1.x-dev",
+    "drupal/token": "1.0-beta2",
+    "drupal/shariff": "1.0",
+    "drupal/r4032login": "dev-1.x",
+    "drupal/message": "1.0-alpha1",
+    "drupal/views_bootstrap": "3.x-dev",
+    "drupal/better_normalizers": "1.x-dev",
+    "drupal/ctools": "3.x-dev",
+    "drupal/image_effects": "1.x-dev",
+    "drupal/paragraphs": "1.x-dev",
+    "drupal/diff": "1.x-dev",
+    "drupal/field_group": "1.x-dev",
+    "drupal/facets": "1.x-dev",
+    "drupal/form_mode_manager": "1.x-dev",
+    "drupal/geolocation": "1.x-dev",
+    "drupal/rules": "3.x-dev",
+    "drupal/maillog": "1.x-dev",
+    "drupal/fa_icon_class": "1.x-dev",
+    "drupal/services_api_key_auth": "1.x-dev"
+  },
+  "extra": {
+    "merge-plugin": {
+      "include": [
+        "composer.json",
+        "web/modules/contrib/*/composer.json"
+      ],
+      "recurse": true,
+      "merge-extra": true,
+      "merge-extra-deep": true
+    },
+    "installer-paths": {
+      "web/core": ["type:drupal-core"],
+      "web/libraries/{$name}": ["type:drupal-library"],
+      "web/modules/contrib/{$name}": ["type:drupal-module"],
+      "web/profiles/contrib/{$name}": ["type:drupal-profile"],
+      "web/themes/contrib/{$name}": ["type:drupal-theme"],
+      "drush/contrib/{$name}": ["type:drupal-drush"]
+    },
+    "patches": {
+      "drupal/core": {
+        "New option for Views page displays to use the admin theme": "https://www.drupal.org/files/issues/new_option_for_views-2719797-1.patch"
+      },
+      "drupal/color_field": {
+        "Palette instead of default_colors": "https://www.drupal.org/files/issues/default_colors_box-2807783-1.patch"
+      },
+      "drupal/rules": {
+        "Type definition error": "https://www.drupal.org/files/issues/rules-Fix_type_definition_error-2694685-30.patch",
+        "TokenProcessor Array to sting warning": "https://www.drupal.org/files/issues/rules-user_has_role-2824360-2-8x3x.patch",
+        "Action send mail, implode error": "https://www.drupal.org/files/issues/system-send-email-action-fails-if-to-is-a-string-2827183-2.patch",
+        "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/453.patch",
+        "Implement missing PluginDefinitionInterface methods in RulesUiDefinition": "https://www.drupal.org/files/issues/rules-fix-tests.patch"
+      }
+    }
+  }
 }
