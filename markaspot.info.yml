@@ -6,7 +6,7 @@ dependencies:
 
   - admin_toolbar
   - address
-  - api_key_auth
+  - services_api_key_auth
   - automated_cron
   - better_normalizers
   - block

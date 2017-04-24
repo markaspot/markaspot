@@ -453,7 +453,7 @@ display:
         description: 'Show requests as list'
         expanded: false
         parent: ''
-        weight: 0
+        weight: 200
         context: '0'
         menu_name: main
       cache:

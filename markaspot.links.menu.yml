@@ -2,7 +2,10 @@ markaspot.front_page:
   title: 'Home'
   route_name: '<front>'
   menu_name: main
+  weight: 0
+
 markaspot.add:
   title: 'Add Request'
   route_name: service_request.add
   menu_name: main
+  weight: 101
