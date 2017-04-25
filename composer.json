@@ -10,6 +10,12 @@
       "role": "Maintainer"
     }
   ],
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packages.drupal.org/8"
+    }
+  ],
   "require": {
     "composer/installers": "^1.2",
     "drupal-composer/drupal-scaffold": "^2.2",
