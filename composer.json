@@ -53,15 +53,13 @@
     "drupal/fa_icon_class": "1.x-dev",
     "drupal/services_api_key_auth": "1.x-dev"
   },
+  "scripts": {
+    "post-install-cmd": [
+      "@composer drupal-scaffold"
+    ],
+    "drupal-scaffold": "DrupalComposer\\DrupalScaffold\\Plugin::scaffold"
+  },
   "extra": {
-    "installer-paths": {
-      "web/core": ["type:drupal-core"],
-      "web/libraries/{$name}": ["type:drupal-library"],
-      "web/modules/contrib/{$name}": ["type:drupal-module"],
-      "web/profiles/markaspot/contrib/{$name}": ["type:drupal-profile"],
-      "web/themes/contrib/{$name}": ["type:drupal-theme"],
-      "drush/contrib/{$name}": ["type:drupal-drush"]
-    },
     "patches": {
       "drupal/core": {
         "New option for Views page displays to use the admin theme": "https://www.drupal.org/files/issues/new_option_for_views-2719797-1.patch"
