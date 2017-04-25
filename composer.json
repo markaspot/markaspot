@@ -59,6 +59,8 @@
     "drupal/fa_icon_class": "1.x-dev",
     "drupal/services_api_key_auth": "1.x-dev"
   },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
   "scripts": {
     "post-install-cmd": [
       "@composer drupal-scaffold"
