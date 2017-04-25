@@ -54,20 +54,11 @@
     "drupal/services_api_key_auth": "1.x-dev"
   },
   "extra": {
-    "merge-plugin": {
-      "include": [
-        "composer.json",
-        "web/modules/contrib/*/composer.json"
-      ],
-      "recurse": true,
-      "merge-extra": true,
-      "merge-extra-deep": true
-    },
     "installer-paths": {
       "web/core": ["type:drupal-core"],
       "web/libraries/{$name}": ["type:drupal-library"],
       "web/modules/contrib/{$name}": ["type:drupal-module"],
-      "web/profiles/contrib/{$name}": ["type:drupal-profile"],
+      "web/profiles/markaspot/contrib/{$name}": ["type:drupal-profile"],
       "web/themes/contrib/{$name}": ["type:drupal-theme"],
       "drush/contrib/{$name}": ["type:drupal-drush"]
     },
