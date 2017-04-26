@@ -301,12 +301,11 @@
   "prefer-stable": true,
   "scripts": {
     "post-install-cmd": [
-      "@composer drupal-scaffold"
+      "DrupalComposer\\DrupalScaffold\\Plugin::scaffold"
     ],
     "post-update-cmd": [
-      "@composer package"
-    ],
-    "drupal-scaffold": "DrupalComposer\\DrupalScaffold\\Plugin::scaffold"
+      "DrupalComposer\\DrupalScaffold\\Plugin::scaffold"
+    ]
   },
   "extra": {
     "patches": {
