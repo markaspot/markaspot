@@ -279,7 +279,7 @@
     "drupal/image_effects": "1.x-dev",
     "drupal/paragraphs": "1.x-dev",
     "drupal/diff": "1.x-dev",
-    "drupal/field_group": "1.0.0-rc6",
+    "drupal/field_group": "1.0.0rc6",
     "drupal/facets": "1.x-dev",
     "drupal/form_mode_manager": "1.x-dev",
     "drupal/geolocation": "1.x-dev",
