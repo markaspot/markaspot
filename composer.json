@@ -301,7 +301,6 @@
   "prefer-stable": true,
   "scripts": {
     "post-install-cmd": [
-      "PhantomInstaller\\Installer::installPhantomJS",
       "@composer drupal-scaffold"
     ],
     "post-update-cmd": [
