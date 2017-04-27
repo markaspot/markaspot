@@ -281,7 +281,7 @@
     "drupal/diff": "1.x-dev",
     "drupal/field_group": "1.*",
     "drupal/facets": "1.x-dev",
-    "drupal/form_mode_manager": "1.x-dev",
+    "drupal/form_mode_manager": "1.x-dev#f3b9c14b6b17f3bbd7d73dc0412039ced218bca3",
     "drupal/geolocation": "1.x-dev",
     "drupal/rules": "3.x-dev",
     "drupal/maillog": "1.x-dev",
