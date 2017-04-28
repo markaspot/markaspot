@@ -285,8 +285,8 @@
     "drupal/geolocation": "1.x-dev",
     "drupal/rules": "3.x-dev",
     "drupal/maillog": "1.x-dev",
-    "drupal/fa_icon_class": "1.x-dev",
-    "drupal/services_api_key_auth": "1.x-dev"
+    "drupal/fa_icon_class": "1.*",
+    "drupal/services_api_key_auth": "1.*"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
