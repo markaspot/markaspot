@@ -289,7 +289,7 @@
     "drupal/services_api_key_auth": "1.*"
   },
   "minimum-stability": "dev",
-  "prefer-stable": true,
+  "prefer-stable": false,
   "scripts": {
     "post-install-cmd": [
       "DrupalComposer\\DrupalScaffold\\Plugin::scaffold"
