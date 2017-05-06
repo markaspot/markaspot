@@ -261,7 +261,7 @@
     "markaspot/markaspot_validation": ">8@dev",
     "markaspot/markaspot_default_content": ">8@dev",
     "markaspot/service_request": ">8@dev",
-    "markaspot/masradix": "~8.3",
+    "markaspot/masradix": ">8@dev",
     "drupal/address": "1.0.0-rc3",
     "drupal/features": "3.0-beta9",
     "drupal/core": "8.3.*",
@@ -299,6 +299,7 @@
     ]
   },
   "extra": {
+    "enable-patching": true,
     "patches": {
       "drupal/core": {
         "New option for Views page displays to use the admin theme": "https://www.drupal.org/files/issues/new_option_for_views-2719797-1.patch"
