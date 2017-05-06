@@ -302,7 +302,7 @@
     "enable-patching": true,
     "patches": {
       "drupal/core": {
-        "New option for Views page displays to use the admin theme": "https://www.drupal.org/files/issues/new_option_for_views-2719797-1.patch"
+        "New option for Views page displays to use the admin theme": "https://www.drupal.org/files/issues/new_option_for_views-2719797-21.patch"
       },
       "drupal/color_field": {
         "Palette instead of default_colors": "https://www.drupal.org/files/issues/default_colors_box-2807783-1.patch"
