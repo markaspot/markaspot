@@ -82,6 +82,7 @@ dependencies:
   - service_request
   - markaspot_default_content
   - markaspot_map
+  - markaspot_token
 
 themes:
   - masradix
