@@ -279,6 +279,7 @@
     "drupal/ctools": "3.x-dev",
     "drupal/image_effects": "1.x-dev",
     "drupal/paragraphs": "1.x-dev",
+    "drupal/entity_reference_revisions": "1.x-dev",
     "drupal/diff": "1.x-dev",
     "drupal/field_group": "1.*",
     "drupal/facets": "1.x-dev",
