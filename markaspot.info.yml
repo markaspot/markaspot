@@ -27,7 +27,6 @@ dependencies:
   - editor
   - entity_reference_revisions
   - fa_icon_class
-  - facets
   - features_ui
   - field_group
   - field_ui
