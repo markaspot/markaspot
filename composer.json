@@ -288,8 +288,9 @@
     "drupal/fa_icon_class": "1.*",
     "drupal/services_api_key_auth": "1.*",
     "hubspot/pace": "0.7.5",
-    "mango/slideout": "1.0.1"
-
+    "mango/slideout": "1.0.1",
+    "fortawesome-mas/font-awesome": "4.7.0",
+    "heiseonline/shariff": "master"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
