@@ -282,16 +282,18 @@
     "drupal/entity_reference_revisions": "1.x-dev",
     "drupal/diff": "1.x-dev",
     "drupal/field_group": "1.*",
-    "drupal/facets": "1.x-dev",
     "drupal/form_mode_manager": "1.x-dev",
     "drupal/geolocation": "1.x-dev",
     "drupal/rules": "3.x-dev",
     "drupal/maillog": "1.x-dev",
     "drupal/fa_icon_class": "1.*",
-    "drupal/services_api_key_auth": "1.*"
+    "drupal/services_api_key_auth": "1.*",
+    "hubspot/pace": "0.7.5",
+    "mango/slideout": "1.0.1"
+
   },
   "minimum-stability": "dev",
-  "prefer-stable": false,
+  "prefer-stable": true,
   "scripts": {
     "post-install-cmd": [
       "DrupalComposer\\DrupalScaffold\\Plugin::scaffold"
