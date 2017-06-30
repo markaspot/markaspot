@@ -304,6 +304,15 @@
     ]
   },
   "extra": {
+    "installer-paths": {
+      "core": ["type:drupal-core"],
+      "modules/contrib/{$name}": ["type:drupal-module"],
+      "profiles/contrib/{$name}": ["type:drupal-profile"],
+      "themes/contrib/{$name}": ["type:drupal-theme"],
+      "drush/contrib/{$name}": ["type:drupal-drush"],
+      "modules/custom/{$name}": ["type:drupal-custom-module"],
+      "themes/custom/{$name}": ["type:drupal-custom-theme"]
+    },
     "enable-patching": true,
     "patches": {
       "drupal/core": {
