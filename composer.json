@@ -132,10 +132,10 @@
       "type": "package",
       "package": {
         "name": "socib/leaflet-timedimension",
-        "version": "1.0.6",
+        "version": "1.1.0",
         "type": "drupal-library",
         "dist": {
-          "url": "https://github.com/socib/Leaflet.TimeDimension/archive/v1.0.6.zip",
+          "url": "https://github.com/socib/Leaflet.TimeDimension/archive/v1.1.0.zip",
           "type": "zip"
         }
       }
@@ -266,7 +266,7 @@
     "markaspot/masradix": ">8@dev",
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
-    "drupal/core": "8.3.*",
+    "drupal/core": "8.4.*",
     "drupal/radix": "3.x-dev",
     "drupal/pathauto": "^1.0@RC",
     "drupal/admin_toolbar": "1.*",
@@ -306,9 +306,6 @@
   "extra": {
     "enable-patching": true,
     "patches": {
-      "drupal/core": {
-        "New option for Views page displays to use the admin theme": "https://www.drupal.org/files/issues/new_option_for_views-2719797-21.patch"
-      },
       "drupal/color_field": {
         "Palette instead of default_colors": "https://www.drupal.org/files/issues/default_colors_box-2807783-1.patch"
       },
