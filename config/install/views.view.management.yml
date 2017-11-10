@@ -823,7 +823,8 @@ display:
           exclude: true
           alter:
             alter_text: true
-            text: '<a href="/node/{{nid}}/edit_service_request?destination=/admin/structure/views/view/management">Edit</a>'
+            text: '<a href="/node/{{nid}}/edit/edit_service_request?destination=/admin/structure/views/view/management
+            ">Edit</a>'
             make_link: false
             path: ''
             absolute: false
