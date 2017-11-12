@@ -91,7 +91,7 @@
         "Implement missing PluginDefinitionInterface methods in RulesUiDefinition": "https://www.drupal.org/files/issues/rules-fix-tests.patch"
       },
       "drupal/shariff": {
-        "Update library path for shariff latest version": "https://gist.githubusercontent.com/markaspot/d493f888f7fb85a23d94352f44f0d6d7/raw/9e15e8bdff4c73d0d2ca7f1fab0e626a0ce3f332/update-lib-path.patch"
+        "Update library path for shariff latest version": "https://gist.githubusercontent.com/markaspot/d493f888f7fb85a23d94352f44f0d6d7/raw/a543f83029a934d3eb267b83aaae7c37f772b65e/update-lib-path.patch"
       }
     }
   }
