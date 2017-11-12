@@ -69,7 +69,7 @@
     "bower-asset/pace": "0.7.6",
     "npm-asset/bootstrap-fileinput":"^4.4",
     "npm-asset/fontawesome-iconpicker":"^1.3",
-    "npm-asset/slideout": "^1.0",
+    "bower-asset/slideout.js": "^1.0",
     "npm-asset/shariff": "dev-master"
   },
   "minimum-stability": "dev",
@@ -94,9 +94,6 @@
         "Action send mail, implode error": "https://www.drupal.org/files/issues/system-send-email-action-fails-if-to-is-a-string-2827183-2.patch",
         "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/453.patch",
         "Implement missing PluginDefinitionInterface methods in RulesUiDefinition": "https://www.drupal.org/files/issues/rules-fix-tests.patch"
-      },
-      "drupal/shariff": {
-        "Installing shariff with composer": "https://www.drupal.org/files/issues/installing_with_composer-2770807-11.patch"
       }
     }
   }
