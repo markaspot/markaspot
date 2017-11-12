@@ -41,7 +41,7 @@
     "markaspot/markaspot_token": ">8@dev",
     "markaspot/markaspot_default_content": ">8@dev",
     "markaspot/service_request": ">8@dev",
-    "markaspot/masradix": "^8.3.8",
+    "markaspot/masradix": "^8.3",
     "markaspot/fa_icon_class": ">8@dev",
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
