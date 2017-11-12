@@ -21,18 +21,6 @@
       "url": "https://asset-packagist.org"
     },
     {
-      "type": "package",
-      "package": {
-        "name": "hubspot/pace",
-        "version": "0.7.5",
-        "type": "drupal-library",
-        "dist": {
-          "url": "https://github.com/HubSpot/pace/archive/v0.7.5.zip",
-          "type": "zip"
-        }
-      }
-    },
-    {
       "type": "vcs",
       "url": "https://github.com/mishal/GeoPHP"
     }
@@ -54,6 +42,7 @@
     "markaspot/markaspot_default_content": ">8@dev",
     "markaspot/service_request": ">8@dev",
     "markaspot/masradix": ">8@dev",
+    "markaspot/fa_icon_class": ">8@dev",
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
     "drupal/core": "8.4.*",
@@ -76,7 +65,6 @@
     "drupal/geolocation": "^1.11",
     "drupal/rules": "3.x-dev",
     "drupal/maillog": "1.x-dev",
-    "drupal/fa_icon_class": "1.*",
     "drupal/services_api_key_auth": "1.*",
     "bower-asset/pace": "0.7.6",
     "npm-asset/bootstrap-fileinput":"^4.4",
@@ -105,7 +93,7 @@
         "TokenProcessor Array to sting warning": "https://www.drupal.org/files/issues/rules-user_has_role-2824360-2-8x3x.patch",
         "Action send mail, implode error": "https://www.drupal.org/files/issues/system-send-email-action-fails-if-to-is-a-string-2827183-2.patch",
         "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/453.patch",
-        "Implement missing PluginDefinitionInterface methods in RulesUiDefinition": "https://www.drupal.org/files/issues/rules-fix-tests.patch",
+        "Implement missing PluginDefinitionInterface methods in RulesUiDefinition": "https://www.drupal.org/files/issues/rules-fix-tests.patch"
       },
       "drupal/shariff": {
         "Installing shariff with composer": "https://www.drupal.org/files/issues/installing_with_composer-2770807-11.patch"
