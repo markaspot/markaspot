@@ -65,12 +65,7 @@
     "drupal/geolocation": "^1.11",
     "drupal/rules": "3.x-dev",
     "drupal/maillog": "1.x-dev",
-    "drupal/services_api_key_auth": "1.*",
-    "bower-asset/pace": "0.7.6",
-    "npm-asset/bootstrap-fileinput":"^4.4",
-    "npm-asset/fontawesome-iconpicker":"^1.3",
-    "bower-asset/slideout.js": "^1.0",
-    "npm-asset/shariff": "dev-master"
+    "drupal/services_api_key_auth": "1.*"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
