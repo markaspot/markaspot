@@ -105,7 +105,10 @@
         "TokenProcessor Array to sting warning": "https://www.drupal.org/files/issues/rules-user_has_role-2824360-2-8x3x.patch",
         "Action send mail, implode error": "https://www.drupal.org/files/issues/system-send-email-action-fails-if-to-is-a-string-2827183-2.patch",
         "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/453.patch",
-        "Implement missing PluginDefinitionInterface methods in RulesUiDefinition": "https://www.drupal.org/files/issues/rules-fix-tests.patch"
+        "Implement missing PluginDefinitionInterface methods in RulesUiDefinition": "https://www.drupal.org/files/issues/rules-fix-tests.patch",
+      },
+      "drupal/shariff": {
+        "Installing shariff with composer": "https://www.drupal.org/files/issues/installing_with_composer-2770807-11.patch"
       }
     }
   }
