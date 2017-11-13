@@ -22,7 +22,7 @@
     },
     {
       "type": "vcs",
-      "url": "https://github.com/mishal/GeoPHP"
+      "url": "https://github.com/markaspot/GeoPHP"
     }
   ],
   "require": {
@@ -65,7 +65,8 @@
     "drupal/geolocation": "^1.11",
     "drupal/rules": "3.x-dev",
     "drupal/maillog": "1.x-dev",
-    "drupal/services_api_key_auth": "1.*"
+    "drupal/services_api_key_auth": "1.*",
+    "oomphinc/composer-installers-extender": "^1.1"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
@@ -78,6 +79,32 @@
     ]
   },
   "extra": {
+    "installer-types": [
+      "bower-asset",
+      "npm-asset"
+    ],
+    "installer-paths": {
+      "web/core": [
+        "type:drupal-core"
+      ],
+      "web/libraries/{$name}": [
+        "type:drupal-library",
+        "type:bower-asset",
+        "type:npm-asset"
+      ],
+      "web/modules/contrib/{$name}": [
+        "type:drupal-module"
+      ],
+      "web/profiles/contrib/{$name}": [
+        "type:drupal-profile"
+      ],
+      "web/themes/contrib/{$name}": [
+        "type:drupal-theme"
+      ],
+      "drush/contrib/{$name}": [
+        "type:drupal-drush"
+      ]
+    },
     "enable-patching": true,
     "patches": {
       "drupal/color_field": {
