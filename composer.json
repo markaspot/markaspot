@@ -23,6 +23,21 @@
     {
       "type": "vcs",
       "url": "https://github.com/markaspot/GeoPHP"
+    },
+    {
+      "type": "package",
+      "package": {
+        "name": "heiseonline/shariff",
+        "version": "master",
+        "type": "drupal-library",
+        "dist": {
+          "url": "https://github.com/heiseonline/shariff/releases/download/2.0.2/shariff-2.0.2.zip",
+          "type": "zip"
+        },
+        "require": {
+          "composer/installers": "~1.0"
+        }
+      }
     }
   ],
   "require": {
