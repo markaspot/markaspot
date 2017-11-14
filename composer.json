@@ -41,6 +41,7 @@
     }
   ],
   "require": {
+    "oomphinc/composer-installers-extender": "^1.1",
     "composer/installers": "^1.2",
     "drupal-composer/drupal-scaffold": "^2.2",
     "cweagans/composer-patches": "~1.6",
@@ -80,8 +81,7 @@
     "drupal/geolocation": "^1.11",
     "drupal/rules": "3.x-dev",
     "drupal/maillog": "1.x-dev",
-    "drupal/services_api_key_auth": "1.*",
-    "oomphinc/composer-installers-extender": "^1.1"
+    "drupal/services_api_key_auth": "1.*"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
