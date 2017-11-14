@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "content-hash": "384894b8e323d59e06d63c8f536221cc",
+    "content-hash": "36527a4d0c0d6ea16a708eff87412bd5",
     "packages": [
         {
             "name": "anthonymartin/geo-location",
@@ -1393,7 +1393,7 @@
             "support": {
                 "source": "http://cgit.drupalcode.org/better_normalizers"
             },
-            "time": "2017-05-03 02:35:27"
+            "time": "2017-05-03T02:35:27+00:00"
         },
         {
             "name": "drupal/color_field",
@@ -1438,7 +1438,7 @@
             "support": {
                 "source": "http://cgit.drupalcode.org/color_field"
             },
-            "time": "2017-04-13 15:34:24"
+            "time": "2017-04-13T15:34:24+00:00"
         },
         {
             "name": "drupal/config_update",
@@ -1761,7 +1761,7 @@
                 "source": "http://cgit.drupalcode.org/ctools",
                 "issues": "https://www.drupal.org/project/issues/ctools"
             },
-            "time": "2017-07-11 17:46:05"
+            "time": "2017-07-11T17:46:05+00:00"
         },
         {
             "name": "drupal/default_content",
@@ -1831,7 +1831,7 @@
             "support": {
                 "source": "http://cgit.drupalcode.org/default_content"
             },
-            "time": "2017-10-19 21:26:16"
+            "time": "2017-10-19T21:26:16+00:00"
         },
         {
             "name": "drupal/diff",
@@ -2165,7 +2165,7 @@
                 "source": "http://cgit.drupalcode.org/field_permissions",
                 "issues": "https://www.drupal.org/project/issues/field_permissions"
             },
-            "time": "2017-10-23 17:14:39"
+            "time": "2017-10-23T17:14:39+00:00"
         },
         {
             "name": "drupal/form_mode_manager",
@@ -2326,7 +2326,7 @@
             "support": {
                 "source": "http://cgit.drupalcode.org/image_effects"
             },
-            "time": "2017-08-22 06:46:38"
+            "time": "2017-08-22T06:46:38+00:00"
         },
         {
             "name": "drupal/maillog",
@@ -2380,7 +2380,7 @@
             "support": {
                 "source": "http://cgit.drupalcode.org/maillog"
             },
-            "time": "2016-08-05 21:18:07"
+            "time": "2016-08-05T21:18:07+00:00"
         },
         {
             "name": "drupal/paragraphs",
@@ -2588,7 +2588,7 @@
             "support": {
                 "source": "http://cgit.drupalcode.org/r4032login"
             },
-            "time": "2017-02-08 04:20:19"
+            "time": "2017-02-08T04:20:19+00:00"
         },
         {
             "name": "drupal/radix",
@@ -2756,7 +2756,7 @@
             "support": {
                 "source": "http://cgit.drupalcode.org/rules"
             },
-            "time": "2017-10-19 12:40:18"
+            "time": "2017-10-19T12:40:18+00:00"
         },
         {
             "name": "drupal/search_api",
@@ -3753,7 +3753,7 @@
                 "drupal",
                 "font awesome"
             ],
-            "time": "2017-11-12 04:33:52"
+            "time": "2017-11-12T04:33:52+00:00"
         },
         {
             "name": "markaspot/geolocation_nominatim",
@@ -3783,7 +3783,7 @@
             "keywords": [
                 "drupal"
             ],
-            "time": "2017-11-11 12:11:04"
+            "time": "2017-11-11T12:11:04+00:00"
         },
         {
             "name": "markaspot/markaspot_blocks",
@@ -3874,16 +3874,16 @@
         },
         {
             "name": "markaspot/markaspot_map",
-            "version": "8.3.0-rc4",
+            "version": "8.3.0-rc5",
             "source": {
                 "type": "git",
                 "url": "https://github.com/markaspot/markaspot_map.git",
-                "reference": "38166bc6de3e38c78a6379c6dabc8d668504a075"
+                "reference": "d702eed5e17e0094007622624e9d618d8e884d1f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/markaspot/markaspot_map/zipball/38166bc6de3e38c78a6379c6dabc8d668504a075",
-                "reference": "38166bc6de3e38c78a6379c6dabc8d668504a075",
+                "url": "https://api.github.com/repos/markaspot/markaspot_map/zipball/d702eed5e17e0094007622624e9d618d8e884d1f",
+                "reference": "d702eed5e17e0094007622624e9d618d8e884d1f",
                 "shasum": ""
             },
             "require": {
@@ -3902,7 +3902,8 @@
                 "npm-asset/leaflet-timedimension": "^1.0",
                 "npm-asset/leaflet.heat": "0.2.0",
                 "npm-asset/leaflet.markercluster": "1.2.0",
-                "npm-asset/waypoints": "4.0.1"
+                "npm-asset/waypoints": "4.0.1",
+                "oomphinc/composer-installers-extender": "^1.1"
             },
             "type": "drupal-module",
             "notification-url": "https://packagist.org/downloads/",
@@ -3921,7 +3922,7 @@
             "keywords": [
                 "drupal"
             ],
-            "time": "2017-11-12T11:48:34+00:00"
+            "time": "2017-11-14T14:58:54+00:00"
         },
         {
             "name": "markaspot/markaspot_open311",
@@ -4736,7 +4737,7 @@
             "support": {
                 "source": "https://github.com/markaspot/geoPHP/tree/master"
             },
-            "time": "2017-05-15 09:50:01"
+            "time": "2017-05-15T09:50:01+00:00"
         },
         {
             "name": "phpdocumentor/reflection-docblock",
