@@ -129,8 +129,7 @@
         "Type definition error": "https://www.drupal.org/files/issues/rules-Fix_type_definition_error-2694685-30.patch",
         "TokenProcessor Array to sting warning": "https://www.drupal.org/files/issues/rules-user_has_role-2824360-2-8x3x.patch",
         "Action send mail, implode error": "https://www.drupal.org/files/issues/system-send-email-action-fails-if-to-is-a-string-2827183-2.patch",
-        "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/453.patch",
-        "Implement missing PluginDefinitionInterface methods in RulesUiDefinition": "https://www.drupal.org/files/issues/rules-fix-tests.patch"
+        "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/453.patch"
       },
       "drupal/shariff": {
         "Update library path for shariff latest version": "https://gist.githubusercontent.com/markaspot/d493f888f7fb85a23d94352f44f0d6d7/raw/9e15e8bdff4c73d0d2ca7f1fab0e626a0ce3f332/update-lib-path.patch"
