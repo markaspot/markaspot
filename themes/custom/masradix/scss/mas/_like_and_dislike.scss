@@ -1,0 +1,32 @@
+.vote-widget a {
+  background: none;
+  color: #cccccc
+}
+
+a.voted-like {
+  color: #cc0000;
+}
+
+.vote-like a:active,
+.vote-like a:hover {
+  color: #AA0000;
+}
+
+.vote-dislike {
+  display: none;
+}
+
+span.like-text {
+  text-indent: -9999px!important;
+  display: inline-block;
+}
+
+.vote-like a, .vote-like a:link, .vote-like a:visited, .vote-dislike a, .vote-dislike a:link, .vote-dislike a:visited {
+  background: none;
+  text-indent: 0px !important;
+}
+
+span.count {
+  font-size: small;
+  color: #666!important;
+}

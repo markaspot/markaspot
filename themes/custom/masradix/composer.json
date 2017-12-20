@@ -1,0 +1,32 @@
+{
+  "name": "markaspot/masradix",
+  "type": "drupal-theme",
+  "description": "Mark-a-Spot Radix Theme",
+  "keywords": [
+    "Drupal"
+  ],
+  "license": "GPL-2.0+",
+  "homepage": "https://github.com/markaspot/masradix",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://github.com/markaspot/masradix",
+    "source": "https://github.com/markaspot/masradix.git"
+  },
+  "require": {
+    "drupal/twig_tweak": "^2.0",
+    "drupal/field_formatter_class":"^1.0",
+    "bower-asset/slideout.js": "1.0.1",
+    "npm-asset/pace-js": "^0.7",
+    "npm-asset/shariff": "2.0.2"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packages.drupal.org/8"
+    },
+    {
+      "type": "composer",
+      "url": "https://asset-packagist.org"
+    }
+  ]
+}

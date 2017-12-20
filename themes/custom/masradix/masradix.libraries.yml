@@ -1,0 +1,30 @@
+base:
+  version: VERSION
+  css:
+    theme:
+      assets/css/masradix.style.css: {}
+      assets/css/color/colors.css: {}
+      assets/css/hacks.css: {}
+  js:
+    bower_components/bootstrap-sass/assets/javascripts/bootstrap.min.js: {}
+    /libraries/waypoints/lib/jquery.waypoints.min.js: {weight: -3, minified: true }
+    /libraries/waypoints/lib/shortcuts/sticky.min.js: {weight: -2, minified: true }
+    /libraries/waypoints/lib/shortcuts/inview.min.js: {weight: -2, minified: true }
+    /libraries/slideout.js/dist/slideout.min.js: {weight: -1, minified: true }
+    /libraries/pace-js/pace.min.js: {weight: 0, minified: true }
+    assets/js/masradix.script.js: {}
+
+  dependencies:
+    - core/jquery
+    - core/jquery.once
+    - core/drupal
+
+color.preview:
+  version: VERSION
+  css:
+    theme:
+      color/preview.css: {}
+  js:
+    color/preview.js: {}
+  dependencies:
+    - color/drupal.color

@@ -1,0 +1,23 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - views.view.stats
+  module:
+    - views
+  theme:
+    - masradix
+id: views_block__stats_block_2
+theme: masradix
+region: sidebar
+weight: -5
+provider: null
+plugin: 'views_block:stats-block_2'
+settings:
+  id: 'views_block:stats-block_2'
+  label: ''
+  provider: views
+  label_display: true
+  views_label: ''
+  items_per_page: none
+visibility: {  }

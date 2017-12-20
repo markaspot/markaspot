@@ -1,0 +1,12 @@
+a.voted-like {
+  text-indent: 0;
+  background: none;
+  color: red; }
+
+a.vote-dislike {
+  display: none; }
+
+div.vote-like a span.text {
+  text-indent: -9999px; }
+
+/*# sourceMappingURL=like_and_dislike.css.map */

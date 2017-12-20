@@ -1,0 +1,42 @@
+# Geolocation core library.
+
+geolocation-nominatim-widget:
+  version: VERSION
+  js:
+    geolocation_nominatim.widget.js: {}
+  dependencies:
+    - geolocation_nominatim/leaflet-control-geocoder
+
+
+leaflet:
+  js:
+    /libraries/leaflet/dist/leaflet.js: {}
+  css:
+    component:
+      /libraries/leaflet/dist/leaflet.css: {}
+
+leaflet-control-geocoder:
+  remote: https://github.com/perliedman/leaflet-control-geocoder
+  version: VERSION
+  license:
+    name: BSD-2-Clause
+    url: https://github.com/perliedman/leaflet-control-geocoder/blob/v1.5.1/LICENSE
+    gpl-compatible: true
+  css:
+    component:
+      /libraries/leaflet-control-geocoder/dist/Control.Geocoder.css: {}
+  js:
+    /libraries/leaflet-control-geocoder/dist/Control.Geocoder.js: {}
+
+leaflet-locatecontrol:
+  js:
+    /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.js: {}
+  css:
+    component:
+      /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.css: {}
+leaflet.fullscreen:
+  js:
+    /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: {}
+  css:
+    component:
+      /libraries/leaflet-fullscreen/dist/leaflet.fullscreen.css: {}

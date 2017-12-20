@@ -1,0 +1,91 @@
+// Styles for Forms
+// -----------------------------------------------------------------------------
+
+
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+  select:focus,
+  textarea:focus,
+  input:focus {
+    font-size: 16px;
+  }
+}
+
+
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+  select:hover,
+  textarea:hover,
+  input:hover {
+    font-size: 16px;
+  }
+}
+
+.leaflet-control-geocoder-form input {
+
+  @media (max-width: $screen-sm-max) {
+    width: 280px!important;
+  }
+  @media (max-width: $screen-xs-max) {
+    width: 220px!important;
+  }
+  @media (max-width: $screen-xs-min) {
+    width: 180px!important;
+  }
+}
+
+#locateMe {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+div#edit-body-0-format,
+input#edit-preview,
+input.form-type-file,
+.file-input-new .fileinput-remove-button, .file-input-new .fileinput-upload-button{
+  display:none!important;
+}
+
+.form-item-field-request-image-0 {
+  border-radius: $border-radius-base;
+  padding: 10px 10px 0 10px;;
+}
+
+
+.image-widget {
+  padding-left: 0;
+  padding-right: 0;
+  float:none
+}
+
+.image-preview {
+  margin: 10px 0;
+  max-width: 250px;
+  float:left
+}
+
+
+span.file-size.badge,
+span.file.file--image {
+  float: right;
+  display: inline-block;
+  margin: 40px 10px;
+}
+
+
+#edit-field-request-image-wrapper input {
+  margin: 30px 10px;
+
+}
+
+input#edit-field-request-image-0-upload,
+input[name="field_request_image_0_upload_button"]{
+  display:none!important
+}
+
+p#edit-field-request-image-0-upload--description {
+  visibility: hidden;
+  max-height: 50px;
+}
+
+p#edit-field-request-image-0-upload--description .visible {
+  visibility: visible!important;
+}

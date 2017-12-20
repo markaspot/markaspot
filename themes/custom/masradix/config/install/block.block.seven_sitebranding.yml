@@ -1,0 +1,20 @@
+langcode: en
+status: false
+dependencies:
+  theme:
+    - seven
+id: seven_sitebranding
+theme: seven
+region: '-1'
+weight: -4
+provider: null
+plugin: system_branding_block
+settings:
+  id: system_branding_block
+  label: 'Site branding'
+  provider: system
+  label_display: true
+  use_site_logo: true
+  use_site_name: false
+  use_site_slogan: true
+visibility: {  }

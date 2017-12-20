@@ -1,0 +1,31 @@
+uuid: 7d2cc5c3-6768-19263-9cf9-cc5c26768ab3f295cf9fc5b666693
+langcode: en
+status: true
+dependencies:
+  content:
+    - 'block_content:mas_custom:c95dc68f-eab9-18470-87d9-dc68feab9c8269fc7d98ff7916891'
+  module:
+    - block_content
+    - system
+  theme:
+    - masradix
+id: masradix_welcome-block
+theme: masradix
+region: content
+weight: -5
+provider: null
+plugin: 'block_content:c95dc68f-eab9-18470-87d9-dc68feab9c8269fc7d98ff7916891'
+settings:
+  id: 'block_content:c95dc68f-eab9-18470-87d9-dc68feab9c8269fc7d98ff7916891'
+  label: Welcome!
+  provider: block_content
+  label_display: '0'
+  status: true
+  info: ''
+  view_mode: full
+visibility:
+  request_path:
+    id: request_path
+    pages: '<front>'
+    negate: false
+    context_mapping: {  }

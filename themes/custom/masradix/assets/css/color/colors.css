@@ -1,0 +1,189 @@
+/* ---------- Color Module Styles ----------- */
+
+body {
+  color: #3b3b3b;
+  background: #ffffff;
+}
+#wrapper,
+.block-masradix-mainnavigation-menu a.is-active {
+  background: #ffffff;
+}
+.tabs ul.primary li a.is-active {
+  background-color: #ffffff;
+}
+.tabs ul.primary li.is-active a {
+  background-color: #ffffff;
+  border-bottom-color: #ffffff;
+}
+
+
+.leaflet-control-locate {
+  border-color: #a3e5ff !important;
+}
+
+
+.btn.btn-success.btn-file,
+.leaflet-control-locate a {
+  color: #7bceff;
+  background-color: #055a8e;
+}
+
+.notifications li,
+.hamburger.is-closed .hamb-top,
+.hamburger.is-closed .hamb-middle,
+.hamburger.is-closed .hamb-bottom,
+#sidebar-wrapper {
+  background-color: #055a8e;
+  background-image: -webkit-linear-gradient(top, #055a8e 0%, #055a8e 100%);
+  background-image: linear-gradient(to bottom, #055a8e 0%, #055a8e 100%);
+}
+
+.notifications li,
+.button,
+.btn-default,
+.add-block p a,
+.btn-default:active,
+.pager li > a, .pager li > span,
+.btn-default.active,
+.open > .btn-default.dropdown-toggle {
+  color: #7bceff;
+  filter: brightness(85%);
+  position: relative;
+  overflow: hidden;
+  -webkit-transform: translate3d(0,0,0);
+  background-color: #055a8e;
+  border-color: #055a8e;
+  background-image: -webkit-linear-gradient(top, #055a8e 0%, #055a8e 100%);
+  background-image: linear-gradient(to bottom, #055a8e 0%, #055a8e 100%);
+  box-shadow:
+      0 1px 3px rgba(0,0,0, 0.12),
+      0 1px 2px rgba(0,0,0, 0.24);
+}
+
+.btn-circle:hover,
+.btn-default:active,
+.btn-default:hover,
+.btn-default:focus{
+  color: #1d84c3;
+  border-color: #055a8e;
+  background-color: inherit!important;
+}
+
+.view--requests .view__header,
+.shariff-button a,
+.mas-action a,
+.add-block,
+.region-sidebar li.list-group-item,
+fieldset#edit-field-geolocation-0-map-container,
+.form-item-field-request-image-0 {
+  background-color: #eeeeee;
+}
+
+.block.block--markaspotbuiltwithblock {
+  background: none;
+}
+
+.nav.navbar-nav li:hover:before {
+    background-color: #1d84c3;
+}
+
+.navbar a {
+  color: #1d84c3;
+}
+
+.toggled .shariff-button a,
+.nav.navbar-nav > .active > a, .nav.navbar-nav > .active > a:hover, .nav.navbar-nav > .active > a:focus {
+  color: #f9f9f9;
+  background-color: #1d84c3;
+}
+.block .user-login-form,
+.nav.navbar-nav > li > a {
+  color: #f9f9f9;
+}
+
+a,
+.link,
+.result-filter {
+  color: #0071b3;
+}
+
+p a {
+  text-decoration: underline;
+  -moz-text-decoration-color: rgba(0, 113, 179, 0.5); /* Code for Firefox */
+  text-decoration-color: rgba(0, 113, 179, 0.5);
+  
+}
+
+a:hover,
+a:focus,
+.link:hover,
+.link:focus {
+  color: #1d84c3;
+}
+a:active,
+.link:active {
+  color: #0071b3;
+}
+
+#footer {
+  background: #fff;
+}
+
+.site-name,
+.site-name a {
+  color: #7bceff;
+}
+
+
+/* ---------- Color Form ----------- */
+
+[dir="rtl"] .color-form .color-palette {
+  margin-left: 0;
+  margin-right: 20px;
+}
+[dir="rtl"] .color-form .form-item label {
+  float: right;
+}
+[dir="rtl"] .color-form .color-palette .lock {
+  right: -20px;
+  left: 0;
+}
+
+@media (min-width: 1200px) {
+  .navbar-default div.container {
+    background: #e2e2e2;
+  }
+
+  .navbar-inner {
+    /* background: #ddd;
+
+    box-shadow:
+      0 1px 3px rgba(0,0,0, 0.12),
+      0 1px 2px rgba(0,0,0, 0.24);
+     */
+  }
+
+  .links.inline a,
+  .navbar-inner li {
+    text-transform: uppercase;
+  }
+
+  nav#sidebar-wrapper {
+    color: #000;
+  }
+
+  .nav.navbar-nav > li > a {
+    color: #000;
+  }
+
+  .nav.navbar-nav > li > a:active {
+    color: #7bceff!important;
+  }
+
+  .nav > li > a:hover, .nav > li > a:focus {
+    text-decoration: none;
+    background-color: #eeeeee!important;
+    color: #7bceff
+  }
+
+}
