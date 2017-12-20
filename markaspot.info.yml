@@ -28,6 +28,7 @@ dependencies:
   - entity_reference_revisions
   - fa_icon_class
   - features_ui
+  - field_formatter_class
   - field_group
   - field_ui
   - field_permissions
@@ -61,6 +62,7 @@ dependencies:
   - system
   - taxonomy
   - text
+  - twig_tweak
   - toolbar
   - user
   - views
