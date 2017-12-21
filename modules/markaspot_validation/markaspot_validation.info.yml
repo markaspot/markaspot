@@ -1,0 +1,6 @@
+name: Mark-a-Spot Validation
+description: Provides some constraints and configuration for entities of the Mark-a-Spot ditribution.
+package: Mark-a-Spot
+type: module
+core: 8.x
+

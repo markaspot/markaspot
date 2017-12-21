@@ -1,0 +1,27 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_geolocation
+    - node.type.service_request
+  module:
+    - geolocation
+id: node.service_request.field_geolocation
+field_name: field_geolocation
+entity_type: node
+bundle: service_request
+label: Location
+description: '<span id="locateMe">Use the GPS sensor<span> of your device to show your location on the map or search for a certain address.'
+required: false
+translatable: false
+default_value:
+  -
+    lat: '40.7370610'
+    lng: '-73.935242'
+    lat_sin: null
+    lat_cos: null
+    lng_rad: null
+    data: null
+default_value_callback: ''
+settings: {  }
+field_type: geolocation

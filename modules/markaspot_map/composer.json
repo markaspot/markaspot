@@ -1,0 +1,45 @@
+{
+  "name": "markaspot/markaspot_map",
+  "type": "drupal-module",
+  "description": "Mark-a-Spot map visualisation",
+  "homepage": "https://github.com/markaspot/markaspot_map",
+  "authors": [
+    {
+      "name": "Holger Kreis (markaspot)",
+      "homepage": "https://www.drupal.org/u/markaspot",
+      "role": "Maintainer"
+    }
+  ],
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "http://drupal.org/project/issues/markaspot_map",
+    "source": "https://github.com/markaspot/markaspot_map"
+  },
+  "require": {
+    "composer/installers": "~1.0",
+    "oomphinc/composer-installers-extender": "^1.1",
+    "npm-asset/waypoints": "4.0.1",
+    "npm-asset/iso8601-js-period": "0.2.0",
+    "npm-asset/dateformat": "3.0.2",
+    "npm-asset/leaflet": "~1.0.0",
+    "npm-asset/leaflet-timedimension": "^1.0",
+    "npm-asset/leaflet.heat": "0.2.0",
+    "npm-asset/leaflet.markercluster": "1.2.0",
+    "npm-asset/leaflet-fullscreen": "1.0.2",
+    "npm-asset/leaflet-easybutton": "2.2.2",
+    "npm-asset/drmonty-leaflet-awesome-markers": "2.0.2",
+    "npm-asset/font-awesome": "4.7.0",
+    "drupal/search_api": "^1.5",
+    "drupal/views_infinite_scroll": "^1.5",
+    "drupal/better_exposed_filters": "^3.0",
+    "markaspot/service_request": "^8"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://asset-packagist.org"
+    }
+  ]
+}

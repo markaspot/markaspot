@@ -1,0 +1,70 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/taxonomy\/term\/4?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+        }
+    },
+    "tid": [
+        {
+            "value": "4"
+        }
+    ],
+    "uuid": [
+        {
+            "value": "1405201631136be77-734c-16852-9727-6be77734c31d4235727ddac88405b14052016"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "vid": [
+        {
+            "target_id": "service_category"
+        }
+    ],
+    "name": [
+        {
+            "value": "Traffic Signal Out",
+            "lang": "en"
+        }
+    ],
+    "weight": [
+        {
+            "value": "0"
+        }
+    ],
+    "changed": [
+        {
+            "value": "1463455378",
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "field_category_hex": [
+        {
+            "color": "#00008B",
+            "opacity": "1"
+        }
+    ],
+    "field_category_icon": [
+        {
+            "value": "fa-sun-o"
+        }
+    ],
+    "field_service_code": [
+        {
+            "value": "0004"
+        }
+    ]
+}

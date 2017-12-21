@@ -1,0 +1,7 @@
+'access open311 extension':
+  title: 'Access Open311 Extended Feature'
+  description: 'Retrieve extended properties'
+
+'access open311 advanced properties':
+  title: 'Access Open311 Advanced Properties'
+  description: 'Retrieve extended properties with author information'

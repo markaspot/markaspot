@@ -1,0 +1,16 @@
+{
+  "name": "markaspot/markaspot_ui",
+  "type": "drupal-module",
+  "description": "UI and Menubar for the Mark-a-Spot Distro",
+  "keywords": [
+    "Drupal"
+  ],
+  "license": "GPL-2.0+",
+  "homepage": "https://github.com/markaspot/markaspot_ui",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://github.com/markaspot/markaspot_ui",
+    "source": "https://github.com/markaspot/markaspot_ui.git"
+  },
+  "require": {}
+}

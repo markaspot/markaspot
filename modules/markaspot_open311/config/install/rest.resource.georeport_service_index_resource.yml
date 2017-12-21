@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - services_api_key_auth
+    - markaspot_open311
+    - serialization
+    - user
+id: georeport_service_index_resource
+plugin_id: georeport_service_index_resource
+granularity: method
+configuration:
+  GET:
+    supported_formats:
+      - xml
+      - json
+    supported_auth:
+      - cookie
+

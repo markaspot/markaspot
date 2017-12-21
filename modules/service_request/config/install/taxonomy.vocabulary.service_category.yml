@@ -1,0 +1,11 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - service_request
+name: Category
+vid: service_category
+description: ''
+hierarchy: 0
+weight: 0

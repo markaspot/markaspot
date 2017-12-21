@@ -1,0 +1,14 @@
+{
+  "name": "markaspot/markaspot_static_json",
+  "type": "drupal-module",
+  "description": "Generate static json for map view's heatmap and timecontroller",
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "homepage": "https://github.com/markaspot/markaspot_static_json",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://github.com/markaspot/markaspot_static_json/issues",
+    "source": "https://github.com/markaspot/markaspot_static_json.git"
+  },
+  "require": { }
+}

@@ -1,0 +1,73 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/block\/1?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/block_content\/mas_custom"
+        }
+    },
+    "id": [
+        {
+            "value": "1"
+        }
+    ],
+    "uuid": [
+        {
+            "value": "c049959f-cc6e-18806-a118-9959fcc6eb97663a118422a2fc408"
+        }
+    ],
+    "revision_id": [
+        {
+            "value": "1"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "type": [
+        {
+            "target_id": "mas_custom"
+        }
+    ],
+    "info": [
+        {
+            "value": "mas custom",
+            "lang": "en"
+        }
+    ],
+    "changed": [
+        {
+            "value": "1488132822",
+            "lang": "en"
+        }
+    ],
+    "revision_created": [
+        {
+            "value": "1488132822"
+        }
+    ],
+    "revision_translation_affected": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "body": [
+        {
+            "value": "<div class=\"round-button col-xs-3\">\r\n             <a class=\"btn btn-default btn-circle btn-lg\" href=\"\/about-mark-spot\"><i class=\"fa fa-info-circle\"><\/i><span>About this platform<\/span><\/a>\r\n             <p>About this platform<\/p>\r\n         <\/div>\r\n          \r\n         <div class=\"round-button col-xs-3\">\r\n             <a class=\"btn btn-default btn-circle btn-lg\" href=\"\/open311\"><i class=\"fa fa-pie-chart\"><\/i><span>Open311<\/span><\/a>\r\n             <p>Open311 - Use the GeoReport v2 API of Mark-a-Spot<\/p>\r\n         <\/div>\r\n         <div class=\"round-button col-xs-3\">\r\n             <a class=\"btn btn-default btn-circle btn-lg\" href=\"\/requests\"><i class=\"fa fa-eye\"><\/i><span>Check Requests<\/span><\/a>\r\n             <p>Search and check for requests<\/p>\r\n         <\/div>\r\n         <div class=\"round-button col-xs-3\">\r\n             <a class=\"btn btn-default btn-circle btn-lg\" href=\"\/user\/login\"><i class=\"fa fa-user\"><\/i><span>Login or register<\/span><\/a>\r\n             <p>Already have an account?<\/p>\r\n         <\/div>",
+            "format": "full_html",
+            "summary": "",
+            "lang": "en"
+        }
+    ]
+}

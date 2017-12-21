@@ -1,0 +1,50 @@
+<?php
+
+/**
+ * @file
+ * Contains service_request.module.
+ *
+ * This is a content type to run an georeport v2 server.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\paragraphs\Entity\Paragraph;
+
+
+/**
+ * Implements hook_entity_presave().
+ */
+function service_request_entity_presave(EntityInterface $node) {
+
+  // Add paragraph for service_requests that are created / not updated.
+  if ($node->bundle() == 'service_request' && !$node->id()) {
+    // Get some relevant config.
+    $config = \Drupal::configFactory()
+      ->getEditable('markaspot_open311.settings');
+    // Add an intitial paragraph on post
+    // Status when inserting.
+    $status_open = array_values($config->get('status_open_start'));
+    // todo: put this in config.
+    $status_note_initial = t('The service request has been created.');
+
+    $paragraph = Paragraph::create([
+      'type' => 'status',
+      'field_status_note' => array(
+        "value" => $status_note_initial,
+        "format" => "full_html",
+      ),
+      'field_status_term' => array(
+        "target_id" => $status_open[0],
+      ),
+    ]);
+    $paragraph->save();
+
+    $node->field_status_notes = array(
+      array(
+        'target_id' => $paragraph->id(),
+        'target_revision_id' => $paragraph->getRevisionId(),
+      ),
+    );
+
+  }
+}

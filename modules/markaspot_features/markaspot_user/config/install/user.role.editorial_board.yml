@@ -1,0 +1,30 @@
+langcode: en
+status: true
+dependencies: {  }
+id: editorial_board
+label: 'Editorial board'
+weight: 4
+is_admin: null
+permissions:
+  - 'access content'
+  - 'use exclude node title'
+  - 'access comments'
+  - 'post comments'
+  - 'skip comment approval'
+  - 'access site-wide contact form'
+  - 'access shortcuts'
+  - 'search content'
+  - 'access open311 extension'
+  - 'create field_status_notes'
+  - 'edit own field_status_notes'
+  - 'edit field_status_notes'
+  - 'create field_e_mail'
+  - 'edit own field_e_mail'
+  - 'edit field_e_mail'
+  - 'view own field_e_mail'
+  - 'view field_e_mail'
+  - 'create field_address'
+  - 'edit own field_address'
+  - 'edit field_address'
+  - 'view own field_status_notes'
+  - 'view own field_address'

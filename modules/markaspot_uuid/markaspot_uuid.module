@@ -1,0 +1,48 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_uuid.module.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_uuid_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_uuid module.
+    case 'help.page.markaspot_uuid':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Override UUID service') . '</p>';
+
+      return $output;
+
+    default:
+  }
+}
+
+
+/**
+ * Implements hook_entity_presave().
+ */
+function markaspot_uuid_entity_presave(EntityInterface $node) {
+
+  if ($node->bundle() == 'service_request') {
+    $tid = $node->field_category->target_id;
+    // Instead of contributed module auto entity_title:
+    // Get the service name by ID and update the title field.
+    if (isset($tid)) {
+
+      $service_name = \Drupal::entityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->load($tid);
+      $node->title = '#' . $node->uuid() . '  ' . $service_name->label();
+
+    }
+
+  }
+}

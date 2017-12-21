@@ -1,0 +1,12 @@
+map_type: '2'
+mapbox: ''
+osm_custom_tile_url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png'
+osm_custom_attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>'
+map_background: '#ddd'
+timeline_date_format: 'ddd dd.mm.yy'
+timeline_period: P1D
+timeline_fps: '15'
+nid_selector: '.row article.service-request'
+zoom_initial: '12'
+center_lat: '40.7370610'
+center_lng: '-73.935242'

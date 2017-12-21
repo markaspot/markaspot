@@ -1,0 +1,8 @@
+name: Markaspot UI module
+type: module
+description: 'UI and Menubar for the Mark-a-Spot Distro'
+package: Mark-a-Spot
+
+core: 8.x
+dependencies:
+  - toolbar

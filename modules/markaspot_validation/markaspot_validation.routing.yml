@@ -1,0 +1,7 @@
+markaspot_validation.settings:
+  path: '/admin/structure/markaspot/validation/settings'
+  defaults:
+    _form: '\Drupal\markaspot_validation\Form\MarkaspotValidationSettingsForm'
+    _title: 'Mark-a-Spot Validation Settings'
+  requirements:
+    _permission: 'administer site configuration'

@@ -1,0 +1,23 @@
+{
+  "name": "markaspot/fa_icon_class",
+  "type": "drupal-module",
+  "description": "Font Awesome Icon Field Widget and Formatter",
+  "keywords": [ "Drupal", "Font Awesome"],
+  "license": "GPL-2.0+",
+  "homepage": "https://github.com/markaspot/fa_icon_class",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://github.com/markaspot/fa_icon_class",
+    "source": "https://github.com/markaspot/fa_icon_class.git"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://asset-packagist.org"
+    }
+  ],
+  "require": {
+    "npm-asset/font-awesome": "^4.7",
+    "npm-asset/fontawesome-iconpicker": "^1.3"
+  }
+}

@@ -1,0 +1,77 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/taxonomy\/term\/2?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+        }
+    },
+    "tid": [
+        {
+            "value": "2"
+        }
+    ],
+    "uuid": [
+        {
+            "value": "140520163067fa183-7b38-16571-802e-fa1837b3860bb72802e2cffd5563a14052016"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "vid": [
+        {
+            "target_id": "service_category"
+        }
+    ],
+    "name": [
+        {
+            "value": "Park Maintenance Complaint",
+            "lang": "en"
+        }
+    ],
+    "description": [
+        {
+            "value": "<p>You can report parks that need cleaning due to conditions such as garbage, trash or litter, broken glass, or overgrown weeds. You can also report repairs needed on operations at&nbsp;park facilities including:<\/p>\r\n\r\n<ul>\r\n\t<li>Beaches<\/li>\r\n\t<li>Benches<\/li>\r\n\t<li>Bike paths or bikeways<\/li>\r\n\t<li>Decorative fountains<\/li>\r\n\t<li>Drinking fountains<\/li>\r\n\t<li>Fire hydrants<\/li>\r\n\t<li>Flags<\/li>\r\n\t<li>Greenways<\/li>\r\n\t<li>Lawns<\/li>\r\n\t<li>Litter baskets<\/li>\r\n\t<li>Monuments<\/li>\r\n\t<li>Night game ball field lighting<\/li>\r\n\t<li>Playing fields or courts<\/li>\r\n\t<li>Playgrounds<\/li>\r\n\t<li>Pools<\/li>\r\n\t<li>Recreation Centers<\/li>\r\n\t<li>Signs<\/li>\r\n<\/ul>\r\n",
+            "format": "basic_html",
+            "lang": "en"
+        }
+    ],
+    "weight": [
+        {
+            "value": "0"
+        }
+    ],
+    "changed": [
+        {
+            "value": "1463455363",
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "field_category_hex": [
+        {
+            "color": "#5F9EA0",
+            "opacity": "1"
+        }
+    ],
+    "field_category_icon": [
+        {
+            "value": "fa-tree"
+        }
+    ],
+    "field_service_code": [
+        {
+            "value": "0002"
+        }
+    ]
+}

@@ -1,0 +1,7 @@
+markaspot_map.settings:
+  path: '/admin/structure/markaspot/map/settings'
+  defaults:
+    _form: '\Drupal\markaspot_map\Form\MarkaspotMapSettingsForm'
+    _title: 'Mark-a-Spot Map Settings'
+  requirements:
+    _permission: 'administer site configuration'

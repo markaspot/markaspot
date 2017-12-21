@@ -1,0 +1,16 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - service_request
+    enforced:
+      module:
+        - service_request
+name: 'Service Request'
+type: service_request
+description: 'Open311 Service service_requests'
+help: ''
+new_revision: false
+preview_mode: 1
+display_submitted: true

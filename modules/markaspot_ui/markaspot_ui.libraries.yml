@@ -1,0 +1,5 @@
+markaspot_ui.icons:
+  version: VERSION
+  css:
+    theme:
+      css/markaspot_ui.icons.css: {}

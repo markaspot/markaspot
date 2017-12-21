@@ -1,0 +1,73 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/block\/2?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/block_content\/mas_custom"
+        }
+    },
+    "id": [
+        {
+            "value": "2"
+        }
+    ],
+    "uuid": [
+        {
+            "value": "9fdfdd05-9829-17231-afad-fdd059829c34f502fad755e059be9"
+        }
+    ],
+    "revision_id": [
+        {
+            "value": "2"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "type": [
+        {
+            "target_id": "mas_custom"
+        }
+    ],
+    "info": [
+        {
+            "value": "Add block",
+            "lang": "en"
+        }
+    ],
+    "changed": [
+        {
+            "value": "1488180143",
+            "lang": "en"
+        }
+    ],
+    "revision_created": [
+        {
+            "value": "1488177013"
+        }
+    ],
+    "revision_translation_affected": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "body": [
+        {
+            "value": "<div class=\"add-block row\">\r\n<div class=\"button-sidekick col-xs-2\">\r\n<p class=\"btn btn-circle btn-lg\"><i class=\"fa fa-map-marker\"><\/i><\/p>\r\n<\/div>\r\n\r\n<div class=\"button-add col-xs-10\">\r\n<p><a href=\"report\">Place a service request<\/a><\/p>\r\n<\/div>\r\n<\/div>\r\n",
+            "format": "full_html",
+            "summary": "",
+            "lang": "en"
+        }
+    ]
+}

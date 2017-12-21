@@ -1,0 +1,33 @@
+
+.leaflet-clickable {
+    -webkit-animation: pulsate 1s ease-in;
+    -webkit-animation: pulsate 1s ease-out;
+    -webkit-animation-iteration-count: infinite;
+}
+
+.pulsar {
+    border: 3px solid #999;
+    -webkit-border-radius: 30px;
+    height: 18px;
+    width: 18px;
+    -webkit-animation: pulsate 1s ease-in;
+    -webkit-animation-iteration-count: 2;
+    /*opacity: 0.0*/
+}
+
+@-webkit-keyframes pulsate {
+    0% {-webkit-transform: scale(1.2, 1.2); opacity: 0.0;}
+    50% {opacity: 1.0;}
+    100% {-webkit-transform: scale(1.2, 1.2); opacity: 0.0;}
+}
+
+
+.fa.active {
+    color: #888;
+}
+
+#map {
+    width: 100%;
+    height: 220px;
+    position: relative;
+}

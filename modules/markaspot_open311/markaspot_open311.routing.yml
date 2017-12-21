@@ -1,0 +1,7 @@
+markaspot_open311.settings:
+  path: '/admin/structure/markaspot/open311/settings'
+  defaults:
+    _form: '\Drupal\markaspot_open311\Form\MarkaspotOpen311SettingsForm'
+    _title: 'Hello 311'
+  requirements:
+    _permission: 'administer site configuration'

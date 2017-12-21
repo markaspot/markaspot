@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_service_code
+    - taxonomy.vocabulary.service_category
+  enforced:
+    module:
+      - service_request
+id: taxonomy_term.service_category.field_service_code
+field_name: field_service_code
+entity_type: taxonomy_term
+bundle: service_category
+label: Service_code
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

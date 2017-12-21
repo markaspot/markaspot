@@ -1,0 +1,24 @@
+iconpicker:
+  js:
+    fa_icon_class.js: {}
+  css:
+    component:
+      fa_icon_class.css: {}
+
+fontawesome-iconpicker:
+  js:
+    /libraries/fontawesome-iconpicker/dist/js/fontawesome-iconpicker.min.js : {}
+  css:
+    component:
+      /libraries/fontawesome-iconpicker/dist/css/fontawesome-iconpicker.min.css : {}
+
+bootstrap:
+  js:
+    //netdna.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js: { type: external, minified: true }
+  css:
+    component:
+      //netdna.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css: {type: external, minified: true}
+font-awesome:
+  css:
+    component:
+      /libraries/font-awesome/css/font-awesome.min.css: {}

@@ -1,0 +1,67 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_open311.module
+ */
+
+use Drupal\node\Entity\Node;
+use Drupal\user\Entity\User;
+
+/**
+ * Implements hook_install().
+ */
+
+function markaspot_default_content_install() {
+
+  $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
+  $user = User::create();
+
+  // Mandatory settings.
+  $user->setPassword(user_password(10));
+  $user->set('uuid', '0111201615f39546ff-5d21-19539-b66d-546ff5d217c539d766d359045e74001112016');
+  $user->enforceIsNew();
+  $user->setEmail('holger@mrkaspot.org');
+  $user->setUsername('api_user');
+
+  $user->set("init", 'api_user@markaspot.org');
+  $user->set("langcode", $language);
+  $user->set("preferred_langcode", $language);
+  $user->set("preferred_admin_langcode", $language);
+  $user->activate();
+
+  // Save user entity.
+  $res = $user->save();
+  if (isset($res)) {
+    drupal_set_message('User saved');
+  }
+}
+
+
+
+function markaspot_default_content_customize_content($body){
+  // Check for default code status.
+  if (strstr($body, 'default')){
+    $url = 'http://' . $_SERVER['HTTP_HOST'];
+    $body = str_replace('http://default', $url, $body);
+  }
+  return $body;
+}
+
+
+/**
+ * Update new summary and description fields from body values.
+ */
+function markaspot_default_content_modules_installed() {
+
+  // Loading Open311 page node.
+  $node =  Node::load(14);
+  $body = $node->get('body')->value;
+  $updatedBody = markaspot_default_content_customize_content($body);
+  if (isset($updatedBody)){
+    $node->body->setValue(['value' => $updatedBody, 'format' => 'full_html']);
+  }
+  $node->save();
+
+  drupal_set_message(t('Default Open311 page was updated with a new server hostname @host', array('@host' => $_SERVER['SERVER_NAME'])));
+}

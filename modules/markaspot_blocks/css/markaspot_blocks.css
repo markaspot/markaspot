@@ -1,0 +1,76 @@
+/**
+ * @file
+ * Styling for the user module icons.
+ */
+
+.built-with {
+    text-align: center;
+}
+
+.built-with a {
+    display: inline-block;
+    margin: 30px 0;
+    background: transparent url(../images/logo-small.png) 0% 45% no-repeat;
+    background-size: 61%;
+    padding: 10px 0 0 10px;
+}
+
+.built-with a span {
+    visibility: hidden;
+}
+
+
+
+.round-button.col-xs-3 item {
+    display: block;
+}
+
+.round-button.col-xs-3 a {
+    text-align: center;
+    display: block;
+    margin: 10px auto;
+}
+
+.round-button.col-xs-3 p {
+    text-align: center;
+    display: block;
+    clear: both
+}
+
+.btn-circle {
+    width: 30px;
+    height: 30px;
+    text-align: center;
+    padding: 6px 0;
+    font-size: 12px;
+    line-height: 1.428571429;
+    border-radius: 15px;
+}
+
+.btn-circle.btn-lg {
+    width: 50px;
+    height: 50px;
+    padding: 15px 16px;
+    font-size: 18px;
+    line-height: 1.33;
+    border-radius: 25px;
+}
+
+.btn-circle.btn-xl {
+    width: 70px;
+    height: 70px;
+    padding: 14px 16px;
+    font-size: 24px;
+    line-height: 1.33;
+    border-radius: 35px;
+}
+
+
+.button-sidekick .btn-circle {
+    margin: 10px 0 30px 50px;
+    border: 0;
+    font-size: 48px;
+    color: #666
+
+}
+

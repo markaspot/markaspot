@@ -1,0 +1,87 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_uuid.module for accessing Mark-a-Spot admin features.
+ */
+
+use Drupal\Core\Url;
+
+/**
+ * Implements hook_toolbar().
+ */
+function markaspot_ui_toolbar() {
+
+  $markaspot_modules = array(
+    'markaspot_map' => 'markaspot_map.settings',
+    'markaspot_uuid' => 'markaspot_uuid.settings',
+    'markaspot_open311' => 'markaspot_open311.settings',
+    'markaspot_validation' => 'markaspot_validation.settings',
+    'api_key_auth' => 'entity.api_key.collection',
+  );
+
+  // Build a list of links for the menu.
+  $links = array();
+  foreach ($markaspot_modules as $module => $route) {
+    // Get the module info (title, description) from Drupal.
+    $info = system_get_info('module', $module);
+
+    if (!empty($info)) {
+      $links[$module] = array(
+        'title' => t($info['name']),
+        'url' => Url::fromRoute($route),
+        'attributes' => array(
+          'title' => t($info['description']),
+        ),
+      );
+    }
+  }
+
+  // Create the markaspot_modules toolbar render array.
+  $items['markaspot_modules'] = array(
+    '#type' => 'toolbar_item',
+    'tab' => array(
+      '#type' => 'link',
+      '#title' => t('Mark-a-Spot'),
+      // @todo: Once it is created, use the example index page.
+      '#url' => Url::fromRoute('<front>'),
+      '#attributes' => array(
+        'title' => t('Mark-a-Spot modules and settings'),
+        'class' => array('toolbar-icon', 'toolbar-icon-markaspot-ui'),
+      ),
+    ),
+    'tray' => array(
+      '#heading' => t('Mark-a-Spot modules and settings'),
+      'shortcuts' => array(
+        '#theme' => 'links__toolbar_markaspot',
+        '#links' => $links,
+        '#attributes' => array(
+          'class' => array('toolbar-menu'),
+        ),
+      ),
+    ),
+    '#weight' => 99,
+    '#attached' => array(
+      'library' => array(
+        'markaspot_ui/markaspot_ui.icons',
+      ),
+    ),
+  );
+
+  return $items;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function markaspot_ui_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+
+  // todo:
+  // Maybe remove this later, bet we need this hook for some tweaks.
+  // //https://www.drupal.org/node/2117411
+  if ($form_id == "views_exposed_form") {
+    if (isset($form['search_api_fulltext'])) {
+      $form['search_api_fulltext']['#attributes'] = array('placeholder' => array(t('Request #, Keyword')));
+    }
+  }
+}

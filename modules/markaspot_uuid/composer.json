@@ -1,0 +1,16 @@
+{
+  "name": "markaspot/markaspot_uuid",
+  "type": "drupal-module",
+  "description": "Mark-a-Spot custom UUID component",
+  "keywords": [
+    "Drupal"
+  ],
+  "license": "GPL-2.0+",
+  "homepage": "https://github.com/markaspot/markaspot_uuid",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://github.com/markaspot/markaspot_uuid",
+    "source": "https://github.com/markaspot/markaspot_uuid.git"
+  },
+  "require": {}
+}

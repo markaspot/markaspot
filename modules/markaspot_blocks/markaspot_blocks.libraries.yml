@@ -1,0 +1,5 @@
+markaspot_blocks:
+  version: VERSION
+  css:
+    theme:
+      css/markaspot_blocks.css: {}

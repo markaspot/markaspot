@@ -1,0 +1,5 @@
+services:
+  markaspot_validation.double_post_constraint_validator:
+    class: Drupal\markaspot_validation\Plugin\Validation\Constraint\DoublePostConstraintValidator
+    arguments: ['@config.factory']
+

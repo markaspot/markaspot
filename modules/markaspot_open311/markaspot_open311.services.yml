@@ -1,0 +1,33 @@
+services:
+  markaspot_open311.serializer.encoder.xml:
+    class: Drupal\markaspot_open311\Encoder\Open311Encoder
+    tags:
+      - { name: encoder, format: xml }
+
+# This is only for registering additiononal services.
+# Altering is dynamically achieved with registering a new service dynamically
+
+  markaspot_open311.request_format_route_filter:
+    class: Drupal\markaspot_open311\Routing\GeoreportRequestFormatRouteFilter
+    tags:
+      - { name: route_filter }
+
+  markaspot_open311.serializer.encoder.form:
+    class: Drupal\markaspot_open311\Encoder\Open311Encoder
+    tags:
+      - { name: encoder, format: form }
+
+  # markaspot_open311.serializer.normalizer.form:
+  #  class: Drupal\markaspot_open311\Serializer\GeoreportPostNormalizer
+  #  tags:
+  #    - { name: normalizer, format: form }
+
+  markaspot_open311.georeport_exception:
+    class: Drupal\markaspot_open311\EventSubscriber\GeoreportException
+    tags:
+     - { name: event_subscriber }
+  markaspot_open311.georeport_resource_response.subscriber:
+    class: Drupal\markaspot_open311\EventSubscriber\GeoReportResourceResponseSubscriber
+    tags:
+      - { name: event_subscriber }
+    arguments: ['@serializer', '@renderer', '@current_route_match']

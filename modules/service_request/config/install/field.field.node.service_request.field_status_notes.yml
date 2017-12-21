@@ -1,0 +1,29 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_status_notes
+    - node.type.service_request
+    - paragraphs.paragraphs_type.status
+  module:
+    - entity_reference_revisions
+id: node.service_request.field_status_notes
+field_name: field_status_notes
+entity_type: node
+bundle: service_request
+label: 'Status Notes / Change Status'
+description: 'Explanation of why status was changed to current state or more details on current status than conveyed with status alone.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:paragraph'
+  handler_settings:
+    target_bundles:
+      status: status
+    target_bundles_drag_drop:
+      status:
+        enabled: true
+        weight: 2
+field_type: entity_reference_revisions

@@ -1,0 +1,10 @@
+name: Open311 Server
+type: module
+description: Open311 georeport v2 server
+core: 8.x
+package: Mark-a-Spot
+
+dependencies:
+  - service_request
+  - rest
+  - services_api_key_auth

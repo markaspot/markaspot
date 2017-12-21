@@ -1,0 +1,14 @@
+service_request.add:
+  path: '/report'
+  defaults:
+    _controller: '\Drupal\node\Controller\NodeController::add'
+    _title: 'Create Service Request'
+    node_type: 'service_request'
+  requirements:
+    _node_add_access: 'node:{node_type}'
+  options:
+    _node_operation_route: TRUE
+    parameters:
+      node_type:
+        with_config_overrides: TRUE
+

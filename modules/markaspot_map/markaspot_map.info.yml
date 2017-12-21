@@ -1,0 +1,14 @@
+name: 'Mark-a-Spot Map'
+package: Mark-a-Spot
+core: 8.x
+description: 'Provides a map block for a Mark-a-Spot Installation'
+type: module
+
+dependencies:
+  - service_request
+  - markaspot_open311
+  - search_api
+  - search_api_db
+  - better_exposed_filters
+  - views_infinite_scroll
+  - markaspot_default_content

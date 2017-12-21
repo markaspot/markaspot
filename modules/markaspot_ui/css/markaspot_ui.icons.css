@@ -1,0 +1,13 @@
+/**
+ * @file
+ * Styling for the user module icons.
+ */
+
+/**
+ * Toolbar tab icon.
+ */
+.toolbar-bar [data-drupal-link-system-path="admin/content/management"]:before,
+.toolbar-bar .toolbar-icon-markaspot-ui:before {
+    background: transparent url(../images/logo-small.png) 50% 50% no-repeat;
+    background-size: 120%;
+}

@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.paragraph.field_status_note
+    - paragraphs.paragraphs_type.status
+  module:
+    - text
+id: paragraph.status.field_status_note
+field_name: field_status_note
+entity_type: paragraph
+bundle: status
+label: 'Step Note'
+description: 'Describe the step you made.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: text_long

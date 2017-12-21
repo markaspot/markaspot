@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies: {  }
+id: authenticated
+label: 'Authenticated user'
+weight: 1
+is_admin: false
+permissions:
+  - 'access content'
+  - 'use exclude node title'
+  - 'access comments'
+  - 'post comments'
+  - 'skip comment approval'
+  - 'access site-wide contact form'
+  - 'access shortcuts'
+  - 'search content'
+  - 'access open311 extension'
+  - 'view field_status_notes'
+  - 'restful post georeport_request_index_resource'
+  - 'use text format basic_html'
+  - 'view field_address'

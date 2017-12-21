@@ -1,0 +1,18 @@
+{
+  "name": "markaspot/markaspot_open311",
+  "type": "drupal-module",
+  "description": "Open311 georeport v2 server",
+  "keywords": [
+    "Drupal"
+  ],
+  "license": "GPL-2.0+",
+  "homepage": "https://github.com/markaspot/markaspot_open311",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://github.com/markaspot/markaspot_open311",
+    "source": "https://github.com/markaspot/markaspot_open311.git"
+  },
+  "require": {
+    "drupal/services_api_key_auth": "1.*"
+  }
+}

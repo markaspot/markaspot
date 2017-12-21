@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - image_effects
+name: header
+label: 'Header (teaser 960x200)'
+effects:
+  3009201614ddce1ca6-1016-18662-9e62-e1ca6101678e60bde623283502e0630092016:
+    uuid: 3009201614ddce1ca6-1016-18662-9e62-e1ca6101678e60bde623283502e0630092016
+    id: image_scale_and_crop
+    weight: -9
+    data:
+      width: 960
+      height: 200
+  66195c56-9074-19944-8a78-95c5690743de8618a7852ffe5f098:
+    uuid: 66195c56-9074-19944-8a78-95c5690743de8618a7852ffe5f098
+    id: image_effects_auto_orient
+    weight: -10
+    data:
+      scan_exif: true

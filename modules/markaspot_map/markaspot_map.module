@@ -1,0 +1,8 @@
+<?php
+
+function markaspot_map_page_attachments(array &$attachments) {
+  $attached = \Drupal::configFactory()
+    ->getEditable('markaspot_map.settings')->get();
+
+  $attachments['#attached']['drupalSettings']['mas'] = $attached;
+}

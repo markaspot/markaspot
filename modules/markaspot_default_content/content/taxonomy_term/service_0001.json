@@ -1,0 +1,77 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/taxonomy\/term\/1?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+        }
+    },
+    "tid": [
+        {
+            "value": "1"
+        }
+    ],
+    "uuid": [
+        {
+            "value": "140520163183164f8-a2ef-16411-a25c-164f8a2efb01b95225ca294513c6d14052016"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "vid": [
+        {
+            "target_id": "service_category"
+        }
+    ],
+    "name": [
+        {
+            "value": "Litter Basket Complaint",
+            "lang": "en"
+        }
+    ],
+    "description": [
+        {
+            "value": "<p>The City places and maintains garbage receptacles at commercial street corners along standard collection routes.<\/p>\r\n\r\n<p>The City accepts requests for litter baskets in new locations within commercial and mixed-use zones. You may not request a public litter basket for a residential area.<\/p>\r\n\r\n<p>The City also accepts reports that public waste receptacles are overflowing or are being used for household or commercial purposes.<\/p>\r\n\r\n<p>A person or group may adopt a City trash receptacle and change liners when the baskets are full. The City provides liner bags and a collection schedule.<\/p>\r\n\r\n<p>A person or group may donate an upgraded litter basket to replace a standard litter basket. The sponsor will receive a recognition sign with their name or company logo.<\/p>\r\n",
+            "format": "basic_html",
+            "lang": "en"
+        }
+    ],
+    "weight": [
+        {
+            "value": "0"
+        }
+    ],
+    "changed": [
+        {
+            "value": "1463455343",
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "field_category_hex": [
+        {
+            "color": "#0000FF",
+            "opacity": "1"
+        }
+    ],
+    "field_category_icon": [
+        {
+            "value": "fa-trash"
+        }
+    ],
+    "field_service_code": [
+        {
+            "value": "0001"
+        }
+    ]
+}

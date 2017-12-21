@@ -1,0 +1,23 @@
+{
+  "name": "markaspot/markaspot_validation",
+  "description": "Provides some constraints for entities of the Mark-a-Spot ditribution.",
+  "type": "drupal-module",
+  "homepage": "https://github.com/markaspot/markaspot_validation",
+  "authors": [
+    {
+      "name": "Holger Kreis (markaspot)",
+      "homepage": "https://www.drupal.org/u/markaspot",
+      "role": "Maintainer"
+    }
+  ],
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/markaspot/GeoPHP"
+    }
+  ],
+  "require": {
+    "phayes/geophp": "dev-master",
+    "anthonymartin/geo-location": "^1.0"
+  }
+}

@@ -1,0 +1,9 @@
+name: Mark-a-Spot Default Content
+type: module
+description: Import some example content on install
+core: 8.x
+package: Mark-a-Spot
+dependencies:
+  - default_content
+  - block_content
+  - markaspot_blocks

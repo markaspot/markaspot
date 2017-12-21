@@ -1,0 +1,27 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.paragraph.field_status_term
+    - paragraphs.paragraphs_type.status
+    - taxonomy.vocabulary.service_status
+id: paragraph.status.field_status_term
+field_name: field_status_term
+entity_type: paragraph
+bundle: status
+label: Status
+description: 'Change the status of the service request that will appear public.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      service_status: service_status
+    sort:
+      field: _none
+    auto_create: false
+    auto_create_bundle: ''
+field_type: entity_reference

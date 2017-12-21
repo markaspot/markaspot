@@ -1,0 +1,40 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.taxonomy_term.service_category.field_category_hex
+    - field.field.taxonomy_term.service_category.field_category_icon
+    - field.field.taxonomy_term.service_category.field_service_code
+    - taxonomy.vocabulary.service_category
+  enforced:
+    module:
+      - service_request
+  module:
+    - fa_icon_class
+    - text
+id: taxonomy_term.service_category.default
+targetEntityType: taxonomy_term
+bundle: service_category
+mode: default
+content:
+  description:
+    label: hidden
+    type: text_default
+    weight: 0
+    settings: {  }
+    third_party_settings: {  }
+  field_category_icon:
+    weight: 3
+    label: above
+    settings: {  }
+    third_party_settings: {  }
+    type: fa_icon_class
+  field_service_code:
+    weight: 1
+    label: above
+    settings:
+      link_to_entity: false
+    third_party_settings: {  }
+    type: string
+hidden:
+  field_category_hex: true

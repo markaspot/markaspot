@@ -1,0 +1,20 @@
+{
+  "name": "markaspot/markaspot_blocks",
+  "type": "drupal-module",
+  "description": "This module provides several blocks in code for a Mark-a-Spot Installation",
+  "homepage": "https://github.com/markaspot/markaspot_blocks",
+  "authors": [
+    {
+      "name": "Holger Kreis (markaspot)",
+      "homepage": "https://www.drupal.org/u/markaspot",
+      "role": "Maintainer"
+    }
+  ],
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "http://drupal.org/project/issues/markaspot_blocks",
+    "source": "https://github.com/markaspot/markaspot_blocks"
+  }
+}

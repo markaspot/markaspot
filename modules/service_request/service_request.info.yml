@@ -1,0 +1,87 @@
+name: Service Request Content Type
+description: Open311 Service Requests content type.
+package: Mark-a-Spot
+type: module
+core: 8.x
+
+dependencies:
+  - node
+  - path
+  - text
+  - geolocation_nominatim
+  - address
+  - color_field
+  - field_permissions
+  - image
+  - image_effects
+  - file
+  - taxonomy
+  - paragraphs
+  - entity_reference_revisions
+  - fa_icon_class
+
+config_devel:
+  - core.view_display.node.service_request.default
+  - core.view_display.node.service_request.teaser
+  - core.entity_form_display.taxonomy_term.service_category.default
+  - field.field.taxonomy_term.service_category.field_category_hex
+  - field.storage.node.field_request_image
+  - core.entity_form_display.node.service_request.default
+  - core.entity_view_display.node.service_request.default
+  - core.entity_view_display.node.service_request.teaser
+  - field.field.node.service_request.field_request_image
+  - core.entity_view_display.taxonomy_term.service_category.default
+  - core.entity_view_display.taxonomy_term.service_status.default
+  - field.field.node.service_request.body
+  - field.field.node.service_request.field_category
+  - field.field.node.service_request.field_geolocation
+  - field.field.node.service_request.field_status
+  - field.field.taxonomy_term.service_category.field_category_icon
+  - field.field.taxonomy_term.service_category.field_service_code
+  - field.field.taxonomy_term.service_status.field_status_hex
+  - field.field.taxonomy_term.service_status.field_status_icon
+  - field.storage.node.field_category
+  - field.storage.node.field_geolocation
+  - field.storage.node.field_status
+  - field.storage.taxonomy_term.field_category_hex
+  - field.storage.taxonomy_term.field_category_icon
+  - field.storage.taxonomy_term.field_service_code
+  - field.storage.taxonomy_term.field_status_hex
+  - field.storage.taxonomy_term.field_status_icon
+  - node.type.service_request
+  - taxonomy.vocabulary.service_category
+  - taxonomy.vocabulary.service_status
+  - core.entity_form_display.taxonomy_term.service_status.default
+  - core.entity_form_display.node.service_request.default
+  - core.entity_form_display.taxonomy_term.service_category.default
+  - core.entity_form_display.taxonomy_term.service_status.default
+  - core.entity_view_display.node.service_request.default
+  - core.entity_view_display.taxonomy_term.service_category.default
+  - core.entity_view_display.taxonomy_term.service_status.default
+  - core.view_display.node.service_request.default
+  - core.view_display.node.service_request.teaser
+  - field.field.node.service_request.body
+  - field.field.node.service_request.field_category
+  - field.field.node.service_request.field_geolocation
+  - field.field.node.service_request.field_request_image
+  - field.field.node.service_request.field_status
+  - field.field.taxonomy_term.service_category.field_category_hex
+  - field.field.taxonomy_term.service_category.field_category_icon
+  - field.field.taxonomy_term.service_category.field_service_code
+  - field.field.taxonomy_term.service_status.field_status_hex
+  - field.field.taxonomy_term.service_status.field_status_icon
+  - field.storage.node.field_category
+  - field.storage.node.field_geolocation
+  - field.storage.node.field_request_image
+  - field.storage.node.field_status
+  - field.storage.taxonomy_term.field_category_hex
+  - field.storage.taxonomy_term.field_category_icon
+  - field.storage.taxonomy_term.field_service_code
+  - field.storage.taxonomy_term.field_status_hex
+  - field.storage.taxonomy_term.field_status_icon
+  - node.type.service_request
+  - taxonomy.vocabulary.service_category
+  - taxonomy.vocabulary.service_status
+  - entity.view_display.node.service_request.default
+  - entity.view_display.node.service_request.teaser
+  - field.instance.node.service_request.body

@@ -1,0 +1,24 @@
+<?php
+
+/**
+ * @file
+ * Service_request module file.
+ */
+
+use Drupal\Core\Entity\EntityTypeInterface;
+
+/**
+ * Implements hook_entity_bundle_field_info_alter().
+ */
+function markaspot_validation_entity_bundle_field_info_alter(&$fields, EntityTypeInterface $entity_type, $bundle) {
+  if ($entity_type->id() == 'node') {
+    switch ($bundle) {
+      case 'service_request':
+        $latlon = $fields['field_geolocation'];
+        $latlon->addConstraint('ValidLatLon');
+        $latlon->addConstraint('DoublePost');
+
+        break;
+    }
+  }
+}

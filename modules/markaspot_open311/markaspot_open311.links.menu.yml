@@ -1,0 +1,8 @@
+# Mas Settings definition
+markaspot_open311.settings:
+  title: 'Open311 Settings'
+  route_name: markaspot_open311.settings
+  description: 'Configure map parameters'
+  parent: system.admin_config_services
+  weight: 99
+

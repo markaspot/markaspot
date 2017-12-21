@@ -1,0 +1,40 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.taxonomy_term.service_status.field_status_hex
+    - field.field.taxonomy_term.service_status.field_status_icon
+    - taxonomy.vocabulary.service_status
+  enforced:
+    module:
+      - service_request
+  module:
+    - color_field
+    - fa_icon_class
+    - text
+id: taxonomy_term.service_status.default
+targetEntityType: taxonomy_term
+bundle: service_status
+mode: default
+content:
+  description:
+    label: hidden
+    type: text_default
+    weight: 0
+    settings: {  }
+    third_party_settings: {  }
+  field_status_hex:
+    type: color_field_formatter_text
+    weight: 1
+    label: hidden
+    settings:
+      format: rgb
+      opacity: '1'
+    third_party_settings: {  }
+  field_status_icon:
+    weight: 2
+    label: above
+    settings: {  }
+    third_party_settings: {  }
+    type: fa_icon_class
+hidden: {  }

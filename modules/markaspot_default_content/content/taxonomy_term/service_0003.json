@@ -1,0 +1,77 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/taxonomy\/term\/3?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+        }
+    },
+    "tid": [
+        {
+            "value": "3"
+        }
+    ],
+    "uuid": [
+        {
+            "value": "1405201635a822988-1696-16963-8e81-229881696c2436f4e81587bb144ee14052016"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "vid": [
+        {
+            "target_id": "service_category"
+        }
+    ],
+    "name": [
+        {
+            "value": "Broken Streetlight",
+            "lang": "en"
+        }
+    ],
+    "description": [
+        {
+            "value": "<p>&nbsp;<\/p>\r\n\r\n<p>There are several ways to report a streetlight outage:<\/p>\r\n\r\n<ul>\r\n\t<li>Use our&nbsp;map<a href=\"http:\/\/bsl.lacity.org\/slomap_redirect.htm\">-<\/a>based reporting application<\/li>\r\n\t<li>Use our&nbsp;online<a href=\"http:\/\/bsl.lacity.org\/serv_req.htm\"> <\/a>form<\/li>\r\n\t<li>Send an email to bsl.streetlighting@lacity.org<\/li>\r\n<\/ul>\r\n",
+            "format": "basic_html",
+            "lang": "en"
+        }
+    ],
+    "weight": [
+        {
+            "value": "0"
+        }
+    ],
+    "changed": [
+        {
+            "value": "1463455318",
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "field_category_hex": [
+        {
+            "color": "#A020F0",
+            "opacity": "1"
+        }
+    ],
+    "field_category_icon": [
+        {
+            "value": "fa-lightbulb-o"
+        }
+    ],
+    "field_service_code": [
+        {
+            "value": "0003"
+        }
+    ]
+}

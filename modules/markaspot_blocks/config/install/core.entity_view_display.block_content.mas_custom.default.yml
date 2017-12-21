@@ -1,0 +1,22 @@
+uuid: 63a31ae5-a9c8-18098-8e58-31ae5a9c8f6b2558e58e680ce3042
+langcode: en
+status: true
+dependencies:
+  config:
+    - block_content.type.mas_custom
+    - field.field.block_content.mas_custom.body
+  module:
+    - text
+id: block_content.mas_custom.default
+targetEntityType: block_content
+bundle: mas_custom
+mode: default
+content:
+  body:
+    label: hidden
+    type: text_default
+    weight: 0
+    settings: {  }
+    third_party_settings: {  }
+    region: content
+hidden: {  }

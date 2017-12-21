@@ -1,0 +1,7 @@
+# Provides a simple user interface that tells the developer where to go.
+fa_icon_class.description:
+  path: 'fa/icon'
+  defaults:
+    _controller: '\Drupal\fa_icon_class\Controller\FaIconController::description'
+  requirements:
+    _permission: 'access content'

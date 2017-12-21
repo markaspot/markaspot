@@ -1,0 +1,182 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/node\/1?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/node\/service_request"
+        },
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/uid": [
+            {
+                "href": "http:\/\/default\/user\/0?_format=hal_json",
+                "lang": "en"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/revision_uid": [
+            {
+                "href": "http:\/\/default\/user\/0?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_category": [
+            {
+                "href": "http:\/\/default\/taxonomy\/term\/3?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status_notes": [
+            {
+                "href": "http:\/\/default\/paragraph\/1?_format=hal_json"
+            }
+        ]
+    },
+    "nid": [
+        {
+            "value": "1"
+        }
+    ],
+    "uuid": [
+        {
+            "value": "14052016-1"
+        }
+    ],
+    "vid": [
+        {
+            "value": "1"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "type": [
+        {
+            "target_id": "service_request"
+        }
+    ],
+    "title": [
+        {
+            "value": "#14052016-1 Broken Streetlight",
+            "lang": "en"
+        }
+    ],
+    "_embedded": {
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/uid": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/user\/0?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/user\/user"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "86030034-482c-4829-b0a7-2625eafd84e1"
+                    }
+                ],
+                "lang": "en"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/revision_uid": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/user\/0?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/user\/user"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "86030034-482c-4829-b0a7-2625eafd84e1"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_category": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/taxonomy\/term\/3?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "1405201635a822988-1696-16963-8e81-229881696c2436f4e81587bb144ee14052016"
+                    }
+                ]
+            }
+        ]
+    },
+    "status": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "created": [
+        {
+            "value": "1463225482",
+            "lang": "en"
+        }
+    ],
+    "changed": [
+        {
+            "value": "1463303686",
+            "lang": "en"
+        }
+    ],
+    "promote": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "sticky": [
+        {
+            "value": "0",
+            "lang": "en"
+        }
+    ],
+    "revision_timestamp": [
+        {
+            "value": "1463225482"
+        }
+    ],
+    "revision_translation_affected": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "body": [
+        {
+            "value": "<p>Corpora aetas sata montes principio traxit tempora. Caligine hanc. Liquidum os umentia prima moderantum solum os inclusum! Natura aera. Orbe volucres addidit nulli uno glomeravit. Dextra liquidas crescendo effervescere praecipites diverso. Limitibus orba consistere cetera quia meis ventos innabilis. Inclusum dicere homini lucis.<\/p>\r\n",
+            "format": "basic_html",
+            "summary": "",
+            "lang": "en"
+        }
+    ],
+    "field_geolocation": [
+        {
+            "lat": "40.7779387",
+            "lng": "-73.90572229999998",
+            "lat_sin": "0.653129080426",
+            "lat_cos": "0.757246594117",
+            "lng_rad": "-1.2898981902",
+            "data": []
+        }
+    ]
+}

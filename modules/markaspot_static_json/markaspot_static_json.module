@@ -1,0 +1,154 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_static_json.module..
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_static_json_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_static_json module.
+    case 'help.page.markaspot_static_json':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Generate static json for map view') . '</p>';
+      return $output;
+  }
+
+}
+
+
+/**
+ * @defgroup cron_example Example: Cron
+ * @ingroup examples
+ * @{
+ * Example using Cron API, including hook_cron() and @QueueWorker plugins
+ *
+ * This example is part of the Examples for Developers Project
+ * which you can download and experiment with at
+ * http://drupal.org/project/examples
+ */
+
+/**
+ * Implements hook_cron().
+ *
+ * We implement hook_cron() to do "background" processing. It gets called every
+ * time the Drupal cron runs. We then decide what has to happen in response.
+ *
+ * In this example, we log a message after the time given in its config
+ * variable 'next_execution'. Then we update that variable to a time in the
+ * future.
+ */
+function markaspot_static_json_cron() {
+  // We access our configuration.
+  $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
+
+  // Default to an hourly interval. Of course, cron has to be running at least
+  // hourly for this to work.
+  $interval = $cron_config->get('interval');
+  $interval = !empty($interval) ? $interval : 5;
+
+  // We usually don't want to act every time cron runs (which could be every
+  // minute) so keep a time for the next run in a variable.
+  // $next_execution = $cron_config->get('next_execution');
+  $next_execution = !empty($next_execution) ? $next_execution : 0;
+  if (REQUEST_TIME >= $next_execution) {
+
+    markaspot_static_json_request();
+    // This is a silly example of a cron job.
+    // It just makes it obvious that the job has run without
+    // making any changes to your database.
+    \Drupal::logger('markaspot_static_json')->notice('Static JSON cron ran');
+    if (\Drupal::state()->get('mas_shown_status_message')) {
+      drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601(REQUEST_TIME)]));
+      \Drupal::state()->set('mas_shown_status_message', FALSE);
+    }
+    $cron_config->set('next_execution', REQUEST_TIME + $interval)->save();
+  }
+}
+
+function markaspot_static_json_request() {
+
+  // Preparing georeport API Request URI.
+  $host = \Drupal::request()->getHost();
+  $curlHost = strstr($host, 'docksal') ? $_SERVER['SERVER_ADDR'] : $host;
+
+  $cronkey = \Drupal::state()->get('system.cron_key');
+  $url = 'http://' . $curlHost  . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
+
+  $path = 'public://requests.json';
+  $file = file_get_contents($path, TRUE);
+  // var_dump($file);
+  if ($file === FALSE) {
+    \Drupal::logger('markaspot_static_json')
+      ->warning(t('Static file could not be read.'));
+  }
+
+  try {
+
+    markaspot_static_json_memory();
+
+    $client = \Drupal::httpClient();
+    $request = $client->get($url);
+
+
+    $current_service_requests = json_decode($request->getBody(), TRUE);
+    $replace = FILE_EXISTS_REPLACE;
+
+    // Encode array.
+    $response = json_encode($current_service_requests);
+
+    $local = $file ? file_save_data($response, $path, $replace) : file_unmanaged_save_data($response, $path, $replace);
+    if (isset($local)) {
+      \Drupal::logger('Mark-a-Spot Static Json')
+        ->notice(t('Static file saved.'));
+    }
+    else {
+      \Drupal::logger('Mark-a-Spot Static Json')
+        ->notice(t('Static file not saved.'));
+    }
+    markaspot_static_json_memory();
+
+    \Drupal::logger('Mark-a-Spot Static Json')->info(t('Status ok'));
+
+  }
+  catch (\GuzzleHttp\Exception\BadResponseException $exception) {
+    $response = $exception->getResponse();
+    drupal_set_message(t('Failed to fetch file due to HTTP error "%error"', array('%error' => $response->getStatusCode() . ' ' . $response->getReasonPhrase())), 'error');
+    return FALSE;
+  }
+  catch (\GuzzleHttp\Exception\RequestException $exception) {
+    drupal_set_message(t('Failed to fetch file due to error "%error"', array('%error' => $exception->getMessage())), 'error');
+    return FALSE;
+  }
+
+}
+
+
+function markaspot_static_json_memory() {
+  $mem_usage = memory_get_usage(TRUE);
+
+  if ($mem_usage < 1024) {
+    \Drupal::logger('Mark-a-Spot Static Json')->notice($mem_usage . " bytes");
+  }
+
+  elseif ($mem_usage < 1048576) {
+    \Drupal::logger('Mark-a-Spot Static Json')
+      ->notice(round($mem_usage / 1024, 2) . " kilobytes");
+  }
+  else {
+    \Drupal::logger('Mark-a-Spot Static Json')
+      ->notice(round($mem_usage / 1048576, 2) . " megabytes");
+  }
+
+}
+
+function markaspot_static_json_page_attachments(array &$attachments) {
+  $attachments['#attached']['library'][] = 'markaspot_static_json/static_json';
+  $attachments['#attached']['drupalSettings']['mas']['static_json'] = '1';
+}

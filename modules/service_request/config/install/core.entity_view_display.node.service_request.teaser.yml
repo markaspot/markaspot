@@ -1,0 +1,58 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - core.entity_view_mode.node.teaser
+    - field.field.node.service_request.body
+    - field.field.node.service_request.field_address
+    - field.field.node.service_request.field_category
+    - field.field.node.service_request.field_e_mail
+    - field.field.node.service_request.field_geolocation
+    - field.field.node.service_request.field_request_image
+    - field.field.node.service_request.field_status_notes
+    - image.style.header
+    - node.type.service_request
+  enforced:
+    module:
+      - service_request
+  module:
+    - image
+    - text
+    - user
+id: node.service_request.teaser
+targetEntityType: node
+bundle: service_request
+mode: teaser
+content:
+  body:
+    type: text_trimmed
+    weight: 1
+    label: hidden
+    settings:
+      trim_length: 140
+    third_party_settings: {  }
+  field_category:
+    type: entity_reference_label
+    weight: 2
+    label: visually_hidden
+    settings:
+      link: false
+    third_party_settings: {  }
+  field_request_image:
+    type: image
+    weight: 0
+    label: visually_hidden
+    settings:
+      image_style: header
+      image_link: ''
+    third_party_settings: {  }
+  links:
+    weight: 4
+    settings: {  }
+    third_party_settings: {  }
+hidden:
+  field_address: true
+  field_e_mail: true
+  field_geolocation: true
+  field_status_notes: true
+  shariff_field: true

@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_category_icon
+    - taxonomy.vocabulary.service_category
+  module:
+    - fa_icon_class
+id: taxonomy_term.service_category.field_category_icon
+field_name: field_category_icon
+entity_type: taxonomy_term
+bundle: service_category
+label: 'Category Icon'
+description: ''
+required: false
+translatable: false
+default_value:
+  -
+    value: fa-heart-o
+default_value_callback: ''
+settings: {  }
+field_type: fa_icon_class

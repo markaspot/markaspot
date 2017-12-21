@@ -1,0 +1,14 @@
+{
+  "name": "markaspot/markaspot_token",
+  "type": "drupal-module",
+  "description": "Adds custom tokens",
+  "homepage": "https://github.com/markaspot/markaspot_blocks",
+  "authors": [
+    {
+      "name": "Holger Kreis (markaspot)",
+      "homepage": "https://www.drupal.org/u/markaspot",
+      "role": "Maintainer"
+    }
+  ],
+  "keywords": ["Drupal"]
+}
