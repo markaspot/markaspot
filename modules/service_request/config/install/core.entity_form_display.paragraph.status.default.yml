@@ -28,7 +28,8 @@ content:
     weight: 0
     settings: {  }
     third_party_settings: {  }
-    type: options_buttons
+    type: options_select
+    region: content
   status:
     type: boolean_checkbox
     weight: 2

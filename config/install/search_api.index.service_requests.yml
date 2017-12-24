@@ -7,11 +7,10 @@ dependencies:
     - field.storage.node.field_category
     - field.storage.node.body
     - field.storage.node.field_address
-    - field.storage.node.field_status_notes
-    - field.storage.paragraph.field_status_term
+    - field.storage.node.field_organisation
+    - field.storage.node.field_status
     - search_api.server.database
   module:
-    - paragraphs
     - search_api
     - node
 id: service_requests
@@ -201,17 +200,39 @@ field_settings:
     type: integer
     indexed_locked: true
     type_locked: true
-  field_status_term:
-    label: 'Status Notes / Change Status » Paragraph » Status'
+  field_organisation:
+    label: 'Dienststelle / Amt'
     datasource_id: 'entity:node'
-    property_path: 'field_status_notes:entity:field_status_term'
+    property_path: field_organisation
     type: integer
     dependencies:
       config:
-        - field.storage.node.field_status_notes
-        - field.storage.paragraph.field_status_term
-      module:
-        - paragraphs
+        - field.storage.node.field_organisation
+  field_status:
+    label: Status
+    datasource_id: 'entity:node'
+    property_path: field_status
+    type: integer
+    dependencies:
+      config:
+        - field.storage.node.field_status
+datasource_settings:
+  'entity:node':
+    plugin_id: 'entity:node'
+    settings:
+      bundles:
+        default: false
+        selected:
+          - service_request
+      languages:
+        default: true
+        selected: {  }
+    bundles:
+      default: true
+      selected: {  }
+    languages:
+      default: true
+      selected: {  }
 processor_settings:
   add_url:
     plugin_id: add_url
@@ -235,6 +256,13 @@ processor_settings:
       suffix: '</strong>'
       weights:
         postprocess_query: 0
+    prefix: '<strong>'
+    suffix: '</strong>'
+    excerpt: true
+    excerpt_length: 256
+    highlight: always
+    highlight_partial: false
+    exclude_fields: {  }
   html_filter:
     plugin_id: html_filter
     settings:
@@ -268,6 +296,17 @@ processor_settings:
       weights:
         preprocess_index: -10
         preprocess_query: -10
+    all_fields: false
+    title: true
+    alt: true
+    tags:
+      h1: 5
+      h2: 3
+      h3: 2
+      strong: 2
+      b: 2
+      em: 1
+      u: 1
   ignorecase:
     plugin_id: ignorecase
     settings:
@@ -291,6 +330,7 @@ processor_settings:
       weights:
         preprocess_index: -10
         preprocess_query: -10
+    all_fields: false
   rendered_item:
     plugin_id: rendered_item
     settings: {  }
@@ -317,22 +357,12 @@ processor_settings:
       weights:
         preprocess_index: -10
         preprocess_query: -10
-options:
-  index_directly: true
-  cron_limit: 50
-datasource_settings:
-  'entity:node':
-    plugin_id: 'entity:node'
-    settings:
-      bundles:
-        default: false
-        selected:
-          - service_request
-      languages:
-        default: true
-        selected: {  }
+    all_fields: false
 tracker_settings:
   default:
     plugin_id: default
     settings: {  }
+options:
+  index_directly: true
+  cron_limit: 50
 server: database

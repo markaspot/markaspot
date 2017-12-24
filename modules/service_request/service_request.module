@@ -14,16 +14,16 @@ use Drupal\paragraphs\Entity\Paragraph;
 /**
  * Implements hook_entity_presave().
  */
-function service_request_entity_presave(EntityInterface $node) {
+function service_request_entity_presave(EntityInterface $entity) {
 
-  // Add paragraph for service_requests that are created / not updated.
-  if ($node->bundle() == 'service_request' && !$node->id()) {
+  // Service Request Creation.
+  if ($entity->bundle() == 'service_request' && !$entity->id()) {
     // Get some relevant config.
     $config = \Drupal::configFactory()
       ->getEditable('markaspot_open311.settings');
     // Add an intitial paragraph on post
     // Status when inserting.
-    $status_open = array_values($config->get('status_open_start'));
+    $status_open_start = $config->get('status_open_start');
     // todo: put this in config.
     $status_note_initial = t('The service request has been created.');
 
@@ -34,17 +34,80 @@ function service_request_entity_presave(EntityInterface $node) {
         "format" => "full_html",
       ),
       'field_status_term' => array(
-        "target_id" => $status_open[0],
+        "target_id" => key($status_open_start),
       ),
     ]);
     $paragraph->save();
 
-    $node->field_status_notes = array(
+    $entity->field_status_notes = array(
       array(
         'target_id' => $paragraph->id(),
         'target_revision_id' => $paragraph->getRevisionId(),
       ),
     );
-
+    $entity->field_status = array(
+      array(
+        'target_id' =>  key($status_open_start),
+      ),
+    );
   }
+  // Service Request Update
+  elseif ($entity->bundle() == 'service_request' && $entity->id()) {
+
+    foreach ($entity->field_status_notes as $paragraph) {
+      // Access the paragraph entity like this:
+      $statusNotes[] = $paragraph->entity;
+    }
+    // Get new Status from Taxonomy Reference.
+    $newStatus = $entity->field_status->target_id;
+    if (isset($statusNotes)) {
+      // Load last Paragraph and Update the Status there.
+      $paragraph = Paragraph::load(end($statusNotes)->Id());
+
+      $paragraph->field_status_term->target_id = $newStatus;
+      // Save paragraph.
+      $paragraph->save();
+    }
+  }
+
+}
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Perform alterations before a form is rendered.
+ *
+ * One popular use of this hook is to add form elements to the node form. When
+ * altering a node form, the node object can be accessed at $form['#node'].
+ *
+ * Note that instead of hook_form_alter(), which is called for all forms, you
+ * can also use hook_form_FORM_ID_alter() to alter a specific form. For each
+ * module (in system weight order) the general form alter hook implementation
+ * is invoked first, then the form ID specific alter implementation is called.
+ * After all module hook implementations are invoked, the hook_form_alter()
+ * implementations from themes are invoked in the same manner.
+ *
+ * @param $form
+ *   Nested array of form elements that comprise the form.
+ * @param $form_state
+ *   A keyed array containing the current state of the form. The arguments
+ *   that drupal_get_form() was originally called with are available in the
+ *   array $form_state['build_info']['args'].
+ * @param $form_id
+ *   String representing the name of the form itself. Typically this is the
+ *   name of the function that generated the form.
+ *
+ * @see hook_form_FORM_ID_alter()
+ *
+ *
+ */
+function service_request_form_alter(&$form, &$form_state, $form_id) {
+  // $status_widget = $form['field_status_notes']['widget'];
+  // todo:
+  // Disable paragraph subform if subform hooks are stable:
+  // https://www.drupal.org/project/paragraphs/issues/2868155
+  $form['#attached']['library'][] = 'service_request/paragraphs';
+  $form['#attached']['drupalSettings']['service_request']['paragraphs']['variable'] = 'value';
+
+  return $form;
 }

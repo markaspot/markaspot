@@ -6,9 +6,11 @@ dependencies:
     - field.storage.node.field_address
     - field.storage.node.field_category
     - field.storage.node.field_e_mail
-    - field.storage.node.field_status_notes
+    - field.storage.node.field_organisation
+    - field.storage.node.field_status
     - search_api.index.service_requests
     - system.menu.admin
+    - taxonomy.vocabulary.organisation
     - taxonomy.vocabulary.service_category
     - taxonomy.vocabulary.service_status
     - user.role.administrator
@@ -19,7 +21,6 @@ dependencies:
       - service_request
   module:
     - address
-    - entity_reference_revisions
     - search_api
     - search_api_views_taxonomy
     - text
@@ -68,7 +69,7 @@ display:
       pager:
         type: full
         options:
-          items_per_page: 12
+          items_per_page: 25
           offset: 0
           id: 0
           total_pages: null
@@ -102,8 +103,8 @@ display:
           relationship: none
           group_type: group
           admin_label: ''
-          label: 'ID (indexed field)'
-          exclude: false
+          label: ''
+          exclude: true
           alter:
             alter_text: false
             text: ''
@@ -135,7 +136,7 @@ display:
           element_class: ''
           element_label_type: ''
           element_label_class: ''
-          element_label_colon: true
+          element_label_colon: false
           element_wrapper_type: ''
           element_wrapper_class: ''
           element_default_classes: true
@@ -164,11 +165,13 @@ display:
             set_precision: false
             precision: 0
             decimal: .
+            separator: ', '
             format_plural: false
-            format_plural_string: "1\x03@count"
+            format_plural_string: !!binary MQNAY291bnQ=
             prefix: ''
             suffix: ''
             link_to_item: false
+            multi_type: separator
             multi_separator: ', '
             format_plural_values:
               - '1'
@@ -181,7 +184,7 @@ display:
           relationship: none
           group_type: group
           admin_label: ''
-          label: 'Title (indexed field)'
+          label: ''
           exclude: false
           alter:
             alter_text: false
@@ -214,7 +217,7 @@ display:
           element_class: ''
           element_label_type: ''
           element_label_class: ''
-          element_label_colon: true
+          element_label_colon: false
           element_wrapper_type: ''
           element_wrapper_class: ''
           element_default_classes: true
@@ -240,6 +243,7 @@ display:
           fallback_handler: search_api
           fallback_options:
             link_to_item: false
+            multi_type: separator
             multi_separator: ', '
           plugin_id: search_api_field
         uid:
@@ -250,7 +254,7 @@ display:
           group_type: group
           admin_label: ''
           label: 'Authored by'
-          exclude: false
+          exclude: true
           alter:
             alter_text: false
             text: ''
@@ -308,6 +312,7 @@ display:
           fallback_handler: search_api_entity
           fallback_options:
             link_to_item: false
+            multi_type: separator
             multi_separator: ', '
             display_methods:
               user:
@@ -357,6 +362,88 @@ display:
           element_label_colon: true
           element_wrapper_type: ''
           element_wrapper_class: ''
+          element_default_classes: false
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          click_sort_column: target_id
+          type: entity_reference_label
+          settings:
+            link: false
+          group_column: target_id
+          group_columns: {  }
+          group_rows: true
+          delta_limit: 0
+          delta_offset: 0
+          delta_reversed: false
+          delta_first_last: false
+          multi_type: separator
+          separator: ', '
+          field_api_classes: false
+          field_rendering: true
+          fallback_handler: search_api_entity
+          fallback_options:
+            link_to_item: false
+            multi_type: separator
+            multi_separator: ', '
+            display_methods:
+              organisation:
+                display_method: label
+                view_mode: default
+              service_category:
+                display_method: label
+                view_mode: default
+              service_status:
+                display_method: label
+                view_mode: default
+              tags:
+                display_method: label
+          entity_type: node
+          plugin_id: search_api_field
+        field_organisation:
+          id: field_organisation
+          table: search_api_datasource_service_requests_entity_node
+          field: field_organisation
+          relationship: none
+          group_type: group
+          admin_label: ''
+          label: 'Dienststelle / Amt'
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: true
+          element_wrapper_type: ''
+          element_wrapper_class: ''
           element_default_classes: true
           empty: ''
           hide_empty: false
@@ -380,8 +467,12 @@ display:
           fallback_handler: search_api_entity
           fallback_options:
             link_to_item: false
+            multi_type: separator
             multi_separator: ', '
             display_methods:
+              organisation:
+                display_method: label
+                view_mode: default
               service_category:
                 display_method: label
                 view_mode: default
@@ -534,7 +625,7 @@ display:
           relationship: none
           group_type: group
           admin_label: ''
-          label: 'Authored on'
+          label: ''
           exclude: false
           alter:
             alter_text: false
@@ -567,81 +658,7 @@ display:
           element_class: ''
           element_label_type: ''
           element_label_class: ''
-          element_label_colon: true
-          element_wrapper_type: ''
-          element_wrapper_class: ''
-          element_default_classes: true
-          empty: ''
-          hide_empty: false
-          empty_zero: false
-          hide_alter_empty: true
-          click_sort_column: value
-          type: timestamp
-          settings:
-            date_format: medium
-            custom_date_format: ''
-            timezone: ''
-          group_column: value
-          group_columns: {  }
-          group_rows: true
-          delta_limit: 0
-          delta_offset: 0
-          delta_reversed: false
-          delta_first_last: false
-          multi_type: separator
-          separator: ', '
-          field_api_classes: false
-          field_rendering: true
-          fallback_handler: search_api_date
-          fallback_options:
-            date_format: fallback
-            custom_date_format: ''
-            timezone: ''
-            link_to_item: false
-            multi_separator: ', '
-          entity_type: node
-          plugin_id: search_api_field
-        changed:
-          id: changed
-          table: search_api_datasource_service_requests_entity_node
-          field: changed
-          relationship: none
-          group_type: group
-          admin_label: ''
-          label: Changed
-          exclude: false
-          alter:
-            alter_text: false
-            text: ''
-            make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
-          element_type: ''
-          element_class: ''
-          element_label_type: ''
-          element_label_class: ''
-          element_label_colon: true
+          element_label_colon: false
           element_wrapper_type: ''
           element_wrapper_class: ''
           element_default_classes: true
@@ -672,6 +689,82 @@ display:
             custom_date_format: ''
             timezone: ''
             link_to_item: false
+            multi_type: separator
+            multi_separator: ', '
+          entity_type: node
+          plugin_id: search_api_field
+        changed:
+          id: changed
+          table: search_api_datasource_service_requests_entity_node
+          field: changed
+          relationship: none
+          group_type: group
+          admin_label: ''
+          label: ''
+          exclude: true
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: false
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
+          click_sort_column: value
+          type: timestamp
+          settings:
+            date_format: short
+            custom_date_format: ''
+            timezone: ''
+          group_column: value
+          group_columns: {  }
+          group_rows: true
+          delta_limit: 0
+          delta_offset: 0
+          delta_reversed: false
+          delta_first_last: false
+          multi_type: separator
+          separator: ', '
+          field_api_classes: false
+          field_rendering: true
+          fallback_handler: search_api_date
+          fallback_options:
+            date_format: fallback
+            custom_date_format: ''
+            timezone: ''
+            link_to_item: false
+            multi_type: separator
             multi_separator: ', '
           entity_type: node
           plugin_id: search_api_field
@@ -743,75 +836,6 @@ display:
             multi_separator: ', '
           entity_type: node
           plugin_id: search_api_field
-        field_status_notes:
-          id: field_status_notes
-          table: search_api_datasource_service_requests_entity_node
-          field: field_status_notes
-          relationship: none
-          group_type: group
-          admin_label: ''
-          label: 'Status Notes / Change Status'
-          exclude: false
-          alter:
-            alter_text: false
-            text: ''
-            make_link: false
-            path: ''
-            absolute: false
-            external: false
-            replace_spaces: false
-            path_case: none
-            trim_whitespace: false
-            alt: ''
-            rel: ''
-            link_class: ''
-            prefix: ''
-            suffix: ''
-            target: ''
-            nl2br: false
-            max_length: 0
-            word_boundary: true
-            ellipsis: true
-            more_link: false
-            more_link_text: ''
-            more_link_path: ''
-            strip_tags: false
-            trim: false
-            preserve_tags: ''
-            html: false
-          element_type: ''
-          element_class: ''
-          element_label_type: ''
-          element_label_class: ''
-          element_label_colon: true
-          element_wrapper_type: ''
-          element_wrapper_class: ''
-          element_default_classes: true
-          empty: ''
-          hide_empty: false
-          empty_zero: false
-          hide_alter_empty: true
-          click_sort_column: target_id
-          type: entity_reference_revisions_entity_view
-          settings:
-            view_mode: default
-          group_column: ''
-          group_columns: {  }
-          group_rows: true
-          delta_limit: 0
-          delta_offset: 0
-          delta_reversed: false
-          delta_first_last: false
-          multi_type: separator
-          separator: ', '
-          field_api_classes: false
-          field_rendering: true
-          fallback_handler: search_api
-          fallback_options:
-            link_to_item: false
-            multi_separator: ', '
-          entity_type: node
-          plugin_id: search_api_field
         nothing_1:
           id: nothing_1
           table: views
@@ -823,8 +847,7 @@ display:
           exclude: true
           alter:
             alter_text: true
-            text: '<a href="/node/{{nid}}/edit/edit_service_request?destination=/admin/structure/views/view/management
-            ">Edit</a>'
+            text: '<a href="/node/{{nid}}/edit/edit_service_request?destination=/admin/structure/views/view/management ">Edit</a>'
             make_link: false
             path: ''
             absolute: false
@@ -922,7 +945,7 @@ display:
           exclude: true
           alter:
             alter_text: true
-            text: '<div class="dropbutton-wrapper dropbutton-multiple"><div class="dropbutton-widget"><ul class="dropbutton"><li class="edit-service-request dropbutton-action"><a href="/node/{{nid}}/edit_service_request?destination=/admin/structure/views/view/management">Edit</a></li><li class="dropbutton-toggle"><button type="button"><span class="dropbutton-arrow"><span class="visually-hidden">List additional actions</span></span></button></li><li class="delete dropbutton-action secondary-action"><a href="/node/{{nid}}/delete?destination=/admin/structure/views/view/management">Delete</a></li></ul></div></div>'
+            text: '<div class="dropbutton-wrapper dropbutton-multiple"><div class="dropbutton-widget"><ul class="dropbutton"><li class="edit-service-request dropbutton-action"><a href="/node/{{nid}}/edit_service_request?destination=/admin/content/management">Edit</a></li><li class="dropbutton-toggle"><button type="button"><span class="dropbutton-arrow"><span class="visually-hidden">List additional actions</span></span></button></li><li class="delete dropbutton-action secondary-action"><a href="/node/{{nid}}/delete?destination=/admin/content/management">Delete</a></li></ul></div></div>'
             make_link: false
             path: ''
             absolute: false
@@ -960,14 +983,14 @@ display:
           empty_zero: false
           hide_alter_empty: false
           plugin_id: custom
-        dropbutton:
-          id: dropbutton
-          table: views
-          field: dropbutton
+        field_status:
+          id: field_status
+          table: search_api_datasource_service_requests_entity_node
+          field: field_status
           relationship: none
           group_type: group
           admin_label: ''
-          label: Dropbutton
+          label: Status
           exclude: false
           alter:
             alter_text: false
@@ -1008,6 +1031,88 @@ display:
           hide_empty: false
           empty_zero: false
           hide_alter_empty: true
+          click_sort_column: target_id
+          type: entity_reference_label
+          settings:
+            link: false
+          group_column: target_id
+          group_columns: {  }
+          group_rows: true
+          delta_limit: 0
+          delta_offset: 0
+          delta_reversed: false
+          delta_first_last: false
+          multi_type: separator
+          separator: ', '
+          field_api_classes: false
+          field_rendering: true
+          fallback_handler: search_api_entity
+          fallback_options:
+            link_to_item: false
+            multi_type: separator
+            multi_separator: ', '
+            display_methods:
+              organisation:
+                display_method: label
+                view_mode: default
+              service_category:
+                display_method: label
+                view_mode: default
+              service_status:
+                display_method: label
+                view_mode: default
+              tags:
+                display_method: label
+          entity_type: node
+          plugin_id: search_api_field
+        dropbutton:
+          id: dropbutton
+          table: views
+          field: dropbutton
+          relationship: none
+          group_type: group
+          admin_label: ''
+          label: ''
+          exclude: false
+          alter:
+            alter_text: false
+            text: ''
+            make_link: false
+            path: ''
+            absolute: false
+            external: false
+            replace_spaces: false
+            path_case: none
+            trim_whitespace: false
+            alt: ''
+            rel: ''
+            link_class: ''
+            prefix: ''
+            suffix: ''
+            target: ''
+            nl2br: false
+            max_length: 0
+            word_boundary: true
+            ellipsis: true
+            more_link: false
+            more_link_text: ''
+            more_link_path: ''
+            strip_tags: false
+            trim: false
+            preserve_tags: ''
+            html: false
+          element_type: ''
+          element_class: ''
+          element_label_type: ''
+          element_label_class: ''
+          element_label_colon: false
+          element_wrapper_type: ''
+          element_wrapper_class: ''
+          element_default_classes: true
+          empty: ''
+          hide_empty: false
+          empty_zero: false
+          hide_alter_empty: true
           fields:
             nothing_1: nothing_1
             nothing_2: nothing_2
@@ -1020,7 +1125,7 @@ display:
             created: '0'
             changed: '0'
             field_e_mail: '0'
-            field_status_term: '0'
+            field_status_notes: '0'
             nothing: '0'
           destination: true
           plugin_id: dropbutton
@@ -1073,7 +1178,7 @@ display:
           group_type: group
           admin_label: ''
           operator: '='
-          value: true
+          value: '1'
           group: 1
           exposed: false
           expose:
@@ -1146,10 +1251,49 @@ display:
           hierarchy: false
           error_message: true
           plugin_id: search_api_term
-        field_status_term:
-          id: field_status_term
+        type:
+          id: type
           table: search_api_index_service_requests
-          field: field_status_term
+          field: type
+          relationship: none
+          group_type: group
+          admin_label: ''
+          operator: or
+          value:
+            service_request: service_request
+          group: 1
+          exposed: false
+          expose:
+            operator_id: ''
+            label: ''
+            description: ''
+            use_operator: false
+            operator: ''
+            identifier: ''
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+            reduce: false
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          reduce_duplicates: false
+          plugin_id: search_api_options
+        field_organisation:
+          id: field_organisation
+          table: search_api_index_service_requests
+          field: field_organisation
           relationship: none
           group_type: group
           admin_label: ''
@@ -1158,12 +1302,59 @@ display:
           group: 1
           exposed: true
           expose:
-            operator_id: field_status_term_op
+            operator_id: field_organisation_op
+            label: 'Dienststelle / Amt'
+            description: ''
+            use_operator: false
+            operator: field_organisation_op
+            identifier: field_organisation
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+              anonymous: '0'
+              administrator: '0'
+              moderator: '0'
+              editorial_board: '0'
+            reduce: false
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          reduce_duplicates: false
+          type: select
+          limit: true
+          vid: organisation
+          hierarchy: false
+          error_message: true
+          plugin_id: search_api_term
+        field_status:
+          id: field_status
+          table: search_api_index_service_requests
+          field: field_status
+          relationship: none
+          group_type: group
+          admin_label: ''
+          operator: or
+          value: {  }
+          group: 1
+          exposed: true
+          expose:
+            operator_id: field_status_op
             label: Status
             description: ''
             use_operator: false
-            operator: field_status_term_op
-            identifier: field_status_term
+            operator: field_status_op
+            identifier: field_status
             required: false
             remember: false
             multiple: false
@@ -1190,7 +1381,7 @@ display:
           type: select
           limit: true
           vid: service_status
-          hierarchy: true
+          hierarchy: false
           error_message: true
           plugin_id: search_api_term
       sorts:
@@ -1235,18 +1426,21 @@ display:
       display_extenders: {  }
       use_ajax: true
     cache_metadata:
-      max-age: 0
+      max-age: -1
       contexts:
         - 'languages:language_content'
         - 'languages:language_interface'
+        - url
         - url.query_args
+        - user
         - user.roles
       tags:
         - 'config:field.storage.node.body'
         - 'config:field.storage.node.field_address'
         - 'config:field.storage.node.field_category'
         - 'config:field.storage.node.field_e_mail'
-        - 'config:field.storage.node.field_status_notes'
+        - 'config:field.storage.node.field_organisation'
+        - 'config:field.storage.node.field_status'
   page_1:
     display_plugin: page
     id: page_1
@@ -1373,11 +1567,14 @@ display:
       contexts:
         - 'languages:language_content'
         - 'languages:language_interface'
+        - url
         - url.query_args
+        - user
         - user.roles
       tags:
         - 'config:field.storage.node.body'
         - 'config:field.storage.node.field_address'
         - 'config:field.storage.node.field_category'
         - 'config:field.storage.node.field_e_mail'
-        - 'config:field.storage.node.field_status_notes'
+        - 'config:field.storage.node.field_organisation'
+        - 'config:field.storage.node.field_status'

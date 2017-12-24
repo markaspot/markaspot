@@ -1,0 +1,11 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - service_request
+name: Organisation
+vid: organisation
+description: 'The organisation responsible for service_requests. '
+hierarchy: 0
+weight: 0
