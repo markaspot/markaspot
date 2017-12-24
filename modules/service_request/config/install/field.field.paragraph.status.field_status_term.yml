@@ -13,8 +13,10 @@ label: Status
 description: 'Change the status of the service request that will appear public.'
 required: false
 translatable: false
-default_value: {  }
-default_value_callback: ''
+default_value:
+  -
+    target_uuid: 150520163425c8221-9e89-18527-82c6-c82219e89085f3e82c64a8411890c15052016
+    default_value_callback: ''
 settings:
   handler: 'default:taxonomy_term'
   handler_settings:
