@@ -4276,14 +4276,15 @@ tbody.collapse.in {
 .label {
   display: inline;
   padding: .2em .6em .3em;
-  font-size: 75%;
+  /* font-size: 75%; */
   font-weight: bold;
   line-height: 1;
   color: #fff;
   text-align: center;
   white-space: nowrap;
   vertical-align: baseline;
-  border-radius: .25em; }
+  border-radius: .25em;
+  }
   .label:empty {
     display: none; }
   .btn .label, .media-widget > a .label {
@@ -7342,7 +7343,7 @@ span.site-slogan {
     opacity: 1; }
 
 .view--requests .view__filters a,
-.view__filters div.form-item-field-status-term,
+.view__filters div.form-item-field-status,
 .view__filters div.form-item-field-category {
   display: none; }
 

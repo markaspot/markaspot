@@ -10,6 +10,7 @@ dependencies:
     module:
       - service_request
   module:
+    - better_exposed_filters
     - search_api
     - search_api_views_taxonomy
     - views_bootstrap
@@ -42,15 +43,47 @@ display:
           skip_access: false
           parse_mode: terms
       exposed_form:
-        type: basic
+        type: bef
         options:
           submit_button: Apply
-          reset_button: true
+          reset_button: false
           reset_button_label: Reset
           exposed_sorts_label: 'Sort by'
-          expose_sort_order: true
+          expose_sort_order: false
           sort_asc_label: Asc
           sort_desc_label: Desc
+          input_required: false
+          text_input_required: 'Select any filter and click on Apply to see results'
+          bef:
+            general:
+              allow_secondary: false
+              secondary_label: 'Advanced options'
+              autosubmit: true
+              autosubmit_hide: false
+            search_api_fulltext:
+              bef_format: default
+              more_options:
+                is_secondary: false
+                rewrite:
+                  filter_rewrite_values: ''
+            field_category:
+              bef_format: default
+              more_options:
+                bef_select_all_none: false
+                bef_collapsible: false
+                is_secondary: false
+                rewrite:
+                  filter_rewrite_values: ''
+            field_status:
+              bef_format: default
+              more_options:
+                bef_select_all_none: false
+                bef_select_all_none_nested: false
+                bef_collapsible: false
+                is_secondary: false
+                rewrite:
+                  filter_rewrite_values: ''
+          text_input_required_format: basic_html
       pager:
         type: infinite_scroll
         options:
@@ -181,7 +214,7 @@ display:
           group_type: group
           admin_label: ''
           operator: '='
-          value: true
+          value: '1'
           group: 1
           exposed: false
           expose:
@@ -254,53 +287,6 @@ display:
           hierarchy: false
           error_message: true
           plugin_id: search_api_term
-        field_status_term:
-          id: field_status_term
-          table: search_api_index_service_requests
-          field: field_status_term
-          relationship: none
-          group_type: group
-          admin_label: ''
-          operator: or
-          value: {  }
-          group: 1
-          exposed: true
-          expose:
-            operator_id: field_status_term_op
-            label: Status
-            description: ''
-            use_operator: false
-            operator: field_status_term_op
-            identifier: field_status_term
-            required: false
-            remember: false
-            multiple: false
-            remember_roles:
-              authenticated: authenticated
-              anonymous: '0'
-              administrator: '0'
-              moderator: '0'
-              editorial_board: '0'
-            reduce: false
-          is_grouped: false
-          group_info:
-            label: ''
-            description: ''
-            identifier: ''
-            optional: true
-            widget: select
-            multiple: false
-            remember: false
-            default_group: All
-            default_group_multiple: {  }
-            group_items: {  }
-          reduce_duplicates: false
-          type: select
-          limit: true
-          vid: service_status
-          hierarchy: true
-          error_message: true
-          plugin_id: search_api_term
         type:
           id: type
           table: search_api_index_service_requests
@@ -340,6 +326,53 @@ display:
             group_items: {  }
           reduce_duplicates: false
           plugin_id: search_api_options
+        field_status:
+          id: field_status
+          table: search_api_index_service_requests
+          field: field_status
+          relationship: none
+          group_type: group
+          admin_label: ''
+          operator: or
+          value: {  }
+          group: 1
+          exposed: true
+          expose:
+            operator_id: field_status_op
+            label: Status
+            description: ''
+            use_operator: false
+            operator: field_status_op
+            identifier: field_status
+            required: false
+            remember: false
+            multiple: false
+            remember_roles:
+              authenticated: authenticated
+              anonymous: '0'
+              administrator: '0'
+              moderator: '0'
+              editorial_board: '0'
+            reduce: false
+          is_grouped: false
+          group_info:
+            label: ''
+            description: ''
+            identifier: ''
+            optional: true
+            widget: select
+            multiple: false
+            remember: false
+            default_group: All
+            default_group_multiple: {  }
+            group_items: {  }
+          reduce_duplicates: false
+          type: select
+          limit: true
+          vid: service_status
+          hierarchy: true
+          error_message: true
+          plugin_id: search_api_term
       sorts:
         nid:
           id: nid
@@ -409,10 +442,12 @@ display:
       display_extenders: {  }
       use_ajax: true
     cache_metadata:
-      max-age: 0
+      max-age: -1
       contexts:
         - 'languages:language_interface'
+        - url
         - url.query_args
+        - user
       tags: {  }
   block_1:
     display_plugin: block
@@ -435,9 +470,11 @@ display:
           items_per_page: 10
           offset: 0
     cache_metadata:
-      max-age: 0
+      max-age: -1
       contexts:
         - 'languages:language_interface'
+        - url
+        - user
       tags: {  }
   page_1:
     display_plugin: page
@@ -482,8 +519,10 @@ display:
             'entity:node':
               service_request: teaser
     cache_metadata:
-      max-age: 0
+      max-age: -1
       contexts:
         - 'languages:language_interface'
+        - url
         - url.query_args
+        - user
       tags: {  }
