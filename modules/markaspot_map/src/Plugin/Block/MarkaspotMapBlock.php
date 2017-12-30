@@ -23,6 +23,7 @@ class MarkaspotMapBlock extends BlockBase {
       '#markup' => '<ul class="notifications"></ul><div id="map" data-slideout-ignore><div class="log"><div class="log_header"><span class="left"></span><span class="right"></span></div><ul class="log_list"></ul></div></div>',
       '#attached' => array(
         'library' => array(
+          'markaspot_map/dateFormat',
           'markaspot_map/leaflet',
           'markaspot_map/leaflet-awesome-markers',
           'markaspot_map/leaflet-easyButton',

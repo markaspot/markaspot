@@ -158,15 +158,15 @@ if (target) {
     var route = drupalSettings.path.currentPath;
 
     // Sticky map on top.
-    if (route === 'requests') {
-      var $stickyElement = $('#map');
-      if ($stickyElement.length) {
-        var sticky = new Waypoint.Sticky({
-          element: $stickyElement[0],
-          wrapper: '<div class="sticky-wrapper waypoint" />'
-        });
-      }
+
+    var $stickyElement = $('#map');
+    if ($stickyElement.length) {
+      var sticky = new Waypoint.Sticky({
+        element: $stickyElement[0],
+        wrapper: '<div class="sticky-wrapper waypoint" />'
+      });
     }
+
     // Add a close button to exposed filter.
     $('.views-exposed-form')
       .append('<a data-toggle="filter" class="btn btn-default close fa fa-close"><span>' + Drupal.t('Close') + '</span></a>')

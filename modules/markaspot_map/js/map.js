@@ -1,4 +1,5 @@
 /**
+ * @file
  * Main Map-Application File with Leaflet Maps api.
  */
 
@@ -13,12 +14,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
         return;
       }
 
-      var time = this._timeDimension.getCurrentTime();
-
-      var request_time = new Date(time);
-      var formattime = request_time.format(Drupal.Markaspot.settings.timeline_date_format);
-      var maxTime = this._timeDimension.getCurrentTime(),
-        minTime = 0;
+      var request_time = this._timeDimension.getCurrentTime()
+      var formattime = dateFormat(request_time, Drupal.Markaspot.settings.timeline_date_format);
+      var maxTime = this._timeDimension.getCurrentTime(), minTime = 0;
       if (this._duration) {
         var date = new Date(maxTime);
         L.TimeDimension.Util.subtractTimeDuration(date, this._duration, true);
@@ -31,11 +29,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
       for (var i = 0, l = layers.length; i < l; i++) {
         var feature = this._getFeatureBetweenDates(layers[i].feature, minTime, maxTime);
         if (feature) {
-
-          var coordinates = feature.geometry.coordinates;
-          var heatPoint = [coordinates[1], coordinates[0]];
-          Drupal.markaspot_map.updateHeatMapLayer(heatPoint);
-
           layer.addData(feature);
           if (this._addlastPoint && feature.geometry.type == "LineString") {
             if (feature.geometry.coordinates.length > 0) {
@@ -85,6 +78,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
   Drupal.behaviors.markaspot_map = {
 
     attach: function (context, settings) {
+
+
+
       var map = {};
       var masSettings = settings.mas;
       Drupal.Markaspot.settings = masSettings;
@@ -117,10 +113,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
         map.addLayer(markerLayer);
 
         // Initital heat map layer for front page:
-
         var currentPath = drupalSettings.path.currentPath;
 
-        if (currentPath === 'node' ) {
+        if (currentPath === 'node') {
           var heatMapLayer = Drupal.markaspot_map.createHeatMapLayer(map);
           // heatMapLayer.addTo(map);
           Drupal.markaspot_map.setDefaults(masSettings);
@@ -198,9 +193,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
               title: Drupal.t('Show TimeControl Layer'),
               onClick: function (control) {
 
-
                 $('div.log').show();
-
 
                 control.state('remove-timeControls');
 
@@ -225,7 +218,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
           ]
         });
         timeControls.addTo(map);
-
 
         // Empty storedNids.
         localStorage.setItem("storedNids", JSON.stringify(''));
@@ -305,7 +297,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
     settings: function (drupalSettings) {
       return drupalSettings;
     },
-    setDefaults: function(masSettings){
+    setDefaults: function (masSettings) {
       var defaultCenter = new L.latLng(masSettings.center_lat, masSettings.center_lng);
       Drupal.Markaspot.maps[0].setView(defaultCenter, masSettings.zoom_initial);
     },
@@ -346,10 +338,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
       // Helper to share the timeDimension object between all layers.
       map.timeDimension = timeDimension;
 
-
       L.Control.TimeDimensionCustom = L.Control.TimeDimension.extend({
         _getDisplayDateFormat: function (date) {
-          return date.format(drupalSettings['mas']['timeline_date_format']);
+          return this._dateUTC ? date.toISOString() : date.toLocaleString();
         },
 
         options:{
@@ -490,15 +481,16 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
         var currentZoom = map.getZoom();
         var fullscreen = map.isFullscreen();
         var target = $('article[data-history-node-id=' + nid + ']');
-        // var target = document.querySelector('data-history-node-id') = nid;
+        // Var target = document.querySelector('data-history-node-id') = nid;
         // var anchor = $(this).attr('data-attr-scroll');
-        if( target.length && fullscreen === false) {
-          map.setZoom(currentZoom +2);
+        if (target.length && fullscreen === false) {
+          map.setZoom(currentZoom + 2);
           event.preventDefault();
           $('html, body').stop().animate({
             scrollTop: target.offset().top - 200
           }, 1000);
-        } else if (target.length && fullscreen === true) {
+        }
+else if (target.length && fullscreen === true) {
           html = target.text();
           marker.bindPopup(html);
         }
