@@ -7,17 +7,17 @@ dependencies:
     - views
   theme:
     - masradix
-id: views_block__stats_block_1
+id: views_block__stats_block_stats_status
 theme: masradix
 region: sidebar
-weight: -5
+weight: -7
 provider: null
-plugin: 'views_block:stats-block_1'
+plugin: 'views_block:stats-block_stats_status'
 settings:
-  id: 'views_block:stats-block_1'
+  id: 'views_block:stats-block_stats_status'
   label: ''
   provider: views
-  label_display: true
+  label_display: visible
   views_label: ''
   items_per_page: none
 visibility: {  }
