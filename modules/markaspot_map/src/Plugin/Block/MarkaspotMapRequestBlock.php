@@ -8,11 +8,11 @@ use Drupal\Core\Block\BlockBase;
  * Provides a 'Leaflet Map' Block.
  *
  * @Block(
- *   id = "markaspot_map_block",
- *   admin_label = @Translation("Markaspot Map Data Visualization"),
+ *   id = "markaspot_map_request_block",
+ *   admin_label = @Translation("Mark-a-Spot Map Requests Block"),
  * )
  */
-class MarkaspotMapBlock extends BlockBase {
+class MarkaspotMapRequestBlock extends BlockBase {
 
   /**
    * {@inheritdoc}

@@ -22,6 +22,31 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_map.settings');
+    $form['markaspot_map_blocks'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Map Blocks'),
+      '#collapsible' => TRUE,
+      '#description' => t('Path settings for the map visualization.'),
+      '#group' => 'settings',
+    );
+    $form['markaspot_map_blocks']['visualization_path'] = array(
+      '#type' => 'textfield',
+      '#title' => $this->t('Existing path for visualization page'),
+      '#default_value' => $config->get('visualization_path'),
+      '#maxlength' => 255,
+      '#size' => 45,
+      '#description' => $this->t('Specify the path you wish to use for the visualization dashboard. For example: /node/28.'),
+      '#required' => TRUE,
+    );
+    $form['markaspot_map_blocks']['request_list_path'] = array(
+      '#type' => 'textfield',
+      '#title' => $this->t('Existing path for request list'),
+      '#default_value' => $config->get('request_list_path'),
+      '#maxlength' => 255,
+      '#size' => 45,
+      '#description' => $this->t('Specify the path you wish to use for the request list. For example: /node/28.'),
+      '#required' => TRUE,
+    );
     $form['markaspot_map'] = array(
       '#type' => 'fieldset',
       '#title' => t('Map Types'),
@@ -121,6 +146,8 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
 
     $this->config('markaspot_map.settings')
+      ->set('request_list_path', $values['request_list_path'])
+      ->set('visualization_path', $values['visualization_path'])
       ->set('map_type', $values['map_type'])
       ->set('mapbox', $values['mapbox'])
       ->set('osm_custom_tile_url', $values['osm_custom_tile_url'])
