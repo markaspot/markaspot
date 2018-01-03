@@ -159,7 +159,7 @@ if (target) {
 
     // Sticky map on top.
 
-    var $stickyElement = $('#map');
+    var $stickyElement = $('.map-request-block');
     if ($stickyElement.length) {
       var sticky = new Waypoint.Sticky({
         element: $stickyElement[0],

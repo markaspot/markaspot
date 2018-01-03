@@ -87,11 +87,18 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
     max-width: 180px;
 }
 
-#map {
+.map-request-block {
   width: 100%;
   height: 220px;
   position: relative;
 }
+
+.map-block {
+  width: 100%;
+  height: 280px;
+  position: relative;
+}
+
 
 // Timeline makes no sense on smartphone screens.
 // Hiding this feature until there is a better solution for this.

@@ -7701,9 +7701,14 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
 .leaflet-popup-content {
   max-width: 180px; }
 
-#map {
+.map-request-block {
   width: 100%;
   height: 220px;
+  position: relative; }
+
+.map-block {
+  width: 100%;
+  height: 280px;
   position: relative; }
 
 @media (max-width: 480px) {

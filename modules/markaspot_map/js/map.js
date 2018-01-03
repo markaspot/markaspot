@@ -79,6 +79,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
 
     attach: function (context, settings) {
 
+      // console.log(Drupal, settings);
 
 
       var map = {};
@@ -120,105 +121,107 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend(
           // heatMapLayer.addTo(map);
           Drupal.markaspot_map.setDefaults(masSettings);
         }
+        currentPath = '/' + currentPath;
+        if(currentPath === masSettings.visualization_path){
 
-        // Drupal.markaspot_map.hideMarkers();
-        // Show Markers additionally ob button click.
-        var categoryMarker = L.easyButton({
-          position: 'topleft',
-          states: [
-            {
-              icon: 'fa-map-marker active',
-              stateName: 'remove-markers',
-              title: Drupal.t('Hide Markers'),
-              onClick: function (control) {
-                Drupal.markaspot_map.hideMarkers();
-                control.state('add-markers');
-              },
-            }, {
-              stateName: 'add-markers',
-              icon: 'fa-map-marker',
-              title: Drupal.t('Show Markers'),
-              onClick: function (control) {
-                Drupal.markaspot_map.showMarkers();
-                control.state('remove-markers');
+          // Drupal.markaspot_map.hideMarkers();
+          // Show Markers additionally ob button click.
+          var categoryMarker = L.easyButton({
+            position: 'topleft',
+            states: [
+              {
+                icon: 'fa-map-marker active',
+                stateName: 'remove-markers',
+                title: Drupal.t('Hide Markers'),
+                onClick: function (control) {
+                  Drupal.markaspot_map.hideMarkers();
+                  control.state('add-markers');
+                },
+              }, {
+                stateName: 'add-markers',
+                icon: 'fa-map-marker',
+                title: Drupal.t('Show Markers'),
+                onClick: function (control) {
+                  Drupal.markaspot_map.showMarkers();
+                  control.state('remove-markers');
+                }
               }
-            }
-          ]
-        });
-        categoryMarker.addTo(map);
+            ]
+          });
+          categoryMarker.addTo(map);
 
-        var geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
-        var heatStart = [
-          [masSettings.center_lat, masSettings.center_lng, 1]
-        ];
-        var heatLayer = new L.heatLayer(heatStart).addTo(map);
-        heatLayer.id = "heatTimedLayer";
-        // Show Markers additionally ob button click.
-        var timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
-        // Show Markers additionally ob button click.
-        var heatControls = L.easyButton({
-          position: 'bottomright',
-          states: [
-            {
-              stateName: 'add-heatControls',
-              icon: 'fa-thermometer-4',
-              title: Drupal.t('Show Heatmap'),
-              onClick: function (control) {
-                var timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
-                var geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
-                control.state('remove-heatControls');
-                control.heatMapLayer = Drupal.markaspot_map.createHeatMapLayer(map);
-                control.heatMapLayer.addTo(map);
+          var geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
+          var heatStart = [
+            [masSettings.center_lat, masSettings.center_lng, 1]
+          ];
+          var heatLayer = new L.heatLayer(heatStart).addTo(map);
+          heatLayer.id = "heatTimedLayer";
+          // Show Markers additionally ob button click.
+          var timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
+          // Show Markers additionally ob button click.
+          var heatControls = L.easyButton({
+            position: 'bottomright',
+            states: [
+              {
+                stateName: 'add-heatControls',
+                icon: 'fa-thermometer-4',
+                title: Drupal.t('Show Heatmap'),
+                onClick: function (control) {
+                  var timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
+                  var geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
+                  control.state('remove-heatControls');
+                  control.heatMapLayer = Drupal.markaspot_map.createHeatMapLayer(map);
+                  control.heatMapLayer.addTo(map);
 
+                }
+              }, {
+                stateName: 'remove-heatControls',
+                icon: 'fa-thermometer-4 active',
+                title: Drupal.t('Hide Heatmap'),
+                onClick: function (control) {
+                  map.removeLayer(control.heatMapLayer);
+                  control.state('add-heatControls');
+                }
               }
-            }, {
-              stateName: 'remove-heatControls',
-              icon: 'fa-thermometer-4 active',
-              title: Drupal.t('Hide Heatmap'),
-              onClick: function (control) {
-                map.removeLayer(control.heatMapLayer);
-                control.state('add-heatControls');
+            ]
+          });
+          heatControls.addTo(map);
+
+          var timeControls = L.easyButton({
+            position: 'bottomright',
+            states: [
+              {
+                stateName: 'add-timeControls',
+                icon: 'fa-clock-o',
+                title: Drupal.t('Show TimeControl Layer'),
+                onClick: function (control) {
+
+                  $('div.log').show();
+
+                  control.state('remove-timeControls');
+
+                  map.addControl(timeDimensionControl);
+                  heatLayer.addTo(map);
+                  geoJsonTimedLayer.addTo(map);
+                }
+              }, {
+                icon: 'fa-clock-o active',
+                stateName: 'remove-timeControls',
+                title: Drupal.t('Remove TimeControl Layer'),
+                onClick: function (control) {
+                  $('div.log').hide();
+                  map.removeControl(timeDimensionControl);
+                  map.removeLayer(geoJsonTimedLayer);
+                  map.removeLayer(heatLayer);
+
+                  control.state('add-timeControls');
+                  $('ul.log_list').empty();
+                },
               }
-            }
-          ]
-        });
-        heatControls.addTo(map);
-
-        var timeControls = L.easyButton({
-          position: 'bottomright',
-          states: [
-            {
-              stateName: 'add-timeControls',
-              icon: 'fa-clock-o',
-              title: Drupal.t('Show TimeControl Layer'),
-              onClick: function (control) {
-
-                $('div.log').show();
-
-                control.state('remove-timeControls');
-
-                map.addControl(timeDimensionControl);
-                heatLayer.addTo(map);
-                geoJsonTimedLayer.addTo(map);
-              }
-            }, {
-              icon: 'fa-clock-o active',
-              stateName: 'remove-timeControls',
-              title: Drupal.t('Remove TimeControl Layer'),
-              onClick: function (control) {
-                $('div.log').hide();
-                map.removeControl(timeDimensionControl);
-                map.removeLayer(geoJsonTimedLayer);
-                map.removeLayer(heatLayer);
-
-                control.state('add-timeControls');
-                $('ul.log_list').empty();
-              },
-            }
-          ]
-        });
-        timeControls.addTo(map);
-
+            ]
+          });
+          timeControls.addTo(map);
+        }
         // Empty storedNids.
         localStorage.setItem("storedNids", JSON.stringify(''));
         // End once.
