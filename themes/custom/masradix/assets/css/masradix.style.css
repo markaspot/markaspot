@@ -4276,15 +4276,14 @@ tbody.collapse.in {
 .label {
   display: inline;
   padding: .2em .6em .3em;
-  /* font-size: 75%; */
+  font-size: 75%;
   font-weight: bold;
   line-height: 1;
   color: #fff;
   text-align: center;
   white-space: nowrap;
   vertical-align: baseline;
-  border-radius: .25em;
-  }
+  border-radius: .25em; }
   .label:empty {
     display: none; }
   .btn .label, .media-widget > a .label {
@@ -7085,6 +7084,10 @@ article.service-request--teaser footer {
   color: #fff;
   opacity: 0.3;
   top: 10px; }
+
+.view--front-gallery .service-request h2:before {
+  left: 40%;
+  top: 20px; }
 
 .service-request h2 {
   font-size: x-small;
