@@ -142,7 +142,7 @@
       "drupal/rules": {
         "Type definition error": "https://www.drupal.org/files/issues/rules-Fix_type_definition_error-2694685-30.patch",
         "Action send mail, implode error": "https://www.drupal.org/files/issues/system-send-email-action-fails-if-to-is-a-string-2827183-2.patch",
-        "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/453.patch"
+        "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/rules_sendmail_textarea-2724129-34.patch"
       },
       "drupal/shariff": {
         "Update library path for shariff latest version using npm-asset": "https://gist.githubusercontent.com/markaspot/d493f888f7fb85a23d94352f44f0d6d7/raw/3f31724a33197631da56ff4d597992f6e02641fb/gistfile1.txt"
