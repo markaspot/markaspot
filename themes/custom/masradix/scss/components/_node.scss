@@ -62,17 +62,18 @@ article.service-request--teaser footer {
 .service-request h2:before {
   content: "\f030";
   font-family: FontAwesome;
-  left: 50%;
+  left: 48%;
   position: absolute;
   font-size: xx-large;
   color: #fff;
-  opacity: 0.3;
-  top: 10px
+  opacity: 0.2;
+  top: 40px
 }
 
 .view--front-gallery .service-request h2:before {
-  left: 40%;
-  top: 20px
+  left: inherit;
+  right:30px;
+  top: 40px
 }
 
 
