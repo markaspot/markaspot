@@ -112,6 +112,40 @@
                     }
                 ]
             }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/taxonomy\/term\/5?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "150520163425c8221-9e89-18527-82c6-c82219e89085f3e82c64a8411890c15052016"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_organisation": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/taxonomy\/term\/7?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "150520163c2461e20-1530-17580-b07e-61e20153044ac00b07ec77beb62b415052016"
+                    }
+                ]
+            }
         ]
     },
     "status": [
@@ -122,13 +156,13 @@
     ],
     "created": [
         {
-            "value": "1463225482",
+            "value": "1463125482",
             "lang": "en"
         }
     ],
     "changed": [
         {
-            "value": "1463303686",
+            "value": "1463125482",
             "lang": "en"
         }
     ],

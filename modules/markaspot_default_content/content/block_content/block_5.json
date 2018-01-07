@@ -1,0 +1,73 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/block\/5?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/block_content\/mas_custom"
+        }
+    },
+    "id": [
+        {
+            "value": "5"
+        }
+    ],
+    "uuid": [
+        {
+            "value": "d124568f-eab9-18470-87d9-dc67febb9c8269fc7d98ff7916891"
+        }
+    ],
+    "revision_id": [
+        {
+            "value": "5"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "type": [
+        {
+            "target_id": "mas_custom"
+        }
+    ],
+    "info": [
+        {
+            "value": "Mark-a-Spot Stats Data",
+            "lang": "en"
+        }
+    ],
+    "changed": [
+        {
+            "value": "1488181624",
+            "lang": "en"
+        }
+    ],
+    "revision_created": [
+        {
+            "value": "1488181624"
+        }
+    ],
+    "revision_translation_affected": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": "1",
+            "lang": "en"
+        }
+    ],
+    "body": [
+        {
+            "value": "<p>Mark-a-Spot offers some Open Data resources building these charts in JSON. Other formats can be provided via Drupal's Rest Export capabilities.<\/p>\r\n\r\n<h3>Statistics to count requests by category, status and organisation<\/h3>\r\n\r\n<ul role=\"group\">\r\n\t<li role=\"treeitem\">\r\n\t<pre>\r\nGET http:\/\/default\/georeport\/stats\/categories<\/pre>\r\n\t<\/li>\r\n\t<li role=\"treeitem\">\r\n\t<pre>\r\nGET http:\/\/default\/georeport\/stats\/status<\/pre>\r\n\t<\/li>\r\n\t<li role=\"treeitem\">\r\n\t<pre>\r\nGET http:\/\/default\/georeport\/stats\/organisations<\/pre>\r\n\t<\/li>\r\n<\/ul>\r\n\r\n<h3>Statistics to count requests per day for all categories:<\/h3>\r\n\r\n<ul>\r\n\t<li>\r\n\t<pre>\r\nGET http:\/\/default\/georeport\/stats\/requests<\/pre>\r\n\t<\/li>\r\n<\/ul>\r\n\r\n<p>All Resources can be filtered by [year\/month\/day]<\/p>\r\n\r\n<ul>\r\n\t<li>\r\n\t<pre>\r\nGET http:\/\/default\/georeport\/stats\/requests\/2018\/01<\/pre>\r\n\t<\/li>\r\n\t<li role=\"treeitem\">\r\n\t<pre>\r\nGET http:\/\/default\/georeport\/stats\/organisations\/2018\/01\/31<\/pre>\r\n\t<\/li>\r\n<\/ul>\r\n",
+            "format": "full_html",
+            "summary": "",
+            "lang": "en"
+        }
+    ]
+}

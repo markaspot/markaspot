@@ -7,3 +7,7 @@ dependencies:
   - default_content
   - block_content
   - markaspot_blocks
+  - services_api_key_auth
+  - node
+  - service_request
+  - page_manager
