@@ -7,7 +7,7 @@ dependencies:
     - masradix
 id: markaspotbuiltwithblock
 theme: masradix
-region: sidebar
+region: footer
 weight: 0
 provider: null
 plugin: 'Markaspot Built With Block'
