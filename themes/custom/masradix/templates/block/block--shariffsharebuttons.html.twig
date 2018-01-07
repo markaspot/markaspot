@@ -28,10 +28,7 @@
 {%
 set classes = [
     'col-sm-6',
-'block-content',
-'block-content--' ~ bundle|clean_class,
-'block-content--' ~ id|clean_class,
-bundle|clean_class
+'block-content'
 ]
 %}
 <div{{ attributes.addClass(classes).addClass('row')}}>
