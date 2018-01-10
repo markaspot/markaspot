@@ -1,12 +1,13 @@
 div#hero {
   position:fixed;
+  z-index: -999;
   top: 25%;
   height: 100%;
   width: 90%;
-  background-image: url("/themes/contrib/masradix/assets/images/cc_by_Martin Grandjean_social-n-analys.png");
+  background-image: url("../images/cc_by_Martin_Grandjean_social-n-analys.png");
   -webkit-filter: grayscale(100%); /* Safari 6.0 - 9.0 */
   filter: grayscale(100%);
-  opacity: 0.02;
+  opacity: 0.1;
   background-position: 0% 0px;
   background-size: 100%;
   background-repeat: no-repeat;

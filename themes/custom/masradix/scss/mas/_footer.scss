@@ -3,3 +3,24 @@
     font-size: x-small;
   }
 }
+
+/**
+ * @file
+ * Styling for the user module icons.
+ */
+
+.built-with {
+ text-align: center
+
+}
+
+
+#footer {
+  height: 360px;
+  padding: 10px 0;
+}
+
+#footer .block.block--shariffsharebuttons {
+    margin: 0 auto;
+    width: 40%;
+}

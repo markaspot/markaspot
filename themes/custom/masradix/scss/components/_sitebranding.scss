@@ -1,9 +1,12 @@
 img.site-logo {
   float: none;
-  margin: 0 auto;
-  max-width: 120px;
+  margin: 20px auto;
+
   @media (min-width: 1200px) {
-    max-height: 50px;
+    max-height: 40px;
+  }
+  @media (max-width: $screen-sm-max) {
+    max-height: 100px;
   }
 }
 

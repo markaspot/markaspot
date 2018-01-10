@@ -43,7 +43,7 @@ if (target) {
       nav.addClass("container");
       $(".fixed-header").hide();
     } else {
-      $("a.navbar-brand").prependTo(branding);
+      // $("a.navbar-brand").prependTo(branding);
       // nav.removeClass("container");
       $(".fixed-header").show();
     }
@@ -123,36 +123,6 @@ if (target) {
     slideout.on('close', function () {
       fixed.style.transition = '';
     });
-
-    $('.btn-default, .add-block p a').click(function (e) {
-      var rippler = $(this);
-      // Create .ink element if it doesn't exist.
-      if (rippler.find(".ink").length == 0) {
-        rippler.append("<span class='ink'></span>");
-      }
-
-      var ink = rippler.find(".ink");
-
-      // Prevent quick double clicks.
-      ink.removeClass("animate");
-
-      // Set .ink diametr.
-      if (!ink.height() && !ink.width()) {
-      var d = Math.max(rippler.outerWidth(), rippler.outerHeight());
-        ink.css({height: d, width: d});
-      }
-
-      // Get click coordinates.
-      var x = e.pageX - rippler.offset().left - ink.width() / 2;
-      var y = e.pageY - rippler.offset().top - ink.height() / 2;
-
-      // Set .ink position and add class .animate.
-      ink.css({
-        top: y + 'px',
-        left:x + 'px'
-      }).addClass("animate");
-    });
-
 
 
     var route = drupalSettings.path.currentPath;

@@ -40,8 +40,7 @@ body {
     transform: scale(2.5); } }
 
 .mas-action,
-a.scroll-to-top,
-a.scroll-to-top span {
+a.scroll-to-top {
   display: none; }
 
 a.scroll-to-top.btn.btn-default.btn-circle.btn-md, .media-widget > a.scroll-to-top.btn-default.btn-circle.btn-md {
@@ -6070,9 +6069,6 @@ html.js fieldset.collapsed {
   margin-left: -15px;
   margin-right: -15px; }
 
-#footer {
-  margin: 36px 0; }
-
 body.maintenance-page .container {
   max-width: 970px !important; }
 
@@ -6909,7 +6905,6 @@ a.btn-circle span {
 .shariff .orientation-vertical {
   min-width: 37px; }
 
-.shariff li a,
 .mas-action li a {
   background: #eeeeee; }
 
@@ -6947,7 +6942,7 @@ a.btn-circle span {
   line-height: 35px; }
 
 .block-content--mas-custom {
-  margin: 50px 0; }
+  margin: 50px 20px 0 0; }
 
 .block-content--masradix-direct-links.mas-custom {
   margin: 50px 0; }
@@ -7274,11 +7269,13 @@ article.service-request .label-default {
 
 img.site-logo {
   float: none;
-  margin: 0 auto;
-  max-width: 120px; }
+  margin: 20px auto; }
   @media (min-width: 1200px) {
     img.site-logo {
-      max-height: 50px; } }
+      max-height: 40px; } }
+  @media (max-width: 991px) {
+    img.site-logo {
+      max-height: 100px; } }
 
 .region-head.col-md-12 .block.block--masradix-sitebranding, .region-head.calendar-calendar .block.block--masradix-sitebranding, .view .row > .region-head.list-group .block.block--masradix-sitebranding {
   clear: both;
@@ -7426,6 +7423,69 @@ Category and Status statistics
   width: 30px;
   text-align: center;
   opacity: 0.5; }
+
+.btn, .media-widget > a {
+  position: relative;
+  display: block;
+  margin: 30px auto;
+  padding: 8px 12px;
+  overflow: hidden;
+  border-width: 0;
+  outline: none;
+  border-radius: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  transition: background-color .3s; }
+  .btn [data-icon], .media-widget > a [data-icon] {
+    padding-left: 10px; }
+    .btn [data-icon]:before, .media-widget > a [data-icon]:before {
+      content: attr(data-icon); }
+
+.btn > *, .media-widget > a > * {
+  position: relative; }
+
+.btn span, .media-widget > a span {
+  display: block; }
+
+.btn:before, .media-widget > a:before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 0;
+  padding-top: 0;
+  border-radius: 100%;
+  background-color: rgba(236, 240, 241, 0.3);
+  transform: translate(-50%, -50%); }
+
+.btn:active:before, .media-widget > a:active:before {
+  width: 120%;
+  padding-top: 120%;
+  transition: width .2s ease-out, padding-top .2s ease-out; }
+
+.btn.start:after, .media-widget > a.start:after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  padding-top: inherit;
+  padding-bottom: inherit;
+  width: 1.8em;
+  font-family: FontAwesome;
+  font-size: 1.3em;
+  line-height: 1.2em;
+  text-align: center;
+  transition: .2s;
+  transform-origin: 50% 60%; }
+
+.report.btn:after, .media-widget > a.report:after {
+  content: ""; }
+
+.request.btn:after, .media-widget > a.request:after {
+  content: ""; }
+
+.visualize.btn:after, .media-widget > a.visualize:after {
+  content: ""; }
 
 /*
  * jQuery UI Dialog 1.10.0
@@ -7578,15 +7638,31 @@ Category and Status statistics
   #footer nav li a {
     font-size: x-small; } }
 
+/**
+ * @file
+ * Styling for the user module icons.
+ */
+.built-with {
+  text-align: center; }
+
+#footer {
+  height: 360px;
+  padding: 10px 0; }
+
+#footer .block.block--shariffsharebuttons {
+  margin: 0 auto;
+  width: 40%; }
+
 div#hero {
   position: fixed;
+  z-index: -999;
   top: 25%;
   height: 100%;
   width: 90%;
-  background-image: url("/themes/contrib/masradix/assets/images/cc_by_Martin Grandjean_social-n-analys.png");
+  background-image: url("../images/cc_by_Martin_Grandjean_social-n-analys.png");
   /* Safari 6.0 - 9.0 */
   filter: grayscale(100%);
-  opacity: 0.02;
+  opacity: 0.1;
   background-position: 0% 0px;
   background-size: 100%;
   background-repeat: no-repeat;
@@ -8108,8 +8184,6 @@ body {
     overflow-y: auto; }
   a.navbar-brand {
     margin: 0; }
-  .navbar-brand img.site-logo {
-    margin: 0 0 -10px 10px; }
   .navbar-brand {
     float: left !important; }
   .block .user-login-form {
@@ -8119,7 +8193,7 @@ body {
     height: 50px;
     margin: 10px 0 0 120px; }
   .navbar-left {
-    margin: 0 10px 0 0px; }
+    margin: 20px 10px 0 0px; }
   .navbar-right {
     margin: 0 10px 0 0;
     float: right !important;
@@ -8139,5 +8213,11 @@ body {
   background: #ddd;
   margin: 10px 0;
   padding: 10px; }
+
+.path--visualization .mas-custom h3,
+.path--visualization .mas-custom ul li,
+.path--visualization .mas-custom pre,
+.path--visualization .mas-custom p {
+  font-size: 11px; }
 
 /*# sourceMappingURL=masradix.style.css.map */
