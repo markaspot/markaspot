@@ -56,7 +56,6 @@ dependencies:
   - restui
   - search_api
   - search_api_db
-  - search_api_views_taxonomy
   - shariff
   - shortcut
   - system
@@ -73,17 +72,20 @@ dependencies:
   - markaspot_blocks
   - markaspot_comment
   - markaspot_open311
+  - markaspot_map
+  - markaspot_token
   - markaspot_page
   - markaspot_static_json
   - markaspot_ui
   - markaspot_user
   - markaspot_uuid
   - markaspot_stats
+  - markaspot_trend
   - markaspot_validation
   - service_request
   - markaspot_default_content
-  - markaspot_map
-  - markaspot_token
+
+
 
 themes:
   - masradix

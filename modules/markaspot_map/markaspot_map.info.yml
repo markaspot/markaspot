@@ -11,4 +11,3 @@ dependencies:
   - search_api_db
   - better_exposed_filters
   - views_infinite_scroll
-  - markaspot_default_content

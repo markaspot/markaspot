@@ -1,0 +1,87 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/admin\/structure\/menu\/item\/1\/edit?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/menu_link_content\/menu_link_content"
+        }
+    },
+    "id": [
+        {
+            "value": 1
+        }
+    ],
+    "uuid": [
+        {
+            "value": "35a7c78a-aee2-19004-a0c6-7c78aaee28a3c84e0c67fe7ed7d4d"
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "bundle": [
+        {
+            "value": "menu_link_content"
+        }
+    ],
+    "title": [
+        {
+            "value": "Open311",
+            "lang": "en"
+        }
+    ],
+    "menu_name": [
+        {
+            "value": "footer"
+        }
+    ],
+    "link": [
+        {
+            "uri": "internal:\/open311",
+            "title": "",
+            "options": []
+        }
+    ],
+    "external": [
+        {
+            "value": false
+        }
+    ],
+    "rediscover": [
+        {
+            "value": true
+        }
+    ],
+    "weight": [
+        {
+            "value": 0
+        }
+    ],
+    "expanded": [
+        {
+            "value": false
+        }
+    ],
+    "enabled": [
+        {
+            "value": true
+        }
+    ],
+    "changed": [
+        {
+            "value": "2018-01-07T15:19:03+00:00",
+            "lang": "en",
+            "format": "Y-m-d\\TH:i:sP"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ]
+}

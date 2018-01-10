@@ -14,6 +14,7 @@ permissions:
   - 'restful get georeport_request_index_resource'
   - 'restful get georeport_service_index_resource'
   - 'view field_status_notes'
+  - 'view field_status'
   - 'create field_e_mail'
   - 'view field_address'
   - 'create service_request content'

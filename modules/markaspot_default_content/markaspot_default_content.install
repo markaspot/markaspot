@@ -63,5 +63,14 @@ function markaspot_default_content_modules_installed() {
   }
   $node->save();
 
-  drupal_set_message(t('Default Open311 page was updated with a new server hostname @host', array('@host' => $_SERVER['SERVER_NAME'])));
+  $dataBlock = \Drupal::entityTypeManager()->getStorage('block_content')->load('5');
+  $body = $dataBlock->body->value;
+  $updatedBody = markaspot_default_content_customize_content($body);
+  if (isset($updatedBody)){
+    $dataBlock->body->setValue(['value' => $updatedBody, 'format' => 'full_html']);
+  }
+
+  $dataBlock->save();
+
+  drupal_set_message(t('Default Open311 and Data Block have been updated with a new server hostname @host', array('@host' => $_SERVER['SERVER_NAME'])));
 }
