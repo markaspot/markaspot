@@ -64,7 +64,7 @@
     ],
     "body": [
         {
-            "value": "<p><a class=\"start btn report\" href=\"/report\"><span>Report</span></a></p>\r\n<p><a class=\"start btn request\" href=\"/requests\"><span>Requests</span></a></p>\r\n<p><a class=\"start btn visualize\" href=\"/visualization\"><span>Visualization</span></a></p>\r\n", "format": "full_html", "summary": "", "lang": "en"
+            "value": "<p><a class=\"start btn report\" href=\"/report\"><span>Submit Request</span></a></p>\r\n<p><a class=\"start btn request\" href=\"/requests\"><span>Check Status</span></a></p>\r\n<p><a class=\"start btn visualize\" href=\"/visualization\"><span>View Data</span></a></p>\r\n", "format": "full_html", "summary": "", "lang": "en"
         }
     ]
 }

@@ -1,0 +1,278 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/requests\/16-c9?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/node\/service_request"
+        },
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/revision_uid": [
+            {
+                "href": "http:\/\/default\/user\/0?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/uid": [
+            {
+                "href": "http:\/\/default\/user\/0?_format=hal_json",
+                "lang": "en"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_category": [
+            {
+                "href": "http:\/\/default\/taxonomy\/term\/1?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_organisation": [
+            {
+                "href": "http:\/\/default\/taxonomy\/term\/8?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_request_image": [
+            {
+                "href": "http:\/\/default\/sites\/default\/files\/2018-01\/DSCI1055_1.JPG",
+                "lang": "en"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status": [
+            {
+                "href": "http:\/\/default\/taxonomy\/term\/6?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status_notes": [
+            {
+                "href": ""
+            }
+        ]
+    },
+    "nid": [
+        {
+            "value": 19
+        }
+    ],
+    "uuid": [
+        {
+            "value": "16-c9"
+        }
+    ],
+    "vid": [
+        {
+            "value": 18
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "type": [
+        {
+            "target_id": "service_request"
+        }
+    ],
+    "revision_timestamp": [
+        {
+            "value": "2018-01-10T04:15:18+00:00",
+            "format": "Y-m-d\\TH:i:sP"
+        }
+    ],
+    "_embedded": {
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/revision_uid": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/user\/0?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/user\/user"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "ac9a6be4-9813-477e-8a6c-57a346af2d15"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/uid": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/user\/0?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/user\/user"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "ac9a6be4-9813-477e-8a6c-57a346af2d15"
+                    }
+                ],
+                "lang": "en"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_category": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/taxonomy\/term\/1?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "140520163183164f8-a2ef-16411-a25c-164f8a2efb01b95225ca294513c6d14052016"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_organisation": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/taxonomy\/term\/8?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/organisation"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "150620174c9461e20-1530-17580-b07e-61e20153044ac00b07ec77beb62b415052016"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/taxonomy\/term\/6?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_status"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "150520163c9461e20-1530-17580-b07e-61e20153044ac00b07ec77beb62b415052016"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status_notes": [
+            {
+                "_links": {
+                    "self": {
+                        "href": ""
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/paragraph\/status"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "16-c8"
+                    }
+                ],
+                "target_revision_id": "3"
+            }
+        ]
+    },
+    "status": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ],
+    "title": [
+        {
+            "value": "#16-c9  Litter Basket Complaint",
+            "lang": "en"
+        }
+    ],
+    "created": [
+        {
+            "value": "2018-01-10T04:15:18+00:00",
+            "lang": "en",
+            "format": "Y-m-d\\TH:i:sP"
+        }
+    ],
+    "changed": [
+        {
+            "value": "2018-01-10T04:19:52+00:00",
+            "lang": "en",
+            "format": "Y-m-d\\TH:i:sP"
+        }
+    ],
+    "promote": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ],
+    "sticky": [
+        {
+            "value": false,
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ],
+    "revision_translation_affected": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ],
+    "path": [
+        {
+            "alias": "\/requests\/16-c9",
+            "pid": 3,
+            "langcode": "en",
+            "lang": "en"
+        }
+    ],
+    "body": [
+        {
+            "value": "Rudis seductaque. Occiduo sata deducite. Os facientes galeae. Aberant satus aliis pluviaque uno astra. Congestaque cuncta inposuit fert securae neu. Proximus quod ligavit: mutatas ille vultus summaque praecipites ambitae. Rudis tegit hunc diu fixo retinebat. Semine tegit pondus cinxit sui postquam quoque totidemque.\r\n\r\n",
+            "format": "plain_text",
+            "summary": "",
+            "lang": "en"
+        }
+    ],
+    "field_address": [
+        {
+            "langcode": "",
+            "country_code": "US",
+            "administrative_area": "NY",
+            "locality": "New York",
+            "dependent_locality": null,
+            "postal_code": "11101",
+            "sorting_code": null,
+            "address_line1": "34th Street 51-10",
+            "address_line2": "",
+            "organization": null,
+            "given_name": null,
+            "additional_name": null,
+            "family_name": null
+        }
+    ],
+    "field_geolocation": [
+        {
+            "lat": 40.737061,
+            "lng": -73.935242,
+            "lat_sin": 0.65258865631896,
+            "lat_cos": 0.75771237659406,
+            "lng_rad": -1.2904134061588,
+            "data": []
+        }
+    ]
+}
