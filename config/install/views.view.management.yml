@@ -22,7 +22,6 @@ dependencies:
   module:
     - address
     - search_api
-    - search_api_views_taxonomy
     - text
     - user
 id: management
@@ -847,7 +846,7 @@ display:
           exclude: true
           alter:
             alter_text: true
-            text: '<a href="/node/{{nid}}/edit/edit_service_request?destination=/admin/structure/views/view/management ">Edit</a>'
+            text: '<a href="/node/{{nid}}/edit/management?destination=/admin/content/management ">Edit</a>'
             make_link: false
             path: ''
             absolute: false
@@ -896,7 +895,7 @@ display:
           exclude: true
           alter:
             alter_text: true
-            text: '<a href="/node/{{nid}}/delete?destination=/admin/structure/views/view/management">Delete</a>'
+            text: '<a href="/node/{{nid}}/delete?destination=/admin/content/management">Delete</a>'
             make_link: false
             path: ''
             absolute: false

@@ -2,26 +2,26 @@ status_open:
   5: '5'
 status_closed:
   6: '6'
-status_open_start:
-  5: '5'
+status_open_start: '5'
 node_options_status: '1'
-changeset: ''
-key_service: ''
-type: ''
-contact: ''
+changeset: '2018-01-10T03:44:00+00:00'
+key_service: 'You can request a key at https://yoursite.gov/open311-api-key-request'
+type: production
+contact: 'You can email for assistance webmaster@yoursite.gov'
 bundle: service_request
 tax_category: service_category
 tax_status: service_status
 link_domain: null
 discovery:
-  changeset: 2017-02-17T17:02-00
-  contact: You can email for assistance webmaster@yoursite.gov
-  key_service: You can request a key at https://yoursite.gov/open311-api-key-request
+  changeset: '2017-02-17T17:02-00'
+  contact: 'You can email for assistance webmaster@yoursite.gov'
+  key_service: 'You can request a key at https://yoursite.gov/open311-api-key-request'
   endpoints:
-  - specification: http://wiki.open311.org/GeoReport_v2
-    url: https://yoursite.gov/georeport/v2
-    changeset: 2017-02-17T17:02-00
-    type: production
-    formats:
-    - text/xml
-    - application/json
+    -
+      changeset: '2018-01-10T03:44:00+00:00'
+      specification: 'http://wiki.open311.org/GeoReport_v2'
+      type: production
+      formats:
+        - text/xml
+        - application/json
+nid-limit: ''

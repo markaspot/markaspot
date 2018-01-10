@@ -1,0 +1,184 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - core.entity_form_mode.node.management
+    - field.field.node.service_request.body
+    - field.field.node.service_request.field_address
+    - field.field.node.service_request.field_category
+    - field.field.node.service_request.field_e_mail
+    - field.field.node.service_request.field_geolocation
+    - field.field.node.service_request.field_organisation
+    - field.field.node.service_request.field_request_image
+    - field.field.node.service_request.field_status
+    - field.field.node.service_request.field_status_notes
+    - image.style.medium
+    - node.type.service_request
+  enforced:
+    module:
+      - service_request
+  module:
+    - address
+    - field_group
+    - geolocation_nominatim
+    - image
+    - paragraphs
+    - text
+third_party_settings:
+  field_group:
+    group_edit_service_request:
+      children:
+        - group_citizen_input
+        - group_administration
+      parent_name: ''
+      weight: 7
+      format_type: tabs
+      format_settings:
+        id: ''
+        classes: ''
+        direction: horizontal
+      label: 'Edit Service Request'
+    group_citizen_input:
+      children:
+        - field_category
+        - body
+        - field_e_mail
+        - field_request_image
+        - field_geolocation
+        - field_address
+      parent_name: group_edit_service_request
+      weight: 16
+      format_type: tab
+      format_settings:
+        id: ''
+        classes: ''
+        formatter: open
+        description: ''
+        required_fields: true
+      label: 'Citizen Input'
+    group_administration:
+      children:
+        - field_organisation
+        - field_status
+        - field_status_notes
+        - status
+        - created
+      parent_name: group_edit_service_request
+      weight: 17
+      format_type: tab
+      format_settings:
+        id: ''
+        classes: ''
+        formatter: closed
+        description: ''
+        required_fields: true
+      label: Administration
+id: node.service_request.management
+targetEntityType: node
+bundle: service_request
+mode: management
+content:
+  body:
+    type: text_textarea_with_summary
+    weight: 3
+    settings:
+      rows: 9
+      summary_rows: 3
+      placeholder: ''
+    third_party_settings: {  }
+    region: content
+  created:
+    type: datetime_timestamp
+    weight: 20
+    settings: {  }
+    third_party_settings: {  }
+    region: content
+  field_address:
+    weight: 7
+    settings:
+      default_country: null
+    third_party_settings: {  }
+    type: address_default
+    region: content
+  field_category:
+    weight: 2
+    settings: {  }
+    third_party_settings: {  }
+    type: options_select
+    region: content
+  field_e_mail:
+    weight: 4
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+    type: email_default
+    region: content
+  field_geolocation:
+    type: geolocation_nominatim_widget
+    weight: 6
+    settings:
+      zoom: '18'
+      center_lat: '40.72353945'
+      center_lng: '-73.9509387658507'
+      limit_countrycodes: us
+      limit_viewbox: '-74.27582,40.85485,-73.67363,40.49030'
+      set_address_field: '1'
+      tileServerUrl: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png'
+      serviceUrl: 'https://nominatim.openstreetmap.org/'
+      autoLocate: false
+    third_party_settings: {  }
+    region: content
+  field_image:
+    type: image_image
+    weight: 6
+    settings:
+      progress_indicator: throbber
+      preview_image_style: thumbnail
+    third_party_settings: {  }
+    region: content
+  field_organisation:
+    type: options_buttons
+    weight: 16
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  field_request_image:
+    type: image_image
+    weight: 5
+    settings:
+      preview_image_style: medium
+      progress_indicator: throbber
+    third_party_settings: {  }
+    region: content
+  field_status:
+    weight: 17
+    settings: {  }
+    third_party_settings: {  }
+    type: options_buttons
+    region: content
+  field_status_notes:
+    type: entity_reference_paragraphs
+    weight: 18
+    settings:
+      title: Paragraph
+      title_plural: Paragraphs
+      edit_mode: open
+      add_mode: dropdown
+      form_display_mode: default
+      default_paragraph_type: ''
+    third_party_settings: {  }
+    region: content
+  status:
+    type: boolean_checkbox
+    settings:
+      display_label: true
+    weight: 19
+    region: content
+    third_party_settings: {  }
+hidden:
+  path: true
+  promote: true
+  sticky: true
+  title: true
+  uid: true

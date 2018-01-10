@@ -421,7 +421,7 @@ display:
           admin_label: ''
           empty: false
           tokenize: false
-          content: '<a class="scroll-to-top btn btn-default btn-circle btn-md" href="#top"><i class="fa  fa-arrow-circle-up"></i><span>Top</span></a>'
+          content: ''
           plugin_id: text_custom
       empty:
         area:
