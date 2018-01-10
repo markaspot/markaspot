@@ -57,7 +57,7 @@
     "npm-asset/font-awesome": "4.7.0",
     "npm-asset/pace-js": "^0.7",
     "npm-asset/shariff": "2.0.2",
-    "bower-asset/slideout.js": "1.0.1"
+    "bower-asset/slideout.js": "1.0.1",
     "oomphinc/composer-installers-extender": "^1.1",
     "composer/installers": "^1.2",
     "drupal-composer/drupal-scaffold": "^2.2",
@@ -99,7 +99,7 @@
     "drupal/hide_revision_field": "^1.1",
     "drupal/page_manager": "^4.0@beta",
     "drupal/panels": "^4.2",
-    "drupal/quick_node_clone": "^1.5",
+    "drupal/quick_node_clone": "^1.5"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
