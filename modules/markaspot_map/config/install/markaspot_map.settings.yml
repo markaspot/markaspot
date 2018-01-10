@@ -10,3 +10,5 @@ nid_selector: '.row article.service-request'
 zoom_initial: '12'
 center_lat: '40.7370610'
 center_lng: '-73.935242'
+request_list_path: /requests
+visualization_path: /visualization
