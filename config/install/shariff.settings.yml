@@ -1,25 +1,10 @@
-shariff_css: min
-shariff_theme: grey
+shariff_css: complete
+shariff_theme: colored
 shariff_orientation: vertical
 shariff_services:
   twitter: twitter
   facebook: facebook
   googleplus: googleplus
-  linkedin: 0
-  pinterest: 0
-  xing: 0
-  whatsapp: 0
-  addthis: 0
-  tumblr: 0
-  flattr: 0
-  diaspora: 0
-  reddit: 0
-  stumbleupon: 0
-  threema: 0
-  mail: 0
-  info: 0
-_core:
-  default_config_hash: 9KCLeaYP64BuA6I0xq5nzO0OipvgEH-YtTIFrCaLkH0
 shariff_twitter_via: markaspot
 shariff_mail_url: 'mailto:'
 shariff_mail_subject: ''
@@ -30,7 +15,7 @@ shariff_flattr_category: ''
 shariff_flattr_user: ''
 shariff_media_url: ''
 actions: null
-form_build_id: form-hyw_8RqszQg8qoESxtnlQSmfY-peocdizuUzzAJU1pk
-form_token: vz6qYDEq1psnY-ZzYA9gZyOYgqE54IsqP74RDYajVTg
+form_build_id: form-UkEdFG9vdozODMmBySyfeck9QvuX6QLolUZ1dnfBfGA
+form_token: TZ90JCeMrw8-HzeDAiYEqLj1UX--5Mm2QVY2QzBt-MI
 form_id: shariff_settings_form
 field_address: null
