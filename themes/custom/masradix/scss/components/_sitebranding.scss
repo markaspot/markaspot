@@ -8,6 +8,9 @@ img.site-logo {
   @media (max-width: $screen-sm-max) {
     max-height: 100px;
   }
+  @media (max-width: $screen-md-max) {
+    max-height: 80px;
+  }
 }
 
 .region-head.col-md-12 .block.block--masradix-sitebranding {
