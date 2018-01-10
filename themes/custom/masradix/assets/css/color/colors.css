@@ -21,7 +21,7 @@ body {
   border-color: #a3e5ff !important;
 }
 
-
+.btn,
 .btn.btn-success.btn-file,
 .leaflet-control-locate a {
   color: #7bceff;
@@ -38,6 +38,7 @@ body {
   background-image: linear-gradient(to bottom, #055a8e 0%, #055a8e 100%);
 }
 
+.btn,
 .notifications li,
 .button,
 .btn-default,
@@ -60,12 +61,20 @@ body {
       0 1px 2px rgba(0,0,0, 0.24);
 }
 
+
+.btn.start:after {
+    background-color: #037fcc;
+
+}
+
+.btn.start:hover,
+.btn.start:active,
+.btn.start:focus,
 .btn-circle:hover,
 .btn-default:active,
 .btn-default:hover,
 .btn-default:focus{
-  color: #1d84c3;
-  border-color: #055a8e;
+  color: #7bceff;
   background-color: inherit!important;
 }
 
@@ -73,6 +82,7 @@ body {
 .shariff-button a,
 .mas-action a,
 .add-block,
+footer#footer,
 .region-sidebar li.list-group-item,
 fieldset#edit-field-geolocation-0-map-container,
 .form-item-field-request-image-0 {
@@ -125,9 +135,6 @@ a:active,
   color: #0071b3;
 }
 
-#footer {
-  background: #fff;
-}
 
 .site-name,
 .site-name a {
