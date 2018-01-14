@@ -157,7 +157,7 @@ if (target) {
     }
 
     var topInview = new Waypoint.Inview({
-      element: footer,
+      element: $('#block-footer')[0],
       entered: function (direction) {
         $('.mas-action').fadeIn(400);
         $('.scroll-to-top').show().on('click', function (e) {
