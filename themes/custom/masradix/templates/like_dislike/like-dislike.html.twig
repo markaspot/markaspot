@@ -15,7 +15,7 @@
  *   - dislike_attributes : Set of attributes for dislike link.
  */
 #}
-<div class="mas vote-widget vote-widget--like-and-dislike">
+<!-- div class="mas vote-widget vote-widget--like-and-dislike">
   <div class="vote-like type-{{ entity_type }}" id="like-container-{{ entity_type }}-{{ entity_id }}">
     <a {{ like_attributes }}><span class="fa fa-heart"> </span><span class="like-text">Like</span></a>
     <span class="count">{{ likes }}</span>
@@ -24,4 +24,30 @@
     <a {{ dislike_attributes }}>Dislike</a>
     <span class="count">{{ dislikes }}</span>
   </div>
+</div -->
+
+{#
+/**
+ * @file
+ * Default theme implementation to display a formatted like dislike field.
+ *
+ * Available variables:
+ * - like_url: like url.
+ * - dislike_url: dislike url.
+ * - likes: number of likes.
+ * - dislikes: number of dislikes.
+ *
+ * @ingroup themeable
+ */
+#}
+<div class="like_dislike">
+  <div class="like">
+    <a class="use-ajax" href={{ like_url }}><span class="fa fa-heart"> </span><span class="like-text"><Like</span></a>
+    <span id="like">{{ likes }}</span>
+  </div>
+  <!--div class="dislike">
+    <a class="use-ajax" href={{ dislike_url }}>Dislike</a>
+    <span id="dislike">{{ dislikes }}</span>
+  </div -->
 </div>
+<div id="like_dislike_status"></div>
