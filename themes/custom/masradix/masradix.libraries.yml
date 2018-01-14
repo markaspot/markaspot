@@ -7,6 +7,7 @@ base:
       assets/css/hacks.css: {}
   js:
     bower_components/bootstrap-sass/assets/javascripts/bootstrap.min.js: {}
+    /libraries/bootstrap-select/dist/bootstrap-select.min.js: {weight: -4, minified: true }
     /libraries/waypoints/lib/jquery.waypoints.min.js: {weight: -3, minified: true }
     /libraries/waypoints/lib/shortcuts/sticky.min.js: {weight: -2, minified: true }
     /libraries/waypoints/lib/shortcuts/inview.min.js: {weight: -2, minified: true }
