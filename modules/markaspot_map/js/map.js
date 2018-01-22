@@ -116,7 +116,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         if (currentPath === masSettings.visualization_path || currentPath === '/home') {
           // Drupal.markaspot_map.hideMarkers();
           // Show Markers additionally ob button click.
-          /*
+
           var categoryMarker = L.easyButton({
             position: 'topleft',
             states: [
@@ -140,7 +140,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
             ]
           });
           categoryMarker.addTo(map);
-          */
+
           const geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
           const heatStart = [
             [masSettings.center_lat, masSettings.center_lng, 1]
@@ -175,6 +175,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
               }
             ]
           });
+
           heatControls.addTo(map);
 
           const timeControls = L.easyButton({
@@ -332,6 +333,11 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         },
         options: {
           position: 'bottomright',
+          minSpeed: 0.1,
+          maxSpeed: 50,
+          speedStep: 1,
+          timeSteps: 1,
+          displayDate: true,
           autoPlay: true,
           timeSlider: false,
           loopButton: true,
@@ -344,32 +350,56 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       return new L.Control.TimeDimensionCustom();
     },
 
-    createGeoJson() {
-      // Retrieve static Data.
+    trendMarker(param) {
+      markerLayer.clearLayers();
       const data = Drupal.markaspot_static_json.getData();
+      const filter_string = param.substr(1).replace('/', '-');
+      const filteredData = data.filter(function(i) {
+        return i.requested_datetime.indexOf(filter_string) > -1;
+      });
+      const geojson = this.createGeoJson(filteredData);
+      const heatPoints = Drupal.markaspot_map.transformGeoJson2heat(geojson, 4);
+      // Define heatlayer
+      const heatLayer = new L.heatLayer(heatPoints, {  });
+      markerLayer.addLayer(heatLayer);
+      this.showMarkers();
+      // heatLayer.remove();
 
-      let feature;
-      let features = [];
-      for (let i = 0; i < data.length; i++) {
-        feature = {
-          type: 'Feature',
-          properties: {time: data[i].requested_datetime},
-          geometry: {
-            type: 'Point',
-            coordinates: [data[i].long, data[i].lat]
+    },
+    createGeoJson(data) {
+      // Retrieve static Data.
+      if (typeof data !== 'undefined') {
+
+        let feature;
+        let features = [];
+        if (data.length) {
+          for (let i = 0; i < data.length; i++) {
+            feature = {
+              type: 'Feature',
+              properties: {time: data[i].requested_datetime},
+              geometry: {
+                type: 'Point',
+                coordinates: [data[i].long, data[i].lat]
+              }
+            };
+            features.push(feature);
           }
+        }
+
+        return {
+          type: 'FeatureCollection',
+          features
         };
-        features.push(feature);
       }
-      return {
-        type: 'FeatureCollection',
-        features
-      };
     },
 
+    retrieveStaticData(){
+      return Drupal.markaspot_static_json.getData();
+    },
     createGeoJsonLayer(map) {
       // Create a geojson feature from static json module.
-      const geoJson = Drupal.markaspot_map.createGeoJson();
+      const data = this.retrieveStaticData();
+      const geoJson = this.createGeoJson(data);
       // Set bounds from geojson.
       map.fitBounds(L.geoJson(geoJson).getBounds());
       const currentZoom = map.getZoom();
@@ -426,8 +456,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
     },
 
     createHeatMapLayer() {
-      const geoJson = Drupal.markaspot_map.createGeoJson();
-      const heatPoints = Drupal.markaspot_map.transformGeoJson2heat(geoJson, 4);
+      const data = this.retrieveStaticData();
+      const geoJson = this.createGeoJson(data);
+      const heatPoints = this.transformGeoJson2heat(geoJson, 4);
       return new L.heatLayer(heatPoints, {
         // radius: 10,.
         blur: 25,
@@ -510,7 +541,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         return false;
       }
 
-      const awesomeColors = Drupal.markaspot_map.getAwesomeColors();
+      const awesomeColors = this.getAwesomeColors();
 
       $.each(dataset, (service_requests, request) => {
         const categoryColor = request.extended_attributes.markaspot.category_hex;
@@ -540,8 +571,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
               color: markerColor,
               time: request.requested_datetime
             });
-            marker.on('click', Drupal.markaspot_map.markerClickFn(marker, nid));
+            marker.on('click', this.markerClickFn(marker, nid));
             markerLayer.addLayer(marker);
+
           }
         });
       });
@@ -555,6 +587,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
             -150
           ]
         });
+      } else {
+        Drupal.Markaspot.maps[0].setView(markerLayer);
       }
       return markerLayer;
     },
