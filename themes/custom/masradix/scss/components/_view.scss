@@ -59,6 +59,10 @@
   display: none;
 }
 
+.view--requests .form-control.form-select {
+    background-color: inherit !important
+  
+}
 
 .view__filters a span {
   display: none;
@@ -68,7 +72,7 @@
   display: none;
 }
 
-.view__filters.exposed div,
+.view__filters.exposed .form-type-select,
 .view__filters.exposed a {
   display: block;
 }

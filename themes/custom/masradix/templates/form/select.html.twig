@@ -13,12 +13,12 @@
 {%
 set classes = [
     'form-control',
-    'selectselectpicker',
-    'show-tic'
+    'selectpicker',
+    'show-tick'
 ]
 %}
 {% spaceless %}
-    <select{{ attributes.addClass(classes) }}>
+    <select{{ attributes.addClass(classes) }} data-showTick="true">
         {% for option in options %}
             {% if option.type == 'optgroup' %}
                 <optgroup label="{{ option.label }}">

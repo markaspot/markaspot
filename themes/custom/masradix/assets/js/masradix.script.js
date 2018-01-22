@@ -157,7 +157,7 @@ if (target) {
     }
 
     var topInview = new Waypoint.Inview({
-      element: $('#block-footer')[0],
+      element: footer,
       entered: function (direction) {
         $('.mas-action').fadeIn(400);
         $('.scroll-to-top').show().on('click', function (e) {
@@ -203,17 +203,13 @@ if (target) {
 
     refineLink.off('click').on('click', function(){
       $('.view-filters').toggleClass('exposed');
+      $('select').selectpicker();
+
     });
 
     if ($('[data-drupal-selector="edit-reset"]')[0]) {
       exposedFilter.addClass('exposed ajax');
     }
-
-    // Add a button to toggle map display;.
-    $('#map').once().each(function () {
-      // Need this for later.
-    });
-
   });
 
   $('[data-toggle="offcanvas"]').click(function () {

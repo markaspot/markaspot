@@ -1,25 +1,9 @@
 .btn {
-  position: relative;
   display: block;
-  margin: 30px auto;
-  padding: 8px 12px;
   overflow: hidden;
   border-width: 0;
   outline: none;
   border-radius: 2px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, .6);
-
-
-  transition: background-color .3s;
-  [data-icon] {
-
-    padding-left: 10px;
-    &:before { content: attr(data-icon); }
-  }
-}
-
-.btn > * {
-  position: relative;
 }
 
 .btn span {

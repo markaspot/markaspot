@@ -7155,9 +7155,6 @@ a.btn-circle span {
 .shariff .orientation-vertical {
   min-width: 37px; }
 
-.mas-action li a {
-  background: #eeeeee; }
-
 .mas-action .orientation-vertical li {
   width: 100%;
   margin: 5px 0; }
@@ -7165,8 +7162,7 @@ a.btn-circle span {
 .mas-action li {
   height: 35px;
   box-sizing: border-box;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24); }
+  overflow: hidden; }
 
 .mas-action li a {
   position: relative;
@@ -7237,7 +7233,50 @@ input.form-type-file,
 .file-input-new .fileinput-remove-button, .file-input-new .fileinput-upload-button {
   display: none !important; }
 
-.form-item-field-request-image-0 {
+.node-service-request-management-form .horizontal-tabs.clearfix, .node-service-request-management-form #node-edit .horizontal-tabs.form-item-path-alias, #node-edit .node-service-request-management-form .horizontal-tabs.form-item-path-alias {
+  margin: 0 0 1em 0;
+  padding: 10px;
+  border: 0px solid #ccc;
+  position: relative; }
+
+.node-service-request-management-form .horizontal-tabs .horizontal-tabs-list {
+  display: inline-block;
+  margin: 0;
+  border: 0;
+  padding: 0px;
+  list-style: none;
+  background-color: #ffffff;
+  border-right: 1px solid #dedede;
+  width: 100%;
+  height: auto;
+  clear: both; }
+
+.node-service-request-management-form legend.panel-heading {
+  border-radius: 2px;
+  font-size: small; }
+
+.node-service-request-management-form .panel {
+  margin-bottom: 0;
+  background-color: #fff;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-shadow: none;
+  padding: 0; }
+
+.button.btn, .media-widget > a.button {
+  background: none;
+  text-transform: uppercase; }
+
+.node-service-request-management-form .panel-body {
+  padding: 15px 0; }
+
+.node-service-request-management-form .form-type-vertical-tabs,
+.node-service-request-management-form .field-multiple-drag,
+.node-service-request-management-form .tabledrag-toggle-weight-wrapper,
+.node-service-request-management-form .filter-wrapper {
+  display: none; }
+
+.node-service-request-management-form .form-item-field-request-image-0 {
   border-radius: 4px;
   padding: 10px 10px 0 10px; }
 
@@ -7270,6 +7309,20 @@ p#edit-field-request-image-0-upload--description {
 
 p#edit-field-request-image-0-upload--description .visible {
   visibility: visible !important; }
+
+.field-multiple-table,
+.field-multiple-table tr,
+.field-multiple-table td,
+.field-multiple-table th {
+  border: 0;
+  padding: 15px; }
+
+label.image-widget-data.btn.btn-block.btn-default {
+  background: none;
+  border: 1px solid #ddd;
+  padding: 30px;
+  text-transform: uppercase;
+  background: #fff; }
 
 @media (min-width: 768px) {
   .navbar-nav {
@@ -7601,13 +7654,16 @@ span.site-slogan {
 .view__filters div.form-item-field-category {
   display: none; }
 
+.view--requests .form-control.form-select {
+  background-color: inherit !important; }
+
 .view__filters a span {
   display: none; }
 
 .view__filters label {
   display: none; }
 
-.view__filters.exposed div,
+.view__filters.exposed .form-type-select,
 .view__filters.exposed a {
   display: block; }
 
@@ -7678,23 +7734,11 @@ Category and Status statistics
   opacity: 0.5; }
 
 .btn, .media-widget > a {
-  position: relative;
   display: block;
-  margin: 30px auto;
-  padding: 8px 12px;
   overflow: hidden;
   border-width: 0;
   outline: none;
-  border-radius: 2px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
-  transition: background-color .3s; }
-  .btn [data-icon], .media-widget > a [data-icon] {
-    padding-left: 10px; }
-    .btn [data-icon]:before, .media-widget > a [data-icon]:before {
-      content: attr(data-icon); }
-
-.btn > *, .media-widget > a > * {
-  position: relative; }
+  border-radius: 2px; }
 
 .btn span, .media-widget > a span {
   display: block; }
@@ -7978,7 +8022,7 @@ body .stuck {
   top: 0;
   margin: 0;
   padding: 0;
-  box-shadow: -1px 2px 4px #666;
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.08);
   z-index: 999; }
 
 body.toolbar-tray-open.toolbar-fixed.toolbar-vertical #map.stuck {
@@ -8472,5 +8516,46 @@ body {
 .path--visualization .mas-custom pre,
 .path--visualization .mas-custom p {
   font-size: 11px; }
+
+.trend_filter {
+  border: 1px #eeeeee dashed;
+  padding: 10px 0; }
+
+.trend_filter label {
+  min-width: 50%; }
+
+.trend_filter.sticky {
+  background: #eeeeee;
+  position: fixed;
+  top: 25%;
+  right: 25px;
+  z-index: 1001;
+  width: 440px !important;
+  font-size: 13px;
+  padding: 10px;
+  box-shadow: 0 2px 2px 0 rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.08); }
+  @media (max-width: 1199px) {
+    .trend_filter.sticky {
+      width: 180px !important;
+      font-size: 13px; } }
+  @media (max-width: 991px) {
+    .trend_filter.sticky {
+      width: 150px !important;
+      font-size: 11px; } }
+  @media (max-width: 767px) {
+    .trend_filter.sticky {
+      width: 130px !important;
+      font-size: 10px;
+      padding: 5px; }
+      .trend_filter.sticky div, .trend_filter.sticky label, .trend_filter.sticky p {
+        padding: 2px 7px; } }
+
+.trend_filter label {
+  margin: 11px 0 2px;
+  font-weight: normal;
+  margin: 0 10px 0 0; }
+
+.trend_filter .bootstrap-select:not([class*="col-"]):not([class*="form-control"]):not(.input-group-btn) {
+  width: 100px; }
 
 /*# sourceMappingURL=masradix.style.css.map */

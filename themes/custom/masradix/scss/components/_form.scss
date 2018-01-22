@@ -44,7 +44,60 @@ input.form-type-file,
   display:none!important;
 }
 
-.form-item-field-request-image-0 {
+.node-service-request-management-form .horizontal-tabs.clearfix {
+    margin: 0 0 1em 0;
+    padding: 10px;
+    border: 0px solid #ccc;
+    position: relative;
+}
+
+.node-service-request-management-form .horizontal-tabs .horizontal-tabs-list {
+    display: inline-block;
+    margin: 0;
+    border: 0;
+    padding: 0px;
+    list-style: none;
+    background-color: #ffffff;
+    border-right: 1px solid #dedede;
+    width: 100%;
+    height: auto;
+    clear: both;
+}
+
+.node-service-request-management-form legend.panel-heading {
+    border-radius: 2px;
+    font-size: small;
+}
+
+.node-service-request-management-form ul.horizontal-tabs-list {}
+
+.node-service-request-management-form .panel {
+    margin-bottom: 0;
+    background-color: #fff;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    box-shadow: none;
+    padding: 0;
+}
+
+.button.btn {
+    background: none;
+    text-transform: uppercase;
+}
+
+.node-service-request-management-form .panel-body {
+    padding: 15px 0;
+}
+
+.node-service-request-management-form .form-type-vertical-tabs,
+.node-service-request-management-form .field-multiple-drag,
+.node-service-request-management-form .tabledrag-toggle-weight-wrapper,
+.node-service-request-management-form .filter-wrapper {
+    display: none;
+}
+
+
+.node-service-request-management-form .form-item-field-request-image-0 {
   border-radius: $border-radius-base;
   padding: 10px 10px 0 10px;;
 }
@@ -88,4 +141,22 @@ p#edit-field-request-image-0-upload--description {
 
 p#edit-field-request-image-0-upload--description .visible {
   visibility: visible!important;
+}
+
+.field-multiple-table ,
+.field-multiple-table tr,
+.field-multiple-table td,
+.field-multiple-table th {
+    border: 0;
+    padding: 15px
+}
+
+
+
+label.image-widget-data.btn.btn-block.btn-default {
+    background: none;
+    border: 1px solid #ddd;
+    padding: 30px;
+    text-transform: uppercase;
+    background: #fff;
 }
