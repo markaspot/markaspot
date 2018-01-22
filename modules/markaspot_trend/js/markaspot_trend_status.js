@@ -22,7 +22,7 @@
       };
     },
     watch: {
-      '$route'(to, from){
+      '$route'(to, from) {
         this.getChartData();
       }
     },

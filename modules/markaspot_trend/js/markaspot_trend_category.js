@@ -21,14 +21,13 @@
       };
     },
     watch: {
-      '$route'(to, from){
+      '$route'(to, from) {
         console.log(this.$route.path);
         this.getChartData();
       }
     },
     methods: {
       getChartData: function (param) {
-        console.log("getCat")
         param = (param) ? param : this.$route.path;
         let baseUrl = settings.path.baseUrl;
         let url = baseUrl + 'georeport/stats/categories' + param;
