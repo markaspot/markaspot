@@ -1,0 +1,23 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - markaspot_trend
+    - system
+id: markaspottrendfilter
+theme: masradix
+region: content
+weight: -6
+provider: null
+plugin: markaspot_trend_filter_block
+settings:
+  id: markaspot_trend_filter_block
+  label: 'Mark-a-Spot Trend Filter'
+  provider: markaspot_trend
+  label_display: '0'
+visibility:
+  request_path:
+    id: request_path
+    pages: /visualization
+    negate: false
+    context_mapping: {  }

@@ -1,0 +1,10 @@
+name: Mark-a-Spot Trend
+type: module
+description: Vue.js and Charts.js powered statistics
+core: 8.x
+package: Mark-a-Spot
+dependencies:
+  - bootstrap_layouts
+  - panels
+  - page_manager
+  - panels_ipe

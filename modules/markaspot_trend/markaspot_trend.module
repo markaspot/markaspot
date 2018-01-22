@@ -1,0 +1,59 @@
+<?php
+/**
+ * @file
+ *
+ */
+
+/**
+ * Implements hook_theme().
+ */
+function markaspot_trend_theme() {
+  return array(
+    'markaspot_trend_category_block' => array(
+      'render element' => 'elements',
+      'template' => 'trend_category',
+    ),
+    'markaspot_trend_count_block' => array(
+      'render element' => 'elements',
+      'template' => 'trend_count',
+      'variables' => ['total'],
+    ),
+    'markaspot_trend_time_block' => array(
+      'render element' => 'elements',
+      'template' => 'trend_time',
+    ),
+    'markaspot_trend_status_block' => array(
+      'render element' => 'elements',
+      'template' => 'trend_status',
+    ),
+    'markaspot_trend_organisation_block' => array(
+      'render element' => 'elements',
+      'template' => 'trend_organisation',
+    ),
+    'markaspot_trend_filter_block' => array(
+      'template' => 'trend_filter',
+      'variables' => ['filter_intro' => NULL]
+    ),
+  );
+}
+
+/**
+ * Implements hook_preprocess_hook().
+ */
+/*
+function markaspot_trend_preprocess_block(&$variables) {
+  // die;.
+  switch ($variables['base_plugin_id']) {
+    case 'markaspot_trend_filter_block':
+      // var_dump($variables);
+      // die;
+      $variables['filter_intro'] = '';
+      if ($variables['content']['filter_intro']['#markup']) {
+        $variables['filter_intro'] = [
+          '#markup' => $variables['content']['filter_intro']['#markup'],
+        ];
+      }
+      break;
+  }
+}
+*/
