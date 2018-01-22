@@ -94,6 +94,12 @@ content:
       progress_indicator: throbber
     third_party_settings: {  }
     region: content
+  field_organisation:
+      weight: 11
+      settings: {  }
+      third_party_settings: {  }
+      type: options_buttons
+      region: content
   field_status:
     weight: 11
     settings: {  }

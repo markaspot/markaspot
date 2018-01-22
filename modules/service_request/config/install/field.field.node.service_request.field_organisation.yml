@@ -5,11 +5,14 @@ dependencies:
     - field.storage.node.field_organisation
     - node.type.service_request
     - taxonomy.vocabulary.organisation
+  enforced:
+    module:
+      - service_request
 id: node.service_request.field_organisation
 field_name: field_organisation
 entity_type: node
 bundle: service_request
-label: 'Department / Organisation responsible'
+label: 'Department, Organisation responsible'
 description: ''
 required: false
 translatable: false
