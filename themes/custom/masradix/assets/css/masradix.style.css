@@ -7263,10 +7263,6 @@ input.form-type-file,
   box-shadow: none;
   padding: 0; }
 
-.button.btn, .media-widget > a.button {
-  background: none;
-  text-transform: uppercase; }
-
 .node-service-request-management-form .panel-body {
   padding: 15px 0; }
 

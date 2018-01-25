@@ -22,5 +22,5 @@ configuration:
       - form
       - json
     supported_auth:
-      - services_api_key_auth
+      - api_key_auth
 

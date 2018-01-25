@@ -75,3 +75,19 @@ function markaspot_install() {
   \Drupal::configFactory()->getEditable('system.site')->set('name', '311 City Services')->save(TRUE);
   \Drupal::configFactory()->getEditable('system.site')->set('page.front', '/home')->save(TRUE);
 }
+
+
+/**
+ * Enables the twig_tweak and markaspot_trend modules.
+ */
+function markaspot_update_8001() {
+  \Drupal::service('module_installer')->install(['twig_tweak']);
+}
+
+/**
+ * Update the stats view.
+ */
+function markaspot_update_8002( ){
+  \Drupal::configFactory()->getEditable('views.view.stats')->delete();
+  \Drupal::service('module_installer')->install(['markaspot_trend']);
+}
