@@ -2,7 +2,7 @@
   "name": "drupal/markaspot",
   "description": "Installation profile of the Mark-a-Spot D8 Distribution",
   "type": "drupal-profile",
-  "license": "GPL-2.0+",
+  "license": "GPL-2.0-or-later",
   "homepage": "https://github.com/markaspot/markaspot.git",
   "authors": [
     {
