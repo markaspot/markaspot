@@ -91,3 +91,10 @@ function markaspot_update_8002( ){
   \Drupal::configFactory()->getEditable('views.view.stats')->delete();
   \Drupal::service('module_installer')->install(['markaspot_trend']);
 }
+
+/**
+ * Enable Mark-a-Spot Front module
+ */
+function markaspot_update_8003( ){
+  \Drupal::service('module_installer')->install(['markaspot_front']);
+}
