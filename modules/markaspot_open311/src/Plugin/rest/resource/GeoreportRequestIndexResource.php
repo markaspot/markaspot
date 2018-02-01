@@ -292,7 +292,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
     if (!empty($service_requests)) {
       $response = new ResourceResponse($service_requests, 200);
-      $response->addCacheableDependency($service_requests);
+      // $response->addCacheableDependency($service_requests);
 
       return $response;
     }

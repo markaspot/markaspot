@@ -140,6 +140,7 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
         return $serializer->serialize($data, $format);
       });
       $response->setContent($output);
+      $response->addCacheableDependency($output);
       if (!$context->isEmpty()) {
         // $response->addCacheableDependency($context->pop());
       }
