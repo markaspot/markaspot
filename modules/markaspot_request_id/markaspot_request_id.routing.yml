@@ -1,7 +1,7 @@
-markaspot_uuid.settings:
-  path: '/admin/structure/markaspot/uuid/settings'
+markaspot_request_id.settings:
+  path: '/admin/config/markaspot/request_id/settings'
   defaults:
-    _form: '\Drupal\markaspot_uuid\Form\MarkaspotUuidSettingsForm'
+    _form: '\Drupal\markaspot_request_id\Form\MarkaspotRequestIdSettingsForm'
     _title: 'Title and ID Settings'
   requirements:
     _permission: 'administer site configuration'

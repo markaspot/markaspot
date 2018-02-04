@@ -1,4 +1,4 @@
-name: Mark-a-Spot UUID
+name: Mark-a-Spot Request ID
 type: module
 description: Overriding the UUID component
 core: 8.x

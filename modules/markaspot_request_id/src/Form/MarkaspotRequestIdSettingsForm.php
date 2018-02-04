@@ -27,7 +27,7 @@ class MarkaspotRequestIdSettingsForm extends ConfigFormBase {
       '#type' => 'fieldset',
       '#title' => t('RequestID Settings'),
       '#collapsible' => TRUE,
-      '#description' => t('Configure the ID and Title Settings (status, publishing settings and Georeport v2 Service Discovery). See http://wiki.open311.org/Service_Discovery. This service discovery specification is meant to be read-only and can be provided either dynamically or using a manually edited static file.'),
+      '#description' => t('Configure the ID and Title Settings'),
       '#group' => 'settings',
     );
 
@@ -49,7 +49,6 @@ class MarkaspotRequestIdSettingsForm extends ConfigFormBase {
 
     $this->config('markaspot_request_id.settings')
       ->set('format', $values['format'])
-      ->set('offset', $values['offset'])
       ->save();
 
     parent::submitForm($form, $form_state);
