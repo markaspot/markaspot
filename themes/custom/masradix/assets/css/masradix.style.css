@@ -6156,9 +6156,6 @@ select.selectpicker {
   .comment .links {
     font-size: 0.80em; }
 
-.form-item {
-  margin-top: 0; }
-
 form .form-managed-file input {
   display: inline-block;
   margin: 0 10px 0 0; }
@@ -7276,9 +7273,11 @@ input.form-type-file,
   border-radius: 4px;
   padding: 10px 10px 0 10px; }
 
+.form-item-field-request-image-0 {
+  padding: 10px; }
+
 .image-widget {
-  padding-left: 0;
-  padding-right: 0;
+  margin: 0px;
   float: none; }
 
 .image-preview {
@@ -7301,7 +7300,8 @@ input[name="field_request_image_0_upload_button"] {
 
 p#edit-field-request-image-0-upload--description {
   visibility: hidden;
-  max-height: 50px; }
+  max-height: 20px;
+  text-align: center; }
 
 p#edit-field-request-image-0-upload--description .visible {
   visibility: visible !important; }
@@ -7314,11 +7314,9 @@ p#edit-field-request-image-0-upload--description .visible {
   padding: 15px; }
 
 label.image-widget-data.btn.btn-block.btn-default {
-  background: none;
-  border: 1px solid #ddd;
-  padding: 30px;
-  text-transform: uppercase;
-  background: #fff; }
+  border: 1px #ddd dashed;
+  padding: 15px;
+  text-transform: uppercase; }
 
 @media (min-width: 768px) {
   .navbar-nav {

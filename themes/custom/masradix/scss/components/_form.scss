@@ -97,10 +97,15 @@ input.form-type-file,
   padding: 10px 10px 0 10px;;
 }
 
+.form-item-field-request-image-0 {
+  padding: 10px;
+}
+
+.form-item-field-request-image-0 label{
+}
 
 .image-widget {
-  padding-left: 0;
-  padding-right: 0;
+  margin: 0px;
   float:none
 }
 
@@ -131,7 +136,8 @@ input[name="field_request_image_0_upload_button"]{
 
 p#edit-field-request-image-0-upload--description {
   visibility: hidden;
-  max-height: 50px;
+  max-height: 20px;
+  text-align: center;
 }
 
 p#edit-field-request-image-0-upload--description .visible {
@@ -149,9 +155,7 @@ p#edit-field-request-image-0-upload--description .visible {
 
 
 label.image-widget-data.btn.btn-block.btn-default {
-    background: none;
-    border: 1px solid #ddd;
-    padding: 30px;
+    border: 1px #ddd dashed;
+    padding: 15px;
     text-transform: uppercase;
-    background: #fff;
 }
