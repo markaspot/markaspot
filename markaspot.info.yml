@@ -49,6 +49,7 @@ dependencies:
   - path
   - pathauto
   - paragraphs
+  - pbf
   - quickedit
   - r4032login
   - rdf
@@ -71,6 +72,7 @@ dependencies:
   - markaspot_article
   - markaspot_blocks
   - markaspot_comment
+  - markaspot_group
   - markaspot_open311
   - markaspot_map
   - markaspot_token
@@ -78,14 +80,14 @@ dependencies:
   - markaspot_static_json
   - markaspot_ui
   - markaspot_user
-  - markaspot_uuid
+  - markaspot_request_id
   - markaspot_stats
   - markaspot_trend
   - markaspot_validation
   - service_request
   - markaspot_default_content
-
-
+  - devel
+  - devel_generate
 
 themes:
   - masradix

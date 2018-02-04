@@ -10,7 +10,7 @@ dependencies:
     - taxonomy
 third_party_settings:
   field_permissions:
-    permission_type: public
+    permission_type: custom
 id: node.field_organisation
 field_name: field_organisation
 entity_type: node
