@@ -77,19 +77,14 @@ class GeoreportProcessor {
    *    The node object.
    * @param string $extended_role
    *    The extended role parameter allows rendering additional fields.
-   * @param bool $uuid
-   *    Using node-uuid or node-nid.
    *
    * @return array
    *    Return the $request array.
    */
-  public function nodeMapRequest($node, $extended_role, $uuid) {
-    if ($uuid !== FALSE) {
-      $id = $node->uuid->value;
-    }
-    else {
-      $id = $node->nid->value;
-    }
+  public function nodeMapRequest($node, $extended_role) {
+
+    $id = $node->request_id->value;
+
     $request = array(
       'servicerequest_id' => $id,
       'title' => $node->title->value,
@@ -100,6 +95,7 @@ class GeoreportProcessor {
       'service_name' => $this->getTerm($node->field_category->target_id, 'name'),
       'requested_datetime' => date('c', $node->created->value),
       'updated_datetime' => date('c', $node->changed->value),
+      'status' => $this->taxMapStatus($node->field_status->target_id),
     );
     // Media Url:
     if (isset($node->field_image->fid)) {
@@ -114,7 +110,6 @@ class GeoreportProcessor {
         // All properties as always: = $note->entity.
         // See below for accessing a detailed history of the service request.
         $request['status_note'] = $note->entity->field_status_note->value;
-        $request['status'] = $this->taxMapStatus($note->entity->field_status_term->target_id);
       }
     }
     $service_code = $this->getTerm($node->field_category->target_id, 'field_service_code');
@@ -175,25 +170,21 @@ class GeoreportProcessor {
     if (isset($request_data['service_request_id'])) {
       $nodes = \Drupal::entityTypeManager()
         ->getStorage('node')
-        ->loadByProperties(array('uuid' => $request_data['service_request_id']));
+        ->loadByProperties(array('request_id' => $request_data['service_request_id']));
       foreach ($nodes as $node) {
-        $uuid = $node->uuid->value;
+        $request_id = $node->request_id->value;
       }
-      if (isset($uuid)) {
+      if (isset($request_id)) {
         $request_data['requested_datetime'] = date('c', $node->created->value);
       }
-      else {
-        // After initital import
-        // toDo: Make this configurable depending on enabled method (update),
-        // $this->processsServicesError(t('Property service_request_id provided, but corresponding id not found for update'), 400);.
-      }
+
     }
 
     $values['node'] = $node;
 
     $values['type'] = 'service_request';
-    if (isset($uuid)) {
-      $values['uuid'] = $request_data['service_request_id'];
+    if (isset($request_id)) {
+      $values['request_id'] = $request_data['service_request_id'];
     }
     $values['title'] = isset($request_data['service_code']) ? $request_data['service_code'] : '';
     $values['body'] = isset($request_data['description']) ? $request_data['description'] : '';

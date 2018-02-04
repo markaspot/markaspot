@@ -234,14 +234,14 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['id'])) {
       // Get the service of the current node:
-      $query->condition('uuid', $parameters['id']);
+      $query->condition('request_id', $parameters['id']);
     }
 
     // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['q'])) {
       // Get the service of the current node:
       $group = $query->orConditionGroup()
-        ->condition('uuid', '%' . $parameters['q'] . '%', 'LIKE')
+        ->condition('request_id', '%' . $parameters['q'] . '%', 'LIKE')
         ->condition('body', '%' . $parameters['q'] . '%', 'LIKE')
         ->condition('title', '%' . $parameters['q'] . '%', 'LIKE');
 
@@ -256,6 +256,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
     $query->condition('created', $end_timestamp, '<=');
     $query->sort('created', $direction = 'DESC');
+    $query->accessCheck(FALSE);
 
     // Checking for status-parameter and map the code with taxonomy terms:
     if (isset($parameters['status'])) {
@@ -285,10 +286,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Building requests array.
-    $uuid = \Drupal::moduleHandler()->moduleExists('markaspot_uuid');
+
 
     foreach ($nodes as $node) {
-      $service_requests[] = $map->nodeMapRequest($node, $extended_role, $uuid);
+      $service_requests[] = $map->nodeMapRequest($node, $extended_role);
     }
     if (!empty($service_requests)) {
       $response = new ResourceResponse($service_requests, 200);
@@ -350,16 +351,16 @@ class GeoreportRequestIndexResource extends ResourceBase {
       // Save the node and prepare response;.
       $node->save();
       // Get the UUID to put it into the response.
-      $uuid = $node->uuid();
+      $request_id = $node->request_id->value;
 
       $service_request = [];
       if (isset($node)) {
-        $service_request['service_requests']['request']['service_request_id'] = $uuid;
+        $service_request['service_requests']['request']['service_request_id'] = $request_id;
       }
 
-      $this->logger->notice('Created entity %type with ID %uuid.', array(
+      $this->logger->notice('Created entity %type with ID %request_id.', array(
         '%type' => $node->getEntityTypeId(),
-        '%uuid' => $node->uuid(),
+        '%request_id' => $node->request_id->value,
       ));
 
       // 201 Created responses return the newly created entity in the response.

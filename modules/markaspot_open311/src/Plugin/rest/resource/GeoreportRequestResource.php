@@ -169,7 +169,7 @@ class GeoreportRequestResource extends ResourceBase {
     $query = \Drupal::entityQuery('node')
       ->condition('status', 1);
     if ($id != "") {
-      $query->condition('uuid', $this->getRequestId($id));
+      $query->condition('request_id', $this->getRequestId($id));
     }
 
     $map = new GeoreportProcessor();
@@ -177,7 +177,7 @@ class GeoreportRequestResource extends ResourceBase {
     // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['id'])) {
       // Get the service of the current node:
-      $query->condition('uuid', $parameters['id']);
+      $query->condition('request_id', $parameters['id']);
     }
 
     $nids = $query->execute();
@@ -232,9 +232,9 @@ class GeoreportRequestResource extends ResourceBase {
       }
 
       $map = new GeoreportProcessor();
-      $uuid = $this->getRequestId($id);
+      $request_id = $this->getRequestId($id);
 
-      $request_data['service_request_id'] = $uuid;
+      $request_data['service_request_id'] = $request_id;
       $values = $map->requestMapNode($request_data);
 
       // Retrvieve the preloaded node object.
@@ -249,15 +249,15 @@ class GeoreportRequestResource extends ResourceBase {
       $node->save();
 
       // Save the node and prepare response;.
-      $uuid = $node->uuid();
+      $request_id = $node->request_id->value;
 
-      $this->logger->notice('Updated node with ID %uuid.', array(
-        '%uuid' => $node->uuid(),
+      $this->logger->notice('Updated node with ID %request_id.', array(
+        '%request_id' => $node->request_id->value,
       ));
 
       $service_request = [];
       if (isset($node)) {
-        $service_request['service_requests']['request']['service_request_id'] = $uuid;
+        $service_request['service_requests']['request']['service_request_id'] = $request_id;
       }
       $response = new ResourceResponse($service_request, 201);
       $response->addCacheableDependency($service_request);

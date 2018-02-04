@@ -7,7 +7,7 @@ dependencies:
 id: requests
 label: requests
 type: 'canonical_entities:node'
-pattern: '/requests/[node:uuid]'
+pattern: '/requests/[node:request_id]'
 selection_criteria:
   56a8d215-6a30-17841-8aad-8d2156a3045b10d8aadc7b7d069cb:
     id: node_type

@@ -98,3 +98,10 @@ function markaspot_update_8002( ){
 function markaspot_update_8003( ){
   \Drupal::service('module_installer')->install(['markaspot_front']);
 }
+
+/**
+ * Enable Mark-a-Spot Request ID module
+ */
+function markaspot_update_8004( ){
+  \Drupal::service('module_installer')->install(['markaspot_request_id']);
+}

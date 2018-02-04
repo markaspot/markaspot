@@ -41,6 +41,11 @@ function markaspot_token_token_info() {
     'description' => t('The global unique ID of the content item, or "node".'),
   // Return them.
   ];
+  $node['request_id'] = [
+    'name' => t("Service Request ID"),
+    'description' => t('The Request ID of 311 Service requests.'),
+    // Return them.
+  ];
 
   return [
     'types' => ['node' => $type],
@@ -57,25 +62,7 @@ function markaspot_token_tokens($type,
  array $options,
 BubbleableMetadata $bubbleable_metadata) {
 
-  $token_service = \Drupal::token();
-
-  $url_options = ['absolute' => TRUE];
-
   $replacements = [];
-
-  if ($type == 'node' && !empty($data['node'])) {
-    /** @var \Drupal\node\NodeInterface $node */
-    $node = $data['node'];
-
-    foreach ($tokens as $name => $original) {
-      switch ($name) {
-        // Simple key values on the node.
-        case 'uuid':
-          $replacements[$original] = $node->uuid();
-          break;
-      }
-    }
-  }
 
   // Node tokens.
   if ($type == 'node' && !empty($data['node'])) {
@@ -87,6 +74,10 @@ BubbleableMetadata $bubbleable_metadata) {
         // Simple key values on the node.
         case 'uuid':
           $replacements[$original] = $node->uuid();
+          break;
+
+        case 'request_id':
+          $replacements[$original] = $node->request_id->value;
           break;
       }
     }
