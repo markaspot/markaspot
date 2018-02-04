@@ -92,5 +92,6 @@ dependencies:
 themes:
   - masradix
   - seven
-distribution:
-  name: Mark-a-Spot
+#distribution:
+#  name: Mark-a-Spot
+#  name: Mark-a-Spot
