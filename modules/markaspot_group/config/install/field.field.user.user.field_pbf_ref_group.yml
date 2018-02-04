@@ -2,22 +2,20 @@ langcode: en
 status: true
 dependencies:
   config:
-    - field.storage.node.field_pbf_ref_group
-    - node.type.service_request
+    - field.storage.user.field_pbf_ref_group
     - taxonomy.vocabulary.organisation
-  content:
-    - 'taxonomy_term:organisation:cce7aa31-526c-16490-aaa8-7aa31526ca06ad36aa85a6d055bda'
   module:
     - pbf
-id: node.service_request.field_pbf_ref_group
+    - user
+id: user.user.field_pbf_ref_group
 field_name: field_pbf_ref_group
-entity_type: node
-bundle: service_request
+entity_type: user
+bundle: user
 label: pbf_ref_group
 description: ''
 required: false
 translatable: false
-default_value: {}
+default_value: {  }
 default_value_callback: ''
 settings:
   handler: 'default:taxonomy_term'
