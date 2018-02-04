@@ -11,7 +11,7 @@ id: user.user.field_pbf_ref_group
 field_name: field_pbf_ref_group
 entity_type: user
 bundle: user
-label: pbf_ref_group
+label: 'Organisation / Group'
 description: ''
 required: false
 translatable: false

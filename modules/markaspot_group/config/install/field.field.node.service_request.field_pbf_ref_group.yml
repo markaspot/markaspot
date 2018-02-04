@@ -13,7 +13,7 @@ id: node.service_request.field_pbf_ref_group
 field_name: field_pbf_ref_group
 entity_type: node
 bundle: service_request
-label: pbf_ref_group
+label: 'Permission for Organisation / Group'
 description: ''
 required: false
 translatable: false
