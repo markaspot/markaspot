@@ -1,0 +1,44 @@
+uuid: 6-7f
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_pbf_ref_role
+    - node.type.service_request
+    - user.role.anonymous
+    - user.role.authenticated
+  module:
+    - pbf
+id: node.service_request.field_pbf_ref_role
+field_name: field_pbf_ref_role
+entity_type: node
+bundle: service_request
+label: pbf_ref_role
+description: ''
+required: false
+translatable: false
+default_value:
+  -
+    grant_public: 0
+    grant_view: 1
+    grant_update: 0
+    grant_delete: 0
+    target_uuid: 159ad48c-be70-4dc2-b9a9-5ff13e398685
+  -
+    grant_public: 0
+    grant_view: 1
+    grant_update: 0
+    grant_delete: 0
+    target_uuid: b37a20ad-97e6-4647-a972-b8995d3193ee
+default_value_callback: ''
+settings:
+  handler: 'default:user_role'
+  handler_settings:
+    target_bundles: null
+    auto_create: false
+  synchronized_by: ''
+  priority: 0
+  user_method: user
+  synchronized_with: ''
+  synchronized_from_target: 0
+field_type: pbf

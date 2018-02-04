@@ -80,10 +80,12 @@ class MarkaspotUuid implements UuidInterface {
    */
   protected function getLastNid() {
 
-    $nids = \Drupal::entityQuery('node')->condition('type', 'service_request')->execute();
-    $nodes = Node::loadMultiple($nids);
-    $last_id = count($nodes);
-    // $last_id = db_query('SELECT MAX(nid) FROM {node}')->fetchField();
+    $query = \Drupal::entityQuery('node');
+    $query->condition('type', 'service_request');
+    $query->accessCheck(FALSE);
+    $entity_ids = $query->execute();
+    $last_id = count($entity_ids);
+
     return $last_id;
   }
 

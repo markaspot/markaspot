@@ -1,0 +1,9 @@
+name: Mark-a-Spot Group
+description: Adds grouped content feature
+package: Mark-a-Spot
+type: module
+core: 8.x
+
+dependencies:
+  - service_request
+  - pbf

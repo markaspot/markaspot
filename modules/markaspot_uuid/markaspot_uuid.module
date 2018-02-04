@@ -27,9 +27,9 @@ function markaspot_uuid_help($route_name, RouteMatchInterface $route_match) {
 
 
 /**
- * Implements hook_entity_presave().
+ * Implements hook_node_presave().
  */
-function markaspot_uuid_entity_presave(EntityInterface $node) {
+function markaspot_uuid_node_presave(EntityInterface $node) {
 
   if ($node->bundle() == 'service_request') {
     $tid = $node->field_category->target_id;

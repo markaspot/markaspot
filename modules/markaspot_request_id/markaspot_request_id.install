@@ -1,0 +1,120 @@
+<?php
+
+/**
+ * @file
+ * Contains cgn_request_id.module..
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\node\NodeInterface;
+use Drupal\node\Entity\NodeType;
+
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_request_id_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the cgn_request_id module.
+    case 'help.page.cgn_request_id':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Adds a custom request id') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_entity_base_field_info()
+ */
+function markaspot_request_id_entity_base_field_info(EntityTypeInterface $entity_type) {
+  if ($entity_type->id() === 'node') {
+    // $node_type = NodeType::load();
+
+    //$field_request_id = BaseFieldDefinition::create('string');
+
+    //$field_request_id->setDescription("This is a custom Request ID");
+
+    $fields['request_id'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Request ID'))
+      ->setDescription("This is a custom request-id")
+      // ->setRequired(TRUE)
+      ->setTranslatable(TRUE)
+      ->setRevisionable(TRUE)
+      ->setSetting('max_length', 32)
+      ->setDisplayOptions('view', [
+        'label' => 'hidden',
+        'type' => 'string',
+        'weight' => -5,
+      ])
+      ->setDisplayOptions('form', [
+        'type' => 'string_textfield',
+        'weight' => -5,
+      ])
+      ->setDisplayConfigurable('form', TRUE);
+
+    return $fields;
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function markaspot_request_id_form_alter(&$form, FormStateInterface $form_state) {
+
+  // Disable some fields.
+  $field = 'request_id';
+  $form[$field]['#disabled'] = 'disabled';
+
+}
+
+/**
+ *
+ */
+function markaspot_request_id_node_insert(EntityInterface $node) {
+
+  if ($node->getType() == 'service_request') {
+
+    $query = \Drupal::entityQuery('node');
+    $query->condition('type', 'service_request');
+    $query->accessCheck(FALSE);
+
+    $entity_ids = $query->execute();
+    $last_request_id = count($entity_ids);
+
+    $node->set('request_id', $last_request_id);
+
+    // Set revision to false will prevent it get errors.
+    $node->setNewRevision(FALSE);
+    $node->save();
+  }
+
+}
+
+/**
+ * Implements hook_node_presave().
+ */
+function markaspot_request_id_node_presave(EntityInterface $node) {
+
+  if ($node->bundle() == 'service_request') {
+    $tid = $node->field_category->target_id;
+    // Instead of contributed module auto entity_title:
+    // Get the service name by ID and update the title field.
+    if (isset($tid)) {
+      $service_name = \Drupal::entityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->load($tid);
+
+      $node->title = '#' . $node->request_id->value . '  ' . $service_name->label();
+
+    }
+
+  }
+}
+
