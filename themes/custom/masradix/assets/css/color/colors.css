@@ -49,7 +49,7 @@ body {
 .open > .btn-default.dropdown-toggle {
   color: #055a8e;
   text-transform:uppercase;
-  border: 1px solid #999;
+  /* border: 1px solid #999; */
   position: relative;
 }
 
