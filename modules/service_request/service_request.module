@@ -58,18 +58,19 @@ function service_request_node_presave(EntityInterface $node) {
 
     foreach ($node->field_status_notes as $paragraph) {
       // Access the paragraph entity like this:
-      $statusNotes[] = $paragraph->entity;
+      $status_notes[] = $paragraph->entity;
     }
     // Get new Status from Taxonomy Reference.
     $newStatus = $node->field_status->target_id;
-    $lastParagraph = end($statusNotes);
-    if (is_array(end($statusNotes))) {
-      // Load last Paragraph and Update the Status there.
-      $paragraph = Paragraph::load(end($statusNotes)->id());
+    if (isset($status_notes)) {
+      if (is_array(end($status_notes))) {
+        // Load last Paragraph and Update the Status there.
+        $paragraph = Paragraph::load(end($status_notes)->id());
 
-      $paragraph->field_status_term->target_id = $newStatus;
-      // Save paragraph.
-      $paragraph->save();
+        $paragraph->field_status_term->target_id = $newStatus;
+        // Save paragraph.
+        $paragraph->save();
+      }
     }
   }
 
