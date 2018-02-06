@@ -1,0 +1,284 @@
+{
+    "_links": {
+        "self": {
+            "href": "http:\/\/default\/requests\/4-2018?_format=hal_json"
+        },
+        "type": {
+            "href": "http:\/\/drupal.org\/rest\/type\/node\/service_request"
+        },
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/revision_uid": [
+            {
+                "href": "http:\/\/default\/user\/1?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/uid": [
+            {
+                "href": "http:\/\/default\/user\/1?_format=hal_json",
+                "lang": "en"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_category": [
+            {
+                "href": "http:\/\/default\/taxonomy\/term\/2?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_request_image": [
+            {
+                "href": "http:\/\/default\/sites\/default\/files\/2018-02\/epignom_gruenschnitt_flickr_0.jpg",
+                "lang": "en"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status": [
+            {
+                "href": "http:\/\/default\/taxonomy\/term\/5?_format=hal_json"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status_notes": [
+            {
+                "href": ""
+            }
+        ]
+    },
+    "nid": [
+        {
+            "value": 4
+        }
+    ],
+    "uuid": [
+        {
+            "value": "fece1a69-d521-4ca6-ba01-69731e882c72"
+        }
+    ],
+    "vid": [
+        {
+            "value": 6
+        }
+    ],
+    "langcode": [
+        {
+            "value": "en",
+            "lang": "en"
+        }
+    ],
+    "type": [
+        {
+            "target_id": "service_request"
+        }
+    ],
+    "revision_timestamp": [
+        {
+            "value": "2018-02-06T07:15:46+00:00",
+            "format": "Y-m-d\\TH:i:sP"
+        }
+    ],
+    "_embedded": {
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/revision_uid": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/user\/1?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/user\/user"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "acc66257-b29f-4a8f-bf96-b8f3c5c29f39"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/uid": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/user\/1?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/user\/user"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "acc66257-b29f-4a8f-bf96-b8f3c5c29f39"
+                    }
+                ],
+                "lang": "en"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_category": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/taxonomy\/term\/2?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_category"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "140520163067fa183-7b38-16571-802e-fa1837b3860bb72802e2cffd5563a14052016"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_request_image": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/sites\/default\/files\/2018-02\/epignom_gruenschnitt_flickr_0.jpg"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/file\/file"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "878277e0-42ae-4a74-8d4d-2e8f45532a72"
+                    }
+                ],
+                "lang": "en",
+                "alt": "",
+                "title": "",
+                "width": "1024",
+                "height": "768"
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status": [
+            {
+                "_links": {
+                    "self": {
+                        "href": "http:\/\/default\/taxonomy\/term\/5?_format=hal_json"
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_status"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "150520163425c8221-9e89-18527-82c6-c82219e89085f3e82c64a8411890c15052016"
+                    }
+                ]
+            }
+        ],
+        "http:\/\/drupal.org\/rest\/relation\/node\/service_request\/field_status_notes": [
+            {
+                "_links": {
+                    "self": {
+                        "href": ""
+                    },
+                    "type": {
+                        "href": "http:\/\/drupal.org\/rest\/type\/paragraph\/status"
+                    }
+                },
+                "uuid": [
+                    {
+                        "value": "f4ecac91-91ee-4f42-8e86-4b4b671b8ac4"
+                    }
+                ],
+                "target_revision_id": "11"
+            }
+        ]
+    },
+    "status": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ],
+    "title": [
+        {
+            "value": "#4-2018  Park Maintenance Complaint",
+            "lang": "en"
+        }
+    ],
+    "created": [
+        {
+            "value": "2018-02-06T05:57:04+00:00",
+            "lang": "en",
+            "format": "Y-m-d\\TH:i:sP"
+        }
+    ],
+    "changed": [
+        {
+            "value": "2018-02-06T07:26:40+00:00",
+            "lang": "en",
+            "format": "Y-m-d\\TH:i:sP"
+        }
+    ],
+    "promote": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ],
+    "sticky": [
+        {
+            "value": false,
+            "lang": "en"
+        }
+    ],
+    "default_langcode": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ],
+    "revision_translation_affected": [
+        {
+            "value": true,
+            "lang": "en"
+        }
+    ],
+    "request_id": [
+        {
+            "value": "4-2018",
+            "lang": "en"
+        }
+    ],
+    "path": [
+        {
+            "alias": "\/requests\/4-2018",
+            "pid": 10,
+            "langcode": "en",
+            "lang": "en"
+        }
+    ],
+    "body": [
+        {
+            "value": "<p>Est dominari. Hunc altae ardentior campoque coeperunt liquidas zephyro fratrum nam. Speciem qui divino terrenae frigida habitandae levitate. Fuerant omni posset: nunc duas habitandae erat quam? Nubes praecipites cepit satus abscidit melioris? Tonitrua frigida deducite orbis rerum aliud. Derecti nebulas summaque tegit finxit.<\/p>\r\n",
+            "format": "basic_html",
+            "summary": "",
+            "lang": "en"
+        }
+    ],
+    "field_address": [
+        {
+            "langcode": "",
+            "country_code": "US",
+            "administrative_area": "NY",
+            "locality": "New York",
+            "dependent_locality": null,
+            "postal_code": "11101",
+            "sorting_code": null,
+            "address_line1": "Review Avenue 38-40",
+            "address_line2": "",
+            "organization": null,
+            "given_name": null,
+            "additional_name": null,
+            "family_name": null
+        }
+    ],
+    "field_geolocation": [
+        {
+            "lat": 40.729821591393,
+            "lng": -73.935040563993,
+            "lat_sin": 0.65249291300248,
+            "lat_cos": 0.75779482611162,
+            "lng_rad": -1.2904098904372,
+            "data": []
+        }
+    ]
+}

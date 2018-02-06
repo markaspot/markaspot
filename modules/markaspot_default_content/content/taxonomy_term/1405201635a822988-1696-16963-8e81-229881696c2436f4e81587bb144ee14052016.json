@@ -9,7 +9,7 @@
     },
     "tid": [
         {
-            "value": "3"
+            "value": 3
         }
     ],
     "uuid": [
@@ -43,25 +43,26 @@
     ],
     "weight": [
         {
-            "value": "0"
+            "value": 0
         }
     ],
     "changed": [
         {
-            "value": "1463455318",
-            "lang": "en"
+            "value": "2016-05-17T03:21:58+00:00",
+            "lang": "en",
+            "format": "Y-m-d\\TH:i:sP"
         }
     ],
     "default_langcode": [
         {
-            "value": "1",
+            "value": true,
             "lang": "en"
         }
     ],
     "field_category_hex": [
         {
-            "color": "#A020F0",
-            "opacity": "1"
+            "color": "#a020f0",
+            "opacity": 1
         }
     ],
     "field_category_icon": [

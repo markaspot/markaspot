@@ -9,7 +9,7 @@
     },
     "tid": [
         {
-            "value": "8"
+            "value": 8
         }
     ],
     "uuid": [
@@ -36,18 +36,19 @@
     ],
     "weight": [
         {
-            "value": "0"
+            "value": 0
         }
     ],
     "changed": [
         {
-            "value": "1463303638",
-            "lang": "en"
+            "value": "2016-05-15T09:13:58+00:00",
+            "lang": "en",
+            "format": "Y-m-d\\TH:i:sP"
         }
     ],
     "default_langcode": [
         {
-            "value": "1",
+            "value": true,
             "lang": "en"
         }
     ]

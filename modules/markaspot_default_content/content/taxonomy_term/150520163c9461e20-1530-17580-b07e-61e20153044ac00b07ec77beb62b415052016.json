@@ -1,7 +1,7 @@
 {
     "_links": {
         "self": {
-            "href": "http:\/\/default\/taxonomy\/term\/5?_format=hal_json"
+            "href": "http:\/\/default\/taxonomy\/term\/6?_format=hal_json"
         },
         "type": {
             "href": "http:\/\/drupal.org\/rest\/type\/taxonomy_term\/service_status"
@@ -9,12 +9,12 @@
     },
     "tid": [
         {
-            "value": "5"
+            "value": 6
         }
     ],
     "uuid": [
         {
-            "value": "150520163425c8221-9e89-18527-82c6-c82219e89085f3e82c64a8411890c15052016"
+            "value": "150520163c9461e20-1530-17580-b07e-61e20153044ac00b07ec77beb62b415052016"
         }
     ],
     "langcode": [
@@ -30,36 +30,37 @@
     ],
     "name": [
         {
-            "value": "Open",
+            "value": "Closed",
             "lang": "en"
         }
     ],
     "weight": [
         {
-            "value": "0"
+            "value": 0
         }
     ],
     "changed": [
         {
-            "value": "1463303629",
-            "lang": "en"
+            "value": "2016-05-15T09:13:58+00:00",
+            "lang": "en",
+            "format": "Y-m-d\\TH:i:sP"
         }
     ],
     "default_langcode": [
         {
-            "value": "1",
+            "value": true,
             "lang": "en"
         }
     ],
     "field_status_hex": [
         {
-            "color": "#8B0000",
-            "opacity": "1"
+            "color": "#008000",
+            "opacity": 1
         }
     ],
     "field_status_icon": [
         {
-            "value": "fa-play-circle-o"
+            "value": "fa-stop-circle-o"
         }
     ]
 }
