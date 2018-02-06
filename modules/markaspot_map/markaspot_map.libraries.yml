@@ -1,7 +1,7 @@
 dateFormat:
   header: true
   js:
-    /libraries/dateFormat/lib/dateformat.js: {}
+    /libraries/dateformat/lib/dateformat.js: {}
 
 leaflet:
   js:
