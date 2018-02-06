@@ -12,12 +12,12 @@ use Drupal\paragraphs\Entity\Paragraph;
 
 
 /**
- * Implements hook_entity_presave().
+ * Implements hook_node_presave().
  */
-function service_request_entity_presave(EntityInterface $entity) {
+function service_request_node_presave(EntityInterface $node) {
 
   // Service Request Creation.
-  if ($entity->bundle() == 'service_request' && !$entity->id()) {
+  if ($node->bundle() == 'service_request' && !$node->id()) {
     // Get some relevant config.
     $config = \Drupal::configFactory()
       ->getEditable('markaspot_open311.settings');
@@ -41,30 +41,31 @@ function service_request_entity_presave(EntityInterface $entity) {
     ]);
     $paragraph->save();
 
-    $entity->field_status_notes = array(
+    $node->field_status_notes = array(
       array(
         'target_id' => $paragraph->id(),
         'target_revision_id' => $paragraph->getRevisionId(),
       ),
     );
-    $entity->field_status = array(
+    $node->field_status = array(
       array(
         'target_id' =>  $status_open_start,
       ),
     );
   }
   // Service Request Update
-  elseif ($entity->bundle() == 'service_request' && $entity->id()) {
+  elseif ($node->bundle() == 'service_request' && $node->id()) {
 
-    foreach ($entity->field_status_notes as $paragraph) {
+    foreach ($node->field_status_notes as $paragraph) {
       // Access the paragraph entity like this:
       $statusNotes[] = $paragraph->entity;
     }
     // Get new Status from Taxonomy Reference.
-    $newStatus = $entity->field_status->target_id;
-    if (isset($statusNotes)) {
+    $newStatus = $node->field_status->target_id;
+    $lastParagraph = end($statusNotes);
+    if (is_array(end($statusNotes))) {
       // Load last Paragraph and Update the Status there.
-      $paragraph = Paragraph::load(end($statusNotes)->Id());
+      $paragraph = Paragraph::load(end($statusNotes)->id());
 
       $paragraph->field_status_term->target_id = $newStatus;
       // Save paragraph.
