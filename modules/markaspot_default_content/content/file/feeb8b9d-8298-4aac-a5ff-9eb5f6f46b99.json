@@ -1,7 +1,7 @@
 {
     "_links": {
         "self": {
-            "href": "http:\/\/default\/sites\/default\/files\/2018-02\/IMG_0690%201.jpg.jpg"
+            "href": "http:\/\/default\/sites\/default\/files\/2018-02\/IMG_0690%201.jpg_9.jpg"
         },
         "type": {
             "href": "http:\/\/drupal.org\/rest\/type\/file\/file"
@@ -40,7 +40,7 @@
                 },
                 "uuid": [
                     {
-                        "value": "480c4349-d9d4-4323-a272-04f3beb3db85"
+                        "value": "9d5c2f0f-9c38-415c-9dee-7293bf329fb7"
                     }
                 ]
             }
@@ -53,7 +53,7 @@
     ],
     "uri": [
         {
-            "value": "public:\/\/2018-02\/IMG_0690 1.jpg.jpg"
+            "value": "public:\/\/2018-02\/IMG_0690 1.jpg_9.jpg"
         }
     ],
     "filemime": [

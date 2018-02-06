@@ -110,7 +110,7 @@ function markaspot_static_json_request() {
     // Encode array.
     $response = json_encode($current_service_requests);
 
-    $local = $file ? file_save_data($response, $path, $replace) : file_unmanaged_save_data($response, $path, $replace);
+    $local = ($file !== FALSE) ? file_save_data($response, $path, $replace) : file_unmanaged_save_data($response, $path, $replace);
     if (isset($local)) {
       \Drupal::logger('Mark-a-Spot Static Json')
         ->notice(t('Static file saved.'));
