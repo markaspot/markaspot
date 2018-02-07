@@ -106,3 +106,21 @@ function markaspot_update_8003( ){
 function markaspot_update_8004( ){
   \Drupal::service('module_installer')->install(['markaspot_request_id']);
 }
+
+/**
+ * Move Service Request IDs
+ */
+function markaspot_update_8005( ){
+  // \Drupal::service('module_installer')->install(['markaspot_request_id']);
+
+  $nids = \Drupal::entityQuery('node')->condition('type','service_request')->execute();
+  $nodes =  \Drupal\node\Entity\Node::loadMultiple($nids);
+
+  foreach ($nodes as $node) {
+    // var_dump($node->uuid());
+    $node->set('request_id', $node->uuid());
+    $node->save();
+  }
+  \Drupal::service('module_installer')->uninstall(['markaspot_uuid']);
+
+}
