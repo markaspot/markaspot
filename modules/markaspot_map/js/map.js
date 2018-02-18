@@ -227,8 +227,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       if (!nids.length) {
         Drupal.markaspot_map.setDefaults(masSettings);
       }
+      if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
 
-      if (nids.length !== storedNids.length) {
         localStorage.setItem('storedNids', JSON.stringify(nids));
 
         markerLayer.clearLayers();
