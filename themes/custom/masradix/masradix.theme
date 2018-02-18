@@ -81,9 +81,10 @@ function masradix_preprocess_image_widget(&$variables) {
  */
 function masradix_preprocess_paragraph(&$variables) {
   $paragraph = $variables['paragraph'];
-  $variables['status'] = $paragraph->status_note;
-  $variables['statusColor'] = str_replace('#', '', $paragraph->field_status_term[0]->entity->field_status_hex->color);
-
+  if (is_object($paragraph->field_status_term[0])) {
+    $variables['status'] = $paragraph->status_note;
+    $variables['statusColor'] =  str_replace('#', '', $paragraph->field_status_term[0]->entity->field_status_hex->color);
+  }
   // Tutorial https://www.webwash.net/display-paragraphs-edge-to-edge-using-bootstrap-in-drupal-8.
 }
 
@@ -105,7 +106,7 @@ function masradix_preprocess_node(&$variables) {
 
     if (isset($variables['node']->field_status_notes)) {
       foreach ($variables['node']->field_status_notes as $item) {
-        if ($item->entity) {
+        if (isset($item->entity->field_status_term[0]->entity->name->value)) {
           $variables['mas_status']['label'] = $item->entity->field_status_term[0]->entity->name->value;
           $variables['mas_status']['icon']  = $item->entity->field_status_term[0]->entity->field_status_icon->value;
           $variables['mas_status']['color'] = str_replace('#', '', $item->entity->field_status_term[0]->entity->field_status_hex->color);
