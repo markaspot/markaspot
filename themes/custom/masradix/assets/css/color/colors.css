@@ -40,7 +40,6 @@ body {
 
 .btn,
 .mas-action li a,
-.notifications li,
 .btn-default,
 .add-block p a,
 .btn-default:active,
@@ -53,6 +52,7 @@ body {
   position: relative;
 }
 
+.notifications li,
 .button.button--primary {
   color: #7bceff;
   background-color: #055a8e;
@@ -93,7 +93,6 @@ body {
 .btn-default:focus {
   color: #f5f5f5;
   background-color: #055a8e;
-    text-transform:inherit;
 }
 
 .view--requests .view__header,
