@@ -1,3 +1,5 @@
+'use strict';
+
 /**
  * @file
  * doughnut component.
@@ -7,7 +9,7 @@
 
   Vue.component('doughnut-organisations', {
     extends: VueChartJs.Doughnut,
-    data() {
+    data: function data() {
 
       return {
         chartData: this.getChartData(),
@@ -21,24 +23,24 @@
         }
       };
     },
+
     watch: {
-      '$route'(to, from) {
+      '$route': function $route(to, from) {
         // console.log(this.$route.path);
         this.getChartData();
-
       }
     },
     methods: {
-      getChartData: function (param) {
-        param = (param) ? param : this.$route.path;
-        let baseUrl = settings.path.baseUrl;
-        let url = baseUrl + 'georeport/stats/organisations' + param;
+      getChartData: function getChartData(param) {
+        param = param ? param : this.$route.path;
+        var baseUrl = settings.path.baseUrl;
+        var url = baseUrl + 'georeport/stats/organisations' + param;
 
-        let parent = this;
+        var parent = this;
         axios.get(url, {}).then(function (response) {
-          let stats = response.data;
+          var stats = response.data;
 
-          let chartData = {
+          var chartData = {
             datasets: [parent.getStats(stats)],
             labels: parent.getLabels(stats)
           };
@@ -46,28 +48,26 @@
             parent.$data._chart.destroy();
           }
           parent.renderChart(chartData, parent.options);
-
         }).catch(function (error) {
           console.log(error);
         });
         return this.chartData;
-
       },
 
-      getLabels: function (stats) {
+      getLabels: function getLabels(stats) {
 
-        let labels = [];
+        var labels = [];
         Object.keys(stats).forEach(function (key) {
           labels.push(stats[key].organisation);
         });
         return labels;
       },
 
-      getStats: function (stats) {
+      getStats: function getStats(stats) {
 
-        let backgroundColor = [];
-        let data = [];
-        let dataset = {};
+        var backgroundColor = [];
+        var data = [];
+        var dataset = {};
 
         Object.keys(stats).forEach(function (key) {
           backgroundColor.push(this.getColor());
@@ -78,7 +78,7 @@
         dataset.data = data;
         return dataset;
       },
-      getColor: function () {
+      getColor: function getColor() {
         return '#' + '0123456789abcdef'.split('').map(function (v, i, a) {
           return i > 5 ? null : a[Math.floor(Math.random() * 16)];
         }).join('');
@@ -87,16 +87,8 @@
 
   });
 
-  const vueOrga = new Vue({
+  var vueOrga = new Vue({
     el: '.trend_organisations',
-    router
+    router: router
   });
-
 })(Drupal, drupalSettings);
-
-
-
-
-
-
-

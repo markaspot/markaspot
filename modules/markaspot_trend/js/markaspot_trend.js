@@ -1,28 +1,27 @@
+'use strict';
+
 /**
  * @file
  */
 
-
-const router = new VueRouter({
-  routes: [],
+var router = new VueRouter({
+  routes: []
 });
-
 
 (function ($, Drupal, drupalSettings) {
   Drupal.behaviors.markaspot_trend = {
-
-    attach(context, settings) {
+    attach: function attach(context, settings) {
       // $('.trend').html(JSON.stringify(trendData));
-      const element = $('.block--markaspottrendfilter')[0];
+      var element = $('.block--markaspottrendfilter')[0];
       if (element) {
-        const filterView = new Waypoint.Inview({
+        var filterView = new Waypoint.Inview({
           element: element,
-          entered(direction) {
+          entered: function entered(direction) {
             if (direction === 'up') {
               $('.trend_filter').removeClass('sticky').hide().fadeIn(800);
             }
           },
-          exited(direction) {
+          exited: function exited(direction) {
             $('.trend_filter').addClass('sticky').hide().fadeIn(400);
           }
         });
@@ -30,77 +29,79 @@ const router = new VueRouter({
     }
   };
 
-
   Drupal.markaspot_trend = {
-
-    getStats(endpoint) {
-      const baseUrl = drupalSettings.path.baseUrl;
-      const url = `${baseUrl}georeport/stats/${endpoint}`;
-      let json = {};
+    getStats: function getStats(endpoint) {
+      var baseUrl = drupalSettings.path.baseUrl;
+      var url = baseUrl + 'georeport/stats/' + endpoint;
+      var json = {};
       $.ajax({
-        url,
+        url: url,
         async: false
-      })
-        .done((data) => {
-          json = data;
-        });
+      }).done(function (data) {
+        json = data;
+      });
       return json;
     },
-
-    getColor() {
-      return `#${'0123456789abcdef'.split('').map((v, i, a) => (i > 5 ? null : a[Math.floor(Math.random() * 16)])).join('')}`;
+    getColor: function getColor() {
+      return '#' + '0123456789abcdef'.split('').map(function (v, i, a) {
+        return i > 5 ? null : a[Math.floor(Math.random() * 16)];
+      }).join('');
     },
-
-    getRequestsStats(param) {
-      const baseUrl = drupalSettings.path.baseUrl;
-      param = (param) || '';
-      let json = {};
+    getRequestsStats: function getRequestsStats(param) {
+      var baseUrl = drupalSettings.path.baseUrl;
+      param = param || '';
+      var json = {};
 
       $.ajax({
-        url: `${baseUrl}georeport/stats/requests${param}`,
+        url: baseUrl + 'georeport/stats/requests' + param,
         async: false
-      })
-        .done((data) => {
-          json = data;
-        });
+      }).done(function (data) {
+        json = data;
+      });
       return json;
     },
-
-    createData(param) {
-      const requestDays = {};
-      const data = this.getRequestsStats(param);
-      const categories = [];
-      Object.keys(data).forEach((key) => {
+    createData: function createData(param) {
+      var requestDays = {};
+      var data = this.getRequestsStats(param);
+      var categories = [];
+      Object.keys(data).forEach(function (key) {
         categories[data[key].category] = data[key].category;
       });
 
-      Object.keys(categories).forEach((key) => {
-        const filtered = data.filter(item => item.category === key);
-        requestDays[key] = filtered.map(val => val.created);
+      Object.keys(categories).forEach(function (key) {
+        var filtered = data.filter(function (item) {
+          return item.category === key;
+        });
+        requestDays[key] = filtered.map(function (val) {
+          return val.created;
+        });
       });
 
-      let request2Days = {};
-      const timeData = {};
+      var request2Days = {};
+      var timeData = {};
 
-      for (const category in requestDays) {
+      var _loop = function _loop(category) {
         // Group requests per day:
-        request2Days = requestDays[category].reduce((r, a) => {
+        request2Days = requestDays[category].reduce(function (r, a) {
           r[a] = r[a] || [];
           r[a].push(a);
           return r;
         }, Object.create(null));
 
-        const dataset = [];
-        let days = [];
-        Object.keys(request2Days).forEach((key) => {
-          days = {x: key, y: request2Days[key].length};
+        var dataset = [];
+        var days = [];
+        Object.keys(request2Days).forEach(function (key) {
+          days = { x: key, y: request2Days[key].length };
           dataset.push(days);
         });
         timeData[category] = dataset;
+      };
+
+      for (var category in requestDays) {
+        _loop(category);
       }
 
       return timeData;
-    },
-
+    }
   };
-}(jQuery, Drupal, drupalSettings));
+})(jQuery, Drupal, drupalSettings);

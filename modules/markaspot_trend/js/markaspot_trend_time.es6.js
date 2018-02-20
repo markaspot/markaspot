@@ -1,12 +1,12 @@
-'use strict';
-
 /**
  * @file
  */
 
+
+
 Vue.component('line-chart', {
   extends: VueChartJs.Line,
-  data: function data() {
+  data() {
     return {
       chartData: this.getChartData(),
       options: {
@@ -21,44 +21,46 @@ Vue.component('line-chart', {
           }
         },
         scales: {
-          xAxes: [{
-            type: 'time'
-          }],
-          yAxes: [{
-            type: 'linear',
-            position: 'right',
-            ticks: {
-              min: 0,
-              stepSize: 10
+          xAxes: [
+            {
+              type: 'time'
             }
-          }]
+          ],
+          yAxes: [
+            {
+              type: 'linear',
+              position: 'right',
+              ticks: {
+                min: 0,
+                stepSize: 10
+              }
+            }
+          ]
         }
       }
     };
   },
-
   watch: {
-    '$route': function $route(to, from) {
+    '$route'(to, from) {
       this.$data._chart.destroy();
       this.getChartData();
     }
   },
-  mounted: function mounted() {
+  mounted() {
     this.getChartData();
   },
-
   methods: {
-    getChartData: function getChartData(param) {
-      param = param ? param : this.$route.path;
-      var timeData = Drupal.markaspot_trend.createData(param);
+    getChartData: function (param) {
+      param = (param) ? param : this.$route.path;
+      const timeData = Drupal.markaspot_trend.createData(param);
 
-      var dataset = [];
+      const dataset = [];
 
       // get category names and color to iterate.
-      var categoryStats = Drupal.markaspot_trend.getStats('categories');
+      const categoryStats = Drupal.markaspot_trend.getStats('categories');
 
       Object.keys(categoryStats).forEach(function (key) {
-        var data = {
+        const data = {
           label: categoryStats[key].category,
           backgroundColor: categoryStats[key].color + '90',
           data: timeData[categoryStats[key].category]
@@ -67,19 +69,23 @@ Vue.component('line-chart', {
         dataset.push(data);
       });
 
-      var chartData = {
+      let chartData = {
         datasets: dataset
       };
 
       if (this.options) {
         this.renderChart(chartData, this.options);
       }
+
     }
   }
 
 });
 
-var vueaaTime = new Vue({
+
+const vueaaTime = new Vue({
   el: '.trend_time',
-  router: router
+  router
 });
+
+

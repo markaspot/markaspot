@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * @file
  */
@@ -13,34 +11,34 @@
 
   Vue.component('count-requests', {
     template: '<span>{{ count }}</span>',
-    data: function data() {
+    data() {
       return {
-        count: this.getData()
+        count: this.getData(),
       };
     },
-
     watch: {
-      '$route': function $route(to, from) {
+      '$route'(to, from){
         this.getData();
-      }
+      },
     },
     methods: {
-      getData: function getData(param) {
-        param = param ? param : this.$route.path;
-        var baseUrl = settings.path.baseUrl;
-        var url = baseUrl + 'georeport/stats/categories' + param;
+      getData: function (param) {
+        param = (param) ? param : this.$route.path;
+        let baseUrl = settings.path.baseUrl;
+        let url = baseUrl + 'georeport/stats/categories' + param;
 
-        var parent = this;
+        let parent = this;
         axios.get(url, {}).then(function (response) {
-          var stats = response.data;
+          let stats = response.data;
           parent.count = parent.getStats(stats);
         }).catch(function (error) {
           // console.log(error);
         });
         return this.data;
+
       },
-      getStats: function getStats(stats) {
-        var data = 0;
+      getStats: function (stats) {
+        let data = 0;
         Object.keys(stats).forEach(function (key) {
           data = data + parseInt(stats[key].count);
         }.bind(this));
@@ -50,8 +48,15 @@
 
   });
 
-  var vueCount = new Vue({
+  const vueCount = new Vue({
     el: '.trend_count',
-    router: router
+    router
   });
+
+
 })(Drupal, drupalSettings);
+
+
+
+
+

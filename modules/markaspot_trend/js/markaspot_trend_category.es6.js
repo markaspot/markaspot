@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * @file
  * doughnut component.
@@ -7,14 +5,13 @@
 
 (function (Drupal, settings) {
 
-  Vue.component('doughnut-status', {
+  Vue.component('doughnut-categories', {
     extends: VueChartJs.PolarArea,
-    data: function data() {
-
+    data() {
       return {
         chartData: this.getChartData(),
         options: {
-          cutoutPercentage: 60,
+          cutoutPercentage: 100,
           legend: {
             labels: {
               boxWidth: 20
@@ -23,55 +20,57 @@
         }
       };
     },
-
     watch: {
-      '$route': function $route(to, from) {
+      '$route'(to, from) {
+        console.log(this.$route.path);
         this.getChartData();
       }
     },
     methods: {
-      getChartData: function getChartData(param) {
-        param = param ? param : this.$route.path;
-        var baseUrl = settings.path.baseUrl;
-        var url = baseUrl + 'georeport/stats/status' + param;
+      getChartData: function (param) {
+        param = (param) ? param : this.$route.path;
+        let baseUrl = settings.path.baseUrl;
+        let url = baseUrl + 'georeport/stats/categories' + param;
 
-        var parent = this;
+        let parent = this;
         axios.get(url, {}).then(function (response) {
-          var stats = response.data;
+          let stats = response.data;
 
-          var chartData = {
+          let chartData = {
             datasets: [parent.getStats(stats)],
             labels: parent.getLabels(stats)
           };
           if (parent.$data._chart) {
             parent.$data._chart.destroy();
           }
+          localStorage.setItem('categoryStats', JSON.stringify(chartData));
+
           parent.renderChart(chartData, parent.options);
+
         }).catch(function (error) {
-          // console.log(error);
+          console.log(error);
         });
         return this.chartData;
+
       },
 
-      getLabels: function getLabels(stats) {
+      getLabels: function (stats) {
 
-        var labels = [];
+        let labels = [];
         Object.keys(stats).forEach(function (key) {
-          labels.push(stats[key].status);
+          labels.push(stats[key].category);
         });
         return labels;
       },
 
-      getStats: function getStats(stats) {
+      getStats: function (stats) {
 
-        var backgroundColor = [];
-        var label = [];
-        var data = [];
-        var dataset = {};
+        let backgroundColor = [];
+        let data = [];
+        let dataset = {};
 
         Object.keys(stats).forEach(function (key) {
           backgroundColor.push(stats[key].color);
-          label.push("label");
           data.push(stats[key].count);
         }.bind(this));
 
@@ -83,8 +82,15 @@
 
   });
 
-  var vueStatus = new Vue({
-    el: '.trend_status',
-    router: router
+  const vueCat = new Vue({
+    el: '.trend_categories',
+    router
   });
+
+
 })(Drupal, drupalSettings);
+
+
+
+
+
