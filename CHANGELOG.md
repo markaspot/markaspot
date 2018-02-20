@@ -1,6 +1,12 @@
 
 # Changelog
 
+## [8.4.0-rc3] - 2018-02-19
+
+- Bug fixes.
+- Add js-files as es6 where needed.
+
+
 ## [8.4.0-rc2] - 2018-02-06
 
 - Minified vue.js.
