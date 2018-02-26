@@ -5,9 +5,12 @@ img.site-logo {
   @media (min-width: 1200px) {
     max-height: 40px;
     max-width: 40px;
+    display: none;
   }
   @media (max-width: $screen-sm-max) {
     max-height: 100px;
+    display: block;
+
   }
   @media (max-width: $screen-md-max) {
     max-height: 80px;

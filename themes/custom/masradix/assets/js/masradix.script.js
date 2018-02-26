@@ -38,14 +38,15 @@ if (target) {
     var nav = $(".navbar-default");
     var branding = $(".block--masradix-sitebranding");
     if (width >= 1200) {
-      $(".navbar-default > div").removeClass(".navbar-left");
-      $("a.navbar-brand").prependTo(nav);
-      nav.addClass("container");
-      $(".fixed-header").hide();
+      $('.navbar-default > div').removeClass(".navbar-left");
+      $('a.navbar-brand').prependTo(nav);
+      nav.addClass('container');
+      $('.fixed-header').hide();
+      $('img.site-logo').fadeIn(800);
     } else {
-      // $("a.navbar-brand").prependTo(branding);
-      // nav.removeClass("container");
-      $(".fixed-header").show();
+      $('.fixed-header').show();
+      $('img.site-logo').fadeIn(800);
+
     }
 
   }
