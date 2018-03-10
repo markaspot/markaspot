@@ -82,9 +82,9 @@ class DoublePostConstraintValidator extends ConstraintValidator {
         $unit = ($this->unit == 'yards') ? 'miles' : 'kilometers';
 
         $message = [];
-        $message[] = Link::fromTextAndUrl($this->t('We found a recently added report of the same category with ID @uuid within a radius of @radius @unit.',
+        $message[] = Link::fromTextAndUrl($this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.',
           array(
-            '@uuid' => $node->uuid(),
+            '@id' => $node->request_id->value,
             '@radius' => $this->radius,
             '@unit' => $unit,
           )), $url)->toString();
