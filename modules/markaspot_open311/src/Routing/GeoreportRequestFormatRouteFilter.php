@@ -19,7 +19,7 @@ class GeoreportRequestFormatRouteFilter implements FilterInterface {
   public function filter(RouteCollection $collection, Request $request) {
 
     $current_path = \Drupal::service('path.current')->getPath();
-    if (!strstr($current_path, 'georeport')) {
+    if (!strstr($current_path, 'georeport/v2')) {
       $format = $request->getRequestFormat('html');
     } else {
       /** @var \Symfony\Component\Routing\Route $route */
