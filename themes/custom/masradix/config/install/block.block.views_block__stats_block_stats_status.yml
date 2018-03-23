@@ -23,6 +23,6 @@ settings:
 visibility:
   request_path:
     id: request_path
-    pages: "/node/*\r\n/node\r\n/requests\r\n/requests/*\r\n/open311\r\n/about"
+    pages: "/report\r\n/node/*\r\n/node\r\n/requests\r\n/requests/*\r\n/open311\r\n/about"
     negate: false
     context_mapping: {  }
