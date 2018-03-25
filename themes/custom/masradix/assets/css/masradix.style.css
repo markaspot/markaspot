@@ -7660,6 +7660,9 @@ Category and Status statistics
 .visualize.btn:after, .media-widget > a.visualize:after {
   content: ""; }
 
+.ui-dialog .ui-dialog-titlebar-close {
+  color: transparent; }
+
 /*
  * jQuery UI Dialog 1.10.0
  *

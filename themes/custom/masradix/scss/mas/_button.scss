@@ -35,9 +35,6 @@
 }
 
 
-
-
-
 $icon-map-marker: "\f041";
 $icon-requests: "\f058";
 $icon-visualization: "\f200";
@@ -76,4 +73,9 @@ $icon-visualization: "\f200";
   &:after {
           content: $icon-visualization;
   }
+}
+
+// Modal Close button
+.ui-dialog .ui-dialog-titlebar-close {
+  color: transparent;
 }
