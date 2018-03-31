@@ -1,6 +1,13 @@
 
 # Changelog
 
+## [8.4.1] - 2018-03-31
+
+- Theme Updates.
+- Add Stats Block.
+- Fix markaspot/mark-a-spot#68 geoReport endpoint format detection.
+- Update to Drupal 8.5.x
+
 ## [8.4.0-rc3] - 2018-02-19
 
 - Bug fixes.
