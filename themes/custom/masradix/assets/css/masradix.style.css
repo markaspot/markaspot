@@ -7076,6 +7076,9 @@ a.btn-circle span {
 .img-circle img {
   border-radius: 50%; }
 
+.form-group {
+  margin-bottom: 30px; }
+
 @media screen and (-webkit-min-device-pixel-ratio: 0) {
   select:focus,
   textarea:focus,
@@ -7612,44 +7615,40 @@ Category and Status statistics
 
 .btn, .media-widget > a {
   display: block;
+  padding: 10px 12px;
   overflow: hidden;
-  outline: none;
-  border-radius: 2px; }
-
-.btn span, .media-widget > a span {
-  display: block; }
-
-.btn:before, .media-widget > a:before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: block;
-  width: 0;
-  padding-top: 0;
-  border-radius: 100%;
-  background-color: rgba(236, 240, 241, 0.3);
-  transform: translate(-50%, -50%); }
-
-.btn:active:before, .media-widget > a:active:before {
-  width: 120%;
-  padding-top: 120%;
-  transition: width .2s ease-out, padding-top .2s ease-out; }
-
-.btn.start:after, .media-widget > a.start:after {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 0;
-  padding-top: inherit;
-  padding-bottom: inherit;
-  width: 1.8em;
-  font-family: FontAwesome;
-  font-size: 1.3em;
-  line-height: 1.2em;
-  text-align: center;
-  transition: .2s;
-  transform-origin: 50% 60%; }
+  outline: none; }
+  .btn span, .media-widget > a span {
+    display: block; }
+  .btn :before, .media-widget > a :before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    display: block;
+    width: 0;
+    padding-top: 0;
+    border-radius: 100%;
+    background-color: rgba(236, 240, 241, 0.3);
+    transform: translate(-50%, -50%); }
+  .btn :active:before, .media-widget > a :active:before {
+    width: 120%;
+    padding-top: 120%;
+    transition: width .2s ease-out, padding-top .2s ease-out; }
+  .btn .start:after, .media-widget > a .start:after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    padding-top: inherit;
+    padding-bottom: inherit;
+    width: 1.8em;
+    font-family: FontAwesome;
+    font-size: 1.3em;
+    line-height: 1.2em;
+    text-align: center;
+    transition: .2s;
+    transform-origin: 50% 60%; }
 
 .report.btn:after, .media-widget > a.report:after {
   content: ""; }
