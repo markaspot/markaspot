@@ -46,10 +46,10 @@ body {
 .pager li > a, .pager li > span,
 .btn-default.active,
 .open > .btn-default.dropdown-toggle {
-  color: #055a8e;
-  text-transform:uppercase;
+  /* color: #055a8e; */
+  /* text-transform:uppercase; */
   /* border: 1px solid #999; */
-  position: relative;
+  /* position: relative; */
 }
 
 .notifications li,
@@ -67,7 +67,7 @@ body {
 .btn.report {
   color: #7bceff;
   background-color: #055a8e;
-  text-transform:inherit;
+  /* text-transform:inherit; */
 }
 
 .btn.visualize {
@@ -81,7 +81,7 @@ body {
 }
 
 .btn.start:after {
-    background-color: #037fcc;
+    /* background-color: #037fcc; */
 }
 
 .btn.start:hover,

@@ -7079,6 +7079,9 @@ a.btn-circle span {
 .form-group {
   margin-bottom: 30px; }
 
+.views-exposed-form .form-group {
+  margin-bottom: 10px; }
+
 @media screen and (-webkit-min-device-pixel-ratio: 0) {
   select:focus,
   textarea:focus,
@@ -7447,6 +7450,10 @@ article.service-request .label-default {
   padding: 10px;
   margin: 10px 0; }
 
+.navbar-brand {
+  height: 40px;
+  width: 40px; }
+
 img.site-logo {
   float: none;
   margin: 20px auto; }
@@ -7613,51 +7620,36 @@ Category and Status statistics
   text-align: center;
   opacity: 0.5; }
 
-.btn, .media-widget > a {
-  display: block;
-  padding: 10px 12px;
-  overflow: hidden;
-  outline: none; }
-  .btn span, .media-widget > a span {
-    display: block; }
-  .btn :before, .media-widget > a :before {
-    content: "";
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    display: block;
-    width: 0;
-    padding-top: 0;
-    border-radius: 100%;
-    background-color: rgba(236, 240, 241, 0.3);
-    transform: translate(-50%, -50%); }
-  .btn :active:before, .media-widget > a :active:before {
-    width: 120%;
-    padding-top: 120%;
-    transition: width .2s ease-out, padding-top .2s ease-out; }
-  .btn .start:after, .media-widget > a .start:after {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 0;
-    padding-top: inherit;
-    padding-bottom: inherit;
-    width: 1.8em;
-    font-family: FontAwesome;
-    font-size: 1.3em;
-    line-height: 1.2em;
-    text-align: center;
-    transition: .2s;
-    transform-origin: 50% 60%; }
+.start.btn span, .media-widget > a.start span {
+  position: relative;
+  left: -12px;
+  display: inline-block;
+  width: 3em;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px 0 0 3px;
+  text-align: center; }
 
-.report.btn:after, .media-widget > a.report:after {
-  content: ""; }
+.start {
+  padding-top: 0;
+  padding-bottom: 0;
+  display: block !important;
+  text-align: left; }
 
-.request.btn:after, .media-widget > a.request:after {
+.start.btn span:before, .media-widget > a.start span:before {
+  font-family: FontAwesome;
+  font-size: 1.3em;
+  line-height: 1.2em;
+  text-align: right; }
+
+.start.btn.request span:before, .media-widget > a.start.request span:before {
   content: ""; }
 
-.visualize.btn:after, .media-widget > a.visualize:after {
+.start.btn.visualize span:before, .media-widget > a.start.visualize span:before {
   content: ""; }
+
+.start.btn.report span:before, .media-widget > a.start.report span:before {
+  content: ""; }
 
 .ui-dialog .ui-dialog-titlebar-close {
   color: transparent; }
