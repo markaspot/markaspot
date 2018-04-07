@@ -1,9 +1,0 @@
-langcode: en
-status: true
-dependencies:
-  module:
-    - node
-id: node.edit_service_request
-label: Management
-targetEntityType: node
-cache: true
