@@ -7622,13 +7622,12 @@ Category and Status statistics
 
 .start.btn span, .media-widget > a.start span {
   position: relative;
-  left: -12px;
+  left: -10px;
   display: inline-block;
-  width: 3em;
-  padding: 6px 12px;
+  padding: 0 8px;
+  width: 2em;
   background: rgba(255, 255, 255, 0.12);
-  border-radius: 3px 0 0 3px;
-  text-align: center; }
+  text-align: right; }
 
 .start {
   padding-top: 0;
@@ -7640,7 +7639,10 @@ Category and Status statistics
   font-family: FontAwesome;
   font-size: 1.3em;
   line-height: 1.2em;
-  text-align: right; }
+  text-align: center;
+  margin: 10px 10px 10px 0;
+  display: inline-block;
+  width: 1em; }
 
 .start.btn.request span:before, .media-widget > a.start.request span:before {
   content: ""; }
