@@ -53,7 +53,7 @@
     "drush/drush": "~9.0",
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
-    "drupal/core": "8.5.*",
+    "drupal/core": "8.6.x-dev",
     "drupal/radix": "3.*",
     "drupal/pathauto": "^1.0@RC",
     "drupal/admin_toolbar": "1.*",
