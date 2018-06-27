@@ -65,19 +65,19 @@ body {
     text-decoration:none;
 }
 .btn.report {
-  color: #7bceff;
+  color: #1d84c3;
   background-color: #055a8e;
   /* text-transform:inherit; */
 }
 
 .btn.visualize {
   color: #055a8e;
-  background-color: #7bceff 
+  background-color: #1d84c3
 }
 
 .btn.request {
   color: #055a8e;
-  background-color: #7bceff 
+  background-color: #1d84c3
 }
 
 .btn.start:after {
