@@ -33,7 +33,7 @@
   .navbar-nav {
     list-style: none;
     padding: 0;
-    width: 256px;
+    width: 270px;
   }
 
   .navbar-nav li {
@@ -95,6 +95,10 @@
 
   .map-stuck .leaflet-bar-timecontrol {
     right: 60px;
+  }
+
+  .block .user-login-form {
+    padding: 20px
   }
 }
 
@@ -276,7 +280,7 @@ body {
   position: fixed;
   top: 0;
   bottom: 0;
-  width: 256px;
+  width: 270px;
   min-height: 100vh;
   overflow-y: scroll;
   -webkit-overflow-scrolling: touch;

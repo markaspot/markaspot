@@ -3681,7 +3681,8 @@ tbody.collapse.in {
     margin-left: 2px; }
   .nav-pills > li.active > a, .nav-pills > li.active > a:hover, .nav-pills > li.active > a:focus {
     color: #fff;
-    background-color: #122458; }
+    background-color: f2f2f2;
+    }
 
 .nav-stacked > li {
   float: none; }
@@ -6912,12 +6913,6 @@ span.site-name {
   clear: both;
   margin: 60px 20px 0 0; }
 
-.block--userlogin ul {
-  clear: left;
-  list-style: none;
-  margin: 0;
-  padding: 0; }
-
 .btn-circle {
   width: 30px;
   height: 30px;
@@ -8109,7 +8104,7 @@ ul.log_list .count {
   .navbar-nav {
     list-style: none;
     padding: 0;
-    width: 256px; }
+    width: 270px; }
   .navbar-nav li {
     display: inline-block;
     line-height: 20px;
@@ -8148,7 +8143,9 @@ ul.log_list .count {
             backface-visibility: hidden;
     z-index: 2; }
   .map-stuck .leaflet-bar-timecontrol {
-    right: 60px; } }
+    right: 60px; }
+  .block .user-login-form {
+    padding: 20px; } }
 
 /*-------------------------------*/
 /*       Hamburger-Cross         */
@@ -8302,7 +8299,7 @@ body {
   position: fixed;
   top: 0;
   bottom: 0;
-  width: 256px;
+  width: 270px;
   min-height: 100vh;
   overflow-y: scroll;
   -webkit-overflow-scrolling: touch;

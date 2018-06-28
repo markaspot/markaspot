@@ -133,6 +133,7 @@ footer#footer {
   background-color: #1d84c3;
 }
 .block .user-login-form,
+.block--userlogin a,
 .nav.navbar-nav > li > a {
   color: #f9f9f9;
 }
