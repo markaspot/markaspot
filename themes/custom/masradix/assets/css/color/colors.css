@@ -18,7 +18,7 @@ body {
 
 
 .leaflet-control-locate {
-  border-color: #a3e5ff !important;
+  border-color: #0071b3 !important;
 }
 
 
@@ -52,12 +52,18 @@ body {
   /* position: relative; */
 }
 
+.btn-default,
 .notifications li,
 .button.button--primary {
-  color: #7bceff;
+  color: #eee;
   background-color: #055a8e;
   text-decoration:none;
   text-transform:inherit;
+}
+
+.dropdown-toggle.btn-default {
+  background-color: inherit;
+  color: inherit;
 }
 
 .btn.start{
@@ -65,18 +71,18 @@ body {
     text-decoration:none;
 }
 .btn.report {
-  color: #1d84c3;
+  color: #eee;
   background-color: #055a8e;
   /* text-transform:inherit; */
 }
 
 .btn.visualize {
-  color: #055a8e;
+  color: #eee;
   background-color: #1d84c3
 }
 
 .btn.request {
-  color: #055a8e;
+  color: #eee;
   background-color: #1d84c3
 }
 
@@ -92,7 +98,7 @@ body {
 .btn-default:hover,
 .btn-default:focus {
   color: #f5f5f5;
-  background-color: #055a8e;
+  background-color: #1d84c3;
 }
 
 .view--requests .view__header,
@@ -103,6 +109,10 @@ footer#footer,
 fieldset#edit-field-geolocation-0-map-container,
 .form-item-field-request-image-0 {
   background-color: #eee;
+}
+
+footer#footer {
+  background-color: #292929;
 }
 
 .block.block--markaspotbuiltwithblock {
@@ -192,13 +202,13 @@ a:active,
   }
 
   .nav.navbar-nav > li > a:active {
-    color: #7bceff!important;
+    color: #0071b3!important;
   }
 
   .nav > li > a:hover, .nav > li > a:focus {
     text-decoration: none;
     background-color: #eeeeee!important;
-    color: #7bceff
+    color: #0071b3
   }
 
 }
