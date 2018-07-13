@@ -79,7 +79,8 @@ function markaspot_static_json_request() {
 
   // Preparing georeport API Request URI.
   $host = \Drupal::request()->getHost();
-  $curlHost = strstr($host, 'docksal') ? $_SERVER['SERVER_ADDR'] : $host;
+  $curlHost = (strstr($host, 'docksal') || strstr($host, 'default')) ? $_SERVER['SERVER_ADDR'] : $host;
+  \Drupal::logger('Mark-a-Spot Static Json')->notice('Saving Json from URL: '. $curlHost);
 
   $cronkey = \Drupal::state()->get('system.cron_key');
   $url = 'http://' . $curlHost . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
@@ -96,8 +97,6 @@ function markaspot_static_json_request() {
 
     markaspot_static_json_memory();
     if ($curlHost !== "default") {
-
-      \Drupal::logger('Mark-a-Spot Static Json')->notice('URL: '. $url);
 
       $client = \Drupal::httpClient();
       $request = $client->get($url);
