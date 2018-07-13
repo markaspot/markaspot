@@ -87,7 +87,7 @@ function markaspot_static_json_request() {
 
   $path = 'public://requests.json';
   $file = file_get_contents($path, TRUE);
-  // var_dump($file);
+
   if ($file === FALSE) {
     \Drupal::logger('Mark-a-Spot Static Json')
       ->warning(t('Static file could not be read.'));
