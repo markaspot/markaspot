@@ -70,6 +70,10 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
   z-index: inherit;
 }
 
+.leaflet-top, .leaflet-bottom {
+    z-index: 900;
+}
+
 .toolbar-vertical.toolbar-fixed .stuck,
 .toolbar-horizontal.toolbar-fixed .stuck,
 .toolbar-vertical.toolbar-fixed .timecontrol-date.utc,

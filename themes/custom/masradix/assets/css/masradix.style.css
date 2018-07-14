@@ -3681,8 +3681,7 @@ tbody.collapse.in {
     margin-left: 2px; }
   .nav-pills > li.active > a, .nav-pills > li.active > a:hover, .nav-pills > li.active > a:focus {
     color: #fff;
-    background-color: f2f2f2;
-    }
+    background-color: #122458; }
 
 .nav-stacked > li {
   float: none; }
@@ -7071,9 +7070,6 @@ a.btn-circle span {
 .img-circle img {
   border-radius: 50%; }
 
-.form-group {
-  margin-bottom: 30px; }
-
 .views-exposed-form .form-group {
   margin-bottom: 10px; }
 
@@ -7193,6 +7189,12 @@ p#edit-field-request-image-0-upload--description .visible {
 .field-multiple-table th {
   border: 0;
   padding: 15px; }
+
+#edit-body-0--description {
+  display: block;
+  margin-top: 0px;
+  margin-bottom: 10px;
+  color: #8c8c8c; }
 
 label.image-widget-data.btn.btn-block.btn-default {
   border: 1px #ddd dashed;
@@ -7923,6 +7925,9 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
 
 .leaflet-control {
   z-index: inherit; }
+
+.leaflet-top, .leaflet-bottom {
+  z-index: 900; }
 
 .toolbar-vertical.toolbar-fixed .stuck,
 .toolbar-horizontal.toolbar-fixed .stuck,
