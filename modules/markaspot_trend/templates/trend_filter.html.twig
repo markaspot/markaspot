@@ -5,18 +5,18 @@
             <p>{{ filter_intro }}</p>
         </div>
         <div class="col-lg-4 col-xl-3">
-            <label for="year">Selected Year: ${ selectedYear }</label>
+            <label for="year">{% trans %}Selected Year{% endtrans %}: ${ selectedYear }</label>
             <select name="year" v-model="selectedYear" class="selectpicker show-tick">
-                <option value="">Reset</option>
+                <option value="">{% trans %}Reset{% endtrans %}</option>
                 <option v-for="year in years" v-bind:value="year">
                     ${ year }
                 </option>
             </select>
         </div>
         <div class="col-lg-4 col-xl-3">
-            <label for="month">Selected Month: ${ selectedMonth }</label>
+            <label for="month">{% trans %}Selected Month{% endtrans %}: ${ selectedMonth }</label>
             <select name="month" v-model="selectedMonth" class="selectpicker show-tick">
-                <option value="">Reset</option>
+                <option value="">{% trans %}Reset{% endtrans %}</option>
                 <option v-for="month in months" v-bind:value="month">
                     ${ month }
                 </option>

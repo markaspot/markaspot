@@ -2,6 +2,10 @@ name: Mark-a-Spot
 description: 'Install with commonly used features pre-configured.'
 type: profile
 core: 8.x
+distibution:
+  name: Mark-a-Spot
+  install:
+    finish_url: admin/content
 dependencies:
 
   - admin_toolbar
@@ -92,6 +96,4 @@ dependencies:
 themes:
   - masradix
   - seven
-#distribution:
-#  name: Mark-a-Spot
-#  name: Mark-a-Spot
+

@@ -79,14 +79,15 @@ function markaspot_static_json_request() {
 
   // Preparing georeport API Request URI.
   $host = \Drupal::request()->getHost();
-  $curlHost = strstr($host, 'docksal') ? $_SERVER['SERVER_ADDR'] : $host;
+  $curlHost = (strstr($host, 'docksal') || strstr($host, 'default')) ? $_SERVER['SERVER_ADDR'] : $host;
+  \Drupal::logger('Mark-a-Spot Static Json')->notice('Saving Json from URL: '. $curlHost);
 
   $cronkey = \Drupal::state()->get('system.cron_key');
   $url = 'http://' . $curlHost . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
 
   $path = 'public://requests.json';
   $file = file_get_contents($path, TRUE);
-  // var_dump($file);
+
   if ($file === FALSE) {
     \Drupal::logger('Mark-a-Spot Static Json')
       ->warning(t('Static file could not be read.'));
@@ -105,12 +106,11 @@ function markaspot_static_json_request() {
       $start_json = "[{\"servicerequest_id\":\"15-c5\",\"title\":\"#15-c5  Park Maintenance Complaint\",\"description\":null,\"lat\":40.737061,\"long\":-73.935242,\"address_string\":\",\",\"service_name\":\"Park Maintenance Complaint\",\"requested_datetime\":\"2018-01-05T12:56:36+00:00\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\",\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"service_code\":\"0002\",\"extended_attributes\":{\"markaspot\":{\"nid\":\"18\",\"category_hex\":\"#5f9ea0\",\"category_icon\":\"fa-tree\",\"status_hex\":\"#8B0000\",\"status_icon\":\"fa-play-circle-o\",\"status_notes\":[{\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\"}]}}}]";
       $current_service_requests = json_decode($start_json, TRUE);
     }
-    $replace = FILE_EXISTS_REPLACE;
 
     // Encode array.
     $response = json_encode($current_service_requests);
 
-    $local = ($file !== FALSE) ? file_save_data($response, $path, $replace) : file_unmanaged_save_data($response, $path, $replace);
+    $local = ($file !== FALSE) ? file_save_data($response, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
     if (isset($local)) {
       \Drupal::logger('Mark-a-Spot Static Json')
         ->notice(t('Static file saved.'));
@@ -121,7 +121,7 @@ function markaspot_static_json_request() {
     }
     markaspot_static_json_memory();
 
-    \Drupal::logger('Mark-a-Spot Static Json')->info(t('Status ok'));
+    \Drupal::logger('Mark-a-Spot Static Json')->info(t('Status finished'));
 
   }
   catch (BadResponseException $exception) {
@@ -142,19 +142,8 @@ function markaspot_static_json_request() {
 function markaspot_static_json_memory() {
   $mem_usage = memory_get_usage(TRUE);
 
-  if ($mem_usage < 1024) {
-    \Drupal::logger('Mark-a-Spot Static Json')->notice($mem_usage . " bytes");
-  }
-
-  elseif ($mem_usage < 1048576) {
-    \Drupal::logger('Mark-a-Spot Static Json')
-      ->notice(round($mem_usage / 1024, 2) . " kilobytes");
-  }
-  else {
-    \Drupal::logger('Mark-a-Spot Static Json')
-      ->notice(round($mem_usage / 1048576, 2) . " megabytes");
-  }
-
+  \Drupal::logger('Mark-a-Spot Static Json')
+    ->notice(round($mem_usage / 1048576, 2) . " megabytes");
 }
 
 /**

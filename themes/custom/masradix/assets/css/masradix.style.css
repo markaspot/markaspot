@@ -6910,13 +6910,7 @@ span.site-name {
 
 .block.block--userlogin {
   clear: both;
-  margin: 60px 20px 0 20px; }
-
-.block--userlogin ul {
-  clear: left;
-  list-style: none;
-  margin: 0;
-  padding: 0; }
+  margin: 60px 20px 0 0; }
 
 .btn-circle {
   width: 30px;
@@ -7076,6 +7070,9 @@ a.btn-circle span {
 .img-circle img {
   border-radius: 50%; }
 
+.views-exposed-form .form-group {
+  margin-bottom: 10px; }
+
 @media screen and (-webkit-min-device-pixel-ratio: 0) {
   select:focus,
   textarea:focus,
@@ -7192,6 +7189,12 @@ p#edit-field-request-image-0-upload--description .visible {
 .field-multiple-table th {
   border: 0;
   padding: 15px; }
+
+#edit-body-0--description {
+  display: block;
+  margin-top: 0px;
+  margin-bottom: 10px;
+  color: #8c8c8c; }
 
 label.image-widget-data.btn.btn-block.btn-default {
   border: 1px #ddd dashed;
@@ -7444,6 +7447,10 @@ article.service-request .label-default {
   padding: 10px;
   margin: 10px 0; }
 
+.navbar-brand {
+  height: 40px;
+  width: 40px; }
+
 img.site-logo {
   float: none;
   margin: 20px auto; }
@@ -7610,55 +7617,38 @@ Category and Status statistics
   text-align: center;
   opacity: 0.5; }
 
-.btn, .media-widget > a {
-  display: block;
-  overflow: hidden;
-  outline: none;
-  border-radius: 2px; }
+.start.btn span, .media-widget > a.start span {
+  position: relative;
+  left: -10px;
+  display: inline-block;
+  padding: 0 8px;
+  width: 2em;
+  background: rgba(255, 255, 255, 0.12);
+  text-align: right; }
 
-.btn span, .media-widget > a span {
-  display: block; }
-
-.btn:before, .media-widget > a:before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: block;
-  width: 0;
+.start {
   padding-top: 0;
-  border-radius: 100%;
-  background-color: rgba(236, 240, 241, 0.3);
-  transform: translate(-50%, -50%); }
+  padding-bottom: 0;
+  display: block !important;
+  text-align: left; }
 
-.btn:active:before, .media-widget > a:active:before {
-  width: 120%;
-  padding-top: 120%;
-  transition: width .2s ease-out, padding-top .2s ease-out; }
-
-.btn.start:after, .media-widget > a.start:after {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  right: 0;
-  padding-top: inherit;
-  padding-bottom: inherit;
-  width: 1.8em;
+.start.btn span:before, .media-widget > a.start span:before {
   font-family: FontAwesome;
   font-size: 1.3em;
   line-height: 1.2em;
   text-align: center;
-  transition: .2s;
-  transform-origin: 50% 60%; }
+  margin: 10px 10px 10px 0;
+  display: inline-block;
+  width: 1em; }
 
-.report.btn:after, .media-widget > a.report:after {
-  content: ""; }
-
-.request.btn:after, .media-widget > a.request:after {
+.start.btn.request span:before, .media-widget > a.start.request span:before {
   content: ""; }
 
-.visualize.btn:after, .media-widget > a.visualize:after {
+.start.btn.visualize span:before, .media-widget > a.start.visualize span:before {
   content: ""; }
+
+.start.btn.report span:before, .media-widget > a.start.report span:before {
+  content: ""; }
 
 .ui-dialog .ui-dialog-titlebar-close {
   color: transparent; }
@@ -7838,8 +7828,7 @@ div#hero {
   background-image: url("../images/cc_by_Martin_Grandjean_social-n-analys.png");
   /* Safari 6.0 - 9.0 */
   filter: grayscale(100%);
-  opacity: 0.1;
-  background-position: 0% 0px;
+  opacity: 0.3;
   background-size: 100%;
   background-repeat: no-repeat;
   background-position: 50% 0px;
@@ -7936,6 +7925,9 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
 
 .leaflet-control {
   z-index: inherit; }
+
+.leaflet-top, .leaflet-bottom {
+  z-index: 900; }
 
 .toolbar-vertical.toolbar-fixed .stuck,
 .toolbar-horizontal.toolbar-fixed .stuck,
@@ -8116,9 +8108,8 @@ ul.log_list .count {
     float: none !important; }
   .navbar-nav {
     list-style: none;
-    margin: 20px 0;
     padding: 0;
-    width: 256px; }
+    width: 270px; }
   .navbar-nav li {
     display: inline-block;
     line-height: 20px;
@@ -8157,7 +8148,9 @@ ul.log_list .count {
             backface-visibility: hidden;
     z-index: 2; }
   .map-stuck .leaflet-bar-timecontrol {
-    right: 60px; } }
+    right: 60px; }
+  .block .user-login-form {
+    padding: 20px; } }
 
 /*-------------------------------*/
 /*       Hamburger-Cross         */
@@ -8311,7 +8304,7 @@ body {
   position: fixed;
   top: 0;
   bottom: 0;
-  width: 256px;
+  width: 270px;
   min-height: 100vh;
   overflow-y: scroll;
   -webkit-overflow-scrolling: touch;
@@ -8330,7 +8323,7 @@ body {
   background-color: #FFF;
   /* A background-color is required */
   min-height: 100vh;
-  box-shadow: 4px 0 1px -2px rgba(0, 0, 0, 0.68); }
+  box-shadow: 2px 0 1px -2px rgba(0, 0, 0, 0.68); }
 
 .slideout-open,
 .slideout-open body,

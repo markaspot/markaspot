@@ -40,7 +40,6 @@ if (target) {
     if (width >= 1200) {
       $('.navbar-default > div').removeClass(".navbar-left");
       $('a.navbar-brand').prependTo(nav);
-      nav.addClass('container');
       $('.fixed-header').hide();
       $('img.site-logo').fadeIn(800);
     } else {

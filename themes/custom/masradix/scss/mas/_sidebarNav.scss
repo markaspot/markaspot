@@ -32,9 +32,8 @@
   }
   .navbar-nav {
     list-style: none;
-    margin: 20px 0;
     padding: 0;
-    width: 256px;
+    width: 270px;
   }
 
   .navbar-nav li {
@@ -96,6 +95,10 @@
 
   .map-stuck .leaflet-bar-timecontrol {
     right: 60px;
+  }
+
+  .block .user-login-form {
+    padding: 20px
   }
 }
 
@@ -277,7 +280,7 @@ body {
   position: fixed;
   top: 0;
   bottom: 0;
-  width: 256px;
+  width: 270px;
   min-height: 100vh;
   overflow-y: scroll;
   -webkit-overflow-scrolling: touch;
@@ -299,8 +302,8 @@ body {
   // will-change: transform;
   background-color: #FFF; /* A background-color is required */
   min-height: 100vh;
-  -webkit-box-shadow: 4px 0 1px -2px rgba(0, 0, 0, 0.68);
-          box-shadow: 4px 0 1px -2px rgba(0, 0, 0, 0.68);
+  -webkit-box-shadow: 2px 0 1px -2px rgba(0, 0, 0, 0.68);
+          box-shadow: 2px 0 1px -2px rgba(0, 0, 0, 0.68);
 }
 
 .slideout-open,

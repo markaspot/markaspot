@@ -118,7 +118,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           // Drupal.markaspot_map.hideMarkers();
           // Show Markers additionally ob button click.
 
-          var categoryMarker = L.easyButton({
+          const categoryMarker = L.easyButton({
             position: 'topleft',
             states: [
               {

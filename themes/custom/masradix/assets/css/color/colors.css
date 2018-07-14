@@ -18,7 +18,7 @@ body {
 
 
 .leaflet-control-locate {
-  border-color: #a3e5ff !important;
+  border-color: #0071b3 !important;
 }
 
 
@@ -46,18 +46,24 @@ body {
 .pager li > a, .pager li > span,
 .btn-default.active,
 .open > .btn-default.dropdown-toggle {
-  color: #055a8e;
-  text-transform:uppercase;
+  /* color: #055a8e; */
+  /* text-transform:uppercase; */
   /* border: 1px solid #999; */
-  position: relative;
+  /* position: relative; */
 }
 
+.btn-default,
 .notifications li,
 .button.button--primary {
-  color: #7bceff;
+  color: #eee;
   background-color: #055a8e;
   text-decoration:none;
   text-transform:inherit;
+}
+
+.dropdown-toggle.btn-default {
+  background-color: inherit;
+  color: inherit;
 }
 
 .btn.start{
@@ -65,23 +71,23 @@ body {
     text-decoration:none;
 }
 .btn.report {
-  color: #7bceff;
+  color: #eee;
   background-color: #055a8e;
-  text-transform:inherit;
+  /* text-transform:inherit; */
 }
 
 .btn.visualize {
-  color: #055a8e;
-  background-color: #7bceff 
+  color: #eee;
+  background-color: #1d84c3
 }
 
 .btn.request {
-  color: #055a8e;
-  background-color: #7bceff 
+  color: #eee;
+  background-color: #1d84c3
 }
 
 .btn.start:after {
-    background-color: #037fcc;
+    /* background-color: #037fcc; */
 }
 
 .btn.start:hover,
@@ -92,7 +98,7 @@ body {
 .btn-default:hover,
 .btn-default:focus {
   color: #f5f5f5;
-  background-color: #055a8e;
+  background-color: #1d84c3;
 }
 
 .view--requests .view__header,
@@ -103,6 +109,10 @@ footer#footer,
 fieldset#edit-field-geolocation-0-map-container,
 .form-item-field-request-image-0 {
   background-color: #eee;
+}
+
+footer#footer {
+  background-color: #292929;
 }
 
 .block.block--markaspotbuiltwithblock {
@@ -123,6 +133,7 @@ fieldset#edit-field-geolocation-0-map-container,
   background-color: #1d84c3;
 }
 .block .user-login-form,
+.block--userlogin a,
 .nav.navbar-nav > li > a {
   color: #f9f9f9;
 }
@@ -192,13 +203,13 @@ a:active,
   }
 
   .nav.navbar-nav > li > a:active {
-    color: #7bceff!important;
+    color: #0071b3!important;
   }
 
   .nav > li > a:hover, .nav > li > a:focus {
     text-decoration: none;
     background-color: #eeeeee!important;
-    color: #7bceff
+    color: #0071b3
   }
 
 }

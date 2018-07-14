@@ -110,7 +110,7 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
         ->getStorage('taxonomy_term')
         ->load($tid);
 
-      $node->title = '#' . $node->request_id->value . '  ' . $service_name->label();
+      $node->title = '#' . $node->request_id->value . '  ' . $service_name->name->value;
 
     }
 
