@@ -1,6 +1,13 @@
 
 # Changelog
 
+## [8.4.2] - 2018-07-14
+
+- Theme Updates.
+- Add exif orientation module
+- Make vue.js filter translatable
+- Update Drush, VBO
+
 ## [8.4.1] - 2018-03-31
 
 - Theme Updates.
