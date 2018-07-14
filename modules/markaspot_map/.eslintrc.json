@@ -1,0 +1,16 @@
+{
+  "extends": "../../../../../core/.eslintrc.json",
+  "globals": {
+    "L": true,
+    "Waypoint": true
+  },
+  "rules": {
+
+    // We want to specify .js and .jsx file extensions.
+    "import/extensions": ["error", "always", {
+      "js": "always"
+    }],
+    // Warn, don't error, for unresolved import paths.
+    "import/no-unresolved": "warn"
+  }
+}

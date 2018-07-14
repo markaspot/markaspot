@@ -10,7 +10,7 @@ module.exports = {
   },
   watchOptions: {
     aggregateTimeout: 300,
-    poll: 1000
+    poll: 1000,
   },
   output: {
     path: path.resolve(__dirname, './js'),
@@ -24,10 +24,10 @@ module.exports = {
         use: [
           {
             loader: 'babel-loader',
-            options: {presets: ['env']}
-          }
+            options: { presets: ['env'] },
+          },
         ],
       },
     ],
-  }
-}
+  },
+};
