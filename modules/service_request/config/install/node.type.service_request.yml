@@ -9,7 +9,7 @@ dependencies:
         - service_request
 name: 'Service Request'
 type: service_request
-description: 'Open311 Service service_requests'
+description: 'Open311 Service Requests'
 help: ''
 new_revision: false
 preview_mode: 1
