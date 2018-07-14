@@ -1,0 +1,36 @@
+{
+  "name": "markaspot",
+  "version": "1.0.0",
+  "description": "This profile defines basic configuration and installation files. No make files here for now.  Installation needs composer.json of the mark-a-spot dev repo.",
+  "main": "index.js",
+  "dependencies": {},
+  "devDependencies": {
+    "babel-cli": "^6.26.0",
+    "babel-core": "^6.26.3",
+    "babel-loader": "^7.1.5",
+    "babel-preset-env": "^1.7.0",
+    "webpack": "^4.16.0",
+    "webpack-cli": "^3.0.8",
+    "webpack-dev-server": "^2.11.2"
+  },
+  "scripts": {
+    "build": "./node_modules/.bin/babel src -d lib",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "babel": {
+    "presets": [
+      "env"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/markaspot/markaspot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/markaspot/markaspot/issues"
+  },
+  "homepage": "https://github.com/markaspot/markaspot#readme"
+}
