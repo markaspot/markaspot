@@ -49,13 +49,13 @@ function markaspot_static_json_cron() {
   $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
 
   // Default to an hourly interval. Of course, cron has to be running at least
-  // hourly for this to work.
+  // half hourly for this to work.
   $interval = $cron_config->get('interval');
-  $interval = !empty($interval) ? $interval : 5;
+  $interval = !empty($interval) ? $interval : 1800;
 
   // We usually don't want to act every time cron runs (which could be every
   // minute) so keep a time for the next run in a variable.
-  // $next_execution = $cron_config->get('next_execution');.
+  $next_execution = $cron_config->get('markaspot_static_json.next_execution');
   $next_execution = !empty($next_execution) ? $next_execution : 0;
   if (REQUEST_TIME >= $next_execution) {
 
@@ -68,7 +68,7 @@ function markaspot_static_json_cron() {
       drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601(REQUEST_TIME)]));
       \Drupal::state()->set('mas_shown_status_message', FALSE);
     }
-    $cron_config->set('next_execution', REQUEST_TIME + $interval)->save();
+    $cron_config->set('markaspot_static_json.next_execution', REQUEST_TIME + $interval)->save();
   }
 }
 
@@ -79,8 +79,7 @@ function markaspot_static_json_request() {
 
   // Preparing georeport API Request URI.
   $host = \Drupal::request()->getHost();
-  $curlHost = (strstr($host, 'docksal') || strstr($host, 'default')) ? $_SERVER['SERVER_ADDR'] : $host;
-  \Drupal::logger('Mark-a-Spot Static Json')->notice('Saving Json from URL: '. $curlHost);
+  \Drupal::logger('Mark-a-Spot Static Json')->notice('Saving Json from URL: '. $host);
 
   $cronkey = \Drupal::state()->get('system.cron_key');
   $url = 'http://' . $curlHost . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
@@ -96,7 +95,7 @@ function markaspot_static_json_request() {
   try {
 
     markaspot_static_json_memory();
-    if ($curlHost !== "default") {
+    if ($host !== "default") {
 
       $client = \Drupal::httpClient();
       $request = $client->get($url);
