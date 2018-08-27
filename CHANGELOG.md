@@ -1,6 +1,20 @@
 
 # Changelog
 
+## [8.4.2] - 2018-07-14
+
+- Theme Updates.
+- Add exif orientation module
+- Make vue.js filter translatable
+- Update Drush, VBO
+
+## [8.4.1] - 2018-03-31
+
+- Theme Updates.
+- Add Stats Block.
+- Fix markaspot/mark-a-spot#68 geoReport endpoint format detection.
+- Update to Drupal 8.5.x
+
 ## [8.4.0-rc3] - 2018-02-19
 
 - Bug fixes.
