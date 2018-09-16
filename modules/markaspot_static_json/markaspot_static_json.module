@@ -79,48 +79,48 @@ function markaspot_static_json_request() {
 
   // Preparing georeport API Request URI.
   $host = \Drupal::request()->getHost();
-  \Drupal::logger('Mark-a-Spot Static Json')->notice('Saving Json from URL: '. $host);
 
-  $cronkey = \Drupal::state()->get('system.cron_key');
-  $url = '//' . $host . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
+
 
   $path = 'public://requests.json';
   $file = file_get_contents($path, TRUE);
 
   if ($file === FALSE) {
-    \Drupal::logger('Mark-a-Spot Static Json')
+    \Drupal::logger('Mark-a-Spot Static JSON')
       ->warning(t('Static file could not be read.'));
+    $start_json = "[{\"servicerequest_id\":\"15-c5\",\"title\":\"#15-c5  Park Maintenance Complaint\",\"description\":null,\"lat\":40.737061,\"long\":-73.935242,\"address_string\":\",\",\"service_name\":\"Park Maintenance Complaint\",\"requested_datetime\":\"2018-01-05T12:56:36+00:00\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\",\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"service_code\":\"0002\",\"extended_attributes\":{\"markaspot\":{\"nid\":\"18\",\"category_hex\":\"#5f9ea0\",\"category_icon\":\"fa-tree\",\"status_hex\":\"#8B0000\",\"status_icon\":\"fa-play-circle-o\",\"status_notes\":[{\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\"}]}}}]";
+    $current_service_requests = json_decode($start_json, TRUE);
+  }
+
+  if ($host !== "default") {
+    \Drupal::logger('Mark-a-Spot Static JSON')->notice('Saving JSON from URL: '. $host);
+    $cronkey = \Drupal::state()->get('system.cron_key');
+    $url = '//' . $host . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
+
+    $client = \Drupal::httpClient();
+    $request = $client->get($url);
+    $current_service_requests = json_decode($request->getBody(), TRUE);
   }
 
   try {
 
     markaspot_static_json_memory();
-    if ($host !== "default") {
-
-      $client = \Drupal::httpClient();
-      $request = $client->get($url);
-      $current_service_requests = json_decode($request->getBody(), TRUE);
-    }
-    else {
-      $start_json = "[{\"servicerequest_id\":\"15-c5\",\"title\":\"#15-c5  Park Maintenance Complaint\",\"description\":null,\"lat\":40.737061,\"long\":-73.935242,\"address_string\":\",\",\"service_name\":\"Park Maintenance Complaint\",\"requested_datetime\":\"2018-01-05T12:56:36+00:00\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\",\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"service_code\":\"0002\",\"extended_attributes\":{\"markaspot\":{\"nid\":\"18\",\"category_hex\":\"#5f9ea0\",\"category_icon\":\"fa-tree\",\"status_hex\":\"#8B0000\",\"status_icon\":\"fa-play-circle-o\",\"status_notes\":[{\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\"}]}}}]";
-      $current_service_requests = json_decode($start_json, TRUE);
-    }
 
     // Encode array.
     $response = json_encode($current_service_requests);
 
     $local = ($file !== FALSE) ? file_save_data($response, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
     if (isset($local)) {
-      \Drupal::logger('Mark-a-Spot Static Json')
+      \Drupal::logger('Mark-a-Spot Static JSON')
         ->notice(t('Static file saved.'));
     }
     else {
-      \Drupal::logger('Mark-a-Spot Static Json')
+      \Drupal::logger('Mark-a-Spot Static JSON')
         ->notice(t('Static file not saved.'));
     }
     markaspot_static_json_memory();
 
-    \Drupal::logger('Mark-a-Spot Static Json')->info(t('Status finished'));
+    \Drupal::logger('Mark-a-Spot Static JSON')->info(t('Status finished'));
 
   }
   catch (BadResponseException $exception) {
@@ -141,7 +141,7 @@ function markaspot_static_json_request() {
 function markaspot_static_json_memory() {
   $mem_usage = memory_get_usage(TRUE);
 
-  \Drupal::logger('Mark-a-Spot Static Json')
+  \Drupal::logger('Mark-a-Spot Static JSON')
     ->notice(round($mem_usage / 1048576, 2) . " megabytes");
 }
 
