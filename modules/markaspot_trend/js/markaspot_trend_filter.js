@@ -32,7 +32,7 @@
       createYears: function createYears(startYear) {
         var currentYear = new Date().getFullYear();
         var years = [];
-        startYear = startYear || 2015;
+        startYear = startYear || currentYear -1;
 
         while (startYear <= currentYear) {
           years.push(startYear++);
