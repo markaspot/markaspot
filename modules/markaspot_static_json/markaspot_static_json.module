@@ -101,36 +101,31 @@ function markaspot_static_json_request() {
       $response = \Drupal::httpClient()->get($uri);
       $data = (string) $response->getBody();
       $current_service_requests = json_decode($data, TRUE);
-
       if (empty($data)) {
         return FALSE;
       }
+      markaspot_static_json_memory();
+
+      // Encode array.
+      $data = json_encode($current_service_requests);
+
+      $local = (file_exists($path)) ? file_save_data($data, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
+      if (isset($local)) {
+        \Drupal::logger('Mark-a-Spot Static JSON')
+          ->notice(t('Static file saved.'));
+      }
+      else {
+        \Drupal::logger('Mark-a-Spot Static JSON')
+          ->notice(t('Static file could not be saved.'));
+      }
+      markaspot_static_json_memory();
+
+      \Drupal::logger('Mark-a-Spot Static JSON')->info(t('Status finished'));
     }
     catch (RequestException $e) {
       return FALSE;
     }
   }
-
-
-
-  markaspot_static_json_memory();
-
-  // Encode array.
-  $data = json_encode($current_service_requests);
-
-  $local = (file_exists($path)) ? file_save_data($data, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
-  if (isset($local)) {
-    \Drupal::logger('Mark-a-Spot Static JSON')
-      ->notice(t('Static file saved.'));
-  }
-  else {
-    \Drupal::logger('Mark-a-Spot Static JSON')
-      ->notice(t('Static file could not be saved.'));
-  }
-  markaspot_static_json_memory();
-
-  \Drupal::logger('Mark-a-Spot Static JSON')->info(t('Status finished'));
-
 }
 
 /**
