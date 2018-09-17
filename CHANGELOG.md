@@ -1,6 +1,11 @@
 
 # Changelog
 
+## [8.4.3] - 2018-09-17
+
+- Update Core to >8.6
+- Fix static file generation
+
 ## [8.4.2] - 2018-07-14
 
 - Theme Updates.
