@@ -80,12 +80,11 @@ function markaspot_static_json_request() {
   // Preparing georeport API Request URI.
   $host = \Drupal::request()->getHost();
 
-
-
   $path = 'public://requests.json';
-  $file = file_get_contents($path, TRUE);
-
-  if ($file === FALSE) {
+  if (file_exists($path)) {
+    $file = file_get_contents($path, TRUE);
+  }
+  else {
     \Drupal::logger('Mark-a-Spot Static JSON')
       ->warning(t('Static file could not be read.'));
     $start_json = "[{\"servicerequest_id\":\"15-c5\",\"title\":\"#15-c5  Park Maintenance Complaint\",\"description\":null,\"lat\":40.737061,\"long\":-73.935242,\"address_string\":\",\",\"service_name\":\"Park Maintenance Complaint\",\"requested_datetime\":\"2018-01-05T12:56:36+00:00\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\",\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"service_code\":\"0002\",\"extended_attributes\":{\"markaspot\":{\"nid\":\"18\",\"category_hex\":\"#5f9ea0\",\"category_icon\":\"fa-tree\",\"status_hex\":\"#8B0000\",\"status_icon\":\"fa-play-circle-o\",\"status_notes\":[{\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\"}]}}}]";
@@ -95,43 +94,41 @@ function markaspot_static_json_request() {
   if ($host !== "default") {
     \Drupal::logger('Mark-a-Spot Static JSON')->notice('Saving JSON from URL: '. $host);
     $cronkey = \Drupal::state()->get('system.cron_key');
-    $url = '//' . $host . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
+    $uri = '//' . $host . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
 
-    $client = \Drupal::httpClient();
-    $request = $client->get($url);
-    $current_service_requests = json_decode($request->getBody(), TRUE);
-  }
+    try {
+      $response = \Drupal::httpClient()->get($uri);
+      $data = (string) $response->getBody();
+      $current_service_requests = json_decode($data, TRUE);
 
-  try {
-
-    markaspot_static_json_memory();
-
-    // Encode array.
-    $response = json_encode($current_service_requests);
-
-    $local = ($file !== FALSE) ? file_save_data($response, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
-    if (isset($local)) {
-      \Drupal::logger('Mark-a-Spot Static JSON')
-        ->notice(t('Static file saved.'));
+      if (empty($data)) {
+        return FALSE;
+      }
     }
-    else {
-      \Drupal::logger('Mark-a-Spot Static JSON')
-        ->notice(t('Static file not saved.'));
+    catch (RequestException $e) {
+      return FALSE;
     }
-    markaspot_static_json_memory();
+  }
 
-    \Drupal::logger('Mark-a-Spot Static JSON')->info(t('Status finished'));
 
+
+  markaspot_static_json_memory();
+
+  // Encode array.
+  $data = json_encode($current_service_requests);
+
+  $local = (file_exists($path)) ? file_save_data($data, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
+  if (isset($local)) {
+    \Drupal::logger('Mark-a-Spot Static JSON')
+      ->notice(t('Static file saved.'));
   }
-  catch (BadResponseException $exception) {
-    $response = $exception->getResponse();
-    drupal_set_message(t('Failed to fetch file due to HTTP error "%error"', array('%error' => $response->getStatusCode() . ' ' . $response->getReasonPhrase())), 'error');
-    return FALSE;
+  else {
+    \Drupal::logger('Mark-a-Spot Static JSON')
+      ->notice(t('Static file could not be saved.'));
   }
-  catch (RequestException $exception) {
-    drupal_set_message(t('Failed to fetch file due to error "%error"', array('%error' => $exception->getMessage())), 'error');
-    return FALSE;
-  }
+  markaspot_static_json_memory();
+
+  \Drupal::logger('Mark-a-Spot Static JSON')->info(t('Status finished'));
 
 }
 
