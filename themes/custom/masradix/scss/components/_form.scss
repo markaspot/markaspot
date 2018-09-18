@@ -1,172 +1,147 @@
 // Styles for Forms
 // -----------------------------------------------------------------------------
 
-
-
-.views-exposed-form .form-group { 
+.views-exposed-form .form-group {
   margin-bottom: 10px
 }
-
-
-@media screen and (-webkit-min-device-pixel-ratio:0) {
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
   select:focus,
   textarea:focus,
   input:focus {
     font-size: 16px;
   }
 }
-
-
-@media screen and (-webkit-min-device-pixel-ratio:0) {
+@media screen and (-webkit-min-device-pixel-ratio: 0) {
   select:hover,
   textarea:hover,
   input:hover {
     font-size: 16px;
   }
 }
-
 .leaflet-control-geocoder-form input {
 
   @media (max-width: $screen-sm-max) {
-    width: 280px!important;
+    width: 280px !important;
   }
   @media (max-width: $screen-xs-max) {
-    width: 220px!important;
+    width: 220px !important;
   }
   @media (max-width: $screen-xs-min) {
-    width: 180px!important;
+    width: 180px !important;
   }
 }
-
 #locateMe {
   text-decoration: underline;
   cursor: pointer;
 }
-
 div#edit-body-0-format,
 input#edit-preview,
 input.form-type-file,
-.file-input-new .fileinput-remove-button, .file-input-new .fileinput-upload-button{
-  display:none!important;
+.file-input-new .fileinput-remove-button, .file-input-new .fileinput-upload-button {
+  display: none !important;
 }
-
 .node-service-request-management-form .horizontal-tabs.clearfix {
-    margin: 0 0 1em 0;
-    padding: 10px;
-    border: 0px solid #ccc;
-    position: relative;
+  margin: 0 0 1em 0;
+  padding: 10px;
+  border: 0px solid #ccc;
+  position: relative;
 }
-
 .node-service-request-management-form .horizontal-tabs .horizontal-tabs-list {
-    display: inline-block;
-    margin: 0;
-    border: 0;
-    padding: 0px;
-    list-style: none;
-    background-color: #ffffff;
-    border-right: 1px solid #dedede;
-    width: 100%;
-    height: auto;
-    clear: both;
+  display: inline-block;
+  margin: 0;
+  border: 0;
+  padding: 0px;
+  list-style: none;
+  background-color: #fff;
+  border-right: 1px solid #dedede;
+  width: 100%;
+  height: auto;
+  clear: both;
 }
-
 .node-service-request-management-form legend.panel-heading {
-    border-radius: 2px;
-    font-size: small;
+  border-radius: 2px;
+  font-size: small;
 }
-
 .node-service-request-management-form ul.horizontal-tabs-list {}
-
 .node-service-request-management-form .panel {
-    margin-bottom: 0;
-    background-color: #fff;
-    border: 1px solid transparent;
-    border-radius: 4px;
-    box-shadow: none;
-    padding: 0;
+  margin-bottom: 0;
+  background-color: #fff;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  box-shadow: none;
+  padding: 0;
 }
-
 .node-service-request-management-form .panel-body {
-    padding: 15px 0;
+  padding: 15px 0;
 }
-
 .node-service-request-management-form .form-type-vertical-tabs,
 .node-service-request-management-form .field-multiple-drag,
 .node-service-request-management-form .tabledrag-toggle-weight-wrapper,
 .node-service-request-management-form .filter-wrapper {
-    display: none;
+  display: none;
 }
-
-
 .node-service-request-management-form .form-item-field-request-image-0 {
   border-radius: $border-radius-base;
   padding: 10px 10px 0 10px;;
 }
-
 .form-item-field-request-image-0 {
   padding: 10px;
 }
 
-.form-item-field-request-image-0 label{
-}
-
 .image-widget {
   margin: 0px;
-  float:none
+  float: none
 }
-
 .image-preview {
   margin: 10px 0;
   max-width: 250px;
-  float:left
+  float: left
 }
-
-
+.ajax-progress-throbber .throbber {
+  background: transparent url(/profiles/contrib/markaspot/themes/custom/masradix/assets/images/puff.svg) no-repeat 0 center;
+  display: inline-block;
+  padding: 5px;
+  margin: 0 10px;
+  height: 60px;
+  width: 100px
+}
 span.file-size.badge,
 span.file.file--image {
   float: right;
   display: inline-block;
   margin: 40px 10px;
 }
-
-
 #edit-field-request-image-wrapper input {
   margin: 30px 10px;
-
+  float: left
 }
-
 input#edit-field-request-image-0-upload,
-input[name="field_request_image_0_upload_button"]{
-  display:none!important
+input[name="field_request_image_0_upload_button"] {
+  display: none !important
 }
-
 p#edit-field-request-image-0-upload--description {
   visibility: hidden;
   max-height: 20px;
   text-align: center;
 }
-
 p#edit-field-request-image-0-upload--description .visible {
-  visibility: visible!important;
+  visibility: visible !important;
 }
-
-.field-multiple-table ,
+.field-multiple-table,
 .field-multiple-table tr,
 .field-multiple-table td,
 .field-multiple-table th {
-    border: 0;
-    padding: 15px
+  border: 0;
+  padding: 15px
 }
-
 #edit-body-0--description {
-    display: block;
-    margin-top: 0px;
-    margin-bottom: 10px;
-    color: #8c8c8c;
+  display: block;
+  margin-top: 0px;
+  margin-bottom: 10px;
+  color: #8c8c8c;
 }
-
 label.image-widget-data.btn.btn-block.btn-default {
-    border: 1px #ddd dashed;
-    padding: 15px;
-    text-transform: uppercase;
+  border: 1px #ddd dashed;
+  padding: 15px;
+  text-transform: uppercase;
 }

@@ -50,10 +50,9 @@
     "cweagans/composer-patches": "~1.6",
     "phayes/geophp": "dev-master",
     "anthonymartin/geo-location": "^1.0",
-    "drush/drush": "~9.0",
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
-    "drupal/core": "8.5.x",
+    "drupal/core": "^8",
     "drupal/radix": "3.*",
     "drupal/pathauto": "^1.0@RC",
     "drupal/admin_toolbar": "1.*",
@@ -134,9 +133,6 @@
     },
     "enable-patching": true,
     "patches": {
-      "drupal/color_field": {
-        "Palette instead of default_colors": "https://www.drupal.org/files/issues/default_colors_box-2807783-1.patch"
-      },
       "drupal/rules": {
         "Action send mail, implode error": "https://www.drupal.org/files/issues/system-send-email-action-fails-if-to-is-a-string-2827183-2.patch",
         "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/rules_sendmail_textarea-2724129-34.patch",
