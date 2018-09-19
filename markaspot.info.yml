@@ -89,9 +89,15 @@ dependencies:
   - markaspot_trend
   - markaspot_validation
   - service_request
-  - markaspot_default_content
   - devel
   - devel_generate
+
+configurable_dependencies:
+  markaspot_default_content:
+    label: Mark-a-Spot Default Content
+    description: Provides default content so you can see the Mark-a-Spot features in action.
+    enabled: true
+
 
 themes:
   - masradix
