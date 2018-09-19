@@ -5,7 +5,7 @@ dependencies:
     - system
   theme:
     - masradix
-id: messages
+id: masradix_messages
 theme: masradix
 region: head
 weight: -2

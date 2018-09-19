@@ -77,6 +77,21 @@ function markaspot_install() {
   \Drupal::service('cron')->run();
 }
 
+/**
+ * Implements hook_install_tasks().
+ */
+function markaspot_install_tasks(&$install_state) {
+  return [
+    'configurable_profile_dependencies' => [
+      'display_name' => t('Configurable Modules'),
+      'display' => TRUE,
+      'type' => 'form',
+      'function' => 'Drupal\markaspot\Form\ConfigurableProfileDependenciesForm',
+    ],
+  ];
+}
+
+
 
 /**
  * Enables the twig_tweak and markaspot_trend modules.
