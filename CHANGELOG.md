@@ -1,6 +1,10 @@
 
 # Changelog
 
+## [8.4.4] - 2018-09-19
+
+- Fix installation issues with 8.6 and default content module (#74)
+
 ## [8.4.3] - 2018-09-17
 
 - Update Core to >8.6
