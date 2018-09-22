@@ -81,13 +81,19 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
     $query->accessCheck(FALSE);
 
     $entity_ids = $query->execute();
+    // count array keys for the latest ID
     $last_request_id = count($entity_ids);
+
+    // check for doubles, an effect that occurs
+    $existing = \Drupal::entityQuery('node')->condition('request_id', $last_request_id)->execute();
+
+    if (!empty($existing)) {
+      $last_request_id = $last_request_id + 1;
+    }
 
     $config = \Drupal::configFactory()->getEditable('markaspot_request_id.settings');
     $id_pattern = $config->get('format');
-
-    $request_id = (isset($id_pattern)) ? $last_request_id . '-' . date($id_pattern) : $last_request_id;
-
+    $request_id = (isset($id_pattern)) ? $last_request_id . '-' . date($id_pattern) : $nid;
     $node->request_id->value = $request_id;
 
     $node->setNewRevision(FALSE);
