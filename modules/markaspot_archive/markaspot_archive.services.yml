@@ -1,0 +1,4 @@
+services:
+  markaspot_archive.archive:
+    class: Drupal\markaspot_archive\ArchiveService
+    arguments: ['@entity_type.manager', '@config.factory']

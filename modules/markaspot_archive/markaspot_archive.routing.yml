@@ -1,0 +1,7 @@
+markaspot_archive.settings:
+  path: '/admin/structure/markaspot/archive/settings'
+  defaults:
+    _form: '\Drupal\markaspot_archive\Form\MarkaspotArchiveSettingsForm'
+    _title: 'Archive settings'
+  requirements:
+    _permission: 'administer site configuration'

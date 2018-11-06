@@ -1,0 +1,14 @@
+{
+  "name": "drupal/markaspot_archive",
+  "type": "drupal-module",
+  "description": "Mark-a-Spot Archive",
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "homepage": "https://www.drupal.org/project/markaspot_archive",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/markaspot_archive",
+    "source": "http://cgit.drupalcode.org/markaspot_archive"
+  },
+  "require": { }
+}

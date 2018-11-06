@@ -1,0 +1,39 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_archive.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_archive_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_archive module.
+    case 'help.page.markaspot_archive':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Mark-a-Spot Archive') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+function markaspot_archive_cron()
+{
+  $archivables = \Drupal::service('markaspot_archive.archive')->load();
+  $config = \Drupal::configFactory()->getEditable('markaspot_archive.settings');
+
+  foreach ($archivables as $archivable)
+  {
+    if(null !== $config->get('unpublished')) {
+      $archivable->setPublished(false);
+    }
+    $archivable->field_status->target_id = $config->get('status_archived');
+    $archivable->save();
+  }
+}

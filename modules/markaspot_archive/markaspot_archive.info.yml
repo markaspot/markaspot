@@ -1,0 +1,5 @@
+name: 'Mark-a-Spot Archive'
+type: module
+description: 'Mark-a-Spot Archive'
+core: 8.x
+package: 'Mark-a-Spot'
