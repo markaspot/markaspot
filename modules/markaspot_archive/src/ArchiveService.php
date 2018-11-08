@@ -41,16 +41,13 @@ class ArchiveService implements ArchiveServiceInterface {
     $days = strtotime(' - ' . $config->get('days') . 'seconds');
 
     $storage = $this->entityTypeManager->getStorage('node');
-    $query = $storage->getQuery()->
-      condition('changed', $days, '<')->
-      condition('field_status.entity.tid', $config->get('status_archivable'));
 
-
+    $query = $storage->getQuery()
+      ->condition('changed', $days, '<')
+      ->condition('type', 'service_request');
+    $and = $query->andConditionGroup();
+    $and->condition('field_status.entity.tid', $config->get('status_archivable'));
     $nids = $query->execute();
-    var_dump($nids);
-
-
-    // var_dump($query);
     return $storage->loadMultiple($nids);
   }
 
