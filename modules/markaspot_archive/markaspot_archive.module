@@ -28,8 +28,7 @@ function markaspot_archive_cron()
   $archivables = \Drupal::service('markaspot_archive.archive')->load();
   $config = \Drupal::configFactory()->getEditable('markaspot_archive.settings');
 
-  foreach ($archivables as $archivable)
-  {
+  foreach ($archivables as $archivable) {
     if(null !== $config->get('unpublished')) {
       $archivable->setPublished(false);
     }

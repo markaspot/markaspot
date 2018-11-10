@@ -38,7 +38,7 @@ class ArchiveService implements ArchiveServiceInterface {
    */
   public function load() {
     $config = $this->configFactory->get('markaspot_archive.settings');
-    $days = strtotime(' - ' . $config->get('days') . 'seconds');
+    $days = strtotime(' - ' . $config->get('days') . 'days');
 
     $storage = $this->entityTypeManager->getStorage('node');
 
