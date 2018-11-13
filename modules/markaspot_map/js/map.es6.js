@@ -1,6 +1,6 @@
 /**
  * @file
- * Main Map-Application File with Leaflet Maps api.
+ * Main Map-Application File with Leaflet Maps API.
  */
 
 
@@ -73,6 +73,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
   Drupal.Markaspot.maps = [];
   let markerLayer;
   const scrolledMarker = [];
+  let currentPath = drupalSettings.path.currentPath;
+  currentPath = `/${currentPath}`;
 
   Drupal.behaviors.markaspot_map = {
 
@@ -105,18 +107,15 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         map.addLayer(markerLayer);
 
         // Initital heat map layer for front page:
-        let currentPath = drupalSettings.path.currentPath;
 
-        if (currentPath === 'node') {
+        if (currentPath === '/node') {
           Drupal.markaspot_map.createHeatMapLayer(map);
           // heatMapLayer.addTo(map);
           Drupal.markaspot_map.setDefaults(masSettings);
         }
-        currentPath = `/${currentPath}`;
 
         if (currentPath === masSettings.visualization_path || currentPath === '/home') {
           // Drupal.markaspot_map.hideMarkers();
-          console.log(currentPath);
 
           const geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
           const heatStart = [
@@ -452,17 +451,15 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         const currentZoom = map.getZoom();
         const fullscreen = map.isFullscreen();
         const target = $(`article[data-history-node-id=${nid}]`);
-        // Var target = document.querySelector('data-history-node-id') = nid;
-        // var anchor = $(this).attr('data-attr-scroll');
-        if (target.length && fullscreen === false) {
+        if ((target.length && fullscreen === false) && currentPath !== '/home') {
           map.setZoom(currentZoom + 2);
           // event.preventDefault();
           $('html, body').stop().animate({
             scrollTop: target.offset().top - 200,
           }, 1000);
         }
-        else if (target.length && fullscreen === true) {
-          const html = target.text();
+        else if ((target.length && fullscreen === true) || currentPath === '/home') {
+          const html = target.find('h2').html();
           marker.bindPopup(html);
         }
       };
@@ -548,14 +545,12 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       });
       const size = markerLayer.getLayers().length;
 
-      if (size >= 1) {
-        // console.log(markerLayer.getBounds());
-        Drupal.Markaspot.maps[0].fitBounds(markerLayer.getBounds(), {
-          padding: [
-            -150,
-            -150,
-          ],
-        });
+      if (size >= 1) {        Drupal.Markaspot.maps[0].fitBounds(markerLayer.getBounds(), {
+        padding: [
+          -150,
+          -150,
+        ],
+      });
       }
       else {
         Drupal.Markaspot.maps[0].setView(markerLayer);
