@@ -49,7 +49,7 @@
         'countrycodes': mapSettings.limitCountryCodes,
         'viewbox': mapSettings.limitViewbox,
         'bounded': 1,
-        'limit': 2
+        'limit': 5
       };
     }
 
@@ -205,8 +205,8 @@
         var localityType = details.city || details.town || details.village || details.hamlet || details.county || details.neighbourhood;
         $('input.locality', $address).val(localityType);
       }
-      if ('road' in details || 'building' in details || 'footway' in details || 'pedestrian' in details) {
-        var streetType = details.road || details.footway || details.pedestrian;
+      if ('road' in details || 'building' in details || 'footway' in details || 'pedestrian' in details || 'path' in details) {
+        var streetType = details.path || details.road || details.footway || details.pedestrian || details.path;
         $('input.address-line1', $address).val(streetType);
         $('input.address-line2', $address).val(details.building);
       }
