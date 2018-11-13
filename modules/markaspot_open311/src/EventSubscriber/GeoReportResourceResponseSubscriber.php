@@ -101,7 +101,7 @@ class GeoReportResourceResponseSubscriber implements EventSubscriberInterface {
    */
   public function getResponseFormat(RouteMatchInterface $route_match, Request $request) {
     $route = $route_match->getRouteObject();
-    var_dump($request->getRequestFormat(), $route->hasRequirement('_format'));
+    // var_dump($request->getRequestFormat(), $route->hasRequirement('_format'));
     $acceptable_request_formats = $route->hasRequirement('_format') ? explode('|', $route->getRequirement('_format')) : [];
     $acceptable_content_type_formats = $route->hasRequirement('_content_type_format') ? explode('|', $route->getRequirement('_content_type_format')) : [];
     $acceptable_formats = $request->isMethodSafe() ? $acceptable_request_formats : $acceptable_content_type_formats;
