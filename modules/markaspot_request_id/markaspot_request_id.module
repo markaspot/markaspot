@@ -93,6 +93,7 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
     $predecessor = $node_storage->load($last_request_nid);
     if (isset($predecessor->request_id->value)) {
       $last_request_id = $predecessor->request_id->value;
+      \Drupal::logger('markaspot')->notice("Last Request ID: ". $last_request_id . " | Last NID: " .$last_request_nid);
       $next = explode('-', $last_request_id);
     }
     // Is one proviced count up.
