@@ -34,7 +34,7 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Bundle'),
       '#default_value' => 'service_status',
-      '#description' => t('Match the request status to a Drupal vocabulary (machine_name) of your choice'),
+      '#description' => t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
     );
 
     $form['markaspot_archive']['status_archivable'] = array(
@@ -43,7 +43,7 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_archive.settings')->get('tax_status')),
       '#default_value' => $config->get('status_archivable'),
-      '#title' => t('Please choose the status for archivable reports'),
+      '#title' => t('Please choose the status for archivable reports.'),
     );
 
     $form['markaspot_archive']['status_archived'] = array(
@@ -52,15 +52,29 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_archive.settings')->get('tax_status')),
       '#default_value' => $config->get('status_archived'),
-      '#title' => t('Please choose the status for archived reports'),
+      '#title' => t('Please choose the status for archived reports.'),
     );
 
     $form['markaspot_archive']['unpublish'] = array(
       '#type' => 'checkbox',
       '#title' => t('Unpublish'),
-      '#description' => t('Unpublish Service Requests on archiving'),
+      '#description' => t('Unpublish Service Requests on archiving.'),
       '#default_value' => $config->get('unpublish'),
+    );
 
+    $form['markaspot_archive']['anonymize'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Anonymize personal data'),
+      '#description' => t('All data of the field entities below will get anonymized.'),
+      '#default_value' => $config->get('anonymize'),
+    );
+
+    $form['markaspot_archive']['anonymize_fields'] = array(
+      '#type' => 'select',
+      '#multiple' => TRUE,
+      '#options' => self::getFields(),
+      '#default_value' => $config->get('anonymize_fields'),
+      '#title' => t('Please choose the fields that will get overwritten on archiving.'),
     );
 
     $form['markaspot_archive']['days'] = array(
@@ -68,9 +82,9 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
       '#min' => 1,
       '#max' => 1000,
       '#step' => 1,
-      '#title' => t('Archive service requests last changed since days'),
+      '#title' => t('Archive service requests last changed since days.'),
       '#default_value' => $config->get('days'),
-      '#description' => t('How many days to reach back for archiving'),
+      '#description' => t('How many days to reach back for archiving?'),
     );
 
     return parent::buildForm($form, $form_state);
@@ -93,10 +107,17 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
       ->set('status_archivable', $values['status_archivable'])
       ->set('status_archived', $values['status_archived'])
       ->set('unpublish', $values['unpublish'])
+      ->set('anonymize', $values['anonymize'])
+      ->set('anonymize_fields', $values['anonymize_fields'])
       ->set('days', $values['days'])
       ->save();
 
     parent::submitForm($form, $form_state);
+  }
+
+  public function getFields() {
+    $definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', 'service_request');
+    return array_keys($definitions);
   }
 
   /**
