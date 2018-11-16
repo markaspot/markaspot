@@ -7498,10 +7498,12 @@ img.site-logo {
   @media (max-width: 991px) {
     img.site-logo {
       max-height: 100px;
-      display: block; } }
+      display: block;
+      } }
   @media (max-width: 1199px) {
     img.site-logo {
-      max-height: 80px; } }
+      max-height: 62px;
+      } }
 
 .region-head.col-md-12 .block.block--masradix-sitebranding, .region-head.calendar-calendar .block.block--masradix-sitebranding, .view .row > .region-head.list-group .block.block--masradix-sitebranding {
   clear: both;
