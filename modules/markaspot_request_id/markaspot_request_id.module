@@ -10,6 +10,8 @@ use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Form\FormStateInterface;
+use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
+
 /**
  * Implements hook_help().
  */
@@ -82,7 +84,7 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
     $query
       ->condition('type', 'service_request')
       ->accessCheck(FALSE)
-      ->sort('created' , 'DESC')
+      ->sort('nid' , 'DESC')
       ->range(1,1);
 
     $entity_ids = $query->execute();
@@ -90,6 +92,7 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
     $node_storage = \Drupal::entityTypeManager()->getStorage('node');
 
     // Now load the the last service_request and check the request_id.
+
     $predecessor = $node_storage->load($last_request_nid);
     if (isset($predecessor->request_id->value)) {
       $last_request_id = $predecessor->request_id->value;
@@ -102,10 +105,23 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
     $config = \Drupal::configFactory()->getEditable('markaspot_request_id.settings');
     $id_pattern = $config->get('format');
     $request_id = (isset($id_pattern)) ? $next . '-' . date($id_pattern) : $next;
-    $node->request_id->value = $request_id;
 
-    $node->setNewRevision(FALSE);
-    $node->save();
+    // Create a duplicate check against node entity.
+    $query = \Drupal::entityQuery('node');
+    $query
+      ->condition('request_id', $request_id)
+      ->accessCheck(FALSE)
+      ->count();
+    $duplicatesCheck = $query->execute();
+    
+    if ($duplicatesCheck != 0) {
+      throw new ServiceUnavailableHttpException(3, t('Oops we found a duplicate, please go back and try again'));
+    } else {
+      $node->request_id->value = $request_id;
+      $node->setNewRevision(FALSE);
+      $node->save();
+    }
+
   }
 
 }
