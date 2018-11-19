@@ -49,11 +49,12 @@
         'countrycodes': mapSettings.limitCountryCodes,
         'viewbox': mapSettings.limitViewbox,
         'bounded': 1,
-        'limit': 5
+        'limit': 5,
+        'city': mapSettings.city
       };
     }
 
-    var geocoderNominatim = L.Control.Geocoder.nominatim({
+    var geocoderNominatim = new L.Control.Geocoder.NominatimCity({
       // Todo: Make this an optional setting.
       serviceUrl: mapSettings.serviceUrl,
       geocodingQueryParams: geocodingQueryParams,

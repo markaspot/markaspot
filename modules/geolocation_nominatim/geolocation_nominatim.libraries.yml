@@ -3,6 +3,7 @@
 geolocation-nominatim-widget:
   version: VERSION
   js:
+    Control.Geocoder.NominatimCity.js: {}
     geolocation_nominatim.widget.js: {}
   dependencies:
     - geolocation_nominatim/leaflet-control-geocoder
