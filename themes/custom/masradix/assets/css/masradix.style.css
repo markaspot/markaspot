@@ -7375,7 +7375,7 @@ article.service-request--teaser footer {
 .col-sm-6.fa .color-ff0000, article.service-request .color-ff0000 {
   color: #FF0000; }
 
-.col-sm-6.fa .color-FFA500, article.service-request .color-FFA500 {
+.col-sm-6.fa .color-ffa500, article.service-request .color-ffa500 {
   color: #ff8c4e; }
 
 .col-sm-6.fa .color-008000, article.service-request .color-008000 {
@@ -7384,7 +7384,7 @@ article.service-request--teaser footer {
 .col-sm-6.fa .color-006400, article.service-request .color-006400 {
   color: #006400; }
 
-.col-sm-6.fa .color-0000ff, article.service-request .color-0000ff {
+.col-sm-6.fa .color-0000FF, article.service-request .color-0000FF {
   color: #0000FF; }
 
 .col-sm-6.fa .color-00008b, article.service-request .color-00008b {
@@ -7393,16 +7393,16 @@ article.service-request--teaser footer {
 .col-sm-6.fa .color-a020f0, article.service-request .color-a020f0 {
   color: #A020F0; }
 
-.col-sm-6.fa .color-871F78, article.service-request .color-871F78 {
+.col-sm-6.fa .color-871f78, article.service-request .color-871f78 {
   color: #871F78; }
 
 .col-sm-6.fa .color-5f9ea0, article.service-request .color-5f9ea0 {
   color: #5F9EA0; }
 
-.col-sm-6.fa .color-ADD8E6, article.service-request .color-ADD8E6 {
-  color: #ADD8E6; }
+.col-sm-6.fa .color-add8e6, article.service-request .color-add8e6 {
+  color: #20b4e4; }
 
-.col-sm-6.fa .color-D3D3D3, article.service-request .color-D3D3D3 {
+.col-sm-6.fa .color-d3d3d3, article.service-request .color-d3d3d3 {
   color: #D3D3D3; }
 
 .col-sm-6.fa .color-808080, article.service-request .color-808080 {
@@ -7411,8 +7411,8 @@ article.service-request--teaser footer {
 .col-sm-6.fa .color-000000, article.service-request .color-000000 {
   color: #000000; }
 
-.col-sm-6.fa .color-F5F5DC, article.service-request .color-F5F5DC {
-  color: #F5F5DC; }
+.col-sm-6.fa .color-f5f5fdc, article.service-request .color-f5f5fdc {
+  color: #bbbb15; }
 
 .col-sm-6.fa .color-FFFFFF, article.service-request .color-FFFFFF {
   color: #FFFFFF; }
@@ -7451,7 +7451,7 @@ article.service-request .label-default {
 .paragraph.color-_08000 {
   border-left: 10px solid #008000; }
 
-.paragraph.color-_0000ff {
+.paragraph.color-_000ff {
   border-left: 10px solid #0000ff; }
 
 .paragraph.color-_08000 {
@@ -7498,12 +7498,10 @@ img.site-logo {
   @media (max-width: 991px) {
     img.site-logo {
       max-height: 100px;
-      display: block;
-      } }
+      display: block; } }
   @media (max-width: 1199px) {
     img.site-logo {
-      max-height: 62px;
-      } }
+      max-height: 80px; } }
 
 .region-head.col-md-12 .block.block--masradix-sitebranding, .region-head.calendar-calendar .block.block--masradix-sitebranding, .view .row > .region-head.list-group .block.block--masradix-sitebranding {
   clear: both;
