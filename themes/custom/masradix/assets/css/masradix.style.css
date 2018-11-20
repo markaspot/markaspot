@@ -8669,12 +8669,6 @@ body {
   margin: 10px 0;
   padding: 10px; }
 
-.path--visualization .mas-custom h3,
-.path--visualization .mas-custom ul li,
-.path--visualization .mas-custom pre,
-.path--visualization .mas-custom p {
-  font-size: 11px; }
-
 .trend_filter {
   border: 1px #eeeeee dashed;
   padding: 10px 0; }
