@@ -33,11 +33,6 @@
             }
         ]
     },
-    "nid": [
-        {
-            "value": 3
-        }
-    ],
     "uuid": [
         {
             "value": "a8e05468-c2dc-45bf-8cc4-154a1a9b1f62"
@@ -201,12 +196,6 @@
     "revision_translation_affected": [
         {
             "value": true,
-            "lang": "en"
-        }
-    ],
-    "request_id": [
-        {
-            "value": "3-2018",
             "lang": "en"
         }
     ],

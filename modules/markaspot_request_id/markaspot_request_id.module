@@ -113,7 +113,7 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
       ->accessCheck(FALSE)
       ->count();
     $duplicatesCheck = $query->execute();
-    
+
     if ($duplicatesCheck != 0) {
       throw new ServiceUnavailableHttpException(3, t('Oops we found a duplicate, please go back and try again'));
     } else {

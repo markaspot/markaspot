@@ -55,7 +55,8 @@ function markaspot_default_content_customize_content($body){
 function markaspot_default_content_modules_installed() {
 
   // Loading Open311 page node.
-  $node =  Node::load(14);
+  $node =  \Drupal::service('entity.repository')->loadEntityByUuid('node', '31102016-04-14');
+
   $body = $node->get('body')->value;
   $updatedBody = markaspot_default_content_customize_content($body);
   if (isset($updatedBody)){
