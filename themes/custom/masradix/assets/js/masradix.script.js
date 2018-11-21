@@ -10,7 +10,7 @@ var slideout = new Slideout({
   'panel': document.getElementById('page-content-wrapper'),
   'menu': document.getElementById('sidebar-wrapper'),
   'padding': 256,
-  'tolerance': 70,
+  'tolerance': 10,
   'side': 'right'
 });
 
