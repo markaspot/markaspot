@@ -11,7 +11,7 @@ base:
     /libraries/waypoints/lib/jquery.waypoints.min.js: {weight: -3, minified: true }
     /libraries/waypoints/lib/shortcuts/sticky.min.js: {weight: -2, minified: true }
     /libraries/waypoints/lib/shortcuts/inview.min.js: {weight: -2, minified: true }
-    /libraries/slideout.js/dist/slideout.min.js: {weight: -1, minified: true }
+    /libraries/bootstrap-offcanvas/dist/js/bootstrap.offcanvas.min.js: {weight: -1, minified: true }
     /libraries/pace-js/pace.min.js: {weight: 0, minified: true }
     assets/js/masradix.script.js: {}
 

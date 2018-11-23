@@ -3,41 +3,13 @@
  * Custom scripts for theme.
  */
 
-// Taking care of flickering controls on touch devices.
-// https://github.com/Leaflet/Leaflet/issues/1198
-window.L_DISABLE_3D = 'ontouchstart' in document.documentElement;
-var slideout = new Slideout({
-  'panel': document.getElementById('page-content-wrapper'),
-  'menu': document.getElementById('sidebar-wrapper'),
-  'padding': 256,
-  'tolerance': 10,
-  'side': 'right'
-});
-
-var MutationObserver = window.MutationObserver || window.WebKitMutationObserver || window.MozMutationObserver;
-var target = document.querySelector('[data-drupal-views-infinite-scroll-content-wrapper]');
-
-// create an observer instance
-var observer = new MutationObserver(function(mutations) {
-  mutations.forEach(function(mutation) {
-    if (mutation.type === 'childList') {
-      Pace.restart();
-    }
-  });
-});
-
-var config = { attributes: true, childList: true, characterData: true };
-// pass in the target node, as well as the observer options
-if (target) {
-  observer.observe(target, config);
-}
 
 (function ($, Drupal, drupalSettings, window, document) {
 
   function toDesktop(width){
     var nav = $(".navbar-default");
     var branding = $(".block--masradix-sitebranding");
-    if (width >= 1200) {
+    if (width >= 1024) {
       $('.navbar-default > div').removeClass(".navbar-left");
       $('a.navbar-brand').prependTo(nav);
       $('.fixed-header').hide();
@@ -75,10 +47,7 @@ if (target) {
 
     });
 
-    // Toggle button.
-    document.querySelector('.toggle-button').addEventListener('click', function () {
-      slideout.toggle();
-    });
+
     $notifications = $('.notifications');
 
     // Taken from http://imakewebthings.com/waypoints/
@@ -99,31 +68,6 @@ if (target) {
         })
       })
     }
-
-    var fixed = document.querySelector('.fixed-header');
-
-    slideout.on('translate', function (translated) {
-      fixed.style.transform = 'translateX(' + translated + 'px)';
-    });
-
-    slideout.on('beforeopen', function () {
-      fixed.style.transition = 'transform 300ms ease';
-      fixed.style.transform = 'translateX(-256px)';
-    });
-
-    slideout.on('beforeclose', function () {
-      fixed.style.transition = 'transform 300ms ease';
-      fixed.style.transform = 'translateX(0px)';
-    });
-
-    slideout.on('open', function () {
-      fixed.style.transition = '';
-    });
-
-    slideout.on('close', function () {
-      fixed.style.transition = '';
-    });
-
 
     var route = drupalSettings.path.currentPath;
 
@@ -210,10 +154,6 @@ if (target) {
     if ($('[data-drupal-selector="edit-reset"]')[0]) {
       exposedFilter.addClass('exposed ajax');
     }
-  });
-
-  $('[data-toggle="offcanvas"]').click(function () {
-    $('#wrapper').toggleClass('toggled');
   });
 
 })(jQuery, Drupal, drupalSettings, this, this.document);

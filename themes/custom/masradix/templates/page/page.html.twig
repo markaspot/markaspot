@@ -7,28 +7,35 @@
 
 <!-- Sidebar -->
 <div class="overlay"></div>
-
-<nav class="navbar navbar-default slideout-menu container" id="sidebar-wrapper" role="navigation">
-    <div class="navbar-inner">
-      {% if page.navbar_left %}
-        <div class="navbar-left">
-          {{ page.navbar_left }}
-        </div>
-      {% endif %}
-      {% if page.navbar_right %}
-        <div class="navbar-right">
-            {{ page.navbar_right }}
-        </div>
-      {% endif %}
-    </div>
-</nav>
 <!-- /#sidebar-wrapper -->
-<header class="fixed-header">
-    <button type="button" class="hamburger is-closed animated toggle-button" data-toggle="offcanvas">
-        <span class="hamb-top"></span>
-        <span class="hamb-middle"></span>
-        <span class="hamb-bottom"></span>
-    </button>
+<header class="clearfix">
+  <nav class="navbar navbar-default container" role="navigation">
+    <div class="container">
+      <div class="navbar-header">
+        {{ page.navbar_branding }}
+        <button type="button" class="navbar-toggle offcanvas-toggle pull-right" data-toggle="offcanvas" data-target="#js-bootstrap-offcanvas" style="float:left;">
+          <span class="sr-only">Toggle navigation</span>
+          <span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </span>
+        </button>
+      </div>
+      <div class="navbar-offcanvas navbar-offcanvas-touch" id="js-bootstrap-offcanvas">
+        {% if page.navbar_left %}
+          <div class="navbar-left">
+            {{ page.navbar_left }}
+          </div>
+        {% endif %}
+        {% if page.navbar_right %}
+          <div class="navbar-right">
+            {{ page.navbar_right }}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
 </header>
 <div id="page-content-wrapper">
   <div id="hero"></div>

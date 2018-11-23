@@ -83,6 +83,7 @@
 @import "../../../../../../../../web/libraries/bootstrap-select/sass/bootstrap-select.scss";
 @import "../../../../../../../../web/libraries/bootstrap-select/sass/variables.scss";
 
+
 // Radix styles overrides and fixes.
 // -----------------------------------------------------------------------------
 // Radix styles overrides and fixes.
@@ -105,3 +106,6 @@
 @import "layout/**/*";
 @import "components/**/*";
 @import "mas/**/*";
+
+// Bootstrap off-canvas
+@import "../../../../../../../../web/libraries/bootstrap-offcanvas/src/sass/bootstrap.offcanvas.scss";

@@ -645,3 +645,12 @@ $container-md:                 $container-desktop !default;
 // Large screen / wide desktop
 $container-large-desktop:      ((1140px + $grid-gutter-width)) !default;
 $container-lg:                 $container-large-desktop !default;
+
+
+// Offcanvas vars
+$screen-md-max:                   $screen-md;
+
+$offcanvas-width:                 250px !default;
+$offcanvas-animation-time:        .15s !default;
+$offcanvas-toggle-bars-color:     #000 !default;
+$offcanvas-media:                 $screen-md-max!default;

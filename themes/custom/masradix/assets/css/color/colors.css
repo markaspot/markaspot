@@ -20,8 +20,8 @@ body {
 .leaflet-control-locate {
   border-color: #0071b3 !important;
 }
-
-
+/*
+.navbar,
 .notifications li,
 .hamburger.is-closed .hamb-top,
 .hamburger.is-closed .hamb-middle,
@@ -31,6 +31,15 @@ body {
   background-image: -webkit-linear-gradient(top, #055a8e 0%, #055a8e 100%);
   background-image: linear-gradient(to bottom, #055a8e 0%, #055a8e 100%);
 }
+
+*/
+.navbar-default .navbar-toggle .icon-bar,
+.navbar-offcanvas.in {
+  background-color: #055a8e;
+  background-image: -webkit-linear-gradient(top, #055a8e 0%, #055a8e 100%);
+  background-image: linear-gradient(to bottom, #055a8e 0%, #055a8e 100%);
+}
+
 
 .btn-default:active:hover {
     background-color: #055a8e;
@@ -131,12 +140,13 @@ footer#footer {
   color: #f9f9f9;
   background-color: #1d84c3;
 }
+/*
 .block .user-login-form,
 .block--userlogin a,
 .nav.navbar-nav > li > a {
   color: #f9f9f9;
 }
-
+*/
 a,
 .link,
 .result-filter {
@@ -183,9 +193,10 @@ a:active,
 }
 
 @media (min-width: 1200px) {
+  /*
   .navbar-default div.container {
     background: #e2e2e2;
-  }
+  }*/
   
 
   .links.inline a,
