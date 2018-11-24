@@ -49,7 +49,7 @@
     "npm-asset/vue": "^2.5",
     "npm-asset/vue-chartjs": "^3.4",
     "npm-asset/vue-router": "^3.0",
-    "bower-asset/slideout.js": "1.0.1",
+    "bower-asset/bootstrap-offcanvas": "^2.5",
     "oomphinc/composer-installers-extender": "^1.1",
     "composer/installers": "^1.2",
     "drupal-composer/drupal-scaffold": "^2.2",
