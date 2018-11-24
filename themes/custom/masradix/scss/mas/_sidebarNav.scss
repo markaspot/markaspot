@@ -3,10 +3,11 @@
 /*     Sidebar nav styles        */
 /*-------------------------------*/
 
-@media (max-width: $screen-md) {
+@media (max-width: $screen-md-max) {
 
   .navbar-offcanvas {
-    padding: 0!important
+    padding: 0!important;
+    z-index:9999!important;
   }
 
   .nav .open > a {
@@ -19,9 +20,6 @@
 
   .nav .open > a:focus {
     background-color: transparent;
-  }
-  .navbar-brand {
-      float: none!important;
   }
   .navbar-nav {
     list-style: none;
@@ -74,6 +72,7 @@
 
   .navbar-brand {
     float: none !important;
+    padding: 0 
   }
 
   .fixed-header {
@@ -107,7 +106,7 @@
 }
 
 
-@media (min-width: $screen-md) {
+@media (min-width: $screen-md-min) {
 
   .fixed-header {
     display: none;

@@ -6,7 +6,7 @@
     }
 }
 
-@media (max-width: $screen-md) {
+@media (max-width: $screen-md-max) {
     .navbar-nav {
         float: none!important;
         margin: 0;
@@ -14,9 +14,10 @@
     }
 
     button.navbar-toggle.offcanvas-toggle {
-        position: absolute;
-        right: 10px;
-        top: 10px;
+        position: fixed;
+        right: 0;
+        top: 0;
+        z-index:9999
     }
 }
 
@@ -34,7 +35,9 @@
   }
 }
 
-
+.navbar {
+  min-height: 20px;
+}
 .navbar-default {
     border-color: transparent;
     background-color: transparent;
