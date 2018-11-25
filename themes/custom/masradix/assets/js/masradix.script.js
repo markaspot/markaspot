@@ -17,7 +17,6 @@
     } else {
       $('.fixed-header').show();
       $('img.site-logo').fadeIn(800);
-
     }
 
   }
@@ -30,7 +29,6 @@
     Pace.restart();
   });
   $(document).ready(function () {
-
     toDesktop($(window).width());
     $(window).resize(function() {
       toDesktop($(this).width());

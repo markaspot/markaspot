@@ -15,7 +15,7 @@
   "require": {
     "drupal/twig_tweak": "^2.0",
     "drupal/field_formatter_class":"^1.0",
-    "bower-asset/slideout.js": "1.0.1",
+    "bower-asset/bootstrap-offcanvas": "^2.5",
     "npm-asset/pace-js": "^0.7",
     "npm-asset/shariff": "2.0.2"
   },
