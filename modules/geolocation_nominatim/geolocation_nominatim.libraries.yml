@@ -28,6 +28,8 @@ leaflet-control-geocoder:
       /libraries/leaflet-control-geocoder/dist/Control.Geocoder.css: {}
   js:
     /libraries/leaflet-control-geocoder/dist/Control.Geocoder.js: {}
+  dependencies:
+    - geolocation_nominatim/leaflet
 
 leaflet-locatecontrol:
   js:

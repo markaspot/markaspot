@@ -3,13 +3,15 @@
  */
 
 (function ($) {
+  Drupal.geolocationNominatimWidgetMap = {};
+
   Drupal.geolocationNominatimWidget = function (mapSettings, context, updateCallback) {
     // Only init once.
     if ($('#' + mapSettings.id).hasClass('leaflet-container')) {
       return;
     }
     // Init map.
-    var map = L.map(mapSettings.id, {
+    Drupal.geolocationNominatimWidget.map = L.map(mapSettings.id, {
       fullscreenControl: true,
     })
       .setView([
@@ -22,6 +24,8 @@
     var locateOptions = {
       position: 'bottomright'
     };
+
+    var map = Drupal.geolocationNominatimWidget.map;
     var lc = L.control.locate(locateOptions).addTo(map);
 
     // Check for ongoing validation and autolocate settings combination.
