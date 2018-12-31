@@ -241,6 +241,76 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           offset: '40%'
         });
       }
+
+      L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
+        _update: function _update() {
+          if (!this._map) {
+            return;
+          }
+
+          if (!this._loaded) {
+            return;
+          }
+
+          var request_time = this._timeDimension.getCurrentTime();
+
+          var formattime = dateFormat(request_time, Drupal.Markaspot.settings.timeline_date_format);
+
+          var maxTime = this._timeDimension.getCurrentTime();
+
+          var minTime = 0;
+
+          if (this._duration) {
+            var date = new Date(maxTime);
+            L.TimeDimension.Util.subtractTimeDuration(date, this._duration, true);
+            minTime = date.getTime();
+          } // New coordinates:
+
+
+          var layer = L.geoJson(null, this._baseLayer.options);
+
+          var layers = this._baseLayer.getLayers();
+
+          for (var _i = 0, l = layers.length; _i < l; _i++) {
+            var feature = this._getFeatureBetweenDates(layers[_i].feature, minTime, maxTime);
+
+            if (feature) {
+              layer.addData(feature);
+
+              if (this._addlastPoint && feature.geometry.type === 'LineString') {
+                if (feature.geometry.coordinates.length > 0) {
+                  var properties = feature.properties.properties;
+                  properties.last = true;
+                  layer.addData({
+                    type: 'Feature',
+                    properties: properties,
+                    geometry: {
+                      type: 'Point',
+                      coordinates: feature.geometry.coordinates[feature.geometry.coordinates.length - 1]
+                    }
+                  });
+                }
+              }
+            }
+          }
+
+          if (this._currentLayer) {
+            this._map.removeLayer(this._currentLayer);
+          }
+
+          if (layer.getLayers().length) {
+            var requests = layer.getLayers().length;
+            var log = jQuery('ul.log_list');
+            log.append("<li><span class=\"time\">".concat(formattime, "</span> <span class=\"count\">").concat(requests, "</span>"));
+            var height = log.get(0).scrollHeight;
+            log.animate({
+              scrollTop: height
+            }, 10);
+            layer.addTo(this._map);
+            this._currentLayer = layer;
+          }
+        }
+      });
     }
   };
   Drupal.markaspot_map = {

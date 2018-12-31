@@ -253,6 +253,70 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           offset: '40%',
         });
       }
+
+      L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
+
+        _update() {
+          if (!this._map) {
+            return;
+          }
+          if (!this._loaded) {
+            return;
+          }
+
+          const request_time = this._timeDimension.getCurrentTime();
+          const formattime = dateFormat(request_time, Drupal.Markaspot.settings.timeline_date_format);
+          const maxTime = this._timeDimension.getCurrentTime();
+          let minTime = 0;
+          if (this._duration) {
+            const date = new Date(maxTime);
+            L.TimeDimension.Util.subtractTimeDuration(date, this._duration, true);
+            minTime = date.getTime();
+          }
+
+          // New coordinates:
+          const layer = L.geoJson(null, this._baseLayer.options);
+          const layers = this._baseLayer.getLayers();
+          for (let i = 0, l = layers.length; i < l; i++) {
+            const feature = this._getFeatureBetweenDates(layers[i].feature, minTime, maxTime);
+            if (feature) {
+              layer.addData(feature);
+              if (this._addlastPoint && feature.geometry.type === 'LineString') {
+                if (feature.geometry.coordinates.length > 0) {
+                  const { properties } = feature.properties;
+                  properties.last = true;
+                  layer.addData({
+                    type: 'Feature',
+                    properties,
+                    geometry: {
+                      type: 'Point',
+                      coordinates: feature.geometry.coordinates[feature.geometry.coordinates.length - 1],
+                    },
+                  });
+                }
+              }
+            }
+          }
+
+
+          if (this._currentLayer) {
+            this._map.removeLayer(this._currentLayer);
+          }
+          if (layer.getLayers().length) {
+            const requests = layer.getLayers().length;
+            const log = jQuery('ul.log_list');
+            log.append(`<li><span class="time">${formattime}</span> <span class="count">${requests}</span>`);
+            const height = log.get(0).scrollHeight;
+            log.animate({
+              scrollTop: height,
+            }, 10);
+            layer.addTo(this._map);
+            this._currentLayer = layer;
+          }
+        },
+
+      });
+
     },
   };
 
