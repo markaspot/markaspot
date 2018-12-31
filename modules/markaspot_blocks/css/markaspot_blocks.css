@@ -1,9 +1,14 @@
 .built-with a {
     display: inline-block;
     margin: 30px 0;
-    background: transparent url(../images/logo-small.png) 0% 45% no-repeat;
+    background: transparent url(../images/logo-small.png) 0 45% no-repeat;
     background-size: 61%;
     padding: 10px 0 0 10px;
+}
+
+.built-with.invert a.mas {
+    background: transparent url(../images/logo-small-invert.png) 0 45% no-repeat;
+    background-size: 61%;
 }
 
 .built-with a span {
