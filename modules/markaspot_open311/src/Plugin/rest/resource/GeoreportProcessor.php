@@ -98,8 +98,8 @@ class GeoreportProcessor {
       'status' => $this->taxMapStatus($node->field_status->target_id),
     );
     // Media Url:
-    if (isset($node->field_image->fid)) {
-      $image_uri = file_create_url($node->field_image->entity->getFileUri());
+    if (isset($node->field_request_image->entity)) {
+      $image_uri = file_create_url($node->field_request_image->entity->getFileUri());
       $request['media_url'] = $image_uri;
     }
 
