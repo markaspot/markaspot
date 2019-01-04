@@ -18,6 +18,8 @@
         mapSettings.centerLat,
         mapSettings.centerLng
       ], 18);
+    var map = Drupal.geolocationNominatimWidget.map;
+
     L.tileLayer(mapSettings.tileServerUrl, {
       attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
@@ -25,7 +27,6 @@
       position: 'bottomright'
     };
 
-    var map = Drupal.geolocationNominatimWidget.map;
     var lc = L.control.locate(locateOptions).addTo(map);
 
     // Check for ongoing validation and autolocate settings combination.
