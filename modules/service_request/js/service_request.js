@@ -10,7 +10,6 @@
     attach: function(context, settings) {
 
       var $paragraphForm = $('div[id^=edit-field-status-notes-]' + ' .field--name-field-status-term select').last();
-      console.log("paragrah-", $paragraphForm);
       var initValue = $('input[name=field_status]:checked').val();
       $paragraphForm.val(initValue);
       var $nodeForm = $('.node-form input');

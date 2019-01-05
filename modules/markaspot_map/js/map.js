@@ -119,26 +119,26 @@
 
       if (!nids.length) {
         Drupal.markaspot_map.setDefaults(masSettings);
+      } else {
+
+        if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
+          localStorage.setItem('storedNids', JSON.stringify(nids));
+          markerLayer.clearLayers(); // Load and showData on map.
+
+          Drupal.markaspot_map.load(function (data) {
+            Drupal.markaspot_map.showData(data);
+            markerLayer.eachLayer(function (layer) {
+              // Define marker-properties for Scrolling.
+              var nid = layer.options.title;
+              scrolledMarker[nid] = {
+                latlng: layer.getLatLng(),
+                title: layer.options.title,
+                color: layer.options.color
+              };
+            });
+          }, nids);
+        } // Theme independent selector.
       }
-
-      if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
-        localStorage.setItem('storedNids', JSON.stringify(nids));
-        markerLayer.clearLayers(); // Load and showData on map.
-
-        Drupal.markaspot_map.load(function (data) {
-          Drupal.markaspot_map.showData(data);
-          markerLayer.eachLayer(function (layer) {
-            // Define marker-properties for Scrolling.
-            var nid = layer.options.title;
-            scrolledMarker[nid] = {
-              latlng: layer.getLatLng(),
-              title: layer.options.title,
-              color: layer.options.color
-            };
-          });
-        }, nids);
-      } // Theme independent selector.
-
 
       var serviceRequests = $(masSettings.nid_selector);
 
@@ -345,7 +345,6 @@
 
 
           var layer = L.geoJson(null, this._baseLayer.options);
-
           var layers = this._baseLayer.getLayers();
 
           for (var _i = 0, l = layers.length; _i < l; _i++) {
