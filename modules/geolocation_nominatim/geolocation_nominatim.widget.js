@@ -127,9 +127,10 @@
       window.setTimeout(function () {
         map._geocoderIsActive = false
       }, 500);
-      marker = L.marker(latLng, {
+      /* marker = L.marker(latLng, {
         draggable: true
       }).bindPopup(result.html || result.name).addTo(map).openPopup();
+      */
     });
     geocoder.on('startgeocode', function () {
       map._geocoderIsActive = true;
