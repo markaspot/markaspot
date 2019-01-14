@@ -78,7 +78,6 @@
     "drupal/field_group": "^1.0",
     "drupal/form_mode_manager": "~2",
     "drupal/geolocation": "^1.11",
-    "drupal/rules": "3.x-dev",
     "drupal/maillog": "1.x-dev",
     "drupal/services_api_key_auth": "1.*",
     "drupal/search_api": "^1.5",
@@ -139,11 +138,6 @@
     },
     "enable-patching": true,
     "patches": {
-      "drupal/rules": {
-        "Action send mail, implode error": "https://www.drupal.org/files/issues/system-send-email-action-fails-if-to-is-a-string-2827183-2.patch",
-        "Send mail text field 2 textarea": "https://www.drupal.org/files/issues/rules_sendmail_textarea-2724129-34.patch",
-        "Set new revision to false on entity save": "https://gist.githubusercontent.com/markaspot/049453ad442cea2df105b4b9b74bc331/raw/ae409ed4a23899f33911635c77e52e76960570f9/save%2520entity%2520no%2520revisions"
-      },
       "drupal/shariff": {
         "Use dist path for shariff library": "https://gist.githubusercontent.com/markaspot/e36e7f6a21f47a984711c6d5ca40a543/raw/965f199c1d22623771d049f7e94f3a7105e1c45f/shariff%2520drupal%2520dist%2520path"
       }
