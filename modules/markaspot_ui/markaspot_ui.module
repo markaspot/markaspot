@@ -11,7 +11,10 @@ use Drupal\Core\Url;
  * Implements hook_toolbar().
  */
 function markaspot_ui_toolbar() {
-
+  if (!\Drupal::currentUser()->hasPermission('administer site configuration')){
+    $items = [];
+    return $items;
+  }
   $markaspot_modules = array(
     'markaspot_map' => 'markaspot_map.settings',
     'markaspot_uuid' => 'markaspot_uuid.settings',
