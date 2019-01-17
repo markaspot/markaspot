@@ -55,6 +55,13 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#description' => t('Validate if new requests are possible duplicates within this radius.'),
     );
 
+    $form['markaspot_validation']['hint'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Validate dublicates only as a hint'),
+      '#default_value' => $config->get('hint'),
+      '#description' => t('Users can ignore this validation note by resubmitting the report form.'),
+    );
+
     $form['markaspot_validation']['days'] = array(
       '#type' => 'number',
       '#min' => 1,
@@ -93,6 +100,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       ->set('radius', $values['radius'])
       ->set('unit', $values['unit'])
       ->set('days', $values['days'])
+      ->set('hint', $values['hint'])
       ->save();
 
     parent::submitForm($form, $form_state);
