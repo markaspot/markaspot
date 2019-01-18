@@ -6909,6 +6909,9 @@ span.site-name {
   clear: both;
   margin: 60px 20px 0 0; }
 
+.block-content--mas-custom {
+  margin: 40px 0; }
+
 .btn-circle {
   width: 30px;
   height: 30px;

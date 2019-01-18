@@ -192,13 +192,13 @@ a:active,
   left: 0;
 }
 
-@media (min-width: 1200px) {
+@media (min-width: 1024px) {
   /*
   .navbar-default div.container {
     background: #e2e2e2;
   }*/
   
-
+  .nav.navbar-nav > li,
   .links.inline a,
   .navbar-inner li {
     text-transform: uppercase;
@@ -214,6 +214,10 @@ a:active,
 
   .nav.navbar-nav > li > a:active {
     color: #0071b3!important;
+  }
+  
+  .nav.navbar-nav > li > a {
+    color: #0071b3;
   }
 
   .nav > li > a:hover, .nav > li > a:focus {
