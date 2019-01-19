@@ -8,6 +8,8 @@ dependencies:
     - field.field.node.service_request.field_e_mail
     - field.field.node.service_request.field_geolocation
     - field.field.node.service_request.field_organisation
+    - field.field.node.service_request.field_pbf_ref_group
+    - field.field.node.service_request.field_pbf_ref_role
     - field.field.node.service_request.field_request_image
     - field.field.node.service_request.field_status
     - field.field.node.service_request.field_status_notes
@@ -76,6 +78,8 @@ content:
       set_address_field: '1'
       tileServerUrl: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png'
       serviceUrl: 'https://nominatim.openstreetmap.org/'
+      city: ''
+      autoLocate: false
     third_party_settings: {  }
     region: content
   field_image:
@@ -86,6 +90,12 @@ content:
       preview_image_style: thumbnail
     third_party_settings: {  }
     region: content
+  field_organisation:
+    weight: 10
+    settings: {  }
+    third_party_settings: {  }
+    type: options_buttons
+    region: content
   field_request_image:
     type: image_image
     weight: 3
@@ -94,12 +104,6 @@ content:
       progress_indicator: throbber
     third_party_settings: {  }
     region: content
-  field_organisation:
-      weight: 11
-      settings: {  }
-      third_party_settings: {  }
-      type: options_buttons
-      region: content
   field_status:
     weight: 11
     settings: {  }
@@ -135,7 +139,7 @@ content:
     type: boolean_checkbox
     settings:
       display_label: true
-    weight: 15
+    weight: 14
     region: content
     third_party_settings: {  }
   sticky:
@@ -155,4 +159,8 @@ content:
     third_party_settings: {  }
     region: content
 hidden:
+  field_pbf_ref_group: true
+  field_pbf_ref_role: true
+  langcode: true
+  request_id: true
   title: true
