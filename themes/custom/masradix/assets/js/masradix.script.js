@@ -8,7 +8,6 @@
 
   function toDesktop(width){
     var nav = $(".navbar-default");
-    var branding = $(".block--masradix-sitebranding");
     if (width >= 992) {
       $('.navbar-default > div').removeClass(".navbar-left");
       $('a.navbar-brand').prependTo(nav);
