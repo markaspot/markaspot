@@ -407,7 +407,7 @@ display:
           relationship: none
           group_type: group
           admin_label: ''
-          label: 'Dienststelle / Amt'
+          label: 'Organisation'
           exclude: false
           alter:
             alter_text: false
