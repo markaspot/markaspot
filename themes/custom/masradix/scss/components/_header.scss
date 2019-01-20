@@ -1,0 +1,16 @@
+@media (min-width: $screen-md) {
+  header.clearfix {
+    background-size: 40px;
+    background-repeat: repeat-x;
+    background-position: top;
+    height: 80px;
+  }
+}
+
+@media (max-width: $screen-md) {
+  header.clearfix {
+    height: 80px;
+    padding: 20px;
+    background-color: none
+  }
+}

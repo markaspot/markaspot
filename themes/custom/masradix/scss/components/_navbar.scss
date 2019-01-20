@@ -13,11 +13,14 @@
 
     }
 
-    button.navbar-toggle.offcanvas-toggle {
+    .navbar-toggle.offcanvas-toggle {
         position: fixed;
         right: 0;
-        top: 0;
+        top: 10px;
         z-index:9999
+    }
+    .page--logged-in .navbar-toggle{
+        top: 50px;
     }
 }
 
