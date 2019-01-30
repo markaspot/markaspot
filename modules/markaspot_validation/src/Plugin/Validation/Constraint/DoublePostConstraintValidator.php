@@ -55,6 +55,7 @@ class DoublePostConstraintValidator extends ConstraintValidator {
     $user->hasPermission('bypass mas validation');
     if (!$user->hasPermission('bypass mas validation')) {
       $nids = $this->checkEnvironment(floatval($field->lng), floatval($field->lat));
+      $session_ident = !empty($nids) ? end($nids) : '';
     }
     else {
       $nids = [];
@@ -94,13 +95,13 @@ class DoublePostConstraintValidator extends ConstraintValidator {
           ]), $url)->toString();
       }
 
-      $iteration = $session->get('ignore_dublicate', 0);
+      $iteration = $session->get('ignore_dublicate_' . $session_ident, 0);
 
       if ($iteration == 0 && $this->configFactory->get('hint') == TRUE) {
 
         $message_append = $this->t('You can ignore this message or help us by comparing the possible duplicate and clicking on the link.');
         $this->context->addViolation(implode("\n", $message) . '</br>' . $message_append);
-        $session->set('ignore_dublicate', $iteration + 1);
+        $session->set('ignore_dublicate_' . $session_ident, $iteration + 1);
 
       } else if ($this->configFactory->get('hint') == FALSE){
 
@@ -110,7 +111,7 @@ class DoublePostConstraintValidator extends ConstraintValidator {
 
     }
     else {
-      $session->set('ignore_dublicate', 0);
+      $session->set('ignore_dublicate_' . $session_ident, 0);
       return TRUE;
     }
   }
