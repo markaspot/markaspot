@@ -58,6 +58,7 @@ class DoublePostConstraintValidator extends ConstraintValidator {
       $session_ident = !empty($nids) ? end($nids) : '';
     }
     else {
+      $session_ident = '';
       $nids = [];
     }
 

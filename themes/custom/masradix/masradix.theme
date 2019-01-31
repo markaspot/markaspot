@@ -96,7 +96,7 @@ function masradix_preprocess_node(&$variables) {
 
   if (isset($variables["content"]["field_category"])) {
     foreach ($variables['node']->field_category as $item) {
-      if ($item->entity) {
+      if (isset($item->entity)) {
         $variables['mas_category']['label'] = $variables["content"]["field_category"][0]["#plain_text"];
         $variables['mas_category']['icon']  = $item->entity->field_category_icon->value;
         $variables['mas_category']['color'] = str_replace('#', '', $item->entity->field_category_hex->color);
@@ -106,11 +106,11 @@ function masradix_preprocess_node(&$variables) {
   if (theme_get_setting('status') != FALSE) {
 
     if (isset($variables["content"]["field_status"])) {
-      foreach ($variables['node']->field_status_notes as $item) {
-        if (isset($item->entity->field_status_term[0]->entity->name->value)) {
+      foreach ($variables['node']->field_status as $item) {
+        if (isset($item->entity)) {
           $variables['mas_status']['label'] = $variables["content"]["field_status"][0]["#plain_text"];
-          $variables['mas_status']['icon']  = $item->entity->field_status_term[0]->entity->field_status_icon->value;
-          $variables['mas_status']['color'] = str_replace('#', '', $item->entity->field_status_term[0]->entity->field_status_hex->color);
+          $variables['mas_status']['icon']  = $item->entity->field_status_icon->value;
+          $variables['mas_status']['color'] = str_replace('#', '', $item->entity->field_status_hex->color);
         }
       }
     }
