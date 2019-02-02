@@ -130,9 +130,10 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
  * Implements hook_node_presave().
  */
 function markaspot_request_id_node_presave(EntityInterface $node) {
-  $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
 
   if ($node->bundle() == 'service_request') {
+    $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
+
     $tid = $node->field_category->target_id;
     // Instead of contributed module auto entity_title:
     // Get the service name by ID and update the title field.
@@ -140,8 +141,11 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
       $taxonomy_term = \Drupal::entityTypeManager()
         ->getStorage('taxonomy_term')
         ->load($tid);
-      $service_name = \Drupal::service('entity.repository')->getTranslationFromContext($taxonomy_term, $language);
-
+      //$service_name = \Drupal::service('entity.repository')->getTranslationFromContext($taxonomy_term);
+      if ($taxonomy_term !== NULL) {
+        $service_name = \Drupal::service('entity.repository')
+          ->getTranslationFromContext($taxonomy_term, $language);
+      }
       $node->title = '#' . $node->request_id->value . '  ' . $service_name->name->value;
 
     }
