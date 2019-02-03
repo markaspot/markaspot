@@ -8,7 +8,7 @@
     "postinstall": "find node_modules/ -name '*.info' -type f -delete"
   },
   "devDependencies": {
-    "browser-sync": "~2.18.7",
+    "browser-sync": "^2.26.3",
     "gulp": "^3.9.1",
     "gulp-autoprefixer": "^3.1.0",
     "gulp-concat": "^2.6.0",
@@ -21,10 +21,10 @@
     "gulp-sass-glob": "1.0.8",
     "gulp-scss-lint": "~0.4.0",
     "gulp-shell": "~0.5.2",
-    "gulp-sourcemaps": "^2.4.0",
+    "gulp-sourcemaps": "^2.6.4",
     "gulp-uglify": "^2.0.1",
     "imagemin-pngcrush": "~5.0.0",
-    "jshint": "~2.9.1",
-    "node-sass": "^4.5.0"
+    "jshint": "^2.9.7",
+    "node-sass": "^4.11.0"
   }
 }
