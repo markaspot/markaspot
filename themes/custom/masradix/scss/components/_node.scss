@@ -67,7 +67,7 @@ article.service-request--teaser footer {
   font-size: xx-large;
   color: #fff;
   opacity: 0.2;
-  top: 40px
+  top: 20px
 }
 
 .view--front-gallery .service-request h2:before {
@@ -79,7 +79,7 @@ article.service-request--teaser footer {
 
 .service-request h2 {
 
-  font-size: x-small;
+  font-size: large;
 
   @media (min-width: $screen-lg-min) {
     font-size: x-large;
@@ -162,6 +162,13 @@ article.service-request--teaser footer {
   }
 }
 
+#drupal-modal .container.category-status {
+    width: 100%;
+}
+
+#drupal-modal .col-sm-6 {
+    width:100%
+}
 
 .service-request__field-status-notes {
   margin: 20px 0;
