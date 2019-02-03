@@ -8,8 +8,6 @@ dependencies:
     - field.field.node.service_request.field_e_mail
     - field.field.node.service_request.field_geolocation
     - field.field.node.service_request.field_organisation
-    - field.field.node.service_request.field_pbf_ref_group
-    - field.field.node.service_request.field_pbf_ref_role
     - field.field.node.service_request.field_request_image
     - field.field.node.service_request.field_status
     - field.field.node.service_request.field_status_notes

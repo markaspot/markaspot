@@ -8,9 +8,6 @@ dependencies:
     - field.field.node.service_request.field_category
     - field.field.node.service_request.field_e_mail
     - field.field.node.service_request.field_geolocation
-    - field.field.node.service_request.field_organisation
-    - field.field.node.service_request.field_pbf_ref_group
-    - field.field.node.service_request.field_pbf_ref_role
     - field.field.node.service_request.field_request_image
     - field.field.node.service_request.field_status
     - field.field.node.service_request.field_status_notes
@@ -20,6 +17,7 @@ dependencies:
     module:
       - service_request
   module:
+    - markaspot_group
     - field_formatter_class
     - image
     - text
@@ -73,9 +71,6 @@ hidden:
   field_address: true
   field_e_mail: true
   field_geolocation: true
-  field_organisation: true
-  field_pbf_ref_group: true
-  field_pbf_ref_role: true
   field_status_notes: true
   langcode: true
   shariff_field: true
