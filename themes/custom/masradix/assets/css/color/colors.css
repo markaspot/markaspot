@@ -20,24 +20,10 @@ body {
 .leaflet-control-locate {
   border-color: #0071b3 !important;
 }
-/*
-.navbar,
-.notifications li,
-.hamburger.is-closed .hamb-top,
-.hamburger.is-closed .hamb-middle,
-.hamburger.is-closed .hamb-bottom,
-#sidebar-wrapper {
-  background-color: #055a8e;
-  background-image: -webkit-linear-gradient(top, #055a8e 0%, #055a8e 100%);
-  background-image: linear-gradient(to bottom, #055a8e 0%, #055a8e 100%);
-}
 
-*/
 .navbar-default .navbar-toggle .icon-bar,
 .navbar-offcanvas.in {
-  background-color: #055a8e;
-  background-image: -webkit-linear-gradient(top, #055a8e 0%, #055a8e 100%);
-  background-image: linear-gradient(to bottom, #055a8e 0%, #055a8e 100%);
+  background-color: #292929;
 }
 
 
