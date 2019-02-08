@@ -73,7 +73,7 @@
       defaultMarkGeocode: false,
       collapsed: false,
       geocoder: geocoderNominatim,
-      placeholder: Drupal.t('Search'),
+      placeholder: Drupal.t('Street search'),
       errorMessage: Drupal.t('Nothing found.')
     });
 
