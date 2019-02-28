@@ -35,6 +35,11 @@ article.service-request--teaser {
   background: #fff;
 }
 
+article.service-request p {
+  margin: 10px 0;
+}
+
+
 article.service-request footer {
   font-style: italic;
   margin: 10px 0;
@@ -58,7 +63,9 @@ article.service-request--teaser footer {
   min-height: 200px
 }
 
-
+.service-request h2 {
+  border: 1px solid;
+}
 .service-request h2:before {
   content: "\f030";
   font-family: FontAwesome;
@@ -66,8 +73,8 @@ article.service-request--teaser footer {
   position: absolute;
   font-size: xx-large;
   color: #fff;
+  line-height:2;
   opacity: 0.2;
-  top: 20px
 }
 
 .view--front-gallery .service-request h2:before {
