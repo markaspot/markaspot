@@ -7275,8 +7275,19 @@ article.service-request--teaser {
   width: 100%; }
 
 article.service-request--teaser.focus {
-  background: #fff;
-  transition: all 0.1s ease; }
+  background: #eeeeee;
+  transition: all 1.5s linear; }
+
+article.service-request--teaser.focus:before {
+  font-family: "FontAwesome";
+  font-weight: 900;
+  content: "\f062";
+  text-align: center;
+  display: block;
+  position: relative;
+  height: 60px;
+  width: 100%;
+  line-height: 3; }
 
 article.service-request--gallery {
   padding: 0;
@@ -7284,7 +7295,7 @@ article.service-request--gallery {
   clear: both; }
 
 article.service-request--teaser {
-  padding: 0;
+  background: #fff;
   margin: 30px 0 40px 0;
   clear: both; }
 
@@ -7302,7 +7313,7 @@ article.service-request footer {
 
 article.service-request--teaser .content,
 article.service-request--teaser footer {
-  padding: 10px;
+  padding: 0 10px;
   margin: 0; }
 
 .category-status {
@@ -7311,9 +7322,6 @@ article.service-request--teaser footer {
 .service-request--gallery h2 {
   font-size: medium;
   min-height: 200px; }
-
-.service-request h2 {
-  border: 1px solid; }
 
 .service-request h2:before {
   content: "\f030";
@@ -7329,6 +7337,9 @@ article.service-request--teaser footer {
   left: inherit;
   right: 30px;
   top: 40px; }
+
+.service-request h2:first-child {
+  border: 1px solid #222222; }
 
 .service-request h2 {
   font-size: large;

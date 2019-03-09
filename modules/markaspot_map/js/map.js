@@ -40,7 +40,6 @@
 
         if (currentPath === '/node') {
           Drupal.markaspot_map.createHeatMapLayer(map); // heatMapLayer.addTo(map);
-
           Drupal.markaspot_map.setDefaults(masSettings);
         }
 
@@ -150,20 +149,16 @@
         });
         new Waypoint({
           element: serviceRequests[i],
-          handler: function handler() {
+          handler: function handler(direction) {
             var nid = this.element.getAttribute('data-history-node-id');
             var previousWp = this.previous();
             var nextWp = this.next();
 
-            if (previousWp) {
-              $(previousWp.element).removeClass('focus');
+            if (direction === 'up') {
+              $(this.element).removeClass('focus');
+            } else {
+              $(this.element).addClass('focus');
             }
-
-            if (nextWp) {
-              $(nextWp.element).removeClass('focus');
-            }
-
-            $(this.element).addClass('focus');
 
             if (scrolledMarker.hasOwnProperty(nid)) {
               Drupal.markaspot_map.showCircle(scrolledMarker[nid]);

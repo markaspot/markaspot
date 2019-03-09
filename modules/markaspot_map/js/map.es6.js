@@ -169,18 +169,17 @@
 
         new Waypoint({
           element: serviceRequests[i],
-          handler() {
+          handler(direction) {
             const nid = this.element.getAttribute('data-history-node-id');
 
             const previousWp = this.previous();
             const nextWp = this.next();
-            if (previousWp) {
-              $(previousWp.element).removeClass('focus');
+
+            if (direction === 'up') {
+              $(this.element).removeClass('focus');
+            } else {
+              $(this.element).addClass('focus');
             }
-            if (nextWp) {
-              $(nextWp.element).removeClass('focus');
-            }
-            $(this.element).addClass('focus');
 
             if (scrolledMarker.hasOwnProperty(nid)) {
               Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
@@ -272,7 +271,7 @@
         return;
       }
       const color = marker.color;
-      const circle = L.circle(marker.latlng, 300 / currentZoom, {
+      const circle = L.circle(marker.latlng, 600 / currentZoom, {
         color,
         weight: 1,
         fillColor: color,

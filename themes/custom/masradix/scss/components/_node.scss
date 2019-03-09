@@ -4,7 +4,7 @@ article.service-request--teaser {
   background: $gray-lighter;
   box-shadow:
     0 2px 2px 0 rgba(0,0,0,0.16), 
-    0 0 0 1px rgba(0,0,0,0.08)
+    0 0 0 1px rgba(0,0,0,0.08);
 }
 
 .service-request__field-category .label-default,
@@ -14,9 +14,22 @@ article.service-request--teaser {
 }
 
 article.service-request--teaser.focus {
-  background: #fff;
-  -webkit-transition: all 0.1s ease;
-  transition: all 0.1s ease;
+  background: $gray-lighter;
+  -webkit-transition: all 2.5s linear;
+  transition: all 1.5s linear;
+}
+
+article.service-request--teaser.focus:before {
+  font-family: "FontAwesome"; 
+  font-weight: 900;
+  content: "\f062";
+  text-align: center;
+  display: block;
+  position: relative;
+  height: 60px;
+  width:100%;
+
+  line-height: 3;
 }
 
 article.service-request--gallery {
@@ -26,7 +39,7 @@ article.service-request--gallery {
 }
 
 article.service-request--teaser {
-  padding: 0;
+  background: #fff;
   margin: 30px 0 40px 0;
   clear: both;
 }
@@ -49,7 +62,7 @@ article.service-request footer {
 
 article.service-request--teaser .content,
 article.service-request--teaser footer {
-  padding: 10px;
+  padding:  0 10px;
   margin: 0;
 }
 
@@ -63,9 +76,7 @@ article.service-request--teaser footer {
   min-height: 200px
 }
 
-.service-request h2 {
-  border: 1px solid;
-}
+
 .service-request h2:before {
   content: "\f030";
   font-family: FontAwesome;
@@ -83,11 +94,12 @@ article.service-request--teaser footer {
   top: 40px
 }
 
-
-.service-request h2 {
+.service-request h2:first-child {
+ border: 1px solid $gray-darker;
+}
+.service-request h2{
 
   font-size: large;
-
   @media (min-width: $screen-lg-min) {
     font-size: x-large;
   }
@@ -147,7 +159,6 @@ article.service-request--teaser footer {
   padding: 0;
   text-align:center;
   background: $gray-lighter;
-
 }
 .view--requests div.col-sm-6,
 .category-status div.col-sm-12,
