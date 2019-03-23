@@ -70,6 +70,7 @@ map:
   dependencies:
     - core/jquery.once
     - markaspot_map/leaflet
+    - markaspot_map/leaflet-timedimension
   js:
     js/map.js: {}
   css:
