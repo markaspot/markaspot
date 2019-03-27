@@ -138,9 +138,6 @@
     },
     "enable-patching": true,
     "patches": {
-      "drupal/shariff": {
-        "Use dist path for shariff library": "https://gist.githubusercontent.com/markaspot/e36e7f6a21f47a984711c6d5ca40a543/raw/965f199c1d22623771d049f7e94f3a7105e1c45f/shariff%2520drupal%2520dist%2520path"
-      }
     }
   }
 }
