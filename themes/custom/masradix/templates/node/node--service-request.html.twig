@@ -91,19 +91,35 @@ set category_icon = [
 
 %}
 
+{%
+  set header_image = node.field_request_image.entity.fileuri
+%}
+
+
 <article {{attributes.addClass(classes).addClass('color-' ~ mas_status['color'])}}>
     {{ title_prefix }}
-    {% if not page %}
+    {% if not page and header_image %}
       <h2{{ title_attributes }} style="background: linear-gradient(
               rgba(0, 0, 0, 0.4),
               rgba(0, 0, 0, 0.4)
-              ), url({{ file_url(node.field_request_image.entity.fileuri | image_style('header') ) }});
+              ), url({{ file_url(header_image | image_style('header') ) }});
               background-repeat:no-repeat;
               background-size:auto;
               background-position:center;">
         <a href="{{ url }}" rel="bookmark">{{ label }}</a>
       </h2>
     {% endif %}
+  {% if not page and not header_image %}
+    <h2{{ title_attributes }} style="background: linear-gradient(
+      rgba(0, 0, 0, 0.4),
+      rgba(0, 0, 0, 0.4)
+      ), url('');
+      background-repeat:no-repeat;
+      background-size:auto;
+      background-position:center;">
+      <a href="{{ url }}" rel="bookmark">{{ label }}</a>
+    </h2>
+  {% endif %}
     {{ title_suffix }}
     {% if display_submitted %}
     <footer class="node__meta">
