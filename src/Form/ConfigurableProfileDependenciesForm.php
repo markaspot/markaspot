@@ -49,8 +49,8 @@ class ConfigurableProfileDependenciesForm extends FormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
-
-    $form['#title'] = $this->t('aGov Module Configuration');
+    // thanks to aGov for that code.
+    $form['#title'] = $this->t('Mark-a-Spot Module Configuration');
     $install_state = $form_state->getBuildInfo()['args'][0];
 
     // If we have any configurable_dependencies in the profile then show them

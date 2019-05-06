@@ -131,11 +131,6 @@
             "value": "field_status_notes"
         }
     ],
-    "behavior_settings": [
-        {
-            "value": "a:0:{}"
-        }
-    ],
     "default_langcode": [
         {
             "value": true,
