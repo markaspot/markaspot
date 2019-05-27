@@ -96,9 +96,9 @@ class DoublePostConstraintValidator extends ConstraintValidator {
           ]), $url)->toString();
       }
 
-      $iteration = $session->get('ignore_dublicate_' . $session_ident, 0);
-
-      if ($iteration == 0 && $this->configFactory->get('hint') == TRUE) {
+      $iteration = $session->get('ignore_dublicate_' . $session_ident);
+      $treshold = $this->configFactory->get('treshold') ? $this->configFactory->get('treshold') : '0';
+      if ($iteration <= $treshold && $this->configFactory->get('hint') == TRUE) {
 
         $message_append = $this->t('You can ignore this message or help us by comparing the possible duplicate and clicking on the link.');
         $this->context->addViolation(implode("\n", $message) . '</br>' . $message_append);

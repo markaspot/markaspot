@@ -61,7 +61,15 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('hint'),
       '#description' => t('Users can ignore this validation note by resubmitting the report form.'),
     );
-
+    $form['markaspot_validation']['treshold'] = array(
+      '#type' => 'number',
+      '#min' => 1,
+      '#max' => 1000,
+      '#step' => 1,
+      '#title' => t('Iterations treshold'),
+      '#default_value' => $config->get('treshold'),
+      '#description' => t('Increase this number if you think that validation notes are too few.'),
+    );
     $form['markaspot_validation']['days'] = array(
       '#type' => 'number',
       '#min' => 1,
@@ -101,6 +109,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       ->set('unit', $values['unit'])
       ->set('days', $values['days'])
       ->set('hint', $values['hint'])
+      ->set('treshold', $values['treshold'])
       ->save();
 
     parent::submitForm($form, $form_state);
