@@ -302,9 +302,11 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         fillColor: color,
         fillOpacity: 0.2
       }).addTo(map);
+
       map.flyTo(marker.latlng, mapDefaultZoom, {
         duration: 0.8
       }); // console.log(map.getZoom());
+      map.invalidateSize();
 
       setTimeout(function() {
         $(".auto_hide").animate(

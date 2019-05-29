@@ -81,9 +81,10 @@
     // Add a close button to exposed filter.
     $('.views-exposed-form')
       .append('<a data-toggle="filter" class="btn btn-default close fa fa-close"><span>' + Drupal.t('Close') + '</span></a>')
-    if ($('#map').length > 0) {
+    var $map = $(#map);
+    if ($map.length > 0) {
       var mapInview = new Waypoint.Inview({
-        element: $('#map'),
+        element: $map,
         entered: function (direction) {
           $('body').addClass('map-stuck');
         },
