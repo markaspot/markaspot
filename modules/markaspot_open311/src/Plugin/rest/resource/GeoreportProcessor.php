@@ -112,24 +112,29 @@ class GeoreportProcessor {
         $request['status_note'] = $note->entity->field_status_note->value;
       }
     }
-    $service_code = $this->getTerm($node->field_category->target_id, 'field_service_code');
-    $request['service_code'] = isset($service_code) ? $service_code : NULL;
-
+    if (isset($node->field_category)) {
+      $service_code = $this->getTerm($node->field_category->target_id, 'field_service_code');
+      $request['service_code'] = isset($service_code) ? $service_code : NULL;
+    }
     if (isset($extended_role)) {
       if (\Drupal::moduleHandler()->moduleExists('service_request')) {
 
         $request['extended_attributes']['markaspot'] = [];
 
         $nid = array('nid' => $node->nid->value);
-        $category = array(
-          'category_hex' => Term::load($node->field_category->target_id)->field_category_hex->color,
-          'category_icon' => Term::load($node->field_category->target_id)->field_category_icon->value,
-        );
+        if (isset($node->field_category)) {
+          $category = [
+            'category_hex' => Term::load($node->field_category->target_id)->field_category_hex->color,
+            'category_icon' => Term::load($node->field_category->target_id)->field_category_icon->value,
+          ];
+        }
 
         if (isset($node->field_status_notes)) {
           foreach ($node->field_status_notes as $note) {
-            $status['status_hex'] = Term::load($note->entity->field_status_term->target_id)->field_status_hex->color;
-            $status['status_icon'] = Term::load($note->entity->field_status_term->target_id)->field_status_icon->value;
+            if (isset($note->entity->field_status_term->target_id)){
+              $status['status_hex'] = Term::load($note->entity->field_status_term->target_id)->field_status_hex->color;
+              $status['status_icon'] = Term::load($note->entity->field_status_term->target_id)->field_status_icon->value;
+            }
           }
 
           // Access the paragraph entity.
