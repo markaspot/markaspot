@@ -56,10 +56,6 @@ body {
   text-transform:inherit;
 }
 
-.dropdown-toggle.btn-default {
-
-}
-
 .btn.start{
     text-transform:inherit;
     text-decoration:none;
@@ -107,7 +103,7 @@ fieldset#edit-field-geolocation-0-map-container,
 }
 
 footer#footer {
-  background-color: #292929;
+  background-color: #1d84c3;
 }
 
 .block.block--markaspotbuiltwithblock {
@@ -144,7 +140,7 @@ p a {
   text-decoration: underline;
   -moz-text-decoration-color: rgba(0, 113, 179, 0.5); /* Code for Firefox */
   text-decoration-color: rgba(0, 113, 179, 0.5);
-  
+
 }
 
 a:hover,
@@ -184,7 +180,7 @@ a:active,
   .navbar-default div.container {
     background: #e2e2e2;
   }*/
-  
+
   .nav.navbar-nav > li,
   .links.inline a,
   .navbar-inner li {
@@ -202,7 +198,7 @@ a:active,
   .nav.navbar-nav > li > a:active {
     color: #0071b3!important;
   }
-  
+
   .nav.navbar-nav > li > a {
     color: #0071b3;
   }

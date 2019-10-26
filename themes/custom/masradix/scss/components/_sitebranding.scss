@@ -1,19 +1,14 @@
-
-
 img.site-logo {
   float: none;
   margin: 0 auto;
-
   @media (min-width: $screen-md) {
-    max-height: 40px;
-    max-width: 40px;
+    height: 40px;
+    width: 80px;
   }
   @media (max-width: $screen-md) {
-    max-height: 50px;
+    max-height: 40px;
     display: block;
-
   }
-
 }
 
 .region-head.col-md-12 .block.block--masradix-sitebranding {

@@ -6,19 +6,6 @@
 
 (function ($, Drupal, drupalSettings, window, document) {
 
-  function toDesktop(width){
-    var nav = $(".navbar-default");
-    if (width >= 992) {
-      $('.navbar-default > div').removeClass(".navbar-left");
-      $('a.navbar-brand').prependTo(nav);
-      $('.fixed-header').hide();
-      $('img.site-logo').fadeIn(800);
-    } else {
-      $('.fixed-header').show();
-      $('img.site-logo').fadeIn(800);
-    }
-
-  }
   // https://www.abeautifulsite.net/whipping-file-inputs-into-shape-with-bootstrap-3
   $(document).on('change', ':file', function () {
     var input = $(this),
@@ -28,10 +15,7 @@
     Pace.restart();
   });
   $(document).ready(function () {
-    toDesktop($(window).width());
-    $(window).resize(function() {
-      toDesktop($(this).width());
-    });
+
     // https://www.abeautifulsite.net/whipping-file-inputs-into-shape-with-bootstrap-3
     $(':file').on('fileselect', function (event, numFiles, label) {
 
