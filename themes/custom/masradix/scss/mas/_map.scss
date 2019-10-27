@@ -109,7 +109,7 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
 // Timeline makes no sense on smartphone screens.
 // Hiding this feature until there is a better solution for this.
 @media (max-width: $screen-xs) {
-  div.easy-button-container:nth-child(2) {
+  div.easy-button-container:nth-child(1) {
       display: none;
   }
 }

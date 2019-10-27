@@ -7565,9 +7565,8 @@ img.site-logo {
       width: 80px; } }
   @media (max-width: 992px) {
     img.site-logo {
-      height: 40px;
-      display: block;
-      } }
+      max-height: 40px;
+      display: block; } }
 
 .region-head.col-md-12 .block.block--masradix-sitebranding, .region-head.calendar-calendar .block.block--masradix-sitebranding, .view .row > .region-head.list-group .block.block--masradix-sitebranding {
   clear: both;
@@ -8309,7 +8308,7 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
   position: relative; }
 
 @media (max-width: 480px) {
-  div.easy-button-container:nth-child(2) {
+  div.easy-button-container:nth-child(1) {
     display: none; } }
 
 /*
