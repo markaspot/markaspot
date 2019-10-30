@@ -54,19 +54,20 @@
 
     // Sticky map on top.
 
-    var $stickyElement = $('.map-request-block');
-    if ($stickyElement.length) {
-      Drupal.sticky = new Waypoint.Sticky({
-        element: $stickyElement[0],
-        wrapper: '<div class="sticky-wrapper waypoint" />'
-      });
-    }
+
 
     // Add a close button to exposed filter.
     $('.views-exposed-form')
       .append('<a data-toggle="filter" class="btn btn-default close fa fa-close"><span>' + Drupal.t('Close') + '</span></a>')
     var $map = $('#map');
     if ($map.length > 0 && sessionStorage.getItem('removeSticky') !== '1') {
+      var $stickyElement = $('.map-request-block');
+      if ($stickyElement.length) {
+        Drupal.sticky = new Waypoint.Sticky({
+          element: $stickyElement[0],
+          wrapper: '<div class="sticky-wrapper waypoint" />'
+        });
+      }
       var mapInview = new Waypoint.Inview({
         element: $map,
         entered: function (direction) {
