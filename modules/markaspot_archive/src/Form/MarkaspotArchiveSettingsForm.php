@@ -77,16 +77,29 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
       '#title' => t('Please choose the fields that will get overwritten on archiving.'),
     );
 
-    $form['markaspot_archive']['days'] = array(
-      '#type' => 'number',
-      '#min' => 1,
-      '#max' => 1000,
-      '#step' => 1,
-      '#title' => t('Archive service requests last changed since days.'),
-      '#default_value' => $config->get('days'),
-      '#description' => t('How many days to reach back for archiving?'),
-    );
 
+
+    $catOptions = $this->getTaxonomyTermOptions('service_category');
+    $form['markaspot_archive']['days'] = [
+      '#tree' => TRUE,
+      '#type' => 'details',
+      '#title' => t('Archive period settings per category'),
+      '#description' => t('You can change the period in which archivable content is sent to the archiving status.'),
+      '#open' => TRUE, // Controls the HTML5 'open' attribute. Defaults to FALSE.
+    ];
+
+
+    foreach ($catOptions as $tid => $category_name) {
+      $form['markaspot_archive']['days'][$tid] = [
+        '#type' => 'number',
+        '#min' => 1,
+        '#max' => 1000,
+        '#step' => 1,
+        '#title' => t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
+        '#default_value' => $config->get('days.'. $tid),
+        '#description' => t('How many days to reach back for archiving?'),
+      ];
+    }
     return parent::buildForm($form, $form_state);
   }
 
