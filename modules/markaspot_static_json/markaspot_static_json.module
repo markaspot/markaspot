@@ -83,18 +83,22 @@ function markaspot_static_json_request() {
 
   $path = 'public://requests.json';
   if (file_exists($path)) {
-    $file = file_get_contents($path, TRUE);
+    $json = file_get_contents($path, TRUE);
+    $static_service_requests = json_decode($json);
+
   }
   else {
     \Drupal::logger('Mark-a-Spot Static JSON')
       ->warning(t('Static file could not be read.'));
-    $start_json = "[{\"servicerequest_id\":\"15-c5\",\"title\":\"#15-c5  Park Maintenance Complaint\",\"description\":null,\"lat\":40.737061,\"long\":-73.935242,\"address_string\":\",\",\"service_name\":\"Park Maintenance Complaint\",\"requested_datetime\":\"2018-01-05T12:56:36+00:00\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\",\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"service_code\":\"0002\",\"extended_attributes\":{\"markaspot\":{\"nid\":\"18\",\"category_hex\":\"#5f9ea0\",\"category_icon\":\"fa-tree\",\"status_hex\":\"#8B0000\",\"status_icon\":\"fa-play-circle-o\",\"status_notes\":[{\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\"}]}}}]";
-    $current_service_requests = json_decode($start_json, TRUE);
+    // $current_service_requests = json_decode($start_json, TRUE);
+    file_save_data('[]', $path, FILE_EXISTS_REPLACE);
   }
 
   if ($host !== "default") {
     $cronkey = \Drupal::state()->get('system.cron_key');
-    $uri = '//' . $host . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
+    // todo:
+    // Make limit configurable
+    $uri = '//' . $host . '/georeport/v2/requests.json?limit=&extensions=true&key=' . $cronkey;
     \Drupal::logger('Mark-a-Spot Static JSON')->notice('Saving JSON from URL: '. $uri);
 
     try {
@@ -107,7 +111,8 @@ function markaspot_static_json_request() {
       markaspot_static_json_memory();
 
       // Encode array.
-      $data = json_encode($current_service_requests);
+      $merged = array_replace_recursive($static_service_requests, $current_service_requests);
+      $data = json_encode($merged);
 
       $local = (file_exists($path)) ? file_save_data($data, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
       if (isset($local)) {
