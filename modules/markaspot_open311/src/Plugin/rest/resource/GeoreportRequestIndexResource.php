@@ -198,7 +198,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       ->condition('changed', REQUEST_TIME, '<')
       ->condition('type', $bundle);
 
-    $query->sort('changed', 'desc');
+    //$query->sort('changed', 'desc');
 
     // Checking for a limit parameter:
     if (isset($parameters['key'])) {
@@ -214,7 +214,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
       $query->condition('nid', $nids, 'IN');
-      $limit = $this->config->get('limit-nids');
+      //$limit = $this->config->get('limit-nids');
     }
 
     if ($limit) {
@@ -255,7 +255,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // End_date param or create a timestamp now:
     $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
     $query->condition('created', $end_timestamp, '<=');
-    $query->sort('created', $direction = 'DESC');
+    $query->sort('created', $direction = 'ASC');
     $query->accessCheck(FALSE);
 
     // Checking for status-parameter and map the code with taxonomy terms:
