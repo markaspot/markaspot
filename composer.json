@@ -76,7 +76,7 @@
     "drupal/core": "^8",
     "drupal/radix": "3.*",
     "drupal/pathauto": "^1.0@RC",
-    "drupal/admin_toolbar": "1.*",
+    "drupal/admin_toolbar": "2.*",
     "drupal/restui": "^1.15",
     "drupal/token": "1.*",
     "drupal/shariff": "^1",
