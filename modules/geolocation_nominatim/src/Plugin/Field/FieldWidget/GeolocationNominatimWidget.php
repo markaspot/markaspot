@@ -34,6 +34,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'city' => '',
       'tileServerUrl' => 'http://{s}.tile.osm.org/{z}/{x}/{y}.png',
       'autoLocate' => FALSE,
+      'streetNumberFormat' => 0,
       'serviceUrl' => 'https://nominatim.openstreetmap.org/',
     ] + parent::defaultSettings();
   }
@@ -108,6 +109,12 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#title' => $this->t('Autolocate user'),
       '#description' => $this->t('Autolocate the user via GPS on widget display?'),
       '#default_value' => $this->getSetting('autoLocate'),
+    ];
+    $elements['streetNumberFormat'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Address formatting (street search)'),
+      '#description' => $this->t('Check to use street name + building number format'),
+      '#default_value' => $this->getSetting('streetNumberFormat'),
     ];
     return $elements;
   }
@@ -184,6 +191,7 @@ class GeolocationNominatimWidget extends WidgetBase {
               'city'  => $this->getSetting('city'),
               'tileServerUrl'  => $this->getSetting('tileServerUrl'),
               'autoLocate' => $this->getSetting('autoLocate'),
+              'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
               'serviceUrl' => $this->getSetting('serviceUrl'),
             ],
           ],

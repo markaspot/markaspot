@@ -12,7 +12,9 @@
     }
     // Init map.
     Drupal.geolocationNominatimWidget.map = L.map(mapSettings.id, {
-      fullscreenControl: true,
+      fullscreenControl: mapSettings.fullscreenControl,
+      dragging: !L.Browser.mobile,
+      zoomControl: !L.Browser.mobile
     })
       .setView([
         mapSettings.centerLat,
@@ -99,10 +101,25 @@
     }
 
     function setMarker(result, latLng) {
+      var address = result.properties.address;
+      console.log(address.road, mapSettings);
+      if (address.road) {
+        var $val = '';
+        switch(mapSettings.streetNumberFormat) {
+          case "1":
+            $val = address.road + ' ' + (address.house_number || '');
+            break;
+          case 0:
+            $val = (address.house_number ? address.house_number + ' ' : '') + address.road;
+            break;
+        }
+        console.log($val);
+        $input = $('.leaflet-control-geocoder-form input');
+        $input.val($val);
+      }
       if (marker) {
         map.removeLayer(marker);
       }
-
       // Check if method is called with a pair of coordinates to prevent
       // marker jumping to nominatm reverse results lat/lon.
       latLng = latLng ? latLng : result.center;
@@ -202,6 +219,14 @@
     Drupal.geolocationNominatimSetAddressDetails = function ($address, details) {
       if ('postcode' in details) {
         $('input.postal-code', $address).val(details.postcode);
+      }
+
+      if ('suburb' in details) {
+        $('select#edit-field-district option').each(function () {
+          if ($(this).text() == details.suburb) {
+            $(this).attr('selected', 'selected');
+          }
+        });
       }
 
       if ('state' in details) {
