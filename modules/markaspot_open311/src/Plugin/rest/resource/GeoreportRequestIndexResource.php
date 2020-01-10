@@ -189,16 +189,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
      */
     $parameters = UrlHelper::filterQueryParameters(\Drupal::request()->query->all());
-
     // Filtering the configured content type.
     $bundle = $this->config->get('bundle');
     $bundle = (isset($bundle)) ? $bundle : 'service_request';
     $query = \Drupal::entityQuery('node')
-      ->condition('status', 1)
       ->condition('changed', REQUEST_TIME, '<')
       ->condition('type', $bundle);
 
-    //$query->sort('changed', 'desc');
+    if (in_array('administrator',$this->currentUser->getRoles()) || $this->currentUser->hasPermission('access open311 advanced properties')) {
+      $query->condition('status', array(0, 1), 'IN');
+    } else {
+      $query->condition('status', 1);
+    }
 
     // Checking for a limit parameter:
     if (isset($parameters['key'])) {
