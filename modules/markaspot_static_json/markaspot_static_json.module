@@ -37,55 +37,44 @@ function markaspot_static_json_help($route_name, RouteMatchInterface $route_matc
  * Implements hook_cron().
  */
 function markaspot_static_json_cron() {
-  // We access our configuration.
-  $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
 
-  // Default to an hourly interval. Of course, cron has to be running at least
-  // half hourly for this to work.
-  $interval = $cron_config->get('interval');
-  $interval = !empty($interval) ? $interval : 1800;
+  $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
 
   // Set limit from config
   // $cron_config->set('limit', 50);.
   $limit = $cron_config->get('limit');
   $limit = !empty($limit) ? $limit : 50;
-  // $cron_config->set('static_page', 0);.
-  $current_page = $cron_config->get('static_page');
+
   // Set start page.
-  $page = (NULL !== $current_page) ? $current_page : 0;
+  $current_page = (NULL !== $cron_config->get('static_page')) ? $cron_config->get('static_page') : 0;
 
   // Get current max.
   $count = markaspot_static_json_get_count();
   // Calculate max pages.
   $pages = ceil($count / $limit);
-
-  if ($page >= $pages) {
-    $cron_config->set('static_page', $page);
+  if ($current_page >= $pages) {
+    $cron_config->set('static_page', $current_page);
   }
   else {
-    $cron_config->set('static_page', $page + 1);
+    $cron_config->set('static_page', $current_page + 1);
   }
 
-  // We usually don't want to act every time cron runs (which could be every
-  // minute) so keep a time for the next run in a variable.
-  $next_execution = $cron_config->get('markaspot_static_json.next_execution');
-  $next_execution = !empty($next_execution) ? $next_execution : 0;
-  if (REQUEST_TIME >= $next_execution) {
 
-    markaspot_static_json_request($limit, $page);
 
-    if (\Drupal::state()->get('mas_shown_status_message')) {
-      drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601(REQUEST_TIME)]));
-      \Drupal::state()->set('mas_shown_status_message', FALSE);
-    }
-    $cron_config->set('markaspot_static_json.next_execution', REQUEST_TIME + $interval)->save();
+  markaspot_static_json_request($limit, $current_page);
+
+  if (\Drupal::state()->get('mas_shown_status_message')) {
+    drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601(REQUEST_TIME)]));
+    \Drupal::state()->set('mas_shown_status_message', FALSE);
   }
+  $cron_config->set('markaspot_static_json.next_execution', $request_time + $interval)->save();
+
 }
 
 /**
  * Client to receive json from georeport rest API.
  */
-function markaspot_static_json_request($limit, $page) {
+function markaspot_static_json_request($limit, $current_page) {
 
   // Preparing georeport API Request URI.
   $host = \Drupal::request()->getHost();
@@ -99,6 +88,10 @@ function markaspot_static_json_request($limit, $page) {
   else {
     \Drupal::logger('Mark-a-Spot Static JSON')
       ->warning(t('Static file could not be read.'));
+    // Reset cron config to 0
+    $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
+    $cron_config->set('static_page', 0);
+
     // $current_service_requests = json_decode($start_json, TRUE);.
     file_save_data('[]', $path, FILE_EXISTS_REPLACE);
   }
@@ -107,7 +100,7 @@ function markaspot_static_json_request($limit, $page) {
     $cronkey = \Drupal::state()->get('system.cron_key');
     // todo:
     // Make limit configurable.
-    $uri = '//' . $host . '/georeport/v2/requests.json?limit=' . $limit . '&page=' . $page . '&extensions=true&key=' . $cronkey;
+    $uri = '//' . $host . '/georeport/v2/requests.json?limit=' . $limit . '&page=' . $current_page . '&extensions=true&key=' . $cronkey;
     \Drupal::logger('Mark-a-Spot Static JSON')->notice('Saving JSON from URL: ' . $uri);
 
     try {
