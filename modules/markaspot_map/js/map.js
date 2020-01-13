@@ -102,6 +102,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       Drupal.Markaspot.settings = masSettings; // Make map stick to the page top or wherever, override via theme.
 
       var mapSelector = $("#map");
+      if (typeof mapSelector === 'undefined'){
+          return;
+      }
       mapSelector.once("markaspot_map").each(function() {
         $(".log_header .left").text(Drupal.t("Date"));
         $(".log_header .right").text(Drupal.t("Requests"));
@@ -279,11 +282,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
     // Showing a Circle Marker on hover and scroll over.
     showCircle: function showCircle(marker) {
       var markerId = marker.nid;
-
-      if (markerId === this.marker) {
-        return;
+      if (typeof markerId === undefined || markerId === this.marker) {
+          return;
       }
-
       this.marker = markerId;
       var map = Drupal.Markaspot.maps[0]; // Get zoomlevel to set circle radius.
 
