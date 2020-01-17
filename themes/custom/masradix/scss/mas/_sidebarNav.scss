@@ -104,10 +104,6 @@
   margin-right: -15px;
   clear: left;
 }
-a.navbar-brand {
-  display: block;
-  margin-top: -80px;
-}
 
 
 @media (min-width: $screen-md-min) {
@@ -148,5 +144,11 @@ a.navbar-brand {
   ul.nav li {
     float: left;
   }
+
+  a.navbar-brand {
+    display: block;
+    margin-top: -70px;
+  }
+
 
 }

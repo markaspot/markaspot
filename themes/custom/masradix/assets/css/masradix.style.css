@@ -6993,6 +6993,9 @@ a.btn-circle span {
   border-radius: 50%;
   overflow: hidden; }
 
+.page--front h4 {
+  display: none; }
+
 .scroll-to-top.show {
   z-index: 999; }
 
@@ -8506,10 +8509,6 @@ ul.log_list .count {
   margin-right: -15px;
   clear: left; }
 
-a.navbar-brand {
-  display: block;
-  margin-top: -80px; }
-
 @media (min-width: 992px) {
   .fixed-header {
     display: none; }
@@ -8531,7 +8530,10 @@ a.navbar-brand {
   .block--userlogin {
     display: none; }
   ul.nav li {
-    float: left; } }
+    float: left; }
+  a.navbar-brand {
+    display: block;
+    margin-top: -70px; } }
 
 .service-request__field-status-note .field__item {
   background: #ddd;

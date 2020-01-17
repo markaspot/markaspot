@@ -34,7 +34,6 @@ body {
 
 
 .btn,
-.mas-action li a,
 .btn-default,
 .add-block p a,
 .btn-default:active,
@@ -95,7 +94,6 @@ body {
 .shariff-button a,
 header.clearfix,
 .add-block,
-footer#footer,
 .region-sidebar li.list-group-item,
 fieldset#edit-field-geolocation-0-map-container,
 .form-item-field-request-image-0 {
@@ -104,6 +102,16 @@ fieldset#edit-field-geolocation-0-map-container,
 
 footer#footer {
   background-color: #1d84c3;
+}
+
+footer#footer a,
+footer#footer a:visited {
+  color: #f5f5f5;
+}
+
+
+footer#footer a:hover {
+  color: #1d84c3;
 }
 
 .block.block--markaspotbuiltwithblock {
