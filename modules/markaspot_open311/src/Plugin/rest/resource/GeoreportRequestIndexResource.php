@@ -217,6 +217,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $nids = explode(',', $parameters['nids']);
       $query->condition('nid', $nids, 'IN');
       //$limit = $this->config->get('limit-nids');
+      $limit = NULL;
     }
 
     if ($limit) {
