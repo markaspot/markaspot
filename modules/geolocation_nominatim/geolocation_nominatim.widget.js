@@ -102,9 +102,9 @@
 
     function setMarker(result, latLng) {
       var address = result.properties.address;
-      console.log(address.road, mapSettings);
+      var $val = '';
+
       if (address.road) {
-        var $val = '';
         switch(mapSettings.streetNumberFormat) {
           case "1":
             $val = address.road + ' ' + (address.house_number || '');
@@ -113,10 +113,11 @@
             $val = (address.house_number ? address.house_number + ' ' : '') + address.road;
             break;
         }
-        console.log($val);
-        $input = $('.leaflet-control-geocoder-form input');
-        $input.val($val);
+      } else {
+        $val = '';
       }
+      $input = $('.leaflet-control-geocoder-form input');
+      $input.val($val);
       if (marker) {
         map.removeLayer(marker);
       }
