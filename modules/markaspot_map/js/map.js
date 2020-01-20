@@ -109,9 +109,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         $(".log_header .left").text(Drupal.t("Date"));
         $(".log_header .right").text(Drupal.t("Requests"));
         Drupal.Markaspot.maps[0] = L.map("map", {
-          fullscreenControl: true,
-          scrollWheelZoom: false,
+          scrollWheelZoom: !L.Browser.mobile,
           maxZoom: 18,
+          dragging: !L.Browser.mobile,
           zoom: masSettings.zoom_initial
         }); // console.log(masSettings.zoom_initial,Drupal.Markaspot.maps[0].getZoom());
         // console.log(Drupal.Markaspot.maps[0].getCenter());
@@ -225,8 +225,9 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
 
       if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
         localStorage.setItem("storedNids", JSON.stringify(nids));
-        markerLayer.clearLayers(); // Load and showData on map.
-
+        if (typeof markerLayer !== undefined){
+            markerLayer.clearLayers(); // Load and showData on map.
+        }
         Drupal.markaspot_map.load(function(data) {
           Drupal.markaspot_map.showData(data);
           markerLayer.eachLayer(function(layer) {
