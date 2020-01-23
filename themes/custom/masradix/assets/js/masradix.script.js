@@ -102,24 +102,6 @@
       }
     });
 
-    // Map resizing:
-    var map = $('div#geolocation-nominatim-map');
-    var form = $('.node-service-request-form input');
-    var search = $('.leaflet-control-geocoder.leaflet-bar input');
-    var locateControl = $('.leaflet-control-locate a');
-    map.height('210px');
-
-    search.click(function () {
-      map.animate({height:'400px'}, 100);
-    });
-
-    search.blur(function () {
-      map.height('210px');
-    });
-    form.focus(function () {
-      map.height('210px');
-    });
-
   });
 
   // Handle Result filter click.
