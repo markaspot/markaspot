@@ -74,7 +74,7 @@
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
     "drupal/core": "^8",
-    "drupal/radix": "3.*",
+    "drupal/radix": "4.*",
     "drupal/pathauto": "^1.0@RC",
     "drupal/admin_toolbar": "2.*",
     "drupal/restui": "^1.15",
