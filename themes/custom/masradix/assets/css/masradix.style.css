@@ -7089,18 +7089,6 @@ a.btn-circle span {
   input:hover {
     font-size: 16px; } }
 
-@media (max-width: 991px) {
-  .leaflet-control-geocoder-form input {
-    width: 280px !important; } }
-
-@media (max-width: 767px) {
-  .leaflet-control-geocoder-form input {
-    width: 220px !important; } }
-
-@media (max-width: 480px) {
-  .leaflet-control-geocoder-form input {
-    width: 180px !important; } }
-
 #locateMe {
   text-decoration: underline;
   cursor: pointer; }
