@@ -19,6 +19,13 @@
   }
 }
 
+
+.leaflet-control-geocoder {
+
+  @media (max-width: $screen-xs-max) {
+    max-width: 250px;
+  }
+}
 #locateMe {
   text-decoration: underline;
   cursor: pointer;

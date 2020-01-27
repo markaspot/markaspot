@@ -7089,6 +7089,10 @@ a.btn-circle span {
   input:hover {
     font-size: 16px; } }
 
+@media (max-width: 767px) {
+  .leaflet-control-geocoder {
+    max-width: 250px; } }
+
 #locateMe {
   text-decoration: underline;
   cursor: pointer; }
