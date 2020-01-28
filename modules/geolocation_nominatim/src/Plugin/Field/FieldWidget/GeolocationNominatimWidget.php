@@ -33,6 +33,8 @@ class GeolocationNominatimWidget extends WidgetBase {
       'limit_viewbox' => '',
       'city' => '',
       'tileServerUrl' => 'http://{s}.tile.osm.org/{z}/{x}/{y}.png',
+      'wmsLayer' =>'',
+      'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
       'autoLocate' => FALSE,
       'streetNumberFormat' => 0,
       'serviceUrl' => 'https://nominatim.openstreetmap.org/',
@@ -96,8 +98,20 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#type' => 'textfield',
       '#title' => $this->t('Default map tile server url'),
       '#default_value' => $this->getSetting('tileServerUrl'),
-      '#description' => $this->t('Choose a tileserver url like "http://{s}.tile.osm.org/{z}/{x}/{y}.png".'),
+      '#description' => $this->t('Choose a tileserver url like "http://{s}.tile.osm.org/{z}/{x}/{y}.png". or a WMS Service URL'),
     ];
+    $elements['wmsLayer'] = array(
+      '#type' => 'textfield',
+      '#title' => t('WMS Layer ID'),
+      '#default_value' => $this->getSetting('wms_layer'),
+      '#description' => t('Enter the layer ID like "layer:layer"'),
+    );
+    $elements['customAttribution'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Add a custom attribution'),
+      '#default_value' => $this->getSetting('customAttribution'),
+      '#description' => t('Check your Tile Service Provider for policy'),
+    );
     $elements['serviceUrl'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Geocoding service url'),
@@ -190,6 +204,8 @@ class GeolocationNominatimWidget extends WidgetBase {
               'limitViewbox'  => $this->getSetting('limit_viewbox'),
               'city'  => $this->getSetting('city'),
               'tileServerUrl'  => $this->getSetting('tileServerUrl'),
+              'wmsLayer'  => $this->getSetting('wmsLayer'),
+              'customAttribution'  => $this->getSetting('customAttribution'),
               'autoLocate' => $this->getSetting('autoLocate'),
               'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
               'serviceUrl' => $this->getSetting('serviceUrl'),

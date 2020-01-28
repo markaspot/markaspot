@@ -21,10 +21,18 @@
         mapSettings.centerLng
       ], 18);
     var map = Drupal.geolocationNominatimWidget.map;
+    var tileLayer;
+    if (mapSettings.wmsLayer === "") {
+      tileLayer = L.tileLayer(mapSettings.tileServerUrl);
+    } else {
+      tileLayer = L.tileLayer.wms(mapSettings.tileServerUrl, { layers: mapSettings.wmsLayer });
+    }
+    map.attributionControl.addAttribution(
+      mapSettings.customAttribution
+    );
 
-    L.tileLayer(mapSettings.tileServerUrl, {
-      attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    map.addLayer(tileLayer);
+
     var locateOptions = {
       position: 'bottomright'
     };

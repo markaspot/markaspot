@@ -107,9 +107,13 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         // console.log(masSettings.zoom_initial,Drupal.Markaspot.maps[0].getZoom());
         // console.log(Drupal.Markaspot.maps[0].getCenter());
         $("#map").css(`background-color:${masSettings.map_background}`);
-        const tileLayer = L.tileLayer(masSettings.osm_custom_tile_url);
+        let tileLayer;
+        if (masSettings.osm_custom_tile_url !== "") {
+          tileLayer = L.tileLayer(masSettings.osm_custom_tile_url);
+        } else {
+          tileLayer = L.tileLayer.wms(masSettings.wms_service, { layers: masSettings.wms_layer });
+        }
         const map = Drupal.Markaspot.maps[0];
-
         map.attributionControl.addAttribution(
           masSettings.osm_custom_attribution
         );

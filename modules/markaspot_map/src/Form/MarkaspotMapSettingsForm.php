@@ -72,6 +72,17 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('osm_custom_tile_url'),
       '#description' => t('If you want to use a different tile service, enter the url pattern, e.g. http://{s}.somedomain.com/your-api-key/{z}/{x}/{y}.png'),
     );
+    $form['markaspot_map']['wms_service'] = array(
+      '#type' => 'textfield',
+      '#title' => t('WMS Service'),
+      '#default_value' => $config->get('wms_service'),
+    );
+    $form['markaspot_map']['wms_layer'] = array(
+      '#type' => 'textfield',
+      '#title' => t('WMS Layer ID'),
+      '#default_value' => $config->get('wms_layer'),
+      '#description' => t('Enter the layer ID like "layer:layer"'),
+    );
     $form['markaspot_map']['map_background'] = array(
       '#type' => 'textfield',
       '#size' => 6,
@@ -151,6 +162,8 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       ->set('map_type', $values['map_type'])
       ->set('mapbox', $values['mapbox'])
       ->set('osm_custom_tile_url', $values['osm_custom_tile_url'])
+      ->set('wms_service', $values['wms_service'])
+      ->set('wms_layer', $values['wms_layer'])
       ->set('osm_custom_attribution', $values['osm_custom_attribution'])
       ->set('map_background', $values['map_background'])
       ->set('timeline_date_format', $values['timeline_date_format'])
