@@ -36,6 +36,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'wmsLayer' =>'',
       'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
       'autoLocate' => FALSE,
+      'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,
       'serviceUrl' => 'https://nominatim.openstreetmap.org/',
     ] + parent::defaultSettings();
@@ -103,7 +104,7 @@ class GeolocationNominatimWidget extends WidgetBase {
     $elements['wmsLayer'] = array(
       '#type' => 'textfield',
       '#title' => t('WMS Layer ID'),
-      '#default_value' => $this->getSetting('wms_layer'),
+      '#default_value' => $this->getSetting('wmsLayer'),
       '#description' => t('Enter the layer ID like "layer:layer"'),
     );
     $elements['customAttribution'] = array(
@@ -124,6 +125,13 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#description' => $this->t('Autolocate the user via GPS on widget display?'),
       '#default_value' => $this->getSetting('autoLocate'),
     ];
+    $elements['fullscreenControl'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Fullscreen Control Widget'),
+      '#description' => $this->t('Show a fullscreen control on the map?'),
+      '#default_value' => $this->getSetting('fullscreenControl'),
+    ];
+
     $elements['streetNumberFormat'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Address formatting (street search)'),
@@ -207,6 +215,7 @@ class GeolocationNominatimWidget extends WidgetBase {
               'wmsLayer'  => $this->getSetting('wmsLayer'),
               'customAttribution'  => $this->getSetting('customAttribution'),
               'autoLocate' => $this->getSetting('autoLocate'),
+              'fullscreenControl' => $this->getSetting('fullscreenControl'),
               'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
               'serviceUrl' => $this->getSetting('serviceUrl'),
             ],
