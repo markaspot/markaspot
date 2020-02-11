@@ -31,7 +31,7 @@
         "version": "1.12",
         "type": "drupal-library",
         "dist": {
-          "url": "https://github.com/markaspot/leaflet-control-geocoder/archive/1.12.zip",
+          "url": "https://codeload.github.com/markaspot/leaflet-control-geocoder/zip/1.12",
           "type": "zip"
         },
         "require": {
