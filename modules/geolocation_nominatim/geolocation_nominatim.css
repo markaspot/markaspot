@@ -1,3 +1,7 @@
 .leaflet-bar.leaflet-control-geocoder {
-  min-width: 280px;
+  min-width: 260px;
+}
+
+.leaflet-control-geocoder-form input {
+  width: 220px;
 }
