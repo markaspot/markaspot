@@ -63,8 +63,10 @@
             },
 
             geocode: function(query, cb, context) {
-              Util.jsonp(this.options.serviceUrl + 'search', L.extend({
-                  street: query,
+              const locationIQsuffix = (this.options.key !== false) ? '.php' : false;
+              Util.jsonp(this.options.serviceUrl + 'search' + locationIQsuffix, L.extend({
+                  key: this.options.key,
+                  q: query,
                   limit: 5,
                   format: 'json',
                   addressdetails: 1
@@ -90,7 +92,8 @@
             },
 
             reverse: function(location, scale, cb, context) {
-              Util.jsonp(this.options.serviceUrl + 'reverse', L.extend({
+              const locationIQsuffix = (this.options.key !== false) ? '.php' : false;
+              Util.jsonp(this.options.serviceUrl + 'reverse' + locationIQsuffix, L.extend({
                 lat: location.lat,
                 lon: location.lng,
                 zoom: Math.round(Math.log(scale / 256) / Math.log(2)),

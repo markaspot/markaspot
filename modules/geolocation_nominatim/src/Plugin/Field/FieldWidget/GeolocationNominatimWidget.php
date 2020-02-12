@@ -39,6 +39,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,
       'serviceUrl' => 'https://nominatim.openstreetmap.org/',
+      'LocationIQToken' => '',
     ] + parent::defaultSettings();
   }
 
@@ -118,6 +119,12 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#title' => $this->t('Geocoding service url'),
       '#default_value' => $this->getSetting('serviceUrl'),
       '#description' => $this->t('Choose url like "https://nominatim.openstreetmap.org/"'),
+    ];
+    $elements['LocationIQToken'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Use LocationIQ Service'),
+      '#description' => $this->t('Are you using the locationIQ Service?'),
+      '#default_value' => $this->getSetting('LocationIQToken'),
     ];
     $elements['autoLocate'] = [
       '#type' => 'checkbox',
@@ -218,6 +225,7 @@ class GeolocationNominatimWidget extends WidgetBase {
               'fullscreenControl' => $this->getSetting('fullscreenControl'),
               'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
               'serviceUrl' => $this->getSetting('serviceUrl'),
+              'LocationIQToken' => $this->getSetting('LocationIQToken'),
             ],
           ],
         ],

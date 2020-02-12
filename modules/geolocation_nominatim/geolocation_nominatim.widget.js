@@ -61,6 +61,7 @@
     var geocodingQueryParams = {};
     if (mapSettings.limitCountryCodes != '' || mapSettings.limitViewbox != '') {
       geocodingQueryParams = {
+        'key': mapSettings.LocationIQToken,
         'countrycodes': mapSettings.limitCountryCodes,
         'viewbox': mapSettings.limitViewbox,
         'bounded': 1,
