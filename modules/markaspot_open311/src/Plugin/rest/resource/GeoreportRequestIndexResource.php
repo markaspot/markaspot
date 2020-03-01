@@ -258,7 +258,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // End_date param or create a timestamp now:
     $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
     $query->condition('created', $end_timestamp, '<=');
-    $query->sort('created', $direction = 'ASC');
+    if (isset($parameters['sort']) && $parameters['sort'] == "desc") {
+      $sort = 'DESC';
+    } else {
+      $sort = 'ASC';
+    }
+    $query->sort('created', $direction = $sort);
+
     $query->accessCheck(FALSE);
 
     // Checking for status-parameter and map the code with taxonomy terms:
