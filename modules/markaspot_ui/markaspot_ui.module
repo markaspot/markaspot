@@ -22,6 +22,7 @@ function markaspot_ui_toolbar() {
     'markaspot_open311' => 'markaspot_open311.settings',
     'markaspot_validation' => 'markaspot_validation.settings',
     'markaspot_archive' => 'markaspot_archive.settings',
+    'markaspot_static_json' => 'markaspot_static_json.settings',
     'api_key_auth' => 'entity.api_key.collection',
   );
 

@@ -40,14 +40,16 @@ function markaspot_static_json_cron() {
 
   $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
 
+  $interval = $cron_config
+    ->get('interval');
+  $interval = !empty($interval) ? $interval : 3600;
+
+  $settings_config = Drupal::configFactory()->getEditable('markaspot_static_json.settings');
   // Set limit from config
-  // $cron_config->set('limit', 50);.
-  $limit = $cron_config->get('limit');
+  $limit = $settings_config->get('limit');
   $limit = !empty($limit) ? $limit : 50;
-
   // Set start page.
-  $current_page = (NULL !== $cron_config->get('static_page')) ? $cron_config->get('static_page') : 0;
-
+  $current_page = ($settings_config->get('reset') ===  1 || NULL === $settings_config->get('reset')) ? 0 : $cron_config->get('static_page');
   // Get current max.
   $count = markaspot_static_json_get_count();
   // Calculate max pages.
@@ -59,12 +61,10 @@ function markaspot_static_json_cron() {
     $cron_config->set('static_page', $current_page + 1);
   }
 
-
-
   markaspot_static_json_request($limit, $current_page);
-
+  $request_time = \Drupal::time()->getRequestTime();
   if (\Drupal::state()->get('mas_shown_status_message')) {
-    drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601(REQUEST_TIME)]));
+    drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601($request_time)]));
     \Drupal::state()->set('mas_shown_status_message', FALSE);
   }
   $cron_config->set('markaspot_static_json.next_execution', $request_time + $interval)->save();
@@ -111,6 +111,9 @@ function markaspot_static_json_request($limit, $current_page) {
         return FALSE;
       }
       markaspot_static_json_memory();
+
+      // Need at least an empty array
+      $static_service_requests = (!is_array($static_service_requests)) ? [] : $static_service_requests;
 
       // Encode array.
       $merged = array_merge_recursive($static_service_requests, $current_service_requests);
