@@ -52,8 +52,6 @@
     "bower-asset/bootstrap-offcanvas": "^2.5",
     "oomphinc/composer-installers-extender": "^1.1",
     "composer/installers": "^1.2",
-    "drupal-composer/drupal-scaffold": "^2.2",
-    "cweagans/composer-patches": "~1.6",
     "phayes/geophp": "dev-master",
     "anthonymartin/geo-location": "^1.0",
     "drupal/address": "~1.0",
