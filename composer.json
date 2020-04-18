@@ -87,7 +87,7 @@
     "drupal/twig_tweak": "^2.0",
     "drupal/field_formatter_class":"^1.0",
     "drupal/hide_revision_field": "^1.1",
-    "drupal/page_manager": "^4",
+    "drupal/page_manager": "4.x-dev",
     "drupal/panels": "^4.2",
     "drupal/entity_clone": "1.x-dev",
     "drupal/pbf": "^1.1",
