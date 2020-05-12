@@ -1,0 +1,8 @@
+markaspot_privacy.gdpr_form:
+  path: '/privacy/delete/{uuid}'
+  defaults:
+    _form: '\Drupal\markaspot_privacy\Form\GDPRForm'
+    _title: 'GDPR Deletion'
+  requirements:
+    _access: 'TRUE'
+  

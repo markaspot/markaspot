@@ -1,0 +1,7 @@
+markaspot_resubmission.settings:
+  path: '/admin/structure/markaspot/resubmission/settings'
+  defaults:
+    _form: '\Drupal\markaspot_resubmission\Form\MarkaspotResubmissionSettingsForm'
+    _title: 'Resubmission settings'
+  requirements:
+    _permission: 'administer site configuration'

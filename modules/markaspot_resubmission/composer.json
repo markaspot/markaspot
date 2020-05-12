@@ -1,0 +1,14 @@
+{
+  "name": "drupal/markaspot_resubmission",
+  "type": "drupal-module",
+  "description": "Mark-a-Spot Resubmission",
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "homepage": "https://www.drupal.org/project/markaspot_resubmission",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/markaspot_resubmission",
+    "source": "http://cgit.drupalcode.org/markaspot_resubmission"
+  },
+  "require": { }
+}

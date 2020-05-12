@@ -1,0 +1,5 @@
+name: 'Mark-a-Spot Resubmission'
+type: module
+description: 'Mark-a-Spot Resubmission'
+core: 8.x
+package: 'Mark-a-Spot'

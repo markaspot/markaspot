@@ -1,0 +1,81 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_privacy.module.
+ * based on Zebralog DSGVO for Drupal 7
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use \Drupal\Core\Render\Element;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_privacy_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_privacy module.
+    case 'help.page.markaspot_privacy':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Privacy field and term page') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Add consent field to forms.
+ *
+ * Add a checkbox (required) to &$form, so that the user has to accept
+ * the "terms of use" / "privacy notes".
+ *
+ * @param array $form
+ *   The form.
+ */
+function _add_terms_of_use(array &$form) {
+
+  // Check if the user ins anonymous or if the user has not accepted the privacy notes yet.
+  if (\Drupal::currentUser()->isAnonymous()) {
+
+    $weight = markaspot_privacy_get_weight($form);
+    // Render the terms of use notice with a link to the privacy notes, if a
+    // path for the privacy notes was found.
+    $form['terms_of_use'] = [
+      '#type' => 'checkbox',
+      '#title' => t('By checking this box, you agree to our terms and that you have read our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Data Use Policy</a>, including our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Cookie Use</a>.'),
+      '#required' => TRUE,
+      '#weight' => $weight + 1,
+    ];
+
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function markaspot_privacy_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+
+  // Add a "terms of use" checkbox in node forms, if a new node will be created.
+  if ($form_state->getFormObject() instanceof \Drupal\Core\Entity\EntityFormInterface) {
+    $entity_type = $form_state->getFormObject()->getEntity()->getEntityTypeId();
+
+    // Add terms of use checkbox in forms for new nodes.
+    if ($entity_type == 'node' || $entity_type == 'comment') {
+      _add_terms_of_use($form);
+    }
+  }
+
+}
+
+function markaspot_privacy_get_weight($form){
+  $elements = Element::getVisibleChildren($form);
+  $weight = 0;
+  foreach ($elements as $el) {
+    if ($el == "field_e_mail" && $form[$el]['#weight'] >= $weight) {
+      $weight = $form[$el]['#weight'];
+      return $weight;
+    }
+  }
+}

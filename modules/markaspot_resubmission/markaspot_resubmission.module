@@ -1,0 +1,133 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_resubmission.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_resubmission_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_resubmission module.
+    case 'help.page.markaspot_resubmission':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Mark-a-Spot Resubmission') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function markaspot_resubmission_cron() {
+  $resubmissionSendable = \Drupal::service('markaspot_resubmission.resubmission')->load();
+  // $config = \Drupal::configFactory()->getEditable('markaspot_resubmission.settings');
+  $count = count($resubmissionSendable);
+
+  foreach ($resubmissionSendable as $resubmissionSend) {
+
+    $node = $resubmissionSend;
+
+    // var_dump($mail);
+    // die;
+    drupal_set_message($node->request_id, 'alert', 1);
+    // $archivable->field_status->target_id = $config->get('status_resubmissiond');
+    // $archivable->save();
+    $mailManager = \Drupal::service('plugin.manager.mail');
+    $module = "markaspot_resubmission";
+    $key = 'resubmit_request';
+    //$to = 'holger@markaspot.org';
+    $moduleHandler = \Drupal::service('module_handler');
+    if ($moduleHandler->moduleExists('markaspot_groups')){
+      $to = markaspot_resubmission_getGroupField($node);
+    } else {
+      $to = markaspot_resubmission_getOrganisationTermField($node);
+    }
+
+    $params['message'] = $node->get('body')->value;
+
+
+    $params['node_title'] = $node->label();
+    $langcode = \Drupal::currentUser()->getPreferredLangcode();
+    $send = true;
+
+    $result = $mailManager->mail($module, $key, $to, $langcode, $params, NULL, $send);
+    if ($result['result'] !== true) {
+     drupal_set_message(t('There was a problem sending your message and it was not sent.'), 'error');
+    }
+    else {
+     drupal_set_message(t('Your message has been sent.'));
+    }
+  }
+}
+
+
+function markaspot_resubmission_getBody($nid) {
+  // Load a node and a user, then replace tokens in the text.
+  $config = \Drupal::config('markaspot_resubmission');
+  $mailtext = $config->get('mailtext');
+  $node = Node::load(1);
+  $user = User::load(1);
+
+  // [date:...] tokens use the current date automatically.
+  $data = array(
+    'node' => $node,
+    'user' => $user,
+  );
+  return Token::replace($mailtext, $data);}
+
+function markaspot_resubmission_getGroupField($node){
+  $group_ids = [];
+
+  $group_contents = \Drupal\group\Entity\GroupContent::loadByEntity($node);
+  foreach ($group_contents as $group_content) {
+    $group_ids[] = $group_content->getGroup()->id();
+    foreach ($group_ids as $group) {
+      $affectedGroup = \Drupal\group\Entity\Group::load($group);
+
+      $headOrganisationEmails = $affectedGroup->get('field_head_organisation_e_mail')->getString();
+    }
+  }
+
+  return $headOrganisationEmails;
+}
+
+
+function markaspot_resubmission_getOrganisationTermField($node){
+  $term_ids = [];
+
+  $tid = $node->get('field_organisation')->target_id();
+  $term = Drupal\taxonomy\Entity\Term::load($tid);
+  $headOrganisationEmails = $term->get('field_head_organisation_e_mail')->getString();
+  return $headOrganisationEmails;
+}
+
+
+/**
+ * Implements hook_mail().
+ */
+
+function markaspot_resubmission_mail($key, &$message, $params) {
+  $options = array(
+    'langcode' => $message['langcode'],
+  );
+
+  switch ($key) {
+    case 'resubmit_request':
+      $message['from'] = \Drupal::config('system.site')->get('mail');
+      $message['subject'] = t('Reminder created: @title', array('@title' => $params['node_title']), $options);
+      $message['body'][] = $params['message'];
+      break;
+  }
+}
+
+function send_mail($mail) {
+
+}

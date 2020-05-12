@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_gdpr
+    - node.type.service_request
+id: node.service_request.field_gdpr
+field_name: field_gdpr
+entity_type: node
+bundle: service_request
+label: 'General Data Protection Regulation'
+description: 'By checking this box, you agree to our terms and that you have read our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Data Use Policy</a>, including our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Cookie Use</a>.'
+required: false
+translatable: false
+default_value:
+  -
+    value: 1
+default_value_callback: ''
+settings:
+  on_label: 'On'
+  off_label: 'Off'
+field_type: boolean
