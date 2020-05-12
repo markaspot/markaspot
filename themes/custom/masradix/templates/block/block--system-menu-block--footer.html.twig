@@ -27,11 +27,12 @@
 #}
 {%
 set classes = [
-    'col-md-12',
-'block-content',
-'block-content--' ~ bundle|clean_class,
-'block-content--' ~ id|clean_class,
-bundle|clean_class
+  'col-md-6',
+  'col-sm-12',
+  'block-content',
+  'block-content--' ~ bundle|clean_class,
+  'block-content--' ~ id|clean_class,
+  bundle|clean_class
 ]
 %}
 <div{{ attributes.addClass(classes).addClass('row')}}>
