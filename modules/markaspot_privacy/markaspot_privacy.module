@@ -44,8 +44,9 @@ function _add_terms_of_use(array &$form) {
     // path for the privacy notes was found.
     $form['terms_of_use'] = [
       '#type' => 'checkbox',
-      '#title' => t('By checking this box, you agree to our terms and that you have read our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Data Use Policy</a>, including our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Cookie Use</a>.'),
       '#required' => TRUE,
+      '#title' => t('GDPR'),
+      '#description' => t('By checking this box, you agree to our terms and that you have read our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Data Use Policy</a>, including our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Cookie Use</a>.'),
       '#weight' => $weight + 1,
     ];
 
@@ -56,15 +57,17 @@ function _add_terms_of_use(array &$form) {
  * Implements hook_form_alter().
  */
 function markaspot_privacy_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  $config = \Drupal::configFactory()
+    ->getEditable('markaspot_privacy.settings')->get();
 
   // Add a "terms of use" checkbox in node forms, if a new node will be created.
-  if ($form_state->getFormObject() instanceof \Drupal\Core\Entity\EntityFormInterface) {
+  if ((isset($config['field_save']) || $config['field_save'] == FALSE ) && $form_state->getFormObject() instanceof \Drupal\Core\Entity\EntityFormInterface) {
     $entity_type = $form_state->getFormObject()->getEntity()->getEntityTypeId();
-
     // Add terms of use checkbox in forms for new nodes.
     if ($entity_type == 'node' || $entity_type == 'comment') {
       _add_terms_of_use($form);
     }
+    unset($form['field_gdpr']);
   }
 
 }
