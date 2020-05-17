@@ -33,16 +33,14 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
     $form['markaspot_resubmission']['common']['tax_status'] = array(
       '#type' => 'textfield',
       '#title' => $this->t('Bundle'),
-      '#default_value' => 'service_status',
+      '#default_value' => $config->get('tax_status') ?: 'service_status',
       '#description' => t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
     );
 
     $form['markaspot_resubmission']['status_resubmissive'] = array(
       '#type' => 'select',
       '#multiple' => TRUE,
-      '#options' => self::getTaxonomyTermOptions(
-        $this->config('markaspot_resubmission.settings')->get('tax_status')),
-      '#default_value' => $config->get('status_resubmissive'),
+      '#options' => ($config->get('tax_status')) ?  self::getTaxonomyTermOptions($config->get('tax_status')) : self::getTaxonomyTermOptions('service_status'),
       '#title' => t('Please choose the status for resubmissable reports.'),
     );
 
@@ -56,10 +54,10 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
     ];
 
     $form['markaspot_resubmission']['mailtext'] = array(
-      '#type' => 'text',
+      '#type' => 'textarea',
       '#token_types' => array('site'),
       '#title' => $this->t('Mailtext'),
-      '#default_value' => 'Mailtext',
+      '#default_value' => $config->get('mailtext') ?: 'Hello [current-user:name]!',
     );
 
     foreach ($catOptions as $tid => $category_name) {
