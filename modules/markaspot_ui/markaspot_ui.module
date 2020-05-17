@@ -21,6 +21,7 @@ function markaspot_ui_toolbar() {
     'markaspot_request_id' => 'markaspot_request_id.settings',
     'markaspot_open311' => 'markaspot_open311.settings',
     'markaspot_validation' => 'markaspot_validation.settings',
+    'markaspot_privacy' => 'markaspot_privacy.settings',
     'markaspot_archive' => 'markaspot_archive.settings',
     'markaspot_resubmission' => 'markaspot_resubmission.settings',
     'markaspot_static_json' => 'markaspot_static_json.settings',
