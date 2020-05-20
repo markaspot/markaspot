@@ -57,19 +57,20 @@ function _add_terms_of_use(array &$form) {
  * Implements hook_form_alter().
  */
 function markaspot_privacy_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
-  $config = \Drupal::configFactory()
-    ->getEditable('markaspot_privacy.settings')->get();
-
-  // Add a "terms of use" checkbox in node forms, if a new node will be created.
-  if ((isset($config['field_save']) || $config['field_save'] == FALSE ) && $form_state->getFormObject() instanceof \Drupal\Core\Entity\EntityFormInterface) {
+  if ($form_state->getFormObject() instanceof \Drupal\Core\Entity\EntityFormInterface){
     $entity_type = $form_state->getFormObject()->getEntity()->getEntityTypeId();
     // Add terms of use checkbox in forms for new nodes.
     if ($entity_type == 'node' || $entity_type == 'comment') {
-      _add_terms_of_use($form);
-    }
-    unset($form['field_gdpr']);
-  }
+      $config = \Drupal::configFactory()
+      ->getEditable('markaspot_privacy.settings')->get();
 
+      // Add a "terms of use" checkbox in node forms, if a new node will be created.
+      if ((isset($config['field_save']) || $config['field_save'] === FALSE )) {
+        _add_terms_of_use($form);
+        unset($form['field_gdpr']);
+      }
+    }
+  }
 }
 
 function markaspot_privacy_get_weight($form){
