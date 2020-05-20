@@ -106,7 +106,7 @@ function markaspot_resubmission_getOrganisationTermField($node){
   $term_ids = [];
   // var_dump($node);
   $tid = $node->get('field_organisation')->target_id;
-  if ($tid !== FALSE) {
+  if ($tid !== NULL) {
     $term = Drupal\taxonomy\Entity\Term::load($tid);
     $headOrganisationEmails = $term->get('field_head_organisation_e_mail')->getString();
     return $headOrganisationEmails;
