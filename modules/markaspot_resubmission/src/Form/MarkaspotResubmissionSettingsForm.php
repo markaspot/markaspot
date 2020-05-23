@@ -40,8 +40,11 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
     $form['markaspot_resubmission']['status_resubmissive'] = array(
       '#type' => 'select',
       '#multiple' => TRUE,
-      '#options' => ($config->get('tax_status')) ?  self::getTaxonomyTermOptions($config->get('tax_status')) : self::getTaxonomyTermOptions('service_status'),
+      '#options' => self::getTaxonomyTermOptions(
+        $this->config('markaspot_resubmission.settings')->get('tax_status')),
+      '#default_value' => $config->get('status_resubmissive'),
       '#title' => t('Please choose the status for resubmissable reports.'),
+
     );
 
     $catOptions = $this->getTaxonomyTermOptions('service_category');
@@ -49,7 +52,7 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
       '#tree' => TRUE,
       '#type' => 'details',
       '#title' => t('Resubmission period settings per category'),
-      '#description' => t('You can change the period in which archivable content is sent to the archiving status.'),
+      '#description' => t('You can change the period in which content is notified for being submissive.'),
       '#open' => TRUE, // Controls the HTML5 'open' attribute. Defaults to FALSE.
     ];
 
@@ -68,9 +71,27 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
         '#step' => 1,
         '#title' => t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
         '#default_value' => $config->get('days.'. $tid),
-        '#description' => t('How many days to reach back for archiving?'),
+        '#description' => t('After how many days reminding e-mails should be sent?'),
       ];
     }
+    $form['markaspot_resubmission']['interval'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Cron interval'),
+      '#description' => $this->t('Time after which the check will we executed'),
+      '#default_value' => $config->get('interval'),
+      '#options' => [
+        60 => $this->t('1 minute'),
+        300 => $this->t('5 minutes'),
+        3600 => $this->t('1 hour'),
+        86400 => $this->t('1 day'),
+        172800 => $this->t('2 days'),
+        432000 => $this->t('5 days'),
+        604800 => $this->t('1 week'),
+
+
+      ],
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -91,6 +112,7 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
       ->set('status_resubmissive', $values['status_resubmissive'])
       ->set('days', $values['days'])
       ->set('mailtext', $values['mailtext'])
+      ->set('interval', $values['interval'])
       ->save();
 
     parent::submitForm($form, $form_state);

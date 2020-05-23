@@ -6,7 +6,6 @@
  */
 
 use Drupal\Core\Routing\RouteMatchInterface;
-use Drupal\token\Token;
 
 /**
  * Implements hook_help().
@@ -28,61 +27,67 @@ function markaspot_resubmission_help($route_name, RouteMatchInterface $route_mat
  * Implements hook_cron().
  */
 function markaspot_resubmission_cron() {
-  $resubmissionSendable = \Drupal::service('markaspot_resubmission.resubmission')->load();
-  // $config = \Drupal::configFactory()->getEditable('markaspot_resubmission.settings');
-  $count = count($resubmissionSendable);
+  // We access our configuration.
+  $config = \Drupal::config('markaspot_resubmission.settings');
+  $mailText = $config->get('mailtext');
+  // Default to an hourly interval. Of course, cron has to be running at least
+  // hourly for this to work.
+  $interval = $config->get('interval');
+  $interval = !empty($interval) ? $interval : 3600;
 
-  foreach ($resubmissionSendable as $resubmissionSend) {
+  // We usually don't want to act every time cron runs (which could be every
+  // minute) so keep a time for the next run in the site state.
+  $next_execution = \Drupal::state()
+    ->get('markaspot_resubmission.next_execution', 0);
+  if (REQUEST_TIME >= $next_execution) {
 
-    $node = $resubmissionSend;
+    $resubmissionSendable = \Drupal::service('markaspot_resubmission.resubmission')->load();
+    // $config = \Drupal::configFactory()->getEditable('markaspot_resubmission.settings');
+    $count = count($resubmissionSendable);
 
-    // var_dump($mail);
-    // die;
-    drupal_set_message($node->request_id, 'alert', 1);
-    // $archivable->field_status->target_id = $config->get('status_resubmissiond');
-    // $archivable->save();
-    $mailManager = \Drupal::service('plugin.manager.mail');
-    $module = "markaspot_resubmission";
-    $key = 'resubmit_request';
-    //$to = 'holger@markaspot.org';
-    $moduleHandler = \Drupal::service('module_handler');
-    if ($moduleHandler->moduleExists('markaspot_groups')){
-      $to = markaspot_resubmission_getGroupField($node);
-    } else {
-      $to = markaspot_resubmission_getOrganisationTermField($node);
+    foreach ($resubmissionSendable as $resubmissionSend) {
+
+      $node = $resubmissionSend;
+
+      $mailManager = \Drupal::service('plugin.manager.mail');
+      $module = "markaspot_resubmission";
+      $key = 'resubmit_request';
+      $moduleHandler = \Drupal::service('module_handler');
+      if ($moduleHandler->moduleExists('markaspot_groups')){
+        $to = markaspot_resubmission_getGroupField($node);
+      } else {
+        $to = markaspot_resubmission_getOrganisationTermField($node);
+      }
+
+      $params['message'] = markaspot_resubmission_getBody($node, $mailText);
+
+      $params['node_title'] = $node->label();
+      $langcode = \Drupal::currentUser()->getPreferredLangcode();
+
+      $result = $mailManager->mail($module, $key, $to, $langcode, $params, NULL, TRUE);
+      if ($result['result'] !== TRUE) {
+        \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('Mail was sent.'));
+      }
+      else {
+        \Drupal::logger('Mark-a-Spot Resubmission')->error(t('Mail was not sent.'));
+      }
     }
 
-    $params['message'] = markaspot_resubmission_getBody($node);
-
-
-    $params['node_title'] = $node->label();
-    $langcode = \Drupal::currentUser()->getPreferredLangcode();
-    $send = true;
-
-    $result = $mailManager->mail($module, $key, $to, $langcode, $params, NULL, $send);
-    if ($result['result'] !== true) {
-     drupal_set_message(t('There was a problem sending your message and it was not sent.'), 'error');
-    }
-    else {
-     drupal_set_message(t('Your message has been sent.'));
-    }
+    \Drupal::state()
+      ->set('markaspot_resubmission.next_execution', REQUEST_TIME + $interval);
   }
+
 }
 
 
-function markaspot_resubmission_getBody($node) {
-  // Load a node and a user, then replace tokens in the text.
-  $config = \Drupal::config('markaspot_resubmission.settings');
-  $mailtext = $config->get('mailtext');
+function markaspot_resubmission_getBody($node, $mailText) {
 
-
-  // [date:...] tokens use the current date automatically.
   $data = [
     'node' => $node,
   ];
   $token_service = \Drupal::token();
   // Replace the token for subject.
-  return $token_service->replace($mailtext, $data);
+  return $token_service->replace($mailText, $data);
 }
 
 function markaspot_resubmission_getGroupField($node){
@@ -103,8 +108,6 @@ function markaspot_resubmission_getGroupField($node){
 
 
 function markaspot_resubmission_getOrganisationTermField($node){
-  $term_ids = [];
-  // var_dump($node);
   $tid = $node->get('field_organisation')->target_id;
   if ($tid !== NULL) {
     $term = Drupal\taxonomy\Entity\Term::load($tid);
@@ -133,8 +136,4 @@ function markaspot_resubmission_mail($key, &$message, $params) {
       $message['body'][] = $params['message'];
       break;
   }
-}
-
-function send_mail($mail) {
-
 }
