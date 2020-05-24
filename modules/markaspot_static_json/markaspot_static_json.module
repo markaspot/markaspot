@@ -54,7 +54,7 @@ function markaspot_static_json_cron() {
   $count = markaspot_static_json_get_count();
   // Calculate max pages.
   $pages = ceil($count / $limit);
-  if ($current_page >= $pages) {
+  if ($current_page >= $pages - 1) {
     $cron_config->set('static_page', $current_page);
   }
   else {
@@ -113,7 +113,7 @@ function markaspot_static_json_request($limit, $current_page) {
       markaspot_static_json_memory();
 
       // Need at least an empty array
-      $static_service_requests = (!is_array($static_service_requests)) ? [] : $static_service_requests;
+      $static_service_requests = (empty($static_service_requests) || !is_array($static_service_requests)) ? [] : $static_service_requests;
 
       // Encode array.
       $merged = array_merge_recursive($static_service_requests, $current_service_requests);

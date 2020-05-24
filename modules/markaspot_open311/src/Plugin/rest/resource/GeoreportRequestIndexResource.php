@@ -220,7 +220,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $limit = NULL;
     }
 
-    if ($limit) {
+    if (isset($limit)) {
       $query->pager($limit);
     }
 
