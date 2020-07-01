@@ -33,7 +33,7 @@ function service_request_node_presave(EntityInterface $node) {
       'type' => 'status',
       'field_status_note' => array(
         "value" => $status_note_initial,
-        "format" => "full_html",
+        'format' => 'plain_text',
       ),
       'field_status_term' => array(
         "target_id" => $status_open_start,

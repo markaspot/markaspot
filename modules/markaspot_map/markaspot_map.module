@@ -1,10 +1,14 @@
 <?php
 
-function markaspot_map_page_attachments(array &$attachments) {
+function markaspot_map_page_attachments(array &$page) {
   $attached = \Drupal::configFactory()
     ->getEditable('markaspot_map.settings')->get();
 
-  $attachments['#attached']['drupalSettings']['mas'] = $attached;
-  $attachments['#attached']['drupalSettings']['mas'] = $attached;
+  $page['#attached']['drupalSettings']['mas'] = $attached;
+  $page['#attached']['drupalSettings']['mas'] = $attached;
 
+  $path =\Drupal::service('path.current')->getPath();
+  if($path !== '/report' && !strstr($path, 'node/add') && !strstr($path, 'node/edit')) {
+    $page['#attached']['library'][] = 'markaspot_map/map';
+  }
 }

@@ -24,11 +24,8 @@ class GeoreportRequestFormatRouteFilter implements FilterInterface {
     } else {
       /** @var \Symfony\Component\Routing\Route $route */
       foreach ($collection as $name => $route) {
-        $path = $route->getPath();
-        $suffix = isset($path) ? explode('.', $path) : NULL;
+        $suffix = isset($current_path) ? explode('.', $current_path) : NULL;
         $format = $suffix[1];
-
-
         // If the route has no _format specification, we move it to the end. If it
         // does, then no match means the route is removed entirely.
         if ($supported_formats = array_filter(explode('|', $route->getRequirement('_format')))) {

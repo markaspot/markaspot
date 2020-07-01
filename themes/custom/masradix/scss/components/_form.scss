@@ -18,16 +18,12 @@
     font-size: 16px;
   }
 }
-.leaflet-control-geocoder-form input {
 
-  @media (max-width: $screen-sm-max) {
-    width: 280px !important;
-  }
+
+.leaflet-control-geocoder {
+
   @media (max-width: $screen-xs-max) {
-    width: 220px !important;
-  }
-  @media (max-width: $screen-xs-min) {
-    width: 180px !important;
+    max-width: 250px;
   }
 }
 #locateMe {

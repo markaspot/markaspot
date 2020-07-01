@@ -1,25 +1,13 @@
-.navbar-brand {
-      height: 40px;
-    width: 40px;
-}
-
-
 img.site-logo {
   float: none;
-  margin: 20px auto;
-
-  @media (min-width: 1200px) {
+  margin: 0 auto;
+  @media (min-width: $screen-md) {
+    height: 40px;
+    width: 80px;
+  }
+  @media (max-width: $screen-md) {
     max-height: 40px;
-    max-width: 40px;
-    display: none;
-  }
-  @media (max-width: $screen-sm-max) {
-    max-height: 100px;
     display: block;
-
-  }
-  @media (max-width: $screen-md-max) {
-    max-height: 80px;
   }
 }
 

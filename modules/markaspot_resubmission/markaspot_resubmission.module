@@ -1,0 +1,139 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_resubmission.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_resubmission_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_resubmission module.
+    case 'help.page.markaspot_resubmission':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Mark-a-Spot Resubmission') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function markaspot_resubmission_cron() {
+  // We access our configuration.
+  $config = \Drupal::config('markaspot_resubmission.settings');
+  $mailText = $config->get('mailtext');
+  // Default to an hourly interval. Of course, cron has to be running at least
+  // hourly for this to work.
+  $interval = $config->get('interval');
+  $interval = !empty($interval) ? $interval : 3600;
+
+  // We usually don't want to act every time cron runs (which could be every
+  // minute) so keep a time for the next run in the site state.
+  $next_execution = \Drupal::state()
+    ->get('markaspot_resubmission.next_execution', 0);
+  if (REQUEST_TIME >= $next_execution) {
+
+    $resubmissionSendable = \Drupal::service('markaspot_resubmission.resubmission')->load();
+    // $config = \Drupal::configFactory()->getEditable('markaspot_resubmission.settings');
+    $count = count($resubmissionSendable);
+
+    foreach ($resubmissionSendable as $resubmissionSend) {
+
+      $node = $resubmissionSend;
+
+      $mailManager = \Drupal::service('plugin.manager.mail');
+      $module = "markaspot_resubmission";
+      $key = 'resubmit_request';
+      $moduleHandler = \Drupal::service('module_handler');
+      if ($moduleHandler->moduleExists('markaspot_groups')){
+        $to = markaspot_resubmission_getGroupField($node);
+      } else {
+        $to = markaspot_resubmission_getOrganisationTermField($node);
+      }
+
+      $params['message'] = markaspot_resubmission_getBody($node, $mailText);
+
+      $params['node_title'] = $node->label();
+      $langcode = \Drupal::currentUser()->getPreferredLangcode();
+
+      $result = $mailManager->mail($module, $key, $to, $langcode, $params, NULL, TRUE);
+      if ($result['result'] !== TRUE) {
+        \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('Mail was sent.'));
+      }
+      else {
+        \Drupal::logger('Mark-a-Spot Resubmission')->error(t('Mail was not sent.'));
+      }
+    }
+
+    \Drupal::state()
+      ->set('markaspot_resubmission.next_execution', REQUEST_TIME + $interval);
+  }
+
+}
+
+
+function markaspot_resubmission_getBody($node, $mailText) {
+
+  $data = [
+    'node' => $node,
+  ];
+  $token_service = \Drupal::token();
+  // Replace the token for subject.
+  return $token_service->replace($mailText, $data);
+}
+
+function markaspot_resubmission_getGroupField($node){
+  $group_ids = [];
+
+  $group_contents = \Drupal\group\Entity\GroupContent::loadByEntity($node);
+  foreach ($group_contents as $group_content) {
+    $group_ids[] = $group_content->getGroup()->id();
+    foreach ($group_ids as $group) {
+      $affectedGroup = \Drupal\group\Entity\Group::load($group);
+
+      $headOrganisationEmails = $affectedGroup->get('field_head_organisation_e_mail')->getString();
+    }
+  }
+
+  return $headOrganisationEmails;
+}
+
+
+function markaspot_resubmission_getOrganisationTermField($node){
+  $tid = $node->get('field_organisation')->target_id;
+  if ($tid !== NULL) {
+    $term = Drupal\taxonomy\Entity\Term::load($tid);
+    $headOrganisationEmails = $term->get('field_head_organisation_e_mail')->getString();
+    return $headOrganisationEmails;
+  } else {
+    \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('We have\'nt found an e-Mail Address'));
+    return false;
+  }
+}
+
+
+/**
+ * Implements hook_mail().
+ */
+
+function markaspot_resubmission_mail($key, &$message, $params) {
+  $options = array(
+    'langcode' => $message['langcode'],
+  );
+
+  switch ($key) {
+    case 'resubmit_request':
+      $message['from'] = \Drupal::config('system.site')->get('mail');
+      $message['subject'] = t('Reminder created: @title', array('@title' => $params['node_title']), $options);
+      $message['body'][] = $params['message'];
+      break;
+  }
+}

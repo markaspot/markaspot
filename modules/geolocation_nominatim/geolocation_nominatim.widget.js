@@ -3,25 +3,40 @@
  */
 
 (function ($) {
+  Drupal.geolocationNominatimWidgetMap = {};
+
   Drupal.geolocationNominatimWidget = function (mapSettings, context, updateCallback) {
     // Only init once.
     if ($('#' + mapSettings.id).hasClass('leaflet-container')) {
       return;
     }
     // Init map.
-    var map = L.map(mapSettings.id, {
-      fullscreenControl: true,
+    Drupal.geolocationNominatimWidget.map = L.map(mapSettings.id, {
+      fullscreenControl: mapSettings.fullscreenControl,
+      dragging: !L.Browser.mobile,
+      zoomControl: !L.Browser.mobile
     })
       .setView([
         mapSettings.centerLat,
         mapSettings.centerLng
       ], 18);
-    L.tileLayer(mapSettings.tileServerUrl, {
-      attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
+    var map = Drupal.geolocationNominatimWidget.map;
+    var tileLayer;
+    if (mapSettings.wmsLayer === "") {
+      tileLayer = L.tileLayer(mapSettings.tileServerUrl);
+    } else {
+      tileLayer = L.tileLayer.wms(mapSettings.tileServerUrl, { layers: mapSettings.wmsLayer });
+    }
+    map.attributionControl.addAttribution(
+      mapSettings.customAttribution
+    );
+
+    map.addLayer(tileLayer);
+
     var locateOptions = {
       position: 'bottomright'
     };
+
     var lc = L.control.locate(locateOptions).addTo(map);
 
     // Check for ongoing validation and autolocate settings combination.
@@ -46,14 +61,16 @@
     var geocodingQueryParams = {};
     if (mapSettings.limitCountryCodes != '' || mapSettings.limitViewbox != '') {
       geocodingQueryParams = {
+        'key': mapSettings.LocationIQToken,
         'countrycodes': mapSettings.limitCountryCodes,
         'viewbox': mapSettings.limitViewbox,
         'bounded': 1,
-        'limit': 2
+        'limit': 5,
+        'city': mapSettings.city
       };
     }
 
-    var geocoderNominatim = L.Control.Geocoder.nominatim({
+    var geocoderNominatim = new L.Control.Geocoder.NominatimCity({
       // Todo: Make this an optional setting.
       serviceUrl: mapSettings.serviceUrl,
       geocodingQueryParams: geocodingQueryParams,
@@ -67,7 +84,7 @@
       defaultMarkGeocode: false,
       collapsed: false,
       geocoder: geocoderNominatim,
-      placeholder: Drupal.t('Search'),
+      placeholder: Drupal.t('Street search'),
       errorMessage: Drupal.t('Nothing found.')
     });
 
@@ -93,10 +110,26 @@
     }
 
     function setMarker(result, latLng) {
+      var address = result.properties.address;
+      var $val = '';
+
+      if (address.road) {
+        switch(mapSettings.streetNumberFormat) {
+          case "1":
+            $val = address.road + ' ' + (address.house_number || '');
+            break;
+          case 0:
+            $val = (address.house_number ? address.house_number + ' ' : '') + address.road;
+            break;
+        }
+      } else {
+        $val = '';
+      }
+      $input = $('.leaflet-control-geocoder-form input');
+      $input.val($val);
       if (marker) {
         map.removeLayer(marker);
       }
-
       // Check if method is called with a pair of coordinates to prevent
       // marker jumping to nominatm reverse results lat/lon.
       latLng = latLng ? latLng : result.center;
@@ -121,6 +154,10 @@
       window.setTimeout(function () {
         map._geocoderIsActive = false
       }, 500);
+      /* marker = L.marker(latLng, {
+        draggable: true
+      }).bindPopup(result.html || result.name).addTo(map).openPopup();
+      */
     });
     geocoder.on('startgeocode', function () {
       map._geocoderIsActive = true;
@@ -194,6 +231,14 @@
         $('input.postal-code', $address).val(details.postcode);
       }
 
+      if ('suburb' in details) {
+        $('select#edit-field-district option').each(function () {
+          if ($(this).text() == details.suburb) {
+            $(this).attr('selected', 'selected');
+          }
+        });
+      }
+
       if ('state' in details) {
         $('select.administrative-area option').each(function () {
           if ($(this).text() == details.state) {
@@ -205,8 +250,8 @@
         var localityType = details.city || details.town || details.village || details.hamlet || details.county || details.neighbourhood;
         $('input.locality', $address).val(localityType);
       }
-      if ('road' in details || 'building' in details || 'footway' in details || 'pedestrian' in details) {
-        var streetType = details.road || details.footway || details.pedestrian;
+      if ('road' in details || 'building' in details || 'footway' in details || 'pedestrian' in details || 'path' in details) {
+        var streetType = details.path || details.road || details.footway || details.pedestrian || details.path;
         $('input.address-line1', $address).val(streetType);
         $('input.address-line2', $address).val(details.building);
       }

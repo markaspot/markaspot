@@ -10,6 +10,8 @@ use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Form\FormStateInterface;
+use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
+
 /**
  * Implements hook_help().
  */
@@ -77,21 +79,49 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
   if ($node->getType() == 'service_request') {
 
     $query = \Drupal::entityQuery('node');
-    $query->condition('type', 'service_request');
-    $query->accessCheck(FALSE);
+
+    // get the latest nid of all existing service-requests.
+    $query
+      ->condition('type', 'service_request')
+      ->accessCheck(FALSE)
+      ->sort('nid' , 'DESC')
+      ->range(1,1);
 
     $entity_ids = $query->execute();
-    $last_request_id = count($entity_ids);
+    $last_request_nid = reset($entity_ids);
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+
+    // Now load the the last service_request and check the request_id.
+
+    $predecessor = $node_storage->load($last_request_nid);
+    if (isset($predecessor->request_id->value)) {
+      $last_request_id = $predecessor->request_id->value;
+      \Drupal::logger('markaspot')->notice("Last Request ID: ". $last_request_id . " | Last NID: " .$last_request_nid);
+      $next = explode('-', $last_request_id);
+    }
+    // Is one proviced count up.
+    $next = (!empty($next[0])) ? $next[0] + 1 : 1;
 
     $config = \Drupal::configFactory()->getEditable('markaspot_request_id.settings');
     $id_pattern = $config->get('format');
+    $request_id = (isset($id_pattern)) ? $next . '-' . date($id_pattern) : $next;
 
-    $request_id = (isset($id_pattern)) ? $last_request_id . '-' . date($id_pattern) : $last_request_id;
+    // Create a duplicate check against node entity.
+    $query = \Drupal::entityQuery('node');
+    $query
+      ->condition('request_id', $request_id)
+      ->accessCheck(FALSE)
+      ->count();
+    $duplicatesCheck = $query->execute();
 
-    $node->request_id->value = $request_id;
+    if ($duplicatesCheck != 0) {
+      throw new ServiceUnavailableHttpException(3, t('Oops we found a duplicate, please go back and try again'));
+    } else {
+      $node->request_id->value = $request_id;
+      $node->setNewRevision(FALSE);
+      $node->save();
+    }
 
-    $node->setNewRevision(FALSE);
-    $node->save();
   }
 
 }
@@ -102,14 +132,20 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
 function markaspot_request_id_node_presave(EntityInterface $node) {
 
   if ($node->bundle() == 'service_request') {
+    $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
+
     $tid = $node->field_category->target_id;
     // Instead of contributed module auto entity_title:
     // Get the service name by ID and update the title field.
     if (isset($tid)) {
-      $service_name = \Drupal::entityTypeManager()
+      $taxonomy_term = \Drupal::entityTypeManager()
         ->getStorage('taxonomy_term')
         ->load($tid);
-
+      //$service_name = \Drupal::service('entity.repository')->getTranslationFromContext($taxonomy_term);
+      if ($taxonomy_term !== NULL) {
+        $service_name = \Drupal::service('entity.repository')
+          ->getTranslationFromContext($taxonomy_term, $language);
+      }
       $node->title = '#' . $node->request_id->value . '  ' . $service_name->name->value;
 
     }

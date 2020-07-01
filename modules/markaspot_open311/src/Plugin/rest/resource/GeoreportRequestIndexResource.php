@@ -189,16 +189,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
      */
     $parameters = UrlHelper::filterQueryParameters(\Drupal::request()->query->all());
-
     // Filtering the configured content type.
     $bundle = $this->config->get('bundle');
     $bundle = (isset($bundle)) ? $bundle : 'service_request';
     $query = \Drupal::entityQuery('node')
-      ->condition('status', 1)
       ->condition('changed', REQUEST_TIME, '<')
       ->condition('type', $bundle);
 
-    $query->sort('changed', 'desc');
+    if (in_array('administrator',$this->currentUser->getRoles()) || $this->currentUser->hasPermission('access open311 advanced properties')) {
+      $query->condition('status', array(0, 1), 'IN');
+    } else {
+      $query->condition('status', 1);
+    }
 
     // Checking for a limit parameter:
     if (isset($parameters['key'])) {
@@ -214,10 +216,11 @@ class GeoreportRequestIndexResource extends ResourceBase {
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
       $query->condition('nid', $nids, 'IN');
-      $limit = $this->config->get('limit-nids');
+      //$limit = $this->config->get('limit-nids');
+      $limit = NULL;
     }
 
-    if ($limit) {
+    if (isset($limit)) {
       $query->pager($limit);
     }
 
@@ -255,7 +258,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // End_date param or create a timestamp now:
     $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
     $query->condition('created', $end_timestamp, '<=');
-    $query->sort('created', $direction = 'DESC');
+    if (isset($parameters['sort']) && $parameters['sort'] == "desc") {
+      $sort = 'DESC';
+    } else {
+      $sort = 'ASC';
+    }
+    $query->sort('created', $direction = $sort);
+
     $query->accessCheck(FALSE);
 
     // Checking for status-parameter and map the code with taxonomy terms:

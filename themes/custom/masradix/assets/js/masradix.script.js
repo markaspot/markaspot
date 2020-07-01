@@ -3,52 +3,9 @@
  * Custom scripts for theme.
  */
 
-// Taking care of flickering controls on touch devices.
-// https://github.com/Leaflet/Leaflet/issues/1198
-window.L_DISABLE_3D = 'ontouchstart' in document.documentElement;
-var slideout = new Slideout({
-  'panel': document.getElementById('page-content-wrapper'),
-  'menu': document.getElementById('sidebar-wrapper'),
-  'padding': 256,
-  'tolerance': 70,
-  'side': 'right'
-});
-
-var MutationObserver = window.MutationObserver || window.WebKitMutationObserver || window.MozMutationObserver;
-var target = document.querySelector('[data-drupal-views-infinite-scroll-content-wrapper]');
-
-// create an observer instance
-var observer = new MutationObserver(function(mutations) {
-  mutations.forEach(function(mutation) {
-    if (mutation.type === 'childList') {
-      Pace.restart();
-    }
-  });
-});
-
-var config = { attributes: true, childList: true, characterData: true };
-// pass in the target node, as well as the observer options
-if (target) {
-  observer.observe(target, config);
-}
 
 (function ($, Drupal, drupalSettings, window, document) {
 
-  function toDesktop(width){
-    var nav = $(".navbar-default");
-    var branding = $(".block--masradix-sitebranding");
-    if (width >= 1200) {
-      $('.navbar-default > div').removeClass(".navbar-left");
-      $('a.navbar-brand').prependTo(nav);
-      $('.fixed-header').hide();
-      $('img.site-logo').fadeIn(800);
-    } else {
-      $('.fixed-header').show();
-      $('img.site-logo').fadeIn(800);
-
-    }
-
-  }
   // https://www.abeautifulsite.net/whipping-file-inputs-into-shape-with-bootstrap-3
   $(document).on('change', ':file', function () {
     var input = $(this),
@@ -59,10 +16,6 @@ if (target) {
   });
   $(document).ready(function () {
 
-    toDesktop($(window).width());
-    $(window).resize(function() {
-      toDesktop($(this).width());
-    });
     // https://www.abeautifulsite.net/whipping-file-inputs-into-shape-with-bootstrap-3
     $(':file').on('fileselect', function (event, numFiles, label) {
 
@@ -75,10 +28,7 @@ if (target) {
 
     });
 
-    // Toggle button.
-    document.querySelector('.toggle-button').addEventListener('click', function () {
-      slideout.toggle();
-    });
+
     $notifications = $('.notifications');
 
     // Taken from http://imakewebthings.com/waypoints/
@@ -100,49 +50,26 @@ if (target) {
       })
     }
 
-    var fixed = document.querySelector('.fixed-header');
-
-    slideout.on('translate', function (translated) {
-      fixed.style.transform = 'translateX(' + translated + 'px)';
-    });
-
-    slideout.on('beforeopen', function () {
-      fixed.style.transition = 'transform 300ms ease';
-      fixed.style.transform = 'translateX(-256px)';
-    });
-
-    slideout.on('beforeclose', function () {
-      fixed.style.transition = 'transform 300ms ease';
-      fixed.style.transform = 'translateX(0px)';
-    });
-
-    slideout.on('open', function () {
-      fixed.style.transition = '';
-    });
-
-    slideout.on('close', function () {
-      fixed.style.transition = '';
-    });
-
-
     var route = drupalSettings.path.currentPath;
 
     // Sticky map on top.
 
-    var $stickyElement = $('.map-request-block');
-    if ($stickyElement.length) {
-      var sticky = new Waypoint.Sticky({
-        element: $stickyElement[0],
-        wrapper: '<div class="sticky-wrapper waypoint" />'
-      });
-    }
+
 
     // Add a close button to exposed filter.
     $('.views-exposed-form')
       .append('<a data-toggle="filter" class="btn btn-default close fa fa-close"><span>' + Drupal.t('Close') + '</span></a>')
-    if ($('#map').length > 0) {
+    var $map = $('#map');
+    if ($map.length > 0 && sessionStorage.getItem('removeSticky') !== '1') {
+      var $stickyElement = $('.map-request-block');
+      if ($stickyElement.length) {
+        Drupal.sticky = new Waypoint.Sticky({
+          element: $stickyElement[0],
+          wrapper: '<div class="sticky-wrapper waypoint" />'
+        });
+      }
       var mapInview = new Waypoint.Inview({
-        element: $('#map'),
+        element: $map,
         entered: function (direction) {
           $('body').addClass('map-stuck');
         },
@@ -175,24 +102,6 @@ if (target) {
       }
     });
 
-    // Map resizing:
-    var map = $('div#geolocation-nominatim-map');
-    var form = $('.node-service-request-form input');
-    var search = $('.leaflet-control-geocoder.leaflet-bar input');
-    var locateControl = $('.leaflet-control-locate a');
-    map.height('210px');
-
-    search.click(function () {
-      map.animate({height:'400px'}, 100);
-    });
-
-    search.blur(function () {
-      map.height('210px');
-    });
-    form.focus(function () {
-      map.height('210px');
-    });
-
   });
 
   // Handle Result filter click.
@@ -210,10 +119,6 @@ if (target) {
     if ($('[data-drupal-selector="edit-reset"]')[0]) {
       exposedFilter.addClass('exposed ajax');
     }
-  });
-
-  $('[data-toggle="offcanvas"]').click(function () {
-    $('#wrapper').toggleClass('toggled');
   });
 
 })(jQuery, Drupal, drupalSettings, this, this.document);

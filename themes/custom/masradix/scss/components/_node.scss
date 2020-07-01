@@ -4,7 +4,7 @@ article.service-request--teaser {
   background: $gray-lighter;
   box-shadow:
     0 2px 2px 0 rgba(0,0,0,0.16), 
-    0 0 0 1px rgba(0,0,0,0.08)
+    0 0 0 1px rgba(0,0,0,0.08);
 }
 
 .service-request__field-category .label-default,
@@ -14,9 +14,22 @@ article.service-request--teaser {
 }
 
 article.service-request--teaser.focus {
-  background: #fff;
-  -webkit-transition: all 0.1s ease;
-  transition: all 0.1s ease;
+  background: $gray-lighter;
+  -webkit-transition: all 2.5s linear;
+  transition: all 1.5s linear;
+}
+
+article.service-request--teaser.focus:before {
+  font-family: "FontAwesome"; 
+  font-weight: 900;
+  content: "\f062";
+  text-align: center;
+  display: block;
+  position: relative;
+  height: 60px;
+  width:100%;
+
+  line-height: 3;
 }
 
 article.service-request--gallery {
@@ -26,7 +39,7 @@ article.service-request--gallery {
 }
 
 article.service-request--teaser {
-  padding: 0;
+  background: #fff;
   margin: 30px 0 40px 0;
   clear: both;
 }
@@ -34,6 +47,11 @@ article.service-request--teaser {
 .page--service-request article.service-request {
   background: #fff;
 }
+
+article.service-request p {
+  margin: 10px 0;
+}
+
 
 article.service-request footer {
   font-style: italic;
@@ -44,7 +62,7 @@ article.service-request footer {
 
 article.service-request--teaser .content,
 article.service-request--teaser footer {
-  padding: 10px;
+  padding:  0 10px;
   margin: 0;
 }
 
@@ -66,8 +84,8 @@ article.service-request--teaser footer {
   position: absolute;
   font-size: xx-large;
   color: #fff;
+  line-height:2;
   opacity: 0.2;
-  top: 40px
 }
 
 .view--front-gallery .service-request h2:before {
@@ -76,11 +94,12 @@ article.service-request--teaser footer {
   top: 40px
 }
 
+.service-request h2:first-child {
+ border: 1px solid $gray-darker;
+}
+.service-request h2{
 
-.service-request h2 {
-
-  font-size: x-small;
-
+  font-size: large;
   @media (min-width: $screen-lg-min) {
     font-size: x-large;
   }
@@ -140,7 +159,6 @@ article.service-request--teaser footer {
   padding: 0;
   text-align:center;
   background: $gray-lighter;
-
 }
 .view--requests div.col-sm-6,
 .category-status div.col-sm-12,
@@ -162,6 +180,13 @@ article.service-request--teaser footer {
   }
 }
 
+#drupal-modal .container.category-status {
+    width: 100%;
+}
+
+#drupal-modal .col-sm-6 {
+    width:100%
+}
 
 .service-request__field-status-notes {
   margin: 20px 0;
@@ -192,14 +217,14 @@ article.service-request--teaser footer {
 }
 
 .col-sm-6.fa {
-  .color-8B0000 {
+  .color-8b0000 {
     color: #8b0000;
   }
   .color-ff0000 {
     color: #FF0000;
   }
-  .color-FFA500 {
-    color: #ff8c4e;
+  .color-ffa500 {
+    color: #ff5722;
   }
   .color-008000 {
     color: #008000;
@@ -216,16 +241,16 @@ article.service-request--teaser footer {
   .color-a020f0 {
     color: #A020F0;
   }
-  .color-871F78 {
+  .color-871f78 {
     color: #871F78;
   }
   .color-5f9ea0 {
     color: #5F9EA0;
   }
-  .color-ADD8E6 {
-    color: #ADD8E6;
+  .color-add8e6 {
+    color: #20b4e4;
   }
-  .color-D3D3D3 {
+  .color-d3d3d3 {
     color: #D3D3D3;
   }
   .color-808080 {
@@ -234,8 +259,8 @@ article.service-request--teaser footer {
   .color-000000 {
     color: #000000;
   }
-  .color-F5F5DC {
-    color: #F5F5DC;
+  .color-f5f5fdc {
+    color: #bbbb15;
   }
   .color-FFFFFF {
     color: #FFFFFF;

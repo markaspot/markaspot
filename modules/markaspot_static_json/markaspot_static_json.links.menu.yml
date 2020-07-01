@@ -1,0 +1,8 @@
+# Mas Settings definition
+markaspot_static_json.settings:
+  title: 'Static JSON Settings'
+  route_name: markaspot_static_json.settings
+  description: 'Configure Static JSON parameters'
+  parent: system.admin_config_services
+  weight: 20
+

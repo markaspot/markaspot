@@ -1,0 +1,7 @@
+name: 'Mark-a-Spot Privacy'
+type: module
+description: 'Privacy term checkbox field and term page'
+core: 8.x
+package: 'Mark-a-Spot'
+dependencies:
+  - default_content

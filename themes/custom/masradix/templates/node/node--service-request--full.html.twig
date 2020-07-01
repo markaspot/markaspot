@@ -104,11 +104,11 @@ set category_icon = [
   {% endif %}
 
   <div{{ content_attributes.addClass('content') }}>
-    {{ content|without('field_status_notes','field_category') }}
+    {{ content|without('field_status_notes', 'field_status', 'field_category') }}
   </div>
   <div class="container category-status">
-    <div class="service-request__field-status col-sm-{{ cols }} {{ 'color-'  ~  mas_status['color'] }}"><div class="field__item label label-default"><span class="fa {{ mas_status['icon'] }} "></span><div class="field__item label label-default">{{ mas_status['label'] }}</div></div></div>
-    <div class="service-request__field-category col-sm-{{ cols }} {{  'color-'  ~  mas_category['color'] }}"><div class="field__item label label-default"><span class="fa {{ mas_category['icon'] }}"></span><div class="field__item label label-default">{{ mas_category['label'] }}</div></div></div>
+    <div class="service-request__field-status col-sm-{{ cols }} {{ 'color-'  ~  mas_status['color']|lower  }}"><div class="field__item label label-default"><span class="fa {{ mas_status['icon'] }} "></span><div class="field__item label label-default">{{ mas_status['label'] }}</div></div></div>
+    <div class="service-request__field-category col-sm-{{ cols }} {{  'color-'  ~  mas_category['color']|lower  }}"><div class="field__item label label-default"><span class="fa {{ mas_category['icon'] }}"></span><div class="field__item label label-default">{{ mas_category['label'] }}</div></div></div>
   </div>
   <div>
     {{ content.field_status_notes }}

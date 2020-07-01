@@ -3,85 +3,25 @@ dateFormat:
   js:
     /libraries/dateFormat/lib/dateformat.js: {}
 
-moment:
-  remote: https://unpkg.com/moment@2.20.1/min/moment.min.js
-  version: 2.20.1
-  license: MIT
-  js:
-    https://unpkg.com/moment@2.20.1/min/moment.min.js: {type: external}
-
 chartjs:
-  remote: https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.1/Chart.min.js
-  version: 2.7.1
-  license:
-    name: MIT
   js:
-    https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.1/Chart.min.js: { type: external, minified: true }
-
-# count-up:
-#  remote: https://unpkg.com/countup@1.8.2/dist/countUp.min.js
-#  version: 1.8.3
-#  license:
-#    name: MIT
-#  js:
-#    https://unpkg.com/countup@1.8.2/dist/countUp.min.js: { type: external, minified: true }
-
-# vue-count-up:
-#  remote: https://unpkg.com/vue-countup-v2@0.1.2/dist/js/app.js
-#  version: 0.1.2
-#  license:
-#    name: MIT
-#  js:
-#    https://unpkg.com/vue-countup-v2@0.1.2/dist/js/app.js: { type: external, minified: true }
+    /libraries/chart.js/dist/Chart.bundle.min.js: {}
 
 vuechartjs:
-  remote: https://unpkg.com/vue-chartjs/dist/vue-chartjs.min.js
-  version: 2.7.1
-  license:
-    name: MIT
   js:
-    https://unpkg.com/vue-chartjs/dist/vue-chartjs.min.js: { type: external, minified: true }
+    /libraries/vue-chartjs/dist/vue-chartjs.min.js: {}
 
 axios:
-  remote: https://unpkg.com/axios/dist/axios.min.js
-  version: 0.17.1
-  license:
-    name: MIT
   js:
-    https://unpkg.com/axios/dist/axios.min.js: { type: external, minified: true }
+    /libraries/axios/dist/axios.min.js: {}
 
 vue-router:
-  remote: https://unpkg.com/vue-router/dist/vue-router.min.js
-  version: 3.0.1
-  license:
-    name: MIT
   js:
-   https://unpkg.com/vue-router/dist/vue-router.min.js: { type: external, minified: true }
+   /libraries/vue-router/dist/vue-router.min.js: {}
 
 vue:
-  remote: https://unpkg.com/vue@2.5.13/dist/vue.min.js
-  version: 2.5.13
-  license:
-    name: MIT
   js:
-    https://unpkg.com/vue@2.5.13/dist/vue.min.js: { type: external, minified: true }
-
-#vuetrend:
-#  remote: https://unpkg.com/vuetrend
-#  version: 2.5.9
-#  license:
-#    name: MIT
-#  js:
-#    https://unpkg.com/vuetrend: { type: external, minified: true }
-
-#vueselect:
-#  remote: https://unpkg.com/vue-select@latest
-#  version: 2.5.9
-#  license:
-#    name: MIT
-#  js:
-#    https://unpkg.com/vue-select@latest: { type: external, minified: true }
-# Markaspot Trend library.
+    /libraries/vue/dist/vue.min.js: {}
 trend:
   css:
     component:

@@ -31,9 +31,15 @@ class GeolocationNominatimWidget extends WidgetBase {
       'set_address_field' => 0,
       'limit_countrycodes' => '',
       'limit_viewbox' => '',
+      'city' => '',
       'tileServerUrl' => 'http://{s}.tile.osm.org/{z}/{x}/{y}.png',
+      'wmsLayer' =>'',
+      'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
       'autoLocate' => FALSE,
+      'fullscreenControl' => TRUE,
+      'streetNumberFormat' => 0,
       'serviceUrl' => 'https://nominatim.openstreetmap.org/',
+      'LocationIQToken' => '',
     ] + parent::defaultSettings();
   }
 
@@ -77,6 +83,12 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#default_value' => $this->getSetting('limit_viewbox'),
       '#description' => $this->t('Optionally enter a bounding-box (left,top,right,bottom) to limit search results.'),
     ];
+    $elements['city'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Limit search to a specific city'),
+      '#default_value' => $this->getSetting('city'),
+      '#description' => $this->t('Optionally enter a city to try and limit any further.'),
+    ];
     $elements['set_address_field'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Populate address field (experimental)'),
@@ -88,19 +100,50 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#type' => 'textfield',
       '#title' => $this->t('Default map tile server url'),
       '#default_value' => $this->getSetting('tileServerUrl'),
-      '#description' => $this->t('Choose a tileserver url like "http://{s}.tile.osm.org/{z}/{x}/{y}.png".'),
+      '#description' => $this->t('Choose a tileserver url like "http://{s}.tile.osm.org/{z}/{x}/{y}.png". or a WMS Service URL'),
     ];
+    $elements['wmsLayer'] = array(
+      '#type' => 'textfield',
+      '#title' => t('WMS Layer ID'),
+      '#default_value' => $this->getSetting('wmsLayer'),
+      '#description' => t('Enter the layer ID like "layer:layer"'),
+    );
+    $elements['customAttribution'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Add a custom attribution'),
+      '#default_value' => $this->getSetting('customAttribution'),
+      '#description' => t('Check your Tile Service Provider for policy'),
+    );
     $elements['serviceUrl'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Geocoding service url'),
       '#default_value' => $this->getSetting('serviceUrl'),
       '#description' => $this->t('Choose url like "https://nominatim.openstreetmap.org/"'),
     ];
+    $elements['LocationIQToken'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Use LocationIQ Service'),
+      '#description' => $this->t('Are you using the locationIQ Service?'),
+      '#default_value' => $this->getSetting('LocationIQToken'),
+    ];
     $elements['autoLocate'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Autolocate user'),
       '#description' => $this->t('Autolocate the user via GPS on widget display?'),
       '#default_value' => $this->getSetting('autoLocate'),
+    ];
+    $elements['fullscreenControl'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Fullscreen Control Widget'),
+      '#description' => $this->t('Show a fullscreen control on the map?'),
+      '#default_value' => $this->getSetting('fullscreenControl'),
+    ];
+
+    $elements['streetNumberFormat'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Address formatting (street search)'),
+      '#description' => $this->t('Check to use street name + building number format'),
+      '#default_value' => $this->getSetting('streetNumberFormat'),
     ];
     return $elements;
   }
@@ -155,6 +198,8 @@ class GeolocationNominatimWidget extends WidgetBase {
       'library' => [
         'geolocation_nominatim/leaflet',
         'geolocation_nominatim/leaflet-locatecontrol',
+        'geolocation_nominatim/leaflet-control-geocoder',
+        'geolocation_nominatim/leaflet-control-geocoder-city',
         'geolocation_nominatim/geolocation-nominatim-widget',
         'geolocation_nominatim/leaflet.fullscreen',
       ],
@@ -172,9 +217,15 @@ class GeolocationNominatimWidget extends WidgetBase {
               'setAddressField' => $this->getSetting('set_address_field'),
               'limitCountryCodes'  => $this->getSetting('limit_countrycodes'),
               'limitViewbox'  => $this->getSetting('limit_viewbox'),
+              'city'  => $this->getSetting('city'),
               'tileServerUrl'  => $this->getSetting('tileServerUrl'),
+              'wmsLayer'  => $this->getSetting('wmsLayer'),
+              'customAttribution'  => $this->getSetting('customAttribution'),
               'autoLocate' => $this->getSetting('autoLocate'),
+              'fullscreenControl' => $this->getSetting('fullscreenControl'),
+              'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
               'serviceUrl' => $this->getSetting('serviceUrl'),
+              'LocationIQToken' => $this->getSetting('LocationIQToken'),
             ],
           ],
         ],

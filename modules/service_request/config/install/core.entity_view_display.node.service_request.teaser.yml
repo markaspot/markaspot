@@ -9,6 +9,7 @@ dependencies:
     - field.field.node.service_request.field_e_mail
     - field.field.node.service_request.field_geolocation
     - field.field.node.service_request.field_request_image
+    - field.field.node.service_request.field_status
     - field.field.node.service_request.field_status_notes
     - image.style.header
     - node.type.service_request
@@ -16,6 +17,8 @@ dependencies:
     module:
       - service_request
   module:
+    - markaspot_group
+    - field_formatter_class
     - image
     - text
     - user
@@ -31,6 +34,7 @@ content:
     settings:
       trim_length: 140
     third_party_settings: {  }
+    region: content
   field_category:
     type: entity_reference_label
     weight: 2
@@ -38,6 +42,7 @@ content:
     settings:
       link: false
     third_party_settings: {  }
+    region: content
   field_request_image:
     type: image
     weight: 0
@@ -46,8 +51,20 @@ content:
       image_style: header
       image_link: ''
     third_party_settings: {  }
-  links:
+    region: content
+  field_status:
+    type: entity_reference_label
     weight: 4
+    region: content
+    label: visually_hidden
+    settings:
+      link: false
+    third_party_settings:
+      field_formatter_class:
+        class: ''
+  links:
+    weight: 3
+    region: content
     settings: {  }
     third_party_settings: {  }
 hidden:
@@ -55,4 +72,5 @@ hidden:
   field_e_mail: true
   field_geolocation: true
   field_status_notes: true
+  langcode: true
   shariff_field: true

@@ -6,7 +6,6 @@
  */
 
 use GuzzleHttp\Exception\RequestException;
-use GuzzleHttp\Exception\BadResponseException;
 use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
@@ -36,66 +35,73 @@ function markaspot_static_json_help($route_name, RouteMatchInterface $route_matc
 
 /**
  * Implements hook_cron().
- *
- * We implement hook_cron() to do "background" processing. It gets called every
- * time the Drupal cron runs. We then decide what has to happen in response.
- *
- * In this example, we log a message after the time given in its config
- * variable 'next_execution'. Then we update that variable to a time in the
- * future.
  */
 function markaspot_static_json_cron() {
-  // We access our configuration.
+
   $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
 
-  // Default to an hourly interval. Of course, cron has to be running at least
-  // half hourly for this to work.
-  $interval = $cron_config->get('interval');
-  $interval = !empty($interval) ? $interval : 1800;
+  $interval = $cron_config
+    ->get('interval');
+  $interval = !empty($interval) ? $interval : 3600;
 
-  // We usually don't want to act every time cron runs (which could be every
-  // minute) so keep a time for the next run in a variable.
-  $next_execution = $cron_config->get('markaspot_static_json.next_execution');
-  $next_execution = !empty($next_execution) ? $next_execution : 0;
-  if (REQUEST_TIME >= $next_execution) {
-
-    markaspot_static_json_request();
-    // This is a silly example of a cron job.
-    // It just makes it obvious that the job has run without
-    // making any changes to your database.
-    \Drupal::logger('Mark-a-Spot Static Json')->notice('Static JSON cron ran');
-    if (\Drupal::state()->get('mas_shown_status_message')) {
-      drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601(REQUEST_TIME)]));
-      \Drupal::state()->set('mas_shown_status_message', FALSE);
-    }
-    $cron_config->set('markaspot_static_json.next_execution', REQUEST_TIME + $interval)->save();
+  $settings_config = Drupal::configFactory()->getEditable('markaspot_static_json.settings');
+  // Set limit from config
+  $limit = $settings_config->get('limit');
+  $limit = !empty($limit) ? $limit : 50;
+  // Set start page.
+  $current_page = ($settings_config->get('reset') ===  1 || NULL === $settings_config->get('reset')) ? 0 : $cron_config->get('static_page');
+  // Get current max.
+  $count = markaspot_static_json_get_count();
+  // Calculate max pages.
+  $pages = ceil($count / $limit);
+  if ($current_page >= $pages - 1) {
+    $cron_config->set('static_page', $current_page);
   }
+  else {
+    $cron_config->set('static_page', $current_page + 1);
+  }
+
+  markaspot_static_json_request($limit, $current_page);
+  $request_time = \Drupal::time()->getRequestTime();
+  if (\Drupal::state()->get('mas_shown_status_message')) {
+    drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601($request_time)]));
+    \Drupal::state()->set('mas_shown_status_message', FALSE);
+  }
+  $cron_config->set('markaspot_static_json.next_execution', $request_time + $interval)->save();
+
 }
 
 /**
  * Client to receive json from georeport rest API.
  */
-function markaspot_static_json_request() {
+function markaspot_static_json_request($limit, $current_page) {
 
   // Preparing georeport API Request URI.
   $host = \Drupal::request()->getHost();
-  \Drupal::logger('Mark-a-Spot Static JSON')->notice('Host: '. $host);
+  \Drupal::logger('Mark-a-Spot Static JSON')->notice('Host: ' . $host);
 
   $path = 'public://requests.json';
   if (file_exists($path)) {
-    $file = file_get_contents($path, TRUE);
+    $json = file_get_contents($path, TRUE);
+    $static_service_requests = ($json == 'null') ? [] : json_decode($json);
   }
   else {
     \Drupal::logger('Mark-a-Spot Static JSON')
       ->warning(t('Static file could not be read.'));
-    $start_json = "[{\"servicerequest_id\":\"15-c5\",\"title\":\"#15-c5  Park Maintenance Complaint\",\"description\":null,\"lat\":40.737061,\"long\":-73.935242,\"address_string\":\",\",\"service_name\":\"Park Maintenance Complaint\",\"requested_datetime\":\"2018-01-05T12:56:36+00:00\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\",\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"service_code\":\"0002\",\"extended_attributes\":{\"markaspot\":{\"nid\":\"18\",\"category_hex\":\"#5f9ea0\",\"category_icon\":\"fa-tree\",\"status_hex\":\"#8B0000\",\"status_icon\":\"fa-play-circle-o\",\"status_notes\":[{\"status_note\":\"The service request has been created.\",\"status\":\"open\",\"updated_datetime\":\"2018-01-05T12:56:42+00:00\"}]}}}]";
-    $current_service_requests = json_decode($start_json, TRUE);
+    // Reset cron config to 0
+    $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
+    $cron_config->set('static_page', 0);
+
+    // $current_service_requests = json_decode($start_json, TRUE);.
+    file_save_data('[]', $path, FILE_EXISTS_REPLACE);
   }
 
   if ($host !== "default") {
     $cronkey = \Drupal::state()->get('system.cron_key');
-    $uri = '//' . $host . '/georeport/v2/requests.json?extensions=true&key=' . $cronkey;
-    \Drupal::logger('Mark-a-Spot Static JSON')->notice('Saving JSON from URL: '. $uri);
+    // todo:
+    // Make limit configurable.
+    $uri = '//' . $host . '/georeport/v2/requests.json?limit=' . $limit . '&page=' . $current_page . '&extensions=true&key=' . $cronkey;
+    \Drupal::logger('Mark-a-Spot Static JSON')->notice('Saving JSON from URL: ' . $uri);
 
     try {
       $response = \Drupal::httpClient()->get($uri);
@@ -106,8 +112,12 @@ function markaspot_static_json_request() {
       }
       markaspot_static_json_memory();
 
+      // Need at least an empty array
+      $static_service_requests = (empty($static_service_requests) || !is_array($static_service_requests)) ? [] : $static_service_requests;
+
       // Encode array.
-      $data = json_encode($current_service_requests);
+      $merged = array_merge_recursive($static_service_requests, $current_service_requests);
+      $data = json_encode($merged);
 
       $local = (file_exists($path)) ? file_save_data($data, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
       if (isset($local)) {
@@ -144,4 +154,15 @@ function markaspot_static_json_memory() {
 function markaspot_static_json_page_attachments(array &$attachments) {
   $attachments['#attached']['library'][] = 'markaspot_static_json/static_json';
   $attachments['#attached']['drupalSettings']['mas']['static_json'] = '1';
+}
+
+/**
+ * Count Requests.
+ */
+function markaspot_static_json_get_count() {
+  $query = \Drupal::entityQuery('node')
+    ->condition('status', 1)
+    ->condition('type', 'service_request');
+  $result = $query->count()->execute();
+  return $result;
 }

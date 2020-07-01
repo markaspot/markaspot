@@ -24,6 +24,8 @@ leaflet-awesome-markers:
   css:
     component:
       /libraries/drmonty-leaflet-awesome-markers/css/leaflet.awesome-markers.css: {}
+  dependencies:
+    - markaspot_map/font-awesome
 
 leaflet-fullscreen:
   js:
@@ -67,6 +69,8 @@ map:
   version: 8.x-1.x
   dependencies:
     - core/jquery.once
+    - markaspot_map/leaflet
+    - markaspot_map/leaflet-timedimension
   js:
     js/map.js: {}
   css:

@@ -1,0 +1,80 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_archive.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_archive_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_archive module.
+    case 'help.page.markaspot_archive':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Mark-a-Spot Archive') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function markaspot_archive_cron()
+{
+  $archivables = \Drupal::service('markaspot_archive.archive')->load();
+  $config = \Drupal::configFactory()->getEditable('markaspot_archive.settings');
+
+  foreach ($archivables as $archivable) {
+    if (null !== $config->get('unpublished')) {
+      $archivable->setPublished(false);
+    }
+    // Will there be field to get anonymized?
+    if(null !== $config->get('anonymize')) {
+      $anonymize_fields = $config->get('anonymize_fields');
+      markaspot_archive_anonymize($archivable, $anonymize_fields);
+    }
+    $archivable->field_status->target_id = $config->get('status_archived');
+    $archivable->save();
+  }
+}
+
+
+/**
+ * Anoynmize archivable node's archivable fields
+ *
+ * @param $archivable
+ * @param $anonymize_fields
+ *
+ * @return object
+ */
+function markaspot_archive_anonymize($archivable, $anonymize_fields) {
+  $definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', 'service_request');
+  $count_defintions = array_values($definitions);
+
+  foreach ($anonymize_fields as $anonymize_field) {
+
+    $type = $count_defintions[$anonymize_field]->getType();
+    $name = $count_defintions[$anonymize_field]->getName();
+    
+    $random_string = substr(str_shuffle(MD5(microtime())), 0, 10);
+    switch ($type) {
+      case 'email':
+        $value =  $random_string. '@' . 'anonymized.off';
+        break;
+      case 'telephone':
+        $value = '+49-0123459995555';
+        break;
+      default:
+        $value = $random_string;
+    }
+    $archivable->{$name}->value = $value;
+  }
+  return $archivable;
+}

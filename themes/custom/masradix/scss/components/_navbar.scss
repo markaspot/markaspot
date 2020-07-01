@@ -1,7 +1,55 @@
-@media (min-width: 768px) {
-    .navbar-nav {
-        float: none!important;
-        margin: 0;
+@media (min-width: $screen-lg) {
+
+    .navbar-left {
+        float: left !important;
+        margin: 20px;
     }
 }
 
+@media (max-width: $screen-md-max) {
+    .navbar-nav {
+        float: none!important;
+        margin: 0;
+
+    }
+
+    .navbar-toggle.offcanvas-toggle {
+        position: fixed;
+        right: 0;
+        top: 10px;
+        z-index:9999
+    }
+    .page--logged-in .navbar-toggle{
+        top: 50px;
+    }
+}
+
+.navbar-toggle {
+  @media (max-width: $screen-md) {
+    display: block;
+  }
+  @media (min-width: $screen-sm) {
+     .icon-bar {
+      display: block;
+      width: 25px;
+      height: 3px;
+      border-radius: 1px;
+    }
+  }
+}
+
+.navbar {
+  min-height: 20px;
+}
+.navbar-default {
+    border-color: transparent;
+    background-color: transparent;
+}
+.navbar-default .navbar-toggle:hover, .navbar-default .navbar-toggle:focus {
+    background-color: transparent;
+}
+
+.navbar-default .navbar-toggle {
+    border-color: transparent;
+    
+}

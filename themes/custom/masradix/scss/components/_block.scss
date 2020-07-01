@@ -17,11 +17,6 @@
   margin: 60px 20px 0 0;
 }
 
-.block--userlogin ul {
-
-}
-
-
 // Info block for front-page.
 
 
@@ -123,6 +118,12 @@ a.btn-circle span {
   overflow: hidden;
 }
 
+// Map front-page.
+
+.page--front h4 {
+    display:none;    
+}
+
 // Footer
 .scroll-to-top.show {
   z-index: 999;
@@ -214,10 +215,6 @@ a.btn-circle span {
   line-height: 35px;
 }
 
-
-.block-content--mas-custom {
-  margin: 50px 20px 0 0;
-}
 
 .block-content--masradix-direct-links.mas-custom {
   margin: 50px 0;

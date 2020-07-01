@@ -49,13 +49,16 @@ class DoublePostConstraintValidator extends ConstraintValidator {
    * {@inheritdoc}
    */
   public function validate($field, Constraint $constraint) {
+    $session = \Drupal::requestStack()->getCurrentRequest()->getSession();
 
     $user = \Drupal::currentUser();
     $user->hasPermission('bypass mas validation');
     if (!$user->hasPermission('bypass mas validation')) {
       $nids = $this->checkEnvironment(floatval($field->lng), floatval($field->lat));
+      $session_ident = !empty($nids) ? end($nids) : '';
     }
     else {
+      $session_ident = '';
       $nids = [];
     }
 
@@ -68,31 +71,48 @@ class DoublePostConstraintValidator extends ConstraintValidator {
       foreach ($nodes as $node) {
         $options = array('absolute' => TRUE);
         $url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], $options);
-        $link_options = array(
-          'attributes' => array(
-            'class' => array(
+        $link_options = [
+          'attributes' => [
+            'class' => [
               'doublepost',
-            ),
-            'data-history-node-id' => array(
+              'use-ajax'
+            ],
+            'data-dialog-type' => 'modal',
+            'data-history-node-id' => [
               $node->id(),
-            ),
-          ),
-        );
+            ],
+          ],
+        ];
         $url->setOptions($link_options);
-        $unit = ($this->unit == 'yards') ? 'miles' : 'kilometers';
+        $unit = ($this->unit == 'yards') ? 'yards' : 'meters';
 
+        $message_string = 'We found a recently added report of the same category with ID @id within a radius of @radius @unit.';
         $message = [];
-        $message[] = Link::fromTextAndUrl($this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.',
-          array(
+        $message[] = Link::fromTextAndUrl($this->t($message_string,
+          [
             '@id' => $node->request_id->value,
             '@radius' => $this->radius,
             '@unit' => $unit,
-          )), $url)->toString();
+          ]), $url)->toString();
       }
 
-      $this->context->addViolation(implode("\n", $message));
+      $iteration = $session->get('ignore_dublicate_' . $session_ident);
+      $treshold = $this->configFactory->get('treshold') ? $this->configFactory->get('treshold') : '0';
+      if ($iteration <= $treshold && $this->configFactory->get('hint') == TRUE) {
+
+        $message_append = $this->t('You can ignore this message or help us by comparing the possible duplicate and clicking on the link.');
+        $this->context->addViolation(implode("\n", $message) . '</br>' . $message_append);
+        $session->set('ignore_dublicate_' . $session_ident, $iteration + 1);
+
+      } else if ($this->configFactory->get('hint') == FALSE){
+
+        $message_append = $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!');
+        $this->context->addViolation(implode("\n", $message). '</br>' . $message_append);
+      }
+
     }
     else {
+      $session->set('ignore_dublicate_' . $session_ident, 0);
       return TRUE;
     }
   }

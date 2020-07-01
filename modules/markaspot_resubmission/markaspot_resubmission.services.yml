@@ -1,0 +1,4 @@
+services:
+  markaspot_resubmission.resubmission:
+    class: Drupal\markaspot_resubmission\ResubmissionService
+    arguments: ['@entity_type.manager', '@config.factory']
