@@ -34,7 +34,7 @@ class MarkaspotPrivacySettingsForm extends ConfigFormBase {
     $form['markaspot_privacy']['field_save'] = array(
       '#type' => 'checkbox',
       '#title' => t('Safe user input with service request.'),
-      '#default_value' => $config->get('hint'),
+      '#default_value' => $config->get('field_save'),
       '#description' => t('Use Drupal fields for saving checked value to database.'),
     );
 
@@ -49,7 +49,7 @@ class MarkaspotPrivacySettingsForm extends ConfigFormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
     $this->config('markaspot_privacy.settings')
-      ->set('field_save', $values['hint'])
+      ->set('field_save', $values['field_save'])
       ->save();
 
     parent::submitForm($form, $form_state);
