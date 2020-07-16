@@ -123,17 +123,20 @@ class GeoreportProcessor {
 
         $nid = array('nid' => $node->nid->value);
         if (isset($node->field_category)) {
+          $term = Term::load($node->field_category->target_id);
           $category = [
-            'category_hex' => Term::load($node->field_category->target_id)->field_category_hex->color,
-            'category_icon' => Term::load($node->field_category->target_id)->field_category_icon->value,
+            'category_hex' => $term->field_category_hex->color,
+            'category_icon' => $term->field_category_icon->value,
           ];
         }
 
         if (isset($node->field_status_notes)) {
+          $term = Term::load($note->entity->field_status_term->target_id);
           foreach ($node->field_status_notes as $note) {
             if (isset($note->entity->field_status_term->target_id)){
-              $status['status_hex'] = Term::load($note->entity->field_status_term->target_id)->field_status_hex->color;
-              $status['status_icon'] = Term::load($note->entity->field_status_term->target_id)->field_status_icon->value;
+              $status['status_descriptive_name'] = $term->name->value;
+              $status['status_hex'] = $term->field_status_hex->color;
+              $status['status_icon'] = $term->field_status_icon->value;
             }
           }
 
