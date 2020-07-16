@@ -188,15 +188,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
     ("Unauthorized can't proceed with create_request.");
     }
      */
+    $request_time = \Drupal::time()->getRequestTime();
+
+
     $parameters = UrlHelper::filterQueryParameters(\Drupal::request()->query->all());
     // Filtering the configured content type.
     $bundle = $this->config->get('bundle');
     $bundle = (isset($bundle)) ? $bundle : 'service_request';
     $query = \Drupal::entityQuery('node')
-      ->condition('changed', REQUEST_TIME, '<')
+      ->condition('changed', $request_time, '<')
       ->condition('type', $bundle);
 
-    if (in_array('administrator',$this->currentUser->getRoles()) || $this->currentUser->hasPermission('access open311 advanced properties')) {
+    if (in_array('administrator', $this->currentUser->getRoles()) || $this->currentUser->hasPermission('access open311 advanced properties')) {
       $query->condition('status', array(0, 1), 'IN');
     } else {
       $query->condition('status', 1);
@@ -227,6 +230,12 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // Process params to Drupal.
     $map = new GeoreportProcessor();
 
+    if (isset($parameters['sort']) && $parameters['sort'] == "desc") {
+      $sort = 'DESC';
+    } else {
+      $sort = 'ASC';
+    }
+
     // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['service_code'])) {
       // Get the service of the current node:
@@ -240,7 +249,15 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->condition('request_id', $parameters['id']);
     }
 
-    // Checking for service_code and map the code with taxonomy terms:
+    if (isset($parameters['updated'])) {
+      $seconds = strtotime($parameters['updated']);
+      $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=');
+      $query->sort('changed', $direction = 'DESC');
+    } else {
+      $query->sort('created', $direction = $sort);
+
+    }
+      // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['q'])) {
       // Get the service of the current node:
       $group = $query->orConditionGroup()
@@ -258,12 +275,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // End_date param or create a timestamp now:
     $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
     $query->condition('created', $end_timestamp, '<=');
-    if (isset($parameters['sort']) && $parameters['sort'] == "desc") {
-      $sort = 'DESC';
-    } else {
-      $sort = 'ASC';
-    }
-    $query->sort('created', $direction = $sort);
 
     $query->accessCheck(FALSE);
 
