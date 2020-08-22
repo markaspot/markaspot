@@ -252,7 +252,13 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       const $serviceRequests = $(masSettings.nid_selector);
       $serviceRequests.hover(function() {
         const nid = this.dataset.historyNodeId;
-        Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+        const $node = this;
+        scrolledMarker.forEach(function(value){
+          if (value["nid"] == nid) {
+            $node.classList.toggle("focus");
+            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+          }
+        })
       });
       // Loop through all current teasers.
 
@@ -607,6 +613,19 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
             const { nid } = request.extended_attributes.markaspot;
             const markerColor = categoryColor;
             const latlon = new L.LatLng(request.lat, request.long);
+
+            // No markers on default position
+            masSettings =  drupalSettings.mas;
+            const center = {};
+            const pos = {};
+            pos.long = Number((request.long).toFixed(3));
+            pos.lat = Number((request.lat).toFixed(3));
+            center.lat = parseFloat(masSettings.center_lat).toFixed(3);
+            center.lng = parseFloat(masSettings.center_lng).toFixed(3);
+            if (center.lat == pos.lat && center.lng == pos.long) {
+              return;
+            }
+
             const marker = new L.Marker(latlon, {
               icon,
               nid,
