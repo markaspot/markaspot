@@ -212,9 +212,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Handle limit parameters for user one and other users.
-    $limit = (isset($is_admin)) ? NULL : 25;
+    $limit = (isset($is_admin)) ? NULL : 1000;
     $query_limit = (isset($parameters['limit'])) ? $parameters['limit'] : NULL;
-    $limit = (isset($query_limit) && $query_limit <= 50) ? $query_limit : $limit;
+    $limit = (isset($query_limit) && $query_limit <= 1000) ? $query_limit : $limit;
 
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
@@ -269,7 +269,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // start_date param or travel back to 1970.
-    $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '') ? strtotime($parameters['start_date']) : strtotime('01-01-1970');
+    $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '') ? strtotime($parameters['start_date']) : strtotime("- 90days");
     $query->condition('created', $start_timestamp, '>=');
 
     // End_date param or create a timestamp now:
