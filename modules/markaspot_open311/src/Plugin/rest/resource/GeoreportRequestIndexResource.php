@@ -295,7 +295,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
     if (isset($parameters['extensions'])) {
 
-      $extended_role = 'anonymous';
+      // $extended_role = 'anonymous';
 
       if ($this->currentUser->hasPermission('access open311 extension')) {
         $extended_role = 'user';
