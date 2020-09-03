@@ -104,7 +104,11 @@ set category_icon = [
   {% endif %}
 
   <div{{ content_attributes.addClass('content') }}>
-    {{ content|without('field_status_notes', 'field_status', 'field_category') }}
+    {% if not (node.field_no_location.isEmpty == true) and content.field_no_location is defined %}
+      {{ content|without('field_status_notes', 'field_status', 'field_category') }}
+    {% else %}
+      {{ content|without('field_address', 'field_status_notes', 'field_status', 'field_category') }}
+    {% endif %}
   </div>
   <div class="container category-status">
     <div class="service-request__field-status col-sm-{{ cols }} {{ 'color-'  ~  mas_status['color']|lower  }}"><div class="field__item label label-default"><span class="fa {{ mas_status['icon'] }} "></span><div class="field__item label label-default">{{ mas_status['label'] }}</div></div></div>
