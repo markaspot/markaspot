@@ -131,9 +131,10 @@ class GeoreportProcessor {
         }
 
         if (isset($node->field_status_notes)) {
-          $term = Term::load($note->entity->field_status_term->target_id);
           foreach ($node->field_status_notes as $note) {
             if (isset($note->entity->field_status_term->target_id)){
+              $term = Term::load($note->entity->field_status_term->target_id);
+
               $status['status_descriptive_name'] = $term->name->value;
               $status['status_hex'] = $term->field_status_hex->color;
               $status['status_icon'] = $term->field_status_icon->value;

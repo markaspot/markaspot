@@ -644,7 +644,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           padding: [50, 50]
         });
       } else {
-        Drupal.Markaspot.maps[0].setView(markerLayer);
+        Drupal.markaspot_map.setDefaults();
       }
       return markerLayer;
     },
