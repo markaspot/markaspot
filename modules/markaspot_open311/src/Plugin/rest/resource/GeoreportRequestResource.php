@@ -2,8 +2,8 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
-use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\rest\Plugin\ResourceBase;
 use Drupal\rest\ResourceResponse;
@@ -165,12 +165,17 @@ class GeoreportRequestResource extends ResourceBase {
   public function get($id) {
 
     $parameters = UrlHelper::filterQueryParameters(\Drupal::request()->query->all());
-
+    // Filtering the configured content type.
+    $bundle = $this->config->get('bundle');
+    $bundle = (isset($bundle)) ? $bundle : 'service_request';
     $query = \Drupal::entityQuery('node')
-      ->condition('status', 1);
+      ->condition('type', $bundle);
     if ($id != "") {
       $query->condition('request_id', $this->getRequestId($id));
     }
+
+    $query->accessCheck(FALSE);
+
 
     $map = new GeoreportProcessor();
 
@@ -187,14 +192,17 @@ class GeoreportRequestResource extends ResourceBase {
       ->loadMultiple($nids);
 
     // Extensions.
-    $extensions = [];
+    $extended_role = NULL;
+
     if (isset($parameters['extensions'])) {
-      $extendend_permission = 'access open311 extension';
-      if ($this->currentUser->hasPermission($extendend_permission)) {
-        $extensions = array('anonymous', 'role');
+
+      // $extended_role = 'anonymous';
+
+      if ($this->currentUser->hasPermission('access open311 extension')) {
+        $extended_role = 'user';
       }
-      else {
-        $extensions = array('anonymous');
+      if ($this->currentUser->hasPermission('access open311 advanced properties')) {
+        $extended_role = 'manager';
       }
     }
 
@@ -203,7 +211,7 @@ class GeoreportRequestResource extends ResourceBase {
 
     foreach ($nodes as $node) {
       $status = "closed";
-      $service_requests[] = $map->nodeMapRequest($node, $extensions, $id);
+      $service_requests[] = $map->nodeMapRequest($node, $extended_role, $id);
     }
     if (!empty($service_requests)) {
       $response = new ResourceResponse($service_requests, 200);

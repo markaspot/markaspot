@@ -1,6 +1,19 @@
 
 # Changelog
 
+## [8.5.0] - 2020-07-01
+
+- Update Core to 8.9.1
+- Added Privacy (GDPR) Module
+- Added Resubmission Module
+- Added settings and reset to Static JSON Module
+- Update Geolocation Nominatim Module
+- Update dependent Drupal Modules
+
+## [8.4.4] - 2018-09-19
+
+- Fix installation issues with 8.6 and default content module (#74)
+
 ## [8.4.3] - 2018-09-17
 
 - Update Core to >8.6
