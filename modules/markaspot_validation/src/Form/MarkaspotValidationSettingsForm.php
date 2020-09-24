@@ -36,6 +36,12 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('wkt'),
       '#description' => t('Place your polygon wkt here. You can <a href="@wkt-editor">create and edit</a> the vectors online. Leave this empty, if you don\'t need polygon validation.', ['@wkt-editor' => 'https://arthur-e.github.io/Wicket/sandbox-gmaps3.html']),
     );
+    $form['markaspot_validation']['duplicate_check'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Duplicate Request check enabled'),
+      '#default_value' => $config->get('duplicate_check'),
+      '#description' => t('Check if new requests get a duplicate check.'),
+    );
 
     $form['markaspot_validation']['radius'] = array(
       '#type' => 'textfield',
@@ -57,7 +63,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
 
     $form['markaspot_validation']['hint'] = array(
       '#type' => 'checkbox',
-      '#title' => t('Validate dublicates only as a hint'),
+      '#title' => t('Validate duplicates only as a hint'),
       '#default_value' => $config->get('hint'),
       '#description' => t('Users can ignore this validation note by resubmitting the report form.'),
     );
@@ -105,6 +111,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
     $this->config('markaspot_validation.settings')
       ->set('wkt', $values['wkt'])
+      ->set('duplicate_check', $values['duplicate_check'])
       ->set('radius', $values['radius'])
       ->set('unit', $values['unit'])
       ->set('days', $values['days'])

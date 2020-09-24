@@ -50,7 +50,10 @@ class DoublePostConstraintValidator extends ConstraintValidator {
    */
   public function validate($field, Constraint $constraint) {
     $session = \Drupal::requestStack()->getCurrentRequest()->getSession();
-
+    $status = $this->configFactory->get('duplicate_check');
+    if ($status === 0){
+      return;
+    }
     $user = \Drupal::currentUser();
     $user->hasPermission('bypass mas validation');
     if (!$user->hasPermission('bypass mas validation')) {

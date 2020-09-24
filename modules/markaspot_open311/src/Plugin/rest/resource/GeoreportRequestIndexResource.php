@@ -268,14 +268,15 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->condition($group);
     }
 
-    // start_date param or travel back to 1970.
-    $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '') ? strtotime($parameters['start_date']) : strtotime("- 90days");
-    $query->condition('created', $start_timestamp, '>=');
+    if (!isset($parameters['nids'])) {
+      // start_date param or max 90days.
+      $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '') ? strtotime($parameters['start_date']) : strtotime("- 90days");
+      $query->condition('created', $start_timestamp, '>=');
 
-    // End_date param or create a timestamp now:
-    $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
-    $query->condition('created', $end_timestamp, '<=');
-
+      // End_date param or create a timestamp now:
+      $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
+      $query->condition('created', $end_timestamp, '<=');
+    }
     $query->accessCheck(FALSE);
 
     // Checking for status-parameter and map the code with taxonomy terms:

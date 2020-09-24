@@ -97,6 +97,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
   var currentPath = drupalSettings.path.currentPath;
   currentPath = "/".concat(currentPath);
   var masSettings = drupalSettings.mas;
+
   Drupal.behaviors.markaspot_map = {
     attach: function attach(context, settings) {
       Drupal.Markaspot.settings = masSettings; // Make map stick to the page top or wherever, override via theme.
@@ -135,7 +136,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
 
         if (currentPath === "/node") {
           Drupal.markaspot_map.createHeatMapLayer(map); // heatMapLayer.addTo(map);
-
           Drupal.markaspot_map.setDefaults();
         }
 
@@ -250,7 +250,13 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       var $serviceRequests = $(masSettings.nid_selector);
       $serviceRequests.hover(function() {
         var nid = this.dataset.historyNodeId;
-        Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+        var $node = this;
+        scrolledMarker.forEach(function(value){
+          if (value['nid'] == nid) {
+            $node.classList.toggle("focus");
+            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+          }
+        })
       }); // Loop through all current teasers.
 
       $serviceRequests.each(function() {
@@ -280,7 +286,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         masSettings.center_lng
       );
       var map = Drupal.Markaspot.maps[0];
-
       if (typeof map !== "undefined") {
         map.setView(defaultCenter, masSettings.zoom_initial);
       }
@@ -610,6 +615,19 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
             var nid = request.extended_attributes.markaspot.nid;
             var markerColor = categoryColor;
             var latlon = new L.LatLng(request.lat, request.long);
+
+            // No markers on default position
+            masSettings =  drupalSettings.mas;
+            const center = {};
+            const pos = {};
+            pos.long = Number((request.long).toFixed(3));
+            pos.lat = Number((request.lat).toFixed(3));
+            center.lat = parseFloat(masSettings.center_lat).toFixed(3);
+            center.lng = parseFloat(masSettings.center_lng).toFixed(3);
+            if (center.lat == pos.lat && center.lng == pos.long) {
+              return;
+            }
+
             var marker = new L.Marker(latlon, {
               icon: icon,
               nid: nid,
@@ -628,7 +646,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           padding: [50, 50]
         });
       } else {
-        Drupal.Markaspot.maps[0].setView(markerLayer);
+        Drupal.markaspot_map.setDefaults();
       }
 
       return markerLayer;
