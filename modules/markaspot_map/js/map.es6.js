@@ -232,21 +232,22 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       }
       if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
         localStorage.setItem("storedNids", JSON.stringify(nids));
-        if (typeof markerLayer !== undefined){
+        if (typeof markerLayer !== "undefined"){
           markerLayer.clearLayers(); // Load and showData on map.
-        }        // Load and showData on map.
-        Drupal.markaspot_map.load(data => {
-          Drupal.markaspot_map.showData(data);
-          markerLayer.eachLayer(layer => {
-            // Define marker-properties for Scrolling.
-            const { nid } = layer.options;
-            scrolledMarker[nid] = {
-              latlng: layer.getLatLng(),
-              nid: layer.options.nid,
-              color: layer.options.color
-            };
-          });
-        }, nids);
+                // Load and showData on map.
+            Drupal.markaspot_map.load(data => {
+              Drupal.markaspot_map.showData(data);
+              markerLayer.eachLayer(layer => {
+                // Define marker-properties for Scrolling.
+                const { nid } = layer.options;
+                scrolledMarker[nid] = {
+                  latlng: layer.getLatLng(),
+                  nid: layer.options.nid,
+                  color: layer.options.color
+                };
+              });
+            }, nids);
+        }
       }
       // Theme independent selector.
       const $serviceRequests = $(masSettings.nid_selector);
@@ -270,7 +271,12 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
             if (typeof scrolledMarker[nid] !== "undefined") {
               Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
               this.element.classList.add("focus");
+            } else {
+              this.element.classList.add("no-location");
+              Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
+              return;                
             }
+            
             if (direction === "up") {
               this.element.classList.remove("focus");
             }

@@ -230,21 +230,23 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
 
       if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
         localStorage.setItem("storedNids", JSON.stringify(nids));
-        if (typeof markerLayer !== undefined){
+        if (typeof markerLayer !== "undefined"){
             markerLayer.clearLayers(); // Load and showData on map.
+        
+            Drupal.markaspot_map.load(function(data) {
+              Drupal.markaspot_map.showData(data);
+              markerLayer.eachLayer(function(layer) {
+                // Define marker-properties for Scrolling.
+                var nid = layer.options.nid;
+                scrolledMarker[nid] = {
+                  latlng: layer.getLatLng(),
+                  nid: layer.options.nid,
+                  color: layer.options.color
+                };
+              });
+            }, nids
+          );
         }
-        Drupal.markaspot_map.load(function(data) {
-          Drupal.markaspot_map.showData(data);
-          markerLayer.eachLayer(function(layer) {
-            // Define marker-properties for Scrolling.
-            var nid = layer.options.nid;
-            scrolledMarker[nid] = {
-              latlng: layer.getLatLng(),
-              nid: layer.options.nid,
-              color: layer.options.color
-            };
-          });
-        }, nids);
       } // Theme independent selector.
 
       var $serviceRequests = $(masSettings.nid_selector);
@@ -268,6 +270,10 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
             if (typeof scrolledMarker[nid] !== "undefined") {
               Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
               this.element.classList.add("focus");
+            } else {
+              this.element.classList.add("no-location");
+              Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
+              return;                
             }
 
             if (direction === "up") {
@@ -625,6 +631,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
             center.lat = parseFloat(masSettings.center_lat).toFixed(3);
             center.lng = parseFloat(masSettings.center_lng).toFixed(3);
             if (center.lat == pos.lat && center.lng == pos.long) {
+
               return;
             }
 
