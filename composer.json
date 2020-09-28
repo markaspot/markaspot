@@ -81,7 +81,7 @@
     "drupal/search_api": "^1.5",
     "drupal/views_infinite_scroll": "^1.5",
     "drupal/better_exposed_filters": "^4.0",
-    "drupal/default_content": "1.x-dev",
+    "drupal/default_content": "2.x-dev",
     "drupal/color_field": "2.x-dev",
     "drupal/field_permissions": "1.x-dev",
     "drupal/twig_tweak": "^2.0",
