@@ -19,10 +19,6 @@
     {
       "type": "composer",
       "url": "https://asset-packagist.org"
-    },
-    {
-      "type": "vcs",
-      "url": "https://github.com/OpencachingDeutschland/geoPHP"
     }
   ],
   "require": {
@@ -52,7 +48,7 @@
     "bower-asset/bootstrap-offcanvas": "^2.5",
     "oomphinc/composer-installers-extender": "^1.1",
     "composer/installers": "^1.2",
-    "phayes/geophp": "dev-master",
+    "funiq/geophp": "dev-master",
     "anthonymartin/geo-location": "^1.0",
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
@@ -86,27 +82,12 @@
     "drupal/field_permissions": "1.x-dev",
     "drupal/twig_tweak": "^2.0",
     "drupal/field_formatter_class":"^1.0",
-    "drupal/hide_revision_field": "^1.1",
     "drupal/page_manager": "4.x-dev",
     "drupal/panels": "^4.2",
-    "drupal/entity_clone": "1.x-dev",
-    "drupal/pbf": "^1.1",
-    "drupal/quick_node_clone": "^1.5",
-    "drupal/tac_lite": "^1.4",
-    "drupal/views_bulk_edit": "^2",
-    "drupal/views_bulk_operations": "^2",
-    "drupal/devel": "^2"
+    "drupal/pbf": "^1.1"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
-  "scripts": {
-    "post-install-cmd": [
-      "DrupalComposer\\DrupalScaffold\\Plugin::scaffold"
-    ],
-    "post-update-cmd": [
-      "DrupalComposer\\DrupalScaffold\\Plugin::scaffold"
-    ]
-  },
   "extra": {
     "installer-types": [
       "bower-asset",
