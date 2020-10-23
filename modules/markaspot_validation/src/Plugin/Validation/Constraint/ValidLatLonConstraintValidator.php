@@ -5,7 +5,7 @@ namespace Drupal\markaspot_validation\Plugin\Validation\Constraint;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\Polygon;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
-use GeoPHP\GeoPHP;
+use \geoPHP\geoPHP;
 
 /**
  * Validates the LatLon constraint.
@@ -43,11 +43,14 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
     $wkt = $config->get('wkt');
     if ($wkt !== '') {
       // Transform wkt to json.
-      $geom = GeoPHP::load($wkt, 'wkt');
+      $geom = GeoPHP::load($wkt);
       $json = $geom->out('json');
       $data = json_decode($json);
       $polygon = new Polygon($data->coordinates[0]);
-      return $polygon->contain($lng, $lat);
+      return $polygon->contain($lng,$lat);
+
+      // $polygon = new Polygon($data->coordinates[0]);
+      // return $polygon->contain($lng, $lat);
     }
     else {
       return TRUE;
