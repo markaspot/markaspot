@@ -41,7 +41,6 @@ class DoublePostConstraintValidator extends ConstraintValidator {
    *   The configuration factory.
    */
   public function __construct() {
-    // $this->config = \Drupal::service('config.factory')->get('markaspot_validation.settings');.
     $this->configFactory = \Drupal::config('markaspot_validation.settings');
   }
 

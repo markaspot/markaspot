@@ -43,7 +43,7 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
     $wkt = $config->get('wkt');
     if ($wkt !== '') {
       // Transform wkt to json.
-      $geom = GeoPHP::load($wkt);
+      $geom = geoPHP::load($wkt, 'wkt');
       $json = $geom->out('json');
       $data = json_decode($json);
       $polygon = new Polygon($data->coordinates[0]);

@@ -16,6 +16,7 @@ function markaspot_validation_entity_bundle_field_info_alter(&$fields, EntityTyp
       case 'service_request':
         $latlon = $fields['field_geolocation'];
         $latlon->addConstraint('ValidLatLon');
+        $latlon->addConstraint('DefaultLocation');
         $latlon->addConstraint('DoublePost');
         break;
     }

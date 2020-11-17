@@ -86,6 +86,12 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#description' => t('How many days to reach back for similar requests'),
     );
 
+    $form['markaspot_validation']['defaultLocation'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Force new location if default lat/lon is posted'),
+      '#default_value' => $config->get('defaultLocation'),
+      '#description' => t('Remove this setting if you use field_unlocated feature'),
+    );
     return parent::buildForm($form, $form_state);
   }
 
@@ -117,6 +123,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       ->set('days', $values['days'])
       ->set('hint', $values['hint'])
       ->set('treshold', $values['treshold'])
+      ->set('defaultLocation', $values['defaultLocation'])
       ->save();
 
     parent::submitForm($form, $form_state);
