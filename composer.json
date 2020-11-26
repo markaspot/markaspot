@@ -46,7 +46,7 @@
     "npm-asset/vue-chartjs": "^3.4",
     "npm-asset/vue-router": "^3.0",
     "bower-asset/bootstrap-offcanvas": "^2.5",
-    "oomphinc/composer-installers-extender": "^1.1",
+    "oomphinc/composer-installers-extender": "^2",
     "composer/installers": "^1.2",
     "funiq/geophp": "dev-master",
     "anthonymartin/geo-location": "^1.0",
