@@ -95,7 +95,6 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
     // All REST routes are restricted to exactly one format, so instead of
     // parsing it out of the Accept headers again, we can simply retrieve the
     // format requirement. If there is no format associated, just pick JSON.
-    // $format =
     // $route_match->getRouteObject()->getRequirement('_format') ?: 'json';.
     $current_path = \Drupal::service('path.current')->getPath();
 
@@ -105,8 +104,6 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
 
     // Handle id params requests.
     if (isset($id_suffix) && $id_suffix[0] != '') {
-
-      // $format =
       // $route_match->getRouteObject()->getRequirement('_format') ?: 'json';
       // All about this discussion:
       // http://www.metaltoad.com/blog/why-drupal-8-wont-ship-with-REST-content-negotiation
@@ -115,7 +112,7 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
     }
 
     try {
-      $response = call_user_func_array(array($resource, $method), array_merge($parameters, array($unserialized, $request)));
+      $result = call_user_func_array(array($resource, $method), array_merge($parameters, array($unserialized, $request)));
     }
     catch (HttpException $e) {
       $error['error'] = $e->getMessage();
@@ -125,30 +122,12 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
       $headers = $e->getHeaders() + array('Content-Type' => $request->getMimeType($format));
       return new Response($content, $e->getStatusCode(), $headers);
     }
+    $result = $serializer->serialize($result, $format);
 
-    if ($response instanceof ResourceResponse) {
-      $data = $response->getResponseData();
-      // Serialization can invoke rendering (e.g., generating URLs), but the
-      // serialization API does not provide a mechanism to collect the
-      // bubbleable metadata associated with that (e.g., language and other
-      // contexts), so instead, allow those to "leak" and collect them here in
-      // a render context.
-      // @todo Add test coverage for language negotiation contexts in
-      //   https://www.drupal.org/node/2135829.
-      $context = new RenderContext();
-      $output = $this->container->get('renderer')->executeInRenderContext($context, function () use ($serializer, $data, $format) {
-        return $serializer->serialize($data, $format);
-      });
-      $response->setContent($output);
-      $response->addCacheableDependency($output);
-      if (!$context->isEmpty()) {
-        // $response->addCacheableDependency($context->pop());
-      }
-
-      $response->headers->set('Content-Type', $request->getMimeType($format));
-      // Add rest settings config's cache tags.
-      // $response->addCacheableDependency($this->container->get('config.factory')->get('rest.settings'));.
-    }
+    $response = new Response();
+    $response->headers->set('Content-Type', $request->getMimeType($format));
+    $response->setContent($result);
+    // $response->addCacheableDependency($result);
     return $response;
   }
 

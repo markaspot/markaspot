@@ -4,9 +4,10 @@ namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Component\Utility\UrlHelper;
+use Drupal\Core\Render\BubbleableMetadata;
+use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\rest\Plugin\ResourceBase;
-use Drupal\rest\ResourceResponse;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -186,11 +187,9 @@ class GeoreportRequestResource extends ResourceBase {
     }
 
     $nids = $query->execute();
-
     $nodes = \Drupal::entityTypeManager()
       ->getStorage('node')
       ->loadMultiple($nids);
-
     // Extensions.
     $extended_role = NULL;
 
@@ -207,17 +206,11 @@ class GeoreportRequestResource extends ResourceBase {
     }
 
     // Building requests array.
-    $service_requests = [];
-
     foreach ($nodes as $node) {
-      $status = "closed";
-      $service_requests[] = $map->nodeMapRequest($node, $extended_role, $id);
+      $service_requests[] = $map->nodeMapRequest($node, $extended_role);
     }
     if (!empty($service_requests)) {
-      $response = new ResourceResponse($service_requests, 200);
-      $response->addCacheableDependency($service_requests);
-
-      return $response;
+      return $service_requests;;
     }
     else {
       throw new HttpException(404, "No Service requests found");
@@ -239,43 +232,58 @@ class GeoreportRequestResource extends ResourceBase {
         throw new AccessDeniedHttpException();
       }
 
-      $map = new GeoreportProcessor();
-      $request_id = $this->getRequestId($id);
+      $context = new RenderContext();
+      /* @var \Drupal\Core\Cache\CacheableDependencyInterface $result */
 
-      $request_data['service_request_id'] = $request_id;
-      $values = $map->requestMapNode($request_data);
+      $result = \Drupal::service('renderer')->executeInRenderContext($context, function () use ($id, $request_data){
+        // do_things() triggers the code that we don't don't control that in turn triggers early rendering.
+        return $this->updateNode($id, $request_data);
+      });
 
-      // Retrvieve the preloaded node object.
-      $node = $values['node'];
-      unset($values['node']);
-
-      foreach (array_keys($values) as $field_name) {
-        $node->set($field_name, $values[$field_name]);
-
+      if (!$context->isEmpty()) {
+        $bubbleable_metadata = $context->pop();
+        BubbleableMetadata::createFromObject($result)
+          ->merge($bubbleable_metadata);
       }
-      // todo: add validation:
-      $node->save();
+      // return result to handler for formatting and response.
+      return $result;
 
-      // Save the node and prepare response;.
-      $request_id = $node->request_id->value;
-
-      $this->logger->notice('Updated node with ID %request_id.', array(
-        '%request_id' => $node->request_id->value,
-      ));
-
-      $service_request = [];
-      if (isset($node)) {
-        $service_request['service_requests']['request']['service_request_id'] = $request_id;
-      }
-      $response = new ResourceResponse($service_request, 201);
-      $response->addCacheableDependency($service_request);
-
-      return $response;
     }
     catch (EntityStorageException $e) {
       throw new HttpException(500, 'Internal Server Error', $e);
     }
 
+  }
+
+  public function updateNode($id, $request_data) {
+    $map = new GeoreportProcessor();
+    $request_id = $this->getRequestId($id);
+
+    $request_data['service_request_id'] = $request_id;
+    $values = $map->requestMapNode($request_data);
+
+    // Retrieve the preloaded node object.
+    $node = $values['node'];
+    unset($values['node']);
+
+    foreach (array_keys($values) as $field_name) {
+      $node->set($field_name, $values[$field_name]);
+    }
+    // todo: add validation
+    $node->save();
+
+    // Save the node and prepare response;.
+    $request_id = $node->request_id->value;
+
+    $this->logger->notice('Updated node with ID %request_id.', array(
+      '%request_id' => $node->request_id->value,
+    ));
+
+    $service_request = [];
+    if (isset($node)) {
+      $service_request['service_requests']['request']['service_request_id'] = $request_id;
+    }
+    return $service_request;
   }
 
   /**

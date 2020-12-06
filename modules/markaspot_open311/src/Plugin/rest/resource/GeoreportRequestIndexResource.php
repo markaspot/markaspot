@@ -5,11 +5,12 @@ namespace Drupal\markaspot_open311\Plugin\rest\resource;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Render\RenderContext;
+use Drupal\Core\Render\BubbleableMetadata;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\rest\Plugin\ResourceBase;
-use Drupal\rest\ResourceResponse;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -152,7 +153,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
    */
   protected function getBaseRoute($canonical_path, $method) {
     $lower_method = strtolower($method);
-
     $route = new Route($canonical_path, array(
       '_controller' => 'Drupal\markaspot_open311\GeoreportRequestHandler::handle',
       // Pass the resource plugin ID along as default property.
@@ -307,16 +307,11 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Building requests array.
-
-
     foreach ($nodes as $node) {
       $service_requests[] = $map->nodeMapRequest($node, $extended_role);
     }
     if (!empty($service_requests)) {
-      $response = new ResourceResponse($service_requests, 200);
-      // $response->addCacheableDependency($service_requests);
-
-      return $response;
+      return $service_requests;;
     }
     else {
       throw new HttpException(404, "No Service requests found");
@@ -326,79 +321,94 @@ class GeoreportRequestIndexResource extends ResourceBase {
   /**
    * Responds to POST requests.
    *
-   * Returns a list of bundles for specified entity.
+   * Returns request id for created service_request.
    *
    * @throws \Symfony\Component\HttpKernel\Exception\HttpException
    *   Throws exception expected.
    */
   public function post($request_data) {
     try {
+      /*
+      $context = new RenderContext();
+      // check leaked data issues:
+      // https://www.lullabot.com/articles/early-rendering-a-lesson-in-debugging-drupal-8
+      $result = \Drupal::service('renderer')->executeInRenderContext($context, function () use ($request_data){
+        // do_things() triggers the code that we don't don't control that in turn triggers early rendering.
+        return $this->createNode($request_data);
+      });
 
-      $map = new GeoreportProcessor();
-      $values = $map->requestMapNode($request_data);
-
-      $node = \Drupal::entityTypeManager()->getStorage('node')->create($values);
-
-      // Make sure it's a content entity.
-      if ($node instanceof ContentEntityInterface) {
-        if ($this->validate($node)) {
-          // Add an intitial paragraph on valid post.
-          $status_open = array_values($this->config->get('status_open_start'));
-          // todo: put this in config.
-          $status_note_initial = t('The service request has been created.');
-
-          $paragraph = Paragraph::create([
-            'type' => 'status',
-            'field_status_note' => array(
-              "value"  => $status_note_initial,
-              "format" => "full_html",
-            ),
-            'field_status_term' => array(
-              "target_id"  => $status_open[0],
-            ),
-          ]);
-          $paragraph->save();
-        }
-
+      if (!$context->isEmpty()) {
+        $bubbleable_metadata = $context->pop();
+        BubbleableMetadata::createFromObject($result)
+          ->merge($bubbleable_metadata);
       }
+      */
+      // return result to handler for formatting and response.
+      return $this->createNode($request_data);
 
-      $node->field_status_notes = array(
-        array(
-          'target_id' => $paragraph->id(),
-          'target_revision_id' => $paragraph->getRevisionId(),
-        ),
-      );
+      // return $result;
 
-      // Save the node and prepare response;.
-      $node->save();
-      // Get the UUID to put it into the response.
-      $request_id = $node->request_id->value;
-
-      $service_request = [];
-      if (isset($node)) {
-        $service_request['service_requests']['request']['service_request_id'] = $request_id;
-      }
-
-      $this->logger->notice('Created entity %type with ID %request_id.', array(
-        '%type' => $node->getEntityTypeId(),
-        '%request_id' => $node->request_id->value,
-      ));
-
-      // 201 Created responses return the newly created entity in the response.
-      // $url = $entity->urlInfo('canonical', [
-      //  'absolute' => TRUE])->toString(TRUE);
-      $response = new ResourceResponse($service_request, 201);
-      $response->addCacheableDependency($service_request);
-
-      // Responses after creating an entity are not cacheable, so we add no
-      // cacheability metadata here.
-      return $response;
     }
     catch (EntityStorageException $e) {
       throw new HttpException(500, 'Internal Server Error', $e);
     }
 
   }
+
+  public function createNode($request_data) {
+    $map = new GeoreportProcessor();
+    $values = $map->requestMapNode($request_data);
+
+    $node = \Drupal::entityTypeManager()->getStorage('node')->create($values);
+
+    // Make sure it's a content entity.
+    if ($node instanceof ContentEntityInterface) {
+      if ($this->validate($node)) {
+        // Add an initial paragraph on valid post.
+        $status_open = $this->config->get('status_open_start');
+        // todo: put this in config.
+        $status_note_initial = t('The service request has been created.');
+
+        $paragraph = Paragraph::create([
+          'type' => 'status',
+          'field_status_note' => array(
+            "value"  => $status_note_initial,
+            "format" => "full_html",
+          ),
+          'field_status_term' => array(
+            "target_id"  => $status_open[0],
+          ),
+        ]);
+        $paragraph->save();
+      }
+
+    }
+
+    $node->field_status_notes = array(
+      array(
+        'target_id' => $paragraph->id(),
+        'target_revision_id' => $paragraph->getRevisionId(),
+      ),
+    );
+
+    // Save the node and prepare response.
+    $node->save();
+
+    $this->logger->notice('Created entity %type with ID %request_id.', array(
+      '%type' => $node->getEntityTypeId(),
+      '%request_id' => $node->request_id->value,
+    ));
+
+    // Get the UUID to put it into the response.
+    $request_id = $node->request_id->value;
+
+    $service_request = [];
+    if (isset($node)) {
+      $service_request['service_requests']['request']['service_request_id'] = $request_id;
+    }
+    return $service_request;
+  }
+
 
   /**
    * Verifies that the whole entity does not violate any validation constraints.

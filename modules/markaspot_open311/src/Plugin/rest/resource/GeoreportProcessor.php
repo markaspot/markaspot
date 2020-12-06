@@ -182,6 +182,7 @@ class GeoreportProcessor {
         ->loadByProperties(array('request_id' => $request_data['service_request_id']));
       foreach ($nodes as $node) {
         $request_id = $node->request_id->value;
+        $values['node'] = $node;
       }
       if (isset($request_id)) {
         $request_data['requested_datetime'] = date('c', $node->created->value);
@@ -189,7 +190,6 @@ class GeoreportProcessor {
 
     }
 
-    $values['node'] = $node;
 
     $values['type'] = 'service_request';
     if (isset($request_id)) {
@@ -316,7 +316,7 @@ class GeoreportProcessor {
       ->load($tid);
 
     $service['service_code'] = $service_category->field_service_code->value;
-    $service['service_name'] = $service_category->name;
+    $service['service_name'] = $service_category->name->value;
     $service['metadata'] = "false";
     $service['type'] = 'realtime';
     $service['description'] = $service_category->description->value;
