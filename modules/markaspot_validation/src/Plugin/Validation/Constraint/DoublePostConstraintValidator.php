@@ -68,8 +68,6 @@ class DoublePostConstraintValidator extends ConstraintValidator {
       $nodes = \Drupal::entityTypeManager()
         ->getStorage('node')
         ->loadMultiple($nids);
-
-      $message = '';
       foreach ($nodes as $node) {
         $options = array('absolute' => TRUE);
         $url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], $options);
@@ -88,30 +86,24 @@ class DoublePostConstraintValidator extends ConstraintValidator {
         $url->setOptions($link_options);
         $unit = ($this->unit == 'yards') ? 'yards' : 'meters';
 
-        $message_string = 'We found a recently added report of the same category with ID @id within a radius of @radius @unit.';
-        $message = [];
-        $message[] = Link::fromTextAndUrl($this->t($message_string,
-          [
-            '@id' => $node->request_id->value,
-            '@radius' => $this->radius,
-            '@unit' => $unit,
-          ]), $url)->toString();
+        $message_string = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
+          '@id' => $node->request_id->value,
+          '@radius' => $this->radius,
+          '@unit' => $unit,
+        ]);
+        $link = Link::fromTextAndUrl($message_string, $url);
+        $message =  $link->toString();
       }
-
       $iteration = $session->get('ignore_dublicate_' . $session_ident);
       $treshold = $this->configFactory->get('treshold') ? $this->configFactory->get('treshold') : '0';
       if ($iteration <= $treshold && $this->configFactory->get('hint') == TRUE) {
-
         $message_append = $this->t('You can ignore this message or help us by comparing the possible duplicate and clicking on the link.');
         $this->context->addViolation(implode("\n", $message) . '</br>' . $message_append);
         $session->set('ignore_dublicate_' . $session_ident, $iteration + 1);
-
       } else if ($this->configFactory->get('hint') == FALSE){
-
         $message_append = $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!');
-        $this->context->addViolation(implode("\n", $message). '</br>' . $message_append);
+        $this->context->addViolation($message. '</br>' . $message_append);
       }
-
     }
     else {
       $session->set('ignore_dublicate_' . $session_ident, 0);
@@ -162,7 +154,7 @@ class DoublePostConstraintValidator extends ConstraintValidator {
     $maxLon = $coordinates[1]->getLongitudeInDegrees();
 
     $query = \Drupal::entityQuery('node')
-    // $query = $this->entity_query->get('node')
+      // only published requests get validated as positive:
       ->condition('status', 1)
       ->condition('changed', REQUEST_TIME, '<')
       ->condition('type', 'service_request')
