@@ -44,7 +44,8 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
     $serializer = $this->container->get('serializer');
     // Get body for Post requests.
     $received = $request->getContent();
-    $unserialized = NULL;
+    $request_data = NULL;
+    $format = '';
     if (!empty($received)) {
       $format = $request->getContentType();
 
@@ -54,6 +55,8 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
       // that bubbles up to the client.
       $config = $this->container->get('config.factory')->get('rest.settings')->get('resources');
       $method_settings = $config[$plugin][$request->getMethod()];
+      $request_all = $request->request->all();
+
       if (empty($method_settings['supported_formats']) || in_array($format, $method_settings['supported_formats'])) {
         $definition = $resource->getPluginDefinition();
         // $class = $definition['serialization_class'];.
@@ -61,12 +64,6 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
           $service_request = [];
           // Create service_request data from parameters;.
           $qs = explode('&', Request::normalizeQueryString($received));
-
-          foreach ($qs as $param) {
-            $property = explode('=', $param);
-            $service_request[$property[0]] = urldecode(Xss::filter($property[1]));
-          }
-          $unserialized = $service_request;
         }
         catch (UnexpectedValueException $e) {
           $error['error'] = $e->getMessage();
@@ -78,14 +75,16 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
         throw new UnsupportedMediaTypeHttpException();
       }
     }
+    $query_params = $request->query->all();
+    $request_data = isset($request_all) ? $request_all : $query_params ;
 
     // Determine the request parameters that should be passed to the resource
     // plugin.
     $route_parameters = $route_match->getParameters();
-    $parameters = array();
+    $parameters = [];
     // Filter out all internal parameters starting with "_".
     foreach ($route_parameters as $key => $parameter) {
-      if ($key{0} !== '_') {
+      if ($key[0] !== '_') {
         $parameters[] = $parameter;
       }
     }
@@ -112,7 +111,7 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
     }
 
     try {
-      $result = call_user_func_array(array($resource, $method), array_merge($parameters, array($unserialized, $request)));
+      $result = call_user_func_array(array($resource, $method), array_merge($parameters, array($request_data, $request)));
     }
     catch (HttpException $e) {
       $error['error'] = $e->getMessage();
@@ -127,7 +126,6 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
     $response = new Response();
     $response->headers->set('Content-Type', $request->getMimeType($format));
     $response->setContent($result);
-    // $response->addCacheableDependency($result);
     return $response;
   }
 
