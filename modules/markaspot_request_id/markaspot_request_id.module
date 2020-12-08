@@ -119,7 +119,7 @@ function markaspot_request_id_node_insert(EntityInterface $node) {
     } else {
       $node->request_id->value = $request_id;
       $node->setNewRevision(FALSE);
-      $node->save();
+      //$node->save();
     }
 
   }
