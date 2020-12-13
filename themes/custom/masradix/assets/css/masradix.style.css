@@ -7276,12 +7276,11 @@ article.service-request--teaser.focus {
 article.service-request--teaser.focus:before {
   font-family: "FontAwesome";
   font-weight: 900;
-  content: "\f062";
-  text-align: center;
-  display: block;
-  position: relative;
-  height: 60px;
-  width: 100%;
+  content: "\f041";
+  position: absolute;
+  width: 10%;
+  right: 10px;
+  color: #fff;
   line-height: 3; }
 
 article.service-request--gallery {
