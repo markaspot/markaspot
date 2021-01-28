@@ -100,7 +100,7 @@ function markaspot_static_json_request($limit, $current_page) {
     $cronkey = \Drupal::state()->get('system.cron_key');
     // todo:
     // Make limit configurable.
-    $uri = '//' . $host . '/georeport/v2/requests.json?limit=' . $limit . '&page=' . $current_page . '&extensions=true&key=' . $cronkey;
+    $uri = '//' . $host . '/georeport/v2/requests.json?start_date=-9999days&limit=' . $limit . '&page=' . $current_page . '&extensions=true&key=' . $cronkey;
     \Drupal::logger('Mark-a-Spot Static JSON')->notice('Saving JSON from URL: ' . $uri);
 
     try {
