@@ -98,7 +98,7 @@ class DoublePostConstraintValidator extends ConstraintValidator {
       $treshold = $this->configFactory->get('treshold') ? $this->configFactory->get('treshold') : '0';
       if ($iteration <= $treshold && $this->configFactory->get('hint') == TRUE) {
         $message_append = $this->t('You can ignore this message or help us by comparing the possible duplicate and clicking on the link.');
-        $this->context->addViolation(implode("\n", $message) . '</br>' . $message_append);
+        $this->context->addViolation($message. '</br>' . $message_append);
         $session->set('ignore_dublicate_' . $session_ident, $iteration + 1);
       } else if ($this->configFactory->get('hint') == FALSE){
         $message_append = $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!');
