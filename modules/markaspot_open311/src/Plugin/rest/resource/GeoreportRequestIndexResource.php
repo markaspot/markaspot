@@ -5,8 +5,6 @@ namespace Drupal\markaspot_open311\Plugin\rest\resource;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Entity\EntityStorageException;
-use Drupal\Core\Render\RenderContext;
-use Drupal\Core\Render\BubbleableMetadata;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\paragraphs\Entity\Paragraph;
@@ -40,7 +38,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
   protected $currentUser;
 
   /**
-   * The devel.settings config object.
+   * The markaspot_open311.settings config object.
    *
    * @var \Drupal\Core\Config\Config
    */
@@ -61,6 +59,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   A logger instance.
    * @param \Drupal\Core\Session\AccountProxyInterface $current_user
    *   A current user instance.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config
+   *   The config object.
    */
   public function __construct(
     array $configuration,
@@ -106,7 +106,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $route = $this->getBaseRoute($canonical_path, $method);
       switch ($method) {
         case 'POST':
-          $georeport_formats = array('json', 'xml', 'form');
+          $georeport_formats = ['json', 'xml', 'form'];
           foreach ($georeport_formats as $format) {
             $format_route = clone $route;
 
@@ -115,7 +115,11 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
             // Restrict the incoming HTTP Content-type header to the known
             // serialization formats.
-            $format_route->addRequirements(array('_content_type_format' => implode('|', $this->serializerFormats)));
+            $format_route->addRequirements(
+              [
+                '_content_type_format'
+                => implode('|', $this->serializerFormats),
+              ]);
             $collection->add("$route_name.$method.$format", $format_route);
           }
           break;
@@ -124,7 +128,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
           // Restrict GET and HEAD requests to the media type specified in the
           // HTTP Accept headers.
           foreach ($this->serializerFormats as $format) {
-            $georeport_formats = array('json', 'xml');
+            $georeport_formats = ['json', 'xml'];
             foreach ($georeport_formats as $format) {
 
               // Expose one route per available format.
@@ -146,25 +150,22 @@ class GeoreportRequestIndexResource extends ResourceBase {
   }
 
   /**
-   * @param string $canonical_path
-   * @param string $method
-   *
-   * @return \Symfony\Component\Routing\Route
+   * {@inheritdoc}
    */
   protected function getBaseRoute($canonical_path, $method) {
     $lower_method = strtolower($method);
-    $route = new Route($canonical_path, array(
+    $route = new Route($canonical_path, [
       '_controller' => 'Drupal\markaspot_open311\GeoreportRequestHandler::handle',
       // Pass the resource plugin ID along as default property.
       '_plugin' => $this->pluginId,
-    ), array(
+    ], [
       '_permission' => "restful $lower_method $this->pluginId",
-    ),
-      array(),
+    ],
+      [],
       '',
-      array(),
+      [],
       // The HTTP method is a requirement for this route.
-      array($method)
+      [$method]
     );
     return $route;
   }
@@ -190,7 +191,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
      */
     $request_time = \Drupal::time()->getRequestTime();
 
-
     $parameters = UrlHelper::filterQueryParameters(\Drupal::request()->query->all());
     // Filtering the configured content type.
     $bundle = $this->config->get('bundle');
@@ -200,8 +200,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
       ->condition('type', $bundle);
 
     if (in_array('administrator', $this->currentUser->getRoles()) || $this->currentUser->hasPermission('access open311 advanced properties')) {
-      $query->condition('status', array(0, 1), 'IN');
-    } else {
+      $query->condition('status', [0, 1], 'IN');
+    }
+    else {
       $query->condition('status', 1);
     }
 
@@ -219,7 +220,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
       $query->condition('nid', $nids, 'IN');
-      //$limit = $this->config->get('limit-nids');
+      // $limit = $this->config->get('limit-nids');
       $limit = NULL;
     }
 
@@ -232,7 +233,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
     if (isset($parameters['sort']) && $parameters['sort'] == "desc") {
       $sort = 'DESC';
-    } else {
+    }
+    else {
       $sort = 'ASC';
     }
 
@@ -249,15 +251,30 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->condition('request_id', $parameters['id']);
     }
 
+    // Check for field_* arguments.
+    $fields = array_filter(
+      $parameters,
+      function ($key) {
+        return(strpos($key, 'field_') !== FALSE);
+      },
+      ARRAY_FILTER_USE_KEY
+    );
+    if (isset($fields)) {
+      foreach ($fields as $field => $value) {
+        $query->condition($field, $value, '=');
+      }
+    }
+
     if (isset($parameters['updated'])) {
       $seconds = strtotime($parameters['updated']);
       $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=');
       $query->sort('changed', $direction = 'DESC');
-    } else {
+    }
+    else {
       $query->sort('created', $direction = $sort);
 
     }
-      // Checking for service_code and map the code with taxonomy terms:
+    // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['q'])) {
       // Get the service of the current node:
       $group = $query->orConditionGroup()
@@ -287,35 +304,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->condition('field_status.entity.tid', $tid);
     }
 
-    $nids = $query->execute();
-    $nodes = \Drupal::entityTypeManager()
-      ->getStorage('node')
-      ->loadMultiple($nids);
-    // Extensions.
-    $extended_role = NULL;
-
-    if (isset($parameters['extensions'])) {
-
-      // $extended_role = 'anonymous';
-
-      if ($this->currentUser->hasPermission('access open311 extension')) {
-        $extended_role = 'user';
-      }
-      if ($this->currentUser->hasPermission('access open311 advanced properties')) {
-        $extended_role = 'manager';
-      }
-    }
-
-    // Building requests array.
-    foreach ($nodes as $node) {
-      $service_requests[] = $map->nodeMapRequest($node, $extended_role);
-    }
-    if (!empty($service_requests)) {
-      return $service_requests;;
-    }
-    else {
-      throw new HttpException(404, "No Service requests found");
-    }
+    $map = new GeoreportProcessor();
+    return $map->getResults($query, $this->currentUser, $parameters);
   }
 
   /**
@@ -328,26 +318,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
    */
   public function post($request_data) {
     try {
-      /*
-      $context = new RenderContext();
-      // check leaked data issues:
-      // https://www.lullabot.com/articles/early-rendering-a-lesson-in-debugging-drupal-8
-      $result = \Drupal::service('renderer')->executeInRenderContext($context, function () use ($request_data){
-        // do_things() triggers the code that we don't don't control that in turn triggers early rendering.
-        return $this->createNode($request_data);
-      });
-
-      if (!$context->isEmpty()) {
-        $bubbleable_metadata = $context->pop();
-        BubbleableMetadata::createFromObject($result)
-          ->merge($bubbleable_metadata);
-      }
-      */
-      // return result to handler for formatting and response.
+      // Return result to handler for formatting and response.
       return $this->createNode($request_data);
-
-      // return $result;
-
     }
     catch (EntityStorageException $e) {
       throw new HttpException(500, 'Internal Server Error', $e);
@@ -355,7 +327,20 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
   }
 
-  public function createNode($request_data) {
+  /**
+   * Create Node in Drupal from request data.
+   *
+   * @param array $request_data
+   *   The request data as defined in open311 POST method.
+   *
+   * @return array
+   *   Return the service_request object with the applied service_request_id
+   *
+   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   */
+  public function createNode(array $request_data) {
     $map = new GeoreportProcessor();
     $values = $map->requestMapNode($request_data);
 
@@ -366,38 +351,38 @@ class GeoreportRequestIndexResource extends ResourceBase {
       if ($this->validate($node)) {
         // Add an initial paragraph on valid post.
         $status_open = $this->config->get('status_open_start');
-        // todo: put this in config.
+        // @todo put this in config.
         $status_note_initial = t('The service request has been created.');
 
         $paragraph = Paragraph::create([
           'type' => 'status',
-          'field_status_note' => array(
+          'field_status_note' => [
             "value"  => $status_note_initial,
             "format" => "full_html",
-          ),
-          'field_status_term' => array(
+          ],
+          'field_status_term' => [
             "target_id"  => $status_open[0],
-          ),
+          ],
         ]);
         $paragraph->save();
       }
 
     }
 
-    $node->field_status_notes = array(
-      array(
+    $node->field_status_notes = [
+      [
         'target_id' => $paragraph->id(),
         'target_revision_id' => $paragraph->getRevisionId(),
-      ),
-    );
+      ],
+    ];
 
     // Save the node and prepare response.
     $node->save();
 
-    $this->logger->notice('Created entity %type with ID %request_id.', array(
+    $this->logger->notice('Created entity %type with ID %request_id.', [
       '%type' => $node->getEntityTypeId(),
       '%request_id' => $node->request_id->value,
-    ));
+    ]);
 
     // Get the UUID to put it into the response.
     $request_id = $node->request_id->value;
@@ -409,20 +394,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
     return $service_request;
   }
 
-
   /**
    * Verifies that the whole entity does not violate any validation constraints.
-   * Those are defined in markaspot_validate module.
+   *
+   * @param object $node
+   *   The node object.
+   *
+   * @return bool
+   *   return exception or TRUE if valid.
    */
-  protected function validate($node) {
+  protected function validate(object $node) {
     $violations = NULL;
-    // Remove violations of inaccessible fields as they cannot stem from our
-    // changes.
-    /*
-    if (!\Drupal::service('email.validator')->isValid($request_data['email'])){
-    $this->processsServicesError('E-mail not valid', 400);
-    }
-     */
+
     $violations = $node->validate();
     if (count($violations) > 0) {
       $message = '';

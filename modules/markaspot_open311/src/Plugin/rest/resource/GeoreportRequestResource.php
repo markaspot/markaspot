@@ -100,13 +100,14 @@ class GeoreportRequestResource extends ResourceBase {
         case 'POST':
           foreach ($this->serializerFormats as $format_name) {
             $format_route = clone $route;
-
-            // $format_route->setPath($create_path . '.' . $format_name);.
             $format_route->setRequirement('_access_rest_csrf', 'FALSE');
-
             // Restrict the incoming HTTP Content-type header to the known
             // serialization formats.
-            $format_route->addRequirements(array('_content_type_format' => implode('|', $this->serializerFormats)));
+            $format_route->addRequirements(
+              [
+                '_content_type_format' =>
+                implode('|', $this->serializerFormats),
+              ]);
             $collection->add("$route_name.$method.$format_name", $format_route);
           }
           break;
@@ -118,7 +119,7 @@ class GeoreportRequestResource extends ResourceBase {
 
             // Expose one route per available format.
             $format_route = clone $route;
-            $format_route->addOptions(array('_format' => $format_name));
+            $format_route->addOptions(['_format' => $format_name]);
             $collection->add("$route_name.$method.$format_name", $format_route);
 
           }
@@ -134,23 +135,23 @@ class GeoreportRequestResource extends ResourceBase {
   }
 
   /**
-   *
+   * {@inheritdoc}
    */
   protected function getBaseRoute($canonical_path, $method) {
     $lower_method = strtolower($method);
 
-    $route = new Route($canonical_path, array(
+    $route = new Route($canonical_path, [
       '_controller' => 'Drupal\markaspot_open311\GeoreportRequestHandler::handle',
       // Pass the resource plugin ID along as default property.
       '_plugin' => $this->pluginId,
-    ), array(
+    ], [
       '_permission' => "restful $lower_method $this->pluginId",
-    ),
-      array(),
+    ],
+      [],
       '',
-      array(),
+      [],
       // The HTTP method is a requirement for this route.
-      array($method)
+      [$method]
     );
     return $route;
   }
@@ -160,8 +161,14 @@ class GeoreportRequestResource extends ResourceBase {
    *
    * Returns a list of bundles for specified entity.
    *
-   * @throws \Symfony\Component\HttpKernel\Exception\HttpException
-   *   Throws exception expected.
+   * @param string $id
+   *   The Service Request ID.
+   *
+   * @return array
+   *   Returns the Service Request matching the ID.
+   *
+   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   public function get($id) {
 
@@ -175,46 +182,13 @@ class GeoreportRequestResource extends ResourceBase {
       $query->condition('request_id', $this->getRequestId($id));
     }
 
-    $query->accessCheck(FALSE);
-
-
-    $map = new GeoreportProcessor();
-
     // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['id'])) {
       // Get the service of the current node:
       $query->condition('request_id', $parameters['id']);
     }
-
-    $nids = $query->execute();
-    $nodes = \Drupal::entityTypeManager()
-      ->getStorage('node')
-      ->loadMultiple($nids);
-    // Extensions.
-    $extended_role = NULL;
-
-    if (isset($parameters['extensions'])) {
-
-      // $extended_role = 'anonymous';
-
-      if ($this->currentUser->hasPermission('access open311 extension')) {
-        $extended_role = 'user';
-      }
-      if ($this->currentUser->hasPermission('access open311 advanced properties')) {
-        $extended_role = 'manager';
-      }
-    }
-
-    // Building requests array.
-    foreach ($nodes as $node) {
-      $service_requests[] = $map->nodeMapRequest($node, $extended_role);
-    }
-    if (!empty($service_requests)) {
-      return $service_requests;;
-    }
-    else {
-      throw new HttpException(404, "No Service requests found");
-    }
+    $map = new GeoreportProcessor();
+    return $map->getResults($query, $this->currentUser, $parameters);
   }
 
   /**
@@ -233,19 +207,20 @@ class GeoreportRequestResource extends ResourceBase {
       }
 
       $context = new RenderContext();
-      /* @var \Drupal\Core\Cache\CacheableDependencyInterface $result */
+      /** @var \Drupal\Core\Cache\CacheableDependencyInterface $result */
 
-      $result = \Drupal::service('renderer')->executeInRenderContext($context, function () use ($id, $request_data){
-        // do_things() triggers the code that we don't don't control that in turn triggers early rendering.
-        return $this->updateNode($id, $request_data);
-      });
+      $result = \Drupal::service('renderer')->executeInRenderContext(
+        $context, function () use ($id, $request_data) {
+          return $this->updateNode($id, $request_data);
+        }
+      );
 
       if (!$context->isEmpty()) {
         $bubbleable_metadata = $context->pop();
         BubbleableMetadata::createFromObject($result)
           ->merge($bubbleable_metadata);
       }
-      // return result to handler for formatting and response.
+      // Return result to handler for formatting and response.
       return $result;
 
     }
@@ -255,7 +230,18 @@ class GeoreportRequestResource extends ResourceBase {
 
   }
 
-  public function updateNode($id, $request_data) {
+  /**
+   * Update Drupal Node.
+   *
+   * @param string $id
+   *   Node ID (nid) of that node.
+   * @param array $request_data
+   *   The request data array.
+   *
+   * @return array
+   *   The service request array with id.
+   */
+  public function updateNode(string $id, array $request_data): array {
     $map = new GeoreportProcessor();
     $request_id = $this->getRequestId($id);
 
@@ -269,15 +255,15 @@ class GeoreportRequestResource extends ResourceBase {
     foreach (array_keys($values) as $field_name) {
       $node->set($field_name, $values[$field_name]);
     }
-    // todo: add validation
+    // @todo add validation
     $node->save();
 
     // Save the node and prepare response;.
     $request_id = $node->request_id->value;
 
-    $this->logger->notice('Updated node with ID %request_id.', array(
+    $this->logger->notice('Updated node with ID %request_id.', [
       '%request_id' => $node->request_id->value,
-    ));
+    ]);
 
     $service_request = [];
     if (isset($node)) {
@@ -317,7 +303,8 @@ class GeoreportRequestResource extends ResourceBase {
   /**
    * Return the service_request_id.
    *
-   * @param $id_param
+   * @param string $id_param
+   *   The first part of service_request_id.format uri.
    *
    * @return string
    *   The Request ID

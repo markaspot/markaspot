@@ -2,7 +2,9 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\taxonomy\Entity\Term;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 /**
  * Class GeoreportProcessor parsing.
@@ -37,149 +39,20 @@ class GeoreportProcessor {
   }
 
   /**
-   * Process errors with http status codes.
-   *
-   * @param string $message
-   *   The error message.
-   * @param int $code
-   *   The http status/error code.
-   *
-   * @throws \Exception
-   *   Throwing an exception which is reformatted by event subscriber.
-   */
-  public function processsServicesError($message, $code) {
-    throw new \Exception($message, $code);
-  }
-
-  /**
-   * Get Taxononmy Term Fields.
-   *
-   * @param int $tid
-   *    The Term id.
-   * @param string $field_name
-   *    The field name.
-   *
-   * @return mixed
-   *    returns the term.
-   */
-  public function getTerm($tid, $field_name) {
-    // var_dump(Term::load(4)->get('name')->value);
-    // http://drupalapi.de/api/drupal/drupal%21core%21modules%21taxonomy%21taxonomy.module/function/taxonomy_term_load/drupal-8
-    if (isset($tid) && Term::load($tid) != '') {
-      return Term::load($tid)->get($field_name)->value;
-    }
-  }
-
-  /**
-   * Map the node object as georeport request.
-   *
-   * @param object $node
-   *    The node object.
-   * @param string $extended_role
-   *    The extended role parameter allows rendering additional fields.
-   *
-   * @return array
-   *    Return the $request array.
-   */
-  public function nodeMapRequest($node, $extended_role) {
-
-    $id = $node->request_id->value;
-
-    $request = array(
-      'service_request_id' => $id,
-      'title' => $node->title->value,
-      'description' => $node->body->value,
-      'lat' => floatval($node->field_geolocation->lat),
-      'long' => floatval($node->field_geolocation->lng),
-      'address_string' => $this->formatAddress($node->field_address),
-      'service_name' => $this->getTerm($node->field_category->target_id, 'name'),
-      'requested_datetime' => date('c', $node->created->value),
-      'updated_datetime' => date('c', $node->changed->value),
-      'status' => $this->taxMapStatus($node->field_status->target_id),
-    );
-    // Media Url:
-    if (isset($node->field_request_image->entity)) {
-      $image_uri = file_create_url($node->field_request_image->entity->getFileUri());
-      $request['media_url'] = $image_uri;
-    }
-
-    // Checking latest paragraph entity item for publish the official status.
-    if (isset($node->field_status_notes)) {
-      // Access the paragraph entity.
-      foreach ($node->field_status_notes as $note) {
-        // All properties as always: = $note->entity.
-        // See below for accessing a detailed history of the service request.
-        $request['status_note'] = $note->entity->field_status_note->value;
-      }
-    }
-    if (isset($node->field_category)) {
-      $service_code = $this->getTerm($node->field_category->target_id, 'field_service_code');
-      $request['service_code'] = isset($service_code) ? $service_code : NULL;
-    }
-    if (isset($extended_role)) {
-      if (\Drupal::moduleHandler()->moduleExists('service_request')) {
-
-        $request['extended_attributes']['markaspot'] = [];
-
-        $nid = array('nid' => $node->nid->value);
-        if (isset($node->field_category)) {
-          $term = Term::load($node->field_category->target_id);
-          $category = [
-            'category_hex' => $term->field_category_hex->color,
-            'category_icon' => $term->field_category_icon->value,
-          ];
-        }
-
-        if (isset($node->field_status_notes)) {
-          foreach ($node->field_status_notes as $note) {
-            if (isset($note->entity->field_status_term->target_id)){
-              $term = Term::load($note->entity->field_status_term->target_id);
-
-              $status['status_descriptive_name'] = $term->name->value;
-              $status['status_hex'] = $term->field_status_hex->color;
-              $status['status_icon'] = $term->field_status_icon->value;
-            }
-          }
-
-          // Access the paragraph entity.
-          $logCount = -1;
-          foreach ($node->field_status_notes as $note) {
-            $logCount++;
-            // All properties as always: = $note->entity.
-            $log['status_notes'][$logCount]['status_note'] = $note->entity->field_status_note->value;
-            $log['status_notes'][$logCount]['status'] = $this->taxMapStatus($note->entity->field_status_term->target_id);
-            $log['status_notes'][$logCount]['updated_datetime'] = date('c', $note->entity->created->value);
-          }
-        }
-        $status = (isset($status)) ? $status : [];
-        $log = (isset($log)) ? $log : [];
-        $request['extended_attributes']['markaspot'] = array_merge($nid, $category, $status, $log);
-
-      }
-    }
-
-    if ($extended_role == 'manager') {
-      $request['extended_attributes']['author'] = $node->author;
-      $request['extended_attributes']['e-mail'] = $node->field_e_mail->value;
-    }
-    return $request;
-  }
-
-  /**
    * Prepare Node properties.
    *
    * @param array $request_data
-   *    Georeport Request data via form urlencoded.
+   *   Georeport Request data via form urlencoded.
    *
    * @return array
-   *    values to be saved via entity api.
+   *   values to be saved via entity api.
    */
-  public function requestMapNode($request_data) {
+  public function requestMapNode(array $request_data) {
 
     if (isset($request_data['service_request_id'])) {
       $nodes = \Drupal::entityTypeManager()
         ->getStorage('node')
-        ->loadByProperties(array('request_id' => $request_data['service_request_id']));
+        ->loadByProperties(['request_id' => $request_data['service_request_id']]);
       foreach ($nodes as $node) {
         $request_id = $node->request_id->value;
         $values['node'] = $node;
@@ -189,7 +62,6 @@ class GeoreportProcessor {
       }
 
     }
-
 
     $values['type'] = 'service_request';
     if (isset($request_id)) {
@@ -204,7 +76,7 @@ class GeoreportProcessor {
     $values['field_geolocation']['lat'] = isset($request_data['lat']) ? $request_data['lat'] : '';
     $values['field_geolocation']['lng'] = isset($request_data['long']) ? $request_data['long'] : '';
 
-    if (array_key_exists('address_string', $request_data) ||  array_key_exists('address', $request_data)) {
+    if (array_key_exists('address_string', $request_data) || array_key_exists('address', $request_data)) {
 
       $address = $this->addressParser($request_data['address_string']) ? $request_data['address_string'] : $request_data['address'];
 
@@ -231,10 +103,10 @@ class GeoreportProcessor {
       $field_keys['image'] = 'field_request_image';
 
       if ($file !== FALSE) {
-        $values[$field_keys['image']] = array(
+        $values[$field_keys['image']] = [
           'target_id' => $file->id(),
           'alt' => 'Open311 File',
-        );
+        ];
       }
 
     }
@@ -245,7 +117,7 @@ class GeoreportProcessor {
   /**
    * Parse an address_string to an array.
    *
-   * Todo: make this reusable for any country.
+   * @todo make this reusable for any country.
    *
    * @param string $address_string
    *   The address as string.
@@ -253,7 +125,7 @@ class GeoreportProcessor {
    * @return array
    *   Return address
    */
-  private function addressParser($address_string) {
+  private function addressParser(string $address_string): array {
 
     $address_array = explode(',', $address_string);
 
@@ -265,6 +137,46 @@ class GeoreportProcessor {
 
     return $address;
 
+  }
+
+  /**
+   * Mapping requested service_code to drupal taxonomy.
+   *
+   * @param string $service_code
+   *   Open311 Service code (can be Code0001)
+   *
+   * @return int
+   *   The TaxonomyId
+   */
+  public function serviceMapTax($service_code) {
+
+    $terms = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_term')
+      ->loadByProperties(['field_service_code' => $service_code]);
+    $term = reset($terms);
+    if ($term != FALSE) {
+      $tid = $term->tid->value;
+      return $tid;
+    }
+    else {
+      $this->processsServicesError('Servicecode not found', 404);
+    }
+    return FALSE;
+  }
+
+  /**
+   * Process errors with http status codes.
+   *
+   * @param string $message
+   *   The error message.
+   * @param int $code
+   *   The http status/error code.
+   *
+   * @throws \Exception
+   *   Throwing an exception which is reformatted by event subscriber.
+   */
+  public function processsServicesError($message, $code) {
+    throw new \Exception($message, $code);
   }
 
   /**
@@ -280,7 +192,7 @@ class GeoreportProcessor {
    * @return array
    *   Return the drupal taxonomy term as a georeport service.
    */
-  public function getTaxonomyTree($vocabulary = "tags", $parent = 0, $max_depth = NULL) {
+  public function getTaxonomyTree($vocabulary = "tags", $parent = 0, $max_depth = NULL): array {
     // Load terms.
     $tree = \Drupal::service('entity_type.manager')
       ->getStorage("taxonomy_term")
@@ -333,31 +245,6 @@ class GeoreportProcessor {
   }
 
   /**
-   * Mapping requested service_code to drupal taxonomy.
-   *
-   * @param string $service_code
-   *   Open311 Service code (can be Code0001)
-   *
-   * @return int
-   *   The TaxonomyId
-   */
-  public function serviceMapTax($service_code) {
-
-    $terms = \Drupal::entityTypeManager()
-      ->getStorage('taxonomy_term')
-      ->loadByProperties(array('field_service_code' => $service_code));
-    $term = reset($terms);
-    if ($term != FALSE) {
-      $tid = $term->tid->value;
-      return $tid;
-    }
-    else {
-      $this->processsServicesError('Servicecode not found', 404);
-    }
-    return FALSE;
-  }
-
-  /**
    * Mapping requested status to drupal taxonomy.
    *
    * @param string $status_sub
@@ -381,25 +268,190 @@ class GeoreportProcessor {
   }
 
   /**
-   * Mapping taxonomy to status. GeoReport v2 has only open and closed status.
+   * Query the database for nodes.
    *
-   * @param int $taxonomy_id
-   *   The Drupal Taxonomy ID.
+   * @param object $query
+   *   The db query.
+   * @param object $user
+   *   Drupal User object.
+   * @param array $parameters
+   *   Array of query parameters.
    *
-   * @return string
-   *   Return Open or Closed Status according to specification.
+   * @return array
+   *   Array of service_requests.
+   *
+   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
+   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
-  public function taxMapStatus($taxonomy_id) {
-    // Mapping Status to Open311 Status (open/closed)
-    $status_open = array_values($this->config->get('status_open'));
-    if (in_array($taxonomy_id, $status_open)) {
-      $status = 'open';
-    }
-    else {
-      $status = 'closed';
+  public function getResults(object $query, object $user, array $parameters): array {
+    $nids = $query->execute();
+    $nodes = \Drupal::entityTypeManager()
+      ->getStorage('node')
+      ->loadMultiple($nids);
+
+    // Extensions.
+    $extended_role = NULL;
+
+    if (isset($parameters['extensions'])) {
+
+      // $extended_role = 'anonymous';
+      if ($user->hasPermission('access open311 extension')) {
+        $extended_role = 'user';
+      }
+      if ($user->hasPermission('access open311 advanced properties')) {
+        $extended_role = 'manager';
+      }
     }
 
-    return $status;
+    // Building requests array.
+    foreach ($nodes as $node) {
+      $service_requests[] = $this->nodeMapRequest($node, $extended_role, $parameters);
+    }
+    if (!empty($service_requests)) {
+      return $service_requests;
+    }
+    else {
+      throw new HttpException(404, "No Service requests found");
+    }
+  }
+
+  /**
+   * Map the node object as georeport request.
+   *
+   * @param object $node
+   *   The node object.
+   * @param string $extended_role
+   *   The extended role parameter allows rendering additional fields.
+   * @param array $parameters
+   *   The query parameters.
+   *
+   * @return array
+   *   Return the $request array.
+   */
+  public function nodeMapRequest(object $node, string $extended_role, array $parameters) {
+
+    $id = $node->request_id->value;
+
+    $request = [
+      'service_request_id' => $id,
+      'title' => $node->title->value,
+      'description' => $node->body->value,
+      'lat' => floatval($node->field_geolocation->lat),
+      'long' => floatval($node->field_geolocation->lng),
+      'address_string' => $this->formatAddress($node->field_address),
+      'service_name' => $this->getTerm($node->field_category->target_id, 'name'),
+      'requested_datetime' => date('c', $node->created->value),
+      'updated_datetime' => date('c', $node->changed->value),
+      'status' => $this->taxMapStatus($node->field_status->target_id),
+    ];
+
+    // Media Url:
+    if (isset($node->field_request_image->entity)) {
+      $image_uri = file_create_url($node->field_request_image->entity->getFileUri());
+      $request['media_url'] = $image_uri;
+    }
+
+    // Checking latest paragraph entity item for publish the official status.
+    if (isset($node->field_status_notes)) {
+      // Access the paragraph entity.
+      foreach ($node->field_status_notes as $note) {
+        // All properties as always: = $note->entity.
+        // See below for accessing a detailed history of the service request.
+        $request['status_note'] = $note->entity->field_status_note->value;
+      }
+    }
+    if (isset($node->field_category)) {
+      $service_code = $this->getTerm($node->field_category->target_id, 'field_service_code');
+      $request['service_code'] = isset($service_code) ? $service_code : NULL;
+    }
+    if (isset($extended_role)) {
+      if (\Drupal::moduleHandler()->moduleExists('service_request')) {
+        $request['extended_attributes']['markaspot'] = [];
+
+        $nid = ['nid' => $node->nid->value];
+        if (isset($node->field_category)) {
+          $term = Term::load($node->field_category->target_id);
+          $category = [
+            'category_hex' => $term->field_category_hex->color,
+            'category_icon' => $term->field_category_icon->value,
+          ];
+        }
+
+        if (isset($node->field_status_notes)) {
+          foreach ($node->field_status_notes as $note) {
+            if (isset($note->entity->field_status_term->target_id)) {
+              $term = Term::load($note->entity->field_status_term->target_id);
+
+              $status['status_descriptive_name'] = $term->name->value;
+              $status['status_hex'] = $term->field_status_hex->color;
+              $status['status_icon'] = $term->field_status_icon->value;
+            }
+          }
+
+          // Access the paragraph entity.
+          $logCount = -1;
+          foreach ($node->field_status_notes as $note) {
+            $logCount++;
+            // All properties as always: = $note->entity.
+            $log['status_notes'][$logCount]['status_note'] = $note->entity->field_status_note->value;
+            $log['status_notes'][$logCount]['status'] = $this->taxMapStatus($note->entity->field_status_term->target_id);
+            $log['status_notes'][$logCount]['updated_datetime'] = date('c', $note->entity->created->value);
+          }
+        }
+        $status = (isset($status)) ? $status : [];
+        $log = (isset($log)) ? $log : [];
+        $request['extended_attributes']['markaspot'] = array_merge($nid, $category, $status, $log);
+      }
+    }
+
+    if ($extended_role == 'manager') {
+      $request['extended_attributes']['author'] = $node->author;
+      $request['extended_attributes']['e-mail'] = $node->field_e_mail->value;
+
+      if (isset($parameters['fields'])) {
+        if ($node instanceof FieldableEntityInterface) {
+          $request['extended_attributes']['drupal'] = [];
+          $fieldNames = explode(',', $parameters['fields']);
+          foreach ($fieldNames as $field_name) {
+            /** @var \Drupal\Core\Field\FieldItemListInterface $field */
+            $field = $node->{$field_name};
+            // Check if fieldname by parameter is an actual field.
+            if (isset($field)) {
+              // Check if perm. are granted for this field (e.g. internal notes)
+              $field_access = $field->access('view', NULL, TRUE);
+              if (!$field_access->isAllowed()) {
+                $field = NULL;
+              }
+            }
+            if (method_exists($node->get($field_name), 'referencedEntities')) {
+              $entities = $node->get($field_name)->referencedEntities();
+              foreach ($entities as $key => $entity) {
+                $request['extended_attributes']['drupal'][$field_name] = $entity;
+              }
+            }
+            else {
+              $request['extended_attributes']['drupal'][$field_name] = $node->{$field_name};
+
+            }
+          }
+        }
+      }
+
+      if (isset($parameters['full'])) {
+        if ($node instanceof FieldableEntityInterface) {
+          $request['extended_attributes']['drupal'] = [];
+          foreach ($node as $field_name => $field) {
+            /** @var \Drupal\Core\Field\FieldItemListInterface $field */
+            $field_access = $field->access('view', NULL, TRUE);
+            if (!$field_access->isAllowed()) {
+              $field = NULL;
+            }
+            $request['extended_attributes']['node'][$field_name] = $field;
+          }
+        }
+      }
+    }
+    return $request;
   }
 
   /**
@@ -412,10 +464,51 @@ class GeoreportProcessor {
    *   The GeoReport address_string property
    */
   public function formatAddress($address) {
-    // todo: Format this with conditions and international,
+    // @todo Format this with conditions and international,
     // make it configurable?
     $address_string = $address->postal_code . ' ' . $address->locality . ', ' . $address->address_line1 . ' ' . $address->address_line2;
     return trim($address_string);
+  }
+
+  /**
+   * Get Taxononmy Term Fields.
+   *
+   * @param int $tid
+   *   The Term id.
+   * @param string $field_name
+   *   The field name.
+   *
+   * @return mixed
+   *   returns the term.
+   */
+  public function getTerm($tid, string $field_name) {
+    // var_dump(Term::load(4)->get('name')->value);
+    // http://drupalapi.de/api/drupal/drupal%21core%21modules%21taxonomy%21taxonomy.module/function/taxonomy_term_load/drupal-8
+    if (isset($tid) && Term::load($tid) != '') {
+      return Term::load($tid)->get($field_name)->value;
+    }
+  }
+
+  /**
+   * Mapping taxonomy to status. GeoReport v2 has only open and closed status.
+   *
+   * @param int $taxonomy_id
+   *   The Drupal Taxonomy ID.
+   *
+   * @return string
+   *   Return Open or Closed Status according to specification.
+   */
+  public function taxMapStatus($taxonomy_id): string {
+    // Mapping Status to Open311 Status (open/closed)
+    $status_open = array_values($this->config->get('status_open'));
+    if (in_array($taxonomy_id, $status_open)) {
+      $status = 'open';
+    }
+    else {
+      $status = 'closed';
+    }
+
+    return $status;
   }
 
 }
