@@ -91,7 +91,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
       $route = $this->getBaseRoute($canonical_path, $method);
       switch ($method) {
         case 'POST':
-          $georeport_formats = array('json', 'xml');
+          $georeport_formats = ['json', 'xml'];
           foreach ($georeport_formats as $format) {
             $format_route = clone $route;
 
@@ -100,7 +100,11 @@ class GeoreportServiceIndexResource extends ResourceBase {
 
             // Restrict the incoming HTTP Content-type header to the known
             // serialization formats.
-            $format_route->addRequirements(array('_content_type_format' => implode('|', $this->serializerFormats)));
+            $format_route->addRequirements(
+              [
+                '_content_type_format' =>
+                implode('|', $this->serializerFormats),
+              ]);
             $collection->add("$route_name.$method.$format", $format_route);
           }
           break;
@@ -109,7 +113,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
           // Restrict GET and HEAD requests to the media type specified in the
           // HTTP Accept headers.
           foreach ($this->serializerFormats as $format) {
-            $georeport_formats = array('json', 'xml');
+            $georeport_formats = ['json', 'xml'];
             foreach ($georeport_formats as $geo_format) {
 
               // Expose one route per available format.

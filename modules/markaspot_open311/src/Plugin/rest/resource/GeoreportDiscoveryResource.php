@@ -94,7 +94,7 @@ class GeoreportDiscoveryResource extends ResourceBase {
           // Restrict GET and HEAD requests to the media type specified in the
           // HTTP Accept headers.
           foreach ($this->serializerFormats as $format) {
-            $georeport_formats = array('json', 'xml');
+            $georeport_formats = ['json', 'xml'];
             foreach ($georeport_formats as $geo_format) {
 
               // Expose one route per available format.
