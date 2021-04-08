@@ -4,6 +4,7 @@ namespace Drupal\markaspot_open311;
 
 use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Security\RequestSanitizer;
 use Symfony\Component\DependencyInjection\ContainerAwareInterface;
 use Symfony\Component\DependencyInjection\ContainerAwareTrait;
 use Symfony\Component\HttpFoundation\Request;
@@ -34,6 +35,7 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
    */
   public function handle(RouteMatchInterface $route_match, Request $request) {
 
+    // $request = RequestSanitizer::sanitize($request, [], TRUE);
     $plugin = $route_match->getRouteObject()->getDefault('_plugin');
     $method = strtolower($request->getMethod());
 
@@ -77,6 +79,7 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
     }
     $query_params = $request->query->all();
     $request_data = isset($request_all) ? $request_all : $query_params ;
+    // $request_data = array_map('trim', $request_data);
 
     // Determine the request parameters that should be passed to the resource
     // plugin.

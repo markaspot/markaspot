@@ -2,6 +2,8 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\Component\Render\PlainTextOutput;
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Render\BubbleableMetadata;
@@ -10,8 +12,6 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
-use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
@@ -203,7 +203,7 @@ class GeoreportRequestResource extends ResourceBase {
     try {
 
       if (!$this->currentUser->hasPermission('access open311 advanced properties')) {
-        throw new AccessDeniedHttpException();
+        // Throw new AccessDeniedHttpException();
       }
 
       $context = new RenderContext();
@@ -242,22 +242,27 @@ class GeoreportRequestResource extends ResourceBase {
    *   The service request array with id.
    */
   public function updateNode(string $id, array $request_data): array {
-    $map = new GeoreportProcessor();
     $request_id = $this->getRequestId($id);
 
-    $request_data['service_request_id'] = $request_id;
-    $values = $map->requestMapNode($request_data);
+    $nodes = \Drupal::entityTypeManager()
+      ->getStorage('node')
+      ->loadByProperties(['request_id' => $request_id]);
 
-    // Retrieve the preloaded node object.
-    $node = $values['node'];
-    unset($values['node']);
+    foreach ($nodes as $node) {
+      if ($node instanceof ContentEntityInterface) {
+        $request_data['service_request_id'] = $request_id;
+        $map = new GeoreportProcessor();
+        $values = array_filter($map->requestMapNode($request_data, 'update'));
+      }
+    }
 
     foreach (array_keys($values) as $field_name) {
       $node->set($field_name, $values[$field_name]);
     }
-    // @todo add validation
-    $node->save();
 
+    if ($this->validate($node)) {
+      $node->save();
+    }
     // Save the node and prepare response;.
     $request_id = $node->request_id->value;
 
@@ -273,34 +278,6 @@ class GeoreportRequestResource extends ResourceBase {
   }
 
   /**
-   * Verifies that the whole entity does not violate any validation constraints.
-   *
-   * Those are defined in markaspot_validate module.
-   */
-  protected function validate($node) {
-    $violations = NULL;
-    // Remove violations of inaccessible fields as they cannot stem from our
-    // changes.
-    /*
-    if (!\Drupal::service('email.validator')->isValid($request_data['email'])){
-    $this->processsServicesError('E-mail not valid', 400);
-    }
-     */
-    $violations = $node->validate();
-    // var_dump(count($violations));
-    if (count($violations) > 0) {
-      $message = '';
-      foreach ($violations as $violation) {
-        $message .= $violation->getMessage() . '\n';
-      }
-      throw new BadRequestHttpException($message);
-    }
-    else {
-      return TRUE;
-    }
-  }
-
-  /**
    * Return the service_request_id.
    *
    * @param string $id_param
@@ -313,6 +290,36 @@ class GeoreportRequestResource extends ResourceBase {
     $param = explode('.', $id_param);
     $id = $param[0];
     return $id;
+  }
+
+  /**
+   * Verifies that the whole entity does not violate any validation constraints.
+   *
+   * @param object $node
+   *   The node object.
+   *
+   * @return bool
+   *   return exception or TRUE if valid.
+   */
+  protected function validate(object $node) {
+    $violations = NULL;
+
+    $violations = $node->validate();
+    if (count($violations) > 0) {
+      $message = "Unprocessable Entity: validation failed.\n";
+      foreach ($violations as $violation) {
+        // We strip every HTML from the error message to have a nicer to read
+        // message on REST responses.
+        $message .= $violation->getPropertyPath() . ': ' . PlainTextOutput::renderFromHtml($violation->getMessage()) . "\n";
+      }
+      // Throw new UnprocessableEntityHttpException($message);
+      throw new HttpException(400, $message);
+
+      // Throw new BadRequestHttpException($message);
+    }
+    else {
+      return TRUE;
+    }
   }
 
 }

@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\Component\Render\PlainTextOutput;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Entity\EntityStorageException;
@@ -408,11 +409,14 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
     $violations = $node->validate();
     if (count($violations) > 0) {
-      $message = '';
+      $message = "Unprocessable Entity: validation failed.\n";
       foreach ($violations as $violation) {
-        $message .= $violation->getMessage() . '\n';
+        // We strip every HTML from the error message to have a nicer to read
+        // message on REST responses.
+        $message .= $violation->getPropertyPath() . ': ' . PlainTextOutput::renderFromHtml($violation->getMessage()) . "\n";
       }
-      throw new HttpException(400, $message, $e);
+      // Throw new UnprocessableEntityHttpException($message);
+      throw new HttpException(400, $message);
 
       // Throw new BadRequestHttpException($message);
     }

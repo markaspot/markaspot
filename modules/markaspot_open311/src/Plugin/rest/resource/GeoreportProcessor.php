@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\taxonomy\Entity\Term;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -49,52 +50,40 @@ class GeoreportProcessor {
    */
   public function requestMapNode(array $request_data) {
 
-    if (isset($request_data['service_request_id'])) {
-      $nodes = \Drupal::entityTypeManager()
-        ->getStorage('node')
-        ->loadByProperties(['request_id' => $request_data['service_request_id']]);
-      foreach ($nodes as $node) {
-        $request_id = $node->request_id->value;
-        $values['node'] = $node;
-      }
-      if (isset($request_id)) {
-        $request_data['requested_datetime'] = date('c', $node->created->value);
-      }
-
-    }
-
     $values['type'] = 'service_request';
     if (isset($request_id)) {
       $values['request_id'] = $request_data['service_request_id'];
     }
-    $values['title'] = isset($request_data['service_code']) ? $request_data['service_code'] : '';
-    $values['body'] = isset($request_data['description']) ? $request_data['description'] : '';
+    if ($op == FALSE) {
+      $values['title'] = isset($request_data['service_code']) ? Html::escape(stripslashes($request_data['service_code'])) : NULL;
+    }
+    $values['body'] = isset($request_data['description']) ? Html::escape(stripslashes($request_data['description'])) : NULL;
 
     // Don't need this for development.
-    $values['field_e_mail'] = isset($request_data['email']) ? $request_data['email'] : '';
+    $values['field_e_mail'] = isset($request_data['email']) ? Html::escape(stripslashes($request_data['email'])) : NULL;
 
-    $values['field_geolocation']['lat'] = isset($request_data['lat']) ? $request_data['lat'] : '';
-    $values['field_geolocation']['lng'] = isset($request_data['long']) ? $request_data['long'] : '';
-
+    $values['field_geolocation']['lat'] = isset($request_data['lat']) ? $request_data['lat'] : NULL;
+    $values['field_geolocation']['lng'] = isset($request_data['long']) ? $request_data['long'] : NULL;
+    if (!isset($values['field_geolocation']['lat'])) {
+      unset($values['field_geolocation']);
+    }
     if (array_key_exists('address_string', $request_data) || array_key_exists('address', $request_data)) {
 
-      $address = $this->addressParser($request_data['address_string']) ? $request_data['address_string'] : $request_data['address'];
+      $address = $this->addressParser($request_data['address_string']) ? Html::escape(stripslashes($request_data['address_string'])) : $request_data['address'];
 
-      // $values['field_address']['country_code'] = 'DE';.
       $values['field_address']['address_line1'] = $address['street'];
       $values['field_address']['postal_code'] = $address['zip'];
       $values['field_address']['locality'] = $address['city'];
-
     }
 
     // Get Category by service_code.
     $values['created'] = isset($request_data['requested_datetime']) ? strtotime($request_data['requested_datetime']) : time();
 
     // This wont work with entity->save().
-    $values['changed'] = isset($request_data['updated_datetime']) ? strtotime($request_data['updated_datetime']) : $values['created'];
+    $values['changed'] = time();
 
-    $values['field_category']['target_id'] = $this->serviceMapTax($request_data['service_code']);
-
+    $tid = $this->serviceMapTax($request_data['service_code']);
+    $values['field_category']['target_id'] = (isset($tid)) ? $tid : NULL;
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
       $managed = TRUE;
@@ -108,10 +97,17 @@ class GeoreportProcessor {
           'alt' => 'Open311 File',
         ];
       }
-
     }
 
-    return $values;
+    if (array_key_exists('extended_attributes', $request_data)) {
+      foreach ($request_data['extended_attributes']['drupal'] as $field_name => $value) {
+        if (isset($field_name)) {
+          $values[$field_name] = $value;
+        }
+      }
+    }
+
+    return array_filter($values);
   }
 
   /**
@@ -290,11 +286,9 @@ class GeoreportProcessor {
       ->loadMultiple($nids);
 
     // Extensions.
-    $extended_role = NULL;
+    $extended_role = 'anonymous';
 
     if (isset($parameters['extensions'])) {
-
-      // $extended_role = 'anonymous';
       if ($user->hasPermission('access open311 extension')) {
         $extended_role = 'user';
       }
@@ -344,7 +338,6 @@ class GeoreportProcessor {
       'updated_datetime' => date('c', $node->changed->value),
       'status' => $this->taxMapStatus($node->field_status->target_id),
     ];
-
     // Media Url:
     if (isset($node->field_request_image->entity)) {
       $image_uri = file_create_url($node->field_request_image->entity->getFileUri());

@@ -16,8 +16,8 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
   /**
    * {@inheritdoc}
    */
-  public function validate($field, Constraint $constraint) {
-    if ($this->polygonCheck(floatval($field->lng), floatval($field->lat))) {
+  public function validate($value, Constraint $constraint) {
+    if ($this->polygonCheck(floatval($value->lng), floatval($value->lat))) {
       $validLatLng = TRUE;
     }
     if (!isset($validLatLng)) {
