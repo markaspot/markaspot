@@ -240,6 +240,7 @@ class GeoreportRequestResource extends ResourceBase {
    *
    * @return array
    *   The service request array with id.
+   * @throws \Exception
    */
   public function updateNode(string $id, array $request_data): array {
     $request_id = $this->getRequestId($id);
@@ -248,12 +249,15 @@ class GeoreportRequestResource extends ResourceBase {
       ->getStorage('node')
       ->loadByProperties(['request_id' => $request_id]);
 
+    $map = new GeoreportProcessor();
     foreach ($nodes as $node) {
       if ($node instanceof ContentEntityInterface) {
         $request_data['service_request_id'] = $request_id;
-        $map = new GeoreportProcessor();
         $values = array_filter($map->requestMapNode($request_data, 'update'));
       }
+    }
+    if (empty($nodes)) {
+      $map->processsServicesError('Service-Request not found', 404);
     }
 
     foreach (array_keys($values) as $field_name) {
