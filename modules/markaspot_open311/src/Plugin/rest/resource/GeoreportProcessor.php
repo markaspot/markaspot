@@ -472,8 +472,8 @@ class GeoreportProcessor {
    * @param string $status
    *   Open or Closed.
    *
-   * @return int $tids
-   *   The tid
+   * @return array
+   *   The tids array
    */
   public function statusMapTax(string $status) {
     // Get all terms according to status.
