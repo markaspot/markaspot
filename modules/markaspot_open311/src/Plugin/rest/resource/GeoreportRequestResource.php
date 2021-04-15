@@ -9,10 +9,12 @@ use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Render\BubbleableMetadata;
 use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\jsonapi\Exception\UnprocessableHttpEntityException;
 use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
@@ -240,6 +242,7 @@ class GeoreportRequestResource extends ResourceBase {
    *
    * @return array
    *   The service request array with id.
+   *
    * @throws \Exception
    */
   public function updateNode(string $id, array $request_data): array {
@@ -257,7 +260,7 @@ class GeoreportRequestResource extends ResourceBase {
       }
     }
     if (empty($nodes)) {
-      $map->processsServicesError('Service-Request not found', 404);
+      throw new NotFoundHttpException('Service-Request not found');
     }
 
     foreach (array_keys($values) as $field_name) {
@@ -317,9 +320,8 @@ class GeoreportRequestResource extends ResourceBase {
         $message .= $violation->getPropertyPath() . ': ' . PlainTextOutput::renderFromHtml($violation->getMessage()) . "\n";
       }
       // Throw new UnprocessableEntityHttpException($message);
-      throw new HttpException(400, $message);
+      throw new UnprocessableHttpEntityException($message);
 
-      // Throw new BadRequestHttpException($message);
     }
     else {
       return TRUE;

@@ -300,9 +300,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // Checking for status-parameter and map the code with taxonomy terms:
     if (isset($parameters['status'])) {
       // Get the service of the current node:
-      $tid = $map->statusMapTax($parameters['status']);
-      // var_dump($tids);
-      $query->condition('field_status.entity.tid', $tid);
+      $tids = $map->statusMapTax($parameters['status']);
+      $or = $query->orConditionGroup();
+      foreach ($tids as $tid) {
+        $or->condition('field_status', $tid);
+      }
+      $query->condition($or);
+
     }
 
     $map = new GeoreportProcessor();

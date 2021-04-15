@@ -5,7 +5,7 @@ namespace Drupal\markaspot_open311\Plugin\rest\resource;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\taxonomy\Entity\Term;
-use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Class GeoreportProcessor parsing.
@@ -155,24 +155,9 @@ class GeoreportProcessor {
       return $tid;
     }
     else {
-      $this->processsServicesError('Servicecode not found', 404);
+      new NotFoundHttpException('Servicecode not found');
     }
     return FALSE;
-  }
-
-  /**
-   * Process errors with http status codes.
-   *
-   * @param string $message
-   *   The error message.
-   * @param int $code
-   *   The http status/error code.
-   *
-   * @throws \Exception
-   *   Throwing an exception which is reformatted by event subscriber.
-   */
-  public function processsServicesError($message, $code) {
-    throw new \Exception($message, $code);
   }
 
   /**
@@ -241,29 +226,6 @@ class GeoreportProcessor {
   }
 
   /**
-   * Mapping requested status to drupal taxonomy.
-   *
-   * @param string $status_sub
-   *   Custom Service status (can be foreign translated term name).
-   *
-   * @return int
-   *   The tid
-   */
-  public function statusMapTax($status_sub) {
-
-    $terms = taxonomy_term_load_multiple_by_name($status_sub);
-    $term = reset($terms);
-    if ($term != FALSE) {
-      $tid = $term->tid->value;
-      return $tid;
-    }
-    else {
-      $this->processsServicesError('Status not found', 404);
-      return FALSE;
-    }
-  }
-
-  /**
    * Query the database for nodes.
    *
    * @param object $query
@@ -305,7 +267,7 @@ class GeoreportProcessor {
       return $service_requests;
     }
     else {
-      throw new HttpException(404, "No Service requests found");
+      throw new NotFoundHttpException('No Service requests found');
     }
   }
 
@@ -357,7 +319,7 @@ class GeoreportProcessor {
       $service_code = $this->getTerm($node->field_category->target_id, 'field_service_code');
       $request['service_code'] = isset($service_code) ? $service_code : NULL;
     }
-    if (isset($extended_role)) {
+    if (isset($extended_role) && isset($parameters['extensions'])) {
       if (\Drupal::moduleHandler()->moduleExists('service_request')) {
         $request['extended_attributes']['markaspot'] = [];
 
@@ -502,6 +464,26 @@ class GeoreportProcessor {
     }
 
     return $status;
+  }
+
+  /**
+   * Mapping requested status to drupal taxonomy.
+   *
+   * @param string $status
+   *   Open or Closed.
+   *
+   * @return int $tids
+   *   The tid
+   */
+  public function statusMapTax(string $status) {
+    // Get all terms according to status.
+    if ($status == 'open') {
+      $tids = array_values($this->config->get('status_open'));
+    }
+    else {
+      $tids = array_values($this->config->get('status_closed'));
+    }
+    return $tids;
   }
 
 }
