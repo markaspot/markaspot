@@ -12,6 +12,7 @@ use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
@@ -409,20 +410,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   return exception or TRUE if valid.
    */
   protected function validate(object $node) {
-    $violations = NULL;
-
     $violations = $node->validate();
     if (count($violations) > 0) {
       $message = "Unprocessable Entity: validation failed.\n";
       foreach ($violations as $violation) {
-        // We strip every HTML from the error message to have a nicer to read
-        // message on REST responses.
         $message .= $violation->getPropertyPath() . ': ' . PlainTextOutput::renderFromHtml($violation->getMessage()) . "\n";
       }
-      // Throw new UnprocessableEntityHttpException($message);
-      throw new HttpException(400, $message);
-
-      // Throw new BadRequestHttpException($message);
+      throw new BadRequestHttpException($message);
     }
     else {
       return TRUE;

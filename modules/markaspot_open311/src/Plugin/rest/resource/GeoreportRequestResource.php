@@ -9,10 +9,10 @@ use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Render\BubbleableMetadata;
 use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Session\AccountProxyInterface;
-use Drupal\jsonapi\Exception\UnprocessableHttpEntityException;
 use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\Routing\Route;
@@ -205,7 +205,7 @@ class GeoreportRequestResource extends ResourceBase {
     try {
 
       if (!$this->currentUser->hasPermission('access open311 advanced properties')) {
-        // Throw new AccessDeniedHttpException();
+        Throw new AccessDeniedHttpException();
       }
 
       $context = new RenderContext();
@@ -319,9 +319,7 @@ class GeoreportRequestResource extends ResourceBase {
         // message on REST responses.
         $message .= $violation->getPropertyPath() . ': ' . PlainTextOutput::renderFromHtml($violation->getMessage()) . "\n";
       }
-      // Throw new UnprocessableEntityHttpException($message);
-      throw new UnprocessableHttpEntityException($message);
-
+      throw new BadRequestHttpException($message);
     }
     else {
       return TRUE;
