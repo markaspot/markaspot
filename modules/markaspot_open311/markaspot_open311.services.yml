@@ -31,3 +31,9 @@ services:
     tags:
       - { name: event_subscriber }
     arguments: ['@serializer', '@renderer', '@current_route_match']
+
+  markaspot_open311.event_subscriber:
+    class: Drupal\markaspot_open311\EventSubscriber\RemoveCookieSubscriber
+    arguments: ['@messenger']
+    tags:
+      - { name: event_subscriber }
