@@ -319,6 +319,20 @@ class GeoreportProcessor {
       $service_code = $this->getTerm($node->field_category->target_id, 'field_service_code');
       $request['service_code'] = isset($service_code) ? $service_code : NULL;
     }
+    if ($extended_role == 'manager') {
+
+      $request['email'] = $node->field_e_mail->value;
+
+      if (isset($node->field_phone)) {
+        $request['phone'] = $node->field_phone->value;
+      }
+      if (isset($node->field_given_name)) {
+        $request['first_name'] = $node->field_given->value;
+      }
+      if (isset($node->field_family_name)) {
+        $request['first_name'] = $node->field_family_name->value;
+      }
+    }
     if (isset($extended_role) && isset($parameters['extensions'])) {
       if (\Drupal::moduleHandler()->moduleExists('service_request')) {
         $request['extended_attributes']['markaspot'] = [];
@@ -360,6 +374,7 @@ class GeoreportProcessor {
     }
 
     if ($extended_role == 'manager') {
+
       $request['extended_attributes']['author'] = $node->author;
       $request['extended_attributes']['e-mail'] = $node->field_e_mail->value;
 
