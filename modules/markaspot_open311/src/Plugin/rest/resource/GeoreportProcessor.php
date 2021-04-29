@@ -83,7 +83,7 @@ class GeoreportProcessor {
     $values['changed'] = time();
 
     $tid = $this->serviceMapTax($request_data['service_code']);
-    $values['field_category']['target_id'] = (isset($tid)) ? $tid : NULL;
+    $values['field_category']['target_id'] = (count($tid) == 1) ? $tid[0][0] : NULL;
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
       $managed = TRUE;
@@ -145,14 +145,18 @@ class GeoreportProcessor {
    *   The TaxonomyId
    */
   public function serviceMapTax($service_code) {
+    $categories = explode(',', $service_code);
+    foreach ($categories as $category) {
+      $terms[] = \Drupal::entityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->loadByProperties(['field_service_code' => $category]);
+    }
 
-    $terms = \Drupal::entityTypeManager()
-      ->getStorage('taxonomy_term')
-      ->loadByProperties(['field_service_code' => $service_code]);
-    $term = reset($terms);
-    if ($term != FALSE) {
-      $tid = $term->tid->value;
-      return $tid;
+    foreach ($terms as $term){
+      $ids[] = array_keys($term);
+    }
+    if ($ids != FALSE) {
+      return $ids;
     }
     else {
       new NotFoundHttpException('Servicecode not found');

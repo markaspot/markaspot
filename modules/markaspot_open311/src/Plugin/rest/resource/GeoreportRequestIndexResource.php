@@ -241,13 +241,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Checking for service_code and map the code with taxonomy terms:
-    if (isset($parameters['service_code'])) {
-      // Get the service of the current node:
-      $tid = $map->serviceMapTax($parameters['service_code']);
-      $query->condition('field_category.entity.tid', $tid);
-    }
-
-    // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['id'])) {
       // Get the service of the current node:
       $query->condition('request_id', $parameters['id']);
@@ -307,7 +300,16 @@ class GeoreportRequestIndexResource extends ResourceBase {
         $or->condition('field_status', $tid);
       }
       $query->condition($or);
-
+    }
+    // Checking for service_code and map the code with taxonomy terms:
+    if (isset($parameters['service_code'])) {
+      // Get the service of the current node:
+      $tids = $map->serviceMapTax($parameters['service_code']);
+      $or = $query->orConditionGroup();
+      foreach ($tids as $tid) {
+        $or->condition('field_category', reset($tid));
+      }
+      $query->condition($or);
     }
 
     $map = new GeoreportProcessor();
