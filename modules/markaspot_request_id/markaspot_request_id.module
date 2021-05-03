@@ -112,7 +112,7 @@ function marakaspot_request_id_create_request_id() {
     ->condition('type', 'service_request')
     ->accessCheck(FALSE)
     ->sort('nid' , 'DESC')
-    ->range(1,1);
+    ->range(0,1);
 
   $entity_ids = $query->execute();
   $last_request_nid = reset($entity_ids);
@@ -127,7 +127,7 @@ function marakaspot_request_id_create_request_id() {
     $next = explode('-', $last_request_id);
   }
   // Is one provided count up (needs increment of 2 if no NID is created yet)
-  $next = (!empty($next[0])) ? $next[0] + 2 : 1;
+  $next = (!empty($next[0])) ? $next[0] + 1 : 1;
 
   $config = \Drupal::configFactory()->getEditable('markaspot_request_id.settings');
   $id_pattern = $config->get('format');
