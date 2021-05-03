@@ -5,3 +5,7 @@
 'access open311 advanced properties':
   title: 'Access Open311 Advanced Properties'
   description: 'Retrieve extended properties with author information'
+
+'update open311 plus all properties':
+  title: 'Update Open311 and Drupal Properties'
+  description: 'Update extended properties of service requests'
