@@ -1,5 +1,5 @@
 name: Mark-a-Spot Token
 type: module
 description: Adds custom token(s)
-core: 8.x
+core_version_requirement: ^8 || ^9
 package: Mark-a-Spot

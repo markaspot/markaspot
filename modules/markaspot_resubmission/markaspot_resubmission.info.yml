@@ -1,5 +1,5 @@
 name: 'Mark-a-Spot Resubmission'
 type: module
 description: 'Mark-a-Spot Resubmission'
-core: 8.x
+core_version_requirement: ^8 || ^9
 package: 'Mark-a-Spot'

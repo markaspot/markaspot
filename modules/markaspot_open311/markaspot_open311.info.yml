@@ -1,7 +1,7 @@
 name: Open311 Server
 type: module
 description: Open311 georeport v2 server
-core: 8.x
+core_version_requirement: ^8 || ^9
 package: Mark-a-Spot
 
 dependencies:

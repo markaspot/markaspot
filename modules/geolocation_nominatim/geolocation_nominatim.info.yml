@@ -1,7 +1,7 @@
 name: Geolocation Nominatim
 type: module
 description: A Nominatim based geocoder and widget for geolocation.
-core: 8.x
+core_version_requirement: ^8 || ^9
 package: Custom
 dependencies:
   - geolocation

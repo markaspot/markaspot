@@ -1,7 +1,7 @@
 name: Mark-a-Spot Default Content
 type: module
 description: Import some example content on install
-core: 8.x
+core_version_requirement: ^8 || ^9
 package: Mark-a-Spot
 dependencies:
   - default_content

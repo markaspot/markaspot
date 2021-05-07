@@ -2,7 +2,7 @@ name: Mark-a-Spot Group
 description: Adds grouped content feature
 package: Mark-a-Spot
 type: module
-core: 8.x
+core_version_requirement: ^8 || ^9
 
 dependencies:
   - service_request
