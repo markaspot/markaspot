@@ -79,13 +79,11 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
     // $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
     $request_id = marakaspot_request_id_create_request_id();
     $node->request_id = $request_id;
+    $request_id = $node->request_id->value;
+    $title = markaspot_request_id_create_title($node, $request_id);
+    markaspot_request_id_update_table($node, $title, $request_id);
+    $node->title = $title;
   }
-  $request_id = $node->request_id->value;
-  $title = markaspot_request_id_create_title($node, $request_id);
-  markaspot_request_id_update_table($node, $title, $request_id);
-
-  $node->title = $title;
-
 }
 
 function markaspot_request_id_update_table($node, $title, $request_id) {
