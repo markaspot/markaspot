@@ -6,7 +6,7 @@
 
 namespace Drupal\fa_icon_class\Tests;
 
-use Drupal\simpletest\WebTestBase;
+use Drupal\Tests\BrowserTestBase;
 
 
 /**
@@ -18,7 +18,7 @@ use Drupal\simpletest\WebTestBase;
  * @group fa_icon_class
  *
  */
-class FaWidgetTest extends WebTestBase {
+class FaWidgetTest extends BrowserTestBase {
 
   /**
    * The content type name.

@@ -20,9 +20,6 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   private $context;
   private $rootNodeName = NULL;
 
-  /**
-   *
-   */
   protected function getNodes() {
     $nodes = array(
       'errors' => 'error',

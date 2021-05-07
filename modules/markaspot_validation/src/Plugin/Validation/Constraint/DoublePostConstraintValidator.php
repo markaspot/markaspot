@@ -156,14 +156,14 @@ class DoublePostConstraintValidator extends ConstraintValidator {
     $query = \Drupal::entityQuery('node')
       // only published requests get validated as positive:
       ->condition('status', 1)
-      ->condition('changed', REQUEST_TIME, '<')
+      ->condition('changed', \Drupal::time()->getRequestTime(), '<')
       ->condition('type', 'service_request')
       ->condition('field_geolocation.lat', $minLat, '>')
       ->condition('field_geolocation.lat', $maxLat, '<')
       ->condition('field_geolocation.lng', $minLon, '>')
       ->condition('field_geolocation.lng', $maxLon, '<')
       ->condition('field_category.target_id', $target_id)
-      ->condition('created', REQUEST_TIME - (24 * 60 * 60 * $this->days), '>=');
+      ->condition('created', \Drupal::time()->getRequestTime() - (24 * 60 * 60 * $this->days), '>=');
 
     $nids = $query->execute();
     return $nids;

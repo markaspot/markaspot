@@ -1,5 +1,6 @@
 <?php
 
+use Drupal\Core\File\FileSystemInterface;
 /**
  * @file
  * Contains markaspot_static_json.module..
@@ -64,7 +65,7 @@ function markaspot_static_json_cron() {
   markaspot_static_json_request($limit, $current_page);
   $request_time = \Drupal::time()->getRequestTime();
   if (\Drupal::state()->get('mas_shown_status_message')) {
-    drupal_set_message(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601($request_time)]));
+    \Drupal::messenger()->addStatus(t('Mark-a-Spot static JSON executed at %time', ['%time' => date_iso8601($request_time)]));
     \Drupal::state()->set('mas_shown_status_message', FALSE);
   }
   $cron_config->set('markaspot_static_json.next_execution', $request_time + $interval)->save();
@@ -93,7 +94,7 @@ function markaspot_static_json_request($limit, $current_page) {
     $cron_config->set('static_page', 0);
 
     // $current_service_requests = json_decode($start_json, TRUE);.
-    file_save_data('[]', $path, FILE_EXISTS_REPLACE);
+    file_save_data('[]', $path, FileSystemInterface::EXISTS_REPLACE);
   }
 
   if ($host !== "default") {
@@ -122,7 +123,7 @@ function markaspot_static_json_request($limit, $current_page) {
 
       $data = json_encode($merged);
 
-      $local = (file_exists($path)) ? file_save_data($data, $path, FILE_EXISTS_REPLACE) : file_unmanaged_save_data($response, $path, FILE_EXISTS_REPLACE);
+      $local = (file_exists($path)) ? file_save_data($data, $path, FileSystemInterface::EXISTS_REPLACE) : \Drupal::service('file_system')->saveData($response, $path, FileSystemInterface::EXISTS_REPLACE);
       if (isset($local)) {
         \Drupal::logger('Mark-a-Spot Static JSON')
           ->notice(t('Static file saved, including ') . $count . ' items.');

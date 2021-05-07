@@ -33,7 +33,7 @@ function markaspot_default_content_install() {
   // Save user entity.
   $res = $user->save();
   if (isset($res)) {
-    drupal_set_message('User saved');
+    \Drupal::messenger()->addStatus('User saved');
   }
 }
 
@@ -73,5 +73,5 @@ function markaspot_default_content_modules_installed() {
 
   $dataBlock->save();
 
-  drupal_set_message(t('Default Open311 and Data Block have been updated with a new server hostname @host', array('@host' => $_SERVER['SERVER_NAME'])));
+  \Drupal::messenger()->addStatus(t('Default Open311 and Data Block have been updated with a new server hostname @host', array('@host' => $_SERVER['SERVER_NAME'])));
 }
