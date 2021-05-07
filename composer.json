@@ -53,37 +53,37 @@
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
     "drupal/radix": "3.*",
-    "drupal/pathauto": "^1.0@RC",
-    "drupal/admin_toolbar": "2.*",
-    "drupal/restui": "^1.15",
-    "drupal/token": "1.*",
+    "drupal/pathauto": "^1",
+    "drupal/admin_toolbar": "^3",
+    "drupal/restui": "^1",
+    "drupal/token": "^1.9",
     "drupal/shariff": "^1",
-    "drupal/r4032login": "dev-1.x",
+    "drupal/r4032login": "^2",
     "drupal/bootstrap_layouts": "^5.0",
     "drupal/views_bootstrap": "^3.0",
     "drupal/better_normalizers": "1.x-dev",
     "drupal/ctools": "3.x-dev",
-    "drupal/image_effects": "1.x-dev",
+    "drupal/image_effects": "^3",
     "drupal/paragraphs": "^1.2",
-    "drupal/entity_reference_revisions": "^1.3",
+    "drupal/entity_reference_revisions": "^1.9",
     "drupal/diff": "^1.0",
     "drupal/exif_orientation": "^1",
     "drupal/field_group": "^3.1",
-    "drupal/form_mode_manager": "~2",
-    "drupal/geolocation": "^1.11",
+    "drupal/form_mode_manager": "2.x-dev",
+    "drupal/geolocation": "^3",
     "drupal/maillog": "1.x-dev",
-    "drupal/services_api_key_auth": "1.*",
+    "drupal/services_api_key_auth": "1.x-dev",
     "drupal/search_api": "^1.5",
     "drupal/views_infinite_scroll": "^1.5",
-    "drupal/better_exposed_filters": "^4.0",
+    "drupal/better_exposed_filters": "^5.0",
     "drupal/default_content": "2.0.x",
-    "drupal/color_field": "2.x-dev",
-    "drupal/field_permissions": "1.x-dev",
+    "drupal/color_field": "^2.4",
+    "drupal/field_permissions": "^1.1",
     "drupal/twig_tweak": "^2.0",
     "drupal/field_formatter_class":"^1.0",
     "drupal/page_manager": "4.x-dev",
     "drupal/panels": "^4.2",
-    "drupal/pbf": "^1.1"
+    "drupal/pbf": "^1.3"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
@@ -122,7 +122,9 @@
       "drupal/business_rules": {
         "Add taxonomy condition": "https://www.drupal.org/files/issues/2018-07-05/2983864-feature-request-compare-target_id-with-field.patch",
         "Fix e-mail-from header": "https://www.drupal.org/files/issues/2020-04-28/business-rules-email-from.patch"
-      }
-    }
+      },
+      "drupal/form_mode_manager": {
+        "Add D9 fixes": "https://www.drupal.org/files/issues/2020-10-30/form_mode_manager-drupal-9-compatibility-3164478-6.patch"
+      }    }
   }
 }
