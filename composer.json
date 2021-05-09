@@ -52,7 +52,7 @@
     "anthonymartin/geo-location": "^1.0",
     "drupal/address": "~1.0",
     "drupal/features": "^3.0",
-    "drupal/radix": "3.*",
+    "drupal/radix": "3.x-dev",
     "drupal/pathauto": "^1",
     "drupal/admin_toolbar": "^3",
     "drupal/restui": "^1",
@@ -117,7 +117,7 @@
     "enable-patching": true,
     "patches": {
       "drupal/radix": {
-        "Make D9 ready": "https://www.drupal.org/files/issues/2020-06-06/radix.3.x-dev.rector.patch"
+        "Make D9 ready": "web/profiles/contrib/markaspot/patches/radix-d9-3-x.patch"
       },
       "drupal/business_rules": {
         "Add taxonomy condition": "https://www.drupal.org/files/issues/2018-07-05/2983864-feature-request-compare-target_id-with-field.patch",
