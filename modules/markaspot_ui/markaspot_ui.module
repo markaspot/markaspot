@@ -17,7 +17,6 @@ function markaspot_ui_toolbar() {
   }
   $markaspot_modules = array(
     'markaspot_map' => 'markaspot_map.settings',
-    'markaspot_uuid' => 'markaspot_uuid.settings',
     'markaspot_request_id' => 'markaspot_request_id.settings',
     'markaspot_open311' => 'markaspot_open311.settings',
     'markaspot_validation' => 'markaspot_validation.settings',
@@ -25,14 +24,14 @@ function markaspot_ui_toolbar() {
     'markaspot_archive' => 'markaspot_archive.settings',
     'markaspot_resubmission' => 'markaspot_resubmission.settings',
     'markaspot_static_json' => 'markaspot_static_json.settings',
-    'api_key_auth' => 'entity.api_key.collection',
+    'services_api_key_auth' => 'entity.api_key.collection',
   );
 
   // Build a list of links for the menu.
   $links = array();
   foreach ($markaspot_modules as $module => $route) {
     // Get the module info (title, description) from Drupal.
-    $info = system_get_info('module', $module);
+    $info = \Drupal::service('extension.list.module')->getExtensionInfo($module);
 
     if (!empty($info)) {
       $links[$module] = array(
