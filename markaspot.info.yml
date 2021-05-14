@@ -1,7 +1,7 @@
 name: Mark-a-Spot
 description: 'Install with commonly used features pre-configured.'
 type: profile
-core: 8.x
+core_version_requirement: ^8 || ^9
 distibution:
   name: Mark-a-Spot
   install:
@@ -45,6 +45,7 @@ dependencies:
   - history
   - image
   - image_effects
+  - language
   - menu_link_content
   - menu_ui
   - node
@@ -73,18 +74,21 @@ dependencies:
   - views_infinite_scroll
   - views_ui
   - views_bootstrap
+  - markaspot_archive
   - markaspot_article
   - markaspot_blocks
   - markaspot_comment
   - markaspot_group
   - markaspot_open311
   - markaspot_map
+  - markaspot_media
   - markaspot_token
   - markaspot_page
   - markaspot_static_json
   - markaspot_ui
-  - markaspot_user
+  - markaspot_privacy
   - markaspot_request_id
+  - markaspot_resubmission
   - markaspot_stats
   - markaspot_trend
   - markaspot_validation
