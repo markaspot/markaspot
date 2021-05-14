@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Core\File\FileSystemInterface;
+use \Drupal\media\entity\Media;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\taxonomy\Entity\Term;
@@ -90,14 +91,33 @@ class GeoreportProcessor {
       $managed = TRUE;
       $file = system_retrieve_file($request_data['media_url'], 'public://', $managed, FileSystemInterface::EXISTS_RENAME);
 
-      $field_keys['image'] = 'field_request_image';
-
-      if ($file !== FALSE) {
-        $values[$field_keys['image']] = [
-          'target_id' => $file->id(),
+      if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
+        $field_keys['image'] = 'field_request_media';
+        $media = Media::create([
+          'bundle'           => 'request_image',
+          'uid'              => \Drupal::currentUser()->id(),
+          'field_media_image' => [
+            'target_id' => $file->id(),
+            'alt' => 'Open311 File',
+          ],
+        ]);
+        $media->setName($request_data['service_code'] . ' ' . $values['created'] )->setPublished(TRUE)->save();
+        $field_keys['image'] = 'field_request_media';
+        $values['field_request_media'] = [
+          'target_id' => $media->id(),
           'alt' => 'Open311 File',
         ];
+      } else {
+        $field_keys['image'] = 'field_request_image';
+        if ($file !== FALSE) {
+          $values[$field_keys['image']] = [
+            'target_id' => $file->id(),
+            'alt' => 'Open311 File',
+          ];
+        }
       }
+
+
     }
 
     if (array_key_exists('extended_attributes', $request_data)) {
@@ -306,10 +326,17 @@ class GeoreportProcessor {
       'status' => $this->taxMapStatus($node->field_status->target_id),
     ];
     // Media Url:
-    if (isset($node->field_request_image->entity)) {
-      $image_uri = file_create_url($node->field_request_image->entity->getFileUri());
-      $request['media_url'] = $image_uri;
+
+    $image = $node->field_request_image->entity;
+    $media = $node->field_request_media->entity->field_media_image->entity;
+
+    if (isset($image)) {
+      $image_uri = file_create_url($image->getFileUri());
+    } else if ($media) {
+      $image_uri = $media->isPublished ? file_create_url($media->getFileUri()) : '';
     }
+    $request['media_url'] = (isset($image_uri)) ? $image_uri : '';
+
 
     // Checking latest paragraph entity item for publish the official status.
     if (isset($node->field_status_notes)) {

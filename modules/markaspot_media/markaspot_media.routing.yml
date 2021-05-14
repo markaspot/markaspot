@@ -1,0 +1,7 @@
+markaspot_media.settings_form:
+  path: '/admin/config/system/markaspot-media'
+  defaults:
+    _title: 'markaspot_media settings'
+    _form: 'Drupal\markaspot_media\Form\SettingsForm'
+  requirements:
+    _permission: 'administer markaspot_media configuration'

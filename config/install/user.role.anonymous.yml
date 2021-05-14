@@ -1,0 +1,33 @@
+uuid: 1e066c27-4a13-4461-abef-aa5e37d1a8d3
+langcode: de
+status: true
+dependencies: {  }
+_core:
+  default_config_hash: F-A_L04pvzFQ_VBxaFu1ZqjrSskq2npRWmi6fDYC9tY
+id: anonymous
+label: 'Anonymous user'
+weight: -6
+is_admin: false
+permissions:
+  - 'access comments'
+  - 'access content'
+  - 'access open311 extension'
+  - 'create field_approved'
+  - 'create field_e_mail'
+  - 'create field_request_media'
+  - 'create service_request content'
+  - 'display eu cookie compliance popup'
+  - 'edit field_approved'
+  - 'edit own field_approved'
+  - 'post comments'
+  - 'restful get georeport_request_index_resource'
+  - 'restful get georeport_request_resource'
+  - 'restful get georeport_service_index_resource'
+  - 'search content'
+  - 'use exclude node title'
+  - 'view field_address'
+  - 'view field_status'
+  - 'view field_status_note'
+  - 'view field_status_notes'
+  - 'view media'
+  - 'view own field_status_note'

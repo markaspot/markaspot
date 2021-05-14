@@ -105,9 +105,9 @@ set category_icon = [
 
   <div{{ content_attributes.addClass('content') }}>
     {% if not (node.field_no_location.isEmpty == true) and content.field_no_location is defined %}
-      {{ content|without('field_status_notes', 'field_status', 'field_category') }}
+      {{ content|without('field_status_notes', 'field_status', 'field_category', 'comment') }}
     {% else %}
-      {{ content|without('field_address', 'field_status_notes', 'field_status', 'field_category') }}
+      {{ content|without('field_address', 'field_status_notes', 'field_status', 'field_category', 'comment') }}
     {% endif %}
   </div>
   <div class="container category-status">
@@ -117,5 +117,7 @@ set category_icon = [
   <div>
     {{ content.field_status_notes }}
   </div>
-
+  <div class="comments">
+    {{ content.comment }}
+  </div>
 </article>

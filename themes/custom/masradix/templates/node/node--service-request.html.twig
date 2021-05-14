@@ -94,7 +94,11 @@ set category_icon = [
 {%
   set header_image = node.field_request_image.entity.fileuri
 %}
+{% if header_image is null and node.field_request_media.entity.isPublished %}
 
+    {% set header_image = node.field_request_media.entity.field_media_image.entity.fileuri %}
+
+{%  endif %}
 
 <article {{attributes.addClass(classes).addClass('color-' ~ mas_status['color'])}}>
     {{ title_prefix }}

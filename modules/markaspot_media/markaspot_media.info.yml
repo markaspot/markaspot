@@ -1,0 +1,10 @@
+name: markaspot_media
+type: module
+description: The description.
+package: Custom
+core: 8.x
+core_version_requirement: ^8 || ^9
+dependencies:
+  - media
+  - inline_entity_form
+  - field_formatter_class

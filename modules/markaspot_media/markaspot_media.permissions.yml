@@ -1,0 +1,4 @@
+administer markaspot_media configuration:
+  title: 'Administer markaspot_media configuration'
+  description: 'Optional description.'
+  restrict access: true

@@ -1,0 +1,14 @@
+uuid: 5185be43-8467-411d-ac46-c8104e329291
+langcode: de
+status: true
+dependencies: {  }
+id: api_user
+label: 'API User'
+weight: -3
+is_admin: null
+permissions:
+  - 'create field_service_provider_notes'
+  - 'view any unpublished service_request content'
+  - 'view field_service_provider'
+  - 'view field_service_provider_notes'
+  - 'view field_sp_attachment'
