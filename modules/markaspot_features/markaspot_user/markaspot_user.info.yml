@@ -1,7 +1,0 @@
-name: User
-description: 'Provide User related configuration.'
-type: module
-core_version_requirement: ^8 || ^9
-dependencies:
-  - user
-package: Mark-a-Spot
