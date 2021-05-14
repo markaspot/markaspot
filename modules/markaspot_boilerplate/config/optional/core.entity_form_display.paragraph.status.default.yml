@@ -1,0 +1,46 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.paragraph.status.field_boilerplate
+    - field.field.paragraph.status.field_status_note
+    - field.field.paragraph.status.field_status_term
+    - paragraphs.paragraphs_type.status
+  module:
+    - text
+_core:
+  default_config_hash: RHyVqSWwZ8JZa9cXvZKogxkgBTDLfWFrDCrF_hvuVwE
+id: paragraph.status.default
+targetEntityType: paragraph
+bundle: status
+mode: default
+content:
+  created:
+    type: datetime_timestamp
+    weight: 3
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  field_boilerplate:
+    weight: 1
+    settings: {  }
+    third_party_settings: {  }
+    type: options_select
+    region: content
+  field_status_note:
+    weight: 2
+    settings:
+      rows: 5
+      placeholder: ''
+    third_party_settings: {  }
+    type: text_textarea
+    region: content
+  field_status_term:
+    weight: 0
+    settings: {  }
+    third_party_settings: {  }
+    type: options_select
+    region: content
+hidden:
+  status: true
+  uid: true

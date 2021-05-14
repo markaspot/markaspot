@@ -1,0 +1,15 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - node.type.boilerplate
+  module:
+    - content_translation
+third_party_settings:
+  content_translation:
+    enabled: true
+id: node.boilerplate
+target_entity_type_id: node
+target_bundle: boilerplate
+default_langcode: site_default
+language_alterable: true

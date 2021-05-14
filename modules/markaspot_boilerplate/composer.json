@@ -1,0 +1,11 @@
+{
+  "name": "drupal/markaspot_boilerplate",
+  "type": "drupal-module",
+  "description": "Mark-a-Spot Bolilerplate",
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "minimum-stability": "dev",
+  "support": {
+  },
+  "require": { }
+}

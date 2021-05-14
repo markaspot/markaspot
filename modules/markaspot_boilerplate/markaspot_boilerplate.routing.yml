@@ -1,0 +1,8 @@
+
+markaspot_boilerplate.load_controller_load:
+  path: '/markaspot_boilerplate/load/{nid}'
+  defaults:
+    _controller: '\Drupal\markaspot_boilerplate\Controller\LoadController::load'
+    _title: 'load'
+  requirements:
+    _permission: 'access content'

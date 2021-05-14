@@ -1,0 +1,41 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.paragraph.status.field_boilerplate
+    - field.field.paragraph.status.field_status_note
+    - field.field.paragraph.status.field_status_term
+    - paragraphs.paragraphs_type.status
+  module:
+    - text
+_core:
+  default_config_hash: 6j65H49azyKFhUeFTRY9Lbc3Uf4NTTw87FxHKRyBArU
+id: paragraph.status.default
+targetEntityType: paragraph
+bundle: status
+mode: default
+content:
+  field_boilerplate:
+    weight: 2
+    label: above
+    settings:
+      link: true
+    third_party_settings: {  }
+    type: entity_reference_label
+    region: content
+  field_status_note:
+    weight: 0
+    label: visually_hidden
+    settings: {  }
+    third_party_settings: {  }
+    type: text_default
+    region: content
+  field_status_term:
+    weight: 1
+    label: visually_hidden
+    settings:
+      link: false
+    third_party_settings: {  }
+    type: entity_reference_label
+    region: content
+hidden: {  }

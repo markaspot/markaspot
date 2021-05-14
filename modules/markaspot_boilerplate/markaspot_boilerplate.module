@@ -1,0 +1,47 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_boilerplate.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Form\FormStateInterface;
+/**
+ * Implements hook_help().
+ */
+function markaspot_boilerplate_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_boilerplate module.
+    case 'help.page.markaspot_boilerplate':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Mark-a-Spot Boilerplate') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function markaspot_boilerplate_theme() {
+  return [
+    'markaspot_boilerplate' => [
+      'render element' => 'children',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+
+function markaspot_boilerplate_form_alter(&$form, FormStateInterface $form_state, $form_id){
+
+  $form['#attached']['library'][] = 'markaspot_boilerplate/markaspot_boilerplate';
+  return $form;
+
+}
+

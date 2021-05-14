@@ -1,0 +1,5 @@
+markaspot_boilerplate:
+  js:
+    js/markaspot_boilerplate.js: {}
+  dependencies:
+    - core/drupal.ajax

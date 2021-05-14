@@ -1,0 +1,33 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - core.entity_view_mode.node.teaser
+    - field.field.node.boilerplate.body
+    - node.type.boilerplate
+  module:
+    - text
+    - user
+id: node.boilerplate.teaser
+targetEntityType: node
+bundle: boilerplate
+mode: teaser
+content:
+  body:
+    label: hidden
+    type: text_summary_or_trimmed
+    weight: 101
+    settings:
+      trim_length: 600
+    third_party_settings: {  }
+    region: content
+  links:
+    weight: 100
+    settings: {  }
+    third_party_settings: {  }
+    region: content
+hidden:
+  groups: true
+  groups_type_organisation: true
+  langcode: true
+  shariff_field: true
