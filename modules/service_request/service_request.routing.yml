@@ -1,6 +1,7 @@
 service_request.add:
-  path: '/report'
+  path: '/report/{node_type}'
   defaults:
+    node_type: 'service_request'
     _entity_form: 'node.default'
     _title_callback: '\Drupal\node\Controller\NodeController::addPageTitle'
   requirements:
@@ -11,5 +12,3 @@ service_request.add:
       node_type:
         type: entity:node_type
         with_config_overrides: TRUE
-
-
