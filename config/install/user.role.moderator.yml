@@ -1,9 +1,6 @@
-uuid: 92c9332c-333e-43e3-8834-3a2ab2004013
 langcode: de
 status: true
 dependencies: {  }
-_core:
-  default_config_hash: l7C6IeGZQBvYEQuhamcW4j-DckJD4wA2Zv4xotpSRkE
 id: moderator
 label: Moderator
 weight: -5

@@ -1,4 +1,3 @@
-uuid: c3f71ce4-1f73-17149-801d-71ce41f7382fd88001d5eb88b4a44
 langcode: en
 status: true
 dependencies:
@@ -12,8 +11,6 @@ dependencies:
     - markaspot_map
     - markaspot_trend
     - panels
-_core:
-  default_config_hash: eOH0rPaN1SbUQCXbX3uWxH-BGteU6Ce7D_YCngbe2x8
 id: front_page-panels_variant-0
 label: 'Front page'
 variant: panels_variant

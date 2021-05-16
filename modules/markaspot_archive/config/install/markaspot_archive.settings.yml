@@ -1,0 +1,13 @@
+tax_status: service_status
+status_archivable:
+  6: '6'
+status_archived: '6'
+unpublish: 1
+anonymize: 1
+anonymize_fields:
+  24: '24'
+days:
+  3: '99'
+  1: '99'
+  2: '99'
+  4: '99'

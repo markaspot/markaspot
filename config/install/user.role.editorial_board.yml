@@ -1,9 +1,6 @@
-uuid: 3d0c7c55-00a0-4810-afa7-62211c4db7cb
 langcode: de
 status: true
 dependencies: {  }
-_core:
-  default_config_hash: 4aVpeVLiU_ymDrrMBdog73TYsz6OJOuf26pPfLQGX1E
 id: editorial_board
 label: 'Editorial board'
 weight: -4
