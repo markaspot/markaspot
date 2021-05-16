@@ -47,11 +47,11 @@ function markaspot_request_id_entity_base_field_info(EntityTypeInterface $entity
       ->setSetting('max_length', 32)
       ->setDisplayOptions('view', [
         'label' => 'hidden',
-        'type' => 'hidden',
+        'region' => 'hidden',
         'weight' => -5,
       ])
       ->setDisplayOptions('form', [
-        'type' => 'hidden',
+        'region' => 'hidden',
         'weight' => -5,
       ])
       ->setDisplayConfigurable('form', TRUE);
@@ -161,3 +161,4 @@ function markaspot_request_id_create_title($node, $request_id) {
   }
 
 }
+
