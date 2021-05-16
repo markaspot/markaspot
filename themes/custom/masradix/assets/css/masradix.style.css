@@ -5957,12 +5957,6 @@ select.selectpicker {
 .form-group-lg .bootstrap-select.btn-group.form-control,
 .form-group-sm .bootstrap-select.btn-group.form-control {
   padding: 0; }
-  .form-group-lg .bootstrap-select.btn-group.form-control .dropdown-toggle,
-  .form-group-sm .bootstrap-select.btn-group.form-control .dropdown-toggle {
-    height: 100%;
-    font-size: inherit;
-    line-height: inherit;
-    border-radius: inherit; }
 
 .form-inline .bootstrap-select.btn-group .form-control {
   width: 100%; }
@@ -8506,7 +8500,7 @@ ul.log_list .count {
   .block .user-login-form {
     display: none; }
   .navbar-left {
-    margin: 10px 10px 0 0px;
+    margin: 10px 0 0 0;
     float: right !important; }
   .navbar-right {
     margin: 0 10px 0 0;
