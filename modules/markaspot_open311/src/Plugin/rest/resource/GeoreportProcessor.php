@@ -54,7 +54,7 @@ class GeoreportProcessor {
 
     $values['type'] = 'service_request';
     if (isset($request_id)) {
-      $values['request_id'] = $request_data['service_request_id'];
+      // $values['request_id'] = $request_data['service_request_id'];
     }
     if ($op == FALSE) {
       $values['title'] = isset($request_data['service_code']) ? Html::escape(stripslashes($request_data['service_code'])) : NULL;
@@ -359,10 +359,16 @@ class GeoreportProcessor {
         $request['phone'] = $node->field_phone->value;
       }
       if (isset($node->field_given_name)) {
-        $request['first_name'] = $node->field_given->value;
+        $request['first_name'] = $node->field_given_name->value;
       }
       if (isset($node->field_family_name)) {
-        $request['first_name'] = $node->field_family_name->value;
+        $request['last_name'] = $node->field_family_name->value;
+      }
+      if (isset($node->field_first_name)) {
+        $request['first_name'] = $node->field_first_name->value;
+      }
+      if (isset($node->field_last_name)) {
+        $request['last_name'] = $node->field_last_name->value;
       }
     }
     if (isset($extended_role) && isset($parameters['extensions'])) {
