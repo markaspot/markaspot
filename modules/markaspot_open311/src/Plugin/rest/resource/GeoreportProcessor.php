@@ -332,8 +332,8 @@ class GeoreportProcessor {
 
     if (isset($image)) {
       $image_uri = file_create_url($image->getFileUri());
-    } else if (isset($media)) {
-      $image_uri = $media->isPublished() ? file_create_url($media->field_media_image->entity->getFileUri()) : '';
+    } else if (isset($media->field_media_image->entity)) {
+      $image_uri = ($media->isPublished()) ? file_create_url($media->field_media_image->entity->getFileUri()) : '';
     }
     $request['media_url'] = (isset($image_uri)) ? $image_uri : '';
 

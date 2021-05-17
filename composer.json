@@ -118,7 +118,7 @@
     "enable-patching": true,
     "patches": {
       "drupal/radix": {
-        "Make D9 ready": "https://gist.githubusercontent.com/markaspot/e68009bc1dffc4db3867dfe582b77871/raw/d323fdd0ae404086b00e7b4ddb198289dd1fe576/radix-d9-3-x.patch"
+        "Make Radix D9 ready": "https://gist.githubusercontent.com/markaspot/e68009bc1dffc4db3867dfe582b77871/raw/d323fdd0ae404086b00e7b4ddb198289dd1fe576/radix-d9-3-x.patch"
       },
       "drupal/business_rules": {
         "Add taxonomy condition": "https://www.drupal.org/files/issues/2018-07-05/2983864-feature-request-compare-target_id-with-field.patch",
