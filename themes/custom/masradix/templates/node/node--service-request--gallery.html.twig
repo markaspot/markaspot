@@ -100,7 +100,7 @@ set cols = content.field_status_notes['#field_name'] and content.field_category[
         <h2{{ title_attributes }} style="background: linear-gradient(
                 rgba(0, 0, 0, 0.4),
                 rgba(0, 0, 0, 0.4)
-                ), url({{ file_url(header_image | image_style('large') ) }});
+                ), url({% if header_image %} {{ file_url(header_image | image_style('large') ) }}{%  endif %});
                 background-repeat:no-repeat;
                 background-size:100%;
                 background-position:center;">

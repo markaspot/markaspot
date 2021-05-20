@@ -90,7 +90,7 @@ BubbleableMetadata $bubbleable_metadata) {
       $replacements += \Drupal::token()->generate('content-type', $node_type_tokens, array('node_type' => $node_type), $options, $bubbleable_metadata);
     }
     if (($url_tokens = \Drupal::token()->findWithPrefix($tokens, 'url'))) {
-      $replacements += \Drupal::token()->generate('url', $url_tokens, array('url' => $node->urlInfo()), $options, $bubbleable_metadata);
+      $replacements += \Drupal::token()->generate('url', $url_tokens, array('url' => $node->toUrl()), $options, $bubbleable_metadata);
     }
   }
   return $replacements;
