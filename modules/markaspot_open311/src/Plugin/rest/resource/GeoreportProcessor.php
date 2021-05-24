@@ -7,6 +7,7 @@ use \Drupal\media\entity\Media;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\taxonomy\Entity\Term;
+use Drupal\paragraphs\Entity\Paragraph;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -56,9 +57,7 @@ class GeoreportProcessor {
     if (isset($request_id)) {
       // $values['request_id'] = $request_data['service_request_id'];
     }
-    if ($op == FALSE) {
-      $values['title'] = isset($request_data['service_code']) ? Html::escape(stripslashes($request_data['service_code'])) : NULL;
-    }
+
     $values['body'] = isset($request_data['description']) ? Html::escape(stripslashes($request_data['description'])) : NULL;
 
     // Don't need this for development.
@@ -84,8 +83,9 @@ class GeoreportProcessor {
     // This wont work with entity->save().
     $values['changed'] = time();
 
-    $tid = $this->serviceMapTax($request_data['service_code']);
-    $values['field_category']['target_id'] = (count($tid) == 1) ? $tid[0][0] : NULL;
+    $category_tid = $this->serviceMapTax($request_data['service_code']);
+    $values['field_category']['target_id'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
+
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
       $managed = TRUE;
@@ -121,6 +121,10 @@ class GeoreportProcessor {
     }
 
     if (array_key_exists('extended_attributes', $request_data)) {
+      // Check for additional attribute for use of revision log message.
+      $values['revision_log_message'] = $request_data['extended_attributes']['revision_log_message'];
+
+      // Check for paragraph status notes.
       foreach ($request_data['extended_attributes']['drupal'] as $field_name => $value) {
         if (isset($field_name)) {
           $values[$field_name] = $value;
@@ -185,6 +189,34 @@ class GeoreportProcessor {
     return FALSE;
   }
 
+  /**
+   * Mapping requested service_code to drupal taxonomy.
+   *
+   * @param string $service_code
+   *   Open311 Service code (can be Code0001)
+   *
+   * @return int
+   *   The TaxonomyId
+   */
+  public function fieldStatusMapTax($statuses) {
+    $statuses = explode(',', $statuses);
+    foreach ($statuses as $status) {
+      $terms[] = \Drupal::entityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->loadByProperties(['name' => $status]);
+    }
+
+    foreach ($terms as $term){
+      $ids[] = array_keys($term);
+    }
+    if ($ids != FALSE) {
+      return $ids;
+    }
+    else {
+      new NotFoundHttpException('Status not found');
+    }
+    return FALSE;
+  }
   /**
    * Returns renderable array of taxonomy terms from Categories vocabulary.
    *
@@ -537,6 +569,16 @@ class GeoreportProcessor {
       $tids = array_values($this->config->get('status_closed'));
     }
     return $tids;
+  }
+
+  function create_paragraph($paragraphData) {
+    $paragraph = Paragraph::create(['type' => 'status',]);
+    $paragraph->set('field_status_term', $paragraphData[0]);
+    $paragraph->set('field_status_note', $paragraphData[1]);
+
+    $paragraph->isNew();
+    $paragraph->save();
+    return $paragraph;
   }
 
 }
