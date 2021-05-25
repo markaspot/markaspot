@@ -57,6 +57,8 @@ class GeoreportProcessor {
     if (isset($request_id)) {
       // $values['request_id'] = $request_data['service_request_id'];
     }
+    $values['title'] = isset($request_data['service_code']) ? Html::escape(stripslashes($request_data['service_code'])) : NULL;
+
 
     $values['body'] = isset($request_data['description']) ? Html::escape(stripslashes($request_data['description'])) : NULL;
 

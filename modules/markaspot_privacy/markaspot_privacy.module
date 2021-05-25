@@ -65,7 +65,7 @@ function markaspot_privacy_form_alter(&$form, \Drupal\Core\Form\FormStateInterfa
       ->getEditable('markaspot_privacy.settings')->get();
 
       // Add a "terms of use" checkbox in node forms, if a new node will be created.
-      if ((isset($config['field_save']) || $config['field_save'] === FALSE )) {
+      if ((isset($config['field_save']) && $config['field_save'] === 0 )) {
         _add_terms_of_use($form);
         unset($form['field_gdpr']);
       }
