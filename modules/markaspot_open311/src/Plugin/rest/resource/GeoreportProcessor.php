@@ -3,7 +3,7 @@
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Core\File\FileSystemInterface;
-use \Drupal\media\entity\Media;
+use Drupal\media\Entity\Media;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\taxonomy\Entity\Term;
