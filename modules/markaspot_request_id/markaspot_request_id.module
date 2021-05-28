@@ -47,11 +47,11 @@ function markaspot_request_id_entity_base_field_info(EntityTypeInterface $entity
       ->setSetting('max_length', 32)
       ->setDisplayOptions('view', [
         'label' => 'hidden',
-        'type' => 'hidden',
+        'region' => 'hidden',
         'weight' => -5,
       ])
       ->setDisplayOptions('form', [
-        'type' => 'hidden',
+        'region' => 'hidden',
         'weight' => -5,
       ])
       ->setDisplayConfigurable('form', TRUE);
@@ -75,14 +75,20 @@ function markaspot_request_id_form_alter(&$form, FormStateInterface $form_state)
  * Implements hook_node_presave().
  */
 function markaspot_request_id_node_presave(EntityInterface $node) {
-  if ($node->bundle() == 'service_request' && $node->request_id->value == NULL) {
-    // $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
-    $request_id = marakaspot_request_id_create_request_id();
-    $node->request_id = $request_id;
-    $request_id = $node->request_id->value;
-    $title = markaspot_request_id_create_title($node, $request_id);
-    markaspot_request_id_update_table($node, $title, $request_id);
+  if ($node->bundle() == 'service_request') {
+    if ($node->request_id->value == NULL) {
+      // $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
+      $request_id = marakaspot_request_id_create_request_id();
+      $node->request_id = $request_id;
+      $request_id = $node->request_id->value;
+      $title = markaspot_request_id_create_title($node, $request_id);
+      markaspot_request_id_update_table($node, $title, $request_id);
+    }  else {
+      $request_id = $node->request_id->value;
+      $title = markaspot_request_id_create_title($node, $request_id);
+    }
     $node->title = $title;
+
   }
 }
 
@@ -156,8 +162,9 @@ function markaspot_request_id_create_title($node, $request_id) {
       $service_name = \Drupal::service('entity.repository')
         ->getTranslationFromContext($taxonomy_term, $language);
     }
-    return '#' . $request_id . '  ' . $service_name->name->value;
+    return '#' . $request_id . ' ' . $service_name->name->value;
 
   }
 
 }
+
