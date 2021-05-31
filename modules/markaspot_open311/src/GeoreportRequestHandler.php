@@ -5,6 +5,7 @@ namespace Drupal\markaspot_open311;
 use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Security\RequestSanitizer;
+use Drupal\rest\RestResourceConfigInterface;
 use Symfony\Component\DependencyInjection\ContainerAwareInterface;
 use Symfony\Component\DependencyInjection\ContainerAwareTrait;
 use Symfony\Component\HttpFoundation\Request;
@@ -29,19 +30,19 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
    *   The route match.
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request object.
-   *
+   * @param \Drupal\rest\RestResourceConfigInterface $_rest_resource_config
+   *   The REST resource config entity.
    * @return \Symfony\Component\HttpFoundation\Response
    *   The response object.
    */
-  public function handle(RouteMatchInterface $route_match, Request $request) {
+  public function handle(RouteMatchInterface $route_match, Request $request, RestResourceConfigInterface $_rest_resource_config) {
 
     // $request = RequestSanitizer::sanitize($request, [], TRUE);
     $plugin = $route_match->getRouteObject()->getDefault('_plugin');
     $method = strtolower($request->getMethod());
 
-    $resource = $this->container
-      ->get('plugin.manager.rest')
-      ->getInstance(array('id' => $plugin));
+    $resource = $_rest_resource_config->getResourcePlugin();
+
     // Deserialize incoming data if available.
     $serializer = $this->container->get('serializer');
     // Get body for Post requests.

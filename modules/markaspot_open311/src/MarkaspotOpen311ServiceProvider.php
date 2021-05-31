@@ -5,9 +5,6 @@ namespace Drupal\markaspot_open311;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\DependencyInjection\ServiceProviderBase;
 
-/**
- *
- */
 class MarkaspotOpen311ServiceProvider extends ServiceProviderBase {
 
   /**

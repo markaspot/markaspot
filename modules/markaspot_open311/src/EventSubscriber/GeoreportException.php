@@ -16,9 +16,6 @@ class GeoreportException implements EventSubscriberInterface {
 
   private $request;
 
-  /**
-   *
-   */
   public function __construct() {
     $this->request = \Drupal::request();
   }

@@ -262,9 +262,39 @@ class GeoreportRequestResource extends ResourceBase {
     if (empty($nodes)) {
       throw new NotFoundHttpException('Service-Request not found');
     }
+    $revisionLogMessage = $values['revision_log_message'];
+    unset($values['revision_log_message']);
+
+
 
     foreach (array_keys($values) as $field_name) {
-      $node->set($field_name, $values[$field_name]);
+      // Status notes need special care as they are paragraphs.
+      if ($field_name == 'field_status_note') {
+        // Replace status only if new status is set.
+        $status = $values['field_status'] ?? $node->get('field_status')
+            ->getValue();
+        $paragraphData = [$status, $values['field_status_note']];
+        $paragraph = $map->create_paragraph($paragraphData);
+
+        $current = $node->get('field_status_notes')->getValue();
+        $current[] = array(
+          'target_id' => $paragraph->id(),
+          'target_revision_id' => $paragraph->getRevisionId(),
+        );
+        $node->set('field_status_notes', $current);
+      } else if ($field_name == 'revision_log_message') {
+        // Create a revision if set in open311 config
+        if ($this->config->get('revisions')) {
+          $node->setNewRevision(TRUE);
+          // Set data for the revision
+          $node->setRevisionLogMessage($revisionLogMessage);
+          // $node->setRevisionUserId();
+          $node->setRevisionCreationTime(\Drupal::time()->getRequestTime());
+        }
+      } else {
+        // Set fields the usual way.
+        $node->set($field_name, $values[$field_name]);
+      }
     }
 
     if ($this->validate($node)) {

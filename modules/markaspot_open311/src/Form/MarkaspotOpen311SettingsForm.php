@@ -102,6 +102,13 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       '#description' => t('Set the maximum number of requests by nids.'),
     );
 
+    $form['markaspot_open311']['common']['revisions'] = array(
+      '#type' => 'checkbox',
+      '#title' => $this->t('Revisions'),
+      '#default_value' => $config->get('revisions'),
+      '#description' => t('Enable revisions and set revision_log_messages via api'),
+    );
+
     $form['markaspot_open311']['discovery'] = array(
       '#type' => 'fieldset',
       '#title' => t('Open311 Service Discovery'),
@@ -209,6 +216,7 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       ->set('tax_category', $values['tax_category'])
       ->set('tax_status', $values['tax_status'])
       ->set('nid-limit', $values['nid-limit'])
+      ->set('revisions', $values['revisions'])
       ->set('discovery.endpoints', array(array(
         'changeset' => $values['changeset'],
         'specification' => $values['specification'],

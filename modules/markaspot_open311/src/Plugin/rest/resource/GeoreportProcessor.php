@@ -2,9 +2,12 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\Core\File\FileSystemInterface;
+use Drupal\media\Entity\Media;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\taxonomy\Entity\Term;
+use Drupal\paragraphs\Entity\Paragraph;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -52,11 +55,11 @@ class GeoreportProcessor {
 
     $values['type'] = 'service_request';
     if (isset($request_id)) {
-      $values['request_id'] = $request_data['service_request_id'];
+      // $values['request_id'] = $request_data['service_request_id'];
     }
-    if ($op == FALSE) {
-      $values['title'] = isset($request_data['service_code']) ? Html::escape(stripslashes($request_data['service_code'])) : NULL;
-    }
+    $values['title'] = isset($request_data['service_code']) ? Html::escape(stripslashes($request_data['service_code'])) : NULL;
+
+
     $values['body'] = isset($request_data['description']) ? Html::escape(stripslashes($request_data['description'])) : NULL;
 
     // Don't need this for development.
@@ -82,24 +85,48 @@ class GeoreportProcessor {
     // This wont work with entity->save().
     $values['changed'] = time();
 
-    $tid = $this->serviceMapTax($request_data['service_code']);
-    $values['field_category']['target_id'] = (count($tid) == 1) ? $tid[0][0] : NULL;
+    $category_tid = $this->serviceMapTax($request_data['service_code']);
+    $values['field_category']['target_id'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
+
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
       $managed = TRUE;
-      $file = system_retrieve_file($request_data['media_url'], 'public://', $managed, FILE_EXISTS_RENAME);
+      $file = system_retrieve_file($request_data['media_url'], 'public://', $managed, FileSystemInterface::EXISTS_RENAME);
 
-      $field_keys['image'] = 'field_request_image';
-
-      if ($file !== FALSE) {
-        $values[$field_keys['image']] = [
-          'target_id' => $file->id(),
+      if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
+        $field_keys['image'] = 'field_request_media';
+        $media = Media::create([
+          'bundle'           => 'request_image',
+          'uid'              => \Drupal::currentUser()->id(),
+          'field_media_image' => [
+            'target_id' => $file->id(),
+            'alt' => 'Open311 File',
+          ],
+        ]);
+        $media->setName($request_data['service_code'] . ' ' . $values['created'] )->setPublished(TRUE)->save();
+        $field_keys['image'] = 'field_request_media';
+        $values['field_request_media'] = [
+          'target_id' => $media->id(),
           'alt' => 'Open311 File',
         ];
+      } else {
+        $field_keys['image'] = 'field_request_image';
+        if ($file !== FALSE) {
+          $values[$field_keys['image']] = [
+            'target_id' => $file->id(),
+            'alt' => 'Open311 File',
+          ];
+        }
       }
+
+
     }
 
     if (array_key_exists('extended_attributes', $request_data)) {
+      // Check for additional attribute for use of revision log message.
+      $values['revision_log_message'] = $request_data['extended_attributes']['revision_log_message'];
+
+      // Check for paragraph status notes.
       foreach ($request_data['extended_attributes']['drupal'] as $field_name => $value) {
         if (isset($field_name)) {
           $values[$field_name] = $value;
@@ -164,6 +191,34 @@ class GeoreportProcessor {
     return FALSE;
   }
 
+  /**
+   * Mapping requested service_code to drupal taxonomy.
+   *
+   * @param string $service_code
+   *   Open311 Service code (can be Code0001)
+   *
+   * @return int
+   *   The TaxonomyId
+   */
+  public function fieldStatusMapTax($statuses) {
+    $statuses = explode(',', $statuses);
+    foreach ($statuses as $status) {
+      $terms[] = \Drupal::entityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->loadByProperties(['name' => $status]);
+    }
+
+    foreach ($terms as $term){
+      $ids[] = array_keys($term);
+    }
+    if ($ids != FALSE) {
+      return $ids;
+    }
+    else {
+      new NotFoundHttpException('Status not found');
+    }
+    return FALSE;
+  }
   /**
    * Returns renderable array of taxonomy terms from Categories vocabulary.
    *
@@ -305,10 +360,17 @@ class GeoreportProcessor {
       'status' => $this->taxMapStatus($node->field_status->target_id),
     ];
     // Media Url:
-    if (isset($node->field_request_image->entity)) {
-      $image_uri = file_create_url($node->field_request_image->entity->getFileUri());
-      $request['media_url'] = $image_uri;
+
+    $image = $node->field_request_image->entity;
+    $media = $node->field_request_media->entity;
+
+    if (isset($image)) {
+      $image_uri = file_create_url($image->getFileUri());
+    } else if (isset($media->field_media_image->entity)) {
+      $image_uri = ($media->isPublished()) ? file_create_url($media->field_media_image->entity->getFileUri()) : '';
     }
+    $request['media_url'] = (isset($image_uri)) ? $image_uri : '';
+
 
     // Checking latest paragraph entity item for publish the official status.
     if (isset($node->field_status_notes)) {
@@ -331,10 +393,16 @@ class GeoreportProcessor {
         $request['phone'] = $node->field_phone->value;
       }
       if (isset($node->field_given_name)) {
-        $request['first_name'] = $node->field_given->value;
+        $request['first_name'] = $node->field_given_name->value;
       }
       if (isset($node->field_family_name)) {
-        $request['first_name'] = $node->field_family_name->value;
+        $request['last_name'] = $node->field_family_name->value;
+      }
+      if (isset($node->field_first_name)) {
+        $request['first_name'] = $node->field_first_name->value;
+      }
+      if (isset($node->field_last_name)) {
+        $request['last_name'] = $node->field_last_name->value;
       }
     }
     if (isset($extended_role) && isset($parameters['extensions'])) {
@@ -503,6 +571,16 @@ class GeoreportProcessor {
       $tids = array_values($this->config->get('status_closed'));
     }
     return $tids;
+  }
+
+  function create_paragraph($paragraphData) {
+    $paragraph = Paragraph::create(['type' => 'status',]);
+    $paragraph->set('field_status_term', $paragraphData[0]);
+    $paragraph->set('field_status_note', $paragraphData[1]);
+
+    $paragraph->isNew();
+    $paragraph->save();
+    return $paragraph;
   }
 
 }
