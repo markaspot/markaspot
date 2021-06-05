@@ -131,7 +131,7 @@ function markaspot_request_id_create_request_id() {
       ->execute();
 
     // Get the the latest request id (to be sure).
-    $request_ids = $connection->select('markaspot_request_id', r)
+    $request_ids = $connection->select('markaspot_request_id', 'r')
       ->fields('r', ['request_id'])
       ->condition('r.id',$id)
       ->execute();
