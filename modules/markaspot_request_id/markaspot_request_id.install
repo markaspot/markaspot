@@ -12,3 +12,82 @@ use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\node\NodeInterface;
 use Drupal\node\Entity\NodeType;
+use Drupal\Core\Database\Database;
+use Drupal\Core\Database\Connection;
+
+
+/**
+ * Add a new table for storing unique ids.
+ */
+
+function markaspot_request_id_update_9500() {
+  $spec = [
+    'description' => 'Mark-a-Spot request_id',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary Key: Unique request_id serial ID.',
+      ],
+      'request_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'default' => '',
+        'description' => "The combined request_id.",
+      ],
+      'uid' => [
+        'description' => '{users}.uid for user.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'timestamp' => [
+        'description' => 'Timestamp.',
+        'type' => 'int',
+        'unsigned' => FALSE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+  ];
+
+  // Create table from schema.
+  $schema = Database::getConnection()->schema();
+  $schema->createTable('markaspot_request_id', $spec);
+
+  // Query for the last service_request to retrieve last service request
+  $query = \Drupal::entityQuery('node');
+  // Get the latest nid of all existing service-requests.
+  $query
+    ->condition('type', 'service_request')
+    ->accessCheck(FALSE)
+    ->sort('nid', 'DESC')
+    ->range(0, 1);
+
+  $entity_ids = $query->execute();
+  $last_request_nid = reset($entity_ids);
+  $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+
+  // Now load the the last service_request and get the last request_id.
+  $service_request = $node_storage->load($last_request_nid);
+  if (isset($service_request->request_id->value)) {
+    $last_request_id = $service_request->request_id->value;
+    $id = explode('-', $last_request_id);
+  }
+  try {
+    $connection = Drupal::service('database');
+    $setId = $connection->insert('markaspot_request_id')
+      ->fields([
+        'id' => $id[0],
+        'request_id' => $last_request_id,
+      ])
+      ->execute();
+    \Drupal::logger('markaspot_request_id')
+      ->notice("Last Request ID: " . $last_request_id . " saved as initial value to new table.");
+  }  catch (\Exception $e) {
+    return FALSE;
+  }
+}

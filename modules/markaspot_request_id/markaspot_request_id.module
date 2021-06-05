@@ -78,9 +78,8 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
   if ($node->bundle() == 'service_request') {
     if ($node->request_id->value == NULL) {
       // $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
-      $request_id = marakaspot_request_id_create_request_id();
-      $node->request_id = $request_id;
-      $request_id = $node->request_id->value;
+      $request_id = markaspot_request_id_create_request_id();
+      $node->request_id->value = $request_id;
       $title = markaspot_request_id_create_title($node, $request_id);
       markaspot_request_id_update_table($node, $title, $request_id);
     }  else {
@@ -108,35 +107,69 @@ function markaspot_request_id_update_table($node, $title, $request_id) {
  * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
  * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
  */
-function marakaspot_request_id_create_request_id() {
-  $query = \Drupal::entityQuery('node');
+function markaspot_request_id_create_request_id() {
 
-  // get the latest nid of all existing service-requests.
-  $query
-    ->condition('type', 'service_request')
-    ->accessCheck(FALSE)
-    ->sort('nid' , 'DESC')
-    ->range(0,1);
+  /** @var \Drupal\Core\Database\Connection $connection */
+  $connection = \Drupal::service('database');
 
-  $entity_ids = $query->execute();
-  $last_request_nid = reset($entity_ids);
-  $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+  // Check if update has been run and custom table has been created.
+  if (markaspot_request_id_check_table($connection)) {
+    $timestamp = Drupal::time()->getRequestTime();
+    // Get the latest serial id.
+    $id = $connection->insert('markaspot_request_id')
+      ->fields([
+        // 'request_id' =>  $id . '-' . DateTime::createFromFormat(Y, $timestamp),
+        'timestamp' => $timestamp,
+      ])
+      ->execute();
+    // Write request id as string to row. todo: make request id periodically, or custom pattern
+    $update = $connection->update('markaspot_request_id')
+      ->fields([
+        'request_id' =>  $id . '-' . date('Y', $timestamp)
+      ])
+      ->condition('id', $id)
+      ->execute();
 
-  // Now load the the last service_request and check the request_id.
+    // Get the the latest request id (to be sure).
+    $request_ids = $connection->select('markaspot_request_id', r)
+      ->fields('r', ['request_id'])
+      ->condition('r.id',$id)
+      ->execute();
 
-  $predecessor = $node_storage->load($last_request_nid);
-  if (isset($predecessor->request_id->value)) {
-    $last_request_id = $predecessor->request_id->value;
-    \Drupal::logger('markaspot')->notice("Last Request ID: ". $last_request_id . " | Last NID: " .$last_request_nid);
-    $next = explode('-', $last_request_id);
+    foreach ($request_ids as $id) {
+      return $id->request_id;
+    }
+  } else {
+    $query = \Drupal::entityQuery('node');
+
+    // get the latest nid of all existing service-requests.
+    $query
+      ->condition('type', 'service_request')
+      ->accessCheck(FALSE)
+      ->sort('nid', 'DESC')
+      ->range(0, 1);
+
+    $entity_ids = $query->execute();
+    $last_request_nid = reset($entity_ids);
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+
+    // Now load the the last service_request and check the request_id.
+
+    $predecessor = $node_storage->load($last_request_nid);
+    if (isset($predecessor->request_id->value)) {
+      $last_request_id = $predecessor->request_id->value;
+      \Drupal::logger('markaspot')
+        ->notice("Last Request ID: " . $last_request_id . " | Last NID: " . $last_request_nid);
+      $next = explode('-', $last_request_id);
+      // Is one provided count up (needs increment of 2 if no NID is created yet)
+      $next = (!empty($next[0])) ? $next[0] + 1 : 1;
+
+      $config = \Drupal::configFactory()
+        ->getEditable('markaspot_request_id.settings');
+      $id_pattern = $config->get('format');
+      return (isset($id_pattern)) ? $next . '-' . date($id_pattern) : $next;
+    }
   }
-  // Is one provided count up (needs increment of 2 if no NID is created yet)
-  $next = (!empty($next[0])) ? $next[0] + 1 : 1;
-
-  $config = \Drupal::configFactory()->getEditable('markaspot_request_id.settings');
-  $id_pattern = $config->get('format');
-  return (isset($id_pattern)) ? $next . '-' . date($id_pattern) : $next;
-
 }
 
 /**
@@ -163,8 +196,18 @@ function markaspot_request_id_create_title($node, $request_id) {
         ->getTranslationFromContext($taxonomy_term, $language);
     }
     return '#' . $request_id . ' ' . $service_name->name->value;
-
   }
-
 }
 
+
+function markaspot_request_id_check_table($connection){
+  // Check if table exists, by simply querying it.
+  try {
+    $table = "markaspot_request_id";
+    $connection->queryRange("SELECT 1 FROM {" . $table . "}", 0, 1);
+    return TRUE;
+  }
+  catch (\Exception $e) {
+    return FALSE;
+  }
+}
