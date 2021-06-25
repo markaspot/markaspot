@@ -383,7 +383,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
         'target_revision_id' => $paragraph->getRevisionId(),
       ],
     ];
-
+    if (isset($node->field_gdpr)) {
+      $node->field_gdpr->value = 1;
+    }
     // Save the node and prepare response.
     $node->save();
 
