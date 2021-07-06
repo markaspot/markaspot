@@ -176,7 +176,7 @@ class GeoreportProcessor {
     foreach ($categories as $category) {
       $terms[] = \Drupal::entityTypeManager()
         ->getStorage('taxonomy_term')
-        ->loadByProperties(['field_service_code' => $category]);
+        ->loadByProperties(['field_service_code' => trim($category)]);
     }
 
     foreach ($terms as $term){
@@ -360,10 +360,12 @@ class GeoreportProcessor {
       'status' => $this->taxMapStatus($node->field_status->target_id),
     ];
     // Media Url:
-
-    $image = $node->field_request_image->entity;
-    $media = $node->field_request_media->entity;
-
+    if (isset($node->field_request_image)) {
+      $image = $node->field_request_image->entity;
+    }
+    if (isset($node->field_request_media)) {
+      $media = $node->field_request_media->entity;
+    }
     if (isset($image)) {
       $image_uri = file_create_url($image->getFileUri());
     } else if (isset($media->field_media_image->entity)) {
