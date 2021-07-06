@@ -84,10 +84,10 @@ class GeoreportProcessor {
 
     // This wont work with entity->save().
     $values['changed'] = time();
-
-    $category_tid = $this->serviceMapTax($request_data['service_code']);
-    $values['field_category']['target_id'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
-
+    if (isset($request_data['service_code'])) {
+      $category_tid = $this->serviceMapTax($request_data['service_code']);
+      $values['field_category']['target_id'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
+    }
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
       $managed = TRUE;
