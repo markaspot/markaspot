@@ -63,14 +63,18 @@ function markaspot_resubmission_cron() {
 
       $params['node_title'] = $node->label();
       $langcode = \Drupal::currentUser()->getPreferredLangcode();
+      if (isset($to) && $to !== '') {
+        \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('Mail will be sent.'));
 
-      $result = $mailManager->mail($module, $key, $to, $langcode, $params, NULL, TRUE);
-      if ($result['result'] !== TRUE) {
-        \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('Mail was sent.'));
+        $result = $mailManager->mail($module, $key, $to, $langcode, $params, 'no-reply@example.com', TRUE);
+        if ($result['result'] == TRUE) {
+          \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('Mail was sent.'));
+        }
+        else {
+          \Drupal::logger('Mark-a-Spot Resubmission')->error(t('Mail was not sent.'));
+        }
       }
-      else {
-        \Drupal::logger('Mark-a-Spot Resubmission')->error(t('Mail was not sent.'));
-      }
+
     }
 
     \Drupal::state()
