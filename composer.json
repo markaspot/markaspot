@@ -69,7 +69,7 @@
     "drupal/diff": "^1.0",
     "drupal/exif_orientation": "^1",
     "drupal/field_group": "^3.1",
-    "drupal/form_mode_manager": "2.x-dev",
+    "drupal/form_mode_manager": "^2",
     "drupal/geolocation": "^3",
     "drupal/maillog": "1.x-dev",
     "drupal/services_api_key_auth": "^3",
@@ -122,9 +122,6 @@
       },
       "drupal/business_rules": {
         "Add taxonomy condition": "https://www.drupal.org/files/issues/2018-07-05/2983864-feature-request-compare-target_id-with-field.patch"
-      },
-      "drupal/form_mode_manager": {
-        "Add D9 fixes": "https://www.drupal.org/files/issues/2020-10-30/form_mode_manager-drupal-9-compatibility-3164478-6.patch"
       },
       "drupal/image_effects": {
         "D8.8.6 -> D8.8.7 = Usupport schema version": "https://www.drupal.org/files/issues/2020-07-14/unsuported_schema_version-3146575-7.patch"
