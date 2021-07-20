@@ -72,7 +72,7 @@
     "drupal/form_mode_manager": "^2",
     "drupal/geolocation": "^3",
     "drupal/maillog": "1.x-dev",
-    "drupal/services_api_key_auth": "^3",
+    "drupal/services_api_key_auth": "dev-3.0.x",
     "drupal/search_api": "^1.5",
     "drupal/views_infinite_scroll": "^1.5",
     "drupal/better_exposed_filters": "^5.0",
