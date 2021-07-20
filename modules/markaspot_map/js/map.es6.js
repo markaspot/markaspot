@@ -251,39 +251,42 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       }
       // Theme independent selector.
       const $serviceRequests = $(masSettings.nid_selector);
-      $serviceRequests.hover(function() {
-        const nid = this.dataset.historyNodeId;
-        const $node = this;
-        scrolledMarker.forEach(function(value){
-          if (value["nid"] == nid) {
-            $node.classList.toggle("focus");
-            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-          }
-        })
-      });
-      // Loop through all current teasers.
-
-      $serviceRequests.each(function() {
-        new Waypoint({
-          element: this,
-          handler(direction) {
-            const nid = this.element.dataset.historyNodeId;
-            if (typeof scrolledMarker[nid] !== "undefined") {
+      $('.view__content').once('markaspot_map').each(function() {
+        $serviceRequests.hover(function() {
+          const nid = this.dataset.historyNodeId;
+          const $node = this;
+          scrolledMarker.forEach(function(value){
+            if (value["nid"] == nid) {
+              $node.classList.toggle("focus");
               Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-              this.element.classList.add("focus");
-            } else {
-              this.element.classList.add("no-location");
-              Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
-              return;                
             }
-            
-            if (direction === "up") {
-              this.element.classList.remove("focus");
-            }
-          },
-          offset: "40%"
+          });
+        });
+        // Loop through all current teasers.
+
+        $serviceRequests.each(function() {
+          new Waypoint({
+            element: this,
+            handler(direction) {
+              const nid = this.element.dataset.historyNodeId;
+              if (typeof scrolledMarker[nid] !== "undefined") {
+                Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+                this.element.classList.add("focus");
+              } else {
+                this.element.classList.add("no-location");
+                Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
+                return;
+              }
+
+              if (direction === "up") {
+                this.element.classList.remove("focus");
+              }
+            },
+            offset: "40%"
+          });
         });
       });
+
     }
   };
 

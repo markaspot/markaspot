@@ -114,8 +114,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           maxZoom: 18,
           dragging: !L.Browser.mobile,
           zoom: masSettings.zoom_initial
-        }); // console.log(masSettings.zoom_initial,Drupal.Markaspot.maps[0].getZoom());
-        // console.log(Drupal.Markaspot.maps[0].getCenter());
+        });
 
         $("#map").css("background-color:".concat(masSettings.map_background));
         var tileLayer;
@@ -248,41 +247,43 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           );
         }
       } // Theme independent selector.
-
       var $serviceRequests = $(masSettings.nid_selector);
-      $serviceRequests.hover(function() {
-        var nid = this.dataset.historyNodeId;
-        var $node = this;
-        scrolledMarker.forEach(function(value){
-          if (value['nid'] == nid) {
-            $node.classList.toggle("focus");
-            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-          }
-        })
-      }); // Loop through all current teasers.
-
-      $serviceRequests.each(function() {
-        new Waypoint({
-          element: this,
-          handler: function handler(direction) {
-            var nid = this.element.dataset.historyNodeId;
-
-            if (typeof scrolledMarker[nid] !== "undefined") {
+      $('.view__content').once('markaspot_map').each(function() {
+        $serviceRequests.hover(function() {
+          var nid = this.dataset.historyNodeId;
+          var $node = this;
+          scrolledMarker.forEach(function(value){
+            if (value['nid'] == nid) {
+              $node.classList.toggle("focus");
               Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-              this.element.classList.add("focus");
-            } else {
-              this.element.classList.add("no-location");
-              Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
-              return;                
             }
+          });
+        });
+        // Loop through all current teasers.
+        $serviceRequests.each(function() {
+          new Waypoint({
+            element: this,
+            handler: function handler(direction) {
+              var nid = this.element.dataset.historyNodeId;
 
-            if (direction === "up") {
-              this.element.classList.remove("focus");
-            }
-          },
-          offset: "40%"
+              if (typeof scrolledMarker[nid] !== "undefined") {
+                Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+                this.element.classList.add("focus");
+              } else {
+                this.element.classList.add("no-location");
+                Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
+                return;
+              }
+
+              if (direction === "up") {
+                this.element.classList.remove("focus");
+              }
+            },
+            offset: "40%"
+          });
         });
       });
+
     }
   };
   Drupal.markaspot_map = {
@@ -321,9 +322,10 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         fillOpacity: 0.2
       }).addTo(map);
 
+
       map.flyTo(marker.latlng, mapDefaultZoom, {
         duration: 0.8
-      }); // console.log(map.getZoom());
+      });
       map.invalidateSize();
 
       setTimeout(function() {
