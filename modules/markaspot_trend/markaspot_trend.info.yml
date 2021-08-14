@@ -4,7 +4,3 @@ description: Vue.js and Charts.js powered statistics
 core_version_requirement: ^8 || ^9
 package: Mark-a-Spot
 dependencies:
-  - bootstrap_layouts
-  - panels
-  - page_manager
-  - panels_ipe

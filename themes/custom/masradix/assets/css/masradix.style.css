@@ -7965,7 +7965,8 @@ select.selectpicker {
   padding: 0 8px;
   width: 2em;
   background: rgba(255, 255, 255, 0.12);
-  text-align: right; }
+  text-align: right;
+  }
 
 .start {
   padding-top: 0;
@@ -8522,7 +8523,8 @@ ul.log_list .count {
     float: left; }
   a.navbar-brand {
     display: block;
-    margin-top: -70px; } }
+    margin-top: -70px;
+    } }
 
 .service-request__field-status-note .field__item {
   background: #ddd;
