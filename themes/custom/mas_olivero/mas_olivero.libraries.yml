@@ -1,0 +1,13 @@
+global-styling:
+  version: VERSION
+  css:
+    base:
+      css/base/mas.css: { }
+      css/base/map.css: { }
+    theme:
+      css/base/color.css: { }
+  js:
+    js/scripts.js: {}
+    /libraries/waypoints/lib/noframework.waypoints.min.js: { weight: -3, minified: true }
+    /libraries/waypoints/lib/shortcuts/sticky.min.js: { weight: -2, minified: true }
+    /libraries/waypoints/lib/shortcuts/inview.min.js: { weight: -2, minified: true }

@@ -1,0 +1,11 @@
+{
+  "name": "drupal/olivero",
+  "description": "A clean, modern, and accessible Drupal default theme.",
+  "type": "drupal-theme",
+  "license": "GPL-2.0-or-later",
+  "homepage": "https://www.drupal.org/project/olivero",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/olivero",
+    "source": "https://git.drupalcode.org/project/olivero"
+  }
+}

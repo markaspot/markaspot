@@ -656,7 +656,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
               color: markerColor,
               time: request.requested_datetime
             });
-            console.log(marker)
+            // console.log(marker)
 
             marker.on("click", this.markerClickFn(marker, nid));
             markerLayer.addLayer(marker);
