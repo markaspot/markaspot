@@ -236,6 +236,10 @@ a:focus {
   color: var(--color--primary-20);
 }
 
+.node__title a:hover, .node__title a:focus {
+  color: var(--color--primary-20);
+}
+
 .node--view-mode-teaser .node__meta a {
   color: var(--color--primary-20);
 }

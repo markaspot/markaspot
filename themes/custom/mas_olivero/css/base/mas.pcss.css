@@ -75,70 +75,10 @@ h3 {
   font-weight: 200;
 }
 
-@media (max-width: 500px) {
-  h2.node__title {
-    float: right;
-    padding-top: 1rem;
-  }
-}
-
-.service-request h2:before {
-  position: absolute;
-  left: 48%;
-  content: "\f030";
-  opacity: 0.2;
-  color: #fff;
-  font-family: "FontAwesome", sans-serif;
-  font-size: xx-large;
-  line-height: 2;
-}
-/*
-article.node--type-service-request.focus {
-
-}
-*/
-
-article.node--type-service-request.focus:before {
-  position: absolute;
-  left: 94%;
-  width: 10%;
-  content: "\f041";
-  color: #ddd;
-  font-family: "FontAwesome", sans-serif;
-  font-weight: 900;
-  line-height: 4;
-}
-
-.field--type-address > .field__item:before {
-  content: "\f041";
-  color: #ddd;
-  font: normal normal normal 3rem/1 "FontAwesome", sans-serif;
-  position: relative;
-  left: -5rem;
-  top: 5rem;
-}
-
-.address {
-    color: #313637;
-    font-family: "Lora", "georgia", serif;
-    font-size: 1.125rem;
-    margin-top: 0;
-}
-
-.block-field-blocknodeservice-requestfield-category,
-.block-field-blocknodeservice-requestfield-status {
-  padding: 1rem;
-  text-align: center;
-  background: #fff;
-  border-left: 2px solid #ddd;
-  font-size: 1.3rem;
-}
-
-
 div.paragraph,
 div.status,
 div.category {
-  
+
   & .field--name-field-status-term {
       font-weight: 800;
   }
@@ -225,8 +165,9 @@ div.category {
   & > .field:not(:last-child) {
     margin-bottom: 0.25rem;
   }
- 
+
 }
+
 
 
 /* Statistik lists */
@@ -248,7 +189,6 @@ div.category {
     border-right: 0;
     border-left: 0;
     border-radius: 0;
-    background-color: #fff;
   }
 
   & li.list-group-item:first-child {
@@ -302,16 +242,16 @@ div.category {
 
 
 /* Action block */
-
+div#block-markaspotactionstats,
 div#block-markaspotaction {
   position: absolute;
   margin: auto;
   padding: 0.1rem 1rem;
   left: 50%;
-  top: 35%;
+  top: 67%;
   transform: translate(-50%, -50%);
   z-index:10;
-  width:80%;
+  width:90%;
 
   @media (--sm) {
     top: 300px;
@@ -327,13 +267,14 @@ div#block-markaspotaction {
     }
   }
   @media (--lg) {
-    top: 580px;
+    top: 510px;
     & a {
       font-size: small
     }
   }
   @media (--xl) {
     top: 580px;
+    margin: auto auto auto -100px;
   }
 
   @media (--nav) {
@@ -342,17 +283,10 @@ div#block-markaspotaction {
 
   @media (--grid-max) {
     top: 580px;
-    width: calc(6 * var(--sp12));
-    margin-right: 200px
+    width: 45%;
+    margin: auto auto auto -250px;
   }
-
-
-
-
 }
-
-
-
 
 div#block-markaspotaction,
 div#block-markaspotactionstats {
@@ -363,7 +297,7 @@ div#block-markaspotactionstats {
     margin: 0;
     padding-left: 0;
     border-radius: 0.25rem;
-    box-shadow: -4px 1px 36px rgb(0 0 0 / 8%);
+    box-shadow: -36px 1px 36px rgba(0, 0, 0, 0.08);
 
     & .list-group-item:hover {
       background-color: #ddd;
@@ -383,7 +317,6 @@ div#block-markaspotactionstats {
       margin: 1rem;
       text-align: center;
       font-family: "FontAwesome", sans-serif;
-      font-size: 1.3rem;
       line-height: 1.2rem;
     }
     & li.report a:before {
@@ -394,6 +327,12 @@ div#block-markaspotactionstats {
     }
     & li.statistics a:before {
       content: "\f200";
+    }
+    & li.heatmap a:before{
+      content: "\f2c8";
+    }
+    & li.time-control a:before{
+      content: "\f017";
     }
 
     @media (max-width: 700px) {
@@ -467,36 +406,35 @@ div#block-markaspotactionstats {
 
 
 div#block-markaspotactionstats {
-  position: absolute;
-  z-index: 10;
-  top: 480px;
-  width: 50%;
-  margin: auto;
-  padding: 0 1.25rem;
-  left: 49%;
+  display:none;
 
+  @media (--sm) {
+    display:none
+  }
+  @media (--md) {
+    display:block;
+    width: 60%;
+    left: 70%;
+  }
+  @media (--xl) {
+    width: 50%;
+    left: 75%;
+  }
+  @media (--grid-max) {
+    max-width: 550px;
+    left: 85%;
+  }
   & p {
-    border-left: 2px solid #dfdfdf;
+    border-left: 2px solid #e7edf1;
     padding: 0 1rem;
     margin: 0.75rem;
     color: #000;
-    box-shadow: -4px 1px 36px rgb(0 0 0 / 8%);
     background-color: #fff;
   }
 
   & ul.list-group {
     margin: 0;
     border-radius: 1rem;
-
-    @media (max-width: 700px) {
-      flex-direction: row;
-    }
-
-
-    & li a {
-      font-size: .8rem;
-    }
-
     & > .list-group-item:first-child {
       border-top-left-radius: inherit;
       border-top-right-radius: 0;
@@ -519,6 +457,18 @@ div#block-markaspotactionstats {
       text-decoration: none;
       border: 1px solid rgba(0, 0, 0, 0.125)!important;
       background-color: #fff;
+      @media (--sm) {
+        & a {
+          font-size: small;
+        }
+      }
+      @media (--md) {
+        & a {
+          font-size: medium;
+        }
+      }
     }
   }
 }
+
+
