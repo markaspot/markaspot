@@ -16,9 +16,7 @@
         options: {
           cutoutPercentage: 60,
           legend: {
-            labels: {
-              boxWidth: 20
-            }
+            display: false
           }
         }
       };

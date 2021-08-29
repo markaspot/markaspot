@@ -13,11 +13,17 @@
       return {
         chartData: this.getChartData(),
         options: {
+          layout: {
+            padding: {
+                left: 50,
+                right: 50,
+                top: 50,
+                bottom: 50
+            }
+          },
           cutoutPercentage: 100,
           legend: {
-            labels: {
-              boxWidth: 20
-            }
+            display: false
           }
         }
       };
