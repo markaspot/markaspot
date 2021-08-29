@@ -11,7 +11,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       return;
     }
     const requestTime = this._timeDimension.getCurrentTime();
-    const formattime = dateFormat(
+    const formatTime = dateFormat(
       requestTime,
       Drupal.Markaspot.settings.timeline_date_format
     );
@@ -61,7 +61,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       const requests = layer.getLayers().length;
       const log = jQuery("ul.log_list");
       log.append(
-        `<li><span class="time">${formattime}</span> <span class="count">${requests}</span>`
+        `<li><span class="time">${formatTime}</span> <span class="count">${requests}</span>`
       );
       const height = log.get(0).scrollHeight;
       log.animate(
@@ -86,6 +86,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
   currentPath = `/${currentPath}`;
   const masSettings = drupalSettings.mas;
 
+
+
   Drupal.behaviors.markaspot_map = {
     attach(context, settings) {
       Drupal.Markaspot.settings = masSettings;
@@ -94,6 +96,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       if (typeof mapSelector === 'undefined'){
         return;
       }
+
+
       mapSelector.once("markaspot_map").each(() => {
         $(".log_header .left").text(Drupal.t("Date"));
         $(".log_header .right").text(Drupal.t("Requests"));
@@ -124,7 +128,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         });
         map.addLayer(markerLayer);
 
-        // Initital heat map layer for front page:
+        // Initial heat map layer for front page:
 
         if (currentPath === "/node") {
           Drupal.markaspot_map.createHeatMapLayer(map);
@@ -146,10 +150,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           ];
           const heatLayer = new L.HeatLayer(heatStart).addTo(map);
           heatLayer.id = "heatTimedLayer";
-          // Show Markers additionally ob button click.
-          const timeDimensionControl = Drupal.markaspot_map.showTimeController(
-            map
-          );
+
           // Show Markers additionally ob button click.
           const heatControls = L.easyButton({
             position: "bottomright",
@@ -178,8 +179,11 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
             ]
           });
 
-          // heatControls.addTo(map);
-
+          heatControls.addTo(map);
+          // Show Markers additionally ob button click.
+          const timeDimensionControl = Drupal.markaspot_map.showTimeController(
+            map
+          );
           const timeControls = L.easyButton({
             position: "bottomright",
             states: [
@@ -189,9 +193,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
                 title: Drupal.t("Show TimeControl Layer"),
                 onClick(control) {
                   $("div.log").show();
-
                   control.state("remove-timeControls");
-
                   map.addControl(timeDimensionControl);
                   heatLayer.addTo(map);
                   geoJsonTimedLayer.addTo(map);
@@ -213,7 +215,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
               }
             ]
           });
-          // timeControls.addTo(map);
+          timeControls.addTo(map);
         }
         // Empty storedNids.
         localStorage.setItem("storedNids", JSON.stringify(""));
@@ -233,20 +235,20 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
         localStorage.setItem("storedNids", JSON.stringify(nids));
         if (typeof markerLayer !== "undefined"){
-          markerLayer.clearLayers(); // Load and showData on map.
-                // Load and showData on map.
-            Drupal.markaspot_map.load(data => {
-              Drupal.markaspot_map.showData(data);
-              markerLayer.eachLayer(layer => {
-                // Define marker-properties for Scrolling.
-                const { nid } = layer.options;
-                scrolledMarker[nid] = {
-                  latlng: layer.getLatLng(),
-                  nid: layer.options.nid,
-                  color: layer.options.color
-                };
-              });
-            }, nids);
+          markerLayer.clearLayers(); // Load and showData on map
+          // Load and showData on map.
+          Drupal.markaspot_map.load(data => {
+            Drupal.markaspot_map.showData(data);
+            markerLayer.eachLayer(layer => {
+              // Define marker-properties for Scrolling.
+              const { nid } = layer.options;
+              scrolledMarker[nid] = {
+                latlng: layer.getLatLng(),
+                nid: layer.options.nid,
+                color: layer.options.color
+              };
+            });
+          }, nids);
         }
       }
       // Theme independent selector.
@@ -315,8 +317,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
     showTimeControl: function showTimeControl(){
       $("div.log").show();
       const map = Drupal.Markaspot.maps[0];
-      const timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
-      map.addControl(timeDimensionControl);
+      Drupal.markaspot_map.timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
+      map.addControl(Drupal.markaspot_map.timeDimensionControl);
       // heatLayer.addTo(map);
       const geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
       Drupal.Markaspot.geoJsonTimedLayer = geoJsonTimedLayer;
@@ -326,7 +328,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       const map = Drupal.Markaspot.maps[0];
       $("div.log").hide();
       const timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
-      map.removeControl(timeDimensionControl);
+      map.removeControl(Drupal.markaspot_map.timeDimensionControl);
       map.removeLayer(Drupal.Markaspot.geoJsonTimedLayer);
       // map.removeLayer(heatLayer);
       $("ul.log_list").empty();

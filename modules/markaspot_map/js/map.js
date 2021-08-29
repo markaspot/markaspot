@@ -19,7 +19,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
 
     var requestTime = this._timeDimension.getCurrentTime();
 
-    var formattime = dateFormat(requestTime, Drupal.Markaspot.settings.timeline_date_format);
+    var formatTime = dateFormat(requestTime, Drupal.Markaspot.settings.timeline_date_format);
 
     var maxTime = this._timeDimension.getCurrentTime();
 
@@ -65,7 +65,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
     if (layer.getLayers().length) {
       var requests = layer.getLayers().length;
       var log = jQuery("ul.log_list");
-      log.append("<li><span class=\"time\">".concat(formattime, "</span> <span class=\"count\">").concat(requests, "</span>"));
+      log.append("<li><span class=\"time\">".concat(formatTime, "</span> <span class=\"count\">").concat(requests, "</span>"));
       var height = log.get(0).scrollHeight;
       log.animate({
         scrollTop: height
@@ -132,7 +132,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
           var heatStart = [[masSettings.center_lat, masSettings.center_lng, 1]];
           var heatLayer = new L.HeatLayer(heatStart).addTo(map);
           heatLayer.id = "heatTimedLayer";
-          var timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
           var heatControls = L.easyButton({
             position: "bottomright",
             states: [{
@@ -155,6 +154,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
               }
             }]
           });
+          heatControls.addTo(map);
+          var timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
           var timeControls = L.easyButton({
             position: "bottomright",
             states: [{
@@ -182,6 +183,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
               }
             }]
           });
+          timeControls.addTo(map);
         }
 
         localStorage.setItem("storedNids", JSON.stringify(""));
@@ -271,8 +273,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
     showTimeControl: function showTimeControl() {
       $("div.log").show();
       var map = Drupal.Markaspot.maps[0];
-      var timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
-      map.addControl(timeDimensionControl);
+      Drupal.markaspot_map.timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
+      map.addControl(Drupal.markaspot_map.timeDimensionControl);
       var geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
       Drupal.Markaspot.geoJsonTimedLayer = geoJsonTimedLayer;
       Drupal.Markaspot.geoJsonTimedLayer.addTo(map);
@@ -281,7 +283,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       var map = Drupal.Markaspot.maps[0];
       $("div.log").hide();
       var timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
-      map.removeControl(timeDimensionControl);
+      map.removeControl(Drupal.markaspot_map.timeDimensionControl);
       map.removeLayer(Drupal.Markaspot.geoJsonTimedLayer);
       $("ul.log_list").empty();
     },
