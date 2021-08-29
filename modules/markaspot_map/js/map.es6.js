@@ -45,8 +45,8 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
                 type: "Point",
                 coordinates:
                   feature.geometry.coordinates[
-                  feature.geometry.coordinates.length - 1
-                    ]
+                    feature.geometry.coordinates.length - 1
+                  ]
               }
             });
           }
@@ -113,9 +113,10 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         $("#map").css(`background-color:${masSettings.map_background}`);
         let tileLayer;
         if (masSettings.osm_custom_tile_url !== "") {
-          tileLayer = L.tileLayer(masSettings.osm_custom_tile_url);
+          tileLayer = L.tileLayer(masSettings.osm_custom_tile_url, { edgeBufferTiles: 1 }
+            );
         } else {
-          tileLayer = L.tileLayer.wms(masSettings.wms_service, { layers: masSettings.wms_layer });
+          tileLayer = L.tileLayer.wms(masSettings.wms_service, { layers: masSettings.wms_layer, edgeBufferTiles: 1 });
         }
         const map = Drupal.Markaspot.maps[0];
         map.attributionControl.addAttribution(

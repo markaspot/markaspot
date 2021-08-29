@@ -107,10 +107,13 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         var tileLayer;
 
         if (masSettings.osm_custom_tile_url !== "") {
-          tileLayer = L.tileLayer(masSettings.osm_custom_tile_url);
+          tileLayer = L.tileLayer(masSettings.osm_custom_tile_url, {
+            edgeBufferTiles: 1
+          });
         } else {
           tileLayer = L.tileLayer.wms(masSettings.wms_service, {
-            layers: masSettings.wms_layer
+            layers: masSettings.wms_layer,
+            edgeBufferTiles: 1
           });
         }
 
