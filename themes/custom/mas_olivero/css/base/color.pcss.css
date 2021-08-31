@@ -236,6 +236,24 @@ a:focus {
   color: var(--color--primary-20);
 }
 
+.block-views-blockstats-block-stats-status ul.list-group {
+  background-color: #fff;
+  box-shadow: -36px 1px 36px rgba(0, 0, 0, 0.08);
+}
+
+div#block-markaspotaction,
+div#block-markaspotactionstats {
+
+  & ul.list-group {
+    background-color: #fff;
+    box-shadow: -36px 1px 36px rgba(0, 0, 0, 0.08);
+
+    & .list-group-item:hover {
+      background-color: #ddd;
+    }
+  }
+}
+
 .node__title a:hover, .node__title a:focus {
   color: var(--color--primary-20);
 }
