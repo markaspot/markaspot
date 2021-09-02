@@ -6,7 +6,10 @@
  */
 
 use Drupal\Core\Url;
-
+use Drupal\media\Entity\Media;
+use Drupal\image\Entity\ImageStyle;
+use Drupal\media_entity\MediaInterface;
+use Drupal\node\Entity\Node;
 /**
  * Implements hook_toolbar().
  */
@@ -95,5 +98,7 @@ function markaspot_ui_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $f
 
 function markaspot_ui_inline_entity_form_entity_form_alter(&$entity_form, &$form_state){
   $entity_form["field_media_image"]["widget"][0]["#alt_field_required"] = FALSE;
+  $entity_form["field_media_image"]["widget"][0]["#default_value"]["alt"] = t('Open311 file from ') . date('Y-m-d H:i:s', $form_state->getValue("changed"));
+
   unset($entity_form["status"]);
 }
