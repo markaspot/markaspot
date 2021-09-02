@@ -75,6 +75,8 @@
     node.isSticky() ? 'node--sticky',
     not node.isPublished() ? 'node--unpublished',
     view_mode ? 'node--view-mode-' ~ view_mode|clean_class,
+    'status--color-#' ~ mas_status['color'],
+    'category--color-#' ~ mas_category['color'],
   ]
 %}
 
@@ -84,15 +86,12 @@
     {{ title_suffix }}
     {% if display_submitted %}
       <div class="node__meta">
-        <span{{ author_attributes }}>
-          {{ 'By'|t }} {% apply spaceless %}<span class="node__author">{{ author_name }}</span>{% endapply %}, {{ date }}
-        </span>
         {{ metadata }}
       </div>
     {% endif %}
     {% if label and not page %}
       <div class="node__top-wrapper">
-        {{ content.field_image }}
+        {{ content.field_request_media }}
         <h2{{ title_attributes.addClass('node__title') }}>
           <a href="{{ url }}" rel="bookmark">{{ label }}</a>
         </h2>
@@ -100,6 +99,6 @@
     {% endif %}
   </header>
   <div{{ content_attributes.addClass('node__content') }}>
-    {{ content|without('field_image', 'links') }}
+    {{ content|without('field_request_media', 'links') }}
   </div>
 </article>

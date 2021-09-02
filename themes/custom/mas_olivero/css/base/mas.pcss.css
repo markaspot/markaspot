@@ -74,6 +74,39 @@ h3 {
 .primary-nav__menu-link {
   font-weight: 200;
 }
+.node--type-service-request .node__content {
+  & .category,
+  & .status {
+    border-left: 2px solid #e7edf1;
+  }
+}
+
+.view-requests .node--type-service-request .node__content {
+  display:flex;
+  flex-wrap: wrap;
+
+  & .category,
+  & .status {
+    margin-right: 1.125rem;
+    flex-basis: calc(50% - 1.125rem);
+    flex-grow: 0;
+    flex-shrink: 0;
+    padding: 1rem;
+    text-align: center;
+    background: #fff;
+    border-left: 2px solid #e7edf1;
+    font-size: 1.3rem;
+    margin-bottom: 2.25rem;
+  }
+
+  & .text-content {
+    flex-basis: calc(100% - 1.125rem);
+  }
+}
+
+
+
+
 
 div.paragraph,
 div.status,
@@ -257,7 +290,7 @@ div#block-markaspotaction {
     top: 300px;
     max-width: 100vw;
     & a {
-      font-size: large
+      font-size: small
     }
   }
   @media (--md) {
@@ -269,12 +302,12 @@ div#block-markaspotaction {
   @media (--lg) {
     top: 510px;
     & a {
-      font-size: small
+      font-size: large
     }
   }
   @media (--xl) {
     top: 580px;
-    margin: auto auto auto -100px;
+    margin: auto auto auto 50px;
   }
 
   @media (--nav) {
@@ -283,8 +316,8 @@ div#block-markaspotaction {
 
   @media (--grid-max) {
     top: 580px;
-    width: 45%;
-    margin: auto auto auto -250px;
+    width: 70%;
+    margin: auto auto auto -100px;
   }
 }
 
@@ -300,7 +333,7 @@ div#block-markaspotactionstats {
     box-shadow: -36px 1px 36px rgba(0, 0, 0, 0.08);
 
     & .list-group-item:hover {
-      background-color: #ddd;
+      background-color: #ddd!important;
     }
 
     & li a:link {
