@@ -21,4 +21,5 @@ bootstrap:
 font-awesome:
   css:
     component:
-      /libraries/font-awesome/css/font-awesome.min.css: {}
+      /libraries/font-awesome/css/all.min.css: {}
+      /libraries/font-awesome/css/v4-shims.min.css: {}

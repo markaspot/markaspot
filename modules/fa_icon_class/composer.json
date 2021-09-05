@@ -17,7 +17,7 @@
     }
   ],
   "require": {
-    "npm-asset/font-awesome": "^4.7",
+    "npm-asset/font-awesome": "^5",
     "npm-asset/fontawesome-iconpicker": "^1.3"
   }
 }

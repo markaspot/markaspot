@@ -269,7 +269,7 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
 }
 
 .field--name-field-status-notes .paragraph:before {
-    font: normal normal normal 3rem/1 "FontAwesome", sans-serif;
+    font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
     content: "\f017";
     position: relative;
     left: -5rem;
@@ -453,7 +453,7 @@ div#block-markaspotaction ul.list-group li a:before, div#block-markaspotactionst
       width: 1rem;
       margin: 1rem;
       text-align: center;
-      font-family: "FontAwesome", sans-serif;
+      font-family: "Font Awesome 5 Free", sans-serif;
       line-height: 1.2rem;
     }
 

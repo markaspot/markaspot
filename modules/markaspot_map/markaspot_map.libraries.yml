@@ -65,7 +65,9 @@ leaflet-heatmap:
 font-awesome:
   css:
     component:
-      /libraries/font-awesome/css/font-awesome.min.css: {minified: true }
+      /libraries/font-awesome/css/all.min.css: {minified: true }
+      /libraries/font-awesome/css/v4-shims.min.css: {minified: true }
+
 
 # Markaspot Map core library.
 map:
