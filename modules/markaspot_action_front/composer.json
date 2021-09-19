@@ -1,0 +1,20 @@
+{
+  "name": "markaspot/markaspot_action_front",
+  "type": "drupal-module",
+  "description": "This module provides the button block in code for a Mark-a-Spot Installation",
+  "homepage": "https://github.com/markaspot",
+  "authors": [
+    {
+      "name": "Holger Kreis (markaspot)",
+      "homepage": "https://www.drupal.org/u/markaspot",
+      "role": "Maintainer"
+    }
+  ],
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "http://drupal.org/project/issues/markaspot",
+    "source": "https://github.com/markaspot/markaspot"
+  }
+}

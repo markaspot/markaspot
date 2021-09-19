@@ -1,0 +1,7 @@
+block.settings.markaspot_action_front:
+  type: block_settings
+  label: 'Markaspot Action Front'
+  mapping:
+    body:
+      type: textarea
+      label: 'Body'

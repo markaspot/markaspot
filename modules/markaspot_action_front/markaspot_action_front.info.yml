@@ -1,0 +1,6 @@
+name: 'Mark-a-Spot Action Front'
+package: Mark-a-Spot
+core_version_requirement: ^8 || ^9
+description: 'Provides the front menu block'
+type: module
+dependencies:

@@ -274,8 +274,8 @@ div.category {
 
 
 /* Action block */
-div#block-markaspotactionstats,
-div#block-markaspotaction {
+div#block-markaspotfrontaction,
+div#block-markaspotactionfront {
   position: relative;
   left: 50%;
   top: 50px;
@@ -315,7 +315,7 @@ div#block-markaspotaction {
   }
 }
 
-div#block-markaspotaction,
+div#block-markaspotfrontaction,
 div#block-markaspotactionstats {
 
   & ul.list-group {
@@ -347,13 +347,13 @@ div#block-markaspotactionstats {
       line-height: 1.2rem;
     }
     & li.report a:before {
-      content: "\f041";
+      content: "\f030";
     }
     & li.requests a:before {
       content: "\f058";
     }
     & li.statistics a:before {
-      content: "\f200";
+      content: "\f058";
     }
     & li.heatmap a:before{
       content: "\f2c8";
