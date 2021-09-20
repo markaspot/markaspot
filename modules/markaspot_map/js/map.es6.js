@@ -104,6 +104,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
           scrollWheelZoom: !L.Browser.mobile,
+          minZoom: 12,
           maxZoom: 18,
           dragging: !L.Browser.mobile,
           zoom: masSettings.zoom_initial
