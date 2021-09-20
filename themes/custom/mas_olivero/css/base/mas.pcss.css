@@ -200,7 +200,16 @@ div.category {
   }
 
 }
-
+.field--type-address > .field__item:before {
+  content: "\f3c5";
+  color: #ddd;
+  font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
+  position: relative;
+  left: -5rem;
+  top: 5rem;
+  color: #ddd;
+  font-weight: 900;
+}
 
 
 /* Statistik lists */
@@ -275,7 +284,7 @@ div.category {
 
 /* Action block */
 div#block-markaspotfrontaction,
-div#block-markaspotactionfront {
+div#block-markaspotstatsaction {
   position: relative;
   left: 50%;
   top: 50px;
@@ -288,20 +297,19 @@ div#block-markaspotactionfront {
     top: 160px;
     max-width: 100vw;
     & a {
-      font-size: small
+      font-size: medium
     }
   }
   @media (--md) {
+    top: 370px;
     width: 90%;
     max-width: 100vw;
     & a {
-      font-size: small
+      font-size: large
     }
   }
   @media (--lg) {
-    top: 370px;
     & a {
-      font-size: large
     }
   }
   @media (--xl) {
@@ -316,7 +324,7 @@ div#block-markaspotactionfront {
 }
 
 div#block-markaspotfrontaction,
-div#block-markaspotactionstats {
+div#block-markaspotstatsaction {
 
   & ul.list-group {
     display: flex;
@@ -332,37 +340,18 @@ div#block-markaspotactionstats {
 
     & li a:link {
       box-shadow: none;
-      padding: 0;
+      padding: 1rem;
       margin: 0;
       display: inline-block;
       width: 100%;
     }
 
     & li a:before {
-      display: inline-block;
-      width: 1rem;
-      margin: 1rem;
-      text-align: center;
-      font-family: "Font Awesome 5 Free", sans-serif;
-      line-height: 1.2rem;
-    }
-    & li.report a:before {
-      content: "\f030";
-    }
-    & li.requests a:before {
-      content: "\f058";
-    }
-    & li.statistics a:before {
-      content: "\f058";
-    }
-    & li.heatmap a:before{
-      content: "\f2c8";
-    }
-    & li.time-control a:before{
-      content: "\f017";
+
     }
 
-    @media (max-width: 700px) {
+
+    @media (--sm) {
       flex-direction: column;
 
       & > .list-group-item:first-child {
@@ -389,7 +378,7 @@ div#block-markaspotactionstats {
         position: relative;
         display: block;
         width: 100%;
-        padding: 0.5rem 1rem;
+        padding: 1rem;
         text-align: center;
         text-decoration: none;
         border: 1px solid rgba(0, 0, 0, 0.125);
@@ -432,7 +421,7 @@ div#block-markaspotactionstats {
 }
 
 
-div#block-markaspotactionstats {
+div#block-markaspotstatsaction {
   display:none;
 
   @media (--sm) {
@@ -440,16 +429,16 @@ div#block-markaspotactionstats {
   }
   @media (--md) {
     display:block;
-    width: 60%;
-    left: 70%;
+    width: 40%;
+    left: 60%;
   }
   @media (--xl) {
     width: 50%;
-    left: 75%;
+    left: 20%;
   }
   @media (--grid-max) {
-    max-width: 550px;
-    left: 85%;
+    width: 40%;
+    left: 20%;
   }
   & p {
     border-left: 2px solid #e7edf1;
@@ -498,4 +487,19 @@ div#block-markaspotactionstats {
   }
 }
 
+/* Stats */
+.page-node-type-page .layout__region {
+  margin: -10px;
+  padding: inherit;
+}
 
+
+
+.trend_count {
+  font-size: 3em;
+  line-height: 80px;
+  background: #dddd;
+  padding: 10px;
+  text-align: center;
+  min-height: 230px;
+}

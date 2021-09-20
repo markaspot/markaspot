@@ -1,21 +1,21 @@
 <?php
 
-namespace Drupal\markaspot_action_front\Plugin\Block;
+namespace Drupal\markaspot_action_stats\Plugin\Block;
 
 use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Block\BlockPluginInterface;
 use Drupal\Core\Form\FormStateInterface;
 
 /**
- * Provides a 'Main Navigation Block' block.
+ * Provides a 'Stats feature Block' block.
  *
  * @Block(
- *   id = "Markaspot Action Front",
+ *   id = "Markaspot Action Stats",
  *   category = @Translation("Mark-a-Spot"),
- *   admin_label = @Translation("Mark-a-Spot: Front Action")
+ *   admin_label = @Translation("Mark-a-Spot: Stats Action")
  * )
  */
-class MarkaspotActionFront extends BlockBase implements BlockPluginInterface {
+class MarkaspotActionStats extends BlockBase implements BlockPluginInterface {
 
   /**
    * {@inheritdoc}
@@ -23,11 +23,12 @@ class MarkaspotActionFront extends BlockBase implements BlockPluginInterface {
   public function defaultConfiguration() {
 
     return [
-      'body' => '<ul class="list-group list-group-horizontal-xxl">
-          <li class="list-group-item report"><a href="/report"><i aria-hidden="true" class="fas fa-map-marker-alt">&nbsp;</i> Anliegen melden</a></li>
-          <li class="list-group-item requests"><a href="/requests"><i aria-hidden="true" class="fas fa-check-circle">&nbsp;</i> Alle Anliegen</a></li>
-          <li class="list-group-item statistics"><a href="/visualization"><i aria-hidden="true" class="fas fa-chart-line">&nbsp;</i> Statistik</a></li>
-        </ul>',
+      'body' =>
+        ['value' => '<ul class="list-group list-group-horizontal-xxl">
+            <li class="list-group-item heatmap"><a href="#" tabindex="-1">Heatmap</a></li>
+            <li class="list-group-item time-control"><a href="#" tabindex="-1">Zeitstrahl</a></li>
+          </ul>',
+          'format' => 'full_html'],
       'label_display' => FALSE,
     ];
   }
@@ -38,7 +39,7 @@ class MarkaspotActionFront extends BlockBase implements BlockPluginInterface {
   public function blockForm($form, FormStateInterface $form_state) {
     $form['body'] = [
       '#type' => 'text_format',
-      '#format' => 'full_html',
+      '#format' => $this->configuration['body']['format'],
       '#title' => 'Body',
       '#default_value' => $this->configuration['body']['value'],
     ];
