@@ -416,10 +416,12 @@ class GeoreportRequestIndexResource extends ResourceBase {
   protected function validate(object $node) {
     $violations = $node->validate();
     if (count($violations) > 0) {
-      $message = "Unprocessable Entity: validation failed.\n";
+      $messages = [];
       foreach ($violations as $violation) {
-        $message .= $violation->getPropertyPath() . ': ' . PlainTextOutput::renderFromHtml($violation->getMessage()) . "\n";
+        $messages[substr($violation->getPropertyPath(), 6)] = $violation->getMessage();
       }
+      $message = json_encode($messages);
+
       throw new BadRequestHttpException($message);
     }
     else {
