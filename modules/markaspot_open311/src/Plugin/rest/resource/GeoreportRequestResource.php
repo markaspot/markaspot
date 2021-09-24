@@ -15,6 +15,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Drupal\markaspot_open311\Exception\GeoreportException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
@@ -189,6 +190,8 @@ class GeoreportRequestResource extends ResourceBase {
       // Get the service of the current node:
       $query->condition('request_id', $parameters['id']);
     }
+    $query->accessCheck(FALSE);
+
     $map = new GeoreportProcessor();
     return $map->getResults($query, $this->currentUser, $parameters);
   }
@@ -296,22 +299,27 @@ class GeoreportRequestResource extends ResourceBase {
         $node->set($field_name, $values[$field_name]);
       }
     }
-
-    if ($this->validate($node)) {
+    $validation = $this->validate($node);
+    if ($validation === TRUE) {
       $node->save();
-    }
-    // Save the node and prepare response;.
-    $request_id = $node->request_id->value;
+      $this->logger->notice('Updated entity %type with ID %request_id.', [
+        '%type' => $node->getEntityTypeId(),
+        '%request_id' => $node->request_id->value,
+      ]);
+      // Save the node and prepare response;.
+      $request_id = $node->request_id->value;
 
-    $this->logger->notice('Updated node with ID %request_id.', [
-      '%request_id' => $node->request_id->value,
-    ]);
+      $service_request = [];
+      if (isset($node)) {
+        $service_request['service_requests']['request']['service_request_id'] = $request_id;
+      }
+      return $service_request;
 
-    $service_request = [];
-    if (isset($node)) {
-      $service_request['service_requests']['request']['service_request_id'] = $request_id;
+    } else {
+      return $exception;
     }
-    return $service_request;
+
+
   }
 
   /**
@@ -335,8 +343,8 @@ class GeoreportRequestResource extends ResourceBase {
    * @param object $node
    *   The node object.
    *
-   * @return bool
-   *   return exception or TRUE if valid.
+   * @return \http\Exception
+   *   return exception.
    */
   protected function validate(object $node) {
     $violations = $node->validate();
@@ -345,11 +353,14 @@ class GeoreportRequestResource extends ResourceBase {
       foreach ($violations as $violation) {
         $messages[substr($violation->getPropertyPath(), 6)] = $violation->getMessage();
       }
-      $message = json_encode($messages);
 
-      throw new BadRequestHttpException($message);
-    }
-    else {
+      // throw new BadRequestHttpException($message);
+      $exception = new GeoreportException();
+      $exception->setViolations($violations);
+      $exception->setCode(400);
+      throw $exception;
+      // return $messages;
+    } else {
       return TRUE;
     }
   }

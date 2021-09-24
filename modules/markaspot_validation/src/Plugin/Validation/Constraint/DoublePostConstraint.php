@@ -15,5 +15,6 @@ use Symfony\Component\Validator\Constraint;
  * )
  */
 class DoublePostConstraint extends Constraint {
+  public $geoReportErrorCode = '100 - Duplicate';
   public $noValidViewboxMessage = 'The submitted service category and location suggests this request as duplicate.';
 }

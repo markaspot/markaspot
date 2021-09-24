@@ -2,19 +2,14 @@
 
 namespace Drupal\markaspot_open311;
 
-use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Routing\RouteMatchInterface;
-use Drupal\Core\Security\RequestSanitizer;
 use Drupal\rest\RestResourceConfigInterface;
 use Symfony\Component\DependencyInjection\ContainerAwareInterface;
 use Symfony\Component\DependencyInjection\ContainerAwareTrait;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\HttpKernel\Exception\UnsupportedMediaTypeHttpException;
 use Symfony\Component\Serializer\Exception\UnexpectedValueException;
-use Drupal\rest\ResourceResponse;
-use \Drupal\Component\Utility\Xss;
 
 /**
  * Acts as intermediate request forwarder for resource plugins.
@@ -117,7 +112,7 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
     try {
       $result = call_user_func_array(array($resource, $method), array_merge($parameters, array($request_data, $request)));
     }
-    catch (HttpException $e) {
+    catch (Exception $e) {
       $error['error'] = $e->getMessage();
       $content = $serializer->serialize($error, $format);
       // Add the default content type, but only if the headers from the

@@ -15,5 +15,6 @@ use Symfony\Component\Validator\Constraint;
  * )
  */
 class DefaultLocationConstraint extends Constraint {
+  public $geoReportErrorCode = '101 - Lat/Lon';
   public $noValidViewboxMessage = 'The submitted service request needs a different location than the default one.';
 }

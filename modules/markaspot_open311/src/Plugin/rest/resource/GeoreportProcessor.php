@@ -305,6 +305,7 @@ class GeoreportProcessor {
     $nodes = \Drupal::entityTypeManager()
       ->getStorage('node')
       ->loadMultiple($nids);
+    $debug = $query->__toString();
 
     // Extensions.
     $extended_role = 'anonymous';
@@ -326,7 +327,7 @@ class GeoreportProcessor {
       return $service_requests;
     }
     else {
-      throw new NotFoundHttpException('No Service requests found');
+      throw new NotFoundHttpException('No service requests found');
     }
   }
 

@@ -15,5 +15,9 @@ use Symfony\Component\Validator\Constraint;
  * )
  */
 class ValidLatLonConstraint extends Constraint {
+  /**
+   * Maps error codes to the names of their constants.
+   */
+  public $geoReportErrorCode = '102 - Lat/Lon';
   public $noValidViewboxMessage = 'The submitted location is outside our range of activity.';
 }
