@@ -219,17 +219,17 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       }
 
       var $serviceRequests = $(masSettings.nid_selector);
-      $('.view-content').once('markaspot_map').each(function () {
-        $serviceRequests.hover(function () {
-          var nid = this.dataset.historyNodeId;
-          var $node = this;
-          scrolledMarker.forEach(function (value) {
-            if (value["nid"] == nid) {
-              $node.classList.toggle("focus");
-              Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-            }
-          });
+      $serviceRequests.hover(function () {
+        var nid = this.dataset.historyNodeId;
+        var $node = this;
+        scrolledMarker.forEach(function (value) {
+          if (value["nid"] == nid) {
+            $node.classList.toggle("focus");
+            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+          }
         });
+      });
+      $('.view-content').once('markaspot_map').each(function () {
         $serviceRequests.each(function () {
           new Waypoint({
             element: this,

@@ -50,7 +50,7 @@ class GeoreportException implements EventSubscriberInterface {
           $violation = $violations->get($i);
           if ($violation->getPropertyPath() == 'field_category') {
             // Referring Service-Codes
-            $error['code']  = '103 | service_code';
+            $error['code']  = '103 - service_code';
           } else {
             // Get Custom Constraints ErrorCodes
             $error['code']  = $violation->getConstraint()->geoReportErrorCode;

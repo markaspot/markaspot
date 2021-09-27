@@ -254,18 +254,20 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         }
       }
       // Theme independent selector.
+
       const $serviceRequests = $(masSettings.nid_selector);
-      $('.view-content').once('markaspot_map').each(function() {
-        $serviceRequests.hover(function() {
-          const nid = this.dataset.historyNodeId;
-          const $node = this;
-          scrolledMarker.forEach(function(value){
-            if (value["nid"] == nid) {
-              $node.classList.toggle("focus");
-              Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-            }
-          });
+      $serviceRequests.hover(function() {
+        const nid = this.dataset.historyNodeId;
+        const $node = this;
+        scrolledMarker.forEach(function(value){
+          if (value["nid"] == nid) {
+            $node.classList.toggle("focus");
+            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+          }
         });
+      });
+      $('.view-content').once('markaspot_map').each(function() {
+
         // Loop through all current teasers.
 
         $serviceRequests.each(function() {
