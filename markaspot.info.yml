@@ -102,6 +102,6 @@ configurable_dependencies:
 
 
 themes:
-  - masradix
-  - seven
+  - mas_olivero
+  - claro
 

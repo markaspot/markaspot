@@ -4,6 +4,7 @@ global-styling:
     base:
       css/base/mas.css: { }
       css/base/map.css: { }
+      css/base/fonts.css: { }
     theme:
       css/base/color.css: { }
   js:

@@ -29,3 +29,7 @@ libraries-override:
     css:
       theme:
         css/system.admin.css: false
+  olivero/global-styling:
+    css:
+      base:
+        css/base/fonts.css: false

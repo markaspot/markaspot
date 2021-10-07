@@ -42,6 +42,7 @@ body.toolbar-tray-open.toolbar-fixed.toolbar-vertical .leaflet-bottom {
 
 div#geolocation-nominatim-map {
   transition: all .5s linear;
+  z-index: 1;
 }
 
 
