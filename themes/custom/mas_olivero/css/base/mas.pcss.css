@@ -406,7 +406,7 @@ div#block-markaspotstatsaction {
   }
   @media (--xl) {
     width: 50%;
-    left: 20%;
+    right: 20%;
   }
   @media (--grid-max) {
     width: 40%;
