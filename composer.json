@@ -117,6 +117,10 @@
     "patches": {
       "drupal/business_rules": {
         "Add taxonomy condition": "https://www.drupal.org/files/issues/2018-07-05/2983864-feature-request-compare-target_id-with-field.patch"
+      },
+      "drupal/core": {
+        "Add UI for field formatter translation": "https://www.drupal.org/files/issues/2020-12-04/2546212-168.patch",
+        "Add UI for field formatter translation / Action tab": "https://www.drupal.org/files/issues/2020-12-04/2546212-168-actions.patch"
       }
     }
   }
