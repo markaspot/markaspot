@@ -4,7 +4,7 @@
     attach: function (context, settings) {
       $('select[name*=boilerplate]').change(function () {
         const url = '/markaspot_boilerplate/load/' + this.value
-        const $textarea = $(this).closest('.paragraphs-subform').find('textarea')
+        const $textarea = $(this).closest('.fieldset-wrapper').find('textarea')
         $.getJSON(url, function (data) {
           CKEDITOR.instances[$textarea.attr('id')].setData(data)
         })
