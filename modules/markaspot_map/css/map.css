@@ -48,3 +48,17 @@ a.leaflet-control-timecontrol.timecontrol-date {
   border: 0px;
   background-color: #000;
 }
+
+.leaflet-marker-icon div:before {
+    position: absolute;
+    top: 8px;
+    left: 7px;
+    font-size: 17px;
+}
+
+
+/* Hide default styles */
+.leaflet-div-icon {
+    border: 0;
+    background: none;
+}

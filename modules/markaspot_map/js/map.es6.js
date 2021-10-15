@@ -2,6 +2,10 @@
  * @file
  * Main Map-Application File with Leaflet Maps API.
  */
+
+
+
+
 L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
   _update() {
     if (!this._map) {
@@ -76,6 +80,41 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
   }
 });
 
+function invertColor(hex, bw) {
+  if (hex.indexOf('#') === 0) {
+    hex = hex.slice(1);
+  }
+  // convert 3-digit hex to 6-digits.
+  if (hex.length === 3) {
+    hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+  }
+  if (hex.length !== 6) {
+    throw new Error('Invalid HEX color.');
+  }
+  var r = parseInt(hex.slice(0, 2), 16),
+      g = parseInt(hex.slice(2, 4), 16),
+      b = parseInt(hex.slice(4, 6), 16);
+  if (bw) {
+    // http://stackoverflow.com/a/3943023/112731
+    return (r * 0.299 + g * 0.587 + b * 0.114) > 186
+        ? '#000000'
+        : '#FFFFFF';
+  }
+  // invert color components
+  r = (255 - r).toString(16);
+  g = (255 - g).toString(16);
+  b = (255 - b).toString(16);
+  // pad each with zeros and return
+  return "#" + padZero(r) + padZero(g) + padZero(b);
+}
+
+function padZero(str, len) {
+  len = len || 2;
+  var zeros = new Array(len).join('0');
+  return (zeros + str).slice(-len);
+}
+
+
 (function($, Drupal, drupalSettings) {
   // 'use strict';.
   Drupal.Markaspot = {};
@@ -86,8 +125,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
   currentPath = `/${currentPath}`;
   const masSettings = drupalSettings.mas;
 
-
-
   Drupal.behaviors.markaspot_map = {
     attach(context, settings) {
       Drupal.Markaspot.settings = masSettings;
@@ -96,8 +133,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
       if (typeof mapSelector === 'undefined'){
         return;
       }
-
-
       mapSelector.once("markaspot_map").each(() => {
         $(".log_header .left").text(Drupal.t("Date"));
         $(".log_header .right").text(Drupal.t("Requests"));
@@ -254,6 +289,7 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         }
       }
       // Theme independent selector.
+
 
       const $serviceRequests = $(masSettings.nid_selector);
       $serviceRequests.hover(function() {
@@ -537,79 +573,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         }
       };
     },
-    getAwesomeColors() {
-      return [
-        {
-          color: "red",
-          hex: "#FF0000"
-        },
-        {
-          color: "darkred",
-          hex: "#8B0000"
-        },
-        {
-          color: "orange",
-          hex: "#FFA500",
-          iconColor: "dark-red"
-        },
-        {
-          color: "green",
-          hex: "#008000"
-        },
-        {
-          color: "darkgreen",
-          hex: "#006400"
-        },
-        {
-          color: "blue",
-          hex: "#0000FF"
-        },
-        {
-          color: "darkblue",
-          hex: "#00008B"
-        },
-        {
-          color: "purple",
-          hex: "#A020F0"
-        },
-        {
-          color: "darkpurple",
-          hex: "#871F78"
-        },
-        {
-          color: "cadetblue",
-          hex: "#5F9EA0"
-        },
-        {
-          color: "lightblue",
-          hex: "#ADD8E6",
-          iconColor: "#000000"
-        },
-        {
-          color: "lightgray",
-          hex: "#D3D3D3",
-          iconColor: "#000000"
-        },
-        {
-          color: "gray",
-          hex: "#808080"
-        },
-        {
-          color: "black",
-          hex: "#000000"
-        },
-        {
-          color: "beige",
-          hex: "#F5F5DC",
-          iconColor: "darkred"
-        },
-        {
-          color: "white",
-          hex: "#FFFFFF",
-          iconColor: "#000000"
-        }
-      ];
-    },
 
     showData(dataset) {
       if (dataset.status === 404) {
@@ -617,57 +580,66 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         return false;
       }
 
-      const awesomeColors = this.getAwesomeColors();
-
       $.each(dataset, (serviceRequests, request) => {
         const categoryColor =
           request.extended_attributes.markaspot.category_hex;
-        const colorswitch = categoryColor
-          ? categoryColor.toUpperCase()
-          : "#000000";
+        const awesomeIcon =
+            request.extended_attributes.markaspot.category_icon;
+        // const iconColor = element.iconColor ? element.iconColor : "#ffffff";
+        const { nid } = request.extended_attributes.markaspot;
+        const latlon = new L.LatLng(request.lat, request.long);
 
-        $.each(awesomeColors, (key, element) => {
-          if (colorswitch === element.hex) {
-            const awesomeColor = element.color;
-            const awesomeIcon =
-              request.extended_attributes.markaspot.category_icon;
-            const iconColor = element.iconColor ? element.iconColor : "#ffffff";
+        // No markers on default position
+        let masSettings =  drupalSettings.mas;
+        const center = {};
+        const pos = {};
+        pos.long = Number((request.long).toFixed(3));
+        pos.lat = Number((request.lat).toFixed(3));
+        center.lat = parseFloat(masSettings.center_lat).toFixed(3);
+        center.lng = parseFloat(masSettings.center_lng).toFixed(3);
+        if (center.lat == pos.lat && center.lng == pos.long) {
+          return;
+        }
 
-            const icon = L.AwesomeMarkers.icon({
-              icon: awesomeIcon,
-              prefix: "fa",
-              markerColor: awesomeColor,
-              iconColor
-            });
+        // icon normal state
+        // Thanks to
+        // https://codepen.io/localhorst/pen/yppoKO
 
-            const { nid } = request.extended_attributes.markaspot;
-            const markerColor = categoryColor;
-            const latlon = new L.LatLng(request.lat, request.long);
+        // https://editor.method.ac/
+        let iconSettings = {
+          mapIconUrl: '<div class="fa {mapIconSymbol}" style="color: {mapIconColor}"><svg class="icon" width="40" height="50" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><style>.shadow {\n' +
+              '  -webkit-filter: drop-shadow( 4px 3px 2px rgba(0, 0, 0, .4));\n' +
+              '  filter: drop-shadow( 4px 3px 2px rgba(0, 0, 0, .4));\n' +
+              '  /* Similar syntax to box-shadow */\n' +
+              '}</style>\n' +
+              '\n' +
+              ' <g>\n' +
+              '  <path class="shadow" fill="{mapIconFill}" stroke="null" d="m15.7703,0c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44805 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"  id="path4133"/>\n' +
+              ' </g>\n' +
+              '</svg></div>'
+        };
 
-            // No markers on default position
-            let masSettings =  drupalSettings.mas;
-            const center = {};
-            const pos = {};
-            pos.long = Number((request.long).toFixed(3));
-            pos.lat = Number((request.lat).toFixed(3));
-            center.lat = parseFloat(masSettings.center_lat).toFixed(3);
-            center.lng = parseFloat(masSettings.center_lng).toFixed(3);
-            if (center.lat == pos.lat && center.lng == pos.long) {
-              return;
-            }
+        // https://stackoverflow.com/questions/35969656/how-can-i-generate-the-opposite-color-according-to-current-color
+        iconSettings.mapIconColor = invertColor(categoryColor, 1);
+        iconSettings.mapIconFill = categoryColor;
+        iconSettings.mapIconSymbol = awesomeIcon;
+        let svgIcon = L.Util.template(iconSettings.mapIconUrl, iconSettings);
+        // let mySvgString = '<svg width="866" height="1000" xmlns="http://www.w3.org/2000/svg"><metadata id="metadata1">image/svg+xml</metadata><circle fill="#fee08b" cx="466" cy="532" r="395"/><circle fill="#ffffbf" cx="400" cy="468" r="395"/></svg>'
+        // let myIconUrl = encodeURI("data:image/svg+xml," + svgIcon).replace(/#/gi,'%23');
 
-            const marker = new L.Marker(latlon, {
-              icon,
-              nid,
-              color: markerColor,
-              time: request.requested_datetime
-            });
-            // console.log(marker)
-
-            marker.on("click", this.markerClickFn(marker, nid));
-            markerLayer.addLayer(marker);
-          }
+        let icon = L.divIcon({
+          html: svgIcon,
+          // className: "fa " + awesomeIcon
         });
+
+
+        let marker = new L.Marker(latlon, {
+          icon: icon,
+          nid
+        });
+        marker.on("click", this.markerClickFn(marker, nid));
+        markerLayer.addLayer(marker);
+
       });
       const size = markerLayer.getLayers().length;
 

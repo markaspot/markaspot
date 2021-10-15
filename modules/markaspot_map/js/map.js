@@ -76,6 +76,39 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
   }
 });
 
+function invertColor(hex, bw) {
+  if (hex.indexOf('#') === 0) {
+    hex = hex.slice(1);
+  }
+
+  if (hex.length === 3) {
+    hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+  }
+
+  if (hex.length !== 6) {
+    throw new Error('Invalid HEX color.');
+  }
+
+  var r = parseInt(hex.slice(0, 2), 16),
+      g = parseInt(hex.slice(2, 4), 16),
+      b = parseInt(hex.slice(4, 6), 16);
+
+  if (bw) {
+    return r * 0.299 + g * 0.587 + b * 0.114 > 186 ? '#000000' : '#FFFFFF';
+  }
+
+  r = (255 - r).toString(16);
+  g = (255 - g).toString(16);
+  b = (255 - b).toString(16);
+  return "#" + padZero(r) + padZero(g) + padZero(b);
+}
+
+function padZero(str, len) {
+  len = len || 2;
+  var zeros = new Array(len).join('0');
+  return (zeros + str).slice(-len);
+}
+
 (function ($, Drupal, drupalSettings) {
   Drupal.Markaspot = {};
   Drupal.Markaspot.maps = [];
@@ -472,62 +505,6 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         }
       };
     },
-    getAwesomeColors: function getAwesomeColors() {
-      return [{
-        color: "red",
-        hex: "#FF0000"
-      }, {
-        color: "darkred",
-        hex: "#8B0000"
-      }, {
-        color: "orange",
-        hex: "#FFA500",
-        iconColor: "dark-red"
-      }, {
-        color: "green",
-        hex: "#008000"
-      }, {
-        color: "darkgreen",
-        hex: "#006400"
-      }, {
-        color: "blue",
-        hex: "#0000FF"
-      }, {
-        color: "darkblue",
-        hex: "#00008B"
-      }, {
-        color: "purple",
-        hex: "#A020F0"
-      }, {
-        color: "darkpurple",
-        hex: "#871F78"
-      }, {
-        color: "cadetblue",
-        hex: "#5F9EA0"
-      }, {
-        color: "lightblue",
-        hex: "#ADD8E6",
-        iconColor: "#000000"
-      }, {
-        color: "lightgray",
-        hex: "#D3D3D3",
-        iconColor: "#000000"
-      }, {
-        color: "gray",
-        hex: "#808080"
-      }, {
-        color: "black",
-        hex: "#000000"
-      }, {
-        color: "beige",
-        hex: "#F5F5DC",
-        iconColor: "darkred"
-      }, {
-        color: "white",
-        hex: "#FFFFFF",
-        iconColor: "#000000"
-      }];
-    },
     showData: function showData(dataset) {
       var _this = this;
 
@@ -535,46 +512,39 @@ L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
         return false;
       }
 
-      var awesomeColors = this.getAwesomeColors();
       $.each(dataset, function (serviceRequests, request) {
         var categoryColor = request.extended_attributes.markaspot.category_hex;
-        var colorswitch = categoryColor ? categoryColor.toUpperCase() : "#000000";
-        $.each(awesomeColors, function (key, element) {
-          if (colorswitch === element.hex) {
-            var awesomeColor = element.color;
-            var awesomeIcon = request.extended_attributes.markaspot.category_icon;
-            var iconColor = element.iconColor ? element.iconColor : "#ffffff";
-            var icon = L.AwesomeMarkers.icon({
-              icon: awesomeIcon,
-              prefix: "fa",
-              markerColor: awesomeColor,
-              iconColor: iconColor
-            });
-            var nid = request.extended_attributes.markaspot.nid;
-            var markerColor = categoryColor;
-            var latlon = new L.LatLng(request.lat, request.long);
-            var _masSettings = drupalSettings.mas;
-            var center = {};
-            var pos = {};
-            pos.long = Number(request.long.toFixed(3));
-            pos.lat = Number(request.lat.toFixed(3));
-            center.lat = parseFloat(_masSettings.center_lat).toFixed(3);
-            center.lng = parseFloat(_masSettings.center_lng).toFixed(3);
+        var awesomeIcon = request.extended_attributes.markaspot.category_icon;
+        var nid = request.extended_attributes.markaspot.nid;
+        var latlon = new L.LatLng(request.lat, request.long);
+        var masSettings = drupalSettings.mas;
+        var center = {};
+        var pos = {};
+        pos.long = Number(request.long.toFixed(3));
+        pos.lat = Number(request.lat.toFixed(3));
+        center.lat = parseFloat(masSettings.center_lat).toFixed(3);
+        center.lng = parseFloat(masSettings.center_lng).toFixed(3);
 
-            if (center.lat == pos.lat && center.lng == pos.long) {
-              return;
-            }
+        if (center.lat == pos.lat && center.lng == pos.long) {
+          return;
+        }
 
-            var marker = new L.Marker(latlon, {
-              icon: icon,
-              nid: nid,
-              color: markerColor,
-              time: request.requested_datetime
-            });
-            marker.on("click", _this.markerClickFn(marker, nid));
-            markerLayer.addLayer(marker);
-          }
+        var iconSettings = {
+          mapIconUrl: '<div class="fa {mapIconSymbol}" style="color: {mapIconColor}"><svg class="icon" width="40" height="50" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><style>.shadow {\n' + '  -webkit-filter: drop-shadow( 4px 3px 2px rgba(0, 0, 0, .4));\n' + '  filter: drop-shadow( 4px 3px 2px rgba(0, 0, 0, .4));\n' + '  /* Similar syntax to box-shadow */\n' + '}</style>\n' + '\n' + ' <g>\n' + '  <path class="shadow" fill="{mapIconFill}" stroke="null" d="m15.7703,0c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44805 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"  id="path4133"/>\n' + ' </g>\n' + '</svg></div>'
+        };
+        iconSettings.mapIconColor = invertColor(categoryColor, 1);
+        iconSettings.mapIconFill = categoryColor;
+        iconSettings.mapIconSymbol = awesomeIcon;
+        var svgIcon = L.Util.template(iconSettings.mapIconUrl, iconSettings);
+        var icon = L.divIcon({
+          html: svgIcon
         });
+        var marker = new L.Marker(latlon, {
+          icon: icon,
+          nid: nid
+        });
+        marker.on("click", _this.markerClickFn(marker, nid));
+        markerLayer.addLayer(marker);
       });
       var size = markerLayer.getLayers().length;
 
