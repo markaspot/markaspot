@@ -272,7 +272,14 @@ class GeoreportRequestResource extends ResourceBase {
 
     foreach (array_keys($values) as $field_name) {
       // Status notes need special care as they are paragraphs.
-      if ($field_name == 'field_status_note') {
+      $field_type = $node->get($field_name)->getFieldDefinition()->getType();
+      if ($field_name == 'type') {
+        $node->set($field_name, $values[$field_name]);
+      }
+      else if ($field_type == 'entity_reference') {
+        $node->set($field_name, ['target_id' => $values[$field_name]]);
+      }
+      else if ($field_name == 'field_status_note') {
         // Replace status only if new status is set.
         $status = $values['field_status'] ?? $node->get('field_status')
             ->getValue();

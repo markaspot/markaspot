@@ -58,13 +58,10 @@ class GeoreportProcessor {
       // $values['request_id'] = $request_data['service_request_id'];
     }
     $values['title'] = isset($request_data['service_code']) ? Html::escape(stripslashes($request_data['service_code'])) : NULL;
-
-
     $values['body'] = isset($request_data['description']) ? Html::escape(stripslashes($request_data['description'])) : NULL;
 
     // Don't need this for development.
     $values['field_e_mail'] = isset($request_data['email']) ? Html::escape(stripslashes($request_data['email'])) : NULL;
-
     $values['field_geolocation']['lat'] = isset($request_data['lat']) ? $request_data['lat'] : NULL;
     $values['field_geolocation']['lng'] = isset($request_data['long']) ? $request_data['long'] : NULL;
     if (!isset($values['field_geolocation']['lat'])) {
@@ -86,7 +83,7 @@ class GeoreportProcessor {
     $values['changed'] = time();
 
     $category_tid = $this->serviceMapTax($request_data['service_code']);
-    $values['field_category']['target_id'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
+    $values['field_category'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
 
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
