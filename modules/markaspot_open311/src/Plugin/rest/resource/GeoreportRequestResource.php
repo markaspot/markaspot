@@ -276,7 +276,8 @@ class GeoreportRequestResource extends ResourceBase {
       if ($field_name == 'type') {
         $node->set($field_name, $values[$field_name]);
       }
-      else if ($field_type == 'entity_reference') {
+
+      else if ($field_type == 'entity_reference' && $field_name != 'field_request_media') {
         $node->set($field_name, ['target_id' => $values[$field_name]]);
       }
       else if ($field_name == 'field_status_note') {
