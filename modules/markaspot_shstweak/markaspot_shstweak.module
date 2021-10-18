@@ -75,12 +75,3 @@ function markaspot_shstweak_field_widget_settings_summary_alter(array &$summary,
 }
 
 
-
-/**
- * Implements hook_form_alter().
- */
-function markaspot_shstweak_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
-
-}
-
-
