@@ -1,0 +1,10 @@
+field.widget.third_party.markaspot_shstweak:
+  type: mapping
+  label: SHS Description Settings
+  mapping:
+    add_description:
+      type: boolean
+      label: 'Add description to SHS widget'
+    only_last_child:
+      type: boolean
+      label: 'Add description only to last childs'
