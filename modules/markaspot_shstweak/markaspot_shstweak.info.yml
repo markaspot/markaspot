@@ -1,0 +1,9 @@
+name: Mark-a-Spot SHS tweaks
+type: module
+description: Provides tweaks for SHS module
+core: 8.x
+core_version_requirement: ^8 || ^9
+dependencies:
+  - shs:shs
+
+package: Mark-a-Spot
