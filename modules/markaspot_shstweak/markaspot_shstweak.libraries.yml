@@ -1,0 +1,5 @@
+shstweak:
+  js:
+    js/shstweak.js: {}
+  dependencies:
+    - core/jquery
