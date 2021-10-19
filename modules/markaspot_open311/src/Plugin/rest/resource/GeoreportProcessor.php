@@ -89,33 +89,34 @@ class GeoreportProcessor {
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
       $managed = TRUE;
       $file = system_retrieve_file($request_data['media_url'], 'public://', $managed, FileSystemInterface::EXISTS_RENAME);
-
-      if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
-        $field_keys['image'] = 'field_request_media';
-        $media = Media::create([
-          'bundle'           => 'request_image',
-          'uid'              => \Drupal::currentUser()->id(),
-          'field_media_image' => [
-            'target_id' => $file->id(),
+      if ($file !== FALSE) {
+        if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
+          $field_keys['image'] = 'field_request_media';
+          $media = Media::create([
+            'bundle' => 'request_image',
+            'uid' => \Drupal::currentUser()->id(),
+            'field_media_image' => [
+              'target_id' => $file->id(),
+              'alt' => 'Open311 File',
+            ],
+          ]);
+          $media->setName($request_data['service_code'] . ' ' . $values['created'])
+            ->setPublished(TRUE)
+            ->save();
+          $field_keys['image'] = 'field_request_media';
+          $values['field_request_media'] = [
+            'target_id' => $media->id(),
             'alt' => 'Open311 File',
-          ],
-        ]);
-        $media->setName($request_data['service_code'] . ' ' . $values['created'] )->setPublished(TRUE)->save();
-        $field_keys['image'] = 'field_request_media';
-        $values['field_request_media'] = [
-          'target_id' => $media->id(),
-          'alt' => 'Open311 File',
-        ];
-      } else {
-        $field_keys['image'] = 'field_request_image';
-        if ($file !== FALSE) {
+          ];
+        }
+        else {
+          $field_keys['image'] = 'field_request_image';
           $values[$field_keys['image']] = [
             'target_id' => $file->id(),
             'alt' => 'Open311 File',
           ];
         }
       }
-
 
     }
 
