@@ -1,0 +1,119 @@
+services:
+  php:
+    image: tugboatqa/drupal:9.0
+    default: true
+    http: false
+    depends: mysql
+    aliases:
+      - preloaded
+      - minimal
+      - standard
+    commands:
+      init:
+        - cp .tugboat/sites.php $DRUPAL_DOCROOT/sites/sites.php
+        # Check out a branch using the unique Tugboat ID for this repository, to
+        # ensure we don't clobber an existing branch.
+        - git checkout -b $TUGBOAT_REPO_ID
+      update: |
+        set -eux
+        # Composer is hungry. You need a Tugboat project with a pretty sizeable
+        # chunk of memory.
+        export COMPOSER_MEMORY_LIMIT=-1
+        # This is an environment variable we added in the Dockerfile that
+        # provides the path to Drupal composer root (not the web root).
+        cd $DRUPAL_COMPOSER_ROOT
+        # We configure the Drupal project to use the checkout of the module as a
+        # Composer package repository.
+        composer config repositories.tugboat vcs $TUGBOAT_ROOT
+        # Now we can require this theme, specifing the branch name we created
+        # above that uses the $TUGBOAT_REPO_ID environment variable.
+        composer require drupal/olivero:dev-$TUGBOAT_REPO_ID -vvv
+        composer require drupal/webform:6.0.0-alpha9 -vvv
+        composer require drupal/admin_toolbar -vvv
+        composer require drupal/metatag -vvv
+        composer require drupal/devel:4.0.0 -vvv
+
+        # Install Drupal on the minimal site.
+        vendor/bin/drush \
+          --yes \
+          --uri=minimal \
+          --db-url=mysql://tugboat:tugboat@mysql:3306/minimal \
+          --site-name=Olivero \
+          --account-pass=${ADMIN_PASSWORD} \
+          site:install minimal
+        chgrp -R www-data $DRUPAL_DOCROOT/sites/minimal/files
+        chmod 2775 $DRUPAL_DOCROOT/sites/minimal/files
+        chmod -R g+w $DRUPAL_DOCROOT/sites/minimal/files
+
+        # Install Drupal on the standard site.
+        vendor/bin/drush \
+          --yes \
+          --uri=standard \
+          --db-url=mysql://tugboat:tugboat@mysql:3306/standard \
+          --site-name=Olivero \
+          --account-pass=${ADMIN_PASSWORD} \
+          site:install standard
+        chgrp -R www-data $DRUPAL_DOCROOT/sites/standard/files
+        chmod 2775 $DRUPAL_DOCROOT/sites/standard/files
+        chmod -R g+w $DRUPAL_DOCROOT/sites/standard/files
+
+        # Install Drupal on the preloaded site. We're really only doing this to
+        # get the site dir and settings.php file created properly.
+        vendor/bin/drush \
+          --yes \
+          --uri=preloaded \
+          --db-url=mysql://tugboat:tugboat@mysql:3306/preloaded \
+          --site-name=Olivero \
+          --account-pass=${ADMIN_PASSWORD} \
+          site:install minimal
+
+        # Import the database into preloaded.
+        wget -O /tmp/olivero_db.sql.gz ${PRELOADED_DB_DUMP}
+        zcat /tmp/olivero_db.sql.gz | vendor/bin/drush --uri=preloaded sql:cli
+        rm /tmp/olivero_db.sql.gz
+
+        # Download the files for preloaded.
+        wget -O /tmp/olivero_files.zip ${PRELOADED_FILES_ZIP}
+        unzip -od $DRUPAL_DOCROOT/sites/preloaded/files /tmp/olivero_files.zip
+        chgrp -R www-data $DRUPAL_DOCROOT/sites/preloaded/files
+        chmod 2775 $DRUPAL_DOCROOT/sites/preloaded/files
+        chmod -R g+w $DRUPAL_DOCROOT/sites/preloaded/files
+
+      build: |
+        set -eux
+        export COMPOSER_MEMORY_LIMIT=-1
+        # Delete and recheck out the branch so that Composer uses this code.
+        git branch -D $TUGBOAT_REPO_ID && git checkout -b $TUGBOAT_REPO_ID || true
+        cd $DRUPAL_COMPOSER_ROOT
+        composer install --optimize-autoloader
+        # Update this module, including all dependencies.
+        composer update drupal/olivero --with-all-dependencies
+        $TUGBOAT_ROOT/.tugboat/build.sh preloaded
+        $TUGBOAT_ROOT/.tugboat/build.sh minimal
+        $TUGBOAT_ROOT/.tugboat/build.sh standard
+    visualdiffs:
+      - /
+      - /node/7
+      - /node/6
+      - /node/4
+      - /node/1
+      - /node/3
+      - /form/job-application
+      - /form/registration
+      - /form/session-evaluation
+      - /form/user-profile
+      - /grid-view
+      - /node/31
+      - /table
+      - /contact
+      - /search/node?keys=drupal
+      - /user/login
+      - /user/register
+
+  mysql:
+    image: tugboatqa/mariadb
+    commands:
+      update:
+        - mysql -e "DROP DATABASE IF EXISTS preloaded; DROP DATABASE IF EXISTS minimal; DROP DATABASE IF EXISTS standard;"
+        - mysql -e "CREATE DATABASE preloaded; CREATE DATABASE minimal; CREATE DATABASE standard;"
+        - mysql -e "GRANT ALL PRIVILEGES ON *.* TO 'tugboat'; FLUSH PRIVILEGES;"

@@ -12,13 +12,8 @@ Vue.component('line-chart', {
       options: {
         maintainAspectRatio: false,
         height: '300',
-
         legend: {
-          display: true,
-          position: 'top',
-          labels: {
-            boxWidth: 20
-          }
+          display: false
         },
         scales: {
           xAxes: [

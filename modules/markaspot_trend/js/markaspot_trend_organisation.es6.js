@@ -13,6 +13,14 @@
         chartData: this.getChartData(),
         options: {
           cutoutPercentage: 60,
+          layout: {
+            padding: {
+                left: 50,
+                right: 50,
+                top: 50,
+                bottom: 50
+            }
+          },
           legend: {
             labels: {
               boxWidth: 20

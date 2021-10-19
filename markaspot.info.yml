@@ -93,8 +93,6 @@ dependencies:
   - markaspot_trend
   - markaspot_validation
   - service_request
-  - devel
-  - devel_generate
 
 configurable_dependencies:
   markaspot_default_content:

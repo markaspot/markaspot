@@ -3,6 +3,7 @@ base:
   css:
     theme:
       assets/css/masradix.style.css: {}
+      assets/css/mas/trend.css: {}
       assets/css/color/colors.css: {}
       assets/css/hacks.css: {}
   js:

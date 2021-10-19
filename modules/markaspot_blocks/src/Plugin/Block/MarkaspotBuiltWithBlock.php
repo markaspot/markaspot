@@ -54,7 +54,7 @@ class MarkaspotBuiltWithBlock extends BlockBase implements BlockPluginInterface 
     $language = \Drupal::config('language.negotiation')
       ->get('selected_langcode');
     $microsite = ($language == "de" || $language == "es") ? $language : 'en';
-    $logo = $this->t('Built with <a class="mas" href="@link-to-mas"><span>Mark-a-Spot</span></a>', ['@link-to-mas' => 'http://markaspot.de/' . $microsite]);
+    $logo = $this->t('Built with <a class="mas" aria-label="Mark-a-Spot" href="@link-to-mas"><span>Mark-a-Spot</span></a>', ['@link-to-mas' => 'http://markaspot.de/' . $microsite]);
 
     return [
       '#type' => 'markup',

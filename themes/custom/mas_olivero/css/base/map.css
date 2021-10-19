@@ -1,0 +1,220 @@
+
+.stuck {
+  position: fixed !important;
+  -webkit-backface-visibility: hidden;
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  width: 100vw;
+  height: 180px!important;
+  right: 0;
+  top:0;
+  margin: 0;
+  padding: 0;
+  box-shadow:  -36px 1px 36px rgb(0 0 0 / 8%);
+  z-index: 3;
+}
+
+contextual {
+  z-index: 0;
+}
+
+body.toolbar-tray-open.toolbar-fixed.toolbar-vertical #map.stuck {
+  position: fixed !important;
+  right: 0;
+  top: 39px;
+}
+
+body.toolbar-tray-open.toolbar-fixed.toolbar-horizontal #map.stuck {
+  position: fixed !important;
+  right: 0;
+  top: 80px;
+}
+
+body.toolbar-tray-open.toolbar-fixed.toolbar-vertical .leaflet-top,
+body.toolbar-tray-open.toolbar-fixed.toolbar-vertical .leaflet-bottom {
+}
+
+/* Geolocation fieldset stuck behaviour */
+
+#edit-field-geolocation-0-map-container legend {
+  display:none
+}
+
+div#geolocation-nominatim-map {
+  transition: all .5s linear;
+}
+
+
+fieldset#edit-field-geofield-wrapper.stuck legend {
+  display: none;
+}
+
+fieldset#edit-field-geofield-wrapper.stuck div {
+  margin: 0;
+  padding: 0;
+}
+
+fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-field-geolocation-0-map-container {
+  padding: 5px;
+}
+
+
+/* Layer the bar just above the trays and above contextual link triggers. */
+.toolbar-oriented .toolbar-bar {
+  z-index: 1502;
+}
+
+
+.stuck .leaflet-top.leaflet-left {
+    z-index: 900;
+    left: 100px;
+}
+
+.toolbar-vertical.toolbar-fixed .stuck,
+.toolbar-horizontal.toolbar-fixed .stuck,
+.toolbar-vertical.toolbar-fixed .timecontrol-date.utc,
+.toolbar-horizontal.toolbar-fixed .timecontrol-date.utc {
+  position: fixed;
+  right: 0;
+  top: 39px;
+}
+.toolbar-vertical.toolbar-fixed.toolbar-tray-open .stuck,
+.toolbar-horizontal.toolbar-fixed.toolbar-tray-open .timecontrol-date.utc {
+  position: fixed;
+  right: 0;
+  top: 80px;
+}
+
+.leaflet-popup-content {
+    max-width: 180px;
+}
+
+.map-request-block {
+  width: 100%;
+  height: 220px;
+  position: relative;
+}
+
+.map-block {
+  width: 100%;
+  height: 280px;
+  position: relative;
+}
+
+
+// Timeline makes no sense on smartphone screens.
+// Hiding this feature until there is a better solution for this.
+@media (max-width: $screen-xs) {
+  div.easy-button-container:nth-child(1) {
+      display: none;
+  }
+}
+/*
+
+@media (max-width: 767px)
+.leaflet-bar-timecontrol .timecontrol-date, .leaflet-bar-timecontrol .timecontrol-slider {
+    clear: none;
+    float: none;
+    border-right: none;
+}
+
+*/
+
+
+.leaflet-control-geocoder {
+  background: #fff!important;
+}
+
+// Styles for locate button
+.leaflet-control-locate span.fa.fa-map-marker {
+    border: 0;
+}
+
+.leaflet-control-locate a:last-child {
+    border-radius: 0;
+}
+.leaflet-control-locate a:first-child {
+    border-radius: 0;
+}
+
+.leaflet-bottom.leaflet-right {
+    border: 0 solid rgba(0,0,0,0.2);
+    background-clip: padding-box;
+}
+
+.toolbar-tray-open .grippie {
+    top: 320px;
+
+}
+
+div.log{
+  position: absolute;
+  display:none;
+  z-index: 800;
+  width: 220px;
+  background: rgba(0, 0, 0, 0.63);
+  list-style: none;
+  height: 100%;
+}
+
+div.log_header{
+  position: absolute;
+  width: 220px;
+  list-style: none;
+  span.left {
+      font-family: monospace;
+      color: #fff;
+      margin: 60px;
+  }
+
+  span.right {
+    font-family: monospace;
+    color: #fff;
+  }
+
+}
+
+
+ul.log_list {
+  top: 20px;
+  position: absolute;
+  color: #fff;
+  list-style: none;
+  padding-left: 50px;
+  font-family:monospace;
+  height: 100%;
+  overflow:scroll;
+}
+
+ul.log_list .time {
+  display: inline-block;
+  margin: 2px 10px;
+  width: 100px;
+}
+
+ul.log_list .count {
+  display: inline-block;
+  text-align: right;
+  width: 20px;
+  color: #fff!important;
+}
+
+.notifications {
+  position: fixed;
+  z-index: 9999;
+  right: 0;
+  top: 0;
+  padding: 0;
+  margin: 0;
+}
+.notifications li {
+  min-width: 100%;
+  display: block;
+  position: relative;
+  padding: 6px 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+}
+.notifications li:first-child {
+  border-top: 0;
+
+}

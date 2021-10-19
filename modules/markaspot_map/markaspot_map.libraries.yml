@@ -40,6 +40,9 @@ leaflet-easyButton:
   css:
     component:
        /libraries/leaflet-easybutton/src/easy-button.css: {}
+leaflet-edgebuffer:
+  js:
+    /libraries/leaflet-easybutton/src/easy-button.js: {}
 
 waypoints:
   js:

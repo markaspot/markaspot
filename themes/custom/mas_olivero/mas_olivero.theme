@@ -1,0 +1,59 @@
+<?php
+
+/**
+ * @file
+ * Functions to support theming in the Olivero theme.
+ */
+
+use Drupal\olivero\OliveroPreRender;
+use Drupal\Component\Utility\Html;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Template\Attribute;
+use Drupal\Core\Render\Element;
+use Drupal\user\UserInterface;
+
+/**
+ * Implements hook_preprocess_entity().
+ */
+function mas_olivero_preprocess_paragraph(&$variables) {
+  $paragraph = $variables['paragraph'];
+  if (is_object($paragraph->field_status_term[0])) {
+    $variables['status'] = $paragraph->status_note;
+    // $variables['statusColor'] =  str_replace('#', '', $paragraph->field_status_term[0]->entity->field_status_hex->color);
+  }
+}
+
+
+
+
+/**
+ * Implements hook_preprocess_HOOK().
+ */
+function mas_olivero_preprocess_field(&$variables) {
+  $element = $variables['element'];
+  $variables['field_name'] = $element['#field_name'];
+  if ($variables['field_name'] == 'field_category') {
+    $variables['attributes']['class'][] = 'category';
+    $item = $variables["items"][0]["content"]["#options"]["entity"];
+    $variables['icon']  = $item->field_category_icon->value;
+    $variables['color'] = str_replace('#', '', $item->field_category_hex->color);
+  }
+  if ($variables['field_name'] == 'field_status') {
+    $variables['attributes']['class'][] = 'status';
+    $item = $variables["items"][0]["content"]["#options"]["entity"];
+    $variables['icon']  = $item->field_status_icon->value;
+    $variables['color'] = str_replace('#', '', $item->field_status_hex->color);
+  }
+}
+
+
+/**
+ * Implements hook_theme_suggestions_HOOK_alter for blocks.
+ */
+function mas_olivero_theme_suggestions_block_alter(&$suggestions, $variables) {
+
+  // Load theme suggestions for blocks from parent theme.
+  foreach ($suggestions as &$suggestion) {
+    $suggestion = str_replace('mas_olivero_', 'olivero_', $suggestion);
+  }
+}

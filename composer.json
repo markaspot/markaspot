@@ -28,11 +28,13 @@
     "npm-asset/waypoints": "4.0.1",
     "npm-asset/iso8601-js-period": "0.2.0",
     "npm-asset/dateformat": "3.0.2",
+    "npm-asset/lazysizes": "^5.1",
     "npm-asset/leaflet": "~1",
     "npm-asset/leaflet-timedimension": "^1.1",
     "npm-asset/leaflet.heat": "0.2.0",
     "npm-asset/leaflet.markercluster": "^1.4",
-    "npm-asset/leaflet-fullscreen": "1.0.2",
+    "npm-asset/leaflet-fullscreen": "^1",
+    "npm-asset/leaflet-edgebuffer": "^1",
     "npm-asset/leaflet-easybutton": "2.4.0",
     "npm-asset/leaflet-control-geocoder": "^1",
     "npm-asset/drmonty-leaflet-awesome-markers": "2.0.2",
@@ -55,6 +57,7 @@
     "drupal/radix": "3.x-dev",
     "drupal/pathauto": "^1",
     "drupal/admin_toolbar": "^3",
+    "drupal/advagg": "^4.1",
     "drupal/restui": "^1",
     "drupal/token": "^1.9",
     "drupal/shariff": "^1",
@@ -64,15 +67,18 @@
     "drupal/better_normalizers": "1.x-dev",
     "drupal/ctools": "3.x-dev",
     "drupal/image_effects": "^3",
+    "drupal/layout_library": "^1.0@beta",
+    "drupal/lazy": "^3.0",
     "drupal/paragraphs": "^1.2",
     "drupal/entity_reference_revisions": "^1.9",
     "drupal/diff": "^1.0",
     "drupal/exif_orientation": "^1",
     "drupal/field_group": "^3.1",
-    "drupal/form_mode_manager": "2.x-dev",
+    "drupal/form_mode_manager": "^2",
     "drupal/geolocation": "^3",
     "drupal/maillog": "1.x-dev",
-    "drupal/services_api_key_auth": "^3",
+    "drupal/metatag": "^1.16",
+    "drupal/services_api_key_auth": "dev-3.0.x",
     "drupal/search_api": "^1.5",
     "drupal/views_infinite_scroll": "^1.5",
     "drupal/better_exposed_filters": "^5.0",
@@ -122,9 +128,6 @@
       },
       "drupal/business_rules": {
         "Add taxonomy condition": "https://www.drupal.org/files/issues/2018-07-05/2983864-feature-request-compare-target_id-with-field.patch"
-      },
-      "drupal/form_mode_manager": {
-        "Add D9 fixes": "https://www.drupal.org/files/issues/2020-10-30/form_mode_manager-drupal-9-compatibility-3164478-6.patch"
       },
       "drupal/image_effects": {
         "D8.8.6 -> D8.8.7 = Usupport schema version": "https://www.drupal.org/files/issues/2020-07-14/unsuported_schema_version-3146575-7.patch"
