@@ -265,6 +265,11 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
   font-weight: 900;
 }
 
+.pager__item a.button {
+  text-align: center;
+  margin: auto;
+}
+
 /* Statistik lists */
 
 .block-views-blockstats-block-status-category ul.list-group,
@@ -390,26 +395,13 @@ div#block-markaspotstatsaction {
 }
   }
 
-@media (min-width: 1200px) {
-
-div#block-markaspotfrontaction,
-div#block-markaspotstatsaction {
-}
-  }
-
-@media (min-width: 1440px) {
-
-div#block-markaspotfrontaction,
-div#block-markaspotstatsaction {
-}
-  }
-
 div#block-markaspotfrontaction ul.list-group, div#block-markaspotstatsaction ul.list-group {
+    list-style: none;
     display: flex;
     flex-direction: column;
     margin: 0;
     padding-left: 0;
-    border-radius: 0.25rem;
+    border-radius: 1rem;
     box-shadow: -36px 1px 36px rgba(0, 0, 0, 0.18)
   }
 
@@ -429,33 +421,33 @@ div#block-markaspotfrontaction ul.list-group li a:before, div#block-markaspotsta
 
     }
 
-@media (min-width: 500px) {
-
 div#block-markaspotfrontaction ul.list-group, div#block-markaspotstatsaction ul.list-group {
+
+
       flex-direction: column
   }
 
-      div#block-markaspotfrontaction ul.list-group > .list-group-item:first-child, div#block-markaspotstatsaction ul.list-group > .list-group-item:first-child {
+div#block-markaspotfrontaction ul.list-group > .list-group-item:first-child, div#block-markaspotstatsaction ul.list-group > .list-group-item:first-child {
         border-left-width: 1px;
-        border-top-left-radius: inherit;
-        border-top-right-radius: inherit;
+        border-top-left-radius: 1rem;
+        border-top-right-radius: 1rem;
         border-bottom-left-radius: 0;
       }
 
-      div#block-markaspotfrontaction ul.list-group > .list-group-item + .list-group-item, div#block-markaspotstatsaction ul.list-group > .list-group-item + .list-group-item {
+div#block-markaspotfrontaction ul.list-group > .list-group-item + .list-group-item, div#block-markaspotstatsaction ul.list-group > .list-group-item + .list-group-item {
         border-top-width: 0;
         border-left-width: 1px;
       }
 
-      div#block-markaspotfrontaction ul.list-group > .list-group-item:last-child, div#block-markaspotstatsaction ul.list-group > .list-group-item:last-child {
+div#block-markaspotfrontaction ul.list-group > .list-group-item:last-child, div#block-markaspotstatsaction ul.list-group > .list-group-item:last-child {
         border-top-right-radius: 0;
-        border-bottom-right-radius: inherit;
-        border-bottom-left-radius: inherit;
+        border-bottom-right-radius: 1rem;
+        border-bottom-left-radius: 1rem;
         border-left-width: 1px;
 
       }
 
-      div#block-markaspotfrontaction ul.list-group .list-group-item, div#block-markaspotstatsaction ul.list-group .list-group-item {
+div#block-markaspotfrontaction ul.list-group .list-group-item, div#block-markaspotstatsaction ul.list-group .list-group-item {
         position: relative;
         display: block;
         width: 100%;
@@ -464,7 +456,6 @@ div#block-markaspotfrontaction ul.list-group, div#block-markaspotstatsaction ul.
         text-decoration: none;
         border: 1px solid rgba(0, 0, 0, 0.125);
       }
-    }
 
 @media (min-width: 700px) {
 
@@ -586,20 +577,11 @@ div#block-markaspotstatsaction ul.list-group .list-group-item {
         }
       }
 
-/* Stats */
-
-.page-node-type-page .layout__region {
-  margin: -10px;
-  padding: inherit;
-}
-
 .trend_count {
   font-size: 3em;
-  line-height: 5rem;
-  background: rgba(221,221,221,0.86667);
+  line-height: 4rem;
   padding: 10px;
   text-align: center;
-  min-height: 230px;
 }
 
 .trend_count {
