@@ -607,14 +607,24 @@ function padZero(str, len) {
 
         // https://editor.method.ac/
         let iconSettings = {
-          mapIconUrl: '<div class="fa {mapIconSymbol}" style="color: {mapIconColor}"><svg class="icon" width="40" height="50" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><style>.shadow {\n' +
-              '  -webkit-filter: drop-shadow( 4px 3px 2px rgba(0, 0, 0, .4));\n' +
-              '  filter: drop-shadow( 4px 3px 2px rgba(0, 0, 0, .4));\n' +
-              '  /* Similar syntax to box-shadow */\n' +
-              '}</style>\n' +
-              '\n' +
+          mapIconUrl: '<div class="fa {mapIconSymbol}" style="color: {mapIconColor}">' +
+
+              '<svg class="icon" width="40" height="50" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1">' +
+              '  <defs>\n' +
+              '    <filter id="dropshadow" height="130%">\n' +
+              '      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/> \n' +
+              '      <feOffset dx="2" dy="2" result="offsetblur"/>\n' +
+              '      <feComponentTransfer>\n' +
+              '        <feFuncA type="linear" slope="0.3"/>\n' +
+              '      </feComponentTransfer>\n' +
+              '      <feMerge> \n' +
+              '        <feMergeNode/>\n' +
+              '        <feMergeNode in="SourceGraphic"/> \n' +
+              '      </feMerge>\n' +
+              '    </filter>\n' +
+              '  </defs>\n' +
               ' <g>\n' +
-              '  <path class="shadow" fill="{mapIconFill}" stroke="null" d="m15.7703,0c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44805 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"  id="path4133"/>\n' +
+              '  <path filter="url(#dropshadow)" fill="{mapIconFill}" stroke="null" d="m15.7703,0c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44805 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"  id="path4133"/>\n' +
               ' </g>\n' +
               '</svg></div>'
         };
@@ -624,12 +634,8 @@ function padZero(str, len) {
         iconSettings.mapIconFill = categoryColor;
         iconSettings.mapIconSymbol = awesomeIcon;
         let svgIcon = L.Util.template(iconSettings.mapIconUrl, iconSettings);
-        // let mySvgString = '<svg width="866" height="1000" xmlns="http://www.w3.org/2000/svg"><metadata id="metadata1">image/svg+xml</metadata><circle fill="#fee08b" cx="466" cy="532" r="395"/><circle fill="#ffffbf" cx="400" cy="468" r="395"/></svg>'
-        // let myIconUrl = encodeURI("data:image/svg+xml," + svgIcon).replace(/#/gi,'%23');
-
         let icon = L.divIcon({
           html: svgIcon,
-          // className: "fa " + awesomeIcon
         });
 
 
