@@ -15,6 +15,11 @@ leaflet:
   css:
     component:
       /libraries/leaflet/dist/leaflet.css: {}
+font-awesome:
+  css:
+    component:
+      /libraries/font-awesome/css/all.min.css: {}
+      /libraries/font-awesome/css/v4-shims.min.css: {}
 
 leaflet-control-geocoder:
   css:
@@ -38,6 +43,8 @@ leaflet-locatecontrol:
   css:
     component:
       /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.css: {}
+  dependencies:
+    - geolocation_nominatim/font-awesome
 leaflet.fullscreen:
   js:
     /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: {}
