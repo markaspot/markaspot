@@ -215,9 +215,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Handle limit parameters for user one and other users.
-    $limit = (isset($is_admin)) ? NULL : 1000;
-    $query_limit = (isset($parameters['limit'])) ? $parameters['limit'] : NULL;
-    $limit = (isset($query_limit) && $query_limit <= 1000) ? $query_limit : $limit;
+    $query_limit = (isset($parameters['limit'])) ? $parameters['limit'] : 100;
+    $limit = (isset($query_limit) && $query_limit <= 100) ? $query_limit : $limit;
 
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
@@ -267,7 +266,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
     else {
       $query->sort('created', $direction = $sort);
-
     }
     // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['q'])) {
@@ -280,7 +278,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->condition($group);
     }
 
-    if (!isset($parameters['nids'])) {
+    if (!isset($parameters['nids']) || (!isset($parameters['updated']))) {
       // start_date param or max 90days.
       $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '') ? strtotime($parameters['start_date']) : strtotime("- 90days");
       $query->condition('created', $start_timestamp, '>=');
