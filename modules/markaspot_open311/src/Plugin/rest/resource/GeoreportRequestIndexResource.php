@@ -292,7 +292,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->condition($group);
     }
 
-    if (!isset($parameters['nids']) || (!isset($parameters['updated']))) {
+    if (!isset($parameters['nids']) && (!isset($parameters['updated']))) {
       // start_date param or max 90days.
       $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '') ? strtotime($parameters['start_date']) : strtotime("- 90days");
       $query->condition('created', $start_timestamp, '>=');
