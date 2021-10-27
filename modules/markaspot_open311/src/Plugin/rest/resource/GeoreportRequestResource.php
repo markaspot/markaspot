@@ -273,7 +273,7 @@ class GeoreportRequestResource extends ResourceBase {
         // Replace status only if new status is set.
         $status = $values['field_status'] ?? $node->get('field_status')
             ->getValue();
-        $paragraphData = [$status, $values['field_status_note']];
+        $paragraphData = [$status, $values['field_status_notes']];
         $paragraph = $map->create_paragraph($paragraphData);
 
         $current = $node->get('field_status_notes')->getValue();
