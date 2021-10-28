@@ -62,6 +62,9 @@ class GeoreportProcessor {
 
     // Don't need this for development.
     $values['field_e_mail'] = isset($request_data['email']) ? Html::escape(stripslashes($request_data['email'])) : NULL;
+    $values['field_first_name'] = isset($request_data['first_name']) ? Html::escape(stripslashes($request_data['first_name'])) : NULL;
+    $values['field_last_name'] = isset($request_data['last_name']) ? Html::escape(stripslashes($request_data['last_name'])) : NULL;
+    $values['field_phone'] = isset($request_data['phone']) ? Html::escape(stripslashes($request_data['phone'])) : NULL;
     $values['field_geolocation']['lat'] = isset($request_data['lat']) ? $request_data['lat'] : NULL;
     $values['field_geolocation']['lng'] = isset($request_data['long']) ? $request_data['long'] : NULL;
     if (!isset($values['field_geolocation']['lat'])) {
@@ -451,7 +454,7 @@ class GeoreportProcessor {
 
     if ($extended_role == 'manager') {
 
-      $request['extended_attributes']['author'] = $node->author;
+      $request['extended_attributes']['author'] = $node->uid->entity->label();
       $request['extended_attributes']['e-mail'] = $node->field_e_mail->value;
 
       if (isset($parameters['fields'])) {
