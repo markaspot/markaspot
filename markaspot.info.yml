@@ -56,7 +56,6 @@ dependencies:
   - paragraphs
   - pbf
   - quickedit
-  - r4032login
   - rdf
   - responsive_image
   - restui
