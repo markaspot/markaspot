@@ -10,6 +10,8 @@ use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Datetime\DrupalDateTime;
+
 use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 
 /**
@@ -111,7 +113,8 @@ function markaspot_request_id_create_request_id() {
 
   /** @var \Drupal\Core\Database\Connection $connection */
   $connection = \Drupal::service('database');
-
+  $config = \Drupal::configFactory()
+    ->getEditable('markaspot_request_id.settings');
   // Check if update has been run and custom table has been created.
   if (markaspot_request_id_check_table($connection)) {
     $timestamp = Drupal::time()->getRequestTime();
@@ -123,13 +126,54 @@ function markaspot_request_id_create_request_id() {
       ])
       ->execute();
     // Write request id as string to row. todo: make request id periodically, or custom pattern
-    $update = $connection->update('markaspot_request_id')
-      ->fields([
-        'request_id' =>  $id . '-' . date('Y', $timestamp)
-      ])
-      ->condition('id', $id)
-      ->execute();
 
+    // Update with the rollover feature
+    if ($config->get('rollover')) {
+      // If rollover data is manually set for development or testing.
+      $custom_rollover = new DrupalDateTime($config->get('start'));
+      $custom_rollover_start = $custom_rollover->getTimestamp();
+      // rollover date should be the last second of the previous year.
+      $yearly_rollover_start = mktime(23, 59, 59, 12, 31, date('Y') - 1);
+
+      // Create Timestamp of both.
+      $last_date = ($custom_rollover_start !== $yearly_rollover_start) ? $custom_rollover_start : $yearly_rollover_start;
+
+      // Get the last request-id of previous year
+      $last_of_year_id = $connection->select('markaspot_request_id', 'r')
+        ->fields('r', ['request_id','offset'])
+        ->condition('timestamp', $last_date,  '<=')
+        ->condition('timestamp', 0,  '<>')
+        ->orderBy('timestamp', 'DESC')
+        ->range(0, 1)
+        ->execute();
+
+      // Get the preset delimiter between serial id and pattern.
+      $delimiter = $config->get('delimiter');
+
+      foreach ($last_of_year_id as $last) {
+        $yearly_diff = explode($delimiter, $last->request_id);
+        $offset = $last->offset ?? 0;
+      }
+      // Create date pattern from config and current request timestamp.
+      $date = date($config->get('format'), $timestamp);
+
+      // Calculate the following serial ID
+      $followUpId = $id - $yearly_diff[0] - $offset;
+      $update = $connection->update('markaspot_request_id')
+        ->fields([
+          'request_id' =>  $followUpId .  $delimiter  . $date,
+          'offset' => $yearly_diff[0] + $offset
+        ])
+        ->condition('id', $id)
+        ->execute();
+    } else {
+      $update = $connection->update('markaspot_request_id')
+        ->fields([
+          'request_id' =>  $id . '-' . date('Y', $timestamp)
+        ])
+        ->condition('id', $id)
+        ->execute();
+    }
     // Get the the latest request id (to be sure).
     $request_ids = $connection->select('markaspot_request_id', 'r')
       ->fields('r', ['request_id'])
@@ -164,8 +208,7 @@ function markaspot_request_id_create_request_id() {
       // Is one provided count up (needs increment of 2 if no NID is created yet)
       $next = (!empty($next[0])) ? $next[0] + 1 : 1;
 
-      $config = \Drupal::configFactory()
-        ->getEditable('markaspot_request_id.settings');
+
       $id_pattern = $config->get('format');
       return (isset($id_pattern)) ? $next . '-' . date($id_pattern) : $next;
     }
@@ -205,6 +248,7 @@ function markaspot_request_id_check_table($connection){
   try {
     $table = "markaspot_request_id";
     $connection->queryRange("SELECT 1 FROM {" . $table . "}", 0, 1);
+    $connection->queryRange("Select offset FROM {" . $table . "}", 0, 1);
     return TRUE;
   }
   catch (\Exception $e) {
