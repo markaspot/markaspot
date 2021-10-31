@@ -49,12 +49,21 @@ class GeoreportException implements EventSubscriberInterface {
 
         for ($i = 0; $i < $violations->count() ; $i++) {
           $violation = $violations->get($i);
-          if ($violation->getPropertyPath() == 'field_category') {
-            // Referring Service-Codes
-            $error['code']  = '103 - service_code';
-          } else {
-            // Get Custom Constraints ErrorCodes
-            $error['code']  = $violation->getConstraint()->geoReportErrorCode;
+          switch ($violation->getPropertyPath()) {
+            case 'field_category':
+              $error['code'] = '103 - service_code';
+              break;
+            case 'field_category.0.target_id':
+              $error['code'] = '104 - service_code not valid';
+              break;
+            case 'field_status.0.target_id':
+              $error['code'] = '105 - Status not valid';
+              break;
+            case 'field_organisation.0.target_id':
+              $error['code'] = '106 - Organisation not valid';
+              break;
+            default:
+              $error['code'] = $violation->getConstraint()->geoReportErrorCode;
           }
 
           $error['description'] = $violation->getMessage();

@@ -91,3 +91,16 @@ function markaspot_request_id_update_9500() {
     return FALSE;
   }
 }
+
+/**
+ * Add a new column to save offset for serial ID rollover.
+ */
+function markaspot_request_id_update_9600() {
+  $spec = [
+    'type' => 'int',
+    'not null' => FALSE,
+    'description' => "Offset"
+  ];
+  $schema = Database::getConnection()->schema();
+  $schema->addField('markaspot_request_id', 'offset', $spec);
+}
