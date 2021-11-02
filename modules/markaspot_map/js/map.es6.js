@@ -609,22 +609,12 @@ function padZero(str, len) {
         let iconSettings = {
           mapIconUrl: '<div class="fa {mapIconSymbol}" style="color: {mapIconColor}">' +
 
-              '<svg class="icon" width="40" height="50" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1">' +
+              '<svg class="icon" width="50" height="50" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1">' +
               '  <defs>\n' +
-              '    <filter id="dropshadow" height="130%">\n' +
-              '      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/> \n' +
-              '      <feOffset dx="2" dy="2" result="offsetblur"/>\n' +
-              '      <feComponentTransfer>\n' +
-              '        <feFuncA type="linear" slope="0.3"/>\n' +
-              '      </feComponentTransfer>\n' +
-              '      <feMerge> \n' +
-              '        <feMergeNode/>\n' +
-              '        <feMergeNode in="SourceGraphic"/> \n' +
-              '      </feMerge>\n' +
-              '    </filter>\n' +
+              '    <filter id="dropshadow" height="130%"><feDropShadow dx="-0.8" dy="-0.8" stdDeviation="2" flood-color="black" flood-opacity="0.5"/></filter>\n' +
               '  </defs>\n' +
               ' <g>\n' +
-              '  <path filter="url(#dropshadow)" fill="{mapIconFill}" stroke="null" d="m15.7703,0c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44805 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"  id="path4133"/>\n' +
+              '  <path filter="url(#dropshadow)" fill="{mapIconFill}" d="m25,2.55778c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44804 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"  id="path4133"/>\n' +
               ' </g>\n' +
               '</svg></div>'
         };

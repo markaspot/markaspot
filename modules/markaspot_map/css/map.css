@@ -51,9 +51,9 @@ a.leaflet-control-timecontrol.timecontrol-date {
 
 .leaflet-marker-icon div:before {
     position: absolute;
-    top: 8px;
-    left: 7px;
-    font-size: 17px;
+    top: 11px;
+    left: 18px;
+    font-size: 15px;
 }
 
 
