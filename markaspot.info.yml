@@ -61,7 +61,6 @@ dependencies:
   - restui
   - search_api
   - search_api_db
-  - shariff
   - shortcut
   - system
   - taxonomy

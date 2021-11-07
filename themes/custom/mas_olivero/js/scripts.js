@@ -10,7 +10,7 @@
   var body = document.querySelector('body');
 
   if (body.classList.contains('path-frontpage') == false && body.classList.contains('page-node-type-page') == false) {
-    var _map = document.getElementById('#map');
+    var _map = document.getElementById('map');
 
     var stickyElement = document.getElementsByClassName('map-request-block');
 
@@ -22,6 +22,23 @@
     }
   }
 
+  var element = document.querySelector('body');
+  var observer = new MutationObserver(function (mutations) {
+    var startBlock = document.getElementById('block-markaspotfrontaction');
+    var fieldsetMap = document.getElementById('geolocation-nominatim-map');
+    mutations.forEach(function (mutation) {
+      if (mutation.type === "attributes" && mutation.target.className.indexOf('overlay-active') != -1) {
+        fieldsetMap ? fieldsetMap.style.display = 'none' : false;
+        startBlock ? startBlock.style.display = 'none' : false;
+      } else {
+        fieldsetMap ? fieldsetMap.style.display = 'block' : false;
+        startBlock ? startBlock.style.display = 'block' : false;
+      }
+    });
+  });
+  observer.observe(element, {
+    attributes: true
+  });
   var heatMapButton = document.querySelector('.heatmap a');
 
   if (heatMapButton !== null) {
@@ -59,9 +76,10 @@
   var map = document.getElementById('map');
 
   if (map !== null) {
-    var observer = new MutationObserver(function (mutations) {
+    var _observer = new MutationObserver(function (mutations) {
       return Drupal.Markaspot.maps[0].invalidateSize();
     });
-    observer.observe(map, config);
+
+    _observer.observe(map, config);
   }
 })(Drupal);

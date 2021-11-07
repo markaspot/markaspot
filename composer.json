@@ -55,8 +55,6 @@
     "drupal/advagg": "^4.1",
     "drupal/restui": "^1",
     "drupal/token": "^1.9",
-    "drupal/shariff": "^1",
-    "drupal/r4032login": "^2",
     "drupal/better_normalizers": "1.x-dev",
     "drupal/ctools": "3.x-dev",
     "drupal/image_effects": "^3",
