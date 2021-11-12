@@ -45,7 +45,7 @@ class MarkaspotRequestIdSettingsForm extends ConfigFormBase {
 
     $form['markaspot_request_id']['start'] = array(
       '#type' => 'datetime',
-      '#default_value' => new DrupalDateTime($previous_year .'-12-31 23:59:59'),
+      '#default_value' => new DrupalDateTime($config->get('start')) ?? new DrupalDateTime($previous_year .'-12-31 23:59:59'),
       '#title' => t('Next Rollover Date'),
       '#description' => t('Force Rollover earlier than this date'),
     );
