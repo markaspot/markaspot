@@ -10,5 +10,9 @@ function markaspot_map_page_attachments(array &$page) {
   $path =\Drupal::service('path.current')->getPath();
   if($path !== '/report' && !strstr($path, 'node/add') && !strstr($path, 'node/edit')) {
     $page['#attached']['library'][] = 'markaspot_map/map';
+
+    if ($attached['mapbox_token'] !== '') {
+      $page['#attached']['library'][] = 'markaspot_map/mapbox';
+    }
   }
 }

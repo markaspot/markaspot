@@ -153,7 +153,16 @@ function padZero(str, len) {
 
         var map = Drupal.Markaspot.maps[0];
         map.attributionControl.addAttribution(masSettings.osm_custom_attribution);
-        map.addLayer(tileLayer);
+
+        if (masSettings.mapbox_token !== '') {
+          var gl = L.mapboxGL({
+            accessToken: masSettings.mapbox_token,
+            style: masSettings.mapbox_style
+          }).addTo(map);
+        } else {
+          map.addLayer(tileLayer);
+        }
+
         markerLayer = L.markerClusterGroup({
           maxClusterRadius: 20
         });

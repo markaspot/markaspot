@@ -68,6 +68,14 @@ font-awesome:
       /libraries/font-awesome/css/all.min.css: {minified: true }
       /libraries/font-awesome/css/v4-shims.min.css: {minified: true }
 
+mapbox:
+  js:
+    /libraries/mapbox-gl/dist/mapbox-gl.js: { }
+    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: { }
+  css:
+    component:
+      /libraries/mapbox-gl/dist/mapbox-gl.css: {}
+
 
 # Markaspot Map core library.
 map:

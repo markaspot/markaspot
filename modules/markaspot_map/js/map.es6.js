@@ -158,7 +158,17 @@ function padZero(str, len) {
         map.attributionControl.addAttribution(
           masSettings.osm_custom_attribution
         );
-        map.addLayer(tileLayer);
+        // console.log(masSettings);
+        // 'mapbox://styles/mapbox/streets-v8'
+
+        if (masSettings.mapbox_token !== '') {
+          const gl = L.mapboxGL({
+            accessToken: masSettings.mapbox_token,
+            style: masSettings.mapbox_style
+          }).addTo(map);
+        } else {
+          map.addLayer(tileLayer);
+        }
 
         markerLayer = L.markerClusterGroup({
           maxClusterRadius: 20

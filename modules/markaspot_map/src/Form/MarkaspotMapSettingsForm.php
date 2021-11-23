@@ -60,11 +60,17 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('map_type'),
       '#options' => array(t('Google Maps'), t('Mapbox'), t('Other OSM')),
     );
-    $form['markaspot_map']['mapbox'] = array(
+    $form['markaspot_map']['mapbox_token'] = array(
       '#type' => 'textfield',
-      '#title' => t('Mapbox Map ID'),
-      '#default_value' => $config->get('mapbox'),
-      '#description' => t('Insert your Map ID (e.g. markaspot.Ejs23a) here'),
+      '#title' => t('Mapbox Access Token'),
+      '#default_value' => $config->get('mapbox_token'),
+      '#description' => t('Insert your Mapbox Access Token (e.g. pk.eyJ1zN2UyOTRxaDkifQ.RYWA5UQ-B5) here'),
+    );
+    $form['markaspot_map']['mapbox_style'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Mapbox Style Url'),
+      '#default_value' => $config->get('mapbox_style'),
+      '#description' => t('Mapbox Style Url (e.g. mapbox://styles/mapbox/streets-v8) here'),
     );
     $form['markaspot_map']['osm_custom_tile_url'] = array(
       '#type' => 'textfield',
@@ -141,7 +147,6 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
 
       '#type' => 'textfield',
       '#size' => 10,
-
       '#title' => t('Longitude value for the map center'),
       '#default_value' => $config->get('center_lng'),
       '#description' => t('Enter in decimal format, e.g 6.8232'),
@@ -160,7 +165,8 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       ->set('request_list_path', $values['request_list_path'])
       ->set('visualization_path', $values['visualization_path'])
       ->set('map_type', $values['map_type'])
-      ->set('mapbox', $values['mapbox'])
+      ->set('mapbox_token', $values['mapbox_token'])
+      ->set('mapbox_style', $values['mapbox_style'])
       ->set('osm_custom_tile_url', $values['osm_custom_tile_url'])
       ->set('wms_service', $values['wms_service'])
       ->set('wms_layer', $values['wms_layer'])
