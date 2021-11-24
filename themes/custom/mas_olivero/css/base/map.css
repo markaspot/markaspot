@@ -11,7 +11,7 @@
   margin: 0;
   padding: 0;
   box-shadow:  -36px 1px 36px rgb(0 0 0 / 8%);
-  z-index: 3;
+  z-index: 3!important;
 }
 
 contextual {
@@ -28,6 +28,7 @@ body.toolbar-tray-open.toolbar-fixed.toolbar-horizontal #map.stuck {
   position: fixed !important;
   right: 0;
   top: 80px;
+  z-index: 1!important;
 }
 
 body.toolbar-tray-open.toolbar-fixed.toolbar-vertical .leaflet-top,
@@ -42,7 +43,6 @@ body.toolbar-tray-open.toolbar-fixed.toolbar-vertical .leaflet-bottom {
 
 div#geolocation-nominatim-map {
   transition: all .5s linear;
-  z-index: 1;
 }
 
 
