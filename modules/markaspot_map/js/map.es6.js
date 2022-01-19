@@ -148,27 +148,28 @@ function padZero(str, len) {
         // console.log(Drupal.Markaspot.maps[0].getCenter());
         $("#map").css(`background-color:${masSettings.map_background}`);
         let tileLayer;
-        if (masSettings.osm_custom_tile_url !== "") {
-          tileLayer = L.tileLayer(masSettings.osm_custom_tile_url, { edgeBufferTiles: 1 }
-            );
-        } else {
-          tileLayer = L.tileLayer.wms(masSettings.wms_service, { layers: masSettings.wms_layer, edgeBufferTiles: 1 });
-        }
         const map = Drupal.Markaspot.maps[0];
-        map.attributionControl.addAttribution(
-          masSettings.osm_custom_attribution
-        );
-        // console.log(masSettings);
-        // 'mapbox://styles/mapbox/streets-v8'
 
-        if (masSettings.mapbox_token !== '') {
+        if (masSettings.map_type === "0") {
           const gl = L.mapboxGL({
             accessToken: masSettings.mapbox_token,
             style: masSettings.mapbox_style
           }).addTo(map);
-        } else {
-          map.addLayer(tileLayer);
         }
+        if (masSettings.map_type === "1") {
+          if (masSettings.wms_service == '') {
+            tileLayer = L.tileLayer(masSettings.osm_custom_tile_url, { edgeBufferTiles: 1 });
+          } else {
+            tileLayer = L.tileLayer.wms(masSettings.wms_service, { layers: masSettings.wms_layer, edgeBufferTiles: 1 });
+          }
+          map.addLayer(tileLayer);
+
+
+        }
+        map.attributionControl.addAttribution(
+          masSettings.osm_custom_attribution
+        );
+
 
         markerLayer = L.markerClusterGroup({
           maxClusterRadius: 20
@@ -611,22 +612,9 @@ function padZero(str, len) {
           return;
         }
 
-        // icon normal state
-        // Thanks to
-        // https://codepen.io/localhorst/pen/yppoKO
-
-        // https://editor.method.ac/
+        // console.log(masSettings);
         let iconSettings = {
-          mapIconUrl: '<div class="fa {mapIconSymbol}" style="color: {mapIconColor}">' +
-
-              '<svg class="icon" width="50" height="50" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1">' +
-              '  <defs>\n' +
-              '    <filter id="dropshadow" height="130%"><feDropShadow dx="-0.8" dy="-0.8" stdDeviation="2" flood-color="black" flood-opacity="0.5"/></filter>\n' +
-              '  </defs>\n' +
-              ' <g>\n' +
-              '  <path filter="url(#dropshadow)" fill="{mapIconFill}" d="m25,2.55778c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44804 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"  id="path4133"/>\n' +
-              ' </g>\n' +
-              '</svg></div>'
+          mapIconUrl: masSettings.marker
         };
 
         // https://stackoverflow.com/questions/35969656/how-can-i-generate-the-opposite-color-according-to-current-color
@@ -634,10 +622,11 @@ function padZero(str, len) {
         iconSettings.mapIconFill = categoryColor;
         iconSettings.mapIconSymbol = awesomeIcon;
         let svgIcon = L.Util.template(iconSettings.mapIconUrl, iconSettings);
+        // console.log(masSettings.iconAnchor);
         let icon = L.divIcon({
           html: svgIcon,
+          iconAnchor: eval(masSettings.iconAnchor),
         });
-
 
         let marker = new L.Marker(latlon, {
           icon: icon,

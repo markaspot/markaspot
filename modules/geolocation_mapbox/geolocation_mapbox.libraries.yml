@@ -1,0 +1,54 @@
+# Geolocation core library.
+
+geolocation-mapbox-widget:
+  version: VERSION
+  js:
+    geolocation_mapbox.widget.js: {}
+  css:
+    theme:
+      geolocation_mapbox.css: {}
+
+leaflet:
+  header: true
+  js:
+    /libraries/leaflet/dist/leaflet.js: {}
+  css:
+    component:
+      /libraries/leaflet/dist/leaflet.css: {}
+mapbox:
+  js:
+    /libraries/mapbox-gl/dist/mapbox-gl.js: { }
+    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: { }
+  css:
+    component:
+      /libraries/mapbox-gl/dist/mapbox-gl.css: {}
+
+font-awesome:
+  css:
+    component:
+      /libraries/font-awesome/css/all.min.css: {}
+      /libraries/font-awesome/css/v4-shims.min.css: {}
+
+leaflet-control-geocoder:
+  css:
+    component:
+      /libraries/leaflet-control-geocoder/dist/Control.Geocoder.css: {}
+  js:
+    /libraries/leaflet-control-geocoder/dist/Control.Geocoder.js: {}
+  dependencies:
+    - geolocation_mapbox/leaflet
+
+leaflet-locatecontrol:
+  js:
+    /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.js: {}
+  css:
+    component:
+      /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.css: {}
+  dependencies:
+    - geolocation_mapbox/font-awesome
+leaflet.fullscreen:
+  js:
+    /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: {}
+  css:
+    component:
+      /libraries/leaflet-fullscreen/dist/leaflet.fullscreen.css: {}

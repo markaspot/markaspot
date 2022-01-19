@@ -1,0 +1,7 @@
+name: Geolocation Mapbox
+type: module
+description: A Mapbox based geocoder and widget for geolocation.
+core_version_requirement: ^8 || ^9
+package: Custom
+dependencies:
+  - geolocation

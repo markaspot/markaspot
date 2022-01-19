@@ -1,0 +1,27 @@
+{
+  "name": "markaspot/geolocation_mapbox",
+  "type": "drupal-module",
+  "description": "Temp Home for A Mapbox based geocoder and widget for geolocation.",
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "homepage": "https://www.drupal.org/project/geolocation_mapbox",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/geolocation_mapbox",
+    "source": "https://github.com/markaspot/geolocation_mapbox"
+  },
+  "require": {
+    "npm-asset/leaflet.locatecontrol": "0.62.0",
+    "npm-asset/leaflet-control-geocoder": "1.5.6"
+  },
+  "repositories": [
+    {
+      "type": "composer",
+      "url": "https://packages.drupal.org/8"
+    },
+    {
+      "type": "composer",
+      "url": "https://asset-packagist.org"
+    }
+  ]
+}

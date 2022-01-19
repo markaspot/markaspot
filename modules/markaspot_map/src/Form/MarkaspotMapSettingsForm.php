@@ -58,7 +58,7 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#type' => 'radios',
       '#title' => t('Map type'),
       '#default_value' => $config->get('map_type'),
-      '#options' => array(t('Google Maps'), t('Mapbox'), t('Other OSM')),
+      '#options' => array(t('Mapbox'), t('Other OSM')),
     );
     $form['markaspot_map']['mapbox_token'] = array(
       '#type' => 'textfield',
@@ -152,6 +152,25 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#description' => t('Enter in decimal format, e.g 6.8232'),
     );
 
+    $default_svg = '<div class="fa {mapIconSymbol}" style="color: {mapIconColor}"><svg class="icon" width="50" height="50"
+xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><defs>
+<filter id="dropshadow" height="130%"><feDropShadow dx="-0.8" dy="-0.8" stdDeviation="2"
+    flood-color="black" flood-opacity="0.5"/></filter></defs><g><path filter="url(#dropshadow)"
+        fill="{mapIconFill}" d="m25,2.55778c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44804 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"
+        id="path4133"/></g></svg></div>';
+
+    $form['markaspot_map']['marker'] = array(
+      '#type' => 'textarea',
+      '#title' => t('Marker SVG / Markup'),
+      '#default_value' => $config->get('marker') !== '' ? $config->get('marker') : $default_svg,
+      '#description' => t('SVG for the marker'),
+    );
+    $form['markaspot_map']['iconAnchor'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Icon Anchor'),
+      '#default_value' => $config->get('iconAnchor') !== '' ? $config->get('iconAnchor') : "[25, 30]",
+      '#description' => t('SVG for the marker, https://leafletjs.com/examples/custom-icons/'),
+    );
     return parent::buildForm($form, $form_state);
   }
 
@@ -179,6 +198,8 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       ->set('zoom_initial', $values['zoom_initial'])
       ->set('center_lat', $values['center_lat'])
       ->set('center_lng', $values['center_lng'])
+      ->set('marker', $values['marker'])
+      ->set('iconAnchor', $values['iconAnchor'])
       ->save();
 
     parent::submitForm($form, $form_state);
