@@ -156,24 +156,26 @@ function markaspot_request_id_create_request_id() {
 
       // Get the preset delimiter between serial id and pattern.
       $delimiter = $config->get('delimiter');
-      if ($last_of_year_id[0]->request_id != '') {
-        foreach ($last_of_year_id as $last) {
-          $yearly_diff = explode($delimiter, $last->request_id);
-          $offset = $last->offset ?? 0;
+      if (!empty($last_of_year_id)) {
+        if ($last_of_year_id[0]->request_id !== '') {
+          foreach ($last_of_year_id as $last) {
+            $yearly_diff = explode($delimiter, $last->request_id);
+            $offset = $last->offset ?? 0;
+          }
+
+          // Create date pattern from config and current request timestamp.
+          $date = date($config->get('format'), $timestamp);
+
+          // Calculate the following serial ID
+          $followUpId = $id - $yearly_diff[0] - $offset;
+          $update = $connection->update('markaspot_request_id')
+            ->fields([
+              'request_id' => $followUpId . $delimiter . $date,
+              'offset' => $yearly_diff[0] + $offset
+            ])
+            ->condition('id', $id)
+            ->execute();
         }
-
-        // Create date pattern from config and current request timestamp.
-        $date = date($config->get('format'), $timestamp);
-
-        // Calculate the following serial ID
-        $followUpId = $id - $yearly_diff[0] - $offset;
-        $update = $connection->update('markaspot_request_id')
-          ->fields([
-            'request_id' => $followUpId . $delimiter . $date,
-            'offset' => $yearly_diff[0] + $offset
-          ])
-          ->condition('id', $id)
-          ->execute();
       } else {
         markaspot_request_id_update_timestamp($connection, $id, $timestamp);
       }
