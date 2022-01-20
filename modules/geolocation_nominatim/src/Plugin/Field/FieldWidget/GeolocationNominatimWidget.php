@@ -122,7 +122,7 @@ class GeolocationNominatimWidget extends WidgetBase {
     ];
     $elements['LocationIQToken'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Use LocationIQ Service'),
+      '#title' => $this->t('LocationIQ Token'),
       '#description' => $this->t('Are you using the locationIQ Service?'),
       '#default_value' => $this->getSetting('LocationIQToken'),
     ];
