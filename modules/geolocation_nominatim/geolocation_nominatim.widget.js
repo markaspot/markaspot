@@ -75,6 +75,7 @@
       serviceUrl: mapSettings.serviceUrl,
       geocodingQueryParams: geocodingQueryParams,
       reverseQueryParams: {
+        key: mapSettings.LocationIQToken,
         extratags: 1,
         namedetails: 0,
         addressdetails: 1
