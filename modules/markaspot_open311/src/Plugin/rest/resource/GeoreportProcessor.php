@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\media\Entity\Media;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
@@ -50,6 +51,7 @@ class GeoreportProcessor {
    *
    * @return array
    *   values to be saved via entity api.
+   * @throws GeoreportException
    */
   public function requestMapNode(array $request_data) {
 
@@ -87,7 +89,9 @@ class GeoreportProcessor {
 
     $category_tid = $this->serviceMapTax($request_data['service_code']);
     $values['field_category'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
-
+    if ($values['field_category'] == NULL) {
+      throw new GeoreportException(t('Service-Code empty or not valid'), 400);
+    }
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
       $managed = TRUE;
@@ -103,7 +107,7 @@ class GeoreportProcessor {
               'alt' => 'Open311 File',
             ],
           ]);
-          $media->setName($request_data['service_code'] . ' ' . $values['created'])
+          $save = $media->setName($request_data['service_code'] . ' ' . $values['created'])
             ->setPublished(TRUE)
             ->save();
           $field_keys['image'] = 'field_request_media';
@@ -119,6 +123,8 @@ class GeoreportProcessor {
             'alt' => 'Open311 File',
           ];
         }
+      } else {
+        throw new GeoreportException(t('Image could not be retrieved via URL'), 400);
       }
 
     }

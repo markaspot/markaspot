@@ -43,7 +43,7 @@ class GeoreportException implements EventSubscriberInterface {
 
       $exceptionCode = method_exists($exception, 'getStatusCode') ? $exception->getStatusCode() : $exception->getCode();
 
-      if ($exceptionCode == 400) {
+      if ($exceptionCode == 400 && count($exception->getViolations())) {
         $errors = [];
         $violations = $exception->getViolations();
 
@@ -63,10 +63,10 @@ class GeoreportException implements EventSubscriberInterface {
               $error['code'] = '106 - Organisation not valid';
               break;
             default:
-              $error['code'] = $violation->getConstraint()->geoReportErrorCode;
+              $error['code'] = '400 - Bad Request';
           }
 
-          $error['description'] = $violation->getMessage();
+          $error['description'] = strip_tags($violation->getMessage());
           $errors[] = $error;
         }
       } else {
