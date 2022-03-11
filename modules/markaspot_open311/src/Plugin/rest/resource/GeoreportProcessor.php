@@ -124,17 +124,17 @@ class GeoreportProcessor {
 
     if (array_key_exists('extended_attributes', $request_data)) {
       // Check for additional attribute for use of revision log message.
-      $values['revision_log_message'] = $request_data['extended_attributes']['revision_log_message'];
-
-      // Check for paragraph status notes.
+      if (isset($request_data['extended_attributes']['revision_log_message'])) {
+        $values['revision_log_message'] = $request_data['extended_attributes']['revision_log_message'];
+      }
+      // Check for all drupal fields
       foreach ($request_data['extended_attributes']['drupal'] as $field_name => $value) {
         if (isset($field_name)) {
           $values[$field_name] = $value;
         }
       }
     }
-
-    return array_filter($values);
+    return array_filter($values, fn($value) => !is_null($value) && $value !== '');
   }
 
   /**
