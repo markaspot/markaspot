@@ -53,10 +53,7 @@
   }
 }
 
-.view-requests .node--type-service-request .node__content {
-  display:flex;
-  flex-wrap: wrap;
-
+.node__content {
   & .category,
   & .status {
     margin-right: 1.125rem;
@@ -156,25 +153,27 @@ div.category {
   font-weight: 700;
 }
 
-.field--name-field-status-notes .paragraph {
-  color: #ddd;
-  margin: 0 1rem 1rem 0;
+.field--name-field-status-notes {
   &:before {
     font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
     content: "\f017";
     position: relative;
     left: -5rem;
-    top: 5rem
-  }
+    top: 5rem;
+    color: #ddd;
+   }
+   & .field__items {
+       margin-top: 1em;
+       margin-bottom: 0.5em;
+     }
 
-  & > .field:not(:last-child) {
-    margin-bottom: 0.25rem;
+  & .field:not(:last-child) {
+    margin-bottom: 0.25em;
   }
 
 }
-.field--type-address > .field__item:before {
+.field--type-address:before {
   content: "\f3c5";
-  color: #ddd;
   font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
   position: relative;
   left: -5rem;

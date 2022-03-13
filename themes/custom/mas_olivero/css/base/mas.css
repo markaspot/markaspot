@@ -116,13 +116,8 @@
     border-left: 2px solid #e7edf1;
   }
 
-.view-requests .node--type-service-request .node__content {
-  display:flex;
-  flex-wrap: wrap
-}
-
-.view-requests .node--type-service-request .node__content .category,
-  .view-requests .node--type-service-request .node__content .status {
+.node__content .category,
+  .node__content .status {
     margin-right: 1.125rem;
     flex-basis: calc(50% - 1.125rem);
     flex-grow: 0;
@@ -135,7 +130,7 @@
     margin-bottom: 2.25rem;
   }
 
-.view-requests .node--type-service-request .node__content .text-content {
+.node__content .text-content {
     flex-basis: calc(100% - 1.125rem);
   }
 
@@ -236,27 +231,26 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
   font-weight: 700;
 }
 
-.field--name-field-status-notes .paragraph {
-  color: #ddd;
-  margin: 0 1rem 1rem 0
-
-}
-
-.field--name-field-status-notes .paragraph:before {
+.field--name-field-status-notes:before {
     font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
     content: "\f017";
     position: relative;
     left: -5rem;
-    top: 5rem
+    top: 5rem;
+    color: #ddd;
+   }
+
+.field--name-field-status-notes .field__items {
+       margin-top: 1em;
+       margin-bottom: 0.5em;
+     }
+
+.field--name-field-status-notes .field:not(:last-child) {
+    margin-bottom: 0.25em;
   }
 
-.field--name-field-status-notes .paragraph > .field:not(:last-child) {
-    margin-bottom: 0.25rem;
-  }
-
-.field--type-address > .field__item:before {
+.field--type-address:before {
   content: "\f3c5";
-  color: #ddd;
   font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
   position: relative;
   left: -5rem;
