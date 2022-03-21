@@ -256,7 +256,7 @@ class GeoreportRequestResource extends ResourceBase {
     foreach ($nodes as $node) {
       if ($node instanceof ContentEntityInterface) {
         $request_data['service_request_id'] = $request_id;
-        $values = array_filter($map->requestMapNode($request_data, 'update'));
+        $values = $map->requestMapNode($request_data, 'update');
       }
     }
     if (empty($nodes)) {

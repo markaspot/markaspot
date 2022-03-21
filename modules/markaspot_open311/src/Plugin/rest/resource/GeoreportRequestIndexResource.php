@@ -10,12 +10,15 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\rest\Plugin\ResourceBase;
+use Drupal\rest\ResourceResponse;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
+use Drupal\markaspot_open311\Exception\GeoreportException;
 
 /**
  * Provides a resource to get view modes by entity and bundle.
@@ -258,7 +261,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
         $query->condition($field, $value, '=');
       }
     }
+    if (isset($parameters['bbox'])) {
+      $bbox = explode(',',$parameters['bbox']);
+      $minLon = $bbox[0];
+      $minLat = $bbox[1];
+      $maxLon = $bbox[2];
+      $maxLat = $bbox[3];
 
+      $query->condition('field_geolocation.lat', $minLat, '>')
+        ->condition('field_geolocation.lat', $maxLat, '<')
+        ->condition('field_geolocation.lng', $minLon, '>')
+        ->condition('field_geolocation.lng', $maxLon, '<');
+    }
     if (isset($parameters['updated'])) {
       $seconds = strtotime($parameters['updated']);
       $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=');
@@ -348,13 +362,14 @@ class GeoreportRequestIndexResource extends ResourceBase {
    */
   public function createNode(array $request_data) {
     $map = new GeoreportProcessor();
-    $values = $map->requestMapNode($request_data);
-
-    $node = \Drupal::entityTypeManager()->getStorage('node')->create($values);
+    $values = $map->requestMapNode($request_data, 'create');
+    $node = \Drupal::entityTypeManager()->getStorage('node')
+      ->create($values);
 
     // Make sure it's a content entity.
     if ($node instanceof ContentEntityInterface) {
-      if ($this->validate($node)) {
+      $validation = $this->validate($node);
+      if ($validation === TRUE) {
         // Add an initial paragraph on valid post.
         $status_open = $this->config->get('status_open_start');
         // @todo put this in config.
@@ -371,35 +386,41 @@ class GeoreportRequestIndexResource extends ResourceBase {
           ],
         ]);
         $paragraph->save();
+
+        $node->field_status_notes = [
+          [
+            'target_id' => $paragraph->id(),
+            'target_revision_id' => $paragraph->getRevisionId(),
+          ],
+        ];
+        if (isset($node->field_gdpr)) {
+          $node->field_gdpr->value = 1;
+        }
+
+        $node->save();
+        $this->logger->notice('Created entity %type with ID %request_id.', [
+          '%type' => $node->getEntityTypeId(),
+          '%request_id' => $node->request_id->value,
+        ]);
+        // Get the UUID to put it into the response.
+        $request_id = $node->request_id->value;
+
+        $service_request = [];
+        if (isset($node)) {
+          $service_request['service_requests']['request']['service_request_id'] = $request_id;
+        }
+        return $service_request;
+
+      } else {
+        return $exception;
       }
 
     }
 
-    $node->field_status_notes = [
-      [
-        'target_id' => $paragraph->id(),
-        'target_revision_id' => $paragraph->getRevisionId(),
-      ],
-    ];
-    if (isset($node->field_gdpr)) {
-      $node->field_gdpr->value = 1;
-    }
-    // Save the node and prepare response.
-    $node->save();
 
-    $this->logger->notice('Created entity %type with ID %request_id.', [
-      '%type' => $node->getEntityTypeId(),
-      '%request_id' => $node->request_id->value,
-    ]);
 
-    // Get the UUID to put it into the response.
-    $request_id = $node->request_id->value;
 
-    $service_request = [];
-    if (isset($node)) {
-      $service_request['service_requests']['request']['service_request_id'] = $request_id;
-    }
-    return $service_request;
+
   }
 
   /**
@@ -408,19 +429,24 @@ class GeoreportRequestIndexResource extends ResourceBase {
    * @param object $node
    *   The node object.
    *
-   * @return bool
-   *   return exception or TRUE if valid.
+   * @return \http\Exception
+   *   return exception.
    */
   protected function validate(object $node) {
     $violations = $node->validate();
     if (count($violations) > 0) {
-      $message = "Unprocessable Entity: validation failed.\n";
+      $messages = [];
       foreach ($violations as $violation) {
-        $message .= $violation->getPropertyPath() . ': ' . PlainTextOutput::renderFromHtml($violation->getMessage()) . "\n";
+        $messages[substr($violation->getPropertyPath(), 6)] = $violation->getMessage();
       }
-      throw new BadRequestHttpException($message);
-    }
-    else {
+
+      // throw new BadRequestHttpException($message);
+      $exception = new GeoreportException();
+      $exception->setViolations($violations);
+      $exception->setCode(400);
+      throw $exception;
+      // return $messages;
+    } else {
       return TRUE;
     }
   }

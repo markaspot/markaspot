@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\media\Entity\Media;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
@@ -50,21 +51,22 @@ class GeoreportProcessor {
    *
    * @return array
    *   values to be saved via entity api.
+   * @throws GeoreportException
    */
-  public function requestMapNode(array $request_data) {
+  public function requestMapNode(array $request_data, $op) {
 
     $values['type'] = 'service_request';
     if (isset($request_id)) {
       // $values['request_id'] = $request_data['service_request_id'];
     }
     $values['title'] = isset($request_data['service_code']) ? Html::escape(stripslashes($request_data['service_code'])) : NULL;
-
-
     $values['body'] = isset($request_data['description']) ? Html::escape(stripslashes($request_data['description'])) : NULL;
 
     // Don't need this for development.
     $values['field_e_mail'] = isset($request_data['email']) ? Html::escape(stripslashes($request_data['email'])) : NULL;
-
+    $values['field_first_name'] = isset($request_data['first_name']) ? Html::escape(stripslashes($request_data['first_name'])) : NULL;
+    $values['field_last_name'] = isset($request_data['last_name']) ? Html::escape(stripslashes($request_data['last_name'])) : NULL;
+    $values['field_phone'] = isset($request_data['phone']) ? Html::escape(stripslashes($request_data['phone'])) : NULL;
     $values['field_geolocation']['lat'] = isset($request_data['lat']) ? $request_data['lat'] : NULL;
     $values['field_geolocation']['lng'] = isset($request_data['long']) ? $request_data['long'] : NULL;
     if (!isset($values['field_geolocation']['lat'])) {
@@ -80,45 +82,53 @@ class GeoreportProcessor {
     }
 
     // Get Category by service_code.
-    $values['created'] = isset($request_data['requested_datetime']) ? strtotime($request_data['requested_datetime']) : time();
+    $values['created'] = isset($request_data['requested_datetime']) && $op == 'update' ? strtotime($request_data['requested_datetime']) : '';
 
-    // This wont work with entity->save().
+    // This won't work with entity->save().
     $values['changed'] = time();
 
-    $category_tid = $this->serviceMapTax($request_data['service_code']);
-    $values['field_category']['target_id'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
-
+    $category_tid = isset($request_data['service_code']) ? $this->serviceMapTax($request_data['service_code']) : NULL;
+    $values['field_category'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
+    if ($values['field_category'] == NULL && $op !== 'update') {
+      throw new GeoreportException(t('Service-Code empty or not valid'), 400);
+    }
+    if (isset($request_data['service_code']) && $values['field_category'] == NULL && $op == 'update') {
+      throw new GeoreportException(t('Service Code not valid'), 400);
+    }
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
       $managed = TRUE;
       $file = system_retrieve_file($request_data['media_url'], 'public://', $managed, FileSystemInterface::EXISTS_RENAME);
-
-      if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
-        $field_keys['image'] = 'field_request_media';
-        $media = Media::create([
-          'bundle'           => 'request_image',
-          'uid'              => \Drupal::currentUser()->id(),
-          'field_media_image' => [
-            'target_id' => $file->id(),
+      if ($file !== FALSE) {
+        if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
+          $field_keys['image'] = 'field_request_media';
+          $media = Media::create([
+            'bundle' => 'request_image',
+            'uid' => \Drupal::currentUser()->id(),
+            'field_media_image' => [
+              'target_id' => $file->id(),
+              'alt' => 'Open311 File',
+            ],
+          ]);
+          $save = $media->setName($request_data['service_code'] . ' ' . $values['created'])
+            ->setPublished(TRUE)
+            ->save();
+          $field_keys['image'] = 'field_request_media';
+          $values['field_request_media'] = [
+            'target_id' => $media->id(),
             'alt' => 'Open311 File',
-          ],
-        ]);
-        $media->setName($request_data['service_code'] . ' ' . $values['created'] )->setPublished(TRUE)->save();
-        $field_keys['image'] = 'field_request_media';
-        $values['field_request_media'] = [
-          'target_id' => $media->id(),
-          'alt' => 'Open311 File',
-        ];
-      } else {
-        $field_keys['image'] = 'field_request_image';
-        if ($file !== FALSE) {
+          ];
+        }
+        else {
+          $field_keys['image'] = 'field_request_image';
           $values[$field_keys['image']] = [
             'target_id' => $file->id(),
             'alt' => 'Open311 File',
           ];
         }
+      } else {
+        throw new GeoreportException(t('Image could not be retrieved via URL'), 400);
       }
-
 
     }
 
@@ -134,8 +144,10 @@ class GeoreportProcessor {
         }
       }
     }
-    return array_filter($values, fn($value) => !is_null($value) && $value !== '');
-  }
+    return array_filter($values, function($value) {
+        return ($value !== NULL && $value !== FALSE && $value !== '');
+      });
+    }
 
   /**
    * Parse an address_string to an array.
@@ -305,6 +317,7 @@ class GeoreportProcessor {
     $nodes = \Drupal::entityTypeManager()
       ->getStorage('node')
       ->loadMultiple($nids);
+    $debug = $query->__toString();
 
     // Extensions.
     $extended_role = 'anonymous';
@@ -326,7 +339,7 @@ class GeoreportProcessor {
       return $service_requests;
     }
     else {
-      throw new NotFoundHttpException('No Service requests found');
+      throw new NotFoundHttpException('No service requests found');
     }
   }
 
@@ -452,7 +465,7 @@ class GeoreportProcessor {
 
     if ($extended_role == 'manager') {
 
-      $request['extended_attributes']['author'] = $node->author;
+      $request['extended_attributes']['author'] = $node->uid->entity->label();
       $request['extended_attributes']['e-mail'] = $node->field_e_mail->value;
 
       if (isset($parameters['fields'])) {
