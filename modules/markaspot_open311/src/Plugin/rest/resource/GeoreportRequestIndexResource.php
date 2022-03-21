@@ -362,7 +362,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
    */
   public function createNode(array $request_data) {
     $map = new GeoreportProcessor();
-    $values = $map->requestMapNode($request_data);
+    $values = $map->requestMapNode($request_data, 'create');
     $node = \Drupal::entityTypeManager()->getStorage('node')
       ->create($values);
 
