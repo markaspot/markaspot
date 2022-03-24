@@ -5,3 +5,7 @@
 .leaflet-control-geocoder-form input {
   width: 220px;
 }
+input.glass {
+  max-height: 30px;
+  min-height: 30px;
+}

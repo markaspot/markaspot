@@ -16,13 +16,9 @@
       dragging: !L.Browser.mobile,
       zoomControl: !L.Browser.mobile
     })
-      .setView([
-        mapSettings.centerLat,
-        mapSettings.centerLng
-      ], 18);
-    var map = Drupal.geolocationMapboxWidget.map;
-    var tileLayer;
-    tileLayer = L.mapboxGL({
+
+    const map = Drupal.geolocationMapboxWidget.map;
+    const tileLayer = new L.mapboxGL({
       accessToken: mapSettings.mapboxToken,
       style: mapSettings.mapboxStyle
     }).addTo(map);
@@ -33,65 +29,67 @@
 
     map.addLayer(tileLayer);
 
-    var locateOptions = {
+    const locateOptions = {
       position: 'bottomright'
     };
-
-    var lc = L.control.locate(locateOptions).addTo(map);
-
+    const lc = L.control.locate(locateOptions).addTo(map);
     // Check for ongoing validation and autolocate settings combination.
     if (mapSettings.autoLocate && !$('.messages')[0]) {
       lc.start();
     }
-
-    function onLocationFound(e) {
-      map.stopLocate();
-      reverseGeocode(e.latlng);
-    }
-
-
-    $('#locateMe').click(function(){
+    $('#locateMe').click(function () {
       lc.start();
     });
 
 
-    map.on('locationfound', onLocationFound);
-
-    // Init geocoder.
-    var geocodingQueryParams = {};
-    if (mapSettings.limitCountryCodes != '' || mapSettings.limitViewbox != '') {
-      // this.options.geocodingQueryParams.access_token = accessToken;
-      geocodingQueryParams = {
+    // Define provider.
+    const provider = new GeoSearch.MapBoxProvider({
+        params:{
+        'access_token': mapSettings.mapboxToken,
         'country': mapSettings.limitCountryCodes,
         'language': mapSettings.limitCountryCodes,
         'bbox': [mapSettings.limitViewbox],
         'bounded': 1,
         'limit': 5,
         'city': mapSettings.city
-      };
-    }
-    // const geoCoder = new L.Control.Geocoder.Mapbox(token, { geocodingQueryParams: { country: "fr,it", language: "fr" } });
-
-
-    var geocoderMapbox = new L.Control.Geocoder.Mapbox(mapSettings.mapboxToken,
-      {
-      // Todo: Make this an optional setting.
-      geocodingQueryParams: geocodingQueryParams,
-      reverseQueryParams: {
-        extratags: 1,
-        namedetails: 0,
-        addressdetails: 1
-      }
-    });
-    var geocoder = L.Control.geocoder({
-      defaultMarkGeocode: false,
-      collapsed: false,
-      geocoder: geocoderMapbox,
-      placeholder: Drupal.t('Street search'),
-      errorMessage: Drupal.t('Nothing found.')
+        }
     });
 
-    var marker;
+    // Add Control.
+    const search = GeoSearch.GeoSearchControl({
+
+      style: 'bar',
+      provider: provider, // required
+      showMarker: true, // optional: true|false  - default true
+      showPopup: false, // optional: true|false  - default false
+      marker: {
+        // optional: L.Marker    - default L.Icon.Default
+        icon: new L.Icon.Default(),
+        draggable: false,
+      },
+      popupFormat: ({ query, result }) => result.label, // optional: function    - default returns result label,
+      resultFormat: ({ result }) => result.label, // optional: function    - default returns result label
+      maxMarkers: 1, // optional: number      - default 1
+      retainZoomLevel: false, // optional: true|false  - default false
+      animateZoom: true, // optional: true|false  - default true
+      autoClose: false, // optional: true|false  - default false
+      searchLabel: Drupal.t('Straße eingeben'), // optional: string      - default 'Enter address'
+      keepResult: false, // optional: true|false  - default false
+      updateMap: true, // optional: true|false  - default true
+    });
+    map.addControl(search);
+
+    const handleResult = result => {
+      const location = Drupal.geolactionMapboxparseReverseGeo(result.location.raw);
+      updateCallback(marker, map, location);
+
+      $('.geolocation-widget-lng.for--geolocation-mapbox-map')
+        .attr('value', result.location.x);
+      $('.geolocation-widget-lat.for--geolocation-mapbox-map')
+        .attr('value', result.location.y);
+    };
+
+    map.on('geosearch/showlocation', handleResult);
 
     // Init default values.
     if (mapSettings.lat && mapSettings.lng) {
@@ -107,40 +105,22 @@
         lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value')
       };
       var initLatLng = new L.latLng(fieldValues.lat, fieldValues.lng);
-      reverseGeocode(initLatLng);
-
+      setMarker(result, initLatLng);
       map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
     }
 
     function setMarker(result, latLng) {
-      var address = result.name;
-      var $val = '';
 
-      if (address.road) {
-        switch(mapSettings.streetNumberFormat) {
-          case "1":
-            $val = address.road + ' ' + (address.house_number || '');
-            break;
-          case 0:
-            $val = (address.house_number ? address.house_number + ' ' : '') + address.road;
-            break;
-        }
-      } else {
-        $val = '';
-      }
-      $input = $('.leaflet-control-geocoder-form input');
-      $input.val($val);
-      if (marker) {
+      if (typeof marker !== 'undefined') {
         map.removeLayer(marker);
       }
       // Check if method is called with a pair of coordinates to prevent
       // marker jumping to nominatm reverse results lat/lon.
       latLng = latLng ? latLng : result.center;
-
       marker = L.marker(latLng, {
         draggable: true
-      }).bindPopup(result.html || result.name).addTo(map).openPopup();
-      // map.setView(latLng).setZoom(zoom);
+      }).addTo(map).openPopup();
+      // map.setView(latLng);
       marker.on('dragend', function (e) {
         updateCallback(marker, map, result);
         reverseGeocode(e.target._latlng, marker);
@@ -148,49 +128,39 @@
       updateCallback(marker, map, result);
     }
 
-    // Variable to disable click events on the map while the geocoder is active.
-    map._geocoderIsActive = false;
-    geocoder.on('markgeocode', function (result) {
-      var latlng = L.latLng(result.geocode.center.lat,result.geocode.center.lng);
-
-      this._map.setView(latlng, mapSettings.zoom);
-      setMarker(result.geocode, result.geocode.center);
-    });
-    geocoder.on('startgeocode', function () {
-      map._geocoderIsActive = true;
-    });
     map.on('click', function (e) {
-      if (map._geocoderIsActive) {
-        return;
-      }
+      search.clearResults();
       reverseGeocode(e.latlng);
     });
+
+
     function reverseGeocode(latlng) {
-      geocoder.options.geocoder.reverse(latlng, map.options.crs.scale(map.getZoom()), function (results) {
-        // Todo: Check if found result is close enough?
-        if (results[0]) {
-          setMarker(results[0], latlng);
-
-          $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat')
-            .attr('value', latlng.lat);
-          $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lng')
-            .attr('value', latlng.lng);
-
-        }
+      const url = "https://api.mapbox.com/geocoding/v5/mapbox.places/" + latlng.lng + "," + latlng.lat + ".json?types=address&access_token=" + mapSettings.mapboxToken;
+      fetch(url).then(function (response) {
+        return response.json();
+      })
+      .then(function (body) {
+        const location = Drupal.geolactionMapboxparseReverseGeo(body.features[0]);
+        console.log(location);
+        updateCallback(marker, map, location);
+        setMarker(body, latlng)
       });
-    }
 
-    geocoder.addTo(map);
+      $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat')
+        .attr('value', latlng.lat);
+      $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lng')
+        .attr('value', latlng.lng);
+    }
   };
 
-  Drupal.geolocationMapboxSetAddressField = function (mapSettings, result, context) {
-    if (!('properties' in result && 'address' in result.properties)) {
+  Drupal.geolocationMapboxSetAddressField = function (mapSettings, location, context) {
+    if (!('place_name' in location)) {
       return;
     }
-    var address = result.properties.address;
-    var $form = $('.geolocation-widget-lat.for--' + mapSettings.id, context)
+    const address = location;
+    const $form = $('.geolocation-widget-lat.for--' + mapSettings.id, context)
       .parents('form');
-    var $address = $form.find('.field--type-address').first();
+    const $address = $form.find('.field--type-address').first();
 
     // Take care if address field widget is not included in form due to field permissions or theme customization.
     if ($address.length) {
@@ -243,13 +213,15 @@
           }
         });
       }
-      if ('city' in details || 'town' in details || 'village' in details || 'hamlet' in details || 'county' in details || 'neighbourhood' in details) {
-        var localityType = details.city || details.town || details.village || details.hamlet || details.county || details.neighbourhood;
-        $('input.locality', $address).val(localityType);
+      if ('place' in details) {
+        $('input.locality', $address).val(details.place);
       }
-      if ('road' in details || 'building' in details || 'footway' in details || 'pedestrian' in details || 'path' in details) {
-        var streetType = details.path || details.road || details.footway || details.pedestrian || details.path;
-        $('input.address-line1', $address).val(streetType);
+      if ('text' in details || 'building' in details) {
+        if (typeof details.housenumber !== 'undefined') {
+          $('input.address-line1', $address).val(details.text + " " + details.housenumber );
+        } else {
+          $('input.address-line1', $address).val(details.text);
+        }
         $('input.address-line2', $address).val(details.building);
       }
       if ('house_number' in details) {
@@ -258,18 +230,42 @@
             .val() + ' ' + details.house_number);
       }
     },
-
+    Drupal.geolactionMapboxparseReverseGeo = function (geoData) {
+      let address = {};
+      console.log(geoData);
+      if(geoData.context){
+        address.housenumber = geoData.address
+        address.place_name = geoData.place_name;
+        address.text = geoData.text
+        $.each(geoData.context, function (i, v) {
+          if(v.id.indexOf('region') >= 0) {
+            address.region = v.text;
+          }
+          if(v.id.indexOf('country') >= 0) {
+            address.country = v.text;
+            address.country_code = v.short_code
+          }
+          if(v.id.indexOf('postcode') >= 0) {
+            address.postcode = v.text;
+          }
+          if(v.id.indexOf('place') >= 0) {
+            address.place = v.text;
+          }
+        });
+      }
+      return address;
+    },
     Drupal.behaviors.geolocationMapboxWidget = {
       attach: function (context, settings) {
         if (settings.geolocationMapbox.widgetMaps) {
           $.each(settings.geolocationMapbox.widgetMaps, function (index, mapSettings) {
-            Drupal.geolocationMapboxWidget(mapSettings, context, function (marker, map, result) {
+            Drupal.geolocationMapboxWidget(mapSettings, context, function (marker, map, location) {
               $('.geolocation-widget-lat.for--' + mapSettings.id, context).attr('value', marker.getLatLng().lat);
               $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value', marker.getLatLng().lng);
               $('.geolocation-widget-zoom.for--' + mapSettings.id, context)
                 .attr('value', map.getZoom());
               if (mapSettings.setAddressField) {
-                Drupal.geolocationMapboxSetAddressField(mapSettings, result, context);
+                Drupal.geolocationMapboxSetAddressField(mapSettings, location, context);
               }
             });
           });

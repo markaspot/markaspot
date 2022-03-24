@@ -40,7 +40,6 @@ dependencies:
   - filter
   - form_mode_manager
   - geolocation
-  - geolocation_nominatim
   - help
   - history
   - image

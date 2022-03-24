@@ -8,7 +8,6 @@ dependencies:
   - node
   - path
   - text
-  - geolocation_nominatim
   - address
   - color_field
   - field_permissions

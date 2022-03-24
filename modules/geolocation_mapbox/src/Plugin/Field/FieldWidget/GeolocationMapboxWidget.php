@@ -183,8 +183,7 @@ class GeolocationMapboxWidget extends WidgetBase {
       'library' => [
         'geolocation_mapbox/leaflet',
         'geolocation_mapbox/leaflet-locatecontrol',
-        'geolocation_mapbox/leaflet-control-geocoder',
-        'geolocation_mapbox/leaflet-control-geocoder-city',
+        'geolocation_mapbox/leaflet-geosearch',
         'geolocation_mapbox/geolocation-mapbox-widget',
         'geolocation_mapbox/leaflet.fullscreen',
         'geolocation_mapbox/mapbox'
