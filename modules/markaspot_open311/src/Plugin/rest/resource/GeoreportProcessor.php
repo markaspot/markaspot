@@ -53,7 +53,7 @@ class GeoreportProcessor {
    *   values to be saved via entity api.
    * @throws GeoreportException
    */
-  public function requestMapNode(array $request_data) {
+  public function requestMapNode(array $request_data, $op) {
 
     $values['type'] = 'service_request';
     if (isset($request_id)) {
@@ -82,15 +82,18 @@ class GeoreportProcessor {
     }
 
     // Get Category by service_code.
-    $values['created'] = isset($request_data['requested_datetime']) ? strtotime($request_data['requested_datetime']) : time();
+    $values['created'] = isset($request_data['requested_datetime']) && $op == 'update' ? strtotime($request_data['requested_datetime']) : '';
 
-    // This wont work with entity->save().
+    // This won't work with entity->save().
     $values['changed'] = time();
 
-    $category_tid = $this->serviceMapTax($request_data['service_code']);
+    $category_tid = isset($request_data['service_code']) ? $this->serviceMapTax($request_data['service_code']) : NULL;
     $values['field_category'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
-    if ($values['field_category'] == NULL) {
+    if ($values['field_category'] == NULL && $op !== 'update') {
       throw new GeoreportException(t('Service-Code empty or not valid'), 400);
+    }
+    if (isset($request_data['service_code']) && $values['field_category'] == NULL && $op == 'update') {
+      throw new GeoreportException(t('Service Code not valid'), 400);
     }
     // File Handling:
     if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
@@ -141,8 +144,10 @@ class GeoreportProcessor {
         }
       }
     }
-    return array_filter($values, fn($value) => !is_null($value) && $value !== '');
-  }
+    return array_filter($values, function($value) {
+        return ($value !== NULL && $value !== FALSE && $value !== '');
+      });
+    }
 
   /**
    * Parse an address_string to an array.
