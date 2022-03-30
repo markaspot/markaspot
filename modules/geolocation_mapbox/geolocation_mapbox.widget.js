@@ -11,23 +11,28 @@
       return;
     }
     // Init map.
-    Drupal.geolocationMapboxWidget.map = L.map(mapSettings.id, {
+
+    Drupal.geolocationMapboxWidgetMap.map = L.map(mapSettings.id, {
       fullscreenControl: mapSettings.fullscreenControl,
       dragging: !L.Browser.mobile,
       zoomControl: !L.Browser.mobile
-    })
+    }).setView([
+        mapSettings.centerLat,
+        mapSettings.centerLng
+      ], 18);
 
-    const map = Drupal.geolocationMapboxWidget.map;
-    const tileLayer = new L.mapboxGL({
-      accessToken: mapSettings.mapboxToken,
-      style: mapSettings.mapboxStyle
-    }).addTo(map);
-
+    const map =  Drupal.geolocationMapboxWidgetMap.map;
+    if (mapSettings.mapboxStyle !== "") {
+      const tileLayer = L.mapboxGL({
+        accessToken: mapSettings.mapboxToken,
+        style: mapSettings.mapboxStyle
+      }).addTo(map);
+    } else {
+      const tileLayer = L.tileLayer.wms(mapSettings.tileServerUrl, { layers: mapSettings.wmsLayer }).addTo(map);
+    }
     map.attributionControl.addAttribution(
       mapSettings.customAttribution
     );
-
-    map.addLayer(tileLayer);
 
     const locateOptions = {
       position: 'bottomright'
@@ -40,8 +45,6 @@
     $('#locateMe').click(function () {
       lc.start();
     });
-
-
     // Define provider.
     const provider = new GeoSearch.MapBoxProvider({
         params:{
@@ -141,7 +144,6 @@
       })
       .then(function (body) {
         const location = Drupal.geolactionMapboxparseReverseGeo(body.features[0]);
-        console.log(location);
         updateCallback(marker, map, location);
         setMarker(body, latlng)
       });
@@ -232,7 +234,6 @@
     },
     Drupal.geolactionMapboxparseReverseGeo = function (geoData) {
       let address = {};
-      console.log(geoData);
       if(geoData.context){
         address.housenumber = geoData.address
         address.place_name = geoData.place_name;

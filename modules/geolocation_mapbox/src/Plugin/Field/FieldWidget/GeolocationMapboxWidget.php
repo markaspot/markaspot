@@ -182,11 +182,11 @@ class GeolocationMapboxWidget extends WidgetBase {
     $element['#attached'] = [
       'library' => [
         'geolocation_mapbox/leaflet',
+        'geolocation_mapbox/mapbox',
         'geolocation_mapbox/leaflet-locatecontrol',
         'geolocation_mapbox/leaflet-geosearch',
-        'geolocation_mapbox/geolocation-mapbox-widget',
         'geolocation_mapbox/leaflet.fullscreen',
-        'geolocation_mapbox/mapbox'
+        'geolocation_mapbox/geolocation-mapbox-widget',
       ],
       'drupalSettings' => [
         'geolocationMapbox' => [

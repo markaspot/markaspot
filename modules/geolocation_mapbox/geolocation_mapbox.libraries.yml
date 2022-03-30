@@ -15,10 +15,11 @@ leaflet:
   css:
     component:
       /libraries/leaflet/dist/leaflet.css: {}
+
 mapbox:
   js:
-    /libraries/mapbox-gl/dist/mapbox-gl.js: { }
-    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: { }
+    /libraries/mapbox-gl/dist/mapbox-gl.js: {}
+    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: {}
   css:
     component:
       /libraries/mapbox-gl/dist/mapbox-gl.css: {}
@@ -52,3 +53,5 @@ leaflet.fullscreen:
   css:
     component:
       /libraries/leaflet-fullscreen/dist/leaflet.fullscreen.css: {}
+
+

@@ -163,8 +163,6 @@ function padZero(str, len) {
             tileLayer = L.tileLayer.wms(masSettings.wms_service, { layers: masSettings.wms_layer, edgeBufferTiles: 1 });
           }
           map.addLayer(tileLayer);
-
-
         }
         map.attributionControl.addAttribution(
           masSettings.osm_custom_attribution
