@@ -23,14 +23,18 @@
 #}
 
 
+{% set name =  name %}
 {% set color =  color %}
+{% set icon =  icon %}
 
 {% block content %}
 
-  {%- for item in items -%}
-      <div style="color:#{{ color }}" {{ attributes.addClass(color) }}>
-          <span class="fa {{ icon }}"</span> {{ item.content }}
-      </div>
-  {%- endfor -%}
+    {% if name %}
+      {%- for item in items -%}
+        <div style="color:{{ color }}" {{ attributes.addClass(color) }}>
+          <span class="fa {{ icon }}"></span> {{ name }}
+        </div>
+      {%- endfor -%}
+    {% endif %}
 
 {% endblock %}

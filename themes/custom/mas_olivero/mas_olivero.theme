@@ -32,18 +32,22 @@ function mas_olivero_preprocess_paragraph(&$variables) {
 function mas_olivero_preprocess_field(&$variables) {
   $element = $variables['element'];
   $variables['field_name'] = $element['#field_name'];
-  if ($variables['field_name'] == 'field_category') {
-    $variables['attributes']['class'][] = 'category';
-    $item = $variables["items"][0]["content"]["#options"]["entity"];
-    $variables['icon']  = $item->field_category_icon->value;
-    $variables['color'] = str_replace('#', '', $item->field_category_hex->color);
+  $entity = isset($element[0]["#taxonomy_term"]);
+  $vocabularies= ['category', 'status'];
+  foreach ($vocabularies as $vocabulary) {
+    if ($variables['field_name'] == "field_{$vocabulary}") {
+      $variables['attributes']['class'][] = $vocabulary;
+
+      if ($entity !== FALSE) {
+        //$element = $element[0]["#taxonomy_term"]->toArray();
+        $item = $variables["items"][0]["content"]["#taxonomy_term"];
+        $variables['icon'] = $item->get("field_{$vocabulary}_icon")->getValue()[0]['value'];
+        $variables['color'] = $item->get("field_{$vocabulary}_hex")->getValue()[0]['color'];
+        $variables['name'] = $item->get("name")->getValue()[0]['value'];
+      }
+    }
   }
-  if ($variables['field_name'] == 'field_status') {
-    $variables['attributes']['class'][] = 'status';
-    $item = $variables["items"][0]["content"]["#options"]["entity"];
-    $variables['icon']  = $item->field_status_icon->value;
-    $variables['color'] = str_replace('#', '', $item->field_status_hex->color);
-  }
+
 }
 
 

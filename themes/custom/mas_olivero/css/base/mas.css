@@ -112,8 +112,14 @@
 }
 
 .node--type-service-request .node__content .category,
-  .node--type-service-request .node__content .status {
+  .node--type-service-request .node__content .status,
+  .node--type-service-request .node__content .category a,
+  .node--type-service-request .node__content .status a
+  {
     border-left: 2px solid #e7edf1;
+    text-decoration: none;
+    font-family: "Alte-DIN-1451-Mittelschrift", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    font-weight: 700;
   }
 
 .node__content .category,
@@ -223,13 +229,6 @@ div.paragraph .color-f5f5fdc a, div.status .color-f5f5fdc a, div.category .color
 div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-FFFFFF a {
     color: #fff;
   }
-
-.status a,
-.category a {
-  text-decoration: none;
-  font-family: "Alte-DIN-1451-Mittelschrift", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
-  font-weight: 700;
-}
 
 .field--name-field-status-notes:before {
     font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
