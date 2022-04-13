@@ -41,7 +41,7 @@ class RemoveCookieSubscriber implements EventSubscriberInterface {
   public function onRespond(FilterResponseEvent $event) {
     // if($event->getRequest()->getPathInfo())
     $query = $event->getRequest()->getQueryString();
-    if (strstr($query, 'api_key')) {
+    if (strstr($query ?: '', 'api_key')) {
       $session = \session_name();
       $response = $event->getResponse()->headers->clearCookie($session);
       $event->getRequest()->getSession()->clear();
