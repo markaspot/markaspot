@@ -36,6 +36,12 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('wkt'),
       '#description' => t('Place your polygon wkt here. You can <a href="@wkt-editor">create and edit</a> the vectors online. Leave this empty, if you don\'t need polygon validation.', ['@wkt-editor' => 'https://arthur-e.github.io/Wicket/sandbox-gmaps3.html']),
     );
+    $form['markaspot_validation']['multiple_reports'] = array(
+      '#type' => 'checkbox',
+      '#title' => t('Multiple Reports prevention check'),
+      '#default_value' => $config->get('multiple_reports'),
+      '#description' => t('Checks if a number of requests per e-mail has been submitted.'),
+    );
     $form['markaspot_validation']['duplicate_check'] = array(
       '#type' => 'checkbox',
       '#title' => t('Duplicate Request check enabled'),

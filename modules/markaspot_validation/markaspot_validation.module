@@ -18,6 +18,9 @@ function markaspot_validation_entity_bundle_field_info_alter(&$fields, EntityTyp
         $latlon->addConstraint('ValidLatLon');
         $latlon->addConstraint('DefaultLocation');
         $latlon->addConstraint('DoublePost');
+
+        $email = $fields['field_e_mail'];
+        $email->addConstraint('MultipleReports');
         break;
     }
   }
