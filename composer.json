@@ -28,7 +28,7 @@
     "npm-asset/iso8601-js-period": "^0.2",
     "npm-asset/dateformat": "3.0.2",
     "npm-asset/lazysizes": "^5.1",
-    "npm-asset/leaflet": "~1",
+    "npm-asset/leaflet": "~1.7",
     "npm-asset/leaflet-timedimension": "^1",
     "npm-asset/leaflet.heat": "0.2.0",
     "npm-asset/leaflet.markercluster": "^1.4",

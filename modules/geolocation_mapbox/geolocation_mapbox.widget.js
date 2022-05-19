@@ -60,9 +60,9 @@
 
     // Add Control.
     const search = GeoSearch.GeoSearchControl({
-
       style: 'bar',
       provider: provider, // required
+      position: 'topright',
       showMarker: true, // optional: true|false  - default true
       showPopup: false, // optional: true|false  - default false
       marker: {
@@ -76,10 +76,11 @@
       retainZoomLevel: false, // optional: true|false  - default false
       animateZoom: true, // optional: true|false  - default true
       autoClose: false, // optional: true|false  - default false
-      searchLabel: Drupal.t('Straße eingeben'), // optional: string      - default 'Enter address'
+      searchLabel: Drupal.t('Street name'), // optional: string      - default 'Enter address'
       keepResult: false, // optional: true|false  - default false
       updateMap: true, // optional: true|false  - default true
     });
+    console.log(search)
     map.addControl(search);
 
     const handleResult = result => {

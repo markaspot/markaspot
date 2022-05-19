@@ -34,6 +34,9 @@ class GeolocationMapboxWidget extends WidgetBase {
       'city' => '',
       'mapboxToken' => '',
       'mapboxStyle' => '',
+      'tileServerUrl' => 'http://{s}.tile.osm.org/{z}/{x}/{y}.png',
+      'wmsLayer' =>'',
+      'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,
@@ -92,11 +95,23 @@ class GeolocationMapboxWidget extends WidgetBase {
       '#default_value' => $this->getSetting('set_address_field'),
       '#description' => $this->t('Experimental feature: Populate an address field with the geocoding results. This works only if the form has one field of type address (https://www.drupal.org/project/address) and might not cover all countries and circumnstances. NOTE: The address form fields will be populated even if they already contain default values. Use with care and not yet in production.'),
     ];
+    $elements['tileServerUrl'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Default map tile server url'),
+      '#default_value' => $this->getSetting('tileServerUrl'),
+      '#description' => $this->t('Choose a tileserver url like "http://{s}.tile.osm.org/{z}/{x}/{y}.png". or a WMS Service URL'),
+    ];
     $elements['wmsLayer'] = array(
       '#type' => 'textfield',
       '#title' => t('WMS Layer ID'),
       '#default_value' => $this->getSetting('wmsLayer'),
       '#description' => t('Enter the layer ID like "layer:layer"'),
+    );
+    $elements['customAttribution'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Add a custom attribution'),
+      '#default_value' => $this->getSetting('customAttribution'),
+      '#description' => t('Check your Tile Service Provider for policy'),
     );
     $elements['mapboxToken'] = array(
       '#type' => 'textfield',
@@ -205,6 +220,9 @@ class GeolocationMapboxWidget extends WidgetBase {
               'city'  => $this->getSetting('city'),
               'mapboxToken'  => $this->getSetting('mapboxToken'),
               'mapboxStyle'  => $this->getSetting('mapboxStyle'),
+              'tileServerUrl'  => $this->getSetting('tileServerUrl'),
+              'wmsLayer'  => $this->getSetting('wmsLayer'),
+              'customAttribution'  => $this->getSetting('customAttribution'),
               'autoLocate' => $this->getSetting('autoLocate'),
               'fullscreenControl' => $this->getSetting('fullscreenControl'),
               'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
