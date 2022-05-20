@@ -5,3 +5,6 @@
 .leaflet-control-geocoder-form input {
   width: 220px;
 }
+div#geolocation-mapbox-map {
+  z-index: 0;
+}

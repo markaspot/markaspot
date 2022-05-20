@@ -62,7 +62,7 @@
     const search = GeoSearch.GeoSearchControl({
       style: 'bar',
       provider: provider, // required
-      position: 'topright',
+      /* position: 'topright', */
       showMarker: true, // optional: true|false  - default true
       showPopup: false, // optional: true|false  - default false
       marker: {

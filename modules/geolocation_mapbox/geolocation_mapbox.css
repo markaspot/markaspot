@@ -1,11 +1,3 @@
-.leaflet-bar.leaflet-control-geocoder {
-  min-width: 260px;
-}
-
-.leaflet-control-geocoder-form input {
-  width: 220px;
-}
-input.glass {
-  max-height: 30px;
-  min-height: 30px;
+div#geolocation-mapbox-map {
+  z-index: 0;
 }
