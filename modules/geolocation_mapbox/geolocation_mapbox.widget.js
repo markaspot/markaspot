@@ -74,10 +74,10 @@
       resultFormat: ({ result }) => result.label, // optional: function    - default returns result label
       maxMarkers: 1, // optional: number      - default 1
       retainZoomLevel: false, // optional: true|false  - default false
-      animateZoom: true, // optional: true|false  - default true
-      autoClose: false, // optional: true|false  - default false
+      animateZoom: false, // optional: true|false  - default true
+      autoClose: true, // optional: true|false  - default false
       searchLabel: Drupal.t('Street name'), // optional: string      - default 'Enter address'
-      keepResult: false, // optional: true|false  - default false
+      keepResult: true, // optional: true|false  - default false
       updateMap: true, // optional: true|false  - default true
     });
     console.log(search)
@@ -109,17 +109,17 @@
         lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value')
       };
       var initLatLng = new L.latLng(fieldValues.lat, fieldValues.lng);
-      setMarker(result, initLatLng);
+      //setMarker(result, initLatLng);
       map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
     }
 
     function setMarker(result, latLng) {
 
       if (typeof marker !== 'undefined') {
-        map.removeLayer(marker);
+        // map.removeLayer(marker);
       }
       // Check if method is called with a pair of coordinates to prevent
-      // marker jumping to nominatm reverse results lat/lon.
+      // marker jumping to nominatim reverse results lat/lon.
       latLng = latLng ? latLng : result.center;
       marker = L.marker(latLng, {
         draggable: true
