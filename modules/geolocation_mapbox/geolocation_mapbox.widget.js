@@ -64,7 +64,7 @@
       provider: provider, // required
       /* position: 'topright', */
       showMarker: true, // optional: true|false  - default true
-      showPopup: false, // optional: true|false  - default false
+      showPopup: true, // optional: true|false  - default false
       marker: {
         // optional: L.Marker    - default L.Icon.Default
         icon: new L.Icon.Default(),
@@ -80,12 +80,13 @@
       keepResult: true, // optional: true|false  - default false
       updateMap: true, // optional: true|false  - default true
     });
-    console.log(search)
+    // console.log(search)
     map.addControl(search);
 
     const handleResult = result => {
       const location = Drupal.geolactionMapboxparseReverseGeo(result.location.raw);
       updateCallback(marker, map, location);
+      map.removeLayer(marker);
 
       $('.geolocation-widget-lng.for--geolocation-mapbox-map')
         .attr('value', result.location.x);
@@ -109,21 +110,27 @@
         lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value')
       };
       var initLatLng = new L.latLng(fieldValues.lat, fieldValues.lng);
-      //setMarker(result, initLatLng);
+      setMarker(result, initLatLng);
       map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
     }
 
     function setMarker(result, latLng) {
-
       if (typeof marker !== 'undefined') {
-        // map.removeLayer(marker);
+        // console.log(result);
+        map.removeLayer(marker);
       }
       // Check if method is called with a pair of coordinates to prevent
       // marker jumping to nominatim reverse results lat/lon.
       latLng = latLng ? latLng : result.center;
       marker = L.marker(latLng, {
         draggable: true
-      }).addTo(map).openPopup();
+      }).addTo(map)
+
+      if (result.text) {
+        marker.bindPopup(result.text).openPopup()
+      }
+
+
       // map.setView(latLng);
       marker.on('dragend', function (e) {
         updateCallback(marker, map, result);
@@ -132,11 +139,12 @@
       updateCallback(marker, map, result);
     }
 
+
     map.on('click', function (e) {
       search.clearResults();
+      map.removeLayer(marker)
       reverseGeocode(e.latlng);
     });
-
 
     function reverseGeocode(latlng) {
       const url = "https://api.mapbox.com/geocoding/v5/mapbox.places/" + latlng.lng + "," + latlng.lat + ".json?types=address&access_token=" + mapSettings.mapboxToken;
@@ -145,8 +153,9 @@
       })
       .then(function (body) {
         const location = Drupal.geolactionMapboxparseReverseGeo(body.features[0]);
+        // console.log(location)
         updateCallback(marker, map, location);
-        setMarker(body, latlng)
+        setMarker(location, latlng)
       });
 
       $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat')
