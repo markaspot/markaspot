@@ -80,7 +80,6 @@
       keepResult: true, // optional: true|false  - default false
       updateMap: true, // optional: true|false  - default true
     });
-    // console.log(search)
     map.addControl(search);
 
     const handleResult = result => {
@@ -110,13 +109,14 @@
         lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value')
       };
       var initLatLng = new L.latLng(fieldValues.lat, fieldValues.lng);
-      setMarker(result, initLatLng);
+      //setMarker(result, initLatLng);
       map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
+      reverseGeocode(fieldValues)
+
     }
 
     function setMarker(result, latLng) {
       if (typeof marker !== 'undefined') {
-        // console.log(result);
         map.removeLayer(marker);
       }
       // Check if method is called with a pair of coordinates to prevent
@@ -142,7 +142,7 @@
 
     map.on('click', function (e) {
       search.clearResults();
-      map.removeLayer(marker)
+      // map.removeLayer(marker)
       reverseGeocode(e.latlng);
     });
 
@@ -153,9 +153,9 @@
       })
       .then(function (body) {
         const location = Drupal.geolactionMapboxparseReverseGeo(body.features[0]);
-        // console.log(location)
+        setMarker(location, latlng);
         updateCallback(marker, map, location);
-        setMarker(location, latlng)
+
       });
 
       $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat')
