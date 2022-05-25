@@ -37,6 +37,7 @@ leaflet-geosearch:
   js:
     /libraries/leaflet-geosearch/dist/bundle.min.js: {}
   dependencies:
+    - geolocation_mapbox/geolocation-mapbox-widget
     - geolocation_mapbox/leaflet
 
 leaflet-locatecontrol:
