@@ -208,6 +208,10 @@ div.category {
     border-right: 0;
     border-left: 0;
     border-radius: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    max-width: 30rem;
+    text-overflow: ellipsis;
   }
 
   & li.list-group-item:first-child {
@@ -307,8 +311,11 @@ div#block-markaspotstatsaction {
     border-radius: 1rem;
     box-shadow: -36px 1px 36px rgb(0 0 0 / 18%);
 
+    & .list-group-item {
+        background-color: #fff;
+    }
     & .list-group-item:hover {
-      background-color: #ddd!important;
+      background-color: #ddd;
     }
 
     & li a:link {

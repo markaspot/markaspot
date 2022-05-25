@@ -284,6 +284,10 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
     border-right: 0;
     border-left: 0;
     border-radius: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    max-width: 30rem;
+    text-overflow: ellipsis;
   }
 
 .block-views-blockstats-block-status-category ul.list-group li.list-group-item:first-child, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item:first-child {
@@ -398,8 +402,12 @@ div#block-markaspotfrontaction ul.list-group, div#block-markaspotstatsaction ul.
     box-shadow: -36px 1px 36px rgba(0, 0, 0, 0.18)
   }
 
+div#block-markaspotfrontaction ul.list-group .list-group-item, div#block-markaspotstatsaction ul.list-group .list-group-item {
+        background-color: #fff;
+    }
+
 div#block-markaspotfrontaction ul.list-group .list-group-item:hover, div#block-markaspotstatsaction ul.list-group .list-group-item:hover {
-      background-color: #ddd!important;
+      background-color: #ddd;
     }
 
 div#block-markaspotfrontaction ul.list-group li a:link, div#block-markaspotstatsaction ul.list-group li a:link {
