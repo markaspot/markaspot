@@ -273,6 +273,8 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
   border-radius: 0;
   box-shadow: -36px 1px 36px rgba(0, 0, 0, 0.08);
   list-style: none
+
+
 }
 
 .block-views-blockstats-block-status-category ul.list-group li.list-group-item, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item {
@@ -287,8 +289,33 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
     white-space: nowrap;
     overflow: hidden;
     max-width: 30rem;
-    text-overflow: ellipsis;
+    text-overflow: ellipsis
+
   }
+
+@media (min-width: 500px) {
+
+.block-views-blockstats-block-status-category ul.list-group li.list-group-item, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item {
+      font-size: large
+
+  }
+    }
+
+@media (min-width: 700px) {
+
+.block-views-blockstats-block-status-category ul.list-group li.list-group-item, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item {
+      font-size: large
+
+  }
+    }
+
+@media (min-width: 1440px) {
+
+.block-views-blockstats-block-status-category ul.list-group li.list-group-item, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item {
+      font-size: large
+
+  }
+    }
 
 .block-views-blockstats-block-status-category ul.list-group li.list-group-item:first-child, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item:first-child {
     border-top: 0;
@@ -329,15 +356,6 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
     font-size: 0.875rem;
     font-weight: bold;
     line-height: 1;
-  }
-
-@media (min-width: 700px) {
-
-.block-views-blockstats-block-status-category ul.list-group,
-.block-views-blockstats-block-stats-status ul.list-group {
-    padding: 0.3rem 0.1rem !important;
-    font-size: medium
-}
   }
 
 /* Action block */

@@ -212,6 +212,16 @@ div.category {
     overflow: hidden;
     max-width: 30rem;
     text-overflow: ellipsis;
+    @media (--sm) {
+      font-size: large;
+    }
+    @media (--grid-md) {
+      font-size: large;
+    }
+    @media (--grid-max) {
+      font-size: large;
+    }
+
   }
 
   & li.list-group-item:first-child {
@@ -255,10 +265,7 @@ div.category {
     line-height: 1;
   }
 
-  @media (min-width: 700px) {
-    padding: 0.3rem 0.1rem !important;
-    font-size: medium;
-  }
+
 }
 
 

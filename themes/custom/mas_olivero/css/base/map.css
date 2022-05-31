@@ -5,7 +5,6 @@
   -webkit-transform: translateZ(0);
   backface-visibility: hidden;
   width: 100vw;
-  height: 180px!important;
   right: 0;
   top:0;
   margin: 0;
@@ -14,22 +13,22 @@
   z-index: 3!important;
 }
 
+
+#map.stuck {
+  top: 110px;
+  height: 250px!important;
+  max-width: 98.125rem;
+  left: 0
+}
+.user-logged-in #map.stuck {
+  position: inherit!important;
+}
+
 contextual {
   z-index: 0;
 }
 
-body.toolbar-tray-open.toolbar-fixed.toolbar-vertical #map.stuck {
-  position: fixed !important;
-  right: 0;
-  top: 39px;
-}
 
-body.toolbar-tray-open.toolbar-fixed.toolbar-horizontal #map.stuck {
-  position: fixed !important;
-  right: 0;
-  top: 80px;
-  z-index: 1!important;
-}
 
 body.toolbar-tray-open.toolbar-fixed.toolbar-vertical .leaflet-top,
 body.toolbar-tray-open.toolbar-fixed.toolbar-vertical .leaflet-bottom {
@@ -66,11 +65,6 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
 }
 
 
-.stuck .leaflet-top.leaflet-left {
-    z-index: 900;
-    left: 100px;
-}
-
 .toolbar-vertical.toolbar-fixed .stuck,
 .toolbar-horizontal.toolbar-fixed .stuck,
 .toolbar-vertical.toolbar-fixed .timecontrol-date.utc,
@@ -103,8 +97,9 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
 }
 
 
-// Timeline makes no sense on smartphone screens.
-// Hiding this feature until there is a better solution for this.
+/* Timeline makes no sense on smartphone screens.
+ Hiding this feature until there is a better solution for this.
+ */
 @media (max-width: $screen-xs) {
   div.easy-button-container:nth-child(1) {
       display: none;
@@ -126,7 +121,7 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
   background: #fff!important;
 }
 
-// Styles for locate button
+/* Styles for locate button */
 .leaflet-control-locate span.fa.fa-map-marker {
     border: 0;
 }
