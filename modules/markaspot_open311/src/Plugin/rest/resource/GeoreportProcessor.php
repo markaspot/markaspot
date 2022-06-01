@@ -96,40 +96,45 @@ class GeoreportProcessor {
       throw new GeoreportException(t('Service Code not valid'), 400);
     }
     // File Handling:
-    if (isset($request_data['media_url']) && strstr($request_data['media_url'], "http")) {
-      $managed = TRUE;
-      $file = system_retrieve_file($request_data['media_url'], 'public://', $managed, FileSystemInterface::EXISTS_RENAME);
-      if ($file !== FALSE) {
-        if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
-          $field_keys['image'] = 'field_request_media';
-          $media = Media::create([
-            'bundle' => 'request_image',
-            'uid' => \Drupal::currentUser()->id(),
-            'field_media_image' => [
-              'target_id' => $file->id(),
-              'alt' => 'Open311 File',
-            ],
-          ]);
-          $save = $media->setName($request_data['service_code'] . ' ' . $values['created'])
-            ->setPublished(TRUE)
-            ->save();
-          $field_keys['image'] = 'field_request_media';
-          $values['field_request_media'] = [
-            'target_id' => $media->id(),
-            'alt' => 'Open311 File',
-          ];
-        }
-        else {
-          $field_keys['image'] = 'field_request_image';
-          $values[$field_keys['image']] = [
-            'target_id' => $file->id(),
-            'alt' => 'Open311 File',
-          ];
-        }
-      } else {
-        throw new GeoreportException(t('Image could not be retrieved via URL'), 400);
-      }
+    if (isset($request_data['media_url'])) {
+      $media_urls = explode(',', $request_data['media_url']);
+      foreach ($media_urls as $url) {
+        if (strstr($url, "http")) {
+          $managed = TRUE;
+          $file = system_retrieve_file($url, 'public://', $managed, FileSystemInterface::EXISTS_RENAME);
+          if ($file !== FALSE) {
+            if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
+              $field_keys['image'] = 'field_request_media';
+              $media = Media::create([
+                'bundle' => 'request_image',
+                'uid' => \Drupal::currentUser()->id(),
+                'field_media_image' => [
+                  'target_id' => $file->id(),
+                  'alt' => 'Open311 File',
+                ],
+              ]);
+              $save = $media->setName('media:request_image:' . $media->uuid())
+                ->setPublished(TRUE)
+                ->save();
+              // $field_keys['image'][] = 'field_request_media';
+              $values['field_request_media'][] = [
+                'target_id' => $media->id(),
+                'alt' => 'Open311 File',
+              ];
+            }
+            else {
+              $field_keys['image'] = 'field_request_image';
+              $values[$field_keys['image']] = [
+                'target_id' => $file->id(),
+                'alt' => 'Open311 File',
+              ];
+            }
+          } else {
+            throw new GeoreportException(t('Image could not be retrieved via URL'), 400);
+          }
 
+        }
+      }
     }
 
     if (array_key_exists('extended_attributes', $request_data)) {
@@ -145,9 +150,9 @@ class GeoreportProcessor {
       }
     }
     return array_filter($values, function($value) {
-        return ($value !== NULL && $value !== FALSE && $value !== '');
-      });
-    }
+      return ($value !== NULL && $value !== FALSE && $value !== '');
+    });
+  }
 
   /**
    * Parse an address_string to an array.
@@ -379,16 +384,18 @@ class GeoreportProcessor {
       $image = $node->field_request_image->entity;
     }
     if (isset($node->field_request_media)) {
-      $media = $node->field_request_media->entity;
+      foreach ($node->get('field_request_media')->getValue() as $media) {
+        $media = Media::load($media['target_id']);
+        $image_uris[] = ($media->isPublished()) ? file_create_url($media->field_media_image->entity->getFileUri()) : '';
+      }
     }
 
     if (isset($image)) {
       $image_uri = file_create_url($image->getFileUri());
     } else if (isset($media->field_media_image->entity)) {
-      $image_uri = ($media->isPublished()) ? file_create_url($media->field_media_image->entity->getFileUri()) : '';
+      $image_uri = implode(',', $image_uris );
     }
     $request['media_url'] = (isset($image_uri)) ? $image_uri : '';
-
 
     // Checking latest paragraph entity item for publish the official status.
     if (isset($node->field_status_notes)) {
