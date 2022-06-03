@@ -296,7 +296,7 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
 @media (min-width: 500px) {
 
 .block-views-blockstats-block-status-category ul.list-group li.list-group-item, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item {
-      font-size: large
+      font-size: small
 
   }
     }
@@ -304,7 +304,7 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
 @media (min-width: 700px) {
 
 .block-views-blockstats-block-status-category ul.list-group li.list-group-item, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item {
-      font-size: large
+      font-size: small
 
   }
     }
@@ -312,7 +312,7 @@ div.paragraph .color-FFFFFF a, div.status .color-FFFFFF a, div.category .color-F
 @media (min-width: 1440px) {
 
 .block-views-blockstats-block-status-category ul.list-group li.list-group-item, .block-views-blockstats-block-stats-status ul.list-group li.list-group-item {
-      font-size: large
+      font-size: medium
 
   }
     }
@@ -581,20 +581,9 @@ div#block-markaspotstatsaction ul.list-group .list-group-item {
       line-height: 1.5rem;
       text-decoration: none;
       border: 1px solid rgba(0, 0, 0, 0.125)!important;
-      background-color: #fff
+      background-color: #fff;
+
     }
-
-@media (min-width: 500px) {
-        div#block-markaspotstatsaction ul.list-group .list-group-item a {
-          font-size: small;
-        }
-      }
-
-@media (min-width: 700px) {
-        div#block-markaspotstatsaction ul.list-group .list-group-item a {
-          font-size: medium;
-        }
-      }
 
 .trend_count {
   font-size: 3em;

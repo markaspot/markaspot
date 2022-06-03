@@ -7,22 +7,25 @@
 
 (function (Drupal) {
   Drupal.mas_olivero = {};
-  var body = document.querySelector('body');
+  Drupal.behaviors.mas_olivero_navigation = {
+    attach: function attach(context) {
+      var stickyHeaderState = localStorage.getItem('Drupal.olivero.stickyHeaderState');
+      var body = context.querySelector('body');
 
-  if (body.classList.contains('path-frontpage') == false && body.classList.contains('page-node-type-page') == false) {
-    var _map = document.getElementById('map');
+      if (body.classList.contains('path-frontpage') == false && body.classList.contains('page-node-type-page') == false) {
+        var map = context.querySelector('[data-drupal-selector="map-request-block"]');
+        console.log(map);
+        Drupal.sticky = new Waypoint.Sticky({
+          element: map,
+          wrapper: '<div class="sticky-wrapper waypoint" />'
+        });
 
-    var stickyElement = document.getElementsByClassName('map-request-block');
-
-    if (stickyElement.length) {
-      Drupal.sticky = new Waypoint.Sticky({
-        element: stickyElement[0],
-        wrapper: '<div class="sticky-wrapper waypoint" />'
-      });
+        if (JSON.parse(stickyHeaderState).value == true) {
+          map.classList.add("stuck-nav");
+        }
+      }
     }
-  }
-
-  var element = document.querySelector('body');
+  };
   var observer = new MutationObserver(function (mutations) {
     var startBlock = document.getElementById('block-markaspotfrontaction');
     var fieldsetMap = document.getElementById('geolocation-nominatim-map');
@@ -35,9 +38,6 @@
         startBlock ? startBlock.style.display = 'block' : false;
       }
     });
-  });
-  observer.observe(element, {
-    attributes: true
   });
   var heatMapButton = document.querySelector('.heatmap a');
 
@@ -73,13 +73,4 @@
     characterData: false,
     subtree: false
   };
-  var map = document.getElementById('map');
-
-  if (map !== null) {
-    var _observer = new MutationObserver(function (mutations) {
-      return Drupal.Markaspot.maps[0].invalidateSize();
-    });
-
-    _observer.observe(map, config);
-  }
 })(Drupal);

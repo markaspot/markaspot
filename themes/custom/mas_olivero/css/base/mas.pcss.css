@@ -213,13 +213,13 @@ div.category {
     max-width: 30rem;
     text-overflow: ellipsis;
     @media (--sm) {
-      font-size: large;
+      font-size: small;
     }
     @media (--grid-md) {
-      font-size: large;
+      font-size: small;
     }
     @media (--grid-max) {
-      font-size: large;
+      font-size: medium;
     }
 
   }
@@ -459,16 +459,7 @@ div#block-markaspotstatsaction {
       text-decoration: none;
       border: 1px solid rgba(0, 0, 0, 0.125)!important;
       background-color: #fff;
-      @media (--sm) {
-        & a {
-          font-size: small;
-        }
-      }
-      @media (--md) {
-        & a {
-          font-size: medium;
-        }
-      }
+
     }
   }
 }

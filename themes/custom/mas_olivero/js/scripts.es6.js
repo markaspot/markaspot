@@ -14,21 +14,37 @@
    * @namespace
    */
   Drupal.mas_olivero = {};
+  Drupal.behaviors.mas_olivero_navigation = {
+    attach(context) {
 
-  // Make map sticky only on requests list
-  const body = document.querySelector('body');
-  if (body.classList.contains('path-frontpage') == false && body.classList.contains('page-node-type-page') == false) {
-    const map = document.getElementById('map');
-    const stickyElement = document.getElementsByClassName('map-request-block');
-    if (stickyElement.length) {
-      Drupal.sticky = new Waypoint.Sticky({
-        element: stickyElement[0],
-        wrapper: '<div class="sticky-wrapper waypoint" />'
-      });
+      // console.log(siteHeaderFixable);
+      const stickyHeaderState = localStorage.getItem(
+        'Drupal.olivero.stickyHeaderState',
+      );
+      // console.log(JSON.parse(stickyHeaderState).value);
+
+      const body = context.querySelector('body');
+
+      if (body.classList.contains('path-frontpage') == false && body.classList.contains('page-node-type-page') == false) {
+        const map = context.querySelector(
+          '[data-drupal-selector="map-request-block"]',
+        );
+        console.log(map)
+        Drupal.sticky = new Waypoint.Sticky({
+          element: map,
+          wrapper: '<div class="sticky-wrapper waypoint" />'
+        });
+        if (JSON.parse(stickyHeaderState).value == true) {
+          map.classList.add("stuck-nav");
+        }
+
+      }
+
     }
   }
+  // Make map sticky only on requests list
 
-  const element = document.querySelector('body');
+
   const observer = new MutationObserver(function(mutations) {
     const startBlock = document.getElementById('block-markaspotfrontaction');
     const fieldsetMap = document.getElementById('geolocation-nominatim-map')
@@ -43,9 +59,7 @@
     });
   });
 
-  observer.observe(element, {
-    attributes: true //configure it to listen to attribute changes
-  });
+
 
   let heatMapButton = document.querySelector('.heatmap a');
   if (heatMapButton !== null) {
@@ -76,17 +90,10 @@
     characterData: false,
     subtree: false
   };
-
+  /*
   let map = document.getElementById('map');
   if (map !== null) {
     let observer = new MutationObserver(mutations => Drupal.Markaspot.maps[0].invalidateSize());
     observer.observe(map, config);
-  }
-
-
-
-
-
-
+  } */
 })(Drupal);
-

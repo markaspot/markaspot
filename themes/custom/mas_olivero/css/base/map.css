@@ -13,8 +13,14 @@
   z-index: 3!important;
 }
 
-
 #map.stuck {
+  top: 0;
+  height: 250px!important;
+  max-width: 98.125rem;
+  left: 0
+}
+
+#map.stuck.stuck-nav {
   top: 110px;
   height: 250px!important;
   max-width: 98.125rem;
