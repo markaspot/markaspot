@@ -1,4 +1,4 @@
 bypass mas validation:
-  title: 'Bypass Mark-a-Spot geo validation'
-  description: 'Bypass location based validation of address and double post'
+  title: 'Bypass Mark-a-Spot validation'
+  description: 'Bypass Mark-a-Spot custom validation'
   restrict access: TRUE

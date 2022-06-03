@@ -40,7 +40,13 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => t('Multiple Reports prevention check'),
       '#default_value' => $config->get('multiple_reports'),
-      '#description' => t('Checks if a number of requests per e-mail has been submitted.'),
+      '#description' => t('Checks whether a certain number of service requests have been submitted per e-mail address used.'),
+    );
+    $form['markaspot_validation']['max_count'] = array(
+      '#type' => 'textfield',
+      '#title' => t('Maximum number of service requests'),
+      '#default_value' => $config->get('max_count'),
+      '#description' => t('How many service requests per day are permitted?'),
     );
     $form['markaspot_validation']['duplicate_check'] = array(
       '#type' => 'checkbox',
@@ -123,6 +129,8 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
     $this->config('markaspot_validation.settings')
       ->set('wkt', $values['wkt'])
+      ->set('multiple_reports', $values['multiple_reports'])
+      ->set('max_count', $values['max_count'])
       ->set('duplicate_check', $values['duplicate_check'])
       ->set('radius', $values['radius'])
       ->set('unit', $values['unit'])

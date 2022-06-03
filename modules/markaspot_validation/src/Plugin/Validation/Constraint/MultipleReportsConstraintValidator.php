@@ -47,6 +47,7 @@ class MultipleReportsConstraintValidator extends ConstraintValidator {
   public function validate($field, Constraint $constraint) {
     $session = \Drupal::requestStack()->getCurrentRequest()->getSession();
     $status = $this->configFactory->get('multiple_reports');
+    $max_count = ($this->configFactory->get('max_count') != FALSE) ? $this->configFactory->get('max_count') : 5 ;
     if ($status === 0) {
       return;
     }
@@ -61,7 +62,7 @@ class MultipleReportsConstraintValidator extends ConstraintValidator {
       $nids = 0;
     }
 
-    if ($nids > 5) {
+    if ($nids > $max_count) {
 
       $message = $this->t('We have noticed that @count requests have already been reported using this email address within the last 24h. Please try again some other day.', [
         '@count' => $nids,
