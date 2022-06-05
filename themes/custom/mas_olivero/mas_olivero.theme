@@ -61,3 +61,19 @@ function mas_olivero_theme_suggestions_block_alter(&$suggestions, $variables) {
     $suggestion = str_replace('mas_olivero_', 'olivero_', $suggestion);
   }
 }
+
+/**
+ * Implements hook_page_attachments_alter().
+ */
+function mas_olivero_page_attachments_alter(&$page) {
+  $viewport = array(
+    '#type' => 'html_tag',
+    '#tag' => 'meta',
+    '#attributes' => array(
+      'name' => 'viewport',
+      'content' => 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no',
+    ),
+  );
+  $page['#attached']['html_head'][] = [$viewport, 'viewport'];
+}
+
