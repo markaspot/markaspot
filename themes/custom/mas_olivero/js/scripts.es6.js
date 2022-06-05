@@ -25,11 +25,13 @@
 
       const body = context.querySelector('body');
 
-      if (body.classList.contains('path-frontpage') == false && body.classList.contains('page-node-type-page') == false) {
+      if (body.classList.contains('path-frontpage') == false 
+          && body.classList.contains('page-node-type-page') == false
+             && body.classList.contains('path-report') == false) {
         const map = context.querySelector(
           '[data-drupal-selector="map-request-block"]',
         );
-        console.log(map)
+        // console.log(map)
         Drupal.sticky = new Waypoint.Sticky({
           element: map,
           wrapper: '<div class="sticky-wrapper waypoint" />'
