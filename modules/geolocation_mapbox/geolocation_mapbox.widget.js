@@ -75,9 +75,9 @@
       maxMarkers: 1, // optional: number      - default 1
       retainZoomLevel: false, // optional: true|false  - default false
       animateZoom: false, // optional: true|false  - default true
-      autoClose: true, // optional: true|false  - default false
+      autoClose: false, // optional: true|false  - default false
       searchLabel: Drupal.t('Street name'), // optional: string      - default 'Enter address'
-      keepResult: true, // optional: true|false  - default false
+      keepResult: false, // optional: true|false  - default false
       updateMap: true, // optional: true|false  - default true
     });
     map.addControl(search);
@@ -130,7 +130,12 @@
         marker.bindPopup(result.text).openPopup()
       }
 
-
+      map.on('click', function (e) {
+        search.clearResults();
+        // console.log("click");
+        map.removeLayer(marker)
+        reverseGeocode(e.latlng);
+      });
       // map.setView(latLng);
       marker.on('dragend', function (e) {
         updateCallback(marker, map, result);
@@ -140,11 +145,7 @@
     }
 
 
-    map.on('click', function (e) {
-      search.clearResults();
-      // map.removeLayer(marker)
-      reverseGeocode(e.latlng);
-    });
+
 
     function reverseGeocode(latlng) {
       const url = "https://api.mapbox.com/geocoding/v5/mapbox.places/" + latlng.lng + "," + latlng.lat + ".json?types=address&access_token=" + mapSettings.mapboxToken;

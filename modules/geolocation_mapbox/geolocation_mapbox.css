@@ -1,3 +1,8 @@
 div#geolocation-mapbox-map {
   z-index: 0;
 }
+a.reset {
+  margin: 8px 6px!important;
+  padding: 0!important;
+  line-height: 1rem!important;
+}
