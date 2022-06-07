@@ -45,6 +45,15 @@
     $('#locateMe').click(function () {
       lc.start();
     });
+    function onLocationFound(e) {
+      map.stopLocate();
+      console.log(e);
+      reverseGeocode(e.latlng);
+    }
+
+    map.on('locationfound', onLocationFound);
+
+
     // Define provider.
     const provider = new GeoSearch.MapBoxProvider({
         params:{
@@ -156,7 +165,7 @@
         const location = Drupal.geolactionMapboxparseReverseGeo(body.features[0]);
         setMarker(location, latlng);
         updateCallback(marker, map, location);
-
+        console.log(location)
       });
 
       $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat')
