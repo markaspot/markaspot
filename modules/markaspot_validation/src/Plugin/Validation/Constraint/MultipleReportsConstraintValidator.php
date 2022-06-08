@@ -88,14 +88,15 @@ class MultipleReportsConstraintValidator extends ConstraintValidator {
 
     // Filter posted category from context object.
     $entity = $this->context->getRoot();
-    $email = $entity->get('field_e_mail')->getValue();
+    $email_field = $entity->get('field_e_mail')->getValue();
+    $email = $email_field[0]['value'] ?? '';
     $count = $this->configFactory->get('count');
     $this->count = $count ?? 5;
     $query = \Drupal::entityQuery('node')
       // Only published requests get validated as positive:
       // ->condition('status', 1)
       ->condition('type', 'service_request')
-      ->condition('field_e_mail', $email[0]['value'])
+      ->condition('field_e_mail', $email)
       ->condition('created', \Drupal::time()->getRequestTime() - (24 * 60 * 60), '>=');
 
     $nids = $query->execute();
