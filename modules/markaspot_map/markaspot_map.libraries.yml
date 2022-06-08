@@ -50,13 +50,10 @@ waypoints:
     /libraries/waypoints/lib/shortcuts/sticky.min.js: {weight: -2, minified: true }
     /libraries/waypoints/lib/shortcuts/inview.min.js: {weight: -2, minified: true }
 
-leaflet-timedimension:
+leaflet-timeline:
   js:
-    /libraries/iso8601-js-period/iso8601.js: {}
-    /libraries/leaflet-timedimension/dist/leaflet.timedimension.min.js: { }
-  css:
-    component:
-      /libraries/leaflet-timedimension/dist/leaflet.timedimension.control.min.css: {}
+    /libraries/leaflet.timeline/dist/leaflet.timeline.js: { }
+
 
 leaflet-heatmap:
   js:
@@ -83,7 +80,7 @@ map:
   dependencies:
     - core/jquery.once
     - markaspot_map/leaflet
-    - markaspot_map/leaflet-timedimension
+    - markaspot_map/leaflet-timeline
   js:
     js/map.js: {}
   css:

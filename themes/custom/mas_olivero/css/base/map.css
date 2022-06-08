@@ -149,74 +149,31 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
 
 }
 
-div.log{
-  position: absolute;
-  display:none;
-  z-index: 800;
-  width: 220px;
-  background: rgba(0, 0, 0, 0.63);
-  list-style: none;
-  height: 100%;
+.leaflet-bottom.leaflet-left {
+  width: 100%;
+}
+.leaflet-control.leaflet-timeline-control .sldr-ctrl-container {
+  margin: 0 auto;
+  box-sizing: border-box;
+  width: 100%;
 }
 
-div.log_header{
-  position: absolute;
-  width: 220px;
-  list-style: none;
-  span.left {
-      font-family: monospace;
-      color: #fff;
-      margin: 60px;
-  }
-
-  span.right {
-    font-family: monospace;
-    color: #fff;
-  }
+.leaflet-control.leaflet-timeline-control {
+  width: 96%;
+  box-sizing: border-box;
+  margin: 2%;
+  margin-bottom: 20px;
+  text-align: center;
+  border-radius: 0.5rem;
+  box-shadow: -36px 1px 36px rgba(0, 0, 0, 0.18)
 
 }
 
+.button-container {padding:  10px;}
 
-ul.log_list {
-  top: 20px;
-  position: absolute;
-  color: #fff;
-  list-style: none;
-  padding-left: 50px;
-  font-family:monospace;
-  height: 100%;
-  overflow:scroll;
-}
-
-ul.log_list .time {
-  display: inline-block;
-  margin: 2px 10px;
-  width: 100px;
-}
-
-ul.log_list .count {
-  display: inline-block;
-  text-align: right;
-  width: 20px;
-  color: #fff!important;
-}
-
-.notifications {
-  position: fixed;
-  z-index: 9999;
-  right: 0;
-  top: 0;
-  padding: 0;
-  margin: 0;
-}
-.notifications li {
-  min-width: 100%;
-  display: block;
-  position: relative;
-  padding: 6px 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.3);
-}
-.notifications li:first-child {
-  border-top: 0;
-
+.button-container button {
+  padding: 10px;
+  border: 1px solid white;
+  border-radius: 2px;
+  margin: 2px;
 }

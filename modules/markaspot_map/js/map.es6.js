@@ -3,83 +3,6 @@
  * Main Map-Application File with Leaflet Maps API.
  */
 
-
-
-
-L.TimeDimension.Layer.MaS = L.TimeDimension.Layer.GeoJson.extend({
-  _update() {
-    if (!this._map) {
-      return;
-    }
-    if (!this._loaded) {
-      return;
-    }
-    const requestTime = this._timeDimension.getCurrentTime();
-    const formatTime = dateFormat(
-      requestTime,
-      Drupal.Markaspot.settings.timeline_date_format
-    );
-    const maxTime = this._timeDimension.getCurrentTime();
-    let minTime = 0;
-    if (this._duration) {
-      const date = new Date(maxTime);
-      L.TimeDimension.Util.subtractTimeDuration(date, this._duration, true);
-      minTime = date.getTime();
-    }
-
-    // New coordinates:
-    const layer = L.geoJson(null, this._baseLayer.options);
-    const layers = this._baseLayer.getLayers();
-    for (let i = 0, l = layers.length; i < l; i++) {
-      const feature = this._getFeatureBetweenDates(
-        layers[i].feature,
-        minTime,
-        maxTime
-      );
-      if (feature) {
-        layer.addData(feature);
-        if (this._addlastPoint && feature.geometry.type === "LineString") {
-          if (feature.geometry.coordinates.length > 0) {
-            const { properties } = feature.properties;
-            properties.last = true;
-            layer.addData({
-              type: "Feature",
-              properties,
-              geometry: {
-                type: "Point",
-                coordinates:
-                  feature.geometry.coordinates[
-                    feature.geometry.coordinates.length - 1
-                  ]
-              }
-            });
-          }
-        }
-      }
-    }
-
-    if (this._currentLayer) {
-      this._map.removeLayer(this._currentLayer);
-    }
-    if (layer.getLayers().length) {
-      const requests = layer.getLayers().length;
-      const log = jQuery("ul.log_list");
-      log.append(
-        `<li><span class="time">${formatTime}</span> <span class="count">${requests}</span>`
-      );
-      const height = log.get(0).scrollHeight;
-      log.animate(
-        {
-          scrollTop: height
-        },
-        10
-      );
-      layer.addTo(this._map);
-      this._currentLayer = layer;
-    }
-  }
-});
-
 function invertColor(hex, bw) {
   if (hex.indexOf('#') === 0) {
     hex = hex.slice(1);
@@ -134,8 +57,6 @@ function padZero(str, len) {
         return;
       }
       mapSelector.once("markaspot_map").each(() => {
-        $(".log_header .left").text(Drupal.t("Date"));
-        $(".log_header .right").text(Drupal.t("Requests"));
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
           scrollWheelZoom: !L.Browser.mobile,
@@ -224,12 +145,8 @@ function padZero(str, len) {
               }
             ]
           });
-
           heatControls.addTo(map);
-          // Show Markers additionally ob button click.
-          const timeDimensionControl = Drupal.markaspot_map.showTimeController(
-            map
-          );
+
           const timeControls = L.easyButton({
             position: "bottomright",
             states: [
@@ -238,11 +155,8 @@ function padZero(str, len) {
                 icon: "fa-clock-o",
                 title: Drupal.t("Show TimeControl Layer"),
                 onClick(control) {
-                  $("div.log").show();
                   control.state("remove-timeControls");
-                  map.addControl(timeDimensionControl);
-                  heatLayer.addTo(map);
-                  geoJsonTimedLayer.addTo(map);
+                  console.log("clicked")
                 }
               },
               {
@@ -250,13 +164,11 @@ function padZero(str, len) {
                 stateName: "remove-timeControls",
                 title: Drupal.t("Remove TimeControl Layer"),
                 onClick(control) {
-                  $("div.log").hide();
-                  map.removeControl(timeDimensionControl);
+                  map.removeControl(timeControls);
                   map.removeLayer(geoJsonTimedLayer);
                   map.removeLayer(heatLayer);
 
                   control.state("add-timeControls");
-                  $("ul.log_list").empty();
                 }
               }
             ]
@@ -298,8 +210,6 @@ function padZero(str, len) {
         }
       }
       // Theme independent selector.
-
-
       const $serviceRequests = $(masSettings.nid_selector);
       $serviceRequests.hover(function() {
         const nid = this.dataset.historyNodeId;
@@ -314,7 +224,6 @@ function padZero(str, len) {
       $('.view-content').once('markaspot_map').each(function() {
 
         // Loop through all current teasers.
-
         $serviceRequests.each(function() {
           new Waypoint({
             element: this,
@@ -328,7 +237,6 @@ function padZero(str, len) {
                 Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
                 return;
               }
-
               if (direction === "up") {
                 this.element.classList.remove("focus");
               }
@@ -364,23 +272,51 @@ function padZero(str, len) {
       map.removeLayer(Drupal.Markaspot.heatMapLayer);
     },
     showTimeControl: function showTimeControl(){
-      $("div.log").show();
       const map = Drupal.Markaspot.maps[0];
-      Drupal.markaspot_map.timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
-      map.addControl(Drupal.markaspot_map.timeDimensionControl);
-      // heatLayer.addTo(map);
-      const geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
-      Drupal.Markaspot.geoJsonTimedLayer = geoJsonTimedLayer;
-      Drupal.Markaspot.geoJsonTimedLayer.addTo(map);
+      const getInterval = function (request) {
+        // earthquake data only has a time, so we'll use that as a "start"
+        // and the "end" will be that + some value based on magnitude
+        // 18000000 = 30 minutes, so a quake of magnitude 5 would show on the
+        // map for 150 minutes or 2.5 hours
+        return {
+          start: request.properties.time,
+          end: request.properties.updated,
+        };
+      };
+      const data = Drupal.markaspot_map.createGeoJsonLayer(map);
+      // console.log(data);
+      const timeline = L.timeline(data, {
+        getInterval: getInterval,
+        pointToLayer: function (data, latlng) {
+          return L.circleMarker(latlng, {
+            radius: 10,
+            color: "#000",
+            fillColor: "#000",
+          })
+        },
+      });
+      // console.log(timeline)
+      const timelineControl = L.timelineSliderControl({
+        formatOutput: function (date) {
+          const dateObj = new Date(date);
+          const yyyy = dateObj.getFullYear();
+          const mm = String(dateObj.getMonth() + 1).padStart(2,'0');
+          const dd = String(dateObj.getDate()).padStart(2,'0');
+
+          return `${dd}.${mm}.${yyyy}`
+          // return new Date(date).toString();
+        }
+      });
+
+      timelineControl.addTo(map);
+      timelineControl.addTimelines(timeline);
+      timeline.addTo(map);
     },
     hideTimeControl: function hideTimeControl(){
+      console.log("hide");
       const map = Drupal.Markaspot.maps[0];
-      $("div.log").hide();
-      const timeDimensionControl = Drupal.markaspot_map.showTimeController(map);
-      map.removeControl(Drupal.markaspot_map.timeDimensionControl);
+      map.removeControl(Drupal.markaspot_map.timeControl);
       map.removeLayer(Drupal.Markaspot.geoJsonTimedLayer);
-      // map.removeLayer(heatLayer);
-      $("ul.log_list").empty();
     },
     // Showing a Circle Marker on hover and scroll over.
     showCircle(marker) {
@@ -416,34 +352,6 @@ function padZero(str, len) {
       return circle;
     },
 
-    showTimeController() {
-      const map = Drupal.Markaspot.maps[0];
-      // Start of TimeDimension manual instantiation.
-      map.timeDimension = new L.TimeDimension({
-        period: drupalSettings.mas.timeline_period
-      });
-      L.Control.TimeDimensionCustom = L.Control.TimeDimension.extend({
-        _getDisplayDateFormat(date) {
-          return this._dateUTC ? date.toISOString() : date.toLocaleString();
-        },
-        options: {
-          position: "bottomright",
-          minSpeed: 0.1,
-          maxSpeed: 50,
-          speedStep: 1,
-          timeSteps: 1,
-          displayDate: true,
-          autoPlay: true,
-          timeSlider: false,
-          loopButton: true,
-          playerOptions: {
-            transitionTime: 125,
-            loop: true
-          }
-        }
-      });
-      return new L.Control.TimeDimensionCustom();
-    },
 
     createGeoJson(data) {
       // Retrieve static Data.
@@ -452,9 +360,10 @@ function padZero(str, len) {
         const features = [];
         if (data.length) {
           for (let i = 0; i < data.length; i++) {
+            const time = Math.floor(new Date(data[i].requested_datetime).getTime())
             feature = {
               type: "Feature",
-              properties: { time: data[i].requested_datetime },
+              properties: { time: time, updated: time + (86400000 *2) },
               geometry: {
                 type: "Point",
                 coordinates: [data[i].long, data[i].lat]
@@ -466,6 +375,9 @@ function padZero(str, len) {
 
         return {
           type: "FeatureCollection",
+          metadata: {
+            count: data.length
+          },
           features
         };
       }
@@ -476,43 +388,21 @@ function padZero(str, len) {
     },
     createGeoJsonLayer(map) {
       // Create a geojson feature from static json module.
+
       const data = this.retrieveStaticData();
       const geoJson = this.createGeoJson(data);
-      // Set bounds from geojson.
+      console.log(geoJson);
       map.fitBounds(L.geoJson(geoJson).getBounds());
-      const currentZoom = map.getZoom();
 
-      if (typeof geoJson !== "undefined") {
-        return L.geoJson(geoJson, {
-          pointToLayer(feature, latlng) {
-            const circle = L.circle(latlng, 3600 / currentZoom, {
-              color: "#333",
-              className: "auto_hide",
-              weight: 1,
-              fillColor: "#333",
-              fillOpacity: 0.2
-            });
-            // map.panTo(latlng);
-            setTimeout(() => {
-              $(".auto_hide").animate({ opacity: 0 }, 500, () => {
-                map.removeLayer(circle);
-              });
-            }, 3000);
-            return circle;
-          }
-        });
-      }
+      return geoJson;
     },
 
-    createGeoJsonTimedLayer(map) {
-      const geoJsonLayer = Drupal.markaspot_map.createGeoJsonLayer(map);
-      // console.log(drupalSettings['mas']['timeline_period']);.
-      if (typeof geoJsonLayer !== "undefined") {
-        return new L.TimeDimension.Layer.MaS(geoJsonLayer, {
-          updateTimeDimension: true,
-          duration: drupalSettings.mas.timeline_period
-        });
-      }
+    createGeoJsonTimedLayer() {
+      const geoJsonLayer = Drupal.markaspot_map.createGeoJsonLayer();
+      // console.log(geoJsonLayer);
+      return geoJsonLayer;
+      // console.log(drupalSettings['mas']['timeline_period']);
+
     },
 
     transformGeoJson2heat(geojson, intensity) {
