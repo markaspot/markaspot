@@ -46,12 +46,13 @@ function padZero(str, len) {
   var markerLayer;
   var scrolledMarker = [];
   var currentPath = drupalSettings.path.currentPath;
-  currentPath = "/".concat(currentPath);
+  currentPath = "".concat(currentPath);
   var masSettings = drupalSettings.mas;
   Drupal.behaviors.markaspot_map = {
     attach: function attach(context, settings) {
       Drupal.Markaspot.settings = masSettings;
       var mapSelector = $("#map");
+      var center = [[masSettings.center_lat, masSettings.center_lng]];
 
       if (typeof mapSelector === 'undefined') {
         return;
@@ -66,14 +67,14 @@ function padZero(str, len) {
           dragging: !L.Browser.mobile,
           zoom: masSettings.zoom_initial
         });
-        $("#map").css("background-color:".concat(masSettings.map_background));
         var tileLayer;
         var map = Drupal.Markaspot.maps[0];
 
         if (masSettings.map_type === "0") {
           var gl = L.mapboxGL({
             accessToken: masSettings.mapbox_token,
-            style: masSettings.mapbox_style
+            style: masSettings.mapbox_style,
+            center: center
           }).addTo(map);
         }
 
@@ -97,73 +98,11 @@ function padZero(str, len) {
           maxClusterRadius: 20
         });
         map.addLayer(markerLayer);
-
-        if (currentPath === "/node") {
-          Drupal.markaspot_map.createHeatMapLayer(map);
-          Drupal.markaspot_map.setDefaults();
-        }
-
-        if (currentPath === masSettings.visualization_path || currentPath === "/home") {
-          var geoJsonTimedLayer = Drupal.markaspot_map.createGeoJsonTimedLayer(map);
-          var heatStart = [[masSettings.center_lat, masSettings.center_lng, 1]];
-          var heatLayer = new L.HeatLayer(heatStart).addTo(map);
-          heatLayer.id = "heatTimedLayer";
-          var heatControls = L.easyButton({
-            position: "bottomright",
-            states: [{
-              stateName: "add-heatControls",
-              icon: "fa-thermometer-4",
-              title: Drupal.t("Show Heatmap"),
-              onClick: function onClick(control) {
-                Drupal.markaspot_map.createGeoJsonTimedLayer(map);
-                control.state("remove-heatControls");
-                control.heatMapLayer = Drupal.markaspot_map.createHeatMapLayer();
-                control.heatMapLayer.addTo(map);
-              }
-            }, {
-              stateName: "remove-heatControls",
-              icon: "fa-thermometer-4 active",
-              title: Drupal.t("Hide Heatmap"),
-              onClick: function onClick(control) {
-                map.removeLayer(control.heatMapLayer);
-                control.state("add-heatControls");
-              }
-            }]
-          });
-          heatControls.addTo(map);
-          var timeControls = L.easyButton({
-            position: "bottomright",
-            states: [{
-              stateName: "add-timeControls",
-              icon: "fa-clock-o",
-              title: Drupal.t("Show TimeControl Layer"),
-              onClick: function onClick(control) {
-                control.state("remove-timeControls");
-                console.log("clicked");
-              }
-            }, {
-              icon: "fa-clock-o active",
-              stateName: "remove-timeControls",
-              title: Drupal.t("Remove TimeControl Layer"),
-              onClick: function onClick(control) {
-                map.removeControl(timeControls);
-                map.removeLayer(geoJsonTimedLayer);
-                map.removeLayer(heatLayer);
-                control.state("add-timeControls");
-              }
-            }]
-          });
-          timeControls.addTo(map);
-        }
-
         localStorage.setItem("storedNids", JSON.stringify(""));
       });
       var storedNids = JSON.parse(localStorage.getItem("storedNids"));
       var nids = Drupal.markaspot_map.getNids(masSettings.nid_selector);
-
-      if (!nids.length) {
-        Drupal.markaspot_map.setDefaults(masSettings);
-      }
+      Drupal.markaspot_map.setDefaults(masSettings);
 
       if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
         localStorage.setItem("storedNids", JSON.stringify(nids));
@@ -261,7 +200,7 @@ function padZero(str, len) {
           });
         }
       });
-      var timelineControl = L.timelineSliderControl({
+      Drupal.markaspot_map.timelineControl = L.timelineSliderControl({
         formatOutput: function formatOutput(date) {
           var dateObj = new Date(date);
           var yyyy = dateObj.getFullYear();
@@ -270,15 +209,14 @@ function padZero(str, len) {
           return "".concat(dd, ".").concat(mm, ".").concat(yyyy);
         }
       });
+      var timelineControl = Drupal.markaspot_map.timelineControl;
       timelineControl.addTo(map);
       timelineControl.addTimelines(timeline);
       timeline.addTo(map);
     },
     hideTimeControl: function hideTimeControl() {
-      console.log("hide");
       var map = Drupal.Markaspot.maps[0];
-      map.removeControl(Drupal.markaspot_map.timeControl);
-      map.removeLayer(Drupal.Markaspot.geoJsonTimedLayer);
+      map.removeControl(Drupal.markaspot_map.timelineControl);
     },
     showCircle: function showCircle(marker) {
       var markerId = marker.nid;
@@ -289,7 +227,6 @@ function padZero(str, len) {
 
       this.marker = markerId;
       var map = Drupal.Markaspot.maps[0];
-      var currentZoom = map.getZoom();
       var mapDefaultZoom = masSettings.zoom_initial;
 
       if (typeof marker === "undefined") {
@@ -355,8 +292,6 @@ function padZero(str, len) {
     createGeoJsonLayer: function createGeoJsonLayer(map) {
       var data = this.retrieveStaticData();
       var geoJson = this.createGeoJson(data);
-      console.log(geoJson);
-      map.fitBounds(L.geoJson(geoJson).getBounds());
       return geoJson;
     },
     createGeoJsonTimedLayer: function createGeoJsonTimedLayer() {
@@ -399,7 +334,7 @@ function padZero(str, len) {
         var map = Drupal.Markaspot.maps[0];
         var currentZoom = map.getZoom();
         var fullscreen = map.isFullscreen();
-        var target = $("article[data-history-node-id=".concat(nid, "]"));
+        var target = $("article[data - history - node - id = ".concat(nid, "]"));
 
         if (target.length && fullscreen === false && currentPath !== "/home") {
           map.setZoom(currentZoom + 2);

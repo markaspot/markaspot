@@ -5,22 +5,25 @@
 * @preserve
 **/
 
-(function (Drupal) {
-  Drupal.mas_olivero = {};
-  Drupal.behaviors.mas_olivero_navigation = {
+(function ($, Drupal) {
+  Drupal.behaviors.mas_olivero = {
     attach: function attach(context) {
       var stickyHeaderState = localStorage.getItem('Drupal.olivero.stickyHeaderState');
-      var body = context.querySelector('body');
 
-      if (body.classList.contains('path-frontpage') == false && body.classList.contains('page-node-type-page') == false && body.classList.contains('path-report') == false) {
-        var map = context.querySelector('[data-drupal-selector="map-request-block"]');
+      if (!context.querySelector('body')) {
+        return;
+      }
+
+      if (context.querySelector('.path-requests')) {
+        var _map = context.querySelector('[data-drupal-selector="map-request-block"]');
+
         Drupal.sticky = new Waypoint.Sticky({
-          element: map,
+          element: _map,
           wrapper: '<div class="sticky-wrapper waypoint" />'
         });
 
         if (JSON.parse(stickyHeaderState).value == true) {
-          map.classList.add("stuck-nav");
+          _map.classList.add("stuck-nav");
         }
       }
     }
@@ -72,4 +75,13 @@
     characterData: false,
     subtree: false
   };
-})(Drupal);
+  var map = document.getElementById('map');
+
+  if (map !== null) {
+    var _observer = new MutationObserver(function (mutations) {
+      return Drupal.Markaspot.maps[0].invalidateSize();
+    });
+
+    _observer.observe(map, config);
+  }
+})(jQuery, Drupal);

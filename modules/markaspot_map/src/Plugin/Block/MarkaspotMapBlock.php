@@ -20,7 +20,7 @@ class MarkaspotMapBlock extends BlockBase {
   public function build() {
     return array(
       '#type' => 'markup',
-      '#markup' => '<ul class="notifications"></ul><div id="map" class="map-block" data-slideout-ignore><div 
+      '#markup' => '<div id="map" class="map-block" data-slideout-ignore><div
 class="log"><div class="log_header"><span class="left"></span><span class="right"></span></div><ul class="log_list"></ul></div></div>',
       '#attached' => array(
         'library' => array(

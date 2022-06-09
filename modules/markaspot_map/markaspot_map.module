@@ -8,7 +8,7 @@ function markaspot_map_page_attachments(array &$page) {
   $page['#attached']['drupalSettings']['mas'] = $attached;
 
   $path =\Drupal::service('path.current')->getPath();
-  if ($path !== '/report' && !strstr($path, 'node/add') && !strstr($path, 'edit')) {
+  if ($path !== '/report' && !strstr($path, 'admin')  && !strstr($path, 'node/add') && !strstr($path, 'edit')) {
     $page['#attached']['library'][] = 'markaspot_map/map';
 
     if ($attached['map_type'] == '0') {
