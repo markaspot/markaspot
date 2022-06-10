@@ -58,6 +58,17 @@ function padZero(str, len) {
         return;
       }
 
+      var $serviceRequests = $(masSettings.nid_selector);
+      $serviceRequests.hover(function () {
+        var nid = this.dataset.historyNodeId;
+        var $node = this;
+        scrolledMarker.forEach(function (value) {
+          if (value["nid"] == nid) {
+            $node.classList.toggle("focus");
+            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+          }
+        });
+      });
       mapSelector.once("markaspot_map").each(function () {
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
@@ -123,17 +134,6 @@ function padZero(str, len) {
         }
       }
 
-      var $serviceRequests = $(masSettings.nid_selector);
-      $serviceRequests.hover(function () {
-        var nid = this.dataset.historyNodeId;
-        var $node = this;
-        scrolledMarker.forEach(function (value) {
-          if (value["nid"] == nid) {
-            $node.classList.toggle("focus");
-            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-          }
-        });
-      });
       $('.view-content').once('markaspot_map').each(function () {
         $serviceRequests.each(function () {
           new Waypoint({

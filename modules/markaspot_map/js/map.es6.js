@@ -59,6 +59,20 @@ function padZero(str, len) {
       if (typeof mapSelector === 'undefined'){
         return;
       }
+
+      // Theme independent selector.
+      const $serviceRequests = $(masSettings.nid_selector);
+      $serviceRequests.hover(function () {
+        const nid = this.dataset.historyNodeId;
+        const $node = this;
+        scrolledMarker.forEach(function (value) {
+          if (value["nid"] == nid) {
+            $node.classList.toggle("focus");
+            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
+          }
+        });
+      });
+      
       mapSelector.once("markaspot_map").each(() => {
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
@@ -128,18 +142,7 @@ function padZero(str, len) {
           }, nids);
         }
       }
-      // Theme independent selector.
-      const $serviceRequests = $(masSettings.nid_selector);
-      $serviceRequests.hover(function () {
-        const nid = this.dataset.historyNodeId;
-        const $node = this;
-        scrolledMarker.forEach(function (value) {
-          if (value["nid"] == nid) {
-            $node.classList.toggle("focus");
-            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-          }
-        });
-      });
+
       $('.view-content').once('markaspot_map').each(function () {
 
         // Loop through all current teasers.
