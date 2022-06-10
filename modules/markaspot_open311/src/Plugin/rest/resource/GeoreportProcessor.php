@@ -386,7 +386,9 @@ class GeoreportProcessor {
     if (isset($node->field_request_media)) {
       foreach ($node->get('field_request_media')->getValue() as $media) {
         $media = Media::load($media['target_id']);
-        $image_uris[] = ($media->isPublished()) ? file_create_url($media->field_media_image->entity->getFileUri()) : '';
+        if (isset($media->field_media_image->entity)) {
+          $image_uris[] = ($media->isPublished()) ? file_create_url($media->field_media_image->entity->getFileUri()) : '';
+        }
       }
     }
 
