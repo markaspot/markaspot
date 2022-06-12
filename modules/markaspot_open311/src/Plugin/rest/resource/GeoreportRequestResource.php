@@ -262,7 +262,7 @@ class GeoreportRequestResource extends ResourceBase {
     if (empty($nodes)) {
       throw new NotFoundHttpException('Service-Request not found');
     }
-    $revisionLogMessage = $values['revision_log_message'];
+    $revisionLogMessage = isset($values['revision_log_message']) ?? '';
     unset($values['revision_log_message']);
 
 

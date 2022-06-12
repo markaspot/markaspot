@@ -57,7 +57,9 @@ class GeoreportRequestHandler implements ContainerAwareInterface {
       // format. If the serializer cannot handle it an exception will be thrown
       // that bubbles up to the client.
       $config = $this->container->get('config.factory')->get('rest.settings')->get('resources');
-      $method_settings = $config[$plugin][$request->getMethod()];
+      if (isset($config)) {
+        $method_settings = $config[$plugin][$request->getMethod()];
+      }
       $request_all = $request->request->all();
 
       if (empty($method_settings['supported_formats']) || in_array($format, $method_settings['supported_formats'])) {
