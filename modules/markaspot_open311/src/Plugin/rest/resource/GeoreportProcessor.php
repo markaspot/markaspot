@@ -9,6 +9,7 @@ use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\paragraphs\Entity\Paragraph;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
@@ -88,7 +89,7 @@ class GeoreportProcessor {
     $values['changed'] = time();
 
     $category_tid = isset($request_data['service_code']) ? $this->serviceMapTax($request_data['service_code']) : NULL;
-    $values['field_category'] = (count($category_tid) == 1) ? $category_tid[0][0] : NULL;
+    $values['field_category'] = $category_tid;
     if ($values['field_category'] == NULL && $op !== 'update') {
       throw new GeoreportException(t('Service-Code empty or not valid'), 400);
     }
@@ -189,23 +190,23 @@ class GeoreportProcessor {
    *   The TaxonomyId
    */
   public function serviceMapTax($service_code) {
-    $categories = explode(',', $service_code);
-    foreach ($categories as $category) {
-      $terms[] = \Drupal::entityTypeManager()
+    $service_codes = explode(',', $service_code);
+    if (count($service_codes) > 1) {
+      throw new GeoreportException(t('Service Code has to be unique'), 400);
+    }
+    foreach ($service_codes as $service_code) {
+      $terms = \Drupal::service('entity_type.manager')
+        ->getStorage('taxonomy_term')->loadByProperties(['field_service_code' => trim($service_code)]);
+      $term = reset($terms);
+      return !empty($term) ? $term->id() : NULL;
+      $terms = \Drupal::entityTypeManager()
         ->getStorage('taxonomy_term')
-        ->loadByProperties(['field_service_code' => trim($category)]);
+        ->loadByProperties(['field_service_code' => trim($service_code)]);
     }
 
-    foreach ($terms as $term){
-      $ids[] = array_keys($term);
-    }
-    if ($ids != FALSE) {
-      return $ids;
-    }
-    else {
-      new NotFoundHttpException('Servicecode not found');
-    }
-    return FALSE;
+    $term = reset($terms);
+    return !empty($term) ? $term->id() : new NotFoundHttpException('Servicecode not found');;
+
   }
 
   /**
