@@ -47,7 +47,7 @@
     });
     function onLocationFound(e) {
       map.stopLocate();
-      console.log(e);
+      // console.log(e);
       reverseGeocode(e.latlng);
     }
 
@@ -93,6 +93,7 @@
 
     const handleResult = result => {
       const location = Drupal.geolactionMapboxparseReverseGeo(result.location.raw);
+      // console.log(marker);
       updateCallback(marker, map, location);
       map.removeLayer(marker);
 
@@ -106,19 +107,14 @@
 
     // Init default values.
     if (mapSettings.lat && mapSettings.lng) {
-      var result = {
-        center: [mapSettings.lat, mapSettings.lng],
-        name: mapSettings.label
-      };
 
       // Map lat and lng are always set to user defined values or 0 initially.
       // If field values already set, use only those and set marker.
-      var fieldValues = {
+      const fieldValues = {
         lat: $('.geolocation-widget-lat.for--' + mapSettings.id, context).attr('value'),
         lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value')
       };
-      var initLatLng = new L.latLng(fieldValues.lat, fieldValues.lng);
-      //setMarker(result, initLatLng);
+
       map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
       reverseGeocode(fieldValues)
 
@@ -165,7 +161,7 @@
         const location = Drupal.geolactionMapboxparseReverseGeo(body.features[0]);
         setMarker(location, latlng);
         updateCallback(marker, map, location);
-        console.log(location)
+        // console.log(location)
       });
 
       $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat')
