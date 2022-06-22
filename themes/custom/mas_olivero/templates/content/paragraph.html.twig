@@ -51,7 +51,7 @@
     {% block content %}
       {{ content }}
       <div class="node__meta">
-        <span{{ author_attributes }}>{{paragraph.getCreatedTime|date('d.m.Y H:m')}}</span>
+        <span{{ author_attributes }}>{{ paragraph.getCreatedTime|format_date('medium') }}</span>
       </div>
     {% endblock %}
   </div>
