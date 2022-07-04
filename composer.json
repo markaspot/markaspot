@@ -45,7 +45,7 @@
     "npm-asset/caman": "^4.1",
     "npm-asset/chart.js": "^2.7",
     "npm-asset/vue": "^2.5",
-    "npm-asset/vue-chartjs": "^3.4",
+    "npm-asset/vue-chartjs": "3.4",
     "npm-asset/vue-router": "^3.0",
     "bower-asset/bootstrap-offcanvas": "^2.5",
     "oomphinc/composer-installers-extender": "^2",
@@ -94,6 +94,7 @@
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
+  "prefer-dist": true,
   "extra": {
     "installer-types": [
       "bower-asset",
