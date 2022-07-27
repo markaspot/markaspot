@@ -8,30 +8,7 @@
 use Drupal\user\Entity\User;
 use Drupal\user\RoleInterface;
 use Drupal\shortcut\Entity\Shortcut;
-
-/**
- * Implements hook_install().
- *
- * Perform actions to set up the site for this profile.
- *
- * @see system_install()
- */
-
-/**
- * Implements hook_install_tasks().
- */
-function markaspot_install_tasks(&$install_state) {
-  return [
-    'configurable_profile_dependencies' => [
-      'display_name' => t('Configurable Modules'),
-      'display' => TRUE,
-      'type' => 'form',
-      'function' => 'Drupal\markaspot\Form\ConfigurableProfileDependenciesForm',
-    ],
-  ];
-}
-
-
+use Drupal\node\Entity\Node;
 
 /**
  * Enables the twig_tweak and markaspot_trend modules.
@@ -71,7 +48,7 @@ function markaspot_update_ids(){
   $nids = \Drupal::entityQuery('node')->condition('type','service_request')->execute();
   $nodes =  \Drupal\node\Entity\Node::loadMultiple($nids);
 
-  foreach ($nodes as $nodeya) {
+  foreach ($nodes as $node) {
     $node->set('request_id', $node->uuid());
     $node->save();
   }

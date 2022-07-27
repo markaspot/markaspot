@@ -64,22 +64,6 @@ content:
     third_party_settings: {  }
     type: email_default
     region: content
-  field_geolocation:
-    type: geolocation_nominatim_widget
-    weight: 0
-    settings:
-      zoom: '18'
-      center_lat: '40.72353945'
-      center_lng: '-73.9509387658507'
-      limit_countrycodes: us
-      limit_viewbox: '-74.27582,40.85485,-73.67363,40.49030'
-      set_address_field: '1'
-      tileServerUrl: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png'
-      serviceUrl: 'https://nominatim.openstreetmap.org/'
-      city: ''
-      autoLocate: false
-    third_party_settings: {  }
-    region: content
   field_image:
     type: image_image
     weight: 6

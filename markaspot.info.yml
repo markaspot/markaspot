@@ -8,11 +8,9 @@ distibution:
     finish_url: admin/content
 dependencies:
 
-  - admin_toolbar
   - address
   - services_api_key_auth
   - automated_cron
-  - better_normalizers
   - block
   - block_content
   - breakpoint
@@ -25,13 +23,11 @@ dependencies:
   - contextual
   - datetime
   - dblog
-  - default_content
   - diff
   - dynamic_page_cache
   - editor
   - entity_reference_revisions
   - fa_icon_class
-  - features_ui
   - field_formatter_class
   - field_group
   - field_ui
@@ -53,7 +49,6 @@ dependencies:
   - path
   - pathauto
   - paragraphs
-  - pbf
   - quickedit
   - rdf
   - responsive_image
@@ -70,12 +65,10 @@ dependencies:
   - views
   - views_infinite_scroll
   - views_ui
-  - views_bootstrap
   - markaspot_archive
   - markaspot_article
   - markaspot_blocks
   - markaspot_comment
-  - markaspot_group
   - markaspot_open311
   - markaspot_map
   - markaspot_media
@@ -90,13 +83,6 @@ dependencies:
   - markaspot_trend
   - markaspot_validation
   - service_request
-
-configurable_dependencies:
-  markaspot_default_content:
-    label: Mark-a-Spot Default Content
-    description: Provides default content so you can see the Mark-a-Spot features in action.
-    enabled: true
-
 
 themes:
   - mas_olivero
