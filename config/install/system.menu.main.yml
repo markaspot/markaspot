@@ -1,8 +1,0 @@
-langcode: en
-status: true
-dependencies: {  }
-id: main
-weight: 2
-label: 'Main navigation'
-description: 'Site section links'
-locked: true
