@@ -3,5 +3,3 @@ type: module
 description: 'Privacy term checkbox field and term page'
 core_version_requirement: ^8 || ^9
 package: 'Mark-a-Spot'
-dependencies:
-  - default_content
