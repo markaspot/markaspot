@@ -21,21 +21,15 @@ font-awesome:
       /libraries/font-awesome/css/all.min.css: {}
       /libraries/font-awesome/css/v4-shims.min.css: {}
 
-leaflet-control-geocoder:
+leaflet-geosearch:
   css:
     component:
-      /libraries/leaflet-control-geocoder/dist/Control.Geocoder.css: {}
+      /libraries/leaflet-geosearch/dist/geosearch.css: {}
   js:
-    /libraries/leaflet-control-geocoder/dist/Control.Geocoder.js: {}
+    /libraries/leaflet-geosearch/dist/bundle.min.js: {}
   dependencies:
-    - geolocation_nominatim/leaflet
-
-leaflet-control-geocoder-city:
-  js:
-    Control.Geocoder.NominatimCity.js: {}
-  dependencies:
-    - geolocation_nominatim/leaflet-control-geocoder
-    - geolocation_nominatim/leaflet
+    - geolocation_nominatum/geolocation-nominatim-widget
+    - geolocation_nominatum/leaflet
 
 leaflet-locatecontrol:
   js:

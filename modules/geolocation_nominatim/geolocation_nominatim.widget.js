@@ -20,8 +20,8 @@
         mapSettings.centerLat,
         mapSettings.centerLng
       ], 18);
-    var map = Drupal.geolocationNominatimWidget.map;
-    var tileLayer;
+    const map = Drupal.geolocationNominatimWidget.map;
+    let tileLayer;
     if (mapSettings.wmsLayer === "") {
       tileLayer = L.tileLayer(mapSettings.tileServerUrl);
     } else {
@@ -33,11 +33,11 @@
 
     map.addLayer(tileLayer);
 
-    var locateOptions = {
+    const locateOptions = {
       position: 'bottomright'
     };
 
-    var lc = L.control.locate(locateOptions).addTo(map);
+    const lc = L.control.locate(locateOptions).addTo(map);
 
     // Check for ongoing validation and autolocate settings combination.
     if (mapSettings.autoLocate && !$('.messages')[0]) {
@@ -46,16 +46,51 @@
 
     function onLocationFound(e) {
       map.stopLocate();
+      // console.log(e);
       reverseGeocode(e.latlng);
     }
 
+    map.on('locationfound', onLocationFound);
 
-    $('#locateMe').click(function(){
-      lc.start();
+
+
+    // Define provider.
+    const provider = new GeoSearch.OpenStreetMapProvider({
+      params:{
+        'access_token': mapSettings.mapboxToken,
+        'country': mapSettings.limitCountryCodes,
+        'language': mapSettings.limitCountryCodes,
+        'bbox': [mapSettings.limitViewbox],
+        'bounded': 1,
+        'limit': 15,
+        'city': mapSettings.city,
+      },
+      searchUrl: mapSettings.serviceUrl + 'search/',
+
     });
 
-
-    map.on('locationfound', onLocationFound);
+    // Add Control.
+    const search = GeoSearch.GeoSearchControl({
+      style: 'bar',
+      provider: provider, // required
+      /* position: 'topright', */
+      showMarker: true, // optional: true|false  - default true
+      showPopup: true, // optional: true|false  - default false
+      marker: {
+        // optional: L.Marker    - default L.Icon.Default
+        icon: new L.Icon.Default(),
+        draggable: false,
+      },
+      popupFormat: ({ query, result }) => result.label, // optional: function    - default returns result label,
+      resultFormat: ({ result }) => result.label, // optional: function    - default returns result label
+      maxMarkers: 1, // optional: number      - default 1
+      retainZoomLevel: true, // optional: true|false  - default false
+      animateZoom: true, // optional: true|false  - default true
+      autoClose: false, // optional: true|false  - default false
+      searchLabel: Drupal.t('Street name'), // optional: string      - default 'Enter address'
+      keepResult: false, // optional: true|false  - default false
+      updateMap: true, // optional: true|false  - default true
+    });
 
     // Init geocoder.
     var geocodingQueryParams = {};
@@ -69,49 +104,39 @@
         'city': mapSettings.city
       };
     }
+    map.addControl(search);
 
-    var geocoderNominatim = new L.Control.Geocoder.NominatimCity({
-      // Todo: Make this an optional setting.
-      serviceUrl: mapSettings.serviceUrl,
-      geocodingQueryParams: geocodingQueryParams,
-      reverseQueryParams: {
-        key: mapSettings.LocationIQToken,
-        extratags: 1,
-        namedetails: 0,
-        addressdetails: 1
-      }
-    });
-    var geocoder = L.Control.geocoder({
-      defaultMarkGeocode: false,
-      collapsed: false,
-      geocoder: geocoderNominatim,
-      placeholder: Drupal.t('Street search'),
-      errorMessage: Drupal.t('Nothing found.')
-    });
-
-    var marker;
+    const handleResult = result => {
+      // console.log(result)
+      const location = Drupal.geolactionNominatimParseReverseGeo(result.location.raw);
+      // console.log(marker);
+      updateCallback(marker, map, location);
+      map.removeLayer(marker);
+      map.setView([result.location.y,result.location.x], 18)
+      $('.geolocation-widget-lng.for--geolocation-mapbox-map')
+        .attr('value', result.location.x);
+      $('.geolocation-widget-lat.for--geolocation-mapbox-map')
+        .attr('value', result.location.y);
+    };
+    map.on('geosearch/showlocation', handleResult);
 
     // Init default values.
     if (mapSettings.lat && mapSettings.lng) {
-      var result = {
-        center: [mapSettings.lat, mapSettings.lng],
-        name: mapSettings.label
-      };
-
       // Map lat and lng are always set to user defined values or 0 initially.
       // If field values already set, use only those and set marker.
-      var fieldValues = {
+      const fieldValues = {
         lat: $('.geolocation-widget-lat.for--' + mapSettings.id, context).attr('value'),
         lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value')
       };
-      var initLatLng = new L.latLng(fieldValues.lat, fieldValues.lng);
-      reverseGeocode(initLatLng);
 
-      map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
+      map.setView([fieldValues.lat, fieldValues.lng], 18);
+      reverseGeocode(fieldValues);
     }
 
+
+
     function setMarker(result, latLng) {
-      var address = result.properties.address;
+      var address = result;
       var $val = '';
 
       if (address.road) {
@@ -128,7 +153,7 @@
       }
       $input = $('.leaflet-control-geocoder-form input');
       $input.val($val);
-      if (marker) {
+      if (typeof marker !== "undefined") {
         map.removeLayer(marker);
       }
       // Check if method is called with a pair of coordinates to prevent
@@ -137,7 +162,7 @@
 
       marker = L.marker(latLng, {
         draggable: true
-      }).bindPopup(result.html || result.name).addTo(map).openPopup();
+      }).bindPopup(result.text || result.display_name).addTo(map).openPopup();
       // map.setView(latLng).setZoom(zoom);
       marker.on('dragend', function (e) {
         updateCallback(marker, map, result);
@@ -147,51 +172,45 @@
     }
 
     // Variable to disable click events on the map while the geocoder is active.
-    map._geocoderIsActive = false;
-    geocoder.on('markgeocode', function (result) {
-      this._map.fitBounds(result.geocode.bbox);
-      setMarker(result.geocode, result.geocode.center);
-      // Set a delay to re-enable click events on the map.
-      window.setTimeout(function () {
-        map._geocoderIsActive = false
-      }, 500);
-      /* marker = L.marker(latLng, {
-        draggable: true
-      }).bindPopup(result.html || result.name).addTo(map).openPopup();
-      */
-    });
-    geocoder.on('startgeocode', function () {
-      map._geocoderIsActive = true;
-    });
+
     map.on('click', function (e) {
       if (map._geocoderIsActive) {
         return;
       }
       reverseGeocode(e.latlng);
     });
+
     function reverseGeocode(latlng) {
-      geocoder.options.geocoder.reverse(latlng, map.options.crs.scale(map.getZoom()), function (results) {
-        // Todo: Check if found result is close enough?
-        if (results[0]) {
-          setMarker(results[0], latlng);
+      const url = mapSettings.serviceUrl + 'reverse/?' + 'lon=' + latlng.lng + "&lat=" + latlng.lat + "&format=json";
+      fetch(url).then(function (response) {
+        return response.json();
+      })
+        .then(function (body) {
+          // console.log(body)
+          const location = Drupal.geolactionNominatimParseReverseGeo(body);
+          //console.log(location);
+          setMarker(location, latlng);
+          updateCallback(marker, map, location);
+          // console.log(location)
+        });
 
-          $('.field--widget-geolocation-nominatim-widget .geolocation-hidden-lat')
-            .attr('value', latlng.lat);
-          $('.field--widget-geolocation-nominatim-widget .geolocation-hidden-lng')
-            .attr('value', latlng.lng);
-
-        }
-      });
+      $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat')
+        .attr('value', latlng.lat);
+      $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lng')
+        .attr('value', latlng.lng);
     }
 
-    geocoder.addTo(map);
+
+
+    // geocoder.addTo(map);
   };
 
   Drupal.geolocationNominatimSetAddressField = function (mapSettings, result, context) {
-    if (!('properties' in result && 'address' in result.properties)) {
+    console.log(result);
+    if (!('road' in result)) {
       return;
     }
-    var address = result.properties.address;
+    var address = result;
     var $form = $('.geolocation-widget-lat.for--' + mapSettings.id, context)
       .parents('form');
     var $address = $form.find('.field--type-address').first();
@@ -226,6 +245,18 @@
       }
     }
   },
+    Drupal.geolactionNominatimParseReverseGeo = function (geoData) {
+      // console.log(geoData);
+      let address = {};
+      if(geoData){
+        address = geoData.address
+        address.place_name = address.road + " " + address.house_number;
+        address.text = geoData.display_name;
+        // console.log(address)
+      }
+      // console.log(address)
+      return address;
+    },
 
     Drupal.geolocationNominatimSetAddressDetails = function ($address, details) {
       if ('postcode' in details) {

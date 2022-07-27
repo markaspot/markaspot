@@ -198,8 +198,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'library' => [
         'geolocation_nominatim/leaflet',
         'geolocation_nominatim/leaflet-locatecontrol',
-        'geolocation_nominatim/leaflet-control-geocoder',
-        'geolocation_nominatim/leaflet-control-geocoder-city',
+        'geolocation_nominatim/leaflet-geosearch',
         'geolocation_nominatim/geolocation-nominatim-widget',
         'geolocation_nominatim/leaflet.fullscreen',
       ],
