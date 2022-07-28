@@ -28,8 +28,8 @@ leaflet-geosearch:
   js:
     /libraries/leaflet-geosearch/dist/bundle.min.js: {}
   dependencies:
-    - geolocation_nominatum/geolocation-nominatim-widget
-    - geolocation_nominatum/leaflet
+    - geolocation_nominatim/geolocation-nominatim-widget
+    - geolocation_nominatim/leaflet
 
 leaflet-locatecontrol:
   js:
