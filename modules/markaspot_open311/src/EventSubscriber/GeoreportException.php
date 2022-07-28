@@ -43,7 +43,7 @@ class GeoreportException implements EventSubscriberInterface {
 
       $exceptionCode = method_exists($exception, 'getStatusCode') ? $exception->getStatusCode() : $exception->getCode();
 
-      if ($exceptionCode == 400 && count($exception->getViolations())) {
+      if ($exceptionCode == 400 && is_countable($exception->getViolations())) {
         $errors = [];
         $violations = $exception->getViolations();
 
