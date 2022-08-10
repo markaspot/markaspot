@@ -65,7 +65,7 @@
         'limit': 15,
         'city': mapSettings.city,
       },
-      searchUrl: mapSettings.serviceUrl + 'search/',
+      searchUrl: mapSettings.serviceUrl + 'search',
 
     });
 
@@ -181,7 +181,7 @@
     });
 
     function reverseGeocode(latlng) {
-      const url = mapSettings.serviceUrl + 'reverse/?' + 'lon=' + latlng.lng + "&lat=" + latlng.lat + "&format=json";
+      const url = mapSettings.serviceUrl + 'reverse?' + 'lon=' + latlng.lng + "&lat=" + latlng.lat + "&format=json";
       fetch(url).then(function (response) {
         return response.json();
       })
