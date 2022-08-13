@@ -39,7 +39,7 @@ function markaspot_resubmission_cron() {
   // minute) so keep a time for the next run in the site state.
   $next_execution = \Drupal::state()
     ->get('markaspot_resubmission.next_execution', 0);
-  if (REQUEST_TIME >= $next_execution) {
+  if (\Drupal::time()->getRequestTime() >= $next_execution) {
 
     $resubmissionSendable = \Drupal::service('markaspot_resubmission.resubmission')->load();
     // $config = \Drupal::configFactory()->getEditable('markaspot_resubmission.settings');
@@ -78,7 +78,7 @@ function markaspot_resubmission_cron() {
     }
 
     \Drupal::state()
-      ->set('markaspot_resubmission.next_execution', REQUEST_TIME + $interval);
+      ->set('markaspot_resubmission.next_execution', \Drupal::time()->getRequestTime() + $interval);
   }
 
 }

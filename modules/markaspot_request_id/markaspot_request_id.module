@@ -189,15 +189,12 @@ function markaspot_request_id_create_request_id() {
       ->execute();
 
     foreach ($request_ids as $id) {
-      return $id->request_id;
+      $id = $id->request_id;
     }
   } else {
-    $query = \Drupal::entityQuery('node');
-
-    // get the latest nid of all existing service-requests.
-    $query
-      ->condition('type', 'service_request')
+    $query = \Drupal::entityQuery('node')
       ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
       ->sort('nid', 'DESC')
       ->range(0, 1);
 
@@ -221,6 +218,8 @@ function markaspot_request_id_create_request_id() {
       return (isset($id_pattern)) ? $next . '-' . date($id_pattern) : $next;
     }
   }
+  return $id;
+
 }
 
 /**
@@ -263,8 +262,9 @@ function markaspot_request_id_create_title($node, $request_id) {
       $service_name = \Drupal::service('entity.repository')
         ->getTranslationFromContext($taxonomy_term, $language);
     }
-    return '#' . $request_id . ' ' . $service_name->name->value;
   }
+  return '#' . $request_id . ' ' . $service_name->name->value;
+
 }
 
 

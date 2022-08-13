@@ -1,38 +1,124 @@
 <?php
 
-namespace Drupal\markaspot_open311\Plugin\rest\resource;
+namespace Drupal\markaspot_open311\Service;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Entity\EntityBase;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\ContentEntityBase;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\File\FileUrlGenerator;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
-use Drupal\media\Entity\Media;
+use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
-use Drupal\taxonomy\Entity\Term;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\paragraphs\Entity\Paragraph;
-use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Component\Datetime\TimeInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * Class GeoreportProcessor parsing.
+ * Class GeoreportProcessorService parsing.
  *
  * @package Drupal\markaspot_open311\Plugin\rest\resource
  */
-class GeoreportProcessor {
+class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
+
+  use StringTranslationTrait;
 
   /**
-   * Load Open311 config.
+   * The time service.
+   *
+   * @var \Drupal\Component\Datetime\TimeInterface
+   */
+  protected $time;
+
+  /**
+   * The request stack.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected $requestStack;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected $entityTypeManager;
+
+  /**
+   * A current user instance.
+   *
+   * @var \Drupal\Core\Session\AccountProxyInterface
+   */
+  protected $currentUser;
+
+  /**
+   * The markaspot_open311.settings config object.
    *
    * @var \Drupal\Core\Config\Config
    */
   protected $config;
 
   /**
-   * GeoreportProcessor constructor.
+   * File url generator object.
+   *
+   * @var \Drupal\Core\File\FileUrlGenerator
    */
-  public function __construct() {
-    $this->config = \Drupal::configFactory()
-      ->getEditable('markaspot_open311.settings');
+  protected $fileUrlGenerator;
+
+  /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
+  protected $moduleHandler;
+
+  /**
+   * GeoreportProcessorService constructor.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The config object.
+   * @param \Drupal\Core\Session\AccountProxyInterface $current_user
+   *   A current user instance.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   *   The Symfony Request Stack.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
+   * @param \Drupal\Core\File\FileUrlGenerator $fileUrlGenerator
+   *   File url generator object.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   *   The module handler.
+   */
+  public function __construct(ConfigFactoryInterface $configFactory, AccountProxyInterface $current_user, TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, FileUrlGenerator $fileUrlGenerator, ModuleHandlerInterface $module_handler) {
+    $this->config = $configFactory->get('markaspot_open311.settings');
+    $this->currentUser = $current_user;
+    $this->time = $time;
+    $this->requestStack = $request_stack;
+    $this->entityTypeManager = $entity_type_manager;
+    $this->fileUrlGenerator = $fileUrlGenerator;
+    $this->moduleHandler = $module_handler;
   }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Public static function create() {
+   * return new static(
+   * $container->get('config.factory'),
+   * $container->get('current_user'),
+   * $container->get('datetime.time'),
+   * $container->get('request_stack'),
+   * $container->get('entity_type.manager'),
+   * );
+   * }
+   */
 
   /**
    * Get discovery from congiguration.
@@ -49,12 +135,16 @@ class GeoreportProcessor {
    *
    * @param array $request_data
    *   Georeport Request data via form urlencoded.
+   * @param string $op
+   *   Operation.
    *
    * @return array
    *   values to be saved via entity api.
-   * @throws GeoreportException
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Georeport Exception with error code and error text.
    */
-  public function requestMapNode(array $request_data, $op) {
+  public function requestMapNode(array $request_data, string $op) {
 
     $values['type'] = 'service_request';
     if (isset($request_id)) {
@@ -68,10 +158,10 @@ class GeoreportProcessor {
     $values['field_first_name'] = isset($request_data['first_name']) ? Html::escape(stripslashes($request_data['first_name'])) : NULL;
     $values['field_last_name'] = isset($request_data['last_name']) ? Html::escape(stripslashes($request_data['last_name'])) : NULL;
     $values['field_phone'] = isset($request_data['phone']) ? Html::escape(stripslashes($request_data['phone'])) : NULL;
-    $values['field_geolocation']['lat'] = isset($request_data['lat']) ? $request_data['lat'] : NULL;
-    $values['field_geolocation']['lng'] = isset($request_data['long']) ? $request_data['long'] : NULL;
+    $values['field_geolocation']['lat'] = $request_data['lat'] ?? NULL;
+    $values['field_geolocation']['lng'] = $request_data['long'] ?? NULL;
     if (!isset($values['field_geolocation']['lat'])) {
-      unset($values['field_geolocation']);
+      $values['field_geolocation'] = NULL;
     }
     if (array_key_exists('address_string', $request_data) || array_key_exists('address', $request_data)) {
 
@@ -91,10 +181,10 @@ class GeoreportProcessor {
     $category_tid = isset($request_data['service_code']) ? $this->serviceMapTax($request_data['service_code']) : NULL;
     $values['field_category'] = $category_tid;
     if ($values['field_category'] == NULL && $op !== 'update') {
-      throw new GeoreportException(t('Service-Code empty or not valid'), 400);
+      throw new GeoreportException('Service-Code empty or not valid', 400);
     }
     if (isset($request_data['service_code']) && $values['field_category'] == NULL && $op == 'update') {
-      throw new GeoreportException(t('Service Code not valid'), 400);
+      throw new GeoreportException('Service Code not valid', 400);
     }
     // File Handling:
     if (isset($request_data['media_url'])) {
@@ -104,17 +194,17 @@ class GeoreportProcessor {
           $managed = TRUE;
           $file = system_retrieve_file($url, 'public://', $managed, FileSystemInterface::EXISTS_RENAME);
           if ($file !== FALSE) {
-            if (\Drupal::moduleHandler()->moduleExists('markaspot_media')) {
+            if ($this->moduleHandler->moduleExists('markaspot_media')) {
               $field_keys['image'] = 'field_request_media';
-              $media = Media::create([
+              $media = $this->entityTypeManager->getStorage('media')->create([
                 'bundle' => 'request_image',
-                'uid' => \Drupal::currentUser()->id(),
+                'uid' => $this->currentUser->id(),
                 'field_media_image' => [
                   'target_id' => $file->id(),
                   'alt' => 'Open311 File',
                 ],
               ]);
-              $save = $media->setName('media:request_image:' . $media->uuid())
+              $media->setName('media:request_image:' . $media->uuid())
                 ->setPublished(TRUE)
                 ->save();
               // $field_keys['image'][] = 'field_request_media';
@@ -130,8 +220,9 @@ class GeoreportProcessor {
                 'alt' => 'Open311 File',
               ];
             }
-          } else {
-            throw new GeoreportException(t('Image could not be retrieved via URL'), 400);
+          }
+          else {
+            throw new GeoreportException('Image could not be retrieved via URL', 400);
           }
 
         }
@@ -143,14 +234,14 @@ class GeoreportProcessor {
       if (isset($request_data['extended_attributes']['revision_log_message'])) {
         $values['revision_log_message'] = $request_data['extended_attributes']['revision_log_message'];
       }
-      // Check for all drupal fields
+      // Check for all drupal fields.
       foreach ($request_data['extended_attributes']['drupal'] as $field_name => $value) {
         if (isset($field_name)) {
           $values[$field_name] = $value;
         }
       }
     }
-    return array_filter($values, function($value) {
+    return array_filter($values, function ($value) {
       return ($value !== NULL && $value !== FALSE && $value !== '');
     });
   }
@@ -192,27 +283,23 @@ class GeoreportProcessor {
   public function serviceMapTax($service_code) {
     $service_codes = explode(',', $service_code);
     if (count($service_codes) > 1) {
-      throw new GeoreportException(t('Service Code has to be unique'), 400);
+      throw new GeoreportException('Service Code has to be unique', 400);
     }
     foreach ($service_codes as $service_code) {
-      $terms = \Drupal::service('entity_type.manager')
-        ->getStorage('taxonomy_term')->loadByProperties(['field_service_code' => trim($service_code)]);
+      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties(['field_service_code' => trim($service_code)]);
       $term = reset($terms);
       return !empty($term) ? $term->id() : NULL;
-      $terms = \Drupal::entityTypeManager()
-        ->getStorage('taxonomy_term')
-        ->loadByProperties(['field_service_code' => trim($service_code)]);
     }
 
     $term = reset($terms);
-    return !empty($term) ? $term->id() : new NotFoundHttpException('Servicecode not found');;
+    return !empty($term) ? $term->id() : new NotFoundHttpException('Servicecode not found');
 
   }
 
   /**
-   * Mapping requested service_code to drupal taxonomy.
+   * Mapping requested status to drupal taxonomy.
    *
-   * @param string $service_code
+   * @param string $statuses
    *   Open311 Service code (can be Code0001)
    *
    * @return int
@@ -221,12 +308,11 @@ class GeoreportProcessor {
   public function fieldStatusMapTax($statuses) {
     $statuses = explode(',', $statuses);
     foreach ($statuses as $status) {
-      $terms[] = \Drupal::entityTypeManager()
-        ->getStorage('taxonomy_term')
+      $terms[] = $this->entityTypeManager->getStorage('taxonomy_term')
         ->loadByProperties(['name' => $status]);
     }
 
-    foreach ($terms as $term){
+    foreach ($terms as $term) {
       $ids[] = array_keys($term);
     }
     if ($ids != FALSE) {
@@ -237,6 +323,7 @@ class GeoreportProcessor {
     }
     return FALSE;
   }
+
   /**
    * Returns renderable array of taxonomy terms from Categories vocabulary.
    *
@@ -252,8 +339,7 @@ class GeoreportProcessor {
    */
   public function getTaxonomyTree($vocabulary = "tags", $parent = 0, $max_depth = NULL): array {
     // Load terms.
-    $tree = \Drupal::service('entity_type.manager')
-      ->getStorage("taxonomy_term")
+    $tree = $this->entityTypeManager->getStorage("taxonomy_term")
       ->loadTree($vocabulary, $parent, $max_depth, $load_entities = FALSE);
 
     // Make sure there are terms to work with.
@@ -281,8 +367,7 @@ class GeoreportProcessor {
   public function taxMapService($tid) {
 
     // Load all field for this taxonomy term:
-    $service_category = \Drupal::entityTypeManager()
-      ->getStorage('taxonomy_term')
+    $service_category = $this->entityTypeManager->getStorage('taxonomy_term')
       ->load($tid);
 
     $service['service_code'] = $service_category->field_service_code->value;
@@ -320,11 +405,9 @@ class GeoreportProcessor {
    */
   public function getResults(object $query, object $user, array $parameters): array {
     $nids = $query->execute();
-    $nodes = \Drupal::entityTypeManager()
-      ->getStorage('node')
+    $nodes = $this->entityTypeManager->getStorage('node')
       ->loadMultiple($nids);
-    $debug = $query->__toString();
-
+    // $debug = $query->__toString();
     // Extensions.
     $extended_role = 'anonymous';
 
@@ -379,24 +462,24 @@ class GeoreportProcessor {
       'status' => $this->taxMapStatus($node->field_status->target_id),
     ];
     // Media Url:
-
     // Media Url:
     if (isset($node->field_request_image)) {
       $image = $node->field_request_image->entity;
     }
     if (isset($node->field_request_media)) {
       foreach ($node->get('field_request_media')->getValue() as $media) {
-        $media = Media::load($media['target_id']);
+        $media = $this->entityTypeManager->getStorage('media')->load($media['target_id']);
         if (isset($media->field_media_image->entity)) {
-          $image_uris[] = ($media->isPublished()) ? file_create_url($media->field_media_image->entity->getFileUri()) : '';
+          $image_uris[] = ($media->isPublished()) ? $this->fileUrlGenerator->generateAbsoluteString($media->field_media_image->entity->getFileUri()) : '';
         }
       }
     }
 
     if (isset($image)) {
-      $image_uri = file_create_url($image->getFileUri());
-    } else if (isset($media->field_media_image->entity)) {
-      $image_uri = implode(',', $image_uris );
+      $image_uri = $this->fileUrlGenerator->generateAbsoluteString($image->getFileUri());
+    }
+    elseif (isset($media->field_media_image->entity)) {
+      $image_uri = implode(',', $image_uris);
     }
     $request['media_url'] = (isset($image_uri)) ? $image_uri : '';
 
@@ -411,7 +494,7 @@ class GeoreportProcessor {
     }
     if (isset($node->field_category)) {
       $service_code = $this->getTerm($node->field_category->target_id, 'field_service_code');
-      $request['service_code'] = isset($service_code) ? $service_code : NULL;
+      $request['service_code'] = $service_code ?? NULL;
     }
     if ($extended_role == 'manager') {
 
@@ -434,12 +517,12 @@ class GeoreportProcessor {
       }
     }
     if (isset($extended_role) && isset($parameters['extensions'])) {
-      if (\Drupal::moduleHandler()->moduleExists('service_request')) {
+      if ($this->moduleHandler->moduleExists('service_request')) {
         $request['extended_attributes']['markaspot'] = [];
 
         $nid = ['nid' => $node->nid->value];
         if (isset($node->field_category)) {
-          $term = Term::load($node->field_category->target_id);
+          $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->field_category->target_id);
           $category = [
             'category_hex' => $term->field_category_hex->color,
             'category_icon' => $term->field_category_icon->value,
@@ -449,7 +532,7 @@ class GeoreportProcessor {
         if (isset($node->field_status_notes)) {
           foreach ($node->field_status_notes as $note) {
             if (isset($note->entity->field_status_term->target_id)) {
-              $term = Term::load($note->entity->field_status_term->target_id);
+              $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($note->entity->field_status_term->target_id);
 
               $status['status_descriptive_name'] = $term->name->value;
               $status['status_hex'] = $term->field_status_hex->color;
@@ -495,7 +578,7 @@ class GeoreportProcessor {
             }
             if (method_exists($node->get($field_name), 'referencedEntities')) {
               $entities = $node->get($field_name)->referencedEntities();
-              foreach ($entities as $key => $entity) {
+              foreach ($entities as $entity) {
                 $request['extended_attributes']['drupal'][$field_name] = $entity;
               }
             }
@@ -554,8 +637,8 @@ class GeoreportProcessor {
   public function getTerm($tid, string $field_name) {
     // var_dump(Term::load(4)->get('name')->value);
     // http://drupalapi.de/api/drupal/drupal%21core%21modules%21taxonomy%21taxonomy.module/function/taxonomy_term_load/drupal-8
-    if (isset($tid) && Term::load($tid) != '') {
-      return Term::load($tid)->get($field_name)->value;
+    if (isset($tid) && $this->entityTypeManager->getStorage('taxonomy_term')->load($tid) != '') {
+      return $this->entityTypeManager->getStorage('taxonomy_term')->load($tid)->get($field_name)->value;
     }
   }
 
@@ -601,8 +684,20 @@ class GeoreportProcessor {
     return $tids;
   }
 
-  function create_paragraph($paragraphData) {
-    $paragraph = Paragraph::create(['type' => 'status',]);
+  /**
+   * Create initial status note.
+   *
+   * @param array $paragraphData
+   *   The Paragraph to be created.
+   *
+   * @return \Drupal\Core\Entity\ContentEntityBase|\Drupal\Core\Entity\EntityBase|\Drupal\Core\Entity\EntityInterface|Paragraph
+   *   Paragraph Object
+   *
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   *   Storage exception.
+   */
+  public function createParagraph(array $paragraphData): ContentEntityBase|EntityInterface|EntityBase|Paragraph {
+    $paragraph = Paragraph::create(['type' => 'status']);
     $paragraph->set('field_status_term', $paragraphData[0]);
     $paragraph->set('field_status_note', $paragraphData[1]);
 

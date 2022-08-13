@@ -4,11 +4,14 @@ namespace Drupal\markaspot_validation\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
  * Configure georeport settings for this site.
  */
 class MarkaspotValidationSettingsForm extends ConfigFormBase {
+
+  use StringTranslationTrait;
 
   /**
    * {@inheritdoc}
@@ -22,88 +25,88 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_validation.settings');
-    $form['markaspot_validation'] = array(
+    $form['markaspot_validation'] = [
       '#type' => 'fieldset',
-      '#title' => t('Validation Types'),
+      '#title' => $this->t('Validation Types'),
       '#collapsible' => TRUE,
-      '#description' => t('This setting allow you too choose a map tile operator of your choose. Be aware that you have to apply the same for the Geolocation Field settings</a>, too.'),
+      '#description' => $this->t('This setting allow you too choose a map tile operator of your choose. Be aware that you have to apply the same for the Geolocation Field settings</a>, too.'),
       '#group' => 'settings',
-    );
+    ];
 
-    $form['markaspot_validation']['wkt'] = array(
+    $form['markaspot_validation']['wkt'] = [
       '#type' => 'textarea',
-      '#title' => t('Polygon in WKT Format'),
+      '#title' => $this->t('Polygon in WKT Format'),
       '#default_value' => $config->get('wkt'),
-      '#description' => t('Place your polygon wkt here. You can <a href="@wkt-editor">create and edit</a> the vectors online. Leave this empty, if you don\'t need polygon validation.', ['@wkt-editor' => 'https://arthur-e.github.io/Wicket/sandbox-gmaps3.html']),
-    );
-    $form['markaspot_validation']['multiple_reports'] = array(
+      '#description' => $this->t('Place your polygon wkt here. You can <a href="@wkt-editor">create and edit</a> the vectors online. Leave this empty, if you don\'t need polygon validation.', ['@wkt-editor' => 'https://arthur-e.github.io/Wicket/sandbox-gmaps3.html']),
+    ];
+    $form['markaspot_validation']['multiple_reports'] = [
       '#type' => 'checkbox',
-      '#title' => t('Multiple Reports prevention check'),
+      '#title' => $this->t('Multiple Reports prevention check'),
       '#default_value' => $config->get('multiple_reports'),
-      '#description' => t('Checks whether a certain number of service requests have been submitted per e-mail address used.'),
-    );
-    $form['markaspot_validation']['max_count'] = array(
+      '#description' => $this->t('Checks whether a certain number of service requests have been submitted per e-mail address used.'),
+    ];
+    $form['markaspot_validation']['max_count'] = [
       '#type' => 'textfield',
-      '#title' => t('Maximum number of service requests'),
+      '#title' => $this->t('Maximum number of service requests'),
       '#default_value' => $config->get('max_count'),
-      '#description' => t('How many service requests per day are permitted?'),
-    );
-    $form['markaspot_validation']['duplicate_check'] = array(
+      '#description' => $this->t('How many service requests per day are permitted?'),
+    ];
+    $form['markaspot_validation']['duplicate_check'] = [
       '#type' => 'checkbox',
-      '#title' => t('Duplicate Request check enabled'),
+      '#title' => $this->t('Duplicate Request check enabled'),
       '#default_value' => $config->get('duplicate_check'),
-      '#description' => t('Check if new requests get a duplicate check.'),
-    );
+      '#description' => $this->t('Check if new requests get a duplicate check.'),
+    ];
 
-    $form['markaspot_validation']['radius'] = array(
+    $form['markaspot_validation']['radius'] = [
       '#type' => 'textfield',
-      '#title' => t('Duplicate Request check Radius'),
+      '#title' => $this->t('Duplicate Request check Radius'),
       '#default_value' => $config->get('radius'),
-      '#description' => t('Validate if new requests are possible duplicates within this radius.'),
-    );
+      '#description' => $this->t('Validate if new requests are possible duplicates within this radius.'),
+    ];
 
-    $form['markaspot_validation']['unit'] = array(
+    $form['markaspot_validation']['unit'] = [
       '#type' => 'radios',
-      '#title' => t('Duplicate Radius Unit'),
+      '#title' => $this->t('Duplicate Radius Unit'),
       '#default_value' => $config->get('unit'),
-      '#options' => array(
-        'meters' => t('Meters'),
-        'yards' => t('Yards'),
-      ),
-      '#description' => t('Validate if new requests are possible duplicates within this radius.'),
-    );
+      '#options' => [
+        'meters' => $this->t('Meters'),
+        'yards' => $this->t('Yards'),
+      ],
+      '#description' => $this->t('Validate if new requests are possible duplicates within this radius.'),
+    ];
 
-    $form['markaspot_validation']['hint'] = array(
+    $form['markaspot_validation']['hint'] = [
       '#type' => 'checkbox',
-      '#title' => t('Validate duplicates only as a hint'),
+      '#title' => $this->t('Validate duplicates only as a hint'),
       '#default_value' => $config->get('hint'),
-      '#description' => t('Users can ignore this validation note by resubmitting the report form.'),
-    );
-    $form['markaspot_validation']['treshold'] = array(
+      '#description' => $this->t('Users can ignore this validation note by resubmitting the report form.'),
+    ];
+    $form['markaspot_validation']['treshold'] = [
       '#type' => 'number',
       '#min' => 1,
       '#max' => 1000,
       '#step' => 1,
-      '#title' => t('Iterations treshold'),
+      '#title' => $this->t('Iterations treshold'),
       '#default_value' => $config->get('treshold'),
-      '#description' => t('Increase this number if you think that validation notes are too few.'),
-    );
-    $form['markaspot_validation']['days'] = array(
+      '#description' => $this->t('Increase this number if you think that validation notes are too few.'),
+    ];
+    $form['markaspot_validation']['days'] = [
       '#type' => 'number',
       '#min' => 1,
       '#max' => 1000,
       '#step' => 1,
-      '#title' => t('Duplicate reach back in days'),
+      '#title' => $this->t('Duplicate reach back in days'),
       '#default_value' => $config->get('days'),
-      '#description' => t('How many days to reach back for similar requests'),
-    );
+      '#description' => $this->t('How many days to reach back for similar requests'),
+    ];
 
-    $form['markaspot_validation']['defaultLocation'] = array(
+    $form['markaspot_validation']['defaultLocation'] = [
       '#type' => 'checkbox',
-      '#title' => t('Force new location if default lat/lon is posted'),
+      '#title' => $this->t('Force new location if default lat/lon is posted'),
       '#default_value' => $config->get('defaultLocation'),
-      '#description' => t('Remove this setting if you use field_unlocated feature'),
-    );
+      '#description' => $this->t('Remove this setting if you use field_unlocated feature'),
+    ];
     return parent::buildForm($form, $form_state);
   }
 

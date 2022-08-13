@@ -56,9 +56,10 @@ class MarkaspotActionFront extends BlockBase implements BlockPluginInterface {
    * {@inheritdoc}
    */
   public function build() {
+    $markup = $this->configuration['body']['value'] ?? '';
     return [
       '#type' => 'markup',
-      '#markup' => $this->t($this->configuration['body']['value']),
+      '#markup' => $markup,
     ];
   }
 

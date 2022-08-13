@@ -1,19 +1,25 @@
-<?php namespace Drupal\markaspot_validation\Plugin\Validation\Geo;
+<?php
+
+namespace Drupal\markaspot_validation\Plugin\Validation\Geo;
 
 /**
- * Temporarily taken from weiyongsheng/poylgon which can't be found on
- * some installations.
- *
+ * Temporarily taken from weiyongsheng/poylgon.
  */
-
-class Polygon
-{
+class Polygon {
   /**
-   * @var []
+   * Checks if point is within polygon.
+   */
+
+  /**
+   * The polygon points.
+   *
+   * @var array
    */
   protected $points = [];
 
   /**
+   * Is point within polygon.
+   *
    * @var bool
    */
   protected $valid;
@@ -22,34 +28,39 @@ class Polygon
    * Polygon constructor.
    *
    * @param array|null $points
+   *   The polygon points.
    */
-  public function __construct(array $points = null)
-  {
+  public function __construct(array $points = NULL) {
     if ($points) {
       $this->setPoints($points);
-    } else {
-      $this->valid = false;
+    }
+    else {
+      $this->valid = FALSE;
     }
   }
 
   /**
+   * Set points of polygon.
+   *
    * @param array $points
+   *   The polygon points.
    *
    * @return $this
+   *   Return result.
    */
-  public function setPoints(array $points)
-  {
-    $this->valid = false;
+  public function setPoints(array $points) {
+    $this->valid = FALSE;
     if (count($points) >= 3) {
-      $this->valid = true;
+      $this->valid = TRUE;
       foreach ($points as $point) {
         if (!$this->checkPoint($point)) {
-          $this->valid = false;
+          $this->valid = FALSE;
 
           return $this;
         }
       }
-    } else {
+    }
+    else {
       return $this;
     }
     $this->points = $points;
@@ -61,9 +72,9 @@ class Polygon
    * Contain all points of min rectangle points.
    *
    * @return array
+   *   return polygon as array.
    */
-  public function rectanglePoints()
-  {
+  public function rectanglePoints() {
     $lats = array_column($this->points, 0);
     $lngs = array_column($this->points, 1);
     $min_lat = min($lats);
@@ -71,33 +82,46 @@ class Polygon
     $max_lat = max($lats);
     $max_lng = max($lngs);
 
-    return [[$min_lat, $min_lng], [$min_lat, $max_lng], [$max_lat, $max_lng], [$max_lat, $min_lng]];
+    return [
+      [$min_lat, $min_lng],
+      [$min_lat, $max_lng],
+      [$max_lat, $max_lng],
+      [$max_lat, $min_lng],
+    ];
   }
 
   /**
-   * @return []
+   * Get points of poloygon.
+   *
+   * @return array
+   *   The poloygon.
    */
-  public function getPoints()
-  {
+  public function getPoints() {
     return $this->points;
   }
 
   /**
+   * Return status if valid.
+   *
    * @return bool
+   *   valid or not.
    */
-  public function isValid()
-  {
+  public function isValid() {
     return $this->valid;
   }
 
   /**
-   * @param double $lat
-   * @param double $lng
+   * Check if point is part of polygon.
+   *
+   * @param float $lat
+   *   The latitude value.
+   * @param float $lng
+   *   The longitude value.
    *
    * @return bool
+   *   Return result.
    */
-  public function contain($lat, $lng)
-  {
+  public function contain(float $lat, float $lng): bool {
     $count = 0;
     $points = $this->points;
     $points[] = reset($points);
@@ -112,9 +136,10 @@ class Polygon
         $tmp = $y1 + ($lat - $x1) / ($x2 - $x1) * ($y2 - $y1);
         if ($tmp < $lng) {
           $count++;
-        } elseif ($tmp == $lng) {
-          //in line
-          return true;
+        }
+        elseif ($tmp == $lng) {
+          // In line.
+          return TRUE;
         }
       }
       $point1 = $point2;
@@ -124,12 +149,16 @@ class Polygon
   }
 
   /**
-   * @param $point
+   * Check if submitted values are valid coordinates.
+   *
+   * @param array $point
+   *   The point.
    *
    * @return bool
+   *   return result.
    */
-  private function checkPoint($point)
-  {
+  private function checkPoint(array $point) {
     return is_array($point) && count($point) == 2 && is_numeric($point[0]) && is_numeric($point[1]);
   }
+
 }

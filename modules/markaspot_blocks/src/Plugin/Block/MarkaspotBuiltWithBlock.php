@@ -3,8 +3,10 @@
 namespace Drupal\markaspot_blocks\Plugin\Block;
 
 use Drupal\Core\Block\BlockBase;
-use Drupal\Core\Block\BlockPluginInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Provides a 'Powered/Built with Mark-a-Spot block' block.
@@ -14,7 +16,43 @@ use Drupal\Core\Form\FormStateInterface;
  *   admin_label = @Translation("Mark-a-Spot: Built With block")
  * )
  */
-class MarkaspotBuiltWithBlock extends BlockBase implements BlockPluginInterface {
+class MarkaspotBuiltWithBlock extends BlockBase implements ContainerFactoryPluginInterface {
+
+  /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactory;
+
+  /**
+   * Constructs a SyndicateBlock object.
+   *
+   * @param array $configuration
+   *   A configuration array containing information about the plugin instance.
+   * @param string $plugin_id
+   *   The plugin_id for the plugin instance.
+   * @param mixed $plugin_definition
+   *   The plugin implementation definition.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The config factory.
+   */
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, ConfigFactoryInterface $configFactory) {
+    parent::__construct($configuration, $plugin_id, $plugin_definition);
+    $this->configFactory = $configFactory;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
+    return new static(
+      $configuration,
+      $plugin_id,
+      $plugin_definition,
+      $container->get('config.factory')
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -28,7 +66,7 @@ class MarkaspotBuiltWithBlock extends BlockBase implements BlockPluginInterface 
       '#type' => 'checkbox',
       '#title' => $this->t('Invert'),
       '#description' => $this->t('Invert Mark-a-Spot logo for dark backgrounds'),
-      '#default_value' => isset($config['logo-invert']) ? $config['logo-invert'] : '',
+      '#default_value' => $config['logo-invert'] ?? '',
     ];
 
     return $form;
@@ -51,8 +89,8 @@ class MarkaspotBuiltWithBlock extends BlockBase implements BlockPluginInterface 
     $config = $this->getConfiguration();
     $class = (!empty($config['logo-invert'])) ? ' invert' : ' default';
 
-    $language = \Drupal::config('language.negotiation')
-      ->get('selected_langcode');
+    $language = $this->configFactory->get('language.negotiation')->get('selected_language');
+
     $microsite = ($language == "de" || $language == "es") ? $language : 'en';
     $logo = $this->t('Built with <a class="mas" aria-label="Mark-a-Spot" href="@link-to-mas"><span>Mark-a-Spot</span></a>', ['@link-to-mas' => 'http://markaspot.de/' . $microsite]);
 

@@ -1,6 +1,10 @@
 <?php
 
-// Set preloaded as the default.
+/**
+ * @file
+ * Set preloaded as the default.
+ */
+
 $sites['localhost'] = 'preloaded';
 $sites['preloaded'] = 'preloaded';
 $sites[getenv('TUGBOAT_DEFAULT_SERVICE_URL_HOST')] = 'preloaded';

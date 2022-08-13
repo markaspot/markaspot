@@ -23,17 +23,17 @@ class IconClassFormatter extends FormatterBase {
    * {@inheritdoc}
    */
   public function viewElements(FieldItemListInterface $items, $langcode) {
-    $elements = array();
+    $elements = [];
 
     foreach ($items as $delta => $item) {
-      $elements[$delta] = array(
+      $elements[$delta] = [
         '#type' => 'html_tag',
         '#tag' => 'span',
-        '#attributes' => array(
+        '#attributes' => [
           'class' => 'fa ' . $item->value,
-        ),
+        ],
         '#value' => '',
-      );
+      ];
     }
 
     return $elements;

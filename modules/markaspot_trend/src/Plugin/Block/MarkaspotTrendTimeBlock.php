@@ -18,10 +18,10 @@ class MarkaspotTrendTimeBlock extends BlockBase {
    * {@inheritdoc}
    */
   public function build() {
-    return array(
+    return [
       '#theme' => 'markaspot_trend_time_block',
-      '#attached' => array(
-        'library' => array(
+      '#attached' => [
+        'library' => [
           'markaspot_trend/dateFormat',
           'markaspot_trend/moment',
           'markaspot_trend/vue',
@@ -31,8 +31,9 @@ class MarkaspotTrendTimeBlock extends BlockBase {
           'markaspot_trend/vuechartjs',
           'markaspot_trend/trend',
           'markaspot_trend/time',
-        ),
-      ),
-    );
+        ],
+      ],
+    ];
   }
+
 }

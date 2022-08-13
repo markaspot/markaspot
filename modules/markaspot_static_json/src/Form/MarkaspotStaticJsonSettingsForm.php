@@ -4,11 +4,14 @@ namespace Drupal\markaspot_static_json\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
  * Configure static_json settings for this site.
  */
 class MarkaspotStaticJsonSettingsForm extends ConfigFormBase {
+
+  use StringTranslationTrait;
 
   /**
    * {@inheritdoc}
@@ -23,31 +26,27 @@ class MarkaspotStaticJsonSettingsForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_static_json.settings');
 
-    $form['markaspot_static_json'] = array(
+    $form['markaspot_static_json'] = [
       '#type' => 'fieldset',
-      '#title' => t('Static JSON Settings'),
+      '#title' => $this->t('Static JSON Settings'),
       '#collapsible' => TRUE,
-      '#description' => t('Configure the Static JSON process which is used to create low server load requests.json endpoint in the files directory'),
+      '#description' => $this->t('Configure the Static JSON process which is used to create low server load requests.json endpoint in the files directory'),
       '#group' => 'settings',
-    );
+    ];
 
-    $form['markaspot_static_json']['limit'] = array(
+    $form['markaspot_static_json']['limit'] = [
       '#type' => 'textfield',
-      '#default_value' =>  $config->get('limit') ? $config->get('limit') : 10,
-      '#title' => t('Limit'),
-    );
-    $form['markaspot_static_json']['reset'] = array(
+      '#default_value' => $config->get('limit') ? $config->get('limit') : 10,
+      '#title' => $this->t('Limit'),
+    ];
+    $form['markaspot_static_json']['reset'] = [
       '#type' => 'checkbox',
       '#default_value' => $config->get('reset') ? $config->get('reset') : 0,
-      '#title' => t('Reset Cron calling Open311 requests at page 0'),
-    );
-
-
+      '#title' => $this->t('Reset Cron calling Open311 requests at page 0'),
+    ];
 
     return parent::buildForm($form, $form_state);
   }
-
-
 
   /**
    * {@inheritdoc}

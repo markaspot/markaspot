@@ -18,11 +18,11 @@ class MarkaspotTrendCountBlock extends BlockBase {
    * {@inheritdoc}
    */
   public function build() {
-    return array(
+    return [
       '#theme' => 'markaspot_trend_count_block',
       '#total' => 'Requests total',
-      '#attached' => array(
-        'library' => array(
+      '#attached' => [
+        'library' => [
           'markaspot_trend/dateFormat',
           'markaspot_trend/moment',
           'markaspot_trend/vue',
@@ -30,8 +30,9 @@ class MarkaspotTrendCountBlock extends BlockBase {
           'markaspot_trend/axios',
           'markaspot_trend/trend',
           'markaspot_trend/count',
-        ),
-      ),
-    );
+        ],
+      ],
+    ];
   }
+
 }

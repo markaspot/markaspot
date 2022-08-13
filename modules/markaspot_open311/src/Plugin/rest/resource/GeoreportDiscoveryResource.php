@@ -2,12 +2,14 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\rest\Plugin\ResourceBase;
-use Drupal\rest\ResourceResponse;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 
 /**
@@ -33,6 +35,21 @@ class GeoreportDiscoveryResource extends ResourceBase {
   protected $currentUser;
 
   /**
+   * The markaspot_open311.settings config object.
+   *
+   * @var \Drupal\Core\Config\Config
+   */
+  protected $config;
+
+
+  /**
+   * The Processing Service for Georeports.
+   *
+   * @var \Drupal\markaspot_open311\Service\GeoreportProcessorService
+   */
+  protected $georeportProcessor;
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -45,8 +62,12 @@ class GeoreportDiscoveryResource extends ResourceBase {
    *   The available serialization formats.
    * @param \Psr\Log\LoggerInterface $logger
    *   A logger instance.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config
+   *   The config object.
    * @param \Drupal\Core\Session\AccountProxyInterface $current_user
    *   A current user instance.
+   * @param \Drupal\markaspot_open311\Service\GeoreportProcessorService $georeport_processor
+   *   The processor service.
    */
   public function __construct(
     array $configuration,
@@ -54,11 +75,14 @@ class GeoreportDiscoveryResource extends ResourceBase {
     $plugin_definition,
     array $serializer_formats,
     LoggerInterface $logger,
-    AccountProxyInterface $current_user) {
+    ConfigFactoryInterface $config,
+    AccountProxyInterface $current_user,
+    GeoreportProcessorService $georeport_processor
+  ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
-    $this->config = \Drupal::configFactory()
-      ->getEditable('markaspot_open311.settings');
+    $this->config = $config->getEditable('markaspot_open311.settings');
     $this->currentUser = $current_user;
+    $this->georeportProcessor = $georeport_processor;
   }
 
   /**
@@ -71,7 +95,9 @@ class GeoreportDiscoveryResource extends ResourceBase {
       $plugin_definition,
       $container->getParameter('serializer.formats'),
       $container->get('logger.factory')->get('markaspot_open311'),
-      $container->get('current_user')
+      $container->get('config.factory'),
+      $container->get('current_user'),
+      $container->get('markaspot_open311.processor')
     );
   }
 
@@ -82,26 +108,45 @@ class GeoreportDiscoveryResource extends ResourceBase {
     $collection = new RouteCollection();
 
     $definition = $this->getPluginDefinition();
-    $canonical_path = isset($definition['uri_paths']['canonical']) ? $definition['uri_paths']['canonical'] : '/' . strtr($this->pluginId, ':', '/');
-    $create_path = isset($definition['uri_paths']['https://www.drupal.org/link-relations/create']) ? $definition['uri_paths']['https://www.drupal.org/link-relations/create'] : '/' . strtr($this->pluginId, ':', '/');
+    $canonical_path = $definition['uri_paths']['canonical'] ?? '/' . strtr($this->pluginId, ':', '/');
+    $create_path = $definition['uri_paths']['https://www.drupal.org/link-relations/create'] ?? '/' . strtr($this->pluginId, ':', '/');
     $route_name = strtr($this->pluginId, ':', '.');
 
     $methods = $this->availableMethods();
     foreach ($methods as $method) {
       $route = $this->getBaseRoute($canonical_path, $method);
       switch ($method) {
+        case 'POST':
+          $georeport_formats = ['json', 'xml', 'form'];
+          foreach ($georeport_formats as $format) {
+            $format_route = clone $route;
+
+            $format_route->setPath($create_path . '.' . $format);
+            $format_route->setRequirement('_access_rest_csrf', 'FALSE');
+
+            // Restrict the incoming HTTP Content-type header to the known
+            // serialization formats.
+            $format_route->addRequirements(
+              [
+                '_content_type_format'
+                => implode('|', $this->serializerFormats),
+              ]);
+            $collection->add("$route_name.$method.$format", $format_route);
+          }
+          break;
+
         case 'GET':
           // Restrict GET and HEAD requests to the media type specified in the
           // HTTP Accept headers.
           foreach ($this->serializerFormats as $format) {
             $georeport_formats = ['json', 'xml'];
-            foreach ($georeport_formats as $geo_format) {
+            foreach ($georeport_formats as $format) {
 
               // Expose one route per available format.
               $format_route = clone $route;
               // Create path with format.name.
-              $format_route->setPath($format_route->getPath() . '.' . $geo_format);
-              $collection->add("$route_name.$method.$geo_format", $format_route);
+              $format_route->setPath($format_route->getPath() . '.' . $format);
+              $collection->add("$route_name.$method.$format", $format_route);
             }
 
           }
@@ -116,6 +161,27 @@ class GeoreportDiscoveryResource extends ResourceBase {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  protected function getBaseRoute($canonical_path, $method) {
+    $lower_method = strtolower($method);
+    $route = new Route($canonical_path, [
+      '_controller' => 'Drupal\markaspot_open311\GeoreportRequestHandler::handle',
+      // Pass the resource plugin ID along as default property.
+      '_plugin' => $this->pluginId,
+    ], [
+      '_permission' => "restful $lower_method $this->pluginId",
+    ],
+      [],
+      '',
+      [],
+      // The HTTP method is a requirement for this route.
+      [$method]
+    );
+    return $route;
+  }
+
+  /**
    * Responds to GET requests.
    *
    * Returns a list of bundles for specified entity.
@@ -125,12 +191,9 @@ class GeoreportDiscoveryResource extends ResourceBase {
    */
   public function get() {
 
-    $map = new GeoreportProcessor();
-    $discovery = $map->getDiscovery();
+    $discovery = $this->georeportProcessor->getDiscovery();
     if (!empty($discovery)) {
-      $response = new ResourceResponse($discovery, 200);
-      $response->addCacheableDependency($discovery);
-      return $response;
+      return $this->georeportProcessor->getDiscovery();
     }
     else {
       throw new HttpException(404, "Service Discovery not found");

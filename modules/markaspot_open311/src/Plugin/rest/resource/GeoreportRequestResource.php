@@ -2,22 +2,26 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
-use Drupal\Component\Render\PlainTextOutput;
 use Drupal\Core\Entity\ContentEntityInterface;
-use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Component\Utility\UrlHelper;
-use Drupal\Core\Render\BubbleableMetadata;
-use Drupal\Core\Render\RenderContext;
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\Core\StringTranslation\TranslationInterface;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Drupal\markaspot_open311\Exception\GeoreportException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Drupal\markaspot_open311\Exception\GeoreportException;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 
 /**
  * Provides a resource to get view modes by entity and bundle.
@@ -35,12 +39,50 @@ use Symfony\Component\Routing\RouteCollection;
  * )
  */
 class GeoreportRequestResource extends ResourceBase {
+
+  use StringTranslationTrait;
+
+  /**
+   * The time service.
+   *
+   * @var \Drupal\Component\Datetime\TimeInterface
+   */
+  protected $time;
+
+  /**
+   * The request stack.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected $requestStack;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected $entityTypeManager;
+
   /**
    * A current user instance.
    *
    * @var \Drupal\Core\Session\AccountProxyInterface
    */
   protected $currentUser;
+
+  /**
+   * The markaspot_open311.settings config object.
+   *
+   * @var \Drupal\Core\Config\Config
+   */
+  protected $config;
+
+  /**
+   * The Georeport Processor.
+   *
+   * @var \Drupal\markaspot_open311\Service\GeoreportProcessorService
+   */
+  protected $georeportProcessor;
 
   /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
@@ -57,18 +99,40 @@ class GeoreportRequestResource extends ResourceBase {
    *   A logger instance.
    * @param \Drupal\Core\Session\AccountProxyInterface $current_user
    *   A current user instance.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config
+   *   The config object.
+   * @param \Drupal\Core\StringTranslation\TranslationInterface $string_translation
+   *   The string translation service.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   *   The Symfony Request Stack.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
+   * @param \Drupal\markaspot_open311\Service\GeoreportProcessorService $georeport_processor
+   *   The processor service.
    */
   public function __construct(
     array $configuration,
-    $plugin_id,
-    $plugin_definition,
+                               $plugin_id,
+                               $plugin_definition,
     array $serializer_formats,
     LoggerInterface $logger,
-    AccountProxyInterface $current_user) {
+    AccountProxyInterface $current_user,
+    ConfigFactoryInterface $config,
+    TranslationInterface $string_translation,
+    TimeInterface $time,
+    RequestStack $request_stack,
+    EntityTypeManagerInterface $entity_type_manager,
+    GeoreportProcessorService $georeport_processor,
+  ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
-    $this->config = \Drupal::configFactory()
-      ->getEditable('markaspot_open311.settings');
     $this->currentUser = $current_user;
+    $this->config = $config->get('markaspot_open311.settings');
+    $this->time = $time;
+    $this->requestStack = $request_stack;
+    $this->entityTypeManager = $entity_type_manager;
+    $this->georeportProcessor = $georeport_processor;
   }
 
   /**
@@ -81,7 +145,13 @@ class GeoreportRequestResource extends ResourceBase {
       $plugin_definition,
       $container->getParameter('serializer.formats'),
       $container->get('logger.factory')->get('markaspot_open311'),
-      $container->get('current_user')
+      $container->get('current_user'),
+      $container->get('config.factory'),
+      $container->get('string_translation'),
+      $container->get('datetime.time'),
+      $container->get('request_stack'),
+      $container->get('entity_type.manager'),
+      $container->get('markaspot_open311.processor')
     );
   }
 
@@ -92,7 +162,7 @@ class GeoreportRequestResource extends ResourceBase {
     $collection = new RouteCollection();
 
     $definition = $this->getPluginDefinition();
-    $canonical_path = isset($definition['uri_paths']['canonical']) ? $definition['uri_paths']['canonical'] : '/' . strtr($this->pluginId, ':', '/') . '/{id}';
+    $canonical_path = $definition['uri_paths']['canonical'] ?? '/' . strtr($this->pluginId, ':', '/') . '/{id}';
     $route_name = strtr($this->pluginId, ':', '.');
 
     $methods = $this->availableMethods();
@@ -173,13 +243,13 @@ class GeoreportRequestResource extends ResourceBase {
    * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
-  public function get($id) {
+  public function get(string $id) {
 
-    $parameters = UrlHelper::filterQueryParameters(\Drupal::request()->query->all());
+    $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
     // Filtering the configured content type.
     $bundle = $this->config->get('bundle');
     $bundle = (isset($bundle)) ? $bundle : 'service_request';
-    $query = \Drupal::entityQuery('node')
+    $query = $this->entityTypeManager->getStorage('node')->getQuery()
       ->condition('type', $bundle);
     if ($id != "") {
       $query->condition('request_id', $this->getRequestId($id));
@@ -192,8 +262,7 @@ class GeoreportRequestResource extends ResourceBase {
     }
     $query->accessCheck(FALSE);
 
-    $map = new GeoreportProcessor();
-    return $map->getResults($query, $this->currentUser, $parameters);
+    return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
   }
 
   /**
@@ -205,29 +274,14 @@ class GeoreportRequestResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function post($id, $request_data) {
+
     try {
-
       if (!$this->currentUser->hasPermission('access open311 advanced properties')) {
-        Throw new AccessDeniedHttpException();
+        throw new AccessDeniedHttpException();
       }
 
-      $context = new RenderContext();
-      /** @var \Drupal\Core\Cache\CacheableDependencyInterface $result */
-
-      $result = \Drupal::service('renderer')->executeInRenderContext(
-        $context, function () use ($id, $request_data) {
-          return $this->updateNode($id, $request_data);
-        }
-      );
-
-      if (!$context->isEmpty()) {
-        $bubbleable_metadata = $context->pop();
-        BubbleableMetadata::createFromObject($result)
-          ->merge($bubbleable_metadata);
-      }
       // Return result to handler for formatting and response.
-      return $result;
-
+      return $this->updateNode($id, $request_data);
     }
     catch (EntityStorageException $e) {
       throw new HttpException(500, 'Internal Server Error', $e);
@@ -251,15 +305,13 @@ class GeoreportRequestResource extends ResourceBase {
   public function updateNode(string $id, array $request_data): array {
     $request_id = $this->getRequestId($id);
 
-    $nodes = \Drupal::entityTypeManager()
-      ->getStorage('node')
+    $nodes = $this->entityTypeManager->getStorage('node')
       ->loadByProperties(['request_id' => $request_id]);
 
-    $map = new GeoreportProcessor();
     foreach ($nodes as $node) {
       if ($node instanceof ContentEntityInterface) {
         $request_data['service_request_id'] = $request_id;
-        $values = $map->requestMapNode($request_data, 'update');
+        $values = $this->georeportProcessor->requestMapNode($request_data, 'update');
       }
     }
     if (empty($nodes)) {
@@ -268,8 +320,6 @@ class GeoreportRequestResource extends ResourceBase {
     $revisionLogMessage = isset($values['revision_log_message']) ?? '';
     unset($values['revision_log_message']);
 
-
-
     foreach (array_keys($values) as $field_name) {
       // Status notes need special care as they are paragraphs.
       $field_type = $node->get($field_name)->getFieldDefinition()->getType();
@@ -277,37 +327,41 @@ class GeoreportRequestResource extends ResourceBase {
         $node->set($field_name, $values[$field_name]);
       }
 
-      else if ($field_type == 'entity_reference' && $field_name != 'field_request_media') {
+      elseif ($field_type == 'entity_reference' && $field_name != 'field_request_media') {
         $node->set($field_name, ['target_id' => $values[$field_name]]);
       }
-      else if ($field_name == 'field_status_notes') {
+      elseif ($field_name == 'field_status_notes') {
         // Replace status only if new status is set.
         $status = $values['field_status'] ?? $node->get('field_status')
-            ->getValue();
+          ->getValue();
         $paragraphData = [$status, $values['field_status_notes']];
-        $paragraph = $map->create_paragraph($paragraphData);
+        $paragraph = $this->georeportProcessor->createParagraph($paragraphData);
 
         $current = $node->get('field_status_notes')->getValue();
-        $current[] = array(
+        $current[] = [
           'target_id' => $paragraph->id(),
           'target_revision_id' => $paragraph->getRevisionId(),
-        );
+        ];
         $node->set('field_status_notes', $current);
-      } else if ($field_name == 'revision_log_message') {
-        // Create a revision if set in open311 config
+      }
+      elseif ($field_name == 'revision_log_message') {
+        // Create a revision if set in open311 config.
         if ($this->config->get('revisions')) {
           $node->setNewRevision(TRUE);
-          // Set data for the revision
+          // Set data for the revision.
           $node->setRevisionLogMessage($revisionLogMessage);
           // $node->setRevisionUserId();
-          $node->setRevisionCreationTime(\Drupal::time()->getRequestTime());
+          $node->setRevisionCreationTime($this->time->getRequestTime());
         }
-      } else {
+      }
+      else {
         // Set fields the usual way.
         $node->set($field_name, $values[$field_name]);
       }
     }
     $validation = $this->validate($node);
+    $service_request = [];
+
     if ($validation === TRUE) {
       $node->save();
       $this->logger->notice('Updated entity %type with ID %request_id.', [
@@ -317,16 +371,11 @@ class GeoreportRequestResource extends ResourceBase {
       // Save the node and prepare response;.
       $request_id = $node->request_id->value;
 
-      $service_request = [];
       if (isset($node)) {
         $service_request['service_requests']['request']['service_request_id'] = $request_id;
       }
-      return $service_request;
-
-    } else {
-      return $exception;
     }
-
+    return $service_request;
 
   }
 
@@ -362,13 +411,14 @@ class GeoreportRequestResource extends ResourceBase {
         $messages[substr($violation->getPropertyPath(), 6)] = $violation->getMessage();
       }
 
-      // throw new BadRequestHttpException($message);
+      // Throw new BadRequestHttpException($message);
       $exception = new GeoreportException();
       $exception->setViolations($violations);
       $exception->setCode(400);
       throw $exception;
-      // return $messages;
-    } else {
+      // Return $messages;.
+    }
+    else {
       return TRUE;
     }
   }

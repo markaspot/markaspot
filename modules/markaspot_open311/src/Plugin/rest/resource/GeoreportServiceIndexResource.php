@@ -3,12 +3,14 @@
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\rest\Plugin\ResourceBase;
 use Drupal\rest\ResourceResponse;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\RouteCollection;
+use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 
 /**
  * Provides a resource to get view modes by entity and bundle.
@@ -33,6 +35,20 @@ class GeoreportServiceIndexResource extends ResourceBase {
   protected $currentUser;
 
   /**
+   * The markaspot_open311.settings config object.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $config;
+
+  /**
+   * The Georeport Processor.
+   *
+   * @var \Drupal\markaspot_open311\Service\GeoreportProcessorService
+   */
+  protected $georeportProcessor;
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -47,6 +63,10 @@ class GeoreportServiceIndexResource extends ResourceBase {
    *   A logger instance.
    * @param \Drupal\Core\Session\AccountProxyInterface $current_user
    *   A current user instance.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config
+   *   The config object.
+   * @param \Drupal\markaspot_open311\Service\GeoreportProcessorService $georeport_processor
+   *   The processor service.
    */
   public function __construct(
     array $configuration,
@@ -54,11 +74,14 @@ class GeoreportServiceIndexResource extends ResourceBase {
     $plugin_definition,
     array $serializer_formats,
     LoggerInterface $logger,
-    AccountProxyInterface $current_user) {
+    AccountProxyInterface $current_user,
+    ConfigFactoryInterface $config,
+    GeoreportProcessorService $georeport_processor,
+  ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
-    $this->config = \Drupal::configFactory()
-      ->getEditable('markaspot_open311.settings');
+    $this->config = $config->getEditable('markaspot_open311.settings');
     $this->currentUser = $current_user;
+    $this->georeportProcessor = $georeport_processor;
   }
 
   /**
@@ -71,7 +94,9 @@ class GeoreportServiceIndexResource extends ResourceBase {
       $plugin_definition,
       $container->getParameter('serializer.formats'),
       $container->get('logger.factory')->get('markaspot_open311'),
-      $container->get('current_user')
+      $container->get('current_user'),
+      $container->get('config.factory'),
+      $container->get('markaspot_open311.processor')
     );
   }
 
@@ -82,8 +107,8 @@ class GeoreportServiceIndexResource extends ResourceBase {
     $collection = new RouteCollection();
 
     $definition = $this->getPluginDefinition();
-    $canonical_path = isset($definition['uri_paths']['canonical']) ? $definition['uri_paths']['canonical'] : '/' . strtr($this->pluginId, ':', '/');
-    $create_path = isset($definition['uri_paths']['https://www.drupal.org/link-relations/create']) ? $definition['uri_paths']['https://www.drupal.org/link-relations/create'] : '/' . strtr($this->pluginId, ':', '/');
+    $canonical_path = $definition['uri_paths']['canonical'] ?? '/' . strtr($this->pluginId, ':', '/');
+    $create_path = $definition['uri_paths']['https://www.drupal.org/link-relations/create'] ?? '/' . strtr($this->pluginId, ':', '/');
     $route_name = strtr($this->pluginId, ':', '.');
 
     $methods = $this->availableMethods();
@@ -143,9 +168,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function get() {
-
-    $map = new GeoreportProcessor();
-    $services = $map->getTaxonomyTree('service_category');
+    $services = $this->georeportProcessor->getTaxonomyTree('service_category');
     if (!empty($services)) {
       $response = new ResourceResponse($services, 200);
       $response->addCacheableDependency($services);

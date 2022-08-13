@@ -4,33 +4,24 @@ services:
     tags:
       - { name: encoder, format: xml }
 
-# This is only for registering additiononal services.
-# Altering is dynamically achieved with registering a new service dynamically
-
-  markaspot_open311.request_format_route_filter:
-    class: Drupal\markaspot_open311\Routing\GeoreportRequestFormatRouteFilter
-    tags:
-      - { name: route_filter }
+  markaspot_open311.handler.georeport_request:
+    class: Drupal\markaspot_open311\GeoreportRequestHandler
+    arguments: ['@path.current']
 
   markaspot_open311.serializer.encoder.form:
     class: Drupal\markaspot_open311\Encoder\Open311Encoder
     tags:
       - { name: encoder, format: form }
 
-  # markaspot_open311.serializer.normalizer.form:
-  #  class: Drupal\markaspot_open311\Serializer\GeoreportPostNormalizer
-  #  tags:
-  #    - { name: normalizer, format: form }
+  markaspot_open311.processor:
+    class: Drupal\markaspot_open311\Service\GeoreportProcessorService
+    arguments: ['@config.factory', '@current_user', '@datetime.time', '@request_stack', '@entity_type.manager', '@file_url_generator', '@module_handler']
 
-  markaspot_open311.georeport_exception:
-    class: Drupal\markaspot_open311\EventSubscriber\GeoreportException
+  markaspot_open311.georeport_event.subscriber:
+    class: Drupal\markaspot_open311\EventSubscriber\GeoReportEventSubscriber
+    arguments: [ '@serializer', '@path.current']
     tags:
      - { name: event_subscriber }
-  markaspot_open311.georeport_resource_response.subscriber:
-    class: Drupal\markaspot_open311\EventSubscriber\GeoReportResourceResponseSubscriber
-    tags:
-      - { name: event_subscriber }
-    arguments: ['@serializer', '@renderer', '@current_route_match']
 
   markaspot_open311.event_subscriber:
     class: Drupal\markaspot_open311\EventSubscriber\RemoveCookieSubscriber

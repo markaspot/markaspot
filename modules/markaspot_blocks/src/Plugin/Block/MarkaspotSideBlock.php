@@ -18,7 +18,7 @@ class MarkaspotSideBlock extends BlockBase {
    * {@inheritdoc}
    */
   public function build() {
-    return array(
+    return [
       '#type' => 'markup',
       '#markup' => '
         <div class="mas-action">
@@ -31,7 +31,7 @@ class MarkaspotSideBlock extends BlockBase {
           </ul>
         </div>
        ',
-    );
+    ];
   }
 
 }

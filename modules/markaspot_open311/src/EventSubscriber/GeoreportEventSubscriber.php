@@ -2,42 +2,67 @@
 
 namespace Drupal\markaspot_open311\EventSubscriber;
 
-use Drupal\rest\ResourceResponse;
+use Drupal\Core\Path\CurrentPathStack;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpKernel\Event\GetResponseForExceptionEvent;
+use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
- * Class GeoreportException.
+ * Class GeoreportEventSubscriber.
+ *
+ * Overrides Exception with parsable error descriptions.
  *
  * @package Drupal\markaspot_open311\EventSubscriber
  */
-class GeoreportException implements EventSubscriberInterface {
+class GeoreportEventSubscriber implements EventSubscriberInterface {
 
-  private $request;
+  /**
+   * The serializer.
+   *
+   * @var \Symfony\Component\Serializer\SerializerInterface
+   */
+  protected $serializer;
 
-  public function __construct() {
-    $this->request = \Drupal::request();
+  /**
+   * The current path.
+   *
+   * @var \Drupal\Core\Path\CurrentPathStack
+   */
+  protected CurrentPathStack $currentPath;
+
+  /**
+   * Constructs a ResourceResponseSubscriber object.
+   *
+   * @param \Symfony\Component\Serializer\SerializerInterface $serializer
+   *   The serializer.
+   * @param \Drupal\Core\Path\CurrentPathStack $current_path
+   *   The current path service.
+   */
+  public function __construct(SerializerInterface $serializer, CurrentPathStack $current_path) {
+    $this->serializer = $serializer;
+    $this->currentPath = $current_path;
   }
 
   /**
    * {@inheritdoc}
    */
-  static public function getSubscribedEvents() {
-    $events[KernelEvents::EXCEPTION][] = array('onException');
+  public static function getSubscribedEvents() {
+    $events[KernelEvents::EXCEPTION][] = ['onException'];
     return $events;
   }
 
   /**
    * Reacting on Exception.
    *
-   * @param \Symfony\Component\HttpKernel\Event\GetResponseForExceptionEvent $event
+   * @param \Symfony\Component\HttpKernel\Event\ExceptionEvent $event
+   *   The exception event.
    */
-  public function onException(GetResponseForExceptionEvent $event) {
+  public function onException(ExceptionEvent $event) {
 
-    $exception = $event->getException();
-    $current_path = \Drupal::service('path.current')->getPath();
+    $exception = $event->getThrowable();
+    $current_path = $this->currentPath->getPath();
 
     if (strstr($current_path, 'georeport')) {
 
@@ -47,46 +72,46 @@ class GeoreportException implements EventSubscriberInterface {
         $errors = [];
         $violations = $exception->getViolations();
 
-        for ($i = 0; $i < $violations->count() ; $i++) {
+        for ($i = 0; $i < $violations->count(); $i++) {
           $violation = $violations->get($i);
+          $geoReportErrorCode = $violation->getConstraint()->geoReportErrorCode ?? NULL;
           switch ($violation->getPropertyPath()) {
             case 'field_category':
               $error['code'] = '103 - service_code';
               break;
+
             case 'field_category.0.target_id':
               $error['code'] = '104 - service_code not valid';
               break;
+
             case 'field_status.0.target_id':
               $error['code'] = '105 - Status not valid';
               break;
+
             case 'field_organisation.0.target_id':
               $error['code'] = '106 - Organisation not valid';
               break;
+
             default:
-              $error['code'] = '400 - Bad Request';
+              $error['code'] = $geoReportErrorCode ?? '400 - Bad Request';
           }
 
           $error['description'] = strip_tags($violation->getMessage());
           $errors[] = $error;
         }
-      } else {
+      }
+      else {
         $errors['error']['code'] = $exceptionCode;
         $errors['error']['description'] = $exception->getMessage();
       }
 
       $request_format = pathinfo($current_path, PATHINFO_EXTENSION);
-      $request_format = isset($request_format) ? $request_format : 'html';
+      $request_format = $request_format ?? 'html';
 
       if ($request_format == 'json' || $request_format == 'xml') {
-        $content = \Drupal::service('serializer')
-          ->serialize($errors, $request_format);
-
+        $content = $this->serializer->serialize($errors, $request_format);
 
       }
-
-
-
-
 
       // Create response, set status code etc.
       $status_code = ($exceptionCode == 0) ? 500 : $exceptionCode;
@@ -95,7 +120,6 @@ class GeoreportException implements EventSubscriberInterface {
       $response->headers->set('Content-Type', 'application/' . $request_format);
 
       // $response->setContent($content);
-
       $event->setResponse($response);
     }
   }

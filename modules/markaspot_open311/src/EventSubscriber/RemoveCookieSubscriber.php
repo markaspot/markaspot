@@ -2,12 +2,9 @@
 
 namespace Drupal\markaspot_open311\EventSubscriber;
 
-use Drupal\Core\Cache\CacheableResponseInterface;
 use Drupal\Core\Messenger\MessengerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpKernel\Event\FilterResponseEvent;
-use Symfony\Component\HttpKernel\Event\GetResponseEvent;
-use Symfony\Component\HttpKernel\Event\PostResponseEvent;
+use Symfony\Component\HttpKernel\Event\ResponseEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
@@ -35,21 +32,18 @@ class RemoveCookieSubscriber implements EventSubscriberInterface {
   /**
    * Sets extra headers on any responses, also subrequest ones.
    *
-   * @param \Symfony\Component\HttpKernel\Event\FilterResponseEvent $event
+   * @param \Symfony\Component\HttpKernel\Event\ResponseEvent $event
    *   The event to process.
    */
-  public function onRespond(FilterResponseEvent $event) {
-    // if($event->getRequest()->getPathInfo())
+  public function onRespond(ResponseEvent $event) {
+
     $query = $event->getRequest()->getQueryString();
     if (strstr($query ?: '', 'api_key')) {
       $session = \session_name();
-      $response = $event->getResponse()->headers->clearCookie($session);
+      $event->getResponse()->headers->clearCookie($session);
       $event->getRequest()->getSession()->clear();
     }
   }
-
-
-
 
   /**
    * {@inheritdoc}

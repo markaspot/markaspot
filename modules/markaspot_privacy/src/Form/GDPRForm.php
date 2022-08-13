@@ -2,15 +2,77 @@
 
 namespace Drupal\markaspot_privacy\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
-
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- * Class GDPRForm.
+ * Class GDPRForm provides a form for the user to delete/anonymize data.
  */
 class GDPRForm extends FormBase {
 
+  use StringTranslationTrait;
+
+  /**
+   * The messenger.
+   *
+   * @var \Drupal\Core\Messenger\MessengerInterface
+   */
+  protected $messenger;
+
+  /**
+   * The time service.
+   *
+   * @var \Drupal\Component\Datetime\TimeInterface
+   */
+  protected $time;
+
+
+  /**
+   * The request stack.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected $requestStack;
+
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected $entityTypeManager;
+
+  /**
+   * Constructs form object.
+   *
+   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
+   *   The messenger.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The configuration factory.
+   */
+  public function __construct(MessengerInterface $messenger, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory) {
+    $this->messenger = $messenger;
+    $this->entityTypeManager = $entity_type_manager;
+    $this->configFactory = $config_factory->getEditable('markaspot_privacy.settings');
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static(
+      $container->get('messenger'),
+      $container->get('entity_type.manager'),
+      $container->get('config.factory')
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -47,38 +109,27 @@ class GDPRForm extends FormBase {
   /**
    * {@inheritdoc}
    */
-  public function validateForm(array &$form, FormStateInterface $form_state) {
-    parent::validateForm($form, $form_state);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     // Display result.
-    foreach ($form_state->getValues() as $key => $value) {
-      $uuid = $form_state->getValue('uuid');
-    }
-
-    $node = \Drupal::entityTypeManager()->getStorage('node')->loadByProperties(['uuid' => $uuid]);
+    $uuid = $form_state->getValue('uuid');
+    $node = $this->entityTypeManager->getStorage('node')->loadByProperties(['uuid' => $uuid]);
 
     if (empty($node)) {
-      drupal_set_message($this->t("Sorry, we can't find the content requested. Maybe this has been deleted already."), 'error');
+      $this->messenger->addMessage($this->t("Sorry, we can't find the content requested. Maybe this has been deleted already."), 'error');
     }
     else {
 
-      // we only have one node as loaded by uuid.
+      // We only have one node as loaded by uuid.
       $node = reset($node);
-      $node->setPublished(FALSE);
-      $node->set('field_e_mail', "anonymous@example.off");
+      $node->setUnpublished();
+      $node->set('field_e_mail', "anasasaonymous@example.off");
       $node->save();
 
       $title = $node->title->value;
 
-      drupal_set_message($this->t('The service request "@title" has been removed from the system.', ['@title' => $title]),'info');
+      $this->messenger->addMessage($this->t('The service request "@title" has been removed from the system.', ['@title' => $title]), 'info');
 
-
-      \Drupal::logger('markaspot_privacy')->notice('User deleted %title.',
+      $this->logger('markaspot_privacy')->notice('User deleted %title.',
         ['%title' => $title]);
 
       $form_state->setRedirect('<front>');

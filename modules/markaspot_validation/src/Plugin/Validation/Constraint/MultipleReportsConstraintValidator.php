@@ -3,6 +3,13 @@
 namespace Drupal\markaspot_validation\Plugin\Validation\Constraint;
 
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Session\AccountInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 
@@ -19,10 +26,35 @@ use Symfony\Component\Validator\ConstraintValidator;
 
 /**
  * Class MultipleReportsConstraintValidator.
+ *
+ * Validates new service request's committed e-mail against being used
+ *  several times.
  */
-class MultipleReportsConstraintValidator extends ConstraintValidator {
+class MultipleReportsConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
   use StringTranslationTrait;
+
+  /**
+   * The time service.
+   *
+   * @var \Drupal\Component\Datetime\TimeInterface
+   */
+  protected $time;
+
+
+  /**
+   * The request stack.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected $requestStack;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected $entityTypeManager;
 
   /**
    * The config factory.
@@ -32,33 +64,66 @@ class MultipleReportsConstraintValidator extends ConstraintValidator {
   protected $configFactory;
 
   /**
-   * Constructs the Validator with config options.
+   * The current user.
    *
+   * @var \Drupal\Core\Session\AccountInterface
+   */
+  protected $account;
+
+  /**
+   * Constructs a Validation object.
+   *
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   *   The Symfony Request Stack.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The configuration factory.
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The currently authenticated user.
    */
-  public function __construct() {
-    $this->configFactory = \Drupal::config('markaspot_validation.settings');
+  public function __construct(TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, AccountInterface $account) {
+    $this->time = $time;
+    $this->requestStack = $request_stack;
+    $this->entityTypeManager = $entity_type_manager;
+    $this->configFactory = $config_factory->getEditable('markaspot_validation.settings');
+    $this->account = $account;
+  }
+
+  /**
+   * {@inheritDoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static(
+      $container->get('datetime.time'),
+      $container->get('request_stack'),
+      $container->get('entity_type.manager'),
+      $container->get('config.factory'),
+      $container->get('current_user'),
+    );
   }
 
   /**
    * {@inheritdoc}
    */
   public function validate($field, Constraint $constraint) {
-    $session = \Drupal::requestStack()->getCurrentRequest()->getSession();
+    // $session = \Drupal::requestStack()->getCurrentRequest()->getSession();
     $status = $this->configFactory->get('multiple_reports');
-    $max_count = ($this->configFactory->get('max_count') != FALSE) ? $this->configFactory->get('max_count') : 5 ;
+    // var_dump($status);
+    $max_count = $this->configFactory->get('max_count') ? $this->configFactory->get('max_count') : 5;
     if ($status === 0) {
       return;
     }
-    $user = \Drupal::currentUser();
-    $permission = $user->hasPermission('bypass mas validation');
+    $user = $this->account;
+    // $permission = $user->hasPermission('bypass mas validation');
     if (!$user->hasPermission('bypass mas validation')) {
       $nids = $this->countReports();
-      $session_ident = !empty($nids) ? $nids : '';
+      // $session_ident = !empty($nids) ? $nids : '';
     }
     else {
-      $session_ident = '';
+      // $session_ident = '';
       $nids = 0;
     }
 
@@ -90,14 +155,13 @@ class MultipleReportsConstraintValidator extends ConstraintValidator {
     $entity = $this->context->getRoot();
     $email_field = $entity->get('field_e_mail')->getValue();
     $email = $email_field[0]['value'] ?? '';
-    $count = $this->configFactory->get('count');
-    $this->count = $count ?? 5;
-    $query = \Drupal::entityQuery('node')
+    $query = $this->entityTypeManager->getStorage('node')->getQuery()
       // Only published requests get validated as positive:
       // ->condition('status', 1)
+      ->accessCheck(FALSE)
       ->condition('type', 'service_request')
       ->condition('field_e_mail', $email)
-      ->condition('created', \Drupal::time()->getRequestTime() - (24 * 60 * 60), '>=');
+      ->condition('created', $this->time->getRequestTime() - (24 * 60 * 60), '>=');
 
     $nids = $query->execute();
     return count($nids);

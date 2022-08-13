@@ -9,26 +9,35 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
 /**
- *  Controller for SHS Tweak module
+ * Controller for SHS Tweak module.
  */
 class SHSTweakController extends ControllerBase {
 
   /**
+   * The Entity Type manager variable.
+   *
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface
    */
   protected $entityTypeManager;
 
   /**
+   * The Entity Type manager service.
+   *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
    */
   public function __construct(EntityTypeManagerInterface $entity_type_manager) {
     $this->entityTypeManager = $entity_type_manager;
   }
 
   /**
+   * Sets a new global container.
+   *
    * @param \Symfony\Component\DependencyInjection\ContainerInterface $container
+   *   The container interface.
    *
    * @return \Drupal\markaspot_shstweak\Controller\SHSTweakController|static
+   *   Get the term description.
    */
   public static function create(ContainerInterface $container) {
     $entityTypeManager = $container->get('entity_type.manager');
@@ -37,13 +46,16 @@ class SHSTweakController extends ControllerBase {
   }
 
   /**
-   * getting taxonomy term description for given Term
+   * Getting taxonomy term description for given term.
    *
    * @param \Drupal\taxonomy\Entity\Term $term
+   *   The Term.
    * @param int $last_child
-   *   if true only terms with no children will return description
+   *   If true only terms with no children will return description.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   Returns a JsonResponse.
+   *
    * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
@@ -59,7 +71,8 @@ class SHSTweakController extends ControllerBase {
     }
     return new JsonResponse([
       'data' => $description,
-      'method' => 'GET'
+      'method' => 'GET',
     ]);
   }
+
 }

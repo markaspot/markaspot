@@ -18,11 +18,11 @@ class MarkaspotMapRequestBlock extends BlockBase {
    * {@inheritdoc}
    */
   public function build() {
-    return array(
+    return [
       '#type' => 'markup',
       '#markup' => '<div id="map" data-drupal-selector="map-request-block" class="map-request-block" data-slideout-ignore><div class="log"><div class="log_header"><span class="left"></span><span class="right"></span></div><ul class="log_list"></ul></div></div>',
-      '#attached' => array(
-        'library' => array(
+      '#attached' => [
+        'library' => [
           'markaspot_map/dateFormat',
           'markaspot_map/leaflet',
           'markaspot_map/leaflet-awesome-markers',
@@ -34,9 +34,9 @@ class MarkaspotMapRequestBlock extends BlockBase {
           'markaspot_map/leaflet-timedimension',
           'markaspot_map/leaflet-markercluster',
           'markaspot_map/map',
-        ),
-      ),
-    );
+        ],
+      ],
+    ];
   }
 
 }

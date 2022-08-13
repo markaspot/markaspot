@@ -5,9 +5,10 @@ namespace Drupal\markaspot_resubmission;
 use Drupal\Core\Entity\EntityTypeManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
 
-
 /**
  * Class ResubmissionService.
+ *
+ * Gets all service requests that need a refreshment.
  */
 class ResubmissionService implements ResubmissionServiceInterface {
 
@@ -33,22 +34,32 @@ class ResubmissionService implements ResubmissionServiceInterface {
     $this->configFactory = $config_factory;
   }
 
-  function array_flatten($array) {
+  /**
+   * Helper function.
+   *
+   * @return array
+   *   return $result.
+   */
+  public function arrayFlatten($array) {
     $result = [];
-    foreach ($array as $key => $value) {
-      array_push($result,$value);
+    foreach ($array as $value) {
+      $result[] = $value;
     }
     return $result;
   }
 
   /**
+   * Load nodes by status.
+   *
    * @return \Drupal\Core\Entity\EntityInterface[]
+   *   An array of entity objects indexed by their IDs. Returns an empty array
+   *   if no matching entities are found.
    */
-  public function load() {
+  public function load(): array {
     $config = $this->configFactory->get('markaspot_resubmission.settings');
 
     $days = $config->get('days');
-    $tids = $this->array_flatten($config->get('status_resubmissive'));
+    $tids = $this->arrayFlatten($config->get('status_resubmissive'));
     $storage = $this->entityTypeManager->getStorage('node');
 
     foreach ($days as $key => $day) {
@@ -65,10 +76,8 @@ class ResubmissionService implements ResubmissionServiceInterface {
       $nids[] = $query->execute();
 
     }
-    $nids = array_reduce($nids, 'array_merge', array());
+    $nids = array_reduce($nids, 'array_merge', []);
     return $storage->loadMultiple($nids);
   }
+
 }
-
-
-

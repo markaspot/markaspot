@@ -3,7 +3,7 @@
 namespace Drupal\markaspot_archive;
 
 /**
- * Interface ArchiveServiceInterface.
+ * Interface for ArchiveService.
  */
 interface ArchiveServiceInterface {
 

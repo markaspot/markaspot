@@ -86,7 +86,7 @@ BubbleableMetadata $bubbleable_metadata) {
     if (($parent_tokens = \Drupal::token()->findWithPrefix($tokens, 'source')) && $source_node = $node->getUntranslated()) {
       $replacements += \Drupal::token()->generate('node', $parent_tokens, array('node' => $source_node), $options, $bubbleable_metadata);
     }
-    if (($node_type_tokens = \Drupal::token()->findWithPrefix($tokens, 'content-type')) && $node_type = node_type_load($node->bundle())) {
+    if (($node_type_tokens = \Drupal::token()->findWithPrefix($tokens, 'content-type')) && $node_type = \Drupal\node\Entity\NodeType::load($node->bundle())) {
       $replacements += \Drupal::token()->generate('content-type', $node_type_tokens, array('node_type' => $node_type), $options, $bubbleable_metadata);
     }
     if (($url_tokens = \Drupal::token()->findWithPrefix($tokens, 'url'))) {

@@ -59,9 +59,7 @@ function markaspot_request_id_update_9500() {
   $schema->createTable('markaspot_request_id', $spec);
 
   // Query for the last service_request to retrieve last service request
-  $query = \Drupal::entityQuery('node');
-  // Get the latest nid of all existing service-requests.
-  $query
+  $query = \Drupal::entityQuery('node')
     ->condition('type', 'service_request')
     ->accessCheck(FALSE)
     ->sort('nid', 'DESC')
@@ -80,6 +78,7 @@ function markaspot_request_id_update_9500() {
   try {
     $connection = Drupal::service('database');
     $setId = $connection->insert('markaspot_request_id')
+      ->accessCheck(FALSE)
       ->fields([
         'id' => $id[0],
         'request_id' => $last_request_id,

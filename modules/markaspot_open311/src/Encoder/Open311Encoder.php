@@ -13,20 +13,40 @@ use Symfony\Component\Serializer\Encoder\DecoderInterface;
  */
 class Open311Encoder implements EncoderInterface, DecoderInterface {
   /**
+   * The XML document.
+   *
    * @var \DOMDocument
    */
   private $dom;
+  /**
+   * The format.
+   *
+   * @var format
+   */
   private $format;
+  /**
+   * Options that the encoder has access to.
+   *
+   * @var context
+   */
   private $context;
+  /**
+   * Set root node name.
+   *
+   * @var null
+   */
   private $rootNodeName = NULL;
 
+  /**
+   * Get all possible nodes.
+   */
   protected function getNodes() {
-    $nodes = array(
+    $nodes = [
       'errors' => 'error',
       'services' => 'service',
       'service_requests' => 'request',
       'discovery' => 'discovery',
-    );
+    ];
 
     return $nodes;
   }
@@ -34,7 +54,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   /**
    * {@inheritdoc}
    */
-  public function encode($data, $format, array $context = array()) {
+  public function encode($data, $format, array $context = []): bool|string {
     if ($data instanceof \DOMDocument) {
       return $data->saveXML();
     }
@@ -75,39 +95,43 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   /**
    * {@inheritdoc}
    */
-  public function decode($data, $format, array $context = array()) {
+  public function decode($data, $format, array $context = []) {
     if ('' === trim($data)) {
-      throw new UnexpectedValueException('Invalid XML data, it can not be empty.');
+      throw new \UnexpectedValueException('Invalid XML data, it can not be empty.');
     }
+    if (function_exists('libxml_use_entity_loader') && \PHP_VERSION_ID < 80000) {
+      $internalErrors = libxml_use_internal_errors(TRUE);
+      libxml_use_internal_errors($internalErrors);
 
-    $internalErrors = libxml_use_internal_errors(TRUE);
-    $disableEntities = libxml_disable_entity_loader(TRUE);
+    }
+    if (function_exists('libxml_disable_entity_loader') && \PHP_VERSION_ID < 80000) {
+      $disableEntities = libxml_disable_entity_loader(TRUE);
+      libxml_disable_entity_loader($disableEntities);
+
+    }
     libxml_clear_errors();
 
     $dom = new \DOMDocument();
     $dom->loadXML($data, LIBXML_NONET | LIBXML_NOBLANKS);
 
-    libxml_use_internal_errors($internalErrors);
-    libxml_disable_entity_loader($disableEntities);
-
     if ($error = libxml_get_last_error()) {
       libxml_clear_errors();
 
-      throw new UnexpectedValueException($error->message);
+      throw new \UnexpectedValueException($error->message);
     }
 
     foreach ($dom->childNodes as $child) {
       if ($child->nodeType === XML_DOCUMENT_TYPE_NODE) {
-        throw new UnexpectedValueException('Document types are not allowed.');
+        throw new \UnexpectedValueException('Document types are not allowed.');
       }
     }
 
     $rootNode = $dom->firstChild;
 
-    // todo: throw an exception if the root node name is not correctly configured (bc)
+    // @todo throw an exception if the root node name is not correctly configured (bc)
     if ($rootNode->hasChildNodes()) {
       $xpath = new \DOMXPath($dom);
-      $data = array();
+      $data = [];
       foreach ($xpath->query('namespace::*', $dom->documentElement) as $nsNode) {
         $data['@' . $nsNode->nodeName] = $nsNode->nodeValue;
       }
@@ -125,7 +149,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       return $rootNode->nodeValue;
     }
 
-    $data = array();
+    $data = [];
 
     foreach ($rootNode->attributes as $attrKey => $attr) {
       $data['@' . $attrKey] = $attr->nodeValue;
@@ -154,7 +178,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * Sets the root node name.
    *
    * @param string $name
-   *   root node name.
+   *   Root node name.
    */
   public function setRootNodeName($name) {
     $this->rootNodeName = $name;
@@ -164,18 +188,24 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * Returns the root node name.
    *
    * @return string
+   *   Returns root node name.
    */
   public function getRootNodeName() {
     return $this->rootNodeName;
   }
 
   /**
+   * Append XML String.
+   *
    * @param \DOMNode $node
+   *   The node.
    * @param string $val
+   *   XML to append.
    *
    * @return bool
+   *   Return value.
    */
-  final protected function appendXMLString(\DOMNode $node, $val) {
+  final protected function appendXmlString(\DOMNode $node, $val) {
     if (strlen($val) > 0) {
       $frag = $this->dom->createDocumentFragment();
       $frag->appendXML($val);
@@ -188,10 +218,15 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   }
 
   /**
+   * Append text to xml.
+   *
    * @param \DOMNode $node
+   *   The node.
    * @param string $val
+   *   Text to append.
    *
    * @return bool
+   *   Return value.
    */
   final protected function appendText(\DOMNode $node, $val) {
     $nodeText = $this->dom->createTextNode($val);
@@ -201,23 +236,32 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   }
 
   /**
+   * Append CDATA to node.
+   *
    * @param \DOMNode $node
+   *   The node.
    * @param string $val
+   *   String to append as CDATA.
    *
    * @return bool
+   *   Return value.
    */
   final protected function appendCData(\DOMNode $node, $val) {
     $nodeText = $this->dom->createCDATASection($val);
     $node->appendChild($nodeText);
-
     return TRUE;
   }
 
   /**
+   * Append fragment.
+   *
    * @param \DOMNode $node
+   *   The node.
    * @param \DOMDocumentFragment $fragment
+   *   Fragement to append.
    *
    * @return bool
+   *   Return value.
    */
   final protected function appendDocumentFragment(\DOMNode $node, $fragment) {
     if ($fragment instanceof \DOMDocumentFragment) {
@@ -233,8 +277,10 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * Checks the name is a valid xml element name.
    *
    * @param string $name
+   *   Name of element.
    *
    * @return bool
+   *   Return value.
    */
   final protected function isElementNameValid($name) {
     return $name &&
@@ -246,9 +292,10 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * Parse the input DOMNode into an array or a string.
    *
    * @param \DOMNode $node
-   *   xml to parse.
+   *   The xml to parse.
    *
    * @return array|string
+   *   Return xml.
    */
   private function parseXml(\DOMNode $node) {
     $data = $this->parseXmlAttributes($node);
@@ -282,16 +329,17 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * Parse the input DOMNode attributes into an array.
    *
    * @param \DOMNode $node
-   *   xml to parse.
+   *   The xml to parse.
    *
    * @return array
+   *   Return attributes.
    */
   private function parseXmlAttributes(\DOMNode $node) {
     if (!$node->hasAttributes()) {
-      return array();
+      return [];
     }
 
-    $data = array();
+    $data = [];
 
     foreach ($node->attributes as $attr) {
       if (ctype_digit($attr->nodeValue)) {
@@ -306,23 +354,26 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   }
 
   /**
-   * Parse the input DOMNode value (content and children) into an array or a string.
+   * Parse the input DOMNode value (content and children).
    *
    * @param \DOMNode $node
-   *   xml to parse.
+   *   The xml to parse.
    *
    * @return array|string
+   *   return value.
    */
   private function parseXmlValue(\DOMNode $node) {
     if (!$node->hasChildNodes()) {
       return $node->nodeValue;
     }
 
-    if (1 === $node->childNodes->length && in_array($node->firstChild->nodeType, array(XML_TEXT_NODE, XML_CDATA_SECTION_NODE))) {
+    if (1 === $node->childNodes->length && in_array($node->firstChild->nodeType,
+        [XML_TEXT_NODE, XML_CDATA_SECTION_NODE]
+      )) {
       return $node->firstChild->nodeValue;
     }
 
-    $value = array();
+    $value = [];
 
     foreach ($node->childNodes as $subnode) {
       $val = $this->parseXml($subnode);
@@ -353,12 +404,17 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * Parse the data and convert it to DOMElements.
    *
    * @param \DOMNode $parentNode
+   *   The parent node.
    * @param array|object $data
+   *   The data to be parsed and added.
    * @param string|null $xmlRootNodeName
+   *   The root node.
    *
    * @return bool
+   *   Return success or ...
    *
    * @throws UnexpectedValueException
+   *   Exception to throw.
    */
   private function buildXml(\DOMNode $parentNode, $data, $xmlRootNodeName = NULL) {
     $append = TRUE;
@@ -366,7 +422,8 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
     if (is_array($data) || $data instanceof \Traversable) {
       foreach ($data as $key => $data) {
         // Ah this is the magic @ attribute types.
-        if (0 === strpos($key, '@') && is_scalar($data) && $this->isElementNameValid($attributeName = substr($key, 1))) {
+        if (0 === strpos($key, '@') && is_scalar($data) &&
+          $this->isElementNameValid($attributeName = substr($key, 1))) {
           $parentNode->setAttribute($attributeName, $data);
         }
         elseif ($key === '#') {
@@ -375,11 +432,6 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
         elseif (is_array($data) && FALSE === is_numeric($key)) {
           // Is this array fully numeric keys?
           if (ctype_digit(implode('', array_keys($data)))) {
-            /*
-             * Create nodes to append to $parentNode based on the $key of this array
-             * Produces <xml><item>0</item><item>1</item></xml>
-             * From array("item" => array(0,1));.
-             */
             foreach ($data as $subData) {
               $append = $this->appendNode($parentNode, $subData, $key);
             }
@@ -389,7 +441,8 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
           }
         }
         elseif (is_numeric($key) || !$this->isElementNameValid($key)) {
-          // Checking passed data for keywords resulting in different root_nodes.
+          // Checking passed data for keywords resulting in different
+          // root_nodes.
           if (NULL != array_key_exists('error', $data)) {
             $append = $this->appendNode($parentNode, $data, 'error', $key);
 
@@ -429,18 +482,23 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       return $this->appendNode($parentNode, $data, 'data');
     }
 
-    throw new UnexpectedValueException(sprintf('An unexpected value could not be serialized: %s', var_export($data, TRUE)));
+    throw new \UnexpectedValueException(sprintf('An unexpected value could not be serialized: %s', var_export($data, TRUE)));
   }
 
   /**
    * Selects the type of node to create and appends it to the parent.
    *
    * @param \DOMNode $parentNode
+   *   The parend node.
    * @param array|object $data
+   *   Data to append.
    * @param string $nodeName
+   *   Node name.
    * @param string $key
+   *   Attribute to set.
    *
-   * @return bool
+   * @return bool|mixed
+   *   Return value.
    */
   private function appendNode(\DOMNode $parentNode, $data, $nodeName, $key = NULL) {
     $node = $this->dom->createElement($nodeName);
@@ -448,7 +506,8 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       $node->setAttribute('key', $key);
     }
     $appendNode = $this->selectNodeType($node, $data);
-    // We may have decided not to append this node, either in error or if its $nodeName is not valid.
+    // We may have decided not to append this node, either in error or if its
+    // $nodeName is not valid.
     if ($appendNode) {
       $parentNode->appendChild($node);
     }
@@ -457,11 +516,13 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   }
 
   /**
-   * Checks if a value contains any characters which would require CDATA wrapping.
+   * Checks if a value contains any characters which require CDATA wrapping.
    *
    * @param string $val
+   *   String to check.
    *
    * @return bool
+   *   Result of check.
    */
   private function needsCdataWrapping($val) {
     return preg_match('/[<>&]/', $val);
@@ -471,9 +532,12 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * Tests the value being passed and decide what sort of element to create.
    *
    * @param \DOMNode $node
+   *   The node.
    * @param mixed $val
+   *   Mixed value.
    *
-   * @return bool
+   * @return mixed
+   *   Return value.
    */
   private function selectNodeType(\DOMNode $node, $val) {
     if (is_array($val)) {
@@ -513,28 +577,29 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * Get real XML root node name, taking serializer options into account.
    *
    * @param array $context
+   *   The context.
    *
    * @return string
+   *   Return root name.
    */
-  private function resolveXmlRootName(array $context = array()) {
-    return isset($context['xml_root_node_name'])
-      ? $context['xml_root_node_name']
-      : $this->rootNodeName;
+  private function resolveXmlRootName(array $context = []) {
+    return $context['xml_root_node_name'] ?? $this->rootNodeName;
   }
 
   /**
    * Create a DOM document, taking serializer options into account.
    *
    * @param array $context
-   *   options that the encoder has access to.
+   *   Options that the encoder has access to.
    *
    * @return \DOMDocument
+   *   Return xml.
    */
   private function createDomDocument(array $context) {
     $document = new \DOMDocument();
 
     // Set an attribute on the DOM document specifying, as part of the XML declaration,.
-    $xmlOptions = array(
+    $xmlOptions = [
       // Nicely formats output with indentation and extra space.
       'xml_format_output' => 'formatOutput',
       // The version number of the document.
@@ -543,7 +608,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       'xml_encoding' => 'encoding',
       // Whether the document is standalone.
       'xml_standalone' => 'xmlStandalone',
-    );
+    ];
     foreach ($xmlOptions as $xmlOption => $documentProperty) {
       if (isset($context[$xmlOption])) {
         $document->$documentProperty = $context[$xmlOption];

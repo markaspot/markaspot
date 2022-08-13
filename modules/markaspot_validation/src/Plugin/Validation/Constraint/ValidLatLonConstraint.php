@@ -1,9 +1,7 @@
 <?php
-/**
- * @file
- * Contains \Drupal\entity_validation\Plugin\Validation\Constraint\EvenNumberConstraint.
- */
+
 namespace Drupal\markaspot_validation\Plugin\Validation\Constraint;
+
 use Symfony\Component\Validator\Constraint;
 
 /**
@@ -17,7 +15,15 @@ use Symfony\Component\Validator\Constraint;
 class ValidLatLonConstraint extends Constraint {
   /**
    * Maps error codes to the names of their constants.
+   *
+   * @var geoReportErrorCode
    */
-  public $geoReportErrorCode = '102 - Lat/Lon';
-  public $noValidViewboxMessage = 'The submitted location is outside our range of activity.';
+  public string $geoReportErrorCode = '102 - Lat/Lon';
+  /**
+   * Message.
+   *
+   * @var noValidViewboxMessage
+   */
+  public string $noValidViewboxMessage = 'The submitted location is outside our range of activity.';
+
 }

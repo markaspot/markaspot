@@ -18,10 +18,10 @@ class MarkaspotTrendCategoryBlock extends BlockBase {
    * {@inheritdoc}
    */
   public function build() {
-    return array(
+    return [
       '#theme' => 'markaspot_trend_category_block',
-      '#attached' => array(
-        'library' => array(
+      '#attached' => [
+        'library' => [
           'markaspot_trend/dateFormat',
           'markaspot_trend/moment',
           'markaspot_trend/axios',
@@ -32,9 +32,9 @@ class MarkaspotTrendCategoryBlock extends BlockBase {
           'markaspot_trend/trend',
           'markaspot_trend/filter',
           'markaspot_trend/category',
-        ),
-      ),
-    );
+        ],
+      ],
+    ];
   }
 
 }

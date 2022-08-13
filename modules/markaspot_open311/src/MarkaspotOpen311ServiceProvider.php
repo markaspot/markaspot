@@ -4,7 +4,11 @@ namespace Drupal\markaspot_open311;
 
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\DependencyInjection\ServiceProviderBase;
+use Symfony\Component\DependencyInjection\Reference;
 
+/**
+ * Override Rest Request Filter with a georeport aware filter.
+ */
 class MarkaspotOpen311ServiceProvider extends ServiceProviderBase {
 
   /**
@@ -14,11 +18,8 @@ class MarkaspotOpen311ServiceProvider extends ServiceProviderBase {
    */
   public function register(ContainerBuilder $container) {
 
-    // Overrides Request Format Filter.
-    $definition = $container->getDefinition('rest.resource_response.subscriber');
-    $definition->setClass('Drupal\markaspot_open311\EventSubscriber\GeoReportResourceResponseSubscriber');
-
-    // Overrides Request Format Filter.
+    $container->register('request_format_route_filter')
+      ->addArgument(new Reference('path.current'));
     $definition = $container->getDefinition('request_format_route_filter');
     $definition->setClass('Drupal\markaspot_open311\Routing\GeoreportRequestFormatRouteFilter');
   }

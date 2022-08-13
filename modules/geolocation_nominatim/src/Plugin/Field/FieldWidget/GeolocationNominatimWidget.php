@@ -6,6 +6,7 @@ use Drupal\Component\Utility\Html;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Field\WidgetBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
  * Plugin implementation of the 'geolocation_nominatim_widget' widget.
@@ -20,6 +21,8 @@ use Drupal\Core\Form\FormStateInterface;
  */
 class GeolocationNominatimWidget extends WidgetBase {
 
+  use StringTranslationTrait;
+
   /**
    * {@inheritdoc}
    */
@@ -33,7 +36,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'limit_viewbox' => '',
       'city' => '',
       'tileServerUrl' => 'http://{s}.tile.osm.org/{z}/{x}/{y}.png',
-      'wmsLayer' =>'',
+      'wmsLayer' => '',
       'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
@@ -57,19 +60,30 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#title' => $this->t('Zoom level'),
       '#options' => $zoom_options,
       '#default_value' => $this->getSetting('zoom'),
-      '#attributes' => ['class' => ['geolocation-widget-zoom', 'for--' . $uniq_id]],
+      '#attributes' => [
+        'class' =>
+        ['geolocation-widget-zoom', 'for--' . $uniq_id],
+      ],
     ];
     $elements['center_lat'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Center (Latitude)'),
       '#default_value' => $this->getSetting('center_lat'),
-      '#attributes' => ['class' => ['geolocation-widget-lat', 'for--' . $uniq_id]],
+      '#attributes' => [
+        'class' =>
+        ['geolocation-widget-lat', 'for--' . $uniq_id,
+        ],
+      ],
     ];
     $elements['center_lng'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Center (Longitude)'),
       '#default_value' => $this->getSetting('center_lng'),
-      '#attributes' => ['class' => ['geolocation-widget-lng', 'for--' . $uniq_id]],
+      '#attributes' => [
+        'class' =>
+        ['geolocation-widget-lng', 'for--' . $uniq_id,
+        ],
+      ],
     ];
     $elements['limit_countrycodes'] = [
       '#type' => 'textfield',
@@ -102,18 +116,18 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#default_value' => $this->getSetting('tileServerUrl'),
       '#description' => $this->t('Choose a tileserver url like "http://{s}.tile.osm.org/{z}/{x}/{y}.png". or a WMS Service URL'),
     ];
-    $elements['wmsLayer'] = array(
+    $elements['wmsLayer'] = [
       '#type' => 'textfield',
-      '#title' => t('WMS Layer ID'),
+      '#title' => $this->t('WMS Layer ID'),
       '#default_value' => $this->getSetting('wmsLayer'),
-      '#description' => t('Enter the layer ID like "layer:layer"'),
-    );
-    $elements['customAttribution'] = array(
+      '#description' => $this->t('Enter the layer ID like "layer:layer"'),
+    ];
+    $elements['customAttribution'] = [
       '#type' => 'textfield',
-      '#title' => t('Add a custom attribution'),
+      '#title' => $this->t('Add a custom attribution'),
       '#default_value' => $this->getSetting('customAttribution'),
-      '#description' => t('Check your Tile Service Provider for policy'),
-    );
+      '#description' => $this->t('Check your Tile Service Provider for policy'),
+    ];
     $elements['serviceUrl'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Geocoding service url'),
@@ -163,19 +177,25 @@ class GeolocationNominatimWidget extends WidgetBase {
   public function formElement(FieldItemListInterface $items, $delta, array $element, array &$form, FormStateInterface $form_state) {
     $uniq_id = Html::getUniqueId('geolocation-nominatim-map');
 
-    $element['lat'] = array(
+    $element['lat'] = [
       '#type' => 'hidden',
       '#empty_value' => '',
       '#default_value' => (isset($items[$delta]->lat)) ? $items[$delta]->lat : NULL,
-      '#attributes' => ['class' => ['geolocation-widget-lat', 'for--' . $uniq_id]],
-    );
+      '#attributes' => [
+        'class' =>
+        ['geolocation-widget-lat', 'for--' . $uniq_id],
+      ],
+    ];
 
-    $element['lng'] = array(
+    $element['lng'] = [
       '#type' => 'hidden',
       '#empty_value' => '',
       '#default_value' => (isset($items[$delta]->lng)) ? $items[$delta]->lng : NULL,
-      '#attributes' => ['class' => ['geolocation-widget-lng', 'for--' . $uniq_id]],
-    );
+      '#attributes' => [
+        'class' =>
+        ['geolocation-widget-lng', 'for--' . $uniq_id],
+      ],
+    ];
 
     $element['map_container'] = [
       '#type' => 'fieldset',
@@ -185,7 +205,10 @@ class GeolocationNominatimWidget extends WidgetBase {
       'map' => [
         '#type' => 'html_tag',
         '#tag' => 'div',
-        '#attributes' => ['id' => $uniq_id, 'style' => 'width: 100%; height: 400px'],
+        '#attributes' => [
+          'id' => $uniq_id,
+          'style' => 'width: 100%; height: 400px',
+        ],
       ],
     ];
 

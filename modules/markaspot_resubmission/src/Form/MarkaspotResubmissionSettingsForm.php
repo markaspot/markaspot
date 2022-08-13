@@ -4,11 +4,42 @@ namespace Drupal\markaspot_resubmission\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\Core\Entity\EntityTypeManager;
 
 /**
  * Configure resubmission settings for this site.
  */
 class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
+
+  use StringTranslationTrait;
+
+  /**
+   * The Entity Type manager variable.
+   *
+   * @var Drupal\Core\Entity\EntityTypeManager
+   */
+  protected $entityTypeManager;
+
+  /**
+   * Class constructor.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeManager $entity
+   *   The Entity type manager service.
+   */
+  public function __construct(EntityTypeManager $entity) {
+    $this->entityTypeManager = $entity;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static(
+      $container->get('entity_type.manager')
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -22,46 +53,47 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_resubmission.settings');
-    $form['markaspot_resubmission'] = array(
+    $form['markaspot_resubmission'] = [
       '#type' => 'fieldset',
-      '#title' => t('Resubmission Settings'),
+      '#title' => $this->t('Resubmission Settings'),
       '#collapsible' => TRUE,
-      '#description' => t('This setting allow you to choose between several resubmission settings.'),
+      '#description' => $this->t('This setting allow you to choose between several resubmission settings.'),
       '#group' => 'settings',
-    );
+    ];
 
-    $form['markaspot_resubmission']['common']['tax_status'] = array(
+    $form['markaspot_resubmission']['common']['tax_status'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Bundle'),
       '#default_value' => $config->get('tax_status') ?: 'service_status',
-      '#description' => t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
-    );
+      '#description' => $this->t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
+    ];
 
-    $form['markaspot_resubmission']['status_resubmissive'] = array(
+    $form['markaspot_resubmission']['status_resubmissive'] = [
       '#type' => 'select',
       '#multiple' => TRUE,
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_resubmission.settings')->get('tax_status')),
       '#default_value' => $config->get('status_resubmissive'),
-      '#title' => t('Please choose the status for resubmissable reports.'),
+      '#title' => $this->t('Please choose the status for resubmissable reports.'),
 
-    );
+    ];
 
     $catOptions = $this->getTaxonomyTermOptions('service_category');
     $form['markaspot_resubmission']['days'] = [
       '#tree' => TRUE,
       '#type' => 'details',
-      '#title' => t('Resubmission period settings per category'),
-      '#description' => t('You can change the period in which content is notified for being submissive.'),
-      '#open' => TRUE, // Controls the HTML5 'open' attribute. Defaults to FALSE.
+      '#title' => $this->t('Resubmission period settings per category'),
+      '#description' => $this->t('You can change the period in which content is notified for being submissive.'),
+    // Controls the HTML5 'open' attribute. Defaults to FALSE.
+      '#open' => TRUE,
     ];
 
-    $form['markaspot_resubmission']['mailtext'] = array(
+    $form['markaspot_resubmission']['mailtext'] = [
       '#type' => 'textarea',
-      '#token_types' => array('site'),
+      '#token_types' => ['site'],
       '#title' => $this->t('Mailtext'),
       '#default_value' => $config->get('mailtext') ?: 'Hello [current-user:name]!',
-    );
+    ];
 
     foreach ($catOptions as $tid => $category_name) {
       $form['markaspot_resubmission']['days'][$tid] = [
@@ -69,9 +101,9 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
         '#min' => 1,
         '#max' => 1000,
         '#step' => 1,
-        '#title' => t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
-        '#default_value' => $config->get('days.'. $tid),
-        '#description' => t('After how many days reminding e-mails should be sent?'),
+        '#title' => $this->t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
+        '#default_value' => $config->get('days.' . $tid),
+        '#description' => $this->t('After how many days reminding e-mails should be sent?'),
       ];
     }
     $form['markaspot_resubmission']['interval'] = [
@@ -88,18 +120,10 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
         432000 => $this->t('5 days'),
         604800 => $this->t('1 week'),
 
-
       ],
     ];
 
     return parent::buildForm($form, $form_state);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function validateForm(array &$form, FormStateInterface $form_state) {
-    parent::validateForm($form, $form_state);
   }
 
   /**
@@ -116,11 +140,6 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
       ->save();
 
     parent::submitForm($form, $form_state);
-  }
-
-  public function getFields() {
-    $definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', 'service_request');
-    return array_keys($definitions);
   }
 
   /**
@@ -142,12 +161,11 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
    *   Select options for form
    */
   public function getTaxonomyTermOptions($machine_name) {
-    $options = array();
+    $options = [];
 
     // $vid = taxonomy_vocabulary_machine_name_load($machine_name)->vid;
     $vid = $machine_name;
-    $options_source = \Drupal::entityTypeManager()
-      ->getStorage('taxonomy_term')
+    $options_source = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadTree($vid);
 
     foreach ($options_source as $item) {

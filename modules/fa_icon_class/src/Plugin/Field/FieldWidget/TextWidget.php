@@ -24,27 +24,27 @@ class TextWidget extends WidgetBase {
    * {@inheritdoc}
    */
   public function formElement(FieldItemListInterface $items, $delta, array $element, array &$form, FormStateInterface $form_state) {
-    $value = isset($items[$delta]->value) ? $items[$delta]->value : 'map';
-    $element += array(
+    $value = $items[$delta]->value ?? 'map';
+    $element += [
       '#type' => 'textfield',
       '#default_value' => $value,
-      '#attributes' => array('class' => array("icon-widget")),
+      '#attributes' => ['class' => ["icon-widget"]],
       '#size' => 12,
       '#maxlength' => 20,
-      '#element_validate' => array(
-        array($this, 'validate'),
-      ),
-      '#attached' => array(
+      '#element_validate' => [
+        [$this, 'validate'],
+      ],
+      '#attached' => [
         // Add bpptstrap and fontAwesome libraries.
-        'library' => array(
+        'library' => [
           'fa_icon_class/fontawesome-iconpicker',
           'fa_icon_class/iconpicker',
           'fa_icon_class/bootstrap',
           'fa_icon_class/font-awesome',
-        ),
-      ),
-    );
-    return array('value' => $element);
+        ],
+      ],
+    ];
+    return ['value' => $element];
   }
 
   /**

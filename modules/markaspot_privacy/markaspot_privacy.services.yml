@@ -1,0 +1,5 @@
+services:
+ markaspot_privacy.gdpr_form:
+    class: Drupal\markaspot_privacy\Form\GDPRForm.php
+    arguments: ['@messenger', '@entity_type.manager', '@config.factory']
+

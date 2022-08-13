@@ -2,13 +2,55 @@
 
 namespace Drupal\markaspot_archive\Form;
 
+use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\Core\Entity\EntityTypeManager;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Configure archive settings for this site.
  */
 class MarkaspotArchiveSettingsForm extends ConfigFormBase {
+  use StringTranslationTrait;
+
+  /**
+   * The Entity Type manager variable.
+   *
+   * @var Drupal\Core\Entity\EntityTypeManager
+   */
+  protected $entityTypeManager;
+
+  /**
+   * The Entity Field manager variable.
+   *
+   * @var Drupal\Core\Entity\EntityFieldManagerImterface
+   */
+  protected EntityFieldManagerInterface $entityFieldManager;
+
+  /**
+   * Class constructor.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeManager $entity
+   *   The Entity type manager service.
+   * @param \Drupal\Core\Entity\EntityFieldManagerInterface $entity_field_manager
+   *   The entity field manager.
+   */
+  public function __construct(EntityTypeManager $entity, EntityFieldManagerInterface $entity_field_manager) {
+    $this->entityTypeManager = $entity;
+    $this->entityFieldManager = $entity_field_manager;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static(
+      $container->get('entity_type.manager'),
+      $container->get('entity_field.manager')
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -22,72 +64,70 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_archive.settings');
-    $form['markaspot_archive'] = array(
+    $form['markaspot_archive'] = [
       '#type' => 'fieldset',
-      '#title' => t('Archive Settings'),
+      '#title' => $this->t('Archive Settings'),
       '#collapsible' => TRUE,
-      '#description' => t('This setting allow you to choose between several archive settings.'),
+      '#description' => $this->t('This setting allow you to choose between several archive settings.'),
       '#group' => 'settings',
-    );
+    ];
 
-    $form['markaspot_archive']['common']['tax_status'] = array(
+    $form['markaspot_archive']['common']['tax_status'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Bundle'),
       '#default_value' => 'service_status',
-      '#description' => t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
-    );
+      '#description' => $this->t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
+    ];
 
-    $form['markaspot_archive']['status_archivable'] = array(
+    $form['markaspot_archive']['status_archivable'] = [
       '#type' => 'select',
       '#multiple' => TRUE,
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_archive.settings')->get('tax_status')),
       '#default_value' => $config->get('status_archivable'),
-      '#title' => t('Please choose the status for archivable reports.'),
-    );
+      '#title' => $this->t('Please choose the status for archivable reports.'),
+    ];
 
-    $form['markaspot_archive']['status_archived'] = array(
+    $form['markaspot_archive']['status_archived'] = [
       '#type' => 'select',
       '#multiple' => FALSE,
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_archive.settings')->get('tax_status')),
       '#default_value' => $config->get('status_archived'),
-      '#title' => t('Please choose the status for archived reports.'),
-    );
+      '#title' => $this->t('Please choose the status for archived reports.'),
+    ];
 
-    $form['markaspot_archive']['unpublish'] = array(
+    $form['markaspot_archive']['unpublish'] = [
       '#type' => 'checkbox',
-      '#title' => t('Unpublish'),
-      '#description' => t('Unpublish Service Requests on archiving.'),
+      '#title' => $this->t('Unpublish'),
+      '#description' => $this->t('Unpublish Service Requests on archiving.'),
       '#default_value' => $config->get('unpublish'),
-    );
+    ];
 
-    $form['markaspot_archive']['anonymize'] = array(
+    $form['markaspot_archive']['anonymize'] = [
       '#type' => 'checkbox',
-      '#title' => t('Anonymize personal data'),
-      '#description' => t('All data of the field entities below will get anonymized.'),
+      '#title' => $this->t('Anonymize personal data'),
+      '#description' => $this->t('All data of the field entities below will get anonymized.'),
       '#default_value' => $config->get('anonymize'),
-    );
+    ];
 
-    $form['markaspot_archive']['anonymize_fields'] = array(
+    $form['markaspot_archive']['anonymize_fields'] = [
       '#type' => 'select',
       '#multiple' => TRUE,
       '#options' => self::getFields(),
       '#default_value' => $config->get('anonymize_fields'),
-      '#title' => t('Please choose the fields that will get overwritten on archiving.'),
-    );
-
-
+      '#title' => $this->t('Please choose the fields that will get overwritten on archiving.'),
+    ];
 
     $catOptions = $this->getTaxonomyTermOptions('service_category');
     $form['markaspot_archive']['days'] = [
       '#tree' => TRUE,
       '#type' => 'details',
-      '#title' => t('Archive period settings per category'),
-      '#description' => t('You can change the period in which archivable content is sent to the archiving status.'),
-      '#open' => TRUE, // Controls the HTML5 'open' attribute. Defaults to FALSE.
+      '#title' => $this->t('Archive period settings per category'),
+      '#description' => $this->t('You can change the period in which archivable content is sent to the archiving status.'),
+    // Controls the HTML5 'open' attribute. Defaults to FALSE.
+      '#open' => TRUE,
     ];
-
 
     foreach ($catOptions as $tid => $category_name) {
       $form['markaspot_archive']['days'][$tid] = [
@@ -95,19 +135,12 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
         '#min' => 1,
         '#max' => 1000,
         '#step' => 1,
-        '#title' => t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
-        '#default_value' => $config->get('days.'. $tid),
-        '#description' => t('How many days to reach back for archiving?'),
+        '#title' => $this->t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
+        '#default_value' => $config->get('days.' . $tid),
+        '#description' => $this->t('How many days to reach back for archiving?'),
       ];
     }
     return parent::buildForm($form, $form_state);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function validateForm(array &$form, FormStateInterface $form_state) {
-    parent::validateForm($form, $form_state);
   }
 
   /**
@@ -128,8 +161,11 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
     parent::submitForm($form, $form_state);
   }
 
+  /**
+   * Get field definitions.
+   */
   public function getFields() {
-    $definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', 'service_request');
+    $definitions = $this->entityFieldManager->getFieldDefinitions('node', 'service_request');
     return array_keys($definitions);
   }
 
@@ -152,12 +188,11 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
    *   Select options for form
    */
   public function getTaxonomyTermOptions($machine_name) {
-    $options = array();
+    $options = [];
 
     // $vid = taxonomy_vocabulary_machine_name_load($machine_name)->vid;
     $vid = $machine_name;
-    $options_source = \Drupal::entityTypeManager()
-      ->getStorage('taxonomy_term')
+    $options_source = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadTree($vid);
 
     foreach ($options_source as $item) {

@@ -3,9 +3,7 @@
 namespace Drupal\markaspot_resubmission;
 
 /**
- * Interface ResubmissionServiceInterface.
+ * Interface ResubmissionServiceInterface provides a service interface.
  */
 interface ResubmissionServiceInterface {
-
-
 }

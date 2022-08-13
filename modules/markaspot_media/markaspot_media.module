@@ -1,19 +1,5 @@
 <?php
 
-/**
- * @file
- * Primary module hooks for markaspot_media module.
- *
- * @DCG
- * This file is no longer required in Drupal 8.
- * @see https://www.drupal.org/node/2217931
- */
-
-/**
- * Implements hook_form_FORM_ID_alter().
- *
- * Disable the required 'Alternative text' field in the CKEditor's image dialog.
- */
-function markaspot_media_form_editor_image_dialog_alter(&$form, FormStateInterface $form_state, $form_id) {
-  $form['attributes']['alt']['#required'] = FALSE;
-}
+  function markaspot_media_form_editor_image_dialog_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+    $form['attributes']['alt']['#required'] = FALSE;
+  }

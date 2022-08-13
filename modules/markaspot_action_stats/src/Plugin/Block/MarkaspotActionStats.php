@@ -24,11 +24,13 @@ class MarkaspotActionStats extends BlockBase implements BlockPluginInterface {
 
     return [
       'body' =>
-        ['value' => '<ul class="list-group list-group-horizontal-xxl">
+        [
+          'value' => '<ul class="list-group list-group-horizontal-xxl">
             <li class="list-group-item heatmap"><a href="#" tabindex="-1">Heatmap</a></li>
             <li class="list-group-item time-control"><a href="#" tabindex="-1">Zeitstrahl</a></li>
           </ul>',
-          'format' => 'full_html'],
+          'format' => 'full_html',
+        ],
       'label_display' => FALSE,
     ];
   }
@@ -57,9 +59,10 @@ class MarkaspotActionStats extends BlockBase implements BlockPluginInterface {
    * {@inheritdoc}
    */
   public function build() {
+    $markup = $this->configuration['body']['value'] ?? '';
     return [
       '#type' => 'markup',
-      '#markup' => $this->t($this->configuration['body']['value']),
+      '#markup' => $markup,
     ];
   }
 

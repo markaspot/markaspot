@@ -1,9 +1,7 @@
 <?php
-/**
- * @file
- * Contains \Drupal\entity_validation\Plugin\Validation\Constraint\EvenNumberConstraint.
- */
+
 namespace Drupal\markaspot_validation\Plugin\Validation\Constraint;
+
 use Symfony\Component\Validator\Constraint;
 
 /**
@@ -15,6 +13,17 @@ use Symfony\Component\Validator\Constraint;
  * )
  */
 class MultipleReportsConstraint extends Constraint {
-  public $geoReportErrorCode = '103 - Multiple Reports';
-  public $noValidViewboxMessage = 'Multiple Reports are prohibted.';
+  /**
+   * Maps error codes to the names of their constants.
+   *
+   * @var geoReportErrorCode
+   */
+  public $geoReportErrorCode = '107 - Multiple Reports';
+  /**
+   * Message.
+   *
+   * @var noValidViewboxMessage
+   */
+  public $noValidViewboxMessage = 'Multiple Reports are prohibited.';
+
 }

@@ -37,7 +37,6 @@ class MarkaspotTrendFilterBlock extends BlockBase implements BlockPluginInterfac
     ];
   }
 
-
   /**
    * {@inheritdoc}
    */
@@ -50,7 +49,7 @@ class MarkaspotTrendFilterBlock extends BlockBase implements BlockPluginInterfac
       '#type' => 'textfield',
       '#title' => $this->t('Charts and filtering Intro'),
       '#description' => $this->t('A short intro for the charts page'),
-      '#default_value' => isset($config['filter_intro']) ? $config['filter_intro'] : 'Refine data by years and months, scroll down to see more charts!',
+      '#default_value' => $config['filter_intro'] ?? 'Refine data by years and months, scroll down to see more charts!',
     ];
 
     return $form;
@@ -64,4 +63,5 @@ class MarkaspotTrendFilterBlock extends BlockBase implements BlockPluginInterfac
     $values = $form_state->getValues();
     $this->configuration['filter_intro'] = $values['filter_intro'];
   }
+
 }

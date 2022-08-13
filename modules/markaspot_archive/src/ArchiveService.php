@@ -5,9 +5,8 @@ namespace Drupal\markaspot_archive;
 use Drupal\Core\Entity\EntityTypeManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
 
-
 /**
- * Class ArchiveService.
+ * Class ArchiveService finds all service requests that can be archived.
  */
 class ArchiveService implements ArchiveServiceInterface {
 
@@ -33,22 +32,34 @@ class ArchiveService implements ArchiveServiceInterface {
     $this->configFactory = $config_factory;
   }
 
-  function array_flatten($array) {
+  /**
+   * Helper function.
+   *
+   * @param array $array
+   *   Array with keys.
+   *
+   * @return array
+   *   Return flattened array
+   */
+  public function arrayFlatten(array $array) {
     $result = [];
-    foreach ($array as $key => $value) {
-      array_push($result,$value);
+    foreach ($array as $value) {
+      array_push($result, $value);
     }
     return $result;
   }
 
   /**
+   * Load service requests.
+   *
    * @return \Drupal\Core\Entity\EntityInterface[]
+   *   Return nodes.
    */
   public function load() {
     $config = $this->configFactory->get('markaspot_archive.settings');
 
     $days = $config->get('days');
-    $tids = $this->array_flatten($config->get('status_archivable'));
+    $tids = $this->arrayFlatten($config->get('status_archivable'));
     $storage = $this->entityTypeManager->getStorage('node');
 
     foreach ($days as $key => $day) {
@@ -65,12 +76,10 @@ class ArchiveService implements ArchiveServiceInterface {
       $nids[] = $query->execute();
 
     }
-    //$nids = $this->array_flatten($nids);
-    $nids = array_reduce($nids, 'array_merge', array());
+    // $nids = $this->arrayFlatten($nids);
+    $nids = array_reduce($nids, 'array_merge', []);
 
     return $storage->loadMultiple($nids);
   }
+
 }
-
-
-
