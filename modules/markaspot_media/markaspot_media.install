@@ -5,16 +5,3 @@
  * Install, update and uninstall functions for the markaspot_media module.
  */
 
-/**
- * Implements hook_install().
- */
-function markaspot_media_install() {
-  \Drupal::messenger()->addStatus(__FUNCTION__);
-}
-
-/**
- * Implements hook_uninstall().
- */
-function markaspot_media_uninstall() {
-  \Drupal::messenger()->addStatus(__FUNCTION__);
-}
