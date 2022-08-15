@@ -18,7 +18,7 @@ services:
     arguments: ['@config.factory', '@current_user', '@datetime.time', '@request_stack', '@entity_type.manager', '@file_url_generator', '@module_handler']
 
   markaspot_open311.georeport_event.subscriber:
-    class: Drupal\markaspot_open311\EventSubscriber\GeoReportEventSubscriber
+    class: Drupal\markaspot_open311\EventSubscriber\GeoreportEventSubscriber
     arguments: [ '@serializer', '@path.current']
     tags:
      - { name: event_subscriber }
