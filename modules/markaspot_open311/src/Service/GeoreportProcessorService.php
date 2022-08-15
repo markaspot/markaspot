@@ -690,13 +690,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @param array $paragraphData
    *   The Paragraph to be created.
    *
-   * @return \Drupal\Core\Entity\ContentEntityBase|\Drupal\Core\Entity\EntityBase|\Drupal\Core\Entity\EntityInterface|Paragraph
+   * @return Paragraph
    *   Paragraph Object
    *
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   Storage exception.
    */
-  public function createParagraph(array $paragraphData): ContentEntityBase|EntityInterface|EntityBase|Paragraph {
+  public function createParagraph(array $paragraphData):Paragraph {
     $paragraph = Paragraph::create(['type' => 'status']);
     $paragraph->set('field_status_term', $paragraphData[0]);
     $paragraph->set('field_status_note', $paragraphData[1]);

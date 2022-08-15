@@ -54,7 +54,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   /**
    * {@inheritdoc}
    */
-  public function encode($data, $format, array $context = []): bool|string {
+  public function encode($data, $format, array $context = []) {
     if ($data instanceof \DOMDocument) {
       return $data->saveXML();
     }
