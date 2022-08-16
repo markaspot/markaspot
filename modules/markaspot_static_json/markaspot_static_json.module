@@ -94,7 +94,7 @@ function markaspot_static_json_request($limit, $current_page) {
     $cron_config->set('static_page', 0);
 
     // $current_service_requests = json_decode($start_json, TRUE);.
-    \Drupal::service('file_system')->writeData('[]', $path, FileSystemInterface::EXISTS_REPLACE);
+    \Drupal::service('file_system')->saveData('[]', $path, FileSystemInterface::EXISTS_REPLACE);
   }
 
   if ($host !== "default") {
