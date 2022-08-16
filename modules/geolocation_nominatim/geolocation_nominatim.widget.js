@@ -65,7 +65,7 @@
         'limit': 15,
         'city': mapSettings.city,
       },
-      searchUrl: mapSettings.serviceUrl + 'search',
+      searchUrl: mapSettings.serviceUrl + 'search/',
 
     });
 
@@ -75,13 +75,13 @@
       provider: provider, // required
       /* position: 'topright', */
       showMarker: true, // optional: true|false  - default true
-      showPopup: true, // optional: true|false  - default false
+      showPopup: false, // optional: true|false  - default false
       marker: {
         // optional: L.Marker    - default L.Icon.Default
         icon: new L.Icon.Default(),
         draggable: false,
       },
-      popupFormat: ({ query, result }) => result.label, // optional: function    - default returns result label,
+      popupFormat: ({ query, result }) => result.road, // optional: function    - default returns result label,
       resultFormat: ({ result }) => result.label, // optional: function    - default returns result label
       maxMarkers: 1, // optional: number      - default 1
       retainZoomLevel: true, // optional: true|false  - default false
@@ -100,14 +100,13 @@
         'countrycodes': mapSettings.limitCountryCodes,
         'viewbox': mapSettings.limitViewbox,
         'bounded': 1,
-        'limit': 5,
+        'limit': 100,
         'city': mapSettings.city
       };
     }
     map.addControl(search);
 
     const handleResult = result => {
-      // console.log(result)
       const location = Drupal.geolactionNominatimParseReverseGeo(result.location.raw);
       // console.log(marker);
       updateCallback(marker, map, location);
@@ -159,10 +158,10 @@
       // Check if method is called with a pair of coordinates to prevent
       // marker jumping to nominatm reverse results lat/lon.
       latLng = latLng ? latLng : result.center;
-
+      console.log(result);
       marker = L.marker(latLng, {
         draggable: true
-      }).bindPopup(result.text || result.display_name).addTo(map).openPopup();
+      }).bindPopup(result.road).addTo(map).openPopup();
       // map.setView(latLng).setZoom(zoom);
       marker.on('dragend', function (e) {
         updateCallback(marker, map, result);
@@ -181,7 +180,7 @@
     });
 
     function reverseGeocode(latlng) {
-      const url = mapSettings.serviceUrl + 'reverse?' + 'lon=' + latlng.lng + "&lat=" + latlng.lat + "&format=json";
+      const url = mapSettings.serviceUrl + 'reverse/?' + 'lon=' + latlng.lng + "&lat=" + latlng.lat + "&format=json";
       fetch(url).then(function (response) {
         return response.json();
       })
@@ -206,7 +205,6 @@
   };
 
   Drupal.geolocationNominatimSetAddressField = function (mapSettings, result, context) {
-    console.log(result);
     if (!('road' in result)) {
       return;
     }
