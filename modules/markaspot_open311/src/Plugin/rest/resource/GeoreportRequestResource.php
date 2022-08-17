@@ -124,7 +124,7 @@ class GeoreportRequestResource extends ResourceBase {
     TimeInterface $time,
     RequestStack $request_stack,
     EntityTypeManagerInterface $entity_type_manager,
-    GeoreportProcessorService $georeport_processor,
+    GeoreportProcessorService $georeport_processor
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
