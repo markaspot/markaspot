@@ -53,7 +53,6 @@
 
     map.on('locationfound', onLocationFound);
 
-
     // Define provider.
     const provider = new GeoSearch.MapBoxProvider({
         params:{
@@ -120,6 +119,12 @@
 
     }
 
+    map.on('click', function (e) {
+      search.clearResults();
+      map.removeLayer(marker)
+      reverseGeocode(e.latlng);
+    });
+
     function setMarker(result, latLng) {
       if (typeof marker !== 'undefined') {
         map.removeLayer(marker);
@@ -135,12 +140,7 @@
         marker.bindPopup(result.text).openPopup()
       }
 
-      map.on('click', function (e) {
-        search.clearResults();
-        // console.log("click");
-        map.removeLayer(marker)
-        reverseGeocode(e.latlng);
-      });
+
       // map.setView(latLng);
       marker.on('dragend', function (e) {
         updateCallback(marker, map, result);

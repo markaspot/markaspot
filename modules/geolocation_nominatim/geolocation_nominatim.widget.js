@@ -46,7 +46,6 @@
 
     function onLocationFound(e) {
       map.stopLocate();
-      // console.log(e);
       reverseGeocode(e.latlng);
     }
 
@@ -111,7 +110,7 @@
       // console.log(marker);
       updateCallback(marker, map, location);
       map.removeLayer(marker);
-      map.setView([result.location.y,result.location.x], 18)
+
       $('.geolocation-widget-lng.for--geolocation-mapbox-map')
         .attr('value', result.location.x);
       $('.geolocation-widget-lat.for--geolocation-mapbox-map')
@@ -158,11 +157,11 @@
       // Check if method is called with a pair of coordinates to prevent
       // marker jumping to nominatm reverse results lat/lon.
       latLng = latLng ? latLng : result.center;
-      console.log(result);
+      // console.log(result);
       marker = L.marker(latLng, {
         draggable: true
       }).bindPopup(result.road).addTo(map).openPopup();
-      // map.setView(latLng).setZoom(zoom);
+
       marker.on('dragend', function (e) {
         updateCallback(marker, map, result);
         reverseGeocode(e.target._latlng, marker);
@@ -173,6 +172,7 @@
     // Variable to disable click events on the map while the geocoder is active.
 
     map.on('click', function (e) {
+      search.clearResults();
       if (map._geocoderIsActive) {
         return;
       }
@@ -232,8 +232,8 @@
       });
 
       if ($('select.country', $address)
-          .val()
-          .toLowerCase() != address.country_code) {
+        .val()
+        .toLowerCase() != address.country_code) {
         $('select.country', $address)
           .val(address.country_code.toUpperCase())
           .trigger('change');
