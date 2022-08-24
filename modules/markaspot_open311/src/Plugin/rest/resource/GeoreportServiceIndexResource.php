@@ -9,6 +9,7 @@ use Drupal\rest\ResourceResponse;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 
@@ -160,6 +161,26 @@ class GeoreportServiceIndexResource extends ResourceBase {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  protected function getBaseRoute($canonical_path, $method) {
+    $lower_method = strtolower($method);
+    $route = new Route($canonical_path, [
+      '_controller' => 'Drupal\markaspot_open311\GeoreportRequestHandler::handle',
+      // Pass the resource plugin ID along as default property.
+      '_plugin' => $this->pluginId,
+    ], [
+      '_permission' => "restful $lower_method $this->pluginId",
+    ],
+      [],
+      '',
+      [],
+      // The HTTP method is a requirement for this route.
+      [$method]
+    );
+    return $route;
+  }
+  /**
    * Responds to GET requests.
    *
    * Returns a list of bundles for specified entity.
@@ -170,9 +191,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
   public function get() {
     $services = $this->georeportProcessor->getTaxonomyTree('service_category');
     if (!empty($services)) {
-      $response = new ResourceResponse($services, 200);
-      $response->addCacheableDependency($services);
-      return $response;
+      return $services;
     }
     else {
       throw new HttpException(404, "Service code not found");
