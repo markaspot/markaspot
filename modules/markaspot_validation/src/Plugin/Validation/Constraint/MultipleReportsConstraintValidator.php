@@ -111,23 +111,19 @@ class MultipleReportsConstraintValidator extends ConstraintValidator implements 
   public function validate($field, Constraint $constraint) {
     // $session = \Drupal::requestStack()->getCurrentRequest()->getSession();
     $status = $this->configFactory->get('multiple_reports');
-    // var_dump($status);
     $max_count = $this->configFactory->get('max_count') ? $this->configFactory->get('max_count') : 5;
     if ($status === 0) {
       return;
     }
     $user = $this->account;
-    // $permission = $user->hasPermission('bypass mas validation');
     if (!$user->hasPermission('bypass mas validation')) {
       $nids = $this->countReports();
-      // $session_ident = !empty($nids) ? $nids : '';
     }
     else {
-      // $session_ident = '';
       $nids = 0;
     }
 
-    if ($nids > $max_count) {
+    if ($nids >= $max_count) {
 
       $message = $this->t('We have noticed that @count requests have already been reported using this email address within the last 24h. Please try again some other day.', [
         '@count' => $nids,
