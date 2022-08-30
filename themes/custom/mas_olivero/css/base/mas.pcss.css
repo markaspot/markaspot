@@ -159,7 +159,7 @@ div.category {
     font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
     content: "\f017";
     position: relative;
-    left: -5rem;
+    left: -4rem;
     top: 5rem;
     color: #ddd;
    }
@@ -177,7 +177,7 @@ div.category {
   content: "\f3c5";
   font: normal normal normal 3rem/1 "Font Awesome 5 Free", sans-serif;
   position: relative;
-  left: -5rem;
+  left: -4rem;
   top: 5rem;
   color: #ddd;
   font-weight: 900;
