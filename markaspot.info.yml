@@ -10,7 +10,6 @@ dependencies:
 
   - address
   - services_api_key_auth
-  - automated_cron
   - block
   - block_content
   - breakpoint
