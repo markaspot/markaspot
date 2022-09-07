@@ -1,0 +1,14 @@
+{
+  "name": "drupal/markaspot_feedback",
+  "type": "drupal-module",
+  "description": "Mark-a-Spot Feedback",
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "homepage": "https://www.drupal.org/project/markaspot_feedback",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/markaspot_feedback",
+    "source": "http://cgit.drupalcode.org/markaspot_feedback"
+  },
+  "require": { }
+}

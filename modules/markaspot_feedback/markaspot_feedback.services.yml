@@ -1,0 +1,4 @@
+services:
+  markaspot_feedback.feedback:
+    class: Drupal\markaspot_feedback\FeedbackService
+    arguments: ['@entity_type.manager', '@config.factory']
