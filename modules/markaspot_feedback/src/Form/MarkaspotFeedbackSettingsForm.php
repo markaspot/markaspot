@@ -75,7 +75,6 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
         $this->config('markaspot_feedback.settings')->get('tax_status')),
       '#default_value' => $config->get('status_resubmissive'),
       '#title' => $this->t('Please choose the status for resubmissable reports.'),
-
     ];
 
     $catOptions = $this->getTaxonomyTermOptions('service_category');
@@ -93,6 +92,22 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#token_types' => ['site'],
       '#title' => $this->t('Mailtext'),
       '#default_value' => $config->get('mailtext') ?: 'Hello [current-user:name]!',
+    ];
+
+    $form['markaspot_feedback']['set_status_note'] = [
+      '#type' => 'textarea',
+      '#token_types' => ['site'],
+      '#title' => $this->t('Status Note to be set.'),
+      '#default_value' => $config->get('set_status_note') ?: '',
+    ];
+
+    $form['markaspot_feedback']['set_status_term'] = [
+      '#type' => 'select',
+      '#multiple' => TRUE,
+      '#options' => self::getTaxonomyTermOptions(
+        $this->config('markaspot_feedback.settings')->get('tax_status')),
+      '#default_value' => $config->get('set_status_term'),
+      '#title' => $this->t('Please choose the status to be set when the re-opening option is chosen by citizens'),
     ];
 
     foreach ($catOptions as $tid => $category_name) {
@@ -134,6 +149,8 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
     $this->config('markaspot_feedback.settings')
       ->set('tax_status', $values['tax_status'])
       ->set('status_resubmissive', $values['status_resubmissive'])
+      ->set('set_status_note', $values['set_status_note'])
+      ->set('set_status_term', $values['set_status_term'])
       ->set('days', $values['days'])
       ->set('mailtext', $values['mailtext'])
       ->set('interval', $values['interval'])

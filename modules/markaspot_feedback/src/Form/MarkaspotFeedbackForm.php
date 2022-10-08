@@ -1,15 +1,18 @@
 <?php
-/**
- * @file
- * Contains \Drupal\markaspot_feedback\Form\MarkaspotFeedbackForm.
- */
+
 namespace Drupal\markaspot_feedback\Form;
+
+use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 
-
-
+/**
+ *
+ */
 class MarkaspotFeedbackForm extends FormBase {
+
+  use StringTranslationTrait;
 
   /**
    * {@inheritdoc}
@@ -18,7 +21,10 @@ class MarkaspotFeedbackForm extends FormBase {
     return 'markaspot_feedback_form';
   }
 
-  public function isValid($uuid){
+  /**
+   *
+   */
+  public function isValid($uuid) {
     return \Drupal::service('markaspot_feedback.feedback')->get($uuid);
   }
 
@@ -32,33 +38,36 @@ class MarkaspotFeedbackForm extends FormBase {
       // $form['feedback']['fieldset']
       $form['feedback'] = [
         '#type' => 'textarea',
-        '#title' => t('Additional Feedback'),
+        '#title' => $this->t('Additional Feedback for') . ' ' . $node->title->value,
+        '#description' => $this->t('Please add some additional feedback to this service-request.'),
         '#required' => TRUE,
-        '#value' => $node->field_feedback->value,
-        "#disabled" => isset($node->field_feedback->value) ?? 0
+        '#default_value' => $node->field_feedback->value ?: '',
+        "#disabled" => isset($node->field_feedback->value) ?? FALSE,
       ];
 
-      $form['uuid'] = array(
+      $form['uuid'] = [
         '#type' => 'hidden',
         '#value' => $uuid,
-      );
-      $form['set_status'] = array(
+      ];
+      $form['set_status'] = [
         '#title' => "Set Status to open",
         '#type' => 'checkbox',
         '#value' => 1,
-      );
-
+        '#disabled' => isset($node->field_feedback->value) ?? 0,
+        '#description' => $this->t('In case you want us to look after this again, you can re-open this service-request.'),
+      ];
 
       $form['actions']['#type'] = 'actions';
       $form['actions']['submit'] = [
         '#type' => 'submit',
         '#value' => $this->t('Save'),
         '#button_type' => 'primary',
-        '#disabled' => isset($node->field_feedback->value) ?? 0
+        '#disabled' => $node->field_feedback->value ?? 0,
       ];
       return $form;
-    } else {
-      throw new \Symfony\Component\HttpKernel\Exception\NotFoundHttpException();
+    }
+    else {
+      throw new NotFoundHttpException();
     }
   }
 
@@ -80,10 +89,11 @@ class MarkaspotFeedbackForm extends FormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-
-    $node = \Drupal::service('markaspot_feedback.feedback')->get($form_state->getValue('uuid'));
-    $node->field_feedback->value  = $form_state->getValue('feedback') ;
-    $new_status_note = \Drupal::service('markaspot_feedback.feedback')->createParagraph();
+    $service = \Drupal::service('markaspot_feedback.feedback');
+    $node = $service->get($form_state->getValue('uuid'));
+    $node->field_feedback->value = $form_state->getValue('feedback');
+    $node->field_status->target_id = 4;
+    $new_status_note = $service->createParagraph();
     $node->field_status_notes[] = $new_status_note;
 
     $node->save();

@@ -45,9 +45,8 @@ function markaspot_feedback_cron() {
     // $config = \Drupal::configFactory()->getEditable('markaspot_feedback.settings');
     // $count = count($feedbackSendable);
 
-    foreach ($feedbackSendable as $feedbackSend) {
+    foreach ($feedbackSendable as $node) {
 
-      $node = $feedbackSend;
 
       $mailManager = \Drupal::service('plugin.manager.mail');
       $module = "markaspot_feedback";
@@ -61,10 +60,14 @@ function markaspot_feedback_cron() {
 
       if (isset($to) && $to !== '') {
         \Drupal::logger('Mark-a-Spot Feedback')->notice(t('Mail will be sent.'));
-
-        $result = $mailManager->mail($module, $key, $to, $langcode, $params, 'no-reply@example.com', TRUE);
+        $result = $mailManager->mail($module, $key, $to, $langcode, $params, 'no-reply@site', TRUE);
         if ($result['result'] == TRUE) {
           \Drupal::logger('Mark-a-Spot Feedback')->notice(t('Mail was sent.'));
+
+          // Set status to archive, service request wont be run through cron loop again.
+          $node->field_status->target_id = 6 ;
+          $node->save();
+
         }
         else {
           \Drupal::logger('Mark-a-Spot Feedback')->error(t('Mail was not sent.'));

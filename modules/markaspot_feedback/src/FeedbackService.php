@@ -4,7 +4,10 @@ namespace Drupal\markaspot_feedback;
 
 use Drupal\Core\Entity\EntityTypeManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\paragraphs\Entity\Paragraph;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Class FeedbackService.
@@ -27,12 +30,47 @@ class FeedbackService implements FeedbackServiceInterface {
    */
   protected $configFactory;
 
+
+  /**
+   * A logger instance.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
+  protected $logger;
+
+  /**
+   * The messenger.
+   *
+   * @var \Drupal\Core\Messenger\MessengerInterface
+   */
+  protected $messenger;
+
   /**
    * Constructs a new FeedbackService object.
+   *
+   * @param \Psr\Log\LoggerInterface $logger
+   *   A logger instance.
+   *
+   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
+   *   The messenger.
    */
-  public function __construct(EntityTypeManager $entity_type_manager, ConfigFactoryInterface $config_factory) {
+  public function __construct(EntityTypeManager $entity_type_manager, ConfigFactoryInterface $config_factory, LoggerInterface $logger, MessengerInterface $messenger) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
+    $this->logger = $logger;
+    $this->messenger = $messenger;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
+    return new static(
+      $container->get('entity_type.manager'),
+      $container->get('config.factory'),
+      $container->get('logger.factory')->get('markaspot_feedback'),
+      $container->get('messenger')
+    );
   }
 
   /**
@@ -89,7 +127,7 @@ class FeedbackService implements FeedbackServiceInterface {
       $date = ($day !== '') ? strtotime(' - ' . $day . 'days') : strtotime(' - ' . 30 . 'days');
       $query = $storage->getQuery()
         // ->condition('field_category', $category_tid, 'IN')
-        ->condition('changed', $date, '<=')
+        ->condition('created', $date, '<=')
         ->condition('type', 'service_request')
         ->condition('field_status', $tids, 'IN');
       $query->accessCheck(FALSE);
@@ -98,8 +136,11 @@ class FeedbackService implements FeedbackServiceInterface {
 
     }
     $nids = array_reduce($nids, 'array_merge', []);
+    $this->logger->notice('Markaspot has found %count requests to collect feedback', ['%count' => count($nids)]);
+
     return $storage->loadMultiple($nids);
   }
+
 
   /**
    * Create Status Note Paragraph.
@@ -109,10 +150,12 @@ class FeedbackService implements FeedbackServiceInterface {
    */
   public function createParagraph() {
 
+    $config = $this->configFactory->get('markaspot_feedback.settings');
+    $tid = $this->arrayFlatten($config->get('set_status_term'));
     $paragraph = Paragraph::create([
       'type' => 'status',
-      'field_status_term' => ['target_id' => 5],
-      'field_status_notes' => ['value' => "sdsdss"],
+      'field_status_term' => ['target_id' => $tid[0]],
+      'field_status_note' => ['value' => $config->get('set_status_note')],
     ]);
     $paragraph->save();
     if (null !== $paragraph->id()) {
