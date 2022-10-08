@@ -1,0 +1,14 @@
+markaspot_feedback.settings:
+  path: '/admin/structure/markaspot/feedback/settings'
+  defaults:
+    _form: '\Drupal\markaspot_feedback\Form\MarkaspotFeedbackSettingsForm'
+    _title: 'Feedback settings'
+  requirements:
+    _permission: 'administer site configuration'
+markaspot_feedback.form:
+  path: '/feedback/{uuid}'
+  defaults:
+    _title: 'Feedback Form'
+    _form: '\Drupal\markaspot_feedback\Form\MarkaspotFeedbackForm'
+  requirements:
+    _permission: 'access content'

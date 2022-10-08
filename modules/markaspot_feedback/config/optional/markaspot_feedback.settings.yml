@@ -1,0 +1,28 @@
+tax_status: service_status
+status_resubmissive:
+  30: '30'
+  5: '5'
+set_status_note: 'Der/die Bürger:in hat über die Feedback-Funktion das Anliegen erneut geöffnet und eine Anmerkung geschrieben.'
+set_status_term:
+  4: '4'
+days:
+  35: '1'
+  36: '1'
+  37: '1'
+  38: '1'
+  39: '1'
+  40: '1'
+  41: '1'
+  42: '1'
+  43: '1'
+  44: '1'
+  45: '1'
+  46: '1'
+  47: '1'
+  48: '1'
+  49: '1'
+  50: '1'
+  51: '1'
+  52: '1'
+mailtext: "Hallo, \r\n\r\nsie haben vor ein paar Wochen, ein Anliegen auf dem Mängelmelder der Stadt Bonn erstellt. Dieses ist Anliegen ist bei uns im System als erledigt vermerkt und wird bald archiviert. Wir möchten Ihnen die Gelegenheit geben, das Anliegen #[node:request_id] noch einmal auf möglichen Handlungsbedarf zu überprüfen oder uns ein allgemeines Feedback zu geben. \r\n\r\n[site:url][node:request_id]\r\n\r\nWenn Sie der Auffassung sind, dass wir in dieser Angelegenheit noch einmal tätig werden sollen, haben Sie zusätzlich die Möglichkeit, das Anliegen noch einmal zu öffnen.\r\nKlicken Sie einfach auf den folgenden Link:\r\n[site:url]feedback[node:uuid]\r\n"
+interval: '60'

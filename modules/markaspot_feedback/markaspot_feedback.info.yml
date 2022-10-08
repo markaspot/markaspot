@@ -1,0 +1,5 @@
+name: 'Mark-a-Spot Feedback'
+type: module
+description: 'Mark-a-Spot Feedback'
+core_version_requirement: ^8 || ^9
+package: 'Mark-a-Spot'
