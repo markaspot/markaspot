@@ -116,31 +116,47 @@ class FeedbackService implements FeedbackServiceInterface {
    */
   public function load(): array {
     $config = $this->configFactory->get('markaspot_feedback.settings');
-
     $days = $config->get('days');
     $tids = $this->arrayFlatten($config->get('status_resubmissive'));
     $storage = $this->entityTypeManager->getStorage('node');
 
-    foreach ($days as $key => $day) {
-      $category_tid = $key;
+    $date = ($days !== '') ? strtotime(' - ' . $days . 'days') : strtotime(' - ' . 30 . 'days');
+    $query = $storage->getQuery()
+      // ->condition('field_category', $category_tid, 'IN')
+      ->condition('created', $date, '<=')
+      ->condition('type', 'service_request')
+      ->condition('field_status', $tids, 'IN');
+    $query->accessCheck(FALSE);
 
-      $date = ($day !== '') ? strtotime(' - ' . $day . 'days') : strtotime(' - ' . 30 . 'days');
-      $query = $storage->getQuery()
-        // ->condition('field_category', $category_tid, 'IN')
-        ->condition('created', $date, '<=')
-        ->condition('type', 'service_request')
-        ->condition('field_status', $tids, 'IN');
-      $query->accessCheck(FALSE);
+    $nids[] = $query->execute();
+    // $string = $query->__toString();
 
-      $nids[] = $query->execute();
 
-    }
     $nids = array_reduce($nids, 'array_merge', []);
     $this->logger->notice('Markaspot has found %count requests to collect feedback', ['%count' => count($nids)]);
-
+    // die;
     return $storage->loadMultiple($nids);
   }
 
+  /**
+   * Save nodes with new status and status note.
+   *
+   */
+  public function saveNode($form_state) {
+    $config = $this->configFactory->get('markaspot_feedback.settings');
+    $node = $this->get($form_state->getValue('uuid'));
+    $node->field_feedback->value = $form_state->getValue('feedback');
+    if ($form_state->getValue('set_status') == 1) {
+      $node->field_status->target_id = key($config->get('set_progress_tid'));
+      $change_status = TRUE;
+    } else {
+      $change_status = FALSE;
+    }
+    $new_status_note = $this->createParagraph($change_status);
+    $node->field_status_notes[] = $new_status_note;
+
+    $node->save();
+  }
 
   /**
    * Create Status Note Paragraph.
@@ -148,13 +164,17 @@ class FeedbackService implements FeedbackServiceInterface {
    * @return array
    *   Return paragraph reference.
    */
-  public function createParagraph() {
+  public function createParagraph($change_status) {
 
     $config = $this->configFactory->get('markaspot_feedback.settings');
-    $tid = $this->arrayFlatten($config->get('set_status_term'));
+    if (isset($change_status)){
+      $tid = key($config->get('set_progress_tid'));
+    } else {
+      $tid = key($config->get('set_archive_tid'));
+    }
     $paragraph = Paragraph::create([
       'type' => 'status',
-      'field_status_term' => ['target_id' => $tid[0]],
+      'field_status_term' => ['target_id' => $tid],
       'field_status_note' => ['value' => $config->get('set_status_note')],
     ]);
     $paragraph->save();

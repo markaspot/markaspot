@@ -47,7 +47,6 @@ function markaspot_feedback_cron() {
 
     foreach ($feedbackSendable as $node) {
 
-
       $mailManager = \Drupal::service('plugin.manager.mail');
       $module = "markaspot_feedback";
       $key = 'resubmit_request';
@@ -63,11 +62,9 @@ function markaspot_feedback_cron() {
         $result = $mailManager->mail($module, $key, $to, $langcode, $params, 'no-reply@site', TRUE);
         if ($result['result'] == TRUE) {
           \Drupal::logger('Mark-a-Spot Feedback')->notice(t('Mail was sent.'));
-
           // Set status to archive, service request wont be run through cron loop again.
-          $node->field_status->target_id = 6 ;
+          $node->field_status->target_id = key($config->get('set_archive_tid'));
           $node->save();
-
         }
         else {
           \Drupal::logger('Mark-a-Spot Feedback')->error(t('Mail was not sent.'));
@@ -93,34 +90,9 @@ function markaspot_feedback_getBody($node, $mailText) {
   return $token_service->replace($mailText, $data);
 }
 
-function markaspot_feedback_getGroupField($node){
-  $group_ids = [];
-
-  $group_contents = \Drupal\group\Entity\GroupContent::loadByEntity($node);
-  foreach ($group_contents as $group_content) {
-    $group_ids[] = $group_content->getGroup()->id();
-    foreach ($group_ids as $group) {
-      $affectedGroup = \Drupal\group\Entity\Group::load($group);
-
-      $headOrganisationEmails = $affectedGroup->get('field_head_organisation_e_mail')->getString();
-    }
-  }
-
-  return $headOrganisationEmails;
-}
 
 
-function markaspot_feedback_getOrganisationTermField($node){
-  $tid = $node->get('field_organisation')->target_id;
-  if ($tid !== NULL) {
-    $term = Drupal\taxonomy\Entity\Term::load($tid);
-    $headOrganisationEmails = $term->get('field_head_organisation_e_mail')->getString();
-    return $headOrganisationEmails;
-  } else {
-    \Drupal::logger('Mark-a-Spot Feedback')->notice(t('We have\'nt found an e-Mail Address'));
-    return false;
-  }
-}
+
 
 
 /**

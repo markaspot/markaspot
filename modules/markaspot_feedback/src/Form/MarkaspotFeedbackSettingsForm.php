@@ -77,14 +77,16 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Please choose the status for resubmissable reports.'),
     ];
 
-    $catOptions = $this->getTaxonomyTermOptions('service_category');
     $form['markaspot_feedback']['days'] = [
       '#tree' => TRUE,
-      '#type' => 'details',
-      '#title' => $this->t('Feedback period settings per category'),
+      '#title' => $this->t('Feedback period settings'),
       '#description' => $this->t('You can change the period in which content is notified for being submissive.'),
-    // Controls the HTML5 'open' attribute. Defaults to FALSE.
       '#open' => TRUE,
+      '#type' => 'number',
+      '#step' => '1',
+      '#default_value' =>  $config->get('days'),
+      '#required' => TRUE,
+      '#weight' => '0',
     ];
 
     $form['markaspot_feedback']['mailtext'] = [
@@ -101,26 +103,35 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('set_status_note') ?: '',
     ];
 
-    $form['markaspot_feedback']['set_status_term'] = [
+    $form['markaspot_feedback']['set_progress_tid'] = [
       '#type' => 'select',
       '#multiple' => TRUE,
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_feedback.settings')->get('tax_status')),
-      '#default_value' => $config->get('set_status_term'),
+      '#default_value' => $config->get('set_progress_tid'),
       '#title' => $this->t('Please choose the status to be set when the re-opening option is chosen by citizens'),
     ];
 
-    foreach ($catOptions as $tid => $category_name) {
-      $form['markaspot_feedback']['days'][$tid] = [
-        '#type' => 'number',
-        '#min' => 1,
-        '#max' => 1000,
-        '#step' => 1,
-        '#title' => $this->t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
-        '#default_value' => $config->get('days.' . $tid),
-        '#description' => $this->t('After how many days reminding e-mails should be sent?'),
-      ];
-    }
+    $form['markaspot_feedback']['set_archive_tid'] = [
+      '#type' => 'select',
+      '#multiple' => TRUE,
+      '#options' => self::getTaxonomyTermOptions(
+        $this->config('markaspot_feedback.settings')->get('tax_status')),
+      '#default_value' => $config->get('set_archive_tid'),
+      '#title' => $this->t('Please choose the status to be set as archive'),
+    ];
+
+    $form['markaspot_feedback']['days'] = [
+      '#type' => 'number',
+      '#min' => 1,
+      '#max' => 1000,
+      '#step' => 1,
+      '#title' => $this->t('Period in days'),
+      '#default_value' => $config->get('days'),
+      '#description' => $this->t('Enter here after how many days an e-mail should be sent.')
+
+    ];
+
     $form['markaspot_feedback']['interval'] = [
       '#type' => 'select',
       '#title' => $this->t('Cron interval'),
@@ -134,7 +145,6 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
         172800 => $this->t('2 days'),
         432000 => $this->t('5 days'),
         604800 => $this->t('1 week'),
-
       ],
     ];
 
@@ -149,8 +159,8 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
     $this->config('markaspot_feedback.settings')
       ->set('tax_status', $values['tax_status'])
       ->set('status_resubmissive', $values['status_resubmissive'])
-      ->set('set_status_note', $values['set_status_note'])
-      ->set('set_status_term', $values['set_status_term'])
+      ->set('set_progress_tid', $values['set_progress_tid'])
+      ->set('set_archive_tid', $values['set_archive_tid'])
       ->set('days', $values['days'])
       ->set('mailtext', $values['mailtext'])
       ->set('interval', $values['interval'])

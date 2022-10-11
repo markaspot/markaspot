@@ -52,7 +52,7 @@ class MarkaspotFeedbackForm extends FormBase {
       $form['set_status'] = [
         '#title' => "Set Status to open",
         '#type' => 'checkbox',
-        '#value' => 1,
+        '#default_value' => $form_state->getValue('set_status') ?? 0,
         '#disabled' => isset($node->field_feedback->value) ?? 0,
         '#description' => $this->t('In case you want us to look after this again, you can re-open this service-request.'),
       ];
@@ -90,13 +90,8 @@ class MarkaspotFeedbackForm extends FormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $service = \Drupal::service('markaspot_feedback.feedback');
-    $node = $service->get($form_state->getValue('uuid'));
-    $node->field_feedback->value = $form_state->getValue('feedback');
-    $node->field_status->target_id = 4;
-    $new_status_note = $service->createParagraph();
-    $node->field_status_notes[] = $new_status_note;
+    return $service->saveNode($form_state);
 
-    $node->save();
   }
 
 }
