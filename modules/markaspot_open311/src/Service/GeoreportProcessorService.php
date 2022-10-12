@@ -283,7 +283,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   public function serviceMapTax($service_code) {
     $service_codes = explode(',', $service_code);
     if (count($service_codes) > 1) {
-      throw new GeoreportException('Service Code has to be unique', 400);
+      // throw new GeoreportException('Service Code has to be unique', 400);
     }
     foreach ($service_codes as $service_code) {
       $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties(['field_service_code' => trim($service_code)]);
@@ -404,6 +404,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   public function getResults(object $query, object $user, array $parameters): array {
+    $queryString = $query->__toString();
     $nids = $query->execute();
     $nodes = $this->entityTypeManager->getStorage('node')
       ->loadMultiple($nids);
