@@ -61,6 +61,13 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#group' => 'settings',
     ];
 
+    $form['markaspot_feedback']['enable'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Feedback loops Enabled'),
+      '#default_value' => $config->get('enable'),
+      '#description' => $this->t('Enable feedback cron runs'),
+    ];
+
     $form['markaspot_feedback']['common']['tax_status'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Bundle'),
@@ -157,6 +164,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
     $this->config('markaspot_feedback.settings')
+      ->set('enable', $values['enable'])
       ->set('tax_status', $values['tax_status'])
       ->set('status_resubmissive', $values['status_resubmissive'])
       ->set('set_progress_tid', $values['set_progress_tid'])

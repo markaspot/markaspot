@@ -285,11 +285,20 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Process params to Drupal.
-    if (isset($parameters['sort']) && $parameters['sort'] == "desc") {
+    if (isset($parameters['sort']) && $parameters['sort'] == "DESC") {
       $sort = 'DESC';
     }
     else {
       $sort = 'ASC';
+    }
+
+    if (isset($parameters['updated'])) {
+      // $seconds = strtotime($parameters['updated']);
+      $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=');
+      $query->sort('changed', 'DESC');
+    }
+    else {
+      $query->sort('created', $sort);
     }
 
     // Checking for service_code and map the code with taxonomy terms:
@@ -323,14 +332,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
         ->condition('field_geolocation.lng', $minLon, '>')
         ->condition('field_geolocation.lng', $maxLon, '<');
     }
-    if (isset($parameters['updated'])) {
-      // $seconds = strtotime($parameters['updated']);
-      $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=');
-      $query->sort('changed', $direction = 'DESC');
-    }
-    else {
-      $query->sort('created', $direction = $sort);
-    }
+
     // Checking for service_code and map the code with taxonomy terms:
     if (isset($parameters['q'])) {
       // Get the service of the current node:

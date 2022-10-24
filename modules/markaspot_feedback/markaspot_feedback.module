@@ -39,7 +39,7 @@ function markaspot_feedback_cron() {
   // minute) so keep a time for the next run in the site state.
   $next_execution = \Drupal::state()
     ->get('markaspot_feedback.next_execution', 0);
-  if (\Drupal::time()->getRequestTime() >= $next_execution) {
+  if (\Drupal::time()->getRequestTime() >= $next_execution && $config->get('enable') == 1) {
 
     $feedbackSendable = \Drupal::service('markaspot_feedback.feedback')->load();
     // $config = \Drupal::configFactory()->getEditable('markaspot_feedback.settings');
