@@ -113,7 +113,7 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
   public function validate($field, Constraint $constraint) {
     $session = $this->requestStack->getCurrentRequest()->getSession();
     $config = $this->configFactory;
-    $status = $config->get('status');
+    $status = $config->get('duplicate_check');
     if ($status === 0) {
       return;
     }

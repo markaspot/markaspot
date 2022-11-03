@@ -29,7 +29,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#type' => 'fieldset',
       '#title' => $this->t('Validation Types'),
       '#collapsible' => TRUE,
-      '#description' => $this->t('This setting allow you too choose a map tile operator of your choose. Be aware that you have to apply the same for the Geolocation Field settings</a>, too.'),
+      '#description' => $this->t('This setting allow you to choose a map tile operator of your choose. Be aware that you have to apply the same for the Geolocation Field settings</a>, too.'),
       '#group' => 'settings',
     ];
 
