@@ -74,14 +74,14 @@
       provider: provider, // required
       /* position: 'topright', */
       showMarker: true, // optional: true|false  - default true
-      showPopup: false, // optional: true|false  - default false
+      showPopup: true, // optional: true|false  - default false
       marker: {
         // optional: L.Marker    - default L.Icon.Default
         icon: new L.Icon.Default(),
         draggable: false,
       },
-      popupFormat: ({ query, result }) => result.road, // optional: function    - default returns result label,
-      resultFormat: ({ result }) => result.label, // optional: function    - default returns result label
+      popupFormat: ({ query, result }) => parseResult(result), // optional: function    - default returns result label,
+      resultFormat: ({ result }) => parseResult(result), // optional: function    - default returns result label
       maxMarkers: 1, // optional: number      - default 1
       retainZoomLevel: true, // optional: true|false  - default false
       animateZoom: true, // optional: true|false  - default true
@@ -91,6 +91,9 @@
       updateMap: true, // optional: true|false  - default true
     });
 
+    function parseResult(result) {
+      return result.raw.address.road + (result.raw.address.house_number ? ' ' + result.raw.address.house_number :'') + ', ' + (result.raw.address.postcode || '') + ', ' + (result.raw.address.city || '');
+    }
     // Init geocoder.
     var geocodingQueryParams = {};
     if (mapSettings.limitCountryCodes != '' || mapSettings.limitViewbox != '') {
@@ -107,13 +110,13 @@
 
     const handleResult = result => {
       const location = Drupal.geolactionNominatimParseReverseGeo(result.location.raw);
-      // console.log(marker);
       updateCallback(marker, map, location);
       map.removeLayer(marker);
+      parseRoad(result);
 
-      $('.geolocation-widget-lng.for--geolocation-mapbox-map')
+      $('.geolocation-widget-lng.for--geolocation-nominatim-map')
         .attr('value', result.location.x);
-      $('.geolocation-widget-lat.for--geolocation-mapbox-map')
+      $('.geolocation-widget-lat.for--geolocation-nominatim-map')
         .attr('value', result.location.y);
     };
     map.on('geosearch/showlocation', handleResult);
@@ -134,23 +137,7 @@
 
 
     function setMarker(result, latLng) {
-      var address = result;
-      var $val = '';
-
-      if (address.road) {
-        switch(mapSettings.streetNumberFormat) {
-          case "1":
-            $val = address.road + ' ' + (address.house_number || '');
-            break;
-          case 0:
-            $val = (address.house_number ? address.house_number + ' ' : '') + address.road;
-            break;
-        }
-      } else {
-        $val = '';
-      }
-      $input = $('.leaflet-control-geocoder-form input');
-      $input.val($val);
+      parseRoad(result);
       if (typeof marker !== "undefined") {
         map.removeLayer(marker);
       }
@@ -160,7 +147,7 @@
       // console.log(result);
       marker = L.marker(latLng, {
         draggable: true
-      }).bindPopup(result.road).addTo(map).openPopup();
+      }).addTo(map);
 
       marker.on('dragend', function (e) {
         updateCallback(marker, map, result);
@@ -179,6 +166,30 @@
       reverseGeocode(e.latlng);
     });
 
+    function parseRoad(result) {
+      let address = '';
+      if (result.type == "geosearch/showlocation") {
+        address = result.location.raw.address;
+      } else {
+        address = result;
+      }
+      let $val = '';
+      if (address.road) {
+        switch(mapSettings.streetNumberFormat) {
+          case "1":
+            $val = (address.road ||  '') + ((typeof address.house_number !== "undefined") ? ' ' + address.house_number : '') + ((typeof address.postcode !== "undefined") ? ', ' + address.postcode : '')  + ' ' + (address.city || '');
+            break;
+          case 0:
+            $val = (address.house_number ? address.house_number + ' ' : '') + address.road;
+            break;
+        }
+      } else {
+        $val = '';
+      }
+      const $input = $('.leaflet-control-geosearch form input');
+      $input.val($val);
+    }
+
     function reverseGeocode(latlng) {
       const url = mapSettings.serviceUrl + 'reverse/?' + 'lon=' + latlng.lng + "&lat=" + latlng.lat + "&format=json";
       fetch(url).then(function (response) {
@@ -193,9 +204,9 @@
           // console.log(location)
         });
 
-      $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat')
+      $('.field--widget-geolocation-nominatim-widget .geolocation-hidden-lat')
         .attr('value', latlng.lat);
-      $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lng')
+      $('.field--widget-geolocation-nominatim-widget .geolocation-hidden-lng')
         .attr('value', latlng.lng);
     }
 
