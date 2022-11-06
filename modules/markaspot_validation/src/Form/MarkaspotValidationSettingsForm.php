@@ -89,7 +89,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#step' => 1,
       '#title' => $this->t('Iterations treshold'),
       '#default_value' => $config->get('treshold'),
-      '#description' => $this->t('Increase this number if you think that validation notes are too few.'),
+      '#description' => $this->t('Increase this number if you feel that too few validation notices are displayed.'),
     ];
     $form['markaspot_validation']['days'] = [
       '#type' => 'number',
@@ -98,7 +98,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#step' => 1,
       '#title' => $this->t('Duplicate reach back in days'),
       '#default_value' => $config->get('days'),
-      '#description' => $this->t('How many days to reach back for similar requests'),
+      '#description' => $this->t('How many days to reach back for similar requests.'),
     ];
 
     $form['markaspot_validation']['defaultLocation'] = [

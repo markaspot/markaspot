@@ -148,8 +148,9 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
           ],
         ];
         $url->setOptions($link_options);
+        $unit = $config->get('unit');
+        $unit = ($unit == 'yards') ? 'yards' : 'meters';
 
-        $unit = ($config->get('unit') == 'yards') ? 'yards' : 'meters';
 
         $message_string = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
           '@id' => $node->request_id->value,
