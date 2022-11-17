@@ -32,11 +32,12 @@ function markaspot_archive_cron()
   $config = \Drupal::configFactory()->getEditable('markaspot_archive.settings');
 
   foreach ($archivables as $archivable) {
-    if (null !== $config->get('unpublish')) {
-      $archivable->setPublished(false);
+    if ($config->get('unpublish') == 1) {
+      $archivable->setUnpublished();
+      // https://www.drupal.org/project/save_edit/issues/3239440
     }
     // Will there be field to get anonymized?
-    if(null !== $config->get('anonymize')) {
+    if($config->get('anonymize') == 1) {
       $anonymize_fields = $config->get('anonymize_fields');
       markaspot_archive_anonymize($archivable, $anonymize_fields);
     }
