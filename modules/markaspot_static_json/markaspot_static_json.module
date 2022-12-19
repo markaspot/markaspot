@@ -50,11 +50,13 @@ function markaspot_static_json_cron() {
   $limit = $settings_config->get('limit');
   $limit = !empty($limit) ? $limit : 50;
   // Set start page.
-  $current_page = ($settings_config->get('reset') ===  1 || NULL === $settings_config->get('reset')) ? 0 : $cron_config->get('static_page');
+  $current_page = ($settings_config->get('reset') ===  1) ? 0 : $cron_config->get('static_page');
+  \Drupal::logger('Mark-a-Spot Static JSON')->notice("Current page: " . $current_page);
   // Get current max.
   $count = markaspot_static_json_get_count();
   // Calculate max pages.
   $pages = ceil($count / $limit);
+  \Drupal::logger('Mark-a-Spot Static JSON')->notice("Number of all pages with current limit: " . $pages);
   if ($current_page >= $pages - 1) {
     $cron_config->set('static_page', $current_page);
   }
@@ -65,7 +67,7 @@ function markaspot_static_json_cron() {
   markaspot_static_json_request($limit, $current_page);
   $request_time = \Drupal::time()->getRequestTime();
   if (\Drupal::state()->get('mas_shown_status_message')) {
-    \Drupal::messenger()->addStatus(t('Mark-a-Spot static JSON executed at %time', ['%time' => date('c', $request_time)]));
+    \Drupal::logger('Mark-a-Spot Static JSON')->notice(t('Mark-a-Spot static JSON executed at %time', ['%time' => date('c', $request_time)]));
     \Drupal::state()->set('mas_shown_status_message', FALSE);
   }
   $cron_config->set('markaspot_static_json.next_execution', $request_time + $interval)->save();

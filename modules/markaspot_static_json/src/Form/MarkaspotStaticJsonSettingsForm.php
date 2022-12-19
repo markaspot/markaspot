@@ -35,9 +35,12 @@ class MarkaspotStaticJsonSettingsForm extends ConfigFormBase {
     ];
 
     $form['markaspot_static_json']['limit'] = [
-      '#type' => 'textfield',
+      '#type' => 'number',
       '#default_value' => $config->get('limit') ? $config->get('limit') : 10,
       '#title' => $this->t('Limit'),
+      "#length" => 3,
+      '#description' => $this->t('You can configure a limit < 200'),
+
     ];
     $form['markaspot_static_json']['reset'] = [
       '#type' => 'checkbox',
