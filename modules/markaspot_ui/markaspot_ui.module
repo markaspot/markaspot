@@ -35,8 +35,10 @@ function markaspot_ui_toolbar() {
   $links = array();
   foreach ($markaspot_modules as $module => $route) {
     // Get the module info (title, description) from Drupal.
-    $info = \Drupal::service('extension.list.module')->getExtensionInfo($module);
-
+    $moduleHandler = \Drupal::service('module_handler');
+    if ($moduleHandler->moduleExists($module)) {
+      $info = \Drupal::service('extension.list.module')->getExtensionInfo($module);
+    }
     if (!empty($info)) {
       $links[$module] = array(
         'title' => t($info['name']),
