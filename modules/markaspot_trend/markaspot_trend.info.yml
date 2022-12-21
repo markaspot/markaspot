@@ -4,3 +4,5 @@ description: Vue.js and Charts.js powered statistics
 core_version_requirement: ^8 || ^9
 package: Mark-a-Spot
 dependencies:
+  - markaspot_open311
+  - markaspot_map

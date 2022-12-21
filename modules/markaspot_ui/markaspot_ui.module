@@ -38,16 +38,17 @@ function markaspot_ui_toolbar() {
     $moduleHandler = \Drupal::service('module_handler');
     if ($moduleHandler->moduleExists($module)) {
       $info = \Drupal::service('extension.list.module')->getExtensionInfo($module);
+      if (!empty($info)) {
+        $links[$module] = array(
+          'title' => t($info['name']),
+          'url' => Url::fromRoute($route),
+          'attributes' => array(
+            'title' => t($info['description']),
+          ),
+        );
+      }
     }
-    if (!empty($info)) {
-      $links[$module] = array(
-        'title' => t($info['name']),
-        'url' => Url::fromRoute($route),
-        'attributes' => array(
-          'title' => t($info['description']),
-        ),
-      );
-    }
+
   }
 
   // Create the markaspot_modules toolbar render array.
