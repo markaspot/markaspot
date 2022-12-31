@@ -277,7 +277,6 @@ function markaspot_request_id_check_table($connection){
   try {
     $table = "markaspot_request_id";
     $connection->queryRange("SELECT 1 FROM {" . $table . "}", 0, 1);
-    $connection->queryRange("Select offset FROM {" . $table . "}", 0, 1);
     return TRUE;
   }
   catch (\Exception $e) {
