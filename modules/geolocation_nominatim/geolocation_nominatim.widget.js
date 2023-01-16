@@ -51,21 +51,19 @@
 
     map.on('locationfound', onLocationFound);
 
-
-
     // Define provider.
+    // https://nominatim.org/release-docs/latest/api/Search/#parameters
     const provider = new GeoSearch.OpenStreetMapProvider({
       params:{
         'access_token': mapSettings.mapboxToken,
         'country': mapSettings.limitCountryCodes,
-        'language': mapSettings.limitCountryCodes,
-        'bbox': [mapSettings.limitViewbox],
-        'bounded': 1,
+        'accept-language': mapSettings.limitCountryCodes,
+        'viewbox': mapSettings.limitViewbox,
         'limit': 15,
-        'city': mapSettings.city,
+        'bounded': 1,
+        'addressdetails': 1
       },
       searchUrl: mapSettings.serviceUrl + 'search/',
-
     });
 
     // Add Control.
@@ -87,12 +85,15 @@
       animateZoom: true, // optional: true|false  - default true
       autoClose: false, // optional: true|false  - default false
       searchLabel: Drupal.t('Street name'), // optional: string      - default 'Enter address'
-      keepResult: false, // optional: true|false  - default false
+      keepResult: true, // optional: true|false  - default false
       updateMap: true, // optional: true|false  - default true
     });
 
     function parseResult(result) {
-      return result.raw.address.road + (result.raw.address.house_number ? ' ' + result.raw.address.house_number :'') + ', ' + (result.raw.address.postcode || '') + ', ' + (result.raw.address.city || '');
+      if (result.raw.address) {
+        const address = result.raw.address
+        return address.house_number ? `${address.road} ${address.house_number}, ${address.postcode} ${address.city} ${address.suburb}` : `${address.road}, ${address.postcode} ${address.city} ${address.suburb}`;
+      }
     }
     // Init geocoder.
     var geocodingQueryParams = {};
@@ -144,7 +145,6 @@
       // Check if method is called with a pair of coordinates to prevent
       // marker jumping to nominatm reverse results lat/lon.
       latLng = latLng ? latLng : result.center;
-      // console.log(result);
       marker = L.marker(latLng, {
         draggable: true
       }).addTo(map);
@@ -196,12 +196,9 @@
         return response.json();
       })
         .then(function (body) {
-          // console.log(body)
           const location = Drupal.geolactionNominatimParseReverseGeo(body);
-          //console.log(location);
           setMarker(location, latlng);
           updateCallback(marker, map, location);
-          // console.log(location)
         });
 
       $('.field--widget-geolocation-nominatim-widget .geolocation-hidden-lat')
@@ -255,15 +252,12 @@
     }
   },
     Drupal.geolactionNominatimParseReverseGeo = function (geoData) {
-      // console.log(geoData);
       let address = {};
       if(geoData){
         address = geoData.address
         address.place_name = address.road + " " + address.house_number;
         address.text = geoData.display_name;
-        // console.log(address)
       }
-      // console.log(address)
       return address;
     },
 
