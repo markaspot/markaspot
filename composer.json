@@ -56,7 +56,6 @@
     "drupal/features": "^3.0",
     "drupal/pathauto": "^1",
     "drupal/admin_toolbar": "^3",
-    "drupal/advagg": "^4.1",
     "drupal/restui": "^1",
     "drupal/token": "^1.9",
     "drupal/better_normalizers": "1.x-dev",
