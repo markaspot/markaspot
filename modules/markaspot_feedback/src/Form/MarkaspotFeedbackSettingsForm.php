@@ -169,6 +169,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       ->set('status_resubmissive', $values['status_resubmissive'])
       ->set('set_progress_tid', $values['set_progress_tid'])
       ->set('set_archive_tid', $values['set_archive_tid'])
+      ->set('set_status_note', $values['set_status_note'])
       ->set('days', $values['days'])
       ->set('mailtext', $values['mailtext'])
       ->set('interval', $values['interval'])
