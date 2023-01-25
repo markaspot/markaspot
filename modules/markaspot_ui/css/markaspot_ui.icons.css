@@ -8,6 +8,7 @@
  */
 .toolbar-bar [data-drupal-link-system-path="admin/content/management"]:before,
 .toolbar-bar .toolbar-icon-markaspot-ui:before {
-    background: transparent url(../images/logo.svg) 50% 50% no-repeat;
+    -webkit-mask-image:none!important;
+    background: transparent url(../images/logo.svg) 50% 50% no-repeat !important;
     background-size: 100%;
 }
