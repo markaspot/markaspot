@@ -76,8 +76,13 @@ class ResubmissionService implements ResubmissionServiceInterface {
       $nids[] = $query->execute();
 
     }
-    $nids = array_reduce($nids, 'array_merge', []);
-    return $storage->loadMultiple($nids);
+    if (!empty($ids)) {
+      $nids = array_reduce($nids, 'array_merge', []);
+      return $storage->loadMultiple($nids);
+    }
+    else {
+      return [];
+    }
   }
 
 }
