@@ -341,15 +341,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Load terms.
     $tree = $this->entityTypeManager->getStorage("taxonomy_term")
       ->loadTree($vocabulary, $parent, $max_depth, $load_entities = FALSE);
-
+    $tree = $this->entityTypeManager->getStorage("taxonomy_term")
+      ->loadByProperties(['vid' => $vocabulary, 'status' => 1]);
     // Make sure there are terms to work with.
     if (empty($tree)) {
       return [];
     }
 
     foreach ($tree as $term) {
-      // var_dump($term);
-      $services[] = $this->taxMapService($term->tid);
+      $services[] = $this->taxMapService($term->tid->value);
     }
 
     return $services;

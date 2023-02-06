@@ -181,7 +181,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
     return $route;
   }
   /**
-   * Responds to GET requests.
+   * Responds to GET services.
    *
    * Returns a list of bundles for specified entity.
    *
