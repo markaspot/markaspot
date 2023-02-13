@@ -189,10 +189,10 @@
         if (instance !== null && instance.hasOwnProperty('callback')
           && instance.callback[0] == 'Drupal\\address\\Element\\Address'
           && instance.callback[1] == 'ajaxRefresh') {
-          var originalSuccess = instance.options.success;
+          const originalSuccess = instance.options.success;
           instance.options.success = function (response, status, xmlhttprequest) {
             originalSuccess(response, status, xmlhttprequest);
-            var $addressNew = $form.find('.field--type-address').first();
+            const $addressNew = $form.find('.field--type-address').first();
             Drupal.geolocationMapboxSetAddressDetails($addressNew, address);
           }
         }
@@ -210,8 +210,7 @@
       }
     }
   },
-
-    Drupal.geolocationMapboxSetAddressDetails = function ($address, details) {
+  Drupal.geolocationMapboxSetAddressDetails = function ($address, details) {
       if ('postcode' in details) {
         $('input.postal-code', $address).val(details.postcode);
       }
