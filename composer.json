@@ -75,7 +75,7 @@
     "drupal/metatag": "^1.16",
     "drupal/services_api_key_auth": "dev-3.0.x",
     "drupal/search_api": "^1.5",
-    "drupal/views_infinite_scroll": "2",
+    "drupal/views_infinite_scroll": "^2",
     "drupal/default_content": "2.0.x",
     "drupal/color_field": "^3",
     "drupal/field_permissions": "^1.1",
