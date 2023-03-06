@@ -165,11 +165,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
     if (array_key_exists('address_string', $request_data) || array_key_exists('address', $request_data)) {
 
-      $address = $this->addressParser($request_data['address_string']) ? Html::escape(stripslashes($request_data['address_string'])) : $request_data['address'];
+      $address = $this->addressParser($request_data['address_string']) ? Html::escape(stripslashes($request_data['address_string'])) : [];
+      if (!empty($address)) {
+        $values['field_address']['address_line1'] = $address['street'];
+        $values['field_address']['postal_code'] = $address['zip'];
+        $values['field_address']['locality'] = $address['city'];
+      }
 
-      $values['field_address']['address_line1'] = $address['street'];
-      $values['field_address']['postal_code'] = $address['zip'];
-      $values['field_address']['locality'] = $address['city'];
     }
 
     // Get Category by service_code.
@@ -258,17 +260,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   Return address
    */
   private function addressParser(string $address_string): array {
+    $address_array = ($address_string != "") ?? explode(',', $address_string);
+    $address = [];
+    if (is_array($address_array)){
+      $zip_city = explode(' ', trim($address_array[1]));
 
-    $address_array = explode(',', $address_string);
-
-    $zip_city = explode(' ', trim($address_array[1]));
-
-    $address['street'] = $address_array[0];
-    $address['zip'] = trim($zip_city[0]);
-    $address['city'] = trim($zip_city[1]);
-
+      $address['street'] = $address_array[0];
+      $address['zip'] = trim($zip_city[0]);
+      $address['city'] = trim($zip_city[1]);
+    }
     return $address;
-
   }
 
   /**
