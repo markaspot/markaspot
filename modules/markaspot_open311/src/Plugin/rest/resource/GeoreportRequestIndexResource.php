@@ -285,7 +285,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Process params to Drupal.
-    if (isset($parameters['sort']) && strtoupper($parameters['sort']) == "DESC") {
+    if (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) {
       $sort = 'DESC';
     }
     else {
