@@ -13,8 +13,6 @@ dependencies:
   - block
   - block_content
   - breakpoint
-  - ckeditor
-  - color
   - color_field
   - comment
   - config
@@ -49,12 +47,10 @@ dependencies:
   - pathauto
   - paragraphs
   - quickedit
-  - rdf
   - responsive_image
   - restui
   - search_api
   - search_api_db
-  - shortcut
   - system
   - taxonomy
   - text
@@ -75,5 +71,5 @@ dependencies:
 
 themes:
   - mas_olivero
-  - claro
+  - gin
 
