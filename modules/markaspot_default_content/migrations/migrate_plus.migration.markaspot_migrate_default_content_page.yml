@@ -1,0 +1,15 @@
+id: markaspot_migrate_default_content_page
+label: 'Import page nodes'
+migration_group: custom
+source:
+  plugin: csv
+  path: /artifacts/page.csv
+  header_row_count: 1
+  ids: [title]
+process:
+  title: title
+  body: body
+destination:
+  plugin: 'entity:node'
+  default_bundle: page
+migration_dependencies: {} # Add this line

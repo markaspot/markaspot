@@ -1,0 +1,5 @@
+name: markaspot_default_content
+type: module
+description: Imports initial content
+package: Markaspot
+core_version_requirement: ^9 || ^10

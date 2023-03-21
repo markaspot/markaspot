@@ -1,0 +1,15 @@
+id: markaspot_migrate_default_content_boilerplate
+label: 'Import boilerplate nodes'
+migration_group: custom
+source:
+  plugin: csv
+  path: /artifacts/boilerplate.csv
+  header_row_count: 1
+  ids: [title]
+process:
+  title: title
+  body: body
+destination:
+  plugin: 'entity:node'
+  default_bundle: boilerplate
+migration_dependencies: {} # Add this line
