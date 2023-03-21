@@ -23,32 +23,36 @@ function mas_olivero_preprocess_paragraph(&$variables) {
   }
 }
 
-
-
-
-/**
- * Implements hook_preprocess_HOOK().
- */
 function mas_olivero_preprocess_field(&$variables) {
   $element = $variables['element'];
   $variables['field_name'] = $element['#field_name'];
-  $entity = isset($element[0]["#taxonomy_term"]);
+  $entity = isset($element[0]["#taxonomy_term"]) ? $element[0]["#taxonomy_term"] : FALSE;
   $vocabularies= ['category', 'status'];
   foreach ($vocabularies as $vocabulary) {
     if ($variables['field_name'] == "field_{$vocabulary}") {
       $variables['attributes']['class'][] = $vocabulary;
 
       if ($entity !== FALSE) {
-        //$element = $element[0]["#taxonomy_term"]->toArray();
         $item = $variables["items"][0]["content"]["#taxonomy_term"];
-        $variables['icon'] = $item->get("field_{$vocabulary}_icon")->getValue()[0]['value'];
-        $variables['color'] = $item->get("field_{$vocabulary}_hex")->getValue()[0]['color'];
+
+
+        if ($item->hasField("field_{$vocabulary}_hex")) {
+          $variables['color'] = $item->get("field_{$vocabulary}_hex")->getValue()[0]['color'];
+        }
+        if ($item->hasField("field_{$vocabulary}_icon")) {
+          $variables['icon'] = $item->get("field_{$vocabulary}_icon")->getValue()[0]['value'];
+        }
+        if ($item->hasField("name")) {
+          $variables['name'] = $item->get("name")->getValue()[0]['value'];
+        }
+
         $variables['name'] = $item->get("name")->getValue()[0]['value'];
       }
     }
   }
-
 }
+
+
 
 
 /**

@@ -447,6 +447,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
           $node->field_gdpr->value = 1;
         }
 
+        // Set the referenced term field.
+        $node->field_status = [
+          [
+            'target_id' => $status_open,
+          ],
+        ];
+
         $node->save();
         $this->logger->notice('Created entity %type with ID %request_id.', [
           '%type' => $node->getEntityTypeId(),
