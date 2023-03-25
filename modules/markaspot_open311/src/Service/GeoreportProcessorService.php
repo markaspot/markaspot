@@ -13,6 +13,8 @@ use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\paragraphs\Entity\Paragraph;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -79,6 +81,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected $moduleHandler;
 
   /**
+   * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
+   */
+  private StreamWrapperManagerInterface $streamWrapperManager;
+
+  /**
+   * @var \Drupal\Core\Entity\EntityFieldManagerInterface
+   */
+  private EntityFieldManagerInterface $entityFieldManager;
+
+  /**
    * GeoreportProcessorService constructor.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -96,7 +108,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
    */
-  public function __construct(ConfigFactoryInterface $configFactory, AccountProxyInterface $current_user, TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, FileUrlGenerator $fileUrlGenerator, ModuleHandlerInterface $module_handler) {
+  public function __construct(ConfigFactoryInterface $configFactory, AccountProxyInterface $current_user, TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, FileUrlGenerator $fileUrlGenerator, ModuleHandlerInterface $module_handler, EntityFieldManagerInterface $entity_field_manager, StreamWrapperManagerInterface $stream_wrapper_manager) {
     $this->config = $configFactory->get('markaspot_open311.settings');
     $this->currentUser = $current_user;
     $this->time = $time;
@@ -104,6 +116,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $this->entityTypeManager = $entity_type_manager;
     $this->fileUrlGenerator = $fileUrlGenerator;
     $this->moduleHandler = $module_handler;
+    $this->entityFieldManager = $entity_field_manager;
+    $this->streamWrapperManager = $stream_wrapper_manager;
   }
 
   /**
@@ -194,8 +208,28 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       foreach ($media_urls as $url) {
         if (strstr($url, "http")) {
           $managed = TRUE;
-          $file = system_retrieve_file($url, 'public://', $managed, FileSystemInterface::EXISTS_RENAME);
+          // Check the storage setting and use the appropriate file system wrapper.
+          $storage_setting = $this->entityFieldManager->getFieldStorageDefinitions('media')['field_media_image']->getSetting('uri_scheme');
+          switch ($storage_setting) {
+            case 'private':
+              $wrapper_scheme = 'private://';
+              break;
+            case 's3fs':
+              $wrapper_scheme = 's3fs://';
+              break;
+            default:
+              $wrapper_scheme = 'public://';
+          }
+          // Get the configured file directory for the media entity's image field.
+          $file_directory = $this->entityFieldManager->getFieldStorageDefinitions('media')['field_media_image']->getSetting('file_directory');
+          $file_directory = trim($file_directory, '/');
+          // Add the file directory to the file system wrapper scheme.
+          $wrapper_scheme .= $file_directory . '/';
+          // Get the original file name from the URL.
+          $original_file_name = basename($url);
+          $file = system_retrieve_file($url, $wrapper_scheme . $original_file_name, $managed, FileSystemInterface::EXISTS_RENAME);
           if ($file !== FALSE) {
+            // Create the media entity and set the appropriate file as the image field value.
             if ($this->moduleHandler->moduleExists('markaspot_media')) {
               $field_keys['image'] = 'field_request_media';
               $media = $this->entityTypeManager->getStorage('media')->create([
@@ -204,12 +238,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
                 'field_media_image' => [
                   'target_id' => $file->id(),
                   'alt' => 'Open311 File',
+                  'uri' => $file->getFileUri(),
                 ],
               ]);
               $media->setName('media:request_image:' . $media->uuid())
                 ->setPublished(TRUE)
                 ->save();
-              // $field_keys['image'][] = 'field_request_media';
               $values['field_request_media'][] = [
                 'target_id' => $media->id(),
                 'alt' => 'Open311 File',
@@ -220,13 +254,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
               $values[$field_keys['image']] = [
                 'target_id' => $file->id(),
                 'alt' => 'Open311 File',
+                'uri' => $file->getFileUri(),
               ];
             }
           }
           else {
             throw new GeoreportException('Image could not be retrieved via URL', 400);
           }
-
         }
       }
     }
