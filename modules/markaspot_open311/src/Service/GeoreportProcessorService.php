@@ -222,8 +222,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
           }
           // Get the configured file directory for the media entity's image field.
           $file_directory = $this->entityFieldManager->getFieldStorageDefinitions('media')['field_media_image']->getSetting('file_directory');
-          $file_directory = trim($file_directory, '/');
-          // Add the file directory to the file system wrapper scheme.
+          $file_directory ??= '';
+          $file_directory = trim($file_directory, '/');          // Add the file directory to the file system wrapper scheme.
           $wrapper_scheme .= $file_directory . '/';
           // Get the original file name from the URL.
           $original_file_name = basename($url);
@@ -294,15 +294,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   Return address
    */
   private function addressParser(string $address_string): array {
-    $address_array = ($address_string != "") ?? explode(',', $address_string);
+    $address_array = $address_string !== "" ? explode(',', $address_string) : [];
     $address = [];
-    if (is_array($address_array)){
+
+    if (is_array($address_array) && count($address_array) >= 2) {
       $zip_city = explode(' ', trim($address_array[1]));
 
-      $address['street'] = $address_array[0];
-      $address['zip'] = trim($zip_city[0]);
-      $address['city'] = trim($zip_city[1]);
+      $address = [
+        'street' => $address_array[0],
+        'zip' => trim($zip_city[0] ?? ''),
+        'city' => trim($zip_city[1] ?? ''),
+      ];
     }
+
     return $address;
   }
 
