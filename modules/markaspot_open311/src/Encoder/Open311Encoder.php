@@ -104,11 +104,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       libxml_use_internal_errors($internalErrors);
 
     }
-    if (function_exists('libxml_disable_entity_loader') && \PHP_VERSION_ID < 80000) {
-      $disableEntities = libxml_disable_entity_loader(TRUE);
-      libxml_disable_entity_loader($disableEntities);
 
-    }
     libxml_clear_errors();
 
     $dom = new \DOMDocument();

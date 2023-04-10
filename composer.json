@@ -53,12 +53,10 @@
     "funiq/geophp": "^2",
     "anthonymartin/geo-location": "^1.0",
     "drupal/address": "~1.0",
-    "drupal/features": "^3.0",
     "drupal/pathauto": "^1",
     "drupal/admin_toolbar": "^3",
     "drupal/restui": "^1",
     "drupal/token": "^1.9",
-    "drupal/better_normalizers": "1.x-dev",
     "drupal/ctools": "3.x-dev",
     "drupal/image_effects": "^3",
     "drupal/layout_library": "^1.0@beta",
@@ -68,7 +66,7 @@
     "drupal/diff": "^1.0",
     "drupal/exif_orientation": "^1",
     "drupal/field_group": "^3.1",
-    "drupal/form_mode_manager": "^2",
+    "drupal/form_mode_manager": "2.x-dev",
     "drupal/geolocation": "^3",
     "drupal/maillog": "1.x-dev",
     "drupal/media_parent_entity_link": "^1.0",
@@ -76,12 +74,10 @@
     "drupal/services_api_key_auth": "dev-3.0.x",
     "drupal/search_api": "^1.5",
     "drupal/views_infinite_scroll": "^2",
-    "drupal/default_content": "2.0.x",
     "drupal/color_field": "^3",
     "drupal/field_permissions": "^1.1",
     "drupal/twig_tweak": "^2.0",
     "drupal/field_formatter_class":"^1.0",
-    "drupal/pbf": "^1.3",
     "drupal/inline_entity_form": "^1.0@RC"
   },
   "minimum-stability": "dev",
@@ -115,11 +111,17 @@
     },
     "enable-patching": true,
     "patches": {
-      "drupal/business_rules": {
-        "Add taxonomy condition": "https://www.drupal.org/files/issues/2018-07-05/2983864-feature-request-compare-target_id-with-field.patch"
-      },
       "drupal/core": {
          "Translate field group": "https://www.drupal.org/files/issues/2022-09-19/2546212-193.patch"
+      },
+      "drupal/form_mode_manager": {
+         "Issue 3297262: Fix D10 Compatibility Issues": "https://www.drupal.org/files/issues/2023-03-20/patchfile.patch"
+      },
+      "drupal/lazy": {
+        "Automated Drupal 10 compatibility fixes": "https://www.drupal.org/files/issues/2022-07-18/lazy.3.x-dev.rector.patch"
+      },
+      "drupal/shs": {
+        "Issue #3295761: Fix D10 Compatibility Issues": "https://www.drupal.org/files/issues/2023-04-05/shs_d10_compatibility_issue_fixes-3295761-8.patch"
       }
     }
   }

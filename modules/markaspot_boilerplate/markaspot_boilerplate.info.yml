@@ -1,5 +1,5 @@
 name: 'Mark-a-Spot Boilerplate'
 type: module
 description: 'Adds Boilerplate content type and form widget to fill status notes with text.'
-core_version_requirement: ^8.8.0 || ^9.0
+core_version_requirement: ^8 || ^9 || ^10
 package: 'Mark-a-Spot'
