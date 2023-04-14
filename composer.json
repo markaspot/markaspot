@@ -119,7 +119,8 @@
          "Issue 3297262: Fix D10 Compatibility Issues": "https://www.drupal.org/files/issues/2023-03-20/patchfile.patch"
       },
       "drupal/lazy": {
-        "Automated Drupal 10 compatibility fixes": "https://www.drupal.org/files/issues/2022-07-18/lazy.3.x-dev.rector.patch"
+        "Automated Drupal 10 compatibility fixes": "https://www.drupal.org/files/issues/2022-07-18/lazy.3.x-dev.rector.patch",
+        "Automated Drupal 10 compatibility fixes version": "https://git.drupalcode.org/project/form_mode_manager/-/merge_requests/8.patch"
       }
     }
   }
