@@ -76,7 +76,7 @@
     "drupal/views_infinite_scroll": "^2",
     "drupal/color_field": "^3",
     "drupal/field_permissions": "^1.1",
-    "drupal/twig_tweak": "^2.0",
+    "drupal/twig_tweak": "^3.0",
     "drupal/field_formatter_class":"^1.0",
     "drupal/inline_entity_form": "^1.0@RC",
     "drupal/shs": "^2"
@@ -116,11 +116,11 @@
          "Translate field group": "https://www.drupal.org/files/issues/2022-09-19/2546212-193.patch"
       },
       "drupal/form_mode_manager": {
-         "Issue 3297262: Fix D10 Compatibility Issues": "https://www.drupal.org/files/issues/2023-03-20/patchfile.patch"
+         "Issue 3297262: Fix D10 Compatibility Issues": "https://www.drupal.org/files/issues/2023-03-20/patchfile.patch",
+         "Automated Drupal 10 compatibility fixes version": "https://git.drupalcode.org/project/form_mode_manager/-/merge_requests/8.patch"
       },
       "drupal/lazy": {
-        "Automated Drupal 10 compatibility fixes": "https://www.drupal.org/files/issues/2022-07-18/lazy.3.x-dev.rector.patch",
-        "Automated Drupal 10 compatibility fixes version": "https://git.drupalcode.org/project/form_mode_manager/-/merge_requests/8.patch"
+        "Automated Drupal 10 compatibility fixes": "https://www.drupal.org/files/issues/2022-07-18/lazy.3.x-dev.rector.patch"
       }
     }
   }
