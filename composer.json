@@ -78,7 +78,8 @@
     "drupal/field_permissions": "^1.1",
     "drupal/twig_tweak": "^2.0",
     "drupal/field_formatter_class":"^1.0",
-    "drupal/inline_entity_form": "^1.0@RC"
+    "drupal/inline_entity_form": "^1.0@RC",
+    "drupal/shs": "^2"
   },
   "minimum-stability": "dev",
   "prefer-stable": true,
@@ -119,9 +120,6 @@
       },
       "drupal/lazy": {
         "Automated Drupal 10 compatibility fixes": "https://www.drupal.org/files/issues/2022-07-18/lazy.3.x-dev.rector.patch"
-      },
-      "drupal/shs": {
-        "Issue #3295761: Fix D10 Compatibility Issues": "https://www.drupal.org/files/issues/2023-04-05/shs_d10_compatibility_issue_fixes-3295761-8.patch"
       }
     }
   }
