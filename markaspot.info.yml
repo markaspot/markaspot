@@ -45,7 +45,6 @@ dependencies:
   - path
   - pathauto
   - paragraphs
-  - quickedit
   - responsive_image
   - restui
   - search_api
@@ -53,7 +52,6 @@ dependencies:
   - system
   - taxonomy
   - text
-  - twig_tweak
   - toolbar
   - user
   - views
