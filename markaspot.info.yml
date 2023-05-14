@@ -31,7 +31,6 @@ dependencies:
   - field_permissions
   - file
   - filter
-  - form_mode_manager
   - geolocation
   - help
   - history
