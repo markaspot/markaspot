@@ -75,7 +75,6 @@
     "drupal/views_infinite_scroll": "^2",
     "drupal/color_field": "^3",
     "drupal/field_permissions": "^1.1",
-    "drupal/twig_tweak": "^3.0",
     "drupal/field_formatter_class":"^1.0",
     "drupal/inline_entity_form": "^1.0@RC",
     "drupal/shs": "^2"
