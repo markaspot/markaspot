@@ -114,7 +114,7 @@
          "Translate field group": "https://www.drupal.org/files/issues/2022-09-19/2546212-193.patch"
       },
       "drupal/lazy": {
-        "Automated Drupal 10 compatibility fixes": "https://www.drupal.org/files/issues/2022-07-18/lazy.3.x-dev.rector.patch"
+        "PHP 8.2 compatibility fixes": "https://www.drupal.org/files/issues/2023-02-08/3340222-php-8.2-deprecations.patch"
       }
     }
   }

@@ -1,0 +1,25 @@
+id: markaspot_migrate_default_content_service_status
+label: 'Import service_status nodes'
+migration_group: custom
+source:
+  plugin: csv
+  path: /artifacts/taxonomy_service_status.csv
+  header_row_count: 1
+  ids: [uuid]
+process:
+  vid: vid
+  tid: tid
+  langcode: langcode
+  name: name
+  description__value: description__value
+  description__format: description__format
+  weight: weight
+  parent: parent
+  uuid: uuid
+  field_status_hex_color: field_status_hex_color
+  field_status_hex_opacity: field_status_hex_opacity
+  field_status_icon: field_status_icon
+destination:
+  plugin: 'entity:taxonomy_term'
+  default_bundle: service_status
+migration_dependencies: {}

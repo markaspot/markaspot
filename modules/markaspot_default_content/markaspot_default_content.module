@@ -7,4 +7,7 @@ function markaspot_default_content_migration_plugins_alter(&$definitions) {
   $path = \Drupal::service('extension.list.module')->getPath('markaspot_default_content');
   $definitions['markaspot_migrate_default_content_page']['source']['path'] = $path . $definitions['markaspot_migrate_default_content_page']['source']['path'];
   $definitions['markaspot_migrate_default_content_boilerplate']['source']['path'] = $path . $definitions['markaspot_migrate_default_content_boilerplate']['source']['path'];
+  $definitions['markaspot_migrate_default_content_service_provider']['source']['path'] = $path . $definitions['markaspot_migrate_default_content_service_provider']['source']['path'];
+  $definitions['markaspot_migrate_default_content_service_status']['source']['path'] = $path . $definitions['markaspot_migrate_default_content_service_status']['source']['path'];
+  $definitions['markaspot_migrate_default_content_service_category']['source']['path'] = $path . $definitions['markaspot_migrate_default_content_service_category']['source']['path'];
 }

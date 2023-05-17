@@ -13,6 +13,7 @@ dependencies:
   - block
   - block_content
   - breakpoint
+  - ckeditor5
   - color_field
   - comment
   - config
