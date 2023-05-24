@@ -1,0 +1,30 @@
+uuid: 31688dcd-e3f8-46bc-b7b8-eb52d123293d
+langcode: en
+status: false
+dependencies:
+  content:
+    - 'block_content:mas_custom:1ab31f7f-27b1-18363-976d-31f7f27b137bbf1976d525e9c0530'
+  module:
+    - block_content
+    - system
+  theme:
+    - mas_custom
+id: mas_custom_markaspotaction
+theme: mas_custom
+region: header
+weight: -12
+provider: null
+plugin: 'block_content:1ab31f7f-27b1-18363-976d-31f7f27b137bbf1976d525e9c0530'
+settings:
+  id: 'block_content:1ab31f7f-27b1-18363-976d-31f7f27b137bbf1976d525e9c0530'
+  label: 'Mark-a-Spot Action'
+  label_display: '0'
+  provider: block_content
+  status: true
+  info: ''
+  view_mode: full
+visibility:
+  request_path:
+    id: request_path
+    negate: false
+    pages: '<front>'

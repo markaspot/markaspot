@@ -398,10 +398,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return array
    *   Return the drupal taxonomy term as a georeport service.
    */
-  public function getTaxonomyTree($vocabulary = "tags", $parent = 0, $max_depth = NULL): array {
+  public function getTaxonomyTree($vocabulary = "tags", $langcode = "en", $parent = 0, $max_depth = NULL,): array {
     // Load terms.
-    $tree = $this->entityTypeManager->getStorage("taxonomy_term")
-      ->loadTree($vocabulary, $parent, $max_depth, $load_entities = FALSE);
     $tree = $this->entityTypeManager->getStorage("taxonomy_term")
       ->loadByProperties(['vid' => $vocabulary, 'status' => 1]);
     // Make sure there are terms to work with.
@@ -410,7 +408,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     foreach ($tree as $term) {
-      $services[] = $this->taxMapService($term->tid->value);
+      $services[] = $this->taxMapService($term->tid->value, $langcode);
     }
 
     return $services;
@@ -425,12 +423,17 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return object
    *   $service: The service object
    */
-  public function taxMapService($tid) {
+  public function taxMapService($tid, $langcode = FALSE) {
 
     // Load all field for this taxonomy term:
     $service_category = $this->entityTypeManager->getStorage('taxonomy_term')
       ->load($tid);
 
+    // Check if the term has a translation in the desired language.
+    if ($service_category->hasTranslation($langcode)) {
+      // If it does, replace the term with its translation.
+      $service_category = $service_category->getTranslation($langcode);
+    }
     $service['service_code'] = $service_category->field_service_code->value;
     $service['service_name'] = $service_category->name->value;
     $service['metadata'] = "false";
@@ -577,6 +580,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $request['last_name'] = $node->field_last_name->value;
       }
     }
+
     if (isset($extended_role) && isset($parameters['extensions'])) {
       if ($this->moduleHandler->moduleExists('service_request')) {
         $request['extended_attributes']['markaspot'] = [];
@@ -584,6 +588,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $nid = ['nid' => $node->nid->value];
         if (isset($node->field_category)) {
           $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->field_category->target_id);
+          $langcode = $parameters['langcode'];
+          // Check if the term has a translation in the desired language.
+          if ($term->hasTranslation($langcode)) {
+            $term = $term->getTranslation($langcode);
+          }
+
           $category = [
             'category_hex' => $term->field_category_hex->color,
             'category_icon' => $term->field_category_icon->value,
@@ -595,6 +605,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
             if (isset($note->entity->field_status_term->target_id)) {
               $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($note->entity->field_status_term->target_id);
 
+              // Check if the term has a translation in the desired language.
+              if ($term->hasTranslation($langcode)) {
+                $term = $term->getTranslation($langcode);
+              }
+
               $status['status_descriptive_name'] = $term->name->value;
               $status['status_hex'] = $term->field_status_hex->color;
               $status['status_icon'] = $term->field_status_icon->value;
@@ -605,6 +620,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
           $logCount = -1;
           foreach ($node->field_status_notes as $note) {
             $logCount++;
+
             // All properties as always: = $note->entity.
             $log['status_notes'][$logCount]['status_note'] = $note->entity->field_status_note->value;
             $log['status_notes'][$logCount]['status'] = $this->taxMapStatus($note->entity->field_status_term->target_id);
