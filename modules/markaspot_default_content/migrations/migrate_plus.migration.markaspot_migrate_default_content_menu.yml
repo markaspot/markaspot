@@ -1,0 +1,23 @@
+id: markaspot_migrate_default_content_menu
+label: 'Import service_category nodes'
+migration_group: custom
+source:
+  plugin: csv
+  path: /artifacts/menu.csv
+  header_row_count: 1
+  ids: [uuid]
+  keys:
+    - uuid
+process:
+  menu_name: menu_name
+  link_title: link_text
+  weight: weight
+  parent: parent
+  link_uri:
+    - plugin: skip_on_empty
+      method: row
+      source: link_uri
+    - plugin: urlencode
+destination:
+  plugin: 'entity:menu_link_content'
+migration_dependencies: {}

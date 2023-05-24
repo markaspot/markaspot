@@ -16,9 +16,10 @@ process:
   weight: weight
   parent: parent
   uuid: uuid
-  field_category_hex_color: field_category_hex_color
-  field_category_hex_opacity: field_category_hex_opacity
+  field_category_gid: field_category_gid
+  field_category_hex: field_category_hex
   field_category_icon: field_category_icon
+  field_service_code: field_service_code
 destination:
   plugin: 'entity:taxonomy_term'
   default_bundle: service_category

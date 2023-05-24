@@ -16,8 +16,7 @@ process:
   weight: weight
   parent: parent
   uuid: uuid
-  field_status_hex_color: field_status_hex_color
-  field_status_hex_opacity: field_status_hex_opacity
+  field_status_hex: field_status_hex
   field_status_icon: field_status_icon
 destination:
   plugin: 'entity:taxonomy_term'

@@ -1,4 +1,4 @@
-"vid","tid","langcode","name","description__value","description__format","weight","parent","uuid","field_status_hex_color","field_status_hex_opacity","field_status_icon"
+"vid","tid","langcode","name","description__value","description__format","weight","parent","uuid","field_status_hex","field_status_hex_opacity","field_status_icon"
 "service_status","6","en","Archived",null,null,"3","0","daf4a00b-696f-49a2-9c7c-9085a73633c4","#808080","1","fa-stack-overflow"
 "service_status","5","en","Closed",null,null,"2","0","022ef1ee-5042-40f6-a088-624d58e6813c","#008000","1","fa-check"
 "service_status","4","en","Open",null,null,"1","0","21fbdf64-58f6-4ac5-8742-24207d8f716a","#FFA500","1","fa-play-circle"
