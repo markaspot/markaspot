@@ -9,7 +9,7 @@ source:
 process:
   title: title
   body__value: description__value
-  body__format: html
+  body__format: full_html
 destination:
   plugin: 'entity:node'
   default_bundle: page
