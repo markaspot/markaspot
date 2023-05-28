@@ -8,3 +8,11 @@
 div#geolocation-mapbox-map {
   z-index: 0;
 }
+
+#edit-field-geolocation-0-map-container .fieldset__wrapper {
+  padding: 0!important;
+}
+
+.leaflet-control-geosearch.leaflet-geosearch-bar {
+  max-width: calc(100% - 20px);
+}
