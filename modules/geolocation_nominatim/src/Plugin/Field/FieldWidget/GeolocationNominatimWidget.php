@@ -41,8 +41,12 @@ class GeolocationNominatimWidget extends WidgetBase {
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,
+      'addressFormat' => '${address.house_number}, ${address.road}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.city}, ${address.county}, ${address.postcode}',
       'serviceUrl' => 'https://nominatim.openstreetmap.org/',
       'LocationIQToken' => '',
+      'dragging' => TRUE,
+      'zoomControl' => FALSE,
+      'tab' => TRUE
     ] + parent::defaultSettings();
   }
 
@@ -159,6 +163,30 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#description' => $this->t('Check to use street name + building number format'),
       '#default_value' => $this->getSetting('streetNumberFormat'),
     ];
+    $elements['addressFormat'] = [
+      '#type' => 'textfield',
+      '#title' => t('Address Format'),
+      '#description' => t('Enter the address format. You can use ${address.road}, ${address.house_number}, ${address.postcode}, ${address.city}, ${address.suburb}'),
+      '#default_value' => $this->getSetting('addressFormat')
+    ];
+    $elements['dragging'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Dragging'),
+      '#description' => $this->t('Enable dragging of the map'),
+      '#default_value' => $this->getSetting('dragging'),
+    ];
+    $elements['zoomControl'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Zoom Control'),
+      '#description' => $this->t('Enable zoom control on the map'),
+      '#default_value' => $this->getSetting('zoomControl'),
+    ];
+    $elements['tab'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Tab'),
+      '#description' => $this->t('Enable tab on the map'),
+      '#default_value' => $this->getSetting('tab'),
+    ];
     return $elements;
   }
 
@@ -246,8 +274,12 @@ class GeolocationNominatimWidget extends WidgetBase {
               'autoLocate' => $this->getSetting('autoLocate'),
               'fullscreenControl' => $this->getSetting('fullscreenControl'),
               'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
+              'addressFormat' => $this->getSetting('addressFormat'),
               'serviceUrl' => $this->getSetting('serviceUrl'),
               'LocationIQToken' => $this->getSetting('LocationIQToken'),
+              'dragging' => $this->getSetting('dragging'),
+              'zoomControl' => $this->getSetting('zoomControl'),
+              'tab' => $this->getSetting('tab'),
             ],
           ],
         ],
