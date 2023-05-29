@@ -67,7 +67,7 @@
         'country': mapSettings.limitCountryCodes,
         'accept-language': mapSettings.limitCountryCodes,
         'viewbox': mapSettings.limitViewbox,
-        'limit': 15,
+        'limit': 5,
         'bounded': 1,
         'addressdetails': 1
       },
@@ -78,11 +78,9 @@
     const search = GeoSearch.GeoSearchControl({
       style: 'bar',
       provider: provider, // required
-      /* position: 'topright', */
       showMarker: true, // optional: true|false  - default true
       showPopup: true, // optional: true|false  - default false
       marker: {
-        // optional: L.Marker    - default L.Icon.Default
         icon: new L.Icon.Default(),
         draggable: true,
       },
@@ -431,14 +429,6 @@
                 Drupal.geolocationNominatimSetAddressField(mapSettings, result, context);
               }
             });
-          });
-
-          // Select the search bar input using its class name
-          const searchInput = document.querySelector('.leaflet-control-geosearch input');
-
-          // Add the event listener to clear the value on focus
-          searchInput.addEventListener('focus', function() {
-            this.value = '';
           });
 
         }
