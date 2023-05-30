@@ -72,14 +72,14 @@ function padZero(str, len) {
           }
         });
       });
-      
+
       mapSelector.once("markaspot_map").each(() => {
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
           scrollWheelZoom: !L.Browser.mobile,
           minZoom: 12,
           maxZoom: 18,
-          dragging: !L.Browser.mobile,
+          dragging: true,
           zoom: masSettings.zoom_initial
         });
 
