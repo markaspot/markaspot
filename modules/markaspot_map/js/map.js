@@ -72,7 +72,7 @@ function invertColor(hex, bw) {
           scrollWheelZoom: !L.Browser.mobile,
           minZoom: 12,
           maxZoom: 18,
-          dragging: !L.Browser.mobile,
+          dragging: true,
           zoom: masSettings.zoom_initial
         });
         var tileLayer;

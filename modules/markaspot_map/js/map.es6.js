@@ -78,7 +78,7 @@ function padZero(str, len) {
         scrollWheelZoom: !L.Browser.mobile,
         minZoom: 12,
         maxZoom: 18,
-        dragging: !L.Browser.mobile,
+        dragging: true,
         zoom: masSettings.zoom_initial
       });
 
