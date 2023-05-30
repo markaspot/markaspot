@@ -57,7 +57,7 @@
       reverseGeocode(e.latlng);
     }
 
-    // map.on('locationfound', onLocationFound);
+    map.on('locationfound', onLocationFound);
 
     // Define provider.
     // https://nominatim.org/release-docs/latest/api/Search/#parameters
@@ -84,8 +84,8 @@
         icon: new L.Icon.Default(),
         draggable: true,
       },
-      popupFormat: ({ query, result }) => parseResult(result), // optional: function    - default returns result label,
-      resultFormat: ({ result }) => parseResult(result), // optional: function    - default returns result label
+      popupFormat: ({ query, result }) => parseResult(result.raw.address, mapSettings), // optional: function    - default returns result label,
+      resultFormat: ({ result }) => parseResult(result.raw.address, mapSettings), // optional: function    - default returns result label
       maxMarkers: 1, // optional: number      - default 1
       retainZoomLevel: false, // optional: true|false  - default false
       animateZoom: true, // optional: true|false  - default true
@@ -96,24 +96,26 @@
     });
 
 
-    function parseResult(result) {
-      if (result.raw.address) {
-        const address = result.raw.address;
-        const addressComponents = [
-          address.road,
-          address.house_number,
-          address.postcode,
-          address.city,
-          address.suburb,
-          address.hamlet,
-          address.town,
-          address.village,
-          address.county
-        ];
+    function parseResult(result, mapSettings) {
+      console.log(result);
+      if (result) {
+        const address = result;
+        const addressFormat = mapSettings.addressFormat;
+        const formattedAddress = addressFormat
+          .replace(/\${address.road},?/g, address.road ? `${address.road.trim()},` : '')
+          .replace(/\${address.house_number},?/g, address.house_number ? `${address.house_number.trim()},` : '')
+          .replace(/\${address.postcode},?/g, address.postcode ? `${address.postcode.trim()},` : '')
+          .replace(/\${address.city},?/g, address.city ? `${address.city.trim()},` : '')
+          .replace(/\${address.suburb},?/g, address.suburb ? `${address.suburb.trim()},` : '')
+          .replace(/\${address.hamlet},?/g, address.hamlet ? `${address.hamlet.trim()},` : '')
+          .replace(/\${address.town},?/g, address.town ? `${address.town.trim()},` : '')
+          .replace(/\${address.village},?/g, address.village ? `${address.village.trim()},` : '')
+          .replace(/\${address.county},?/g, address.county ? `${address.county.trim()},` : '');
 
-        const filteredComponents = addressComponents.filter(component => component);
-        const addressString = filteredComponents.join(', ');
-        return addressString.trim();
+        // Remove trailing comma and trim the address
+        const filteredAddress = formattedAddress.replace(/,$/, '').trim();
+
+        return filteredAddress;
       }
     }
 
@@ -189,7 +191,7 @@
 
 
     function setMarker(result, latLng) {
-      parseRoad(result);
+
       if (typeof marker !== "undefined") {
         map.removeLayer(marker);
       }
@@ -199,7 +201,10 @@
         map.removeLayer(geosearchMarker);
       }
 
-
+      $val = parseResult(result, mapSettings);
+      const $input = $('.leaflet-control-geosearch form input');
+      $input.val($val);
+      // return $val
 
       // Check if method is called with a pair of coordinates to prevent
       // marker jumping to nominatm reverse results lat/lon.
