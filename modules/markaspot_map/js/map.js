@@ -341,9 +341,9 @@ function invertColor(hex, bw) {
         const map = Drupal.Markaspot.maps[0];
         const currentZoom = map.getZoom();
         const fullscreen = map.isFullscreen();
-        const target = $(`article[data - history - node - id = ${nid}]`);
+        const target = $(`article[data-history-node-id = ${nid}]`);
         if (target.length && fullscreen === false && currentPath !== "/home") {
-          map.setZoom(currentZoom + 2);
+          // map.setZoom(currentZoom + 2);
           // event.preventDefault();
           $("html, body").stop().animate({
             scrollTop: target.offset().top - 250
