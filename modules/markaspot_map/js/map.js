@@ -334,7 +334,7 @@ function padZero(str, len) {
         var map = Drupal.Markaspot.maps[0];
         var currentZoom = map.getZoom();
         var fullscreen = map.isFullscreen();
-        var target = $("article[data - history - node - id = ".concat(nid, "]"));
+        var target = $("article[data-history-node-id = ".concat(nid, "]"));
 
         if (target.length && fullscreen === false && currentPath !== "/home") {
           map.setZoom(currentZoom + 2);
