@@ -97,28 +97,26 @@
 
 
     function parseResult(result, mapSettings) {
-      console.log(result);
       if (result) {
         const address = result;
         const addressFormat = mapSettings.addressFormat;
         const formattedAddress = addressFormat
-          .replace(/\${address.road},?/g, address.road ? `${address.road.trim()},` : '')
-          .replace(/\${address.house_number},?/g, address.house_number ? `${address.house_number.trim()},` : '')
-          .replace(/\${address.postcode},?/g, address.postcode ? `${address.postcode.trim()},` : '')
-          .replace(/\${address.city},?/g, address.city ? `${address.city.trim()},` : '')
-          .replace(/\${address.suburb},?/g, address.suburb ? `${address.suburb.trim()},` : '')
-          .replace(/\${address.hamlet},?/g, address.hamlet ? `${address.hamlet.trim()},` : '')
-          .replace(/\${address.town},?/g, address.town ? `${address.town.trim()},` : '')
-          .replace(/\${address.village},?/g, address.village ? `${address.village.trim()},` : '')
-          .replace(/\${address.county},?/g, address.county ? `${address.county.trim()},` : '');
+          .replace(/\${address.road}/g, address.road || '')
+          .replace(/\${address.house_number}/g, address.house_number || '')
+          .replace(/\${address.postcode}/g, address.postcode || '')
+          .replace(/\${address.city}/g, address.city || '')
+          .replace(/\${address.suburb}/g, address.suburb || '')
+          .replace(/\${address.hamlet}/g, address.hamlet || '')
+          .replace(/\${address.town}/g, address.town || '')
+          .replace(/\${address.village}/g, address.village || '')
+          .replace(/\${address.county}/g, address.county || '');
 
-        // Remove trailing comma and trim the address
-        const filteredAddress = formattedAddress.replace(/,$/, '').trim();
+        // Trim the address
+        const trimmedAddress = formattedAddress.trim();
 
-        return filteredAddress;
+        return trimmedAddress;
       }
     }
-
 
     // Init geocoder.
     var geocodingQueryParams = {};
