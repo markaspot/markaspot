@@ -111,8 +111,8 @@
           .replace(/\${address.village}/g, address.village || '')
           .replace(/\${address.county}/g, address.county || '');
 
-        // Trim the address
-        const trimmedAddress = formattedAddress.trim();
+        // Remove extra spaces and trim the address
+        const trimmedAddress = formattedAddress.replace(/\s*,\s*/g, ', ').trim();
 
         return trimmedAddress;
       }
