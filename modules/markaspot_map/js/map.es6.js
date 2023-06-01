@@ -52,7 +52,6 @@ function padZero(str, len = 2) {
       Drupal.Markaspot.settings = masSettings;
       const mapSelector = $("#map");
       const center = [[masSettings.center_lat, masSettings.center_lng]];
-
       if (typeof mapSelector === 'undefined') {
         return;
       }
@@ -68,6 +67,7 @@ function padZero(str, len = 2) {
           }
         });
       });
+
       mapSelector.once("markaspot_map").each(() => {
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
@@ -112,7 +112,9 @@ function padZero(str, len = 2) {
       });
       const storedNids = JSON.parse(localStorage.getItem("storedNids"));
       const nids = Drupal.markaspot_map.getNids(masSettings.nid_selector);
-      Drupal.markaspot_map.setDefaults(masSettings);
+      Drupal.markaspot_map.setDefaults();
+
+      let markersOnMap = {};
 
       if (JSON.stringify(nids) !== JSON.stringify(storedNids)) {
         localStorage.setItem("storedNids", JSON.stringify(nids));
@@ -126,37 +128,54 @@ function padZero(str, len = 2) {
               scrolledMarker[nid] = {
                 latlng: layer.getLatLng(),
                 nid: layer.options.nid,
-                color: layer.options.color
+                color: layer.options.color,
+                marker: layer
               };
+              markersOnMap[nid] = true;
             });
           }, nids);
         }
       }
 
+      $(document).ready(function() {
+        new Waypoint({
+          element: document.getElementsByClassName('view-header')[0],
+          handler: function(direction) {
+            // When the element is at the top and we are scrolling up, we reset the map to its initial view.
+            if (direction === 'up') {
+              Drupal.markaspot_map.setDefaults(masSettings);
+            }
+          },
+          offset: '0'
+        });
+      });
+
+
       $('.view-requests').once('markaspot_map').each(() => {
         // Loop through all current teasers.
         $serviceRequests.each(function () {
+          function handleScroll(direction) {
+            const nid = this.element.dataset.historyNodeId;
+
+            // If marker doesn't exist, fallback to default view and return
+            if (typeof scrolledMarker[nid] === "undefined") {
+              this.element.classList.add("no-location");
+              Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
+              return;
+            }
+            // Marker exists, handle based on direction
+            if (direction === "down") {
+              this.element.classList.add("focus");
+            }
+            if (direction === "up") {
+              this.element.classList.remove("focus");
+            }
+            Drupal.markaspot_map.showCircle(scrolledMarker[nid]); // Show circle for both directions
+
+          }
           new Waypoint({
             element: this,
-            handler(direction) {
-              const nid = this.element.dataset.historyNodeId;
-
-              // If marker doesn't exist, fallback to default view and return
-              if (typeof scrolledMarker[nid] === "undefined") {
-                this.element.classList.add("no-location");
-                Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
-                return;
-              }
-              // Marker exists, handle based on direction
-              if (direction === "down") {
-                Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
-                this.element.classList.add("focus");
-              }
-              if (direction === "up") {
-                this.element.classList.remove("focus");
-                Drupal.markaspot_map.showCircle(scrolledMarker[nid]); // Show circle on scroll up as well
-              }
-            },
+            handler: handleScroll,
             offset: "10%"
           });
         });
@@ -166,10 +185,13 @@ function padZero(str, len = 2) {
   Drupal.markaspot_map = {
     setDefaults: function setDefaults() {
       const defaultCenter = new L.LatLng(masSettings.center_lat, masSettings.center_lng);
-      const map = Drupal.Markaspot.maps[0];
+      const defaultZoom = masSettings.zoom_initial;
+      let map = Drupal.Markaspot.maps[0];
 
-      if (typeof map !== "undefined") {
-        map.setView(defaultCenter, masSettings.zoom_initial);
+      if (typeof map !== "undefined" && defaultCenter && defaultZoom) {
+        map.setView(defaultCenter, defaultZoom-3);
+      } else {
+        console.error("Unable to set defaults. Map center or zoom is not defined.");
       }
     },
     showHeatMap: function showHeatMap() {
@@ -244,6 +266,19 @@ function padZero(str, len = 2) {
         fillColor: color,
         fillOpacity: 0.2
       }).addTo(map);
+
+      const target = $(`article[data-history-node-id = ${marker.nid}]`);
+      if (target.length) {
+        const html = target.find("h2").html();
+
+        if (!marker._map) {
+          circle.addTo(Drupal.Markaspot.maps[0]); // Add the marker to the map
+        }
+        circle.bindPopup(html); // bind the popup with content
+        circle.openPopup();
+      }
+
+
       map.flyTo(marker.latlng, mapDefaultZoom, {
         duration: 0.1
       });
@@ -331,7 +366,7 @@ function padZero(str, len = 2) {
       Drupal.Markaspot.maps[0].addLayer(markerLayer);
     },
     markerClickFn: (marker, nid) => () => {
-      let map = Drupal.Markaspot.maps[0];
+      // let map = Drupal.Markaspot.maps[0];
       let target = $(`article[data-history-node-id = ${nid}]`);
 
       if (target.length) {
@@ -350,7 +385,6 @@ function padZero(str, len = 2) {
             }, 1000);
           });
         });
-        // You don't need to add the marker to the layer again because it was already added before this function was called.
       }
     },
     showData: function showData(dataset) {
