@@ -90,9 +90,33 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
   top: 80px;
 }
 
-.leaflet-popup-content {
-    max-width: 180px;
+/* This will change the size of the popup to be 70% of the screen size. */
+.leaflet-fullscreen-on .leaflet-popup {
+  width: 50vw !important; /* 70% of viewport width */
+  max-width: 50vw !important; /* Override default max-width */
+
 }
+
+/* This will center the popup */
+.leaflet-fullscreen-on .leaflet-popup-content-wrapper {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+/* To make the close button look better, you can also adjust its position and size. */
+.leaflet-fullscreen-on .leaflet-popup-close-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 1.5rem;
+}
+
+.leaflet-fullscreen-on .leaflet-popup-content {
+  width: auto !important;
+  max-width: 50vw !important; /* 70% of viewport width */
+}
+
 
 .map-request-block {
   width: 100%;

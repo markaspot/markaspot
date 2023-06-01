@@ -137,21 +137,19 @@ function padZero(str, len = 2) {
         }
       }
 
-      $(document).ready(function() {
+      const viewHeader = document.getElementsByClassName('view-header')[0]
+      if(viewHeader) {
         new Waypoint({
           element: document.getElementsByClassName('view-header')[0],
           handler: function(direction) {
             // When the element is at the top and we are scrolling up, we reset the map to its initial view.
             if (direction === 'up') {
-              console.log("top")
               Drupal.markaspot_map.setDefaults(masSettings);
-
             }
           },
           offset: '0'
         });
-      });
-
+      }
 
       $('.view-requests').once('markaspot_map').each(() => {
         // Loop through all current teasers.
@@ -268,18 +266,17 @@ function padZero(str, len = 2) {
         fillColor: color,
         fillOpacity: 0.2
       }).addTo(map);
+      // Check the state of the fullscreen mode
 
       const target = $(`article[data-history-node-id = ${marker.nid}]`);
       if (target.length) {
         const html = target.find("h2").html();
-
         if (!marker._map) {
           circle.addTo(Drupal.Markaspot.maps[0]); // Add the marker to the map
         }
         circle.bindPopup(html); // bind the popup with content
         circle.openPopup();
       }
-
 
       map.flyTo(marker.latlng, mapDefaultZoom, {
         duration: 0.1
@@ -368,26 +365,42 @@ function padZero(str, len = 2) {
       Drupal.Markaspot.maps[0].addLayer(markerLayer);
     },
     markerClickFn: (marker, nid) => () => {
-      // let map = Drupal.Markaspot.maps[0];
-      let target = $(`article[data-history-node-id = ${nid}]`);
+      let map = Drupal.Markaspot.maps[0];
+      let target = document.querySelector(`article[data-history-node-id="${nid}"]`);
+      let html;
+      if (target) {
 
-      if (target.length) {
-        let html = target.find("h2").html();
-        marker.bindPopup(html); // bind the popup with content
+        if (map.isFullscreen()) {
 
-        marker.on("click", () => {
+          // target.querySelector('a').remove(); // Remove the anchor tags from the target element
+          marker.bindPopup(html);
           marker.openPopup();
+        } else {
+          if (drupalSettings.path.currentPath === "requests" || drupalSettings.path.isFront === true) {
 
-          $(document).on('click', '.leaflet-popup-content a', event => {
-            event.preventDefault();
+            html = target.querySelector("h2").innerHTML; // Get the HTML content of the <h2> element
+            marker.bindPopup(html);
+            marker.addEventListener("click", () => {
+              marker.openPopup();
 
-            // Scroll to the target element smoothly
-            $("html, body").stop().animate({
-              scrollTop: target.offset().top - 250
-            }, 1000);
-          });
-        });
+              document.addEventListener('click', function(event) {
+                if (event.target.closest('.leaflet-popup-content a')) {
+                  event.preventDefault();
+
+                  // Scroll to the target element smoothly
+                  window.scrollTo({
+                    top: target.offsetTop - 150,
+                    behavior: 'smooth'
+                  });
+                }
+              });
+            });
+          }
+        }
+        // marker.bindPopup(html); // bind the popup with content
       }
+
+
     },
     showData: function showData(dataset) {
       const _this = this;
