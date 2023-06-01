@@ -15,13 +15,18 @@
 
 #map.stuck {
   top: 0;
-  height: 250px!important;
+  height: 250px;
   max-width: 98.125rem;
   left: 0
 }
 
+.stuck .leaflet-top leaflet-left {
+
+}
+
 #map.stuck.stuck-nav {
-  height: 250px!important;
+  top:100px;
+  height: 250px;
   max-width: 98.125rem;
   left: 0
 }
