@@ -57,6 +57,7 @@ function padZero(str, len = 2) {
       }
 
       const $serviceRequests = $(masSettings.nid_selector);
+      /*
       $serviceRequests.hover(function () {
         const nid = this.dataset.historyNodeId;
         const $node = this;
@@ -67,6 +68,7 @@ function padZero(str, len = 2) {
           }
         });
       });
+      */
 
       mapSelector.once("markaspot_map").each(() => {
         Drupal.Markaspot.maps[0] = L.map("map", {
@@ -154,30 +156,44 @@ function padZero(str, len = 2) {
       $('.view-requests').once('markaspot_map').each(() => {
         // Loop through all current teasers.
         $serviceRequests.each(function () {
-          function handleScroll(direction) {
-            const nid = this.element.dataset.historyNodeId;
 
+          // Re
+          const element = this;
+          const nid = this.dataset.historyNodeId;
+
+          // Handler when the element comes into view just beneath the map
+          function handleEnter(direction) {
             // If marker doesn't exist, fallback to default view and return
             if (typeof scrolledMarker[nid] === "undefined") {
               this.element.classList.add("no-location");
               Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
               return;
             }
-            // Marker exists, handle based on direction
-            if (direction === "down") {
-              this.element.classList.add("focus");
-            }
-            if (direction === "up") {
-              this.element.classList.remove("focus");
-            }
-            Drupal.markaspot_map.showCircle(scrolledMarker[nid]); // Show circle for both directions
 
+            // Marker exists, add focus class and show the marker
+            this.element.classList.add("focus");
+            Drupal.markaspot_map.showCircle(scrolledMarker[nid]);
           }
+
+          // Handler when the element goes out of view behind the map
+          function handleExit(direction) {
+            this.element.classList.remove("focus");
+          }
+
           new Waypoint({
-            element: this,
-            handler: handleScroll,
-            offset: "10%"
+            element: element,
+            handler: handleEnter,
+            offset: '50%'
           });
+
+          new Waypoint({
+            element: element,
+            handler: handleExit,
+            offset: function() {
+              return -element.clientHeight;
+            }
+          });
+
         });
       });
     }
@@ -259,7 +275,7 @@ function padZero(str, len = 2) {
       }
 
       const color = marker.color;
-      const circle = L.circle(marker.latlng, 3600 / mapDefaultZoom, {
+      const circle = L.circle(marker.latlng, 100, {
         color,
         className: "auto_hide",
         weight: 1,
@@ -278,8 +294,8 @@ function padZero(str, len = 2) {
         circle.openPopup();
       }
 
-      map.flyTo(marker.latlng, mapDefaultZoom, {
-        duration: 0.1
+      map.flyTo(marker.latlng, 16, {
+        duration: 0.5
       });
       map.invalidateSize();
       setTimeout(() => {
@@ -369,15 +385,13 @@ function padZero(str, len = 2) {
       let target = document.querySelector(`article[data-history-node-id="${nid}"]`);
       let html;
       if (target) {
-
+        html = target;
         if (map.isFullscreen()) {
-
-          // target.querySelector('a').remove(); // Remove the anchor tags from the target element
-          marker.bindPopup(html);
-          marker.openPopup();
+          marker.bindPopup(html, { autoClose: true, closeOnClick: true });
+          return
         } else {
           if (drupalSettings.path.currentPath === "requests" || drupalSettings.path.isFront === true) {
-
+            // List view and front view (no fullscreen)
             html = target.querySelector("h2").innerHTML; // Get the HTML content of the <h2> element
             marker.bindPopup(html);
             marker.addEventListener("click", () => {
@@ -386,12 +400,11 @@ function padZero(str, len = 2) {
               document.addEventListener('click', function(event) {
                 if (event.target.closest('.leaflet-popup-content a')) {
                   event.preventDefault();
-
-                  // Scroll to the target element smoothly
                   window.scrollTo({
-                    top: target.offsetTop - 150,
+                    top: Math.max(target.offsetTop - 150, 0),
                     behavior: 'smooth'
                   });
+
                 }
               });
             });

@@ -92,11 +92,14 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
 
 /* This will change the size of the popup to be 70% of the screen size. */
 .leaflet-fullscreen-on .leaflet-popup {
-  width: 50vw !important; /* 70% of viewport width */
-  max-width: 50vw !important; /* Override default max-width */
+  width: 400px!important; /* 70% of viewport width */
+  max-width: 400px !important; /* Override default max-width */
 
 }
-
+.leaflet-fullscreen-on .leaflet-popup .layout--twocol-section--50-50 .status,
+.leaflet-fullscreen-on .leaflet-popup .layout--twocol-section--50-50 .category {
+  font-size: 0.8rem;
+}
 /* This will center the popup */
 .leaflet-fullscreen-on .leaflet-popup-content-wrapper {
   display: flex !important;
