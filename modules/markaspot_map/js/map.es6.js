@@ -69,8 +69,9 @@ function padZero(str, len = 2) {
         });
       });
       */
+      const elements = once("markaspot_map", mapSelector);
 
-      mapSelector.once("markaspot_map").each(() => {
+      elements.forEach(() => {
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
           scrollWheelZoom: !L.Browser.mobile,
@@ -153,7 +154,7 @@ function padZero(str, len = 2) {
         });
       }
 
-      $('.view-requests').once('markaspot_map').each(() => {
+      once('markaspot_map', function () {
         // Loop through all current teasers.
         $serviceRequests.each(function () {
 
