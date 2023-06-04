@@ -3,7 +3,7 @@
 namespace Drupal\markaspot_validation\Plugin\Validation\Geo;
 
 /**
- * Temporarily taken from weiyongsheng/poylgon.
+ * Temporarily taken from weiyongsheng/polygon.
  */
 class Polygon {
   /**
