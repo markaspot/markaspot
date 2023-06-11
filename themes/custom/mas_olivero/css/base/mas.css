@@ -133,7 +133,7 @@
     background: #fff;
     border-left: 2px solid #e7edf1;
     font-size: 1.3rem;
-    margin-bottom: 2.25rem;
+    /* margin-bottom: 2.25rem; */
   }
 
 .node__content .text-content {
