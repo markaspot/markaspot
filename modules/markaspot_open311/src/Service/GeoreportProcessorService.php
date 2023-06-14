@@ -588,7 +588,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $nid = ['nid' => $node->nid->value];
         if (isset($node->field_category)) {
           $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->field_category->target_id);
-          $langcode = $parameters['langcode'];
+
+          // Check if "langcode" is set in $parameters, otherwise use a default value or throw an error.
+          $langcode = $parameters['langcode'] ?? 'en';
+
           // Check if the term has a translation in the desired language.
           if ($term->hasTranslation($langcode)) {
             $term = $term->getTranslation($langcode);
