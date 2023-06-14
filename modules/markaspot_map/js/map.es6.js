@@ -154,7 +154,7 @@ function padZero(str, len = 2) {
         });
       }
 
-      once('markaspot_map', function () {
+      elements.forEach(() => {
         // Loop through all current teasers.
         $serviceRequests.each(function () {
 
