@@ -7,16 +7,14 @@
         el.addEventListener('change', function() {
           const url = '/markaspot_boilerplate/load/' + this.value;
           let $textarea = $(this).closest('.paragraphs-subform').find('textarea');
-          console.log(Drupal.CKEditor5Instances);
           if ($textarea.length > 0) {
-            let instanceId = $textarea.data('ckeditor5-id');  // the id you are looking for
+            let instanceId = String($textarea.data('ckeditor5-id'));
+            let editor;
             if (Drupal.CKEditor5Instances.has(instanceId)) {
-              const editor = Drupal.CKEditor5Instances.get(instanceId);
-              // Use editor instance here...
+              editor = Drupal.CKEditor5Instances.get(instanceId);
             } else {
               console.log('CKEditor instance not found for', instanceId);
             }
-            //const editor = Drupal.CKEditor5Instances.get($textarea.data('ckeditor5-id'));
             if (editor) {
               $.getJSON(url, function (data) {
                 editor.setData(data);
