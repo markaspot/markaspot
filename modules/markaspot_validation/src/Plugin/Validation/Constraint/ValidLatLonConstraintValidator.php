@@ -5,7 +5,6 @@ namespace Drupal\markaspot_validation\Plugin\Validation\Constraint;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\Polygon;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
-use geoPHP\geoPHP;
 
 /**
  * Validates the LatLon constraint.
@@ -38,22 +37,34 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
   public static function polygonCheck($lng, $lat) {
     // Looking for a valid WKT polygon:
     $config = \Drupal::configFactory()->getEditable('markaspot_validation.settings');
-
     $wkt = $config->get('wkt');
     if ($wkt !== '') {
-      // Transform wkt to json.
-      $geom = geoPHP::load($wkt, 'wkt');
-      $json = $geom->out('json');
-      $data = json_decode($json);
-      $polygon = new Polygon($data->coordinates[0]);
+      $coordinates = self::parse_wkt($wkt);
+      $polygon = new Polygon($coordinates);
       return $polygon->contain($lng, $lat);
-
-      // $polygon = new Polygon($data->coordinates[0]);
-      // return $polygon->contain($lng, $lat);
     }
     else {
       return TRUE;
     }
   }
+
+  /**
+   * Parse WKT into an array of coordinates.
+   *
+   * @param string $wkt
+   *   The Well-Known Text string.
+   *
+   * @return array
+   *   An array of coordinates.
+   */
+  private static function parse_wkt($wkt) {
+    $polygon = substr($wkt, 9, -2); // remove "POLYGON ((" at start and "))" at end
+    $points = explode(',', $polygon); // split into points
+    $coords = array_map(function($point) {
+      return array_map('floatval', explode(' ', trim($point))); // split each point into lat and lon
+    }, $points);
+    return $coords;
+  }
+
 
 }

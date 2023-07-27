@@ -15,14 +15,18 @@
 
 #map.stuck {
   top: 0;
-  height: 250px!important;
+  height: 250px;
   max-width: 98.125rem;
   left: 0
 }
 
+.stuck .leaflet-top leaflet-left {
+
+}
+
 #map.stuck.stuck-nav {
-  top: 110px;
-  height: 250px!important;
+  top:100px;
+  height: 250px;
   max-width: 98.125rem;
   left: 0
 }
@@ -86,9 +90,36 @@ fieldset#edit-field-geolocation-0-map-container div.panel-body, fieldset#edit-fi
   top: 80px;
 }
 
-.leaflet-popup-content {
-    max-width: 180px;
+/* This will change the size of the popup to be 70% of the screen size. */
+.leaflet-fullscreen-on .leaflet-popup {
+  width: 400px!important; /* 70% of viewport width */
+  max-width: 400px !important; /* Override default max-width */
+
 }
+.leaflet-fullscreen-on .leaflet-popup .layout--twocol-section--50-50 .status,
+.leaflet-fullscreen-on .leaflet-popup .layout--twocol-section--50-50 .category {
+  font-size: 0.8rem;
+}
+/* This will center the popup */
+.leaflet-fullscreen-on .leaflet-popup-content-wrapper {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+/* To make the close button look better, you can also adjust its position and size. */
+.leaflet-fullscreen-on .leaflet-popup-close-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 1.5rem;
+}
+
+.leaflet-fullscreen-on .leaflet-popup-content {
+  width: auto !important;
+  max-width: 50vw !important; /* 70% of viewport width */
+}
+
 
 .map-request-block {
   width: 100%;

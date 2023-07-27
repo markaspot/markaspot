@@ -1,4 +1,8 @@
 
+.path-frontpage .leaflet-control-container {
+  display: none;
+}
+
 .leaflet-clickable {
     -webkit-animation: pulsate 1s ease-in;
     -webkit-animation: pulsate 1s ease-out;
