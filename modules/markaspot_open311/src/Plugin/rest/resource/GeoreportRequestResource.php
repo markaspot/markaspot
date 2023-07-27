@@ -359,7 +359,12 @@ class GeoreportRequestResource extends ResourceBase {
         $node->set($field_name, $values[$field_name]);
       }
     }
-    $validation = $this->validate($node);
+    // Validate the node only if the user does not have the 'bypass mas validation' permission
+    $validation = TRUE;
+    if (!$this->currentUser->hasPermission('bypass mas validation')) {
+      $validation = $this->validate($node);
+    }
+
     $service_request = [];
 
     if ($validation === TRUE) {
