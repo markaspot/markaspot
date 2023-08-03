@@ -13,8 +13,6 @@ dependencies:
   - block
   - block_content
   - breakpoint
-  - ckeditor
-  - color
   - color_field
   - comment
   - config
@@ -33,7 +31,6 @@ dependencies:
   - field_permissions
   - file
   - filter
-  - form_mode_manager
   - geolocation
   - help
   - history
@@ -48,8 +45,6 @@ dependencies:
   - path
   - pathauto
   - paragraphs
-  - quickedit
-  - rdf
   - responsive_image
   - restui
   - search_api
@@ -58,7 +53,6 @@ dependencies:
   - system
   - taxonomy
   - text
-  - twig_tweak
   - toolbar
   - user
   - views
