@@ -71,7 +71,7 @@
         'bounded': 1,
         'addressdetails': 1
       },
-      searchUrl: mapSettings.serviceUrl + 'search/',
+      searchUrl: mapSettings.serviceUrl + 'search'
     });
 
     // Add Control.
@@ -258,7 +258,7 @@
     }
 
     function reverseGeocode(latlng) {
-      const url = mapSettings.serviceUrl + 'reverse/?' + 'lon=' + latlng.lng + "&lat=" + latlng.lat + "&format=json";
+      const url = mapSettings.serviceUrl + 'reverse?' + 'lon=' + latlng.lng + "&lat=" + latlng.lat + "&format=json";
       fetch(url).then(function (response) {
         return response.json();
       })
