@@ -82,9 +82,9 @@ function padZero(str, len = 2) {
         });
         let tileLayer;
         const map = Drupal.Markaspot.maps[0];
-
+        let gl;
         if (masSettings.map_type === "0") {
-          const gl = L.mapboxGL({
+          gl = L.mapboxGL({
             accessToken: masSettings.mapbox_token,
             style: masSettings.mapbox_style,
             center
@@ -154,7 +154,7 @@ function padZero(str, len = 2) {
         });
       }
 
-      once('markaspot_map', function () {
+      elements.forEach(() => {
         // Loop through all current teasers.
         $serviceRequests.each(function () {
 

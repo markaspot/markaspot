@@ -39,7 +39,7 @@ function padZero(str, len = 2) {
   return (zeros + str).slice(-len);
 }
 
-(($, Drupal, drupalSettings) => {
+(($, Drupal, drupalSettings, once) => {
   Drupal.Markaspot = {};
   Drupal.Markaspot.maps = [];
   let markerLayer;
@@ -70,7 +70,6 @@ function padZero(str, len = 2) {
       });
       */
       const elements = once("markaspot_map", mapSelector);
-
       elements.forEach(() => {
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
@@ -82,9 +81,9 @@ function padZero(str, len = 2) {
         });
         let tileLayer;
         const map = Drupal.Markaspot.maps[0];
-
+        let gl;
         if (masSettings.map_type === "0") {
-          const gl = L.mapboxGL({
+          gl = L.mapboxGL({
             accessToken: masSettings.mapbox_token,
             style: masSettings.mapbox_style,
             center
@@ -153,11 +152,9 @@ function padZero(str, len = 2) {
           offset: '0'
         });
       }
-
-      once('markaspot_map', function () {
+      elements.forEach(() => {
         // Loop through all current teasers.
         $serviceRequests.each(function () {
-
           // Re
           const element = this;
           const nid = this.dataset.historyNodeId;
@@ -491,4 +488,4 @@ function padZero(str, len = 2) {
       return nids;
     }
   };
-})(jQuery, Drupal, drupalSettings);
+})(jQuery, Drupal, drupalSettings, once);
