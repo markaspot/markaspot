@@ -487,6 +487,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $messages = [];
       foreach ($violations as $violation) {
         $messages[substr($violation->getPropertyPath(), 6)] = $violation->getMessage();
+        $this->logger->error('Node validation error: @message', ['@message' => $violation->getMessage()]);
       }
 
       // Throw new BadRequestHttpException($message);
