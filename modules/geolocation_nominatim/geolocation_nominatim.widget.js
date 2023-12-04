@@ -4,14 +4,12 @@
 
 (function ($) {
   Drupal.geolocationNominatimWidgetMap = {};
-
   Drupal.geolocationNominatimWidget = function (mapSettings, context, updateCallback) {
     // Only init once.
     if ($('#' + mapSettings.id).hasClass('leaflet-container')) {
       return;
     }
     let geosearchMarker; // store the GeoSearch marker
-
 
     Drupal.geolocationNominatimWidget.map = L.map(mapSettings.id, {
       dragging: mapSettings.dragging,
@@ -21,6 +19,30 @@
 
     const map = Drupal.geolocationNominatimWidget.map;
 
+    let gl;
+    if (mapSettings.mapboxStyle && mapSettings.maplibre == "1") {
+      gl = L.maplibreGL({
+        accessToken: mapSettings.mapboxToken,
+        style: mapSettings.mapboxStyle
+      }).addTo(map);
+    }
+
+    if (mapSettings.mapboxStyle && mapSettings.maplibre == "0") {
+      gl = L.mapboxGL({
+        accessToken: mapSettings.mapboxToken,
+        style: mapSettings.mapboxStyle
+      }).addTo(map);
+    }
+
+    if (!mapSettings.mapboxStyle) {
+      let tileLayer;
+      if (mapSettings.wmsLayer === "") {
+        tileLayer = L.tileLayer(mapSettings.tileServerUrl);
+      } else {
+        tileLayer = L.tileLayer.wms(mapSettings.tileServerUrl, { layers: mapSettings.wmsLayer });
+      }
+      map.addLayer(tileLayer);
+    }
 
     if (mapSettings.fullscreenControl) {
       L.control.fullscreen({
@@ -29,17 +51,10 @@
       }).addTo(map);
     }
 
-    let tileLayer;
-    if (mapSettings.wmsLayer === "") {
-      tileLayer = L.tileLayer(mapSettings.tileServerUrl);
-    } else {
-      tileLayer = L.tileLayer.wms(mapSettings.tileServerUrl, { layers: mapSettings.wmsLayer });
-    }
     map.attributionControl.addAttribution(
       mapSettings.customAttribution
     );
 
-    map.addLayer(tileLayer);
 
     const locateOptions = {
       position: 'bottomright'
@@ -148,10 +163,6 @@
         .attr('value', result.location.y);
     };
 
-
-
-
-
     map.on('click', function (e) {
       search.clearResults();
 
@@ -185,8 +196,6 @@
       map.setView([fieldValues.lat, fieldValues.lng]);
       reverseGeocode(fieldValues);
     }
-
-
 
     function setMarker(result, latLng) {
 
@@ -273,8 +282,6 @@
       $('.field--widget-geolocation-nominatim-widget .geolocation-hidden-lng')
         .attr('value', latlng.lng);
     }
-
-
 
     // geocoder.addTo(map);
   };

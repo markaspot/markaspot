@@ -11,8 +11,11 @@ function markaspot_map_page_attachments(array &$page) {
   if ($path !== '/report' && !strstr($path, 'admin')  && !strstr($path, 'node/add') && !strstr($path, 'edit')) {
     $page['#attached']['library'][] = 'markaspot_map/map';
 
-    if ($attached['map_type'] == '0') {
+    if ($attached['map_type'] == '0' && $attached['maplibre'] == '1') {
+      $page['#attached']['library'][] = 'markaspot_map/maplibre';
+    } elseif ($attached['map_type'] == '0' && $attached['maplibre'] == '0') {
       $page['#attached']['library'][] = 'markaspot_map/mapbox';
     }
+
   }
 }

@@ -69,6 +69,14 @@ mapbox:
     component:
       /libraries/mapbox-gl/dist/mapbox-gl.css: {}
 
+maplibre:
+  js:
+    /libraries/maplibre-gl/dist/maplibre-gl.js: { }
+    /libraries/maplibre-gl-leaflet/leaflet-maplibre-gl.js: { }
+  css:
+    component:
+      /libraries/maplibre-gl/dist/maplibre-gl.css: {}
+
 
 # Markaspot Map core library.
 map:

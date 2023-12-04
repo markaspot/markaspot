@@ -83,7 +83,14 @@ function padZero(str, len = 2) {
         let tileLayer;
         const map = Drupal.Markaspot.maps[0];
         let gl;
-        if (masSettings.map_type === "0") {
+        if (masSettings.map_type == "0" && masSettings.maplibre == "1") {
+          gl = L.maplibreGL({
+            accessToken: masSettings.mapbox_token,
+            style: masSettings.mapbox_style,
+            center
+          }).addTo(map);
+        }
+        if (masSettings.map_type == "0" && masSettings.maplibre == "0") {
           gl = L.mapboxGL({
             accessToken: masSettings.mapbox_token,
             style: masSettings.mapbox_style,

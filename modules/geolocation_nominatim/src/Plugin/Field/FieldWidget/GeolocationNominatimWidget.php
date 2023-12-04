@@ -37,6 +37,9 @@ class GeolocationNominatimWidget extends WidgetBase {
       'city' => '',
       'tileServerUrl' => 'http://{s}.tile.osm.org/{z}/{x}/{y}.png',
       'wmsLayer' => '',
+      'mapboxStyle' => '',
+      'mapboxToken' => '',
+      'maplibre' => '',
       'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
@@ -125,6 +128,23 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#title' => $this->t('WMS Layer ID'),
       '#default_value' => $this->getSetting('wmsLayer'),
       '#description' => $this->t('Enter the layer ID like "layer:layer"'),
+    ];
+    $elements['mapboxToken'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mapbox Token'),
+      '#default_value' => $this->getSetting('mapboxToken'),
+      '#description' => $this->t('Enter your personal Mapbox Token'),
+    ];
+    $elements['mapboxStyle'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mapbox Style'),
+      '#default_value' => $this->getSetting('mapboxStyle'),
+      '#description' => $this->t('Enter a Mapbox Style Url'),
+    ];
+    $elements['maplibre'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable MapLibre'),
+      '#default_value' => $this->getSetting('maplibre'),
     ];
     $elements['customAttribution'] = [
       '#type' => 'textarea',
@@ -248,6 +268,8 @@ class GeolocationNominatimWidget extends WidgetBase {
     $element['#attached'] = [
       'library' => [
         'geolocation_nominatim/leaflet',
+        'geolocation_nominatim/mapbox',
+        'geolocation_nominatim/maplibre',
         'geolocation_nominatim/leaflet-locatecontrol',
         'geolocation_nominatim/leaflet-geosearch',
         'geolocation_nominatim/geolocation-nominatim-widget',
@@ -269,6 +291,9 @@ class GeolocationNominatimWidget extends WidgetBase {
               'limitViewbox'  => $this->getSetting('limit_viewbox'),
               'city'  => $this->getSetting('city'),
               'tileServerUrl'  => $this->getSetting('tileServerUrl'),
+              'mapboxStyle'  => $this->getSetting('mapboxStyle'),
+              'mapboxToken'  => $this->getSetting('mapboxToken'),
+              'maplibre'  => $this->getSetting('maplibre'),
               'wmsLayer'  => $this->getSetting('wmsLayer'),
               'customAttribution'  => $this->getSetting('customAttribution'),
               'autoLocate' => $this->getSetting('autoLocate'),
