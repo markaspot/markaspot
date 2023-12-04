@@ -72,7 +72,7 @@ mapbox:
 maplibre:
   js:
     /libraries/maplibre-gl/dist/maplibre-gl.js: { }
-    /libraries/maplibre-gl-leaflet/leaflet-maplibre-gl.js: { }
+    /libraries/maplibre--maplibre-gl-leaflet/leaflet-maplibre-gl.js: { }
   css:
     component:
       /libraries/maplibre-gl/dist/maplibre-gl.css: {}
