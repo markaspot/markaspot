@@ -42,7 +42,7 @@
         "npm-asset/mapbox-gl-leaflet": "^0.0.15",
         "npm-asset/mapbox-gl": "^2",
         "npm-asset/maplibre-gl": "^2",
-        "npm-asset/maplibre-gl-leaflet": ">=0",
+        "npm-asset/maplibre--maplibre-gl-leaflet": "^0.0.20",
         "npm-asset/font-awesome": "^5",
         "npm-asset/axios": "^1",
         "npm-asset/caman": "^4.1",
