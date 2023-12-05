@@ -129,6 +129,8 @@
         "npm-asset/mapbox--jsonlint-lines-primitives": "*",
         "npm-asset/mapbox--geojson-rewind": "*",
         "npm-asset/mapbox--node-pre-gyp": "*",
+        "npm-asset/types--mapbox__point-geometry": "*",
+        "npm-asset/types--mapbox__vector-tile": "*",
         "npm-asset/ini": "*",
         "npm-asset/kind-of": "*",
         "npm-asset/types--pbf": "*",
