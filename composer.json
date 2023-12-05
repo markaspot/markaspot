@@ -12,17 +12,15 @@
         }
     ],
     "repositories": [
-
         {
             "type": "package",
             "package": {
                 "name": "maplibre/maplibre-gl-js",
                 "version": "3.6.2",
                 "type": "drupal-library",
-                "source": {
-                    "url": "https://github.com/maplibre/maplibre-gl-js.git",
-                    "type": "git",
-                    "reference": "v3.6.2"
+                "dist": {
+                    "url": "https://github.com/maplibre/maplibre-gl-js/archive/refs/tags/v3.6.2.zip",
+                    "type": "zip"
                 }
             }
         },
@@ -32,10 +30,9 @@
                 "name": "mapbox/mapbox-gl-js",
                 "version": "3.0.0",
                 "type": "drupal-library",
-                "source": {
-                    "url": "https://github.com/mapbox/mapbox-gl-js.git",
-                    "type": "git",
-                    "reference": "v3.0.0"
+                "dist": {
+                    "url": "https://github.com/maplibre/maplibre-gl-js/archive/refs/tags/v3.6.2.zip",
+                    "type": "zip"
                 }
             }
         },
