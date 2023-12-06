@@ -1,6 +1,21 @@
 
 # Changelog
 
+## [10.6.0] - 2023-12-06
+### New Features
+- **Map Integrations**: Integrated Maplibre and Mapbox into a dedicated git package with added dependencies for enhanced map functionalities. Included maplibre-gl-js for improved map and widget integration.
+- **Internationalization Enhancements**: Introduced multi-lingual support for terms and added a module for translation, broadening global usability.
+- **User Interface Improvements**: Implemented scrolling pop-ups and fixed logo padding in the toolbar for an enhanced user experience.
+- **API Flexibility**: Added a validation bypass for API users.
+
+### Fixes and Improvements
+- **Installation and Setup**: Corrected directory post-installation issues and updated maplibre-gl-leaflet constraints.
+- **Library Updates**: Updated various dependencies and libraries in line with Drupal 10 requirements.
+- **Performance Enhancements**: Numerous bug fixes and minor enhancements for overall stability and performance improvement.
+
+## [9.5.1] - Previous Version
+- The version prior to the updates and improvements leading to 10.6.0.
+
 ## [8.5.0] - 2020-07-01
 
 - Update Core to 8.9.1
