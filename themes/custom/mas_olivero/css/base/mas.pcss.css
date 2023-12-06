@@ -80,6 +80,34 @@
   }
 }
 
+.view-front-gallery .node__top-wrapper {
+  position: relative;
+}
+
+.view-front-gallery field--name-field-request-media {
+  margin-bottom: 10px;
+}
+
+.view-front-gallery .field--name-field-request-media img {
+  width: 100%;
+  height: auto;
+}
+
+.view-front-gallery .node__title {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background-color: rgba(0, 0, 0, 0.5); /* Add a semi-transparent background to make the text more readable. */
+  color: #fff;
+  padding: 10px;
+}
+
+.view-front-gallery .node__title a {
+  color: #fff;
+}
+
+
 
 
 

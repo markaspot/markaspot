@@ -1,6 +1,6 @@
 name: 'Mark-a-Spot Front'
 package: Mark-a-Spot
-core_version_requirement: ^8 || ^9
+core_version_requirement: ^8 || ^9 || ^10
 description: 'Installs the 8.4.x Front page'
 type: module
 dependencies:

@@ -1,0 +1,19 @@
+id: markaspot_migrate_default_content_block
+label: 'Import blocks'
+migration_group: custom
+source:
+  plugin: csv
+  path: /artifacts/block.csv
+  header_row_count: 1
+  ids: [uuid]
+process:
+  title: title
+  uuid: uuid
+  body/value: body
+  body/format:
+    plugin: default_value
+    default_value: full_html
+destination:
+  plugin: 'entity:block_content'
+  default_bundle: mas_custom
+migration_dependencies: {}

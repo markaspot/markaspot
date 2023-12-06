@@ -1,0 +1,26 @@
+id: markaspot_migrate_default_content_service_category
+label: 'Import service_category nodes'
+migration_group: custom
+source:
+  plugin: csv
+  path: /artifacts/taxonomy_service_categories.csv
+  header_row_count: 1
+  ids: [uuid]
+process:
+  vid: vid
+  tid: tid
+  langcode: langcode
+  name: name
+  description__value: description__value
+  description__format: description__format
+  weight: weight
+  parent: parent
+  uuid: uuid
+  field_category_gid: field_category_gid
+  field_category_hex: field_category_hex
+  field_category_icon: field_category_icon
+  field_service_code: field_service_code
+destination:
+  plugin: 'entity:taxonomy_term'
+  default_bundle: service_category
+migration_dependencies: {}

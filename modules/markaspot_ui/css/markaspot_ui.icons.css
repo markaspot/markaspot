@@ -12,3 +12,7 @@
     background: transparent url(../images/logo.svg) 50% 50% no-repeat !important;
     background-size: 100%;
 }
+
+img.toolbar-icon-home {
+  padding: 10px;
+}

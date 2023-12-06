@@ -1,14 +1,10 @@
-dateFormat:
-  header: true
-  js:
-    /libraries/dateformat/lib/dateformat.js: {}
-
 leaflet:
   js:
     /libraries/leaflet/dist/leaflet.js: {}
   css:
     component:
       /libraries/leaflet/dist/leaflet.css: {}
+
 
 leaflet-markercluster:
   js:
@@ -73,12 +69,21 @@ mapbox:
     component:
       /libraries/mapbox-gl/dist/mapbox-gl.css: {}
 
+maplibre:
+  js:
+    /libraries/maplibre-gl/dist/maplibre-gl.js: { }
+    /libraries/maplibre--maplibre-gl-leaflet/leaflet-maplibre-gl.js: { }
+  css:
+    component:
+      /libraries/maplibre-gl/dist/maplibre-gl.css: {}
+
 
 # Markaspot Map core library.
 map:
   version: 8.x-1.x
   dependencies:
-    - core/jquery.once
+    - core/Drupal
+    - core/once
     - markaspot_map/leaflet
     - markaspot_map/leaflet-timeline
   js:

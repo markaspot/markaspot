@@ -54,7 +54,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   /**
    * {@inheritdoc}
    */
-  public function encode($data, $format, array $context = []) {
+  public function encode(mixed $data, string $format, array $context = []): string {
     if ($data instanceof \DOMDocument) {
       return $data->saveXML();
     }
@@ -104,11 +104,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       libxml_use_internal_errors($internalErrors);
 
     }
-    if (function_exists('libxml_disable_entity_loader') && \PHP_VERSION_ID < 80000) {
-      $disableEntities = libxml_disable_entity_loader(TRUE);
-      libxml_disable_entity_loader($disableEntities);
 
-    }
     libxml_clear_errors();
 
     $dom = new \DOMDocument();
@@ -163,7 +159,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   /**
    * {@inheritdoc}
    */
-  public function supportsEncoding($format) {
+  public function supportsEncoding(string $format): bool {
     return 'xml' === $format;
   }
 
@@ -506,12 +502,8 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       $node->setAttribute('key', $key);
     }
     $appendNode = $this->selectNodeType($node, $data);
-    // We may have decided not to append this node, either in error or if its
-    // $nodeName is not valid.
-    if ($appendNode) {
-      $parentNode->appendChild($node);
-    }
-
+    // We always append the node, regardless of the selectNodeType result
+    $parentNode->appendChild($node);
     return $appendNode;
   }
 

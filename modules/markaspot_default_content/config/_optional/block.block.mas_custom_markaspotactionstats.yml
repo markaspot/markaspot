@@ -1,0 +1,30 @@
+uuid: 45d6d998-3466-4dd7-89d4-fd9e941e659d
+langcode: en
+status: false
+dependencies:
+  content:
+    - 'block_content:mas_custom:bc5c0415-9160-449e-9a81-765ac42cc632'
+  module:
+    - block_content
+    - system
+  theme:
+    - mas_custom
+id: mas_custom_markaspotactionstats
+theme: mas_custom
+region: header
+weight: -11
+provider: null
+plugin: 'block_content:bc5c0415-9160-449e-9a81-765ac42cc632'
+settings:
+  id: 'block_content:bc5c0415-9160-449e-9a81-765ac42cc632'
+  label: 'Mark-a-Spot Action Stats'
+  label_display: '0'
+  provider: block_content
+  status: true
+  info: ''
+  view_mode: full
+visibility:
+  request_path:
+    id: request_path
+    negate: false
+    pages: "/visualization\r\n/node/80"

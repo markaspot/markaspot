@@ -61,7 +61,7 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#type' => 'radios',
       '#title' => $this->t('Map type'),
       '#default_value' => $config->get('map_type'),
-      '#options' => [$this->t('Mapbox'), $this->t('Other OSM')],
+      '#options' => [$this->t('Mapbox/MapLibre'), $this->t('Other OSM')],
     ];
     $form['markaspot_map']['mapbox_token'] = [
       '#type' => 'textfield',
@@ -71,9 +71,20 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
     ];
     $form['markaspot_map']['mapbox_style'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Mapbox Style Url'),
+      '#title' => $this->t('Mapbox Style Url / MapLibre JSON Url'),
       '#default_value' => $config->get('mapbox_style'),
       '#description' => $this->t('Mapbox Style Url (e.g. mapbox://styles/mapbox/streets-v8) here'),
+    ];
+    $form['markaspot_map']['maplibre'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable MapLibre'),
+      '#default_value' => $config->get('maplibre'),
+      // Use the #states property to make this checkbox dependent on the Mapbox/MapLibre selection
+      '#states' => [
+        'visible' => [
+          ':input[name="map_type"]' => ['value' => '0'],
+        ],
+      ],
     ];
     $form['markaspot_map']['osm_custom_tile_url'] = [
       '#type' => 'textfield',
@@ -187,6 +198,7 @@ xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><defs>
       ->set('request_list_path', $values['request_list_path'])
       ->set('visualization_path', $values['visualization_path'])
       ->set('map_type', $values['map_type'])
+      ->set('maplibre', $values['maplibre'])
       ->set('mapbox_token', $values['mapbox_token'])
       ->set('mapbox_style', $values['mapbox_style'])
       ->set('osm_custom_tile_url', $values['osm_custom_tile_url'])

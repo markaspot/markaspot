@@ -9,15 +9,5 @@
       "homepage": "https://www.drupal.org/u/markaspot",
       "role": "Maintainer"
     }
-  ],
-  "repositories": [
-    {
-      "type": "vcs",
-      "url": "https://github.com/markaspot/GeoPHP"
-    }
-  ],
-  "require": {
-    "phayes/geophp": "dev-master",
-    "anthonymartin/geo-location": "^1.0"
-  }
+  ]
 }

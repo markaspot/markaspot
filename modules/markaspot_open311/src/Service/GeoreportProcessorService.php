@@ -3,9 +3,9 @@
 namespace Drupal\markaspot_open311\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Entity\EntityBase;
-use Drupal\Core\Entity\EntityInterface;
-use Drupal\Core\Entity\ContentEntityBase;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\Core\Field\FieldStorageConfigInterface;
+use Drupal\Core\Utility\Token;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\File\FileUrlGenerator;
 use Drupal\Core\Extension\ModuleHandlerInterface;
@@ -13,7 +13,6 @@ use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Component\Utility\Html;
 use Drupal\Core\Entity\FieldableEntityInterface;
-use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\paragraphs\Entity\Paragraph;
@@ -30,6 +29,13 @@ use Symfony\Component\HttpFoundation\RequestStack;
 class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
   use StringTranslationTrait;
+
+  /**
+   * The config factory service.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactory;
 
   /**
    * The time service.
@@ -90,6 +96,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    */
   private EntityFieldManagerInterface $entityFieldManager;
 
+
+  /**
+   * The token service.
+   *
+   * @var \Drupal\Core\Utility\Token
+   */
+  protected $token;
+
   /**
    * GeoreportProcessorService constructor.
    *
@@ -108,8 +122,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
    */
-  public function __construct(ConfigFactoryInterface $configFactory, AccountProxyInterface $current_user, TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, FileUrlGenerator $fileUrlGenerator, ModuleHandlerInterface $module_handler, EntityFieldManagerInterface $entity_field_manager, StreamWrapperManagerInterface $stream_wrapper_manager) {
-    $this->config = $configFactory->get('markaspot_open311.settings');
+  public function __construct(ConfigFactoryInterface $configFactory, AccountProxyInterface $current_user, TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, FileUrlGenerator $fileUrlGenerator, ModuleHandlerInterface $module_handler, EntityFieldManagerInterface $entity_field_manager, StreamWrapperManagerInterface $stream_wrapper_manager, Token $token) {
+    $this->configFactory = $configFactory;
     $this->currentUser = $current_user;
     $this->time = $time;
     $this->requestStack = $request_stack;
@@ -118,6 +132,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $this->moduleHandler = $module_handler;
     $this->entityFieldManager = $entity_field_manager;
     $this->streamWrapperManager = $stream_wrapper_manager;
+    $this->token = $token;
   }
 
   /**
@@ -141,7 +156,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   Return Open or Closed Status according to specification.
    */
   public function getDiscovery() {
-    return $this->config->get('discovery');
+    return $this->configFactory->get('markaspot_open311.settings')->get('discovery');
   }
 
   /**
@@ -220,11 +235,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
             default:
               $wrapper_scheme = 'public://';
           }
-          // Get the configured file directory for the media entity's image field.
-          $file_directory = $this->entityFieldManager->getFieldStorageDefinitions('media')['field_media_image']->getSetting('file_directory');
+
+          $field_config = $this->configFactory->get('field.field.media.request_image.field_media_image');
+          $field_settings = $field_config->get('settings');
+          $file_directory = $field_settings['file_directory'];
+          $file_directory = $this->token->replace($file_directory);
+
+          $file_directory ??= '';
           $file_directory = trim($file_directory, '/');
-          // Add the file directory to the file system wrapper scheme.
-          $wrapper_scheme .= $file_directory . '/';
+
+          // Modify the file system wrapper scheme to include the file directory.
+          $wrapper_scheme .= $file_directory ? $file_directory . '/' : '';
+
           // Get the original file name from the URL.
           $original_file_name = basename($url);
           $file = system_retrieve_file($url, $wrapper_scheme . $original_file_name, $managed, FileSystemInterface::EXISTS_RENAME);
@@ -294,15 +316,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   Return address
    */
   private function addressParser(string $address_string): array {
-    $address_array = ($address_string != "") ?? explode(',', $address_string);
+    $address_array = $address_string !== "" ? explode(',', $address_string) : [];
     $address = [];
-    if (is_array($address_array)){
+
+    if (is_array($address_array) && count($address_array) >= 2) {
       $zip_city = explode(' ', trim($address_array[1]));
 
-      $address['street'] = $address_array[0];
-      $address['zip'] = trim($zip_city[0]);
-      $address['city'] = trim($zip_city[1]);
+      $address = [
+        'street' => $address_array[0],
+        'zip' => trim($zip_city[0] ?? ''),
+        'city' => trim($zip_city[1] ?? ''),
+      ];
     }
+
     return $address;
   }
 
@@ -315,7 +341,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return int
    *   The TaxonomyId
    */
-  public function serviceMapTax($service_code) {
+  public function serviceMapTax($service_code): int|NULL|NotFoundHttpException {
     $service_codes = explode(',', $service_code);
     if (count($service_codes) > 1) {
       // throw new GeoreportException('Service Code has to be unique', 400);
@@ -350,7 +376,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     foreach ($terms as $term) {
       $ids[] = array_keys($term);
     }
-    if ($ids != FALSE) {
+    if ($ids) {
       return $ids;
     }
     else {
@@ -372,10 +398,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return array
    *   Return the drupal taxonomy term as a georeport service.
    */
-  public function getTaxonomyTree($vocabulary = "tags", $parent = 0, $max_depth = NULL): array {
+  public function getTaxonomyTree($vocabulary = "tags", $langcode = "en", $parent = 0, $max_depth = NULL,): array {
     // Load terms.
-    $tree = $this->entityTypeManager->getStorage("taxonomy_term")
-      ->loadTree($vocabulary, $parent, $max_depth, $load_entities = FALSE);
     $tree = $this->entityTypeManager->getStorage("taxonomy_term")
       ->loadByProperties(['vid' => $vocabulary, 'status' => 1]);
     // Make sure there are terms to work with.
@@ -384,7 +408,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     foreach ($tree as $term) {
-      $services[] = $this->taxMapService($term->tid->value);
+      $services[] = $this->taxMapService($term->tid->value, $langcode);
     }
 
     return $services;
@@ -399,12 +423,17 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return object
    *   $service: The service object
    */
-  public function taxMapService($tid) {
+  public function taxMapService($tid, $langcode = FALSE) {
 
     // Load all field for this taxonomy term:
     $service_category = $this->entityTypeManager->getStorage('taxonomy_term')
       ->load($tid);
 
+    // Check if the term has a translation in the desired language.
+    if ($service_category->hasTranslation($langcode)) {
+      // If it does, replace the term with its translation.
+      $service_category = $service_category->getTranslation($langcode);
+    }
     $service['service_code'] = $service_category->field_service_code->value;
     $service['service_name'] = $service_category->name->value;
     $service['metadata'] = "false";
@@ -498,7 +527,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       'status' => $this->taxMapStatus($node->field_status->target_id),
     ];
     // Media Url:
-    // Media Url:
     if (isset($node->field_request_image)) {
       $image = $node->field_request_image->entity;
     }
@@ -552,6 +580,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $request['last_name'] = $node->field_last_name->value;
       }
     }
+
     if (isset($extended_role) && isset($parameters['extensions'])) {
       if ($this->moduleHandler->moduleExists('service_request')) {
         $request['extended_attributes']['markaspot'] = [];
@@ -559,6 +588,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $nid = ['nid' => $node->nid->value];
         if (isset($node->field_category)) {
           $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->field_category->target_id);
+
+          // Check if "langcode" is set in $parameters, otherwise use a default value or throw an error.
+          $langcode = $parameters['langcode'] ?? 'en';
+
+          // Check if the term has a translation in the desired language.
+          if ($term->hasTranslation($langcode)) {
+            $term = $term->getTranslation($langcode);
+          }
+
           $category = [
             'category_hex' => $term->field_category_hex->color,
             'category_icon' => $term->field_category_icon->value,
@@ -570,6 +608,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
             if (isset($note->entity->field_status_term->target_id)) {
               $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($note->entity->field_status_term->target_id);
 
+              // Check if the term has a translation in the desired language.
+              if ($term->hasTranslation($langcode)) {
+                $term = $term->getTranslation($langcode);
+              }
+
               $status['status_descriptive_name'] = $term->name->value;
               $status['status_hex'] = $term->field_status_hex->color;
               $status['status_icon'] = $term->field_status_icon->value;
@@ -580,6 +623,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
           $logCount = -1;
           foreach ($node->field_status_notes as $note) {
             $logCount++;
+
             // All properties as always: = $note->entity.
             $log['status_notes'][$logCount]['status_note'] = $note->entity->field_status_note->value;
             $log['status_notes'][$logCount]['status'] = $this->taxMapStatus($note->entity->field_status_term->target_id);
@@ -689,7 +733,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    */
   public function taxMapStatus($taxonomy_id): string {
     // Mapping Status to Open311 Status (open/closed)
-    $status_open = array_values($this->config->get('status_open'));
+    $status_open = array_values($this->configFactory->get('markaspot_open311.settings')->get('status_open'));
     if (in_array($taxonomy_id, $status_open)) {
       $status = 'open';
     }
@@ -712,10 +756,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   public function statusMapTax(string $status) {
     // Get all terms according to status.
     if ($status == 'open') {
-      $tids = array_values($this->config->get('status_open'));
+      $tids = array_values($this->configFactory->get('markaspot_open311.settings')->get('status_open'));
     }
     else {
-      $tids = array_values($this->config->get('status_closed'));
+      $tids = array_values($this->configFactory->get('markaspot_open311.settings')->get('status_closed'));
     }
     return $tids;
   }

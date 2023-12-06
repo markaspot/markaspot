@@ -1,0 +1,33 @@
+uuid: daad0272-7d78-4431-b632-575dc85149d1
+langcode: en
+status: false
+dependencies:
+  content:
+    - 'block_content:mas_custom:9fdfdd05-9829-17231-afad-fdd059829c34f502fad755e059be9'
+  module:
+    - block_content
+    - system
+  theme:
+    - mas_custom
+_core:
+  default_config_hash: null
+id: mas_custom_addblock
+theme: mas_custom
+region: header
+weight: 2
+provider: null
+plugin: 'block_content:9fdfdd05-9829-17231-afad-fdd059829c34f502fad755e059be9'
+settings:
+  id: 'block_content:9fdfdd05-9829-17231-afad-fdd059829c34f502fad755e059be9'
+  label: 'Block hinzufügen'
+  label_display: '0'
+  provider: block_content
+  status: false
+  info: ''
+  view_mode: full
+visibility:
+  request_path:
+    id: request_path
+    negate: false
+    context_mapping: {  }
+    pages: '<front>'

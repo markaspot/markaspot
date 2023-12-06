@@ -1,0 +1,25 @@
+uuid: f77d7cdd-835f-4f83-966d-0d7dc428394f
+langcode: en
+status: true
+dependencies:
+  content:
+    - 'block_content:mas_custom:2bcaa256-8702-4986-ae60-a41e410f5c02'
+  module:
+    - block_content
+  theme:
+    - mas_custom
+id: contact
+theme: mas_custom
+region: footer_top
+weight: 0
+provider: null
+plugin: 'block_content:2bcaa256-8702-4986-ae60-a41e410f5c02'
+settings:
+  id: 'block_content:2bcaa256-8702-4986-ae60-a41e410f5c02'
+  label: Contact
+  label_display: visible
+  provider: block_content
+  status: true
+  info: ''
+  view_mode: full
+visibility: {  }

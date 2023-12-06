@@ -5,7 +5,7 @@ service_request.add:
     _entity_form: 'node.default'
     _title_callback: '\Drupal\node\Controller\NodeController::addPageTitle'
   requirements:
-    _node_add_access: 'node:{node_type}'
+    _permission: 'create service_request content'
   options:
     _node_operation_route: TRUE
     parameters:

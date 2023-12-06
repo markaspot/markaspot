@@ -1,0 +1,27 @@
+<?php
+
+use Drupal\markaspot_language\MarkaspotLanguageTaxonomy;
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_language_install() {
+  // Get the service container.
+  $container = \Drupal::getContainer();
+
+  // Instantiate the class and call the method.
+  $class = $container->get('markaspot_language.language_service');
+  $class->enableTranslationForAllVocabularies();
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_language_uninstall() {
+  // Get the service container.
+  $container = \Drupal::getContainer();
+
+  // Instantiate the class and call the method.
+  $class = $container->get('markaspot_language.language_service');
+  $class->disableTranslationForAllVocabularies();
+}

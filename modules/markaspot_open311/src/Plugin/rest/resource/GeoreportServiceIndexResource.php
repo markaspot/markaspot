@@ -2,12 +2,14 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\rest\Plugin\ResourceBase;
 use Drupal\rest\ResourceResponse;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
@@ -50,6 +52,13 @@ class GeoreportServiceIndexResource extends ResourceBase {
   protected $georeportProcessor;
 
   /**
+   * The request stack.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected $requestStack;
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -77,12 +86,15 @@ class GeoreportServiceIndexResource extends ResourceBase {
     LoggerInterface $logger,
     AccountProxyInterface $current_user,
     ConfigFactoryInterface $config,
-    GeoreportProcessorService $georeport_processor
+    GeoreportProcessorService $georeport_processor,
+    RequestStack $request_stack
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->config = $config->getEditable('markaspot_open311.settings');
     $this->currentUser = $current_user;
     $this->georeportProcessor = $georeport_processor;
+    $this->requestStack = $request_stack;
+
   }
 
   /**
@@ -97,7 +109,8 @@ class GeoreportServiceIndexResource extends ResourceBase {
       $container->get('logger.factory')->get('markaspot_open311'),
       $container->get('current_user'),
       $container->get('config.factory'),
-      $container->get('markaspot_open311.processor')
+      $container->get('markaspot_open311.processor'),
+      $container->get('request_stack')
     );
   }
 
@@ -189,7 +202,9 @@ class GeoreportServiceIndexResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function get() {
-    $services = $this->georeportProcessor->getTaxonomyTree('service_category');
+    $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
+    $langcode = $parameters['langcode'];
+    $services = $this->georeportProcessor->getTaxonomyTree('service_category', $langcode);
     if (!empty($services)) {
       return $services;
     }

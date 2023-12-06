@@ -1,6 +1,6 @@
 name: 'Mark-a-Spot Map'
 package: Mark-a-Spot
-core_version_requirement: ^8 || ^9
+core_version_requirement: ^8 || ^9 || ^10
 description: 'Provides a map block for a Mark-a-Spot Installation'
 type: module
 

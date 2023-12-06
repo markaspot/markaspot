@@ -1,7 +1,7 @@
 name: Mark-a-Spot
 description: 'Install with commonly used features pre-configured.'
 type: profile
-core_version_requirement: ^8 || ^9
+core_version_requirement: ^8 || ^9 || ^10
 distibution:
   name: Mark-a-Spot
   install:
@@ -13,6 +13,7 @@ dependencies:
   - block
   - block_content
   - breakpoint
+  - ckeditor5
   - color_field
   - comment
   - config
@@ -31,7 +32,6 @@ dependencies:
   - field_permissions
   - file
   - filter
-  - form_mode_manager
   - geolocation
   - help
   - history
@@ -46,7 +46,6 @@ dependencies:
   - path
   - pathauto
   - paragraphs
-  - quickedit
   - responsive_image
   - restui
   - search_api
@@ -54,7 +53,6 @@ dependencies:
   - system
   - taxonomy
   - text
-  - twig_tweak
   - toolbar
   - user
   - views

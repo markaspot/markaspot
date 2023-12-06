@@ -1,0 +1,4 @@
+services:
+  markaspot_language.language_service:
+    class: Drupal\markaspot_language\MarkaspotLanguageTaxonomy
+    arguments: ['@config.factory']

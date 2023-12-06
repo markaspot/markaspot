@@ -1,13 +1,13 @@
 <?php
 
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Routing\RouteMatchInterface;
+use GuzzleHttp\Exception\RequestException;
+
 /**
  * @file
  * Contains markaspot_static_json.module..
  */
-
-use GuzzleHttp\Exception\RequestException;
-use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
  * Implements hook_help().
@@ -38,27 +38,24 @@ function markaspot_static_json_help($route_name, RouteMatchInterface $route_matc
  * Implements hook_cron().
  */
 function markaspot_static_json_cron() {
-
   $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
-
-  $interval = $cron_config
-    ->get('interval');
-  $interval = !empty($interval) ? $interval : 3600;
+  $interval = $cron_config->get('interval') ?: 3600;
 
   $settings_config = Drupal::configFactory()->getEditable('markaspot_static_json.settings');
   // Set limit from config
-  $limit = $settings_config->get('limit');
-  $limit = !empty($limit) ? $limit : 50;
+  $limit = $settings_config->get('limit') ?: 50;
   // Set start page.
   $current_page = ($settings_config->get('reset') ===  1) ? 0 : $cron_config->get('static_page');
   \Drupal::logger('Mark-a-Spot Static JSON')->notice("Current page: " . $current_page);
+
   // Get current max.
   $count = markaspot_static_json_get_count();
   // Calculate max pages.
   $pages = ceil($count / $limit);
   \Drupal::logger('Mark-a-Spot Static JSON')->notice("Number of all pages with current limit: " . $pages);
+
   if ($current_page >= $pages - 1) {
-    $cron_config->set('static_page', $current_page);
+    $cron_config->set('static_page', 0);
   }
   else {
     $cron_config->set('static_page', $current_page + 1);
@@ -66,13 +63,15 @@ function markaspot_static_json_cron() {
 
   markaspot_static_json_request($limit, $current_page);
   $request_time = \Drupal::time()->getRequestTime();
+
   if (\Drupal::state()->get('mas_shown_status_message')) {
     \Drupal::logger('Mark-a-Spot Static JSON')->notice(t('Mark-a-Spot static JSON executed at %time', ['%time' => date('c', $request_time)]));
     \Drupal::state()->set('mas_shown_status_message', FALSE);
   }
-  $cron_config->set('markaspot_static_json.next_execution', $request_time + $interval)->save();
 
+  $cron_config->set('markaspot_static_json.next_execution', $request_time + $interval)->save();
 }
+
 
 /**
  * Client to receive json from georeport rest API.
@@ -83,66 +82,66 @@ function markaspot_static_json_request($limit, $current_page) {
   $host = \Drupal::request()->getHost();
   \Drupal::logger('Mark-a-Spot Static JSON')->notice('Host: ' . $host);
 
-  $path = 'public://requests.json';
-  if (file_exists($path)) {
-    $json = file_get_contents($path, TRUE);
-    $static_service_requests = ($json == 'null') ? [] : json_decode($json, true);
-  }
-  else {
-    \Drupal::logger('Mark-a-Spot Static JSON')
-      ->warning(t('Static file could not be read.'));
-    // Reset cron config to 0
-    $cron_config = \Drupal::configFactory()->getEditable('markaspot_static_json.cron');
-    $cron_config->set('static_page', 0);
-
-    // $current_service_requests = json_decode($start_json, TRUE);.
-    \Drupal::service('file_system')->saveData('[]', $path, FileSystemInterface::EXISTS_REPLACE);
-  }
-
   if ($host !== "default") {
     $cronkey = \Drupal::state()->get('system.cron_key');
     // todo:
     // Make limit configurable.
-    $uri = '//' . $host . '/georeport/v2/requests.json?start_date=-9999days&limit=' . $limit . '&page=' . $current_page . '&extensions=true&key=' . $cronkey;
+    $protocol = \Drupal::request()->isSecure() ? 'https://' : 'http://';
+    $uri = $protocol . $host . '/georeport/v2/requests.json?start_date=-9999days&limit=' . $limit . '&page=' . $current_page . '&extensions=true&key=' . $cronkey;
     \Drupal::logger('Mark-a-Spot Static JSON')->notice('Saving JSON from URL: ' . $uri);
 
     try {
       $response = \Drupal::httpClient()->get($uri);
       $data = (string) $response->getBody();
-      $current_service_requests = json_decode($data, TRUE);
+
       if (empty($data)) {
+        \Drupal::logger('Mark-a-Spot Static JSON')->warning('Empty response from REST API endpoint.');
         return FALSE;
       }
+
+      $current_service_requests = json_decode($data, TRUE);
+      if (!is_array($current_service_requests)) {
+        \Drupal::logger('Mark-a-Spot Static JSON')->warning('Invalid response from REST API endpoint.');
+        return FALSE;
+      }
+
       markaspot_static_json_memory();
 
-      // Need at least an empty array
-      $static_service_requests = (empty($static_service_requests) || !is_array($static_service_requests)) ? [] : $static_service_requests;
+      $path = 'public://requests.json';
+      if (file_exists($path)) {
+        $json = file_get_contents($path, TRUE);
+        $static_service_requests = ($json == 'null') ? [] : json_decode($json, true);
+      } else {
+        \Drupal::logger('Mark-a-Spot Static JSON')->warning('Static file could not be read.');
+        $static_service_requests = [];
+        \Drupal::service('file_system')->saveData('[]', $path, FileSystemInterface::EXISTS_REPLACE);
+      }
 
-      // Encode array.
-
+      // Merge the new service requests with the existing ones.
       $merged = unique_multidim_array(array_merge($static_service_requests, $current_service_requests), 'service_request_id');
       $count = count($merged);
 
+      // Save the merged service requests to the static JSON file.
       $data = json_encode($merged);
-
-      $local = (file_exists($path)) ? \Drupal::service('file_system')->saveData($data, $path, FileSystemInterface::EXISTS_REPLACE) : \Drupal::service('file_system')->saveData($response, $path, FileSystemInterface::EXISTS_REPLACE);
+      $local = \Drupal::service('file_system')->saveData($data, $path, FileSystemInterface::EXISTS_REPLACE);
       if (isset($local)) {
-        \Drupal::logger('Mark-a-Spot Static JSON')
-          ->notice(t('Static file saved, including ') . $count . ' items.');
+        \Drupal::logger('Mark-a-Spot Static JSON')->notice(t('Static file saved, including ') . $count . ' items.');
+      } else {
+        \Drupal::logger('Mark-a-Spot Static JSON')->notice(t('Static file could not be saved.'));
       }
-      else {
-        \Drupal::logger('Mark-a-Spot Static JSON')
-          ->notice(t('Static file could not be saved.'));
-      }
-      markaspot_static_json_memory();
 
+      markaspot_static_json_memory();
       \Drupal::logger('Mark-a-Spot Static JSON')->info(t('Status finished'));
-    }
-    catch (RequestException $e) {
+
+      return TRUE;
+
+    } catch (RequestException $e) {
+      \Drupal::logger('Mark-a-Spot Static JSON')->warning('Request to REST API endpoint failed with message: ' . $e->getMessage());
       return FALSE;
     }
   }
 }
+
 
 /**
  * Monitor memory usage in dblog.

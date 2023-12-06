@@ -37,12 +37,19 @@ class GeolocationNominatimWidget extends WidgetBase {
       'city' => '',
       'tileServerUrl' => 'http://{s}.tile.osm.org/{z}/{x}/{y}.png',
       'wmsLayer' => '',
+      'mapboxStyle' => '',
+      'mapboxToken' => '',
+      'maplibre' => '',
       'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,
+      'addressFormat' => '${address.house_number}, ${address.road}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.city}, ${address.county}, ${address.postcode}',
       'serviceUrl' => 'https://nominatim.openstreetmap.org/',
       'LocationIQToken' => '',
+      'dragging' => TRUE,
+      'zoomControl' => FALSE,
+      'tab' => TRUE
     ] + parent::defaultSettings();
   }
 
@@ -122,8 +129,25 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#default_value' => $this->getSetting('wmsLayer'),
       '#description' => $this->t('Enter the layer ID like "layer:layer"'),
     ];
-    $elements['customAttribution'] = [
+    $elements['mapboxToken'] = [
       '#type' => 'textfield',
+      '#title' => $this->t('Mapbox Token'),
+      '#default_value' => $this->getSetting('mapboxToken'),
+      '#description' => $this->t('Enter your personal Mapbox Token'),
+    ];
+    $elements['mapboxStyle'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mapbox Style'),
+      '#default_value' => $this->getSetting('mapboxStyle'),
+      '#description' => $this->t('Enter a Mapbox Style Url'),
+    ];
+    $elements['maplibre'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable MapLibre'),
+      '#default_value' => $this->getSetting('maplibre'),
+    ];
+    $elements['customAttribution'] = [
+      '#type' => 'textarea',
       '#title' => $this->t('Add a custom attribution'),
       '#default_value' => $this->getSetting('customAttribution'),
       '#description' => $this->t('Check your Tile Service Provider for policy'),
@@ -158,6 +182,30 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#title' => $this->t('Address formatting (street search)'),
       '#description' => $this->t('Check to use street name + building number format'),
       '#default_value' => $this->getSetting('streetNumberFormat'),
+    ];
+    $elements['addressFormat'] = [
+      '#type' => 'textarea',
+      '#title' => t('Address Format'),
+      '#description' => t('Enter the address format. You can use ${address.road}, ${address.house_number}, ${address.postcode}, ${address.city}, ${address.suburb}'),
+      '#default_value' => $this->getSetting('addressFormat')
+    ];
+    $elements['dragging'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Dragging'),
+      '#description' => $this->t('Enable dragging of the map'),
+      '#default_value' => $this->getSetting('dragging'),
+    ];
+    $elements['zoomControl'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Zoom Control'),
+      '#description' => $this->t('Enable zoom control on the map'),
+      '#default_value' => $this->getSetting('zoomControl'),
+    ];
+    $elements['tab'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Tab'),
+      '#description' => $this->t('Enable tab on the map'),
+      '#default_value' => $this->getSetting('tab'),
     ];
     return $elements;
   }
@@ -220,6 +268,8 @@ class GeolocationNominatimWidget extends WidgetBase {
     $element['#attached'] = [
       'library' => [
         'geolocation_nominatim/leaflet',
+        'geolocation_nominatim/mapbox',
+        'geolocation_nominatim/maplibre',
         'geolocation_nominatim/leaflet-locatecontrol',
         'geolocation_nominatim/leaflet-geosearch',
         'geolocation_nominatim/geolocation-nominatim-widget',
@@ -241,13 +291,20 @@ class GeolocationNominatimWidget extends WidgetBase {
               'limitViewbox'  => $this->getSetting('limit_viewbox'),
               'city'  => $this->getSetting('city'),
               'tileServerUrl'  => $this->getSetting('tileServerUrl'),
+              'mapboxStyle'  => $this->getSetting('mapboxStyle'),
+              'mapboxToken'  => $this->getSetting('mapboxToken'),
+              'maplibre'  => $this->getSetting('maplibre'),
               'wmsLayer'  => $this->getSetting('wmsLayer'),
               'customAttribution'  => $this->getSetting('customAttribution'),
               'autoLocate' => $this->getSetting('autoLocate'),
               'fullscreenControl' => $this->getSetting('fullscreenControl'),
               'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
+              'addressFormat' => $this->getSetting('addressFormat'),
               'serviceUrl' => $this->getSetting('serviceUrl'),
               'LocationIQToken' => $this->getSetting('LocationIQToken'),
+              'dragging' => $this->getSetting('dragging'),
+              'zoomControl' => $this->getSetting('zoomControl'),
+              'tab' => $this->getSetting('tab'),
             ],
           ],
         ],
