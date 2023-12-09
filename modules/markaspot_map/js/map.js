@@ -74,6 +74,7 @@ function padZero(str, len = 2) {
         Drupal.Markaspot.maps[0] = L.map("map", {
           fullscreenControl: true,
           scrollWheelZoom: !L.Browser.mobile,
+          maxZoom: 18,
           dragging: true,
           zoom: masSettings.zoom_initial
         });
