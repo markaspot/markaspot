@@ -17,14 +17,15 @@ const changeOrAdded = require('./changeOrAdded');
 const log = require('./log');
 
 // Match only on .pcss.css files.
-const fileMatch = './**/*.pcss.css';
+const fileMatch = '**/*.pcss.css';
 // Ignore everything in node_modules
 const watcher = chokidar.watch(fileMatch, {
   ignoreInitial: true,
-  ignored: './node_modules/**',
-  usePolling: true
-
+  usePolling: true,
+  ignored: './node_modules/**'
 });
+
+console.log(watcher)
 
 const unlinkHandler = (err) => {
   if (err) {
