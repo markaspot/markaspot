@@ -18,7 +18,7 @@ leaflet:
 
 mapbox:
   js:
-    /libraries/mapbox-gl/dist/mapbox-gl.js: {}
+    /libraries/mapbox-gl/dist/mapbox-gl.js: { weight: -1, preprocess: false}
     /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: {}
   css:
     component:
@@ -26,7 +26,7 @@ mapbox:
 
 maplibre:
   js:
-    /libraries/maplibre-gl/dist/maplibre-gl.js: {}
+    /libraries/maplibre-gl/dist/maplibre-gl.js: { weight: -1, preprocess: false}
     /libraries/maplibre--maplibre-gl-leaflet/leaflet-maplibre-gl.js: {}
   css:
     component:

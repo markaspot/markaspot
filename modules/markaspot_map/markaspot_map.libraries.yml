@@ -1,6 +1,6 @@
 leaflet:
   js:
-    /libraries/leaflet/dist/leaflet.js: {}
+    /libraries/leaflet/dist/leaflet.js: { }
   css:
     component:
       /libraries/leaflet/dist/leaflet.css: {}
@@ -36,9 +36,6 @@ leaflet-easyButton:
   css:
     component:
        /libraries/leaflet-easybutton/src/easy-button.css: {}
-leaflet-edgebuffer:
-  js:
-    /libraries/leaflet-easybutton/src/easy-button.js: {}
 
 waypoints:
   js:
@@ -50,7 +47,6 @@ leaflet-timeline:
   js:
     /libraries/leaflet.timeline/dist/leaflet.timeline.js: { }
 
-
 leaflet-heatmap:
   js:
     /libraries/leaflet.heat/dist/leaflet-heat.js: {}
@@ -61,22 +57,26 @@ font-awesome:
       /libraries/font-awesome/css/all.min.css: {minified: true }
       /libraries/font-awesome/css/v4-shims.min.css: {minified: true }
 
+
 mapbox:
   js:
-    /libraries/mapbox-gl/dist/mapbox-gl.js: { }
-    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: { }
+    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: {  }
+    /libraries/mapbox-gl/dist/mapbox-gl.js: { weight: -1, preprocess: false }
+
   css:
     component:
       /libraries/mapbox-gl/dist/mapbox-gl.css: {}
-
+  dependencies:
+    - markaspot_map/map
 maplibre:
   js:
-    /libraries/maplibre-gl/dist/maplibre-gl.js: { }
     /libraries/maplibre--maplibre-gl-leaflet/leaflet-maplibre-gl.js: { }
+    /libraries/maplibre-gl/dist/maplibre-gl.js?version=3.6.2: { weight: -1, preprocess: false}
   css:
     component:
-      /libraries/maplibre-gl/dist/maplibre-gl.css: {}
-
+      /libraries/maplibre-gl/dist/maplibre-gl.css: {minified: false}
+  dependencies:
+    - markaspot_map/map
 
 # Markaspot Map core library.
 map:

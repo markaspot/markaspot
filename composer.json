@@ -79,7 +79,6 @@
         "anthonymartin/geo-location": "^1.0",
         "drupal/address": "~1.0",
         "drupal/pathauto": "^1",
-        "drupal/admin_toolbar": "^3",
         "drupal/restui": "^1",
         "drupal/token": "^1.9",
         "drupal/ctools": "3.x-dev",
