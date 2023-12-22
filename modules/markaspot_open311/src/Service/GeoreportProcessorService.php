@@ -7,7 +7,7 @@ use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Field\FieldStorageConfigInterface;
 use Drupal\Core\Utility\Token;
 use Drupal\Core\File\FileSystemInterface;
-use Drupal\Core\File\FileUrlGenerator;
+use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -104,36 +104,43 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    */
   protected $token;
 
-  /**
-   * GeoreportProcessorService constructor.
-   *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
-   *   The config object.
-   * @param \Drupal\Core\Session\AccountProxyInterface $current_user
-   *   A current user instance.
-   * @param \Drupal\Component\Datetime\TimeInterface $time
-   *   The time service.
-   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
-   *   The Symfony Request Stack.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
-   *   The entity type manager.
-   * @param \Drupal\Core\File\FileUrlGenerator $fileUrlGenerator
-   *   File url generator object.
-   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
-   *   The module handler.
-   */
-  public function __construct(ConfigFactoryInterface $configFactory, AccountProxyInterface $current_user, TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, FileUrlGenerator $fileUrlGenerator, ModuleHandlerInterface $module_handler, EntityFieldManagerInterface $entity_field_manager, StreamWrapperManagerInterface $stream_wrapper_manager, Token $token) {
-    $this->configFactory = $configFactory;
-    $this->currentUser = $current_user;
-    $this->time = $time;
-    $this->requestStack = $request_stack;
-    $this->entityTypeManager = $entity_type_manager;
-    $this->fileUrlGenerator = $fileUrlGenerator;
-    $this->moduleHandler = $module_handler;
-    $this->entityFieldManager = $entity_field_manager;
-    $this->streamWrapperManager = $stream_wrapper_manager;
-    $this->token = $token;
-  }
+/**
+ * GeoreportProcessorService constructor.
+ *
+ * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+ *   The config object.
+ * @param \Drupal\Core\Session\AccountProxyInterface $current_user
+ *   A current user instance.
+ * @param \Drupal\Component\Datetime\TimeInterface $time
+ *   The time service.
+ * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+ *   The Symfony Request Stack.
+ * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+ *   The entity type manager.
+ * @param \Drupal\Core\File\FileUrlGeneratorInterface $fileUrlGenerator
+ *   File url generator object.
+ * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+ *   The module handler.
+ * @param \Drupal\Core\Entity\EntityFieldManagerInterface $entity_field_manager
+ *   The entity field manager.
+ * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $stream_wrapper_manager
+ *   The stream wrapper manager.
+ * @param \Drupal\Core\Utility\Token $token
+ *   The token service.
+ */
+public function __construct(ConfigFactoryInterface $configFactory, AccountProxyInterface $current_user, TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, FileUrlGeneratorInterface $fileUrlGenerator, ModuleHandlerInterface $module_handler, EntityFieldManagerInterface $entity_field_manager, StreamWrapperManagerInterface $stream_wrapper_manager, Token $token) {
+  $this->configFactory = $configFactory;
+  $this->currentUser = $current_user;
+  $this->time = $time;
+  $this->requestStack = $request_stack;
+  $this->entityTypeManager = $entity_type_manager;
+  $this->fileUrlGenerator = $fileUrlGenerator;
+  $this->moduleHandler = $module_handler;
+  $this->entityFieldManager = $entity_field_manager;
+  $this->streamWrapperManager = $stream_wrapper_manager;
+  $this->token = $token;
+}
+
 
   /**
    * {@inheritdoc}
