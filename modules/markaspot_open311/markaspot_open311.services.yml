@@ -22,7 +22,10 @@ services:
     arguments: [ '@serializer', '@path.current']
     tags:
       - { name: event_subscriber }
-
+  markaspot_open311.request_format_subscriber:
+    class: Drupal\markaspot_open311\EventSubscriber\RequestFormatSubscriber
+    tags:
+      - { name: event_subscriber }
   markaspot_open311.event_subscriber:
     class: Drupal\markaspot_open311\EventSubscriber\RemoveCookieSubscriber
     arguments: ['@messenger']
