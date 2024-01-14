@@ -537,13 +537,26 @@ public function __construct(ConfigFactoryInterface $configFactory, AccountProxyI
     if (isset($node->field_request_image)) {
       $image = $node->field_request_image->entity;
     }
+    // Use RequestStack to check if the current request is secure (HTTPS).
+    $isSecure = $this->requestStack->getCurrentRequest()->isSecure();
+    $currentScheme = $isSecure ? 'https://' : 'http://';
+
+    // Media URL Handling
     if (isset($node->field_request_media)) {
-      foreach ($node->get('field_request_media')->getValue() as $media) {
-        $media = $this->entityTypeManager->getStorage('media')->load($media['target_id']);
-        if (isset($media->field_media_image->entity)) {
-          $image_uris[] = ($media->isPublished()) ? $this->fileUrlGenerator->generateAbsoluteString($media->field_media_image->entity->getFileUri()) : '';
+        foreach ($node->get('field_request_media')->getValue() as $media) {
+            $media = $this->entityTypeManager->getStorage('media')->load($media['target_id']);
+            if (isset($media->field_media_image->entity)) {
+                $image_uri = $media->field_media_image->entity->getFileUri();
+                if ($media->isPublished()) {
+                    // Generate absolute URL
+                    $absolute_url = $this->fileUrlGenerator->generateAbsoluteString($image_uri);
+                    $scheme_specific_url = preg_replace('/^http[s]?:\/\//', $currentScheme, $absolute_url);
+                    $image_uris[] = $scheme_specific_url;
+                } else {
+                    $image_uris[] = '';
+                }
+            }
         }
-      }
     }
 
     if (isset($image)) {
