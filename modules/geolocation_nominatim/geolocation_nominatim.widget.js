@@ -79,10 +79,10 @@
     const provider = new GeoSearch.OpenStreetMapProvider({
       params:{
         'access_token': mapSettings.mapboxToken,
-        'country': mapSettings.limitCountryCodes,
+         // 'country': mapSettings.limitCountryCodes,
         'accept-language': mapSettings.limitCountryCodes,
         'viewbox': mapSettings.limitViewbox,
-        'limit': 5,
+        'limit': 15,
         'bounded': 1,
         'addressdetails': 1
       },
@@ -112,25 +112,35 @@
 
 
     function parseResult(result, mapSettings) {
-      if (result) {
-        const address = result;
-        const addressFormat = mapSettings.addressFormat;
-        const formattedAddress = addressFormat
-          .replace(/\${address.road}/g, address.road || '')
-          .replace(/\${address.house_number}/g, address.house_number || '')
-          .replace(/\${address.postcode}/g, address.postcode || '')
-          .replace(/\${address.city}/g, address.city || '')
-          .replace(/\${address.suburb}/g, address.suburb || '')
-          .replace(/\${address.hamlet}/g, address.hamlet || '')
-          .replace(/\${address.town}/g, address.town || '')
-          .replace(/\${address.village}/g, address.village || '')
-          .replace(/\${address.county}/g, address.county || '');
+      if (!result) return '';
+      console.log(result)
 
-        // Remove extra spaces and trim the address
-        const trimmedAddress = formattedAddress.replace(/\s*,\s*/g, ', ').trim();
+      const address = result;
+      console.log(address)
+      const placeholders = {
+        road: address.road || '',
+        house_number: address.house_number || '',
+        postcode: address.postcode || '',
+        city: address.city || '',
+        suburb: address.suburb || '',
+        hamlet: address.hamlet || '',
+        town: address.town || '',
+        village: address.village || '',
+        municipality: address.municipality || '',
+        county: address.county || ''
+      };
 
-        return trimmedAddress;
-      }
+      // Replace placeholders in the format
+      let formattedAddress = mapSettings.addressFormat;
+      Object.keys(placeholders).forEach(key => {
+        formattedAddress = formattedAddress.replace(new RegExp(`\\$\{address.${key}\}`, 'g'), placeholders[key]);
+      });
+
+      // Clean up the address
+      formattedAddress = formattedAddress.replace(/\s*,\s*/g, ', ').trim();
+      formattedAddress = formattedAddress.replace(/\s{2,}/g, ' ');
+
+      return formattedAddress;
     }
 
     // Init geocoder.
