@@ -120,7 +120,7 @@ class GeolocationMapboxWidget extends WidgetBase {
       '#description' => $this->t('Enter the layer ID like "layer:layer"'),
     ];
     $elements['customAttribution'] = [
-      '#type' => 'textfield',
+      '#type' => 'textarea',
       '#title' => $this->t('Add a custom attribution'),
       '#default_value' => $this->getSetting('customAttribution'),
       '#description' => $this->t('Check your Tile Service Provider for policy'),
