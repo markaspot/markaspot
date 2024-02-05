@@ -90,11 +90,7 @@
 %}
 <article{{ attributes.addClass(classes) }}>
   <header class="{{ layout }}">
-    {{ title_prefix }}
-    <h2{{ title_attributes.addClass('node__title') }}>
-      <a href="{{ url }}" rel="bookmark">{{ label }}</a>
-    </h2>
-    {{ title_suffix }}
+
     {% if display_submitted %}
       <div class="node__meta">
       {% if author_picture %}
