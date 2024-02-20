@@ -75,7 +75,7 @@
         "maplibre/maplibre-gl": "3.6.2",
         "mapbox/mapbox-gl": "3.0.0",
         "oomphinc/composer-installers-extender": "^2",
-        "composer/installers": "^1.2",
+        "composer/installers": "^2",
         "anthonymartin/geo-location": "^1.0",
         "drupal/address": "~1.0",
         "drupal/pathauto": "^1",
