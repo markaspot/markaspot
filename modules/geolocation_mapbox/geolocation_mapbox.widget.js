@@ -200,12 +200,8 @@
       }).addTo(map);
 
       if (result.text) {
-        marker.bindPopup(result.text).openPopup()
+        marker.bindPopup(result.place_name).openPopup()
       }
-
-      const $input = $('.leaflet-control-geosearch form input');
-      $input.val(result.text);
-
       marker.on('dragend', function (e) {
         const newPosition = e.target.getLatLng();
         if (newPosition.lat !== latLng.lat || newPosition.lng !== latLng.lng) {
@@ -217,17 +213,7 @@
 
       updateCallback(marker, map, result);
     }
-
-    // Variable to disable click events on the map while the geocoder is active.
-    /*
-    map.on('click', function (e) {
-      search.clearResults();
-      if (map._geocoderIsActive) {
-        return;
-      }
-      reverseGeocode(e.latlng);
-    });
-    */
+    
     function parseRoad(result) {
       let address = '';
       if (result.type == "geosearch/showlocation") {
