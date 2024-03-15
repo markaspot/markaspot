@@ -173,7 +173,7 @@ class GeoreportRequestResource extends ResourceBase {
         case 'POST':
           foreach ($this->serializerFormats as $format_name) {
             $format_route = clone $route;
-            $format_route->setRequirement('_access_rest_csrf', 'FALSE');
+            $format_route->setRequirement('_csrf_request_header_token', 'FALSE');
             // Restrict the incoming HTTP Content-type header to the known
             // serialization formats.
             $format_route->addRequirements(
@@ -304,20 +304,21 @@ class GeoreportRequestResource extends ResourceBase {
    */
   public function updateNode(string $id, array $request_data): array {
     $request_id = $this->getRequestId($id);
-
     $nodes = $this->entityTypeManager->getStorage('node')
       ->loadByProperties(['request_id' => $request_id]);
+
+    if (empty($nodes)) {
+      throw new NotFoundHttpException('Service request not found');
+    }
 
     foreach ($nodes as $node) {
       if ($node instanceof ContentEntityInterface) {
         $request_data['service_request_id'] = $request_id;
-        $values = $this->georeportProcessor->requestMapNode($request_data, 'update');
+        $values = $this->georeportProcessor->prepareNodeProperties($request_data, 'update');
       }
     }
-    if (empty($nodes)) {
-      throw new NotFoundHttpException('Service-Request not found');
-    }
-    $revisionLogMessage = isset($values['revision_log_message']) ?? '';
+
+    $revisionLogMessage = $values['revision_log_message'] ?? '';
     unset($values['revision_log_message']);
 
     foreach (array_keys($values) as $field_name) {
@@ -335,7 +336,7 @@ class GeoreportRequestResource extends ResourceBase {
         $status = $values['field_status'] ?? $node->get('field_status')
           ->getValue();
         $paragraphData = [$status, $values['field_status_notes']];
-        $paragraph = $this->georeportProcessor->createParagraph($paragraphData);
+        $paragraph = $this->georeportProcessor->createStatusNoteParagraph($paragraphData);
 
         $current = $node->get('field_status_notes')->getValue();
         $current[] = [

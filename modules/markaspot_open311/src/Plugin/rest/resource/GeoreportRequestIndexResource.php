@@ -175,7 +175,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
             $format_route = clone $route;
 
             $format_route->setPath($create_path . '.' . $format);
-            $format_route->setRequirement('_access_rest_csrf', 'FALSE');
+            $format_route->setRequirement('_csrf_request_header_token', 'FALSE');
 
             // Restrict the incoming HTTP Content-type header to the known
             // serialization formats.
@@ -398,8 +398,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
     catch (EntityStorageException $e) {
       throw new HttpException(500, 'Internal Server Error', $e);
     }
-
   }
+
 
   /**
    * Create Node in Drupal from request data.
@@ -411,10 +411,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   If node has not been saved.
    */
   public function createNode(array $request_data) {
-
-    $values = $this->georeportProcessor->requestMapNode($request_data, 'create');
-    $node = $this->entityTypeManager->getStorage('node')
-      ->create($values);
+    $values = $this->georeportProcessor->prepareNodeProperties($request_data, 'create');
+    $node = $this->entityTypeManager->getStorage('node')->create($values);
 
     // Make sure it's a content entity.
     if ($node instanceof ContentEntityInterface) {
@@ -467,7 +465,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
           $service_request['service_requests']['request']['service_request_id'] = $request_id;
         }
         return $service_request;
-
       }
     }
   }
