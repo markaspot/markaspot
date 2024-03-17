@@ -182,31 +182,56 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    */
   public function prepareNodeProperties(array $requestData, string $operation): array
   {
-    $values['type'] = 'service_request';
-    if (isset($request_id)) {
-      // $values['request_id'] = $request_data['service_request_id'];
-    }
-
     $values = [
       'type' => 'service_request',
-      'title' => $this->getSafeValue($requestData, 'service_code'),
-      'body' => $this->getSafeValue($requestData, 'description'),
-      'field_e_mail' => $this->getSafeValue($requestData, 'email'),
-      'field_first_name' => $this->getSafeValue($requestData, 'first_name'),
-      'field_last_name' => $this->getSafeValue($requestData, 'last_name'),
-      'field_phone' => $this->getSafeValue($requestData, 'phone'),
-      'field_geolocation' => [
-        'lat' => $this->getSafeValue($requestData, 'lat'),
-        'lng' => $this->getSafeValue($requestData, 'long'),
-      ],
-      'created' => $operation === 'update' && isset($requestData['requested_datetime'])
-        ? strtotime($requestData['requested_datetime'])
-        : NULL,
       'changed' => $this->time->getCurrentTime(),
     ];
 
-    if (array_key_exists('address_string', $requestData) || array_key_exists('address', $requestData)) {
-      $address = $this->addressParser($requestData['address_string']) ? Html::escape(stripslashes($requestData['address_string'])) : [];
+    $values = [
+      'type' => 'service_request',
+      'field_first_name' => $this->getSafeValue($requestData, 'first_name'),
+      'field_last_name' => $this->getSafeValue($requestData, 'last_name'),
+      'field_phone' => $this->getSafeValue($requestData, 'phone'),
+    ];
+
+    $values['title'] = isset($requestData['service_code']) ? Html::escape(stripslashes($requestData['service_code'])) : NULL;
+
+    if (array_key_exists('email', $requestData)) {
+      // Assuming getSafeValue sanitizes the input.
+      $sanitizedValue = $this->getSafeValue($requestData, 'email');
+      $values['field_e_mail'] = [
+        'value' => $sanitizedValue
+      ];
+    }
+
+
+    // creating a tmp title to be created later via request_id
+    // $values['title'] = $operation === 'create'  ? Html::escape(stripslashes($requestData['service_code'])) : NULL;
+
+
+    if (array_key_exists('description', $requestData)) {
+      // Assuming getSafeValue sanitizes the input.
+      $sanitizedValue = $this->getSafeValue($requestData, 'description');
+      $values['body'] = [
+        'value' => $sanitizedValue,
+        'format' => 'plain_text', // Set the format explicitly
+      ];
+    }
+    if (array_key_exists('lat', $requestData) && array_key_exists('long', $requestData)) {
+      $values['field_geolocation'] = [
+        'lat' => $requestData['lat'],
+        'lng' => $requestData['long'],
+      ];
+    }
+    // Handle Media URL file creation
+    $values['field_request_media'] = $this->handleMediaUrls($requestData);
+
+    # $values['created'] = isset($request_data['requested_datetime']) && $operation == 'update' ? strtotime($request_data['requested_datetime']) : '';
+
+
+    $addressString = $requestData['address_string'] ?? ($requestData['address'] ?? null);
+    if ($addressString) {
+      $address = $this->addressParser($addressString) ? Html::escape(stripslashes($addressString)) : [];
       if (!empty($address)) {
         $values['field_address']['address_line1'] = $address['street'];
         $values['field_address']['postal_code'] = $address['zip'];
@@ -214,36 +239,26 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       }
     }
 
-    // Get Category by service_code.
-    $values['created'] = isset($requestData['requested_datetime']) && $operation == 'update' ? strtotime($requestData['requested_datetime']) : '';
-
-    // This won't work with entity->save().
-    $values['changed'] = time();
-
-
-    $category_tid = isset($requestData['service_code']) ? $this->mapServiceCodeToTaxonomy($requestData['service_code']) : NULL;
-    $values['field_category'] = $category_tid;
-    if ($values['field_category'] == NULL && $operation !== 'update') {
-      throw new GeoreportException('Service-Code empty or not valid', 400);
-    }
-    if (isset($requestData['service_code']) && $values['field_category'] == NULL && $operation == 'update') {
-      throw new GeoreportException('Service Code not valid', 400);
+    if (array_key_exists('service_code', $requestData)) {
+      $category_tid = $this->mapServiceCodeToTaxonomy($requestData['service_code']);
+      $values['field_category'] = $category_tid;
+      if ($values['field_category'] == null && $operation !== 'update') {
+        throw new GeoreportException('Service-Code empty or not valid', 400);
+      }
+      if ($values['field_category'] == null && $operation == 'update') {
+        throw new GeoreportException('Service Code not valid', 400);
+      }
     }
 
-    // Handle media field
-    $values['field_request_media'] = $this->handleMediaUrls($requestData);
-
-    // Handle extended attributes
-    if (isset($requestData['extended_attributes'])) {
-      $values['revision_log_message'] = $requestData['extended_attributes']['revision_log_message'] ?? NULL;
+    if (array_key_exists('extended_attributes', $requestData)) {
+      $values['revision_log_message'] = $requestData['extended_attributes']['revision_log_message'] ?? null;
       $values += $this->handleExtendedAttributes($requestData['extended_attributes']['drupal'] ?? []);
     }
 
     return array_filter($values, function ($value) {
-      return $value !== null && $value !== false && $value !== '';
+      return ($value !== NULL && $value !== FALSE && $value !== '');
     });
   }
-
   /**
    * Parses an address string into an associative array.
    *
@@ -474,8 +489,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     if ($extendedRole === 'manager') {
       $request['email'] = $node->get('field_e_mail')->value;
       $request['phone'] = $node->get('field_phone')->value ?? null;
-      $request['first_name'] = $node->get('first_name')->value ?? $node->get('field_first_name')->value ?? null;
-      $request['last_name'] = $node->get('last_name')->value ?? $node->get('field_last_name')->value ?? null;
+      $request['first_name'] = $node->get('field_first_name')->value ?? $node->get('field_first_name')->value ?? null;
+      $request['last_name'] = $node->get('field_last_name')->value ?? $node->get('field_last_name')->value ?? null;
     }
 
     if ($extendedRole !== '' && isset($parameters['extensions'])) {
@@ -804,9 +819,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
             $fieldSettings = $fieldConfig->get('settings');
             $fileDirectory = $this->token->replace($fieldSettings['file_directory'] ?? '');
             $fileDirectory = trim($fileDirectory, '/');
-            // ...
 
-            $destination = $wrapperScheme . ($fileDirectory ? $fileDirectory . '/' : '') . basename($url);
+            // Create the directory if it doesn't exist
+            $directoryPath = $wrapperScheme . ($fileDirectory ? $fileDirectory . '/' : '');
+            \Drupal::service('file_system')->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
+
+            $destination = $directoryPath . basename($url);
             $filePath = \Drupal::service('file_system')->saveData($data, $destination, FileSystemInterface::EXISTS_REPLACE);
 
             if ($filePath) {
@@ -819,20 +837,23 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
                   'target_id' => $media->id(),
                   'alt' => 'Open311 File',
                 ];
-              } else {
+              }
+              else {
                 $mediaUrls[] = [
                   'target_id' => $file->id(),
                   'alt' => 'Open311 File',
                   'uri' => $file->getFileUri(),
                 ];
               }
-            } else {
+            }
+            else {
               throw new \Exception('Failed to save file', 400);
             }
-
-          } catch (\GuzzleHttp\Exception\TransferException $exception) {
+          }
+          catch (\GuzzleHttp\Exception\TransferException $exception) {
             \Drupal::messenger()->addError(t('Failed to fetch file due to error "%error"', ['%error' => $exception->getMessage()]));
-          } catch (\Drupal\Core\File\Exception\FileException | \Drupal\Core\File\Exception\InvalidStreamWrapperException $e) {
+          }
+          catch (\Drupal\Core\File\Exception\FileException | \Drupal\Core\File\Exception\InvalidStreamWrapperException $e) {
             \Drupal::messenger()->addError(t('Failed to save file due to error "%error"', ['%error' => $e->getMessage()]));
             throw new \Exception('Image could not be retrieved via URL', 400);
           }
@@ -842,7 +863,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     return $mediaUrls;
   }
-
 
   /**
    * Creates a media entity with the provided file.

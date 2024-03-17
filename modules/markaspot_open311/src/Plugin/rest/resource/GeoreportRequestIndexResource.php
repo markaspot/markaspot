@@ -483,16 +483,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
     if (count($violations) > 0) {
       $messages = [];
       foreach ($violations as $violation) {
-        $messages[substr($violation->getPropertyPath(), 6)] = $violation->getMessage();
+        $dotPosition = strpos($violation->getPropertyPath(), '.');
+
+        $propertyPath = $dotPosition !== false ? substr($violation->getPropertyPath(), $dotPosition + 1) : $violation->getPropertyPath();
+        $messages[$propertyPath] = $violation->getMessage();
         $this->logger->error('Node validation error: @message', ['@message' => $violation->getMessage()]);
+
       }
 
-      // Throw new BadRequestHttpException($message);
-      $exception = new GeoreportException();
-      $exception->setViolations($violations);
-      $exception->setCode(400);
-      throw $exception;
-      // Return $messages;.
+      // Convert messages to a string or format that you want to show in the response
+      $detailedMessage = json_encode($messages);
+      throw new GeoreportException($detailedMessage, 400);
+
     }
     else {
       return TRUE;
