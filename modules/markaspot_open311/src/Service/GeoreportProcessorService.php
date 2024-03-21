@@ -808,24 +808,26 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     if (isset($requestData['media_url'])) {
       $urls = explode(',', $requestData['media_url']);
+      $storageSetting = $this->entityFieldManager->getFieldStorageDefinitions('media')['field_media_image']->getSetting('uri_scheme');
+      $wrapperScheme = $this->getWrapperScheme($storageSetting);
+      $fieldConfig = $this->configFactory->get('field.field.media.request_image.field_media_image');
+      $fieldSettings = $fieldConfig->get('settings');
+      $fileDirectory = $this->token->replace($fieldSettings['file_directory'] ?? '');
+      $fileDirectory = trim($fileDirectory, '/');
+      // Create the directory if it doesn't exist
+      $directoryPath = $wrapperScheme . ($fileDirectory ? $fileDirectory . '/' : '');
+      \Drupal::service('file_system')->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
+
 
       foreach ($urls as $url) {
+        unset($client); // Destroy the client after use
+
+        $destination = $directoryPath . basename($url);
+
         if (strstr($url, 'http')) {
           try {
             $data = (string) \Drupal::httpClient()->get($url)->getBody();
-            $storageSetting = $this->entityFieldManager->getFieldStorageDefinitions('media')['field_media_image']->getSetting('uri_scheme');
-            $wrapperScheme = $this->getWrapperScheme($storageSetting);
-            $fieldConfig = $this->configFactory->get('field.field.media.request_image.field_media_image');
-            $fieldSettings = $fieldConfig->get('settings');
-            $fileDirectory = $this->token->replace($fieldSettings['file_directory'] ?? '');
-            $fileDirectory = trim($fileDirectory, '/');
-
-            // Create the directory if it doesn't exist
-            $directoryPath = $wrapperScheme . ($fileDirectory ? $fileDirectory . '/' : '');
-            \Drupal::service('file_system')->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
-
-            $destination = $directoryPath . basename($url);
-            $filePath = \Drupal::service('file_system')->saveData($data, $destination, FileSystemInterface::EXISTS_REPLACE);
+            $filePath = \Drupal::service('file_system')->saveData($data, $destination, FileSystemInterface::EXISTS_RENAME);
 
             if ($filePath) {
               $file = File::create(['uri' => $filePath]);
