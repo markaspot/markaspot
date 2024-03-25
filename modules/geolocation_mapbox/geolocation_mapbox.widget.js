@@ -14,6 +14,7 @@
 
 
     Drupal.geolocationMapboxWidget.map = L.map(mapSettings.id, {
+      fullscreenControl: mapSettings.fullscreenControl,
       dragging: mapSettings.dragging,
       zoomControl: mapSettings.zoomControl,
       tab: mapSettings.zoomControl
@@ -213,7 +214,7 @@
 
       updateCallback(marker, map, result);
     }
-    
+
     function parseRoad(result) {
       let address = '';
       if (result.type == "geosearch/showlocation") {
