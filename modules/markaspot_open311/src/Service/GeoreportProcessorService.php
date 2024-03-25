@@ -539,10 +539,24 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    * @return mixed
    *   The field value, or null if the field or term is not found.
    */
-  public function getTaxonomyTermField(int $tid, string $fieldName): mixed
+  public function getTaxonomyTermField(?int $tid, string $fieldName): mixed
   {
+    // Early return if $tid is null or not positive
+    if (is_null($tid) || $tid <= 0) {
+      return null;
+    }
+
+    // Attempt to load the taxonomy term
     $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($tid);
-    return $term ? $term->get($fieldName)->value : null;
+
+    // Check if the term exists and if the specified field exists on the term
+    if ($term !== null && $term->hasField($fieldName)) {
+      // Safely return the field value, ensuring null is returned if the field is not set
+      return $term->get($fieldName)->value ?? null;
+    }
+
+    // Return null if the term doesn't exist, the field doesn't exist, or $tid is invalid
+    return null;
   }
 
   /**
