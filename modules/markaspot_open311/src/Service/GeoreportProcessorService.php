@@ -251,7 +251,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     }
 
     if (array_key_exists('extended_attributes', $requestData)) {
-      $values['revision_log_message'] = $requestData['extended_attributes']['revision_log_message'] ?? null;
+      $values['revision_log_message'] = $requestData['extended_attributes']['revision_log_message'] ??
+        $requestData['extended_attributes']['drupal']['revision_log_message'] ??
+        null;
       $values += $this->handleExtendedAttributes($requestData['extended_attributes']['drupal'] ?? []);
     }
 
