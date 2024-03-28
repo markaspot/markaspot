@@ -842,7 +842,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
         if (strstr($url, 'http')) {
           try {
-            $data = (string) \Drupal::httpClient()->get($url)->getBody();
+            $data = (string) \Drupal::httpClient()->get(trim($url))->getBody();
             $filePath = \Drupal::service('file_system')->saveData($data, $destination, FileSystemInterface::EXISTS_RENAME);
 
             if ($filePath) {
