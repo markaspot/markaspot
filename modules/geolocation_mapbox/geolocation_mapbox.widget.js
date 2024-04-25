@@ -52,7 +52,7 @@
       reverseGeocode(e.latlng);
     }
 
-    // map.on('locationfound', onLocationFound);
+    map.on('locationfound', onLocationFound);
 
     const provider = new GeoSearch.MapBoxProvider({
       params: {
