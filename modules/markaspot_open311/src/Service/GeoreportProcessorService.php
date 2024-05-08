@@ -445,9 +445,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     if (!empty($serviceRequests)) {
       return $serviceRequests;
+    } else {
+      return [];
     }
 
-    throw new NotFoundHttpException('No service requests found');
   }
 
   /**
