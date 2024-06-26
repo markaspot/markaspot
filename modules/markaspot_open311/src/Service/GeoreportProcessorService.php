@@ -224,8 +224,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       ];
     }
     // Handle Media URL file creation
-    $values['field_request_media'] = $this->handleMediaUrls($requestData);
-
+    if (array_key_exists('media_url', $requestData)) {
+      $values['field_request_media'] = $this->handleMediaUrls($requestData);
+    }
     # $values['created'] = isset($request_data['requested_datetime']) && $operation == 'update' ? strtotime($request_data['requested_datetime']) : '';
 
 
