@@ -16,10 +16,18 @@ use Drupal\user\UserInterface;
  * Implements hook_preprocess_entity().
  */
 function mas_olivero_preprocess_paragraph(&$variables) {
-  $paragraph = $variables['paragraph'];
-  if (is_object($paragraph->field_status_term[0])) {
-    $variables['status'] = $paragraph->status_note;
-    // $variables['statusColor'] =  str_replace('#', '', $paragraph->field_status_term[0]->entity->field_status_hex->color);
+  // Ensure the 'paragraph' key exists and is an object
+  if (isset($variables['paragraph']) && is_object($variables['paragraph'])) {
+    $paragraph = $variables['paragraph'];
+
+    // Ensure 'field_status_term' is set and is an array with at least one element
+    if (isset($paragraph->field_status_term) && is_array($paragraph->field_status_term) && isset($paragraph->field_status_term[0])) {
+      // Check if 'field_status_term[0]' is an object
+      if (is_object($paragraph->field_status_term[0])) {
+        $variables['status'] = $paragraph->status_note;
+        // $variables['statusColor'] =  str_replace('#', '', $paragraph->field_status_term[0]->entity->field_status_hex->color);
+      }
+    }
   }
 }
 
