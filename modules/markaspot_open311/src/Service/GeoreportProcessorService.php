@@ -744,10 +744,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
         if ($fieldAccess->isAllowed()) {
           if (method_exists($field, 'referencedEntities')) {
-            $fieldValues[$fieldName] = $field->referencedEntities();
+            $value = $field->referencedEntities();
+            // Normalize single-value arrays
+            if (is_array($value) && count($value) === 1) {
+              $value = reset($value);
+            }
           } else {
-            $fieldValues[$fieldName] = $field->value;
+            $value = $field->getValue();
           }
+
+
+
+          $fieldValues[$fieldName] = $value;
         }
       }
     }
