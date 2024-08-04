@@ -232,11 +232,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     $addressString = $requestData['address_string'] ?? ($requestData['address'] ?? null);
     if ($addressString) {
-      $address = $this->addressParser($addressString) ? Html::escape(stripslashes($addressString)) : [];
+      $address = $this->addressParser(Html::escape(stripslashes($addressString)));
       if (!empty($address)) {
-        $values['field_address']['address_line1'] = $address['street'];
-        $values['field_address']['postal_code'] = $address['zip'];
-        $values['field_address']['locality'] = $address['city'];
+        $values['field_address']['address_line1'] = $address['address_line1'];
+        $values['field_address']['address_line2'] = $address['address_line2'];
+        $values['field_address']['postal_code'] = $address['postal_code'];
+        $values['field_address']['locality'] = $address['locality'];
+        // Maybe we add this later.
+        // $values['field_address']['administrative_area'] = $address['state'];
+        // $values['field_address']['country_code'] = $address['country'];
       }
     }
 
@@ -964,5 +968,108 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     }
 
     return $fieldValues;
+  }
+
+
+  /**
+   * Parses an address string into structured components.
+   *
+   * This function takes a free-form address string and attempts to parse it into
+   * structured address components according to the GeoReport v2 standard. It
+   * processes the address from most specific (e.g., street address) to most
+   * general (e.g., country) geographic units.
+   *
+   * @param string $addressString
+   *   The input address string to be parsed.
+   *
+   * @return array
+   *   An associative array of parsed address components:
+   *   - address_line1: Street address or most specific part of the address.
+   *   - address_line2: Additional address information if available.
+   *   - neighborhood: Neighborhood or district information.
+   *   - locality: City, town, or village.
+   *   - county: County or region.
+   *   - postal_code: Postal or ZIP code.
+   *   - state: State, province, or administrative area.
+   *   - country: Country name.
+   */
+  private function addressParser(string $addressString): array
+  {
+    $addressString = html_entity_decode($addressString, ENT_QUOTES, 'UTF-8');
+    $addressString = trim($addressString);
+
+    // Initialize the result array
+    $result = [
+      'address_line1' => '',
+      'address_line2' => '',
+      'neighborhood' => '',
+      'locality' => '',
+      'county' => '',
+      'postal_code' => '',
+      'state' => '',
+      'country' => '',
+    ];
+
+    // Split the address string by commas.
+    $parts = preg_split('/,\s*/', $addressString);
+
+    // Extract postal code.
+    $extractPostalCode = function($str) {
+      if (preg_match('/\b(\d{4,7}([A-Z]{1,2})?)\b/i', $str, $matches)) {
+        return $matches[1];
+      }
+      return null;
+    };
+
+    $numParts = count($parts);
+    for ($i = 0; $i < $numParts; $i++) {
+      $part = trim($parts[$i]);
+
+      // Add a Check for postal code.
+      $postalCode = $extractPostalCode($part);
+      if ($postalCode) {
+        $result['postal_code'] = $postalCode;
+        $part = trim(str_replace($postalCode, '', $part));
+        if (empty($part)) continue;
+      }
+
+      // Assign parts based on position and content.
+      if ($i == 0) {
+        // First part is likely the most specific (address number or cross streets).
+        $result['address_line1'] = $part;
+      } elseif ($i == 1) {
+        // Second part could be street name or continue address.
+        if (empty($result['address_line2'])) {
+          $result['address_line2'] = $part;
+        } else {
+          $result['address_line1'] .= ', ' . $part;
+        }
+      } elseif ($i == $numParts - 1) {
+        // Last part is likely country
+        $result['country'] = $part;
+      } elseif ($i == $numParts - 2) {
+        // Second to last might be state/province
+        $result['state'] = $part;
+      } else {
+        // Middle parts could be neighborhood, locality, or county.
+        if (empty($result['neighborhood'])) {
+          $result['neighborhood'] = $part;
+        } elseif (empty($result['locality'])) {
+          $result['locality'] = $part;
+        } elseif (empty($result['county'])) {
+          $result['county'] = $part;
+        } else {
+          // If all else is filled, append to address_line2.
+          $result['address_line2'] .= ', ' . $part;
+        }
+      }
+    }
+
+    // Clean up results
+    foreach ($result as $key => $value) {
+      $result[$key] = trim($value);
+    }
+
+    return $result;
   }
 }
