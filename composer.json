@@ -100,7 +100,7 @@
         "drupal/field_permissions": "^1.1",
         "drupal/field_formatter_class":"^1.0",
         "drupal/inline_entity_form": "^1.0@RC",
-        "drupal/shs": "2.0.0-rc4"
+        "drupal/shs": "2.0.0-rc12"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
