@@ -3,5 +3,5 @@ type: module
 description: 'UI and Menubar for the Mark-a-Spot Distro'
 package: Mark-a-Spot
 
-core_version_requirement: ^8 || ^9 || ^10
+core_version_requirement: ^10 || ^11
 

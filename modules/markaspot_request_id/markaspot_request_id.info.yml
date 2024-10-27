@@ -1,6 +1,6 @@
 name: Mark-a-Spot Request ID
 type: module
 description: Overriding the UUID component
-core_version_requirement: ^8 || ^9 || ^10
+core_version_requirement: ^10 || ^11
 package: Mark-a-Spot
 

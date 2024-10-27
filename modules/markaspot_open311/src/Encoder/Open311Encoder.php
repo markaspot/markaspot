@@ -61,11 +61,9 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
     // Checking passed data for keywords resulting in different root_nodes.
     if (NULL != array_key_exists('error', $data)) {
       $context['xml_root_node_name'] = "errors";
-
     }
     elseif (isset($data[0]) && array_key_exists('metadata', $data[0])) {
       $context['xml_root_node_name'] = "services";
-
     }
     elseif (array_key_exists('changeset', $data)) {
       $context['xml_root_node_name'] = "discovery";
@@ -95,14 +93,13 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   /**
    * {@inheritdoc}
    */
-  public function decode($data, $format, array $context = []) {
+  public function decode(string $data, string $format, array $context = []): mixed {
     if ('' === trim($data)) {
       throw new \UnexpectedValueException('Invalid XML data, it can not be empty.');
     }
     if (function_exists('libxml_use_entity_loader') && \PHP_VERSION_ID < 80000) {
       $internalErrors = libxml_use_internal_errors(TRUE);
       libxml_use_internal_errors($internalErrors);
-
     }
 
     libxml_clear_errors();
@@ -112,7 +109,6 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
 
     if ($error = libxml_get_last_error()) {
       libxml_clear_errors();
-
       throw new \UnexpectedValueException($error->message);
     }
 
@@ -124,7 +120,6 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
 
     $rootNode = $dom->firstChild;
 
-    // @todo throw an exception if the root node name is not correctly configured (bc)
     if ($rootNode->hasChildNodes()) {
       $xpath = new \DOMXPath($dom);
       $data = [];
@@ -166,7 +161,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   /**
    * {@inheritdoc}
    */
-  public function supportsDecoding($format) {
+  public function supportsDecoding(string $format): bool {
     return 'xml' === $format;
   }
 

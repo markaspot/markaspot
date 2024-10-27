@@ -1,6 +1,6 @@
 name: 'Mark-a-Spot Blocks'
 package: Mark-a-Spot
-core_version_requirement: ^8 || ^9 || ^10
+core_version_requirement: ^10 || ^11
 description: 'Provides several blocks in code for a Mark-a-Spot Installation'
 type: module
 dependencies:

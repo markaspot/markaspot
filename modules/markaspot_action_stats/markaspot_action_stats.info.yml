@@ -1,6 +1,6 @@
 name: 'Mark-a-Spot Action Stats'
 package: Mark-a-Spot
-core_version_requirement: ^8 || ^9 || ^10
+core_version_requirement: ^10 || ^11
 description: 'Provides the statistic menu block'
 type: module
 dependencies:

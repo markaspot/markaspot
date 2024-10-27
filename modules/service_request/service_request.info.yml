@@ -2,7 +2,7 @@ name: Service Request Content Type
 description: Open311 Service Requests content type.
 package: Mark-a-Spot
 type: module
-core_version_requirement: ^8 || ^9 || ^10
+core_version_requirement: ^10 || ^11
 
 dependencies:
   - node
