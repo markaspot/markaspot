@@ -1,3 +1,54 @@
-html {
+.ip-icons-content {
     font-size: 100%!important;
+    color: #000!important;
+}
+
+.icon-picker-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-picker-button.gin-button {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  height: 32px;
+  border-radius: 4px;
+}
+
+.icon-picker-button .button__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Style the IconPicker modal to match Gin */
+.ip-container {
+  border-radius: 8px;
+  border: 1px solid var(--gin-border-color);
+  box-shadow: var(--gin-shadow-l2);
+  background: var(--gin-bg-layer);
+}
+
+.ip-search-container input {
+  border-radius: 4px;
+  border: 1px solid var(--gin-border-color);
+  padding: 8px;
+  background: var(--gin-bg-layer2);
+}
+
+.ip-icons-container {
+  background: var(--gin-bg-layer);
+}
+
+.ip-icons-content a {
+  border-radius: 4px;
+  color: var(--gin-color-text);
+}
+
+.ip-icons-content a:hover {
+  background: var(--gin-bg-item-hover);
 }

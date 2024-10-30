@@ -1,25 +1,12 @@
 iconpicker:
   js:
+    /libraries/furcan--iconpicker/dist/iconpicker-1.5.0.js: {}
     fa_icon_class.js: {}
   css:
     component:
+      /libraries/furcan--iconpicker/dist/iconpicker-1.5.0.css: {}
+      /libraries/furcan--iconpicker/dist/fontawesome-5.11.2/css/all.min.css: {}
       fa_icon_class.css: {}
-
-fontawesome-iconpicker:
-  js:
-    /libraries/fontawesome-iconpicker/dist/js/fontawesome-iconpicker.min.js : {}
-  css:
-    component:
-      /libraries/fontawesome-iconpicker/dist/css/fontawesome-iconpicker.min.css : {}
-
-bootstrap:
-  js:
-    //netdna.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js: { type: external, minified: true }
-  css:
-    component:
-      //netdna.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css: {type: external, minified: true}
-font-awesome:
-  css:
-    component:
-      /libraries/font-awesome/css/all.min.css: {}
-      /libraries/font-awesome/css/v4-shims.min.css: {}
+  dependencies:
+    - core/drupal
+    - core/once
