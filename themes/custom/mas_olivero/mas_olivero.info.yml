@@ -5,7 +5,7 @@ description: 'An Olivero based sub-theme.'
 package: 'Olivero'
 version: 1.x
 hidden: false
-core_version_requirement: ^8 || ^9 || ^10
+core_version_requirement: ^10 || ^11
 regions:
   header: Header
   primary_menu: 'Primary menu'
