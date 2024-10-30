@@ -63,3 +63,21 @@ function markaspot_update_ids(){
 function markaspot_update_9600( ){
   \Drupal::service("module_installer")->uninstall(["shariff"]);
 }
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_requirements($phase) {
+  $requirements = [];
+
+  if ($phase == 'runtime') {
+    $info = \Drupal::service('extension.list.profile')->get('markaspot');
+    $requirements['markaspot_profile'] = [
+      'title' => t('Mark-a-Spot'),
+      'value' => isset($info->info['version']) ? $info->info['version'] : t('Unknown'),
+      'severity' => REQUIREMENT_INFO,
+    ];
+  }
+
+  return $requirements;
+}

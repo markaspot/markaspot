@@ -1,7 +1,8 @@
 name: Mark-a-Spot
-description: 'Install with commonly used features pre-configured.'
+description: 'Mark-a-Spot Installation Profile'
 type: profile
 core_version_requirement: ^10 || ^11
+version: '6.x-dev'
 distibution:
   name: Mark-a-Spot
   install:
