@@ -70,21 +70,13 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
    */
   public function handle(RouteMatchInterface $route_match, Request $request, RestResourceConfigInterface $_rest_resource_config) {
 
-    // $request = RequestSanitizer::sanitize($request, [], TRUE);
-    // $plugin = $route_match->getRouteObject()->getDefault('_plugin');
     $method = strtolower($request->getMethod());
     $resource = $_rest_resource_config->getResourcePlugin();
 
     $received = $request->getContent();
-    // var_dump($received);
     if (!empty($received)) {
-      $format = $request->getContentType();
+      $format = $request->getContentTypeFormat(); // Updated here
 
-      // Only allow serialization formats that are explicitly configured. If no
-      // formats are configured allow all and hope that the serializer knows the
-      // format. If the serializer cannot handle it an exception will be thrown
-      // that bubbles up to the client.
-      // $config = $this->config;.
       $method_settings = $_rest_resource_config->get('configuration')[$request->getMethod()];
 
       $request_all = $request->request->all();
@@ -105,22 +97,15 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
     }
     $query_params = $request->query->all();
     $request_data = $request_all ?? $query_params;
-    // Determine the request parameters that should be passed to the resource
-    // plugin.
+
     $route_parameters = $route_match->getParameters();
     $parameters = [];
-    // Filter out all internal parameters starting with "_".
     foreach ($route_parameters as $key => $parameter) {
       if ($key[0] !== '_') {
         $parameters[] = $parameter;
       }
     }
-    // $id_suffix = isset($parameter) ? explode('&', $parameter) : NULL;
-    // Invoke the operation on the resource plugin.
-    // All REST routes are restricted to exactly one format, so instead of
-    // parsing it out of the Accept headers again, we can simply retrieve the
-    // format requirement. If there is no format associated, just pick JSON.
-    // $route_match->getRouteObject()->getRequirement('_format') ?: 'json';.
+
     $current_path = $this->currentPath->getPath();
 
     if (strstr($current_path, 'georeport')) {
@@ -130,7 +115,7 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
     $result = call_user_func_array([
       $resource, $method,
     ], array_merge($parameters, [$request_data, $request]));
-    // var_dump($this->serializer);.
+
     $result = $this->serializer->serialize($result, $format);
 
     $response = new Response();
