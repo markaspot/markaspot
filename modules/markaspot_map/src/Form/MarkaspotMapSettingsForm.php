@@ -75,6 +75,12 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('mapbox_style'),
       '#description' => $this->t('Mapbox Style Url (e.g. mapbox://styles/mapbox/streets-v8) here'),
     ];
+    $form['markaspot_map']['mapbox_style_dark'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mapbox Style Url / MapLibre JSON Url for dark modes'),
+      '#default_value' => $config->get('mapbox_style_dark'),
+      '#description' => $this->t('Mapbox Style Url (e.g. mapbox://styles/mapbox/streets-v8) here'),
+    ];
     $form['markaspot_map']['maplibre'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable MapLibre'),
@@ -201,6 +207,7 @@ xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><defs>
       ->set('maplibre', $values['maplibre'])
       ->set('mapbox_token', $values['mapbox_token'])
       ->set('mapbox_style', $values['mapbox_style'])
+      ->set('mapbox_style_dark', $values['mapbox_style_dark'])
       ->set('osm_custom_tile_url', $values['osm_custom_tile_url'])
       ->set('wms_service', $values['wms_service'])
       ->set('wms_layer', $values['wms_layer'])
