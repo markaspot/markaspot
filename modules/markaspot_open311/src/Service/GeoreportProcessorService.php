@@ -695,6 +695,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       $extendedAttributes['category_hex'] = $term->get('field_category_hex')->color;
       $extendedAttributes['category_icon'] = $term->get('field_category_icon')->value;
     }
+    if ($node->hasField('field_status') && !$node->get('field_status')->isEmpty()) {
+      $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->get('field_status')->target_id);
+      $extendedAttributes['status_descriptive_name'] = $term->getName();
+      $extendedAttributes['status_hex'] = $term->get('field_status_hex')->color;
+    }
+
+
 
     if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
       $statusNotes = [];
