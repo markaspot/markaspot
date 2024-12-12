@@ -3,55 +3,57 @@
 geolocation-mapbox-widget:
   version: VERSION
   js:
-    geolocation_mapbox.widget.js: {}
+    geolocation_mapbox.widget.js: { }
   css:
     theme:
-      geolocation_mapbox.css: {}
+      geolocation_mapbox.css: { }
   dependencies:
     - geolocation_mapbox/mapbox
 leaflet:
   header: true
   js:
-    /libraries/leaflet/dist/leaflet.js: {}
+    /libraries/leaflet/dist/leaflet.js: { }
   css:
     component:
-      /libraries/leaflet/dist/leaflet.css: {}
+      /libraries/leaflet/dist/leaflet.css: { }
 
 mapbox:
+  dependencies:
+    - core/leaflet
   js:
-    /libraries/mapbox-gl/dist/mapbox-gl.js: {preprocess: false}
-    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: {}
+    /libraries/maplibre-gl/dist/maplibre-gl.js: { }
+    /libraries/maplibre--maplibre-gl-leaflet/leaflet-maplibre-gl.js: { }
   css:
     component:
-      /libraries/mapbox-gl/dist/mapbox-gl.css: {}
+      /libraries/maplibre-gl/dist/maplibre-gl.css: { }
 
 font-awesome:
   css:
     component:
-      /libraries/font-awesome/css/all.min.css: {}
-      /libraries/font-awesome/css/v4-shims.min.css: {}
+      /libraries/font-awesome/css/all.min.css: { }
+      /libraries/font-awesome/css/v4-shims.min.css: { }
 
 leaflet-geosearch:
   css:
     component:
-      /libraries/leaflet-geosearch/dist/geosearch.css: {}
+      /libraries/leaflet-geosearch/dist/geosearch.css: { }
   js:
-    /libraries/leaflet-geosearch/dist/bundle.min.js: {}
+    /libraries/leaflet-geosearch/dist/bundle.min.js: { }
 
 
 leaflet-locatecontrol:
   js:
-    /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.js: {}
+    /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.js: { }
   css:
     component:
-      /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.css: {}
+      /libraries/leaflet.locatecontrol/dist/L.Control.Locate.min.css: { }
   dependencies:
     - geolocation_mapbox/font-awesome
 leaflet.fullscreen:
   js:
-    /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: {}
+    /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: { }
   css:
     component:
-      /libraries/leaflet-fullscreen/dist/leaflet.fullscreen.css: {}
+      /libraries/leaflet-fullscreen/dist/leaflet.fullscreen.css: { }
 
 

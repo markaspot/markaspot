@@ -23,12 +23,12 @@
 
     let tileLayer;
     if (mapSettings.mapboxStyle !== "") {
-      tileLayer = L.mapboxGL({
+      tileLayer = L.maplibreGL({
         accessToken: mapSettings.mapboxToken,
         style: mapSettings.mapboxStyle
       }).addTo(map);
     } else {
-      tileLayer = L.tileLayer.wms(mapSettings.tileServerUrl, { layers: mapSettings.wmsLayer }).addTo(map);
+      tileLayer = L.tileLayer.wms(mapSettings.tileServerUrl, {layers: mapSettings.wmsLayer}).addTo(map);
     }
 
     map.attributionControl.addAttribution(
@@ -76,8 +76,8 @@
         icon: new L.Icon.Default(),
         draggable: false
       },
-      popupFormat: ({ query, result }) => result.label,
-      resultFormat: ({ result }) => result.label,
+      popupFormat: ({query, result}) => result.label,
+      resultFormat: ({result}) => result.label,
       maxMarkers: 1,
       retainZoomLevel: false,
       animateZoom: true,
@@ -141,9 +141,6 @@
     };
 
 
-
-
-
     map.on('click', function (e) {
       search.clearResults();
 
@@ -179,7 +176,6 @@
     }
 
 
-
     function setMarker(result, latLng) {
       // parseRoad(result);
       if (typeof marker !== "undefined") {
@@ -190,7 +186,6 @@
         // If geosearchMarker exists, remove it from the map before creating a new one
         map.removeLayer(geosearchMarker);
       }
-
 
 
       // Check if method is called with a pair of coordinates to prevent
@@ -224,9 +219,9 @@
       }
       let $val = '';
       if (address.road) {
-        switch(mapSettings.streetNumberFormat) {
+        switch (mapSettings.streetNumberFormat) {
           case "1":
-            $val = (address.road ||  '') + ((typeof address.house_number !== "undefined") ? ' ' + address.house_number : '') + ((typeof address.postcode !== "undefined") ? ', ' + address.postcode : '')  + ' ' + (address.city || '');
+            $val = (address.road || '') + ((typeof address.house_number !== "undefined") ? ' ' + address.house_number : '') + ((typeof address.postcode !== "undefined") ? ', ' + address.postcode : '') + ' ' + (address.city || '');
             break;
           case 0:
             $val = (address.house_number ? address.house_number + ' ' : '') + address.road;
@@ -352,7 +347,7 @@
     }
     if ('text' in details || 'building' in details) {
       if (typeof details.housenumber !== 'undefined') {
-        $('input.address-line1', $address).val(details.text + " " + details.housenumber );
+        $('input.address-line1', $address).val(details.text + " " + details.housenumber);
       } else {
         $('input.address-line1', $address).val(details.text);
       }
