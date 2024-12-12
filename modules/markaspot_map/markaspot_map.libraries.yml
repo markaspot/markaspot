@@ -3,45 +3,45 @@ leaflet:
     /libraries/leaflet/dist/leaflet.js: { }
   css:
     component:
-      /libraries/leaflet/dist/leaflet.css: {}
+      /libraries/leaflet/dist/leaflet.css: { }
 
 
 leaflet-markercluster:
   js:
-    /libraries/leaflet.markercluster/dist/leaflet.markercluster.js: {}
+    /libraries/leaflet.markercluster/dist/leaflet.markercluster.js: { }
   css:
     component:
-      /libraries/leaflet.markercluster/dist/MarkerCluster.css: {}
-      /libraries/leaflet.markercluster/dist/MarkerCluster.Default.css: {}
+      /libraries/leaflet.markercluster/dist/MarkerCluster.css: { }
+      /libraries/leaflet.markercluster/dist/MarkerCluster.Default.css: { }
 
 leaflet-awesome-markers:
   js:
-    /libraries/drmonty-leaflet-awesome-markers/js/leaflet.awesome-markers.min.js: {}
+    /libraries/drmonty-leaflet-awesome-markers/js/leaflet.awesome-markers.min.js: { }
   css:
     component:
-      /libraries/drmonty-leaflet-awesome-markers/css/leaflet.awesome-markers.css: {}
+      /libraries/drmonty-leaflet-awesome-markers/css/leaflet.awesome-markers.css: { }
   dependencies:
     - markaspot_map/font-awesome
 
 leaflet-fullscreen:
   js:
-    /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: {}
+    /libraries/leaflet-fullscreen/dist/Leaflet.fullscreen.min.js: { }
   css:
     component:
-      /libraries/leaflet-fullscreen/dist/leaflet.fullscreen.css: {}
+      /libraries/leaflet-fullscreen/dist/leaflet.fullscreen.css: { }
 
 leaflet-easyButton:
   js:
-    /libraries/leaflet-easybutton/src/easy-button.js: {}
+    /libraries/leaflet-easybutton/src/easy-button.js: { }
   css:
     component:
-       /libraries/leaflet-easybutton/src/easy-button.css: {}
+      /libraries/leaflet-easybutton/src/easy-button.css: { }
 
 waypoints:
   js:
-    /libraries/waypoints/lib/jquery.waypoints.min.js: {weight: -3}
-    /libraries/waypoints/lib/shortcuts/sticky.min.js: {weight: -2, minified: true }
-    /libraries/waypoints/lib/shortcuts/inview.min.js: {weight: -2, minified: true }
+    /libraries/waypoints/lib/jquery.waypoints.min.js: { weight: -3 }
+    /libraries/waypoints/lib/shortcuts/sticky.min.js: { weight: -2, minified: true }
+    /libraries/waypoints/lib/shortcuts/inview.min.js: { weight: -2, minified: true }
 
 leaflet-timeline:
   js:
@@ -49,32 +49,21 @@ leaflet-timeline:
 
 leaflet-heatmap:
   js:
-    /libraries/leaflet.heat/dist/leaflet-heat.js: {}
+    /libraries/leaflet.heat/dist/leaflet-heat.js: { }
 
 font-awesome:
   css:
     component:
-      /libraries/font-awesome/css/all.min.css: {minified: true }
-      /libraries/font-awesome/css/v4-shims.min.css: {minified: true }
+      /libraries/font-awesome/css/all.min.css: { minified: true }
+      /libraries/font-awesome/css/v4-shims.min.css: { minified: true }
 
-
-mapbox:
-  js:
-    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: {  }
-    /libraries/mapbox-gl/dist/mapbox-gl.js: { weight: -1, preprocess: false }
-
-  css:
-    component:
-      /libraries/mapbox-gl/dist/mapbox-gl.css: {}
-  dependencies:
-    - markaspot_map/map
 maplibre:
   js:
     /libraries/maplibre--maplibre-gl-leaflet/leaflet-maplibre-gl.js: { }
-    /libraries/maplibre-gl/dist/maplibre-gl.js?version=3.6.2: { weight: -1, preprocess: false}
+    /libraries/maplibre-gl/dist/maplibre-gl.js?version=3.6.2: { weight: -1, preprocess: false }
   css:
     component:
-      /libraries/maplibre-gl/dist/maplibre-gl.css: {minified: false}
+      /libraries/maplibre-gl/dist/maplibre-gl.css: { minified: false }
   dependencies:
     - markaspot_map/map
 
@@ -87,7 +76,7 @@ map:
     - markaspot_map/leaflet
     - markaspot_map/leaflet-timeline
   js:
-    js/map.js: {}
+    js/map.js: { }
   css:
     component:
-      css/map.css: {minified: true}
+      css/map.css: { minified: true }

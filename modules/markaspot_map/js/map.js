@@ -5,7 +5,19 @@
  * @preserve
  **/
 
-function _typeof(obj) { "@babel/helpers - typeof"; if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") { _typeof = function _typeof(obj) { return typeof obj; }; } else { _typeof = function _typeof(obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj; }; } return _typeof(obj); }
+function _typeof(obj) {
+  "@babel/helpers - typeof";
+  if (typeof Symbol === "function" && typeof Symbol.iterator === "symbol") {
+    _typeof = function _typeof(obj) {
+      return typeof obj;
+    };
+  } else {
+    _typeof = function _typeof(obj) {
+      return obj && typeof Symbol === "function" && obj.constructor === Symbol && obj !== Symbol.prototype ? "symbol" : typeof obj;
+    };
+  }
+  return _typeof(obj);
+}
 
 function invertColor(hex, bw) {
   if (hex.indexOf('#') === 0) {
@@ -89,24 +101,17 @@ function padZero(str, len = 2) {
             zoom: masSettings.zoom_initial
           });
         }
+        
         let tileLayer;
         const map = Drupal.Markaspot.maps[0];
         let gl;
 
-        if (masSettings.map_type == "0" && masSettings.maplibre == "1") {
-          gl = L.maplibreGL({
-            accessToken: masSettings.mapbox_token,
-            style: masSettings.mapbox_style,
-            center
-          }).addTo(map);
-        }
-        if (masSettings.map_type == "0" && masSettings.maplibre == "0") {
-          gl = L.mapboxGL({
-            accessToken: masSettings.mapbox_token,
-            style: masSettings.mapbox_style,
-            center
-          }).addTo(map);
-        }
+        const gl = L.maplibreGL({
+          accessToken: masSettings.mapbox_token,
+          style: masSettings.mapbox_style,
+          center
+        }).addTo(map);
+
         if (masSettings.map_type === "1") {
           if (masSettings.wms_service == '') {
             tileLayer = L.tileLayer(masSettings.osm_custom_tile_url, {
@@ -118,7 +123,6 @@ function padZero(str, len = 2) {
               edgeBufferTiles: 1
             });
           }
-
           map.addLayer(tileLayer);
         }
 
@@ -157,10 +161,10 @@ function padZero(str, len = 2) {
       }
 
       const viewHeader = document.getElementsByClassName('view-header')[0]
-      if(viewHeader) {
+      if (viewHeader) {
         new Waypoint({
           element: document.getElementsByClassName('view-header')[0],
-          handler: function(direction) {
+          handler: function (direction) {
             // When the element is at the top and we are scrolling up, we reset the map to its initial view.
             if (direction === 'up') {
               Drupal.markaspot_map.setDefaults(masSettings);
@@ -181,7 +185,7 @@ function padZero(str, len = 2) {
             // If marker doesn't exist, fallback to default view and return
             if (typeof scrolledMarker[nid] === "undefined") {
               this.element.classList.add("no-location");
-              Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng],10);
+              Drupal.Markaspot.maps[0].setView([masSettings.center_lat, masSettings.center_lng], 10);
               return;
             }
 
@@ -204,7 +208,7 @@ function padZero(str, len = 2) {
           new Waypoint({
             element: element,
             handler: handleExit,
-            offset: function() {
+            offset: function () {
               return -element.clientHeight;
             }
           });
@@ -220,7 +224,7 @@ function padZero(str, len = 2) {
       let map = Drupal.Markaspot.maps[0];
 
       if (typeof map !== "undefined" && defaultCenter && defaultZoom) {
-        map.setView(defaultCenter, defaultZoom-3);
+        map.setView(defaultCenter, defaultZoom - 3);
       } else {
         console.error("Unable to set defaults. Map center or zoom is not defined.");
       }
@@ -402,7 +406,7 @@ function padZero(str, len = 2) {
       if (target) {
         html = target;
         if (map.isFullscreen()) {
-          marker.bindPopup(html, { autoClose: true, closeOnClick: true });
+          marker.bindPopup(html, {autoClose: true, closeOnClick: true});
           return
         } else {
           if (drupalSettings.path.currentPath === "requests" || drupalSettings.path.isFront === true) {
@@ -412,7 +416,7 @@ function padZero(str, len = 2) {
             marker.addEventListener("click", () => {
               marker.openPopup();
 
-              document.addEventListener('click', function(event) {
+              document.addEventListener('click', function (event) {
                 if (event.target.closest('.leaflet-popup-content a')) {
                   event.preventDefault();
                   window.scrollTo({

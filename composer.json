@@ -13,30 +13,6 @@
     ],
     "repositories": [
         {
-            "type": "package",
-            "package": {
-                "name": "mapbox/mapbox-gl",
-                "type": "drupal-library",
-                "version": "3.0.0",
-                "dist": {
-                    "url": "https://github.com/markaspot/mark-a-spot/releases/download/10.6.0-beta.2/mapbox-gl.zip",
-                    "type": "zip"
-                }
-            }
-        },
-        {
-            "type": "package",
-            "package": {
-                "name": "maplibre/maplibre-gl",
-                "type": "drupal-library",
-                "version": "3.6.2",
-                "dist": {
-                    "url": "https://github.com/markaspot/mark-a-spot/releases/download/10.6.0-beta.2/maplibre-gl.zip",
-                    "type": "zip"
-                }
-            }
-        },
-        {
             "type": "composer",
             "url": "https://packages.drupal.org/8"
         },
@@ -63,13 +39,9 @@
         "npm-asset/leaflet-geosearch": "^3.6",
         "npm-asset/mapbox--geojson-rewind": "^0.5.0",
         "npm-asset/drmonty-leaflet-awesome-markers": "2.0.2",
-        "npm-asset/mapbox-gl-leaflet": "^0.0.15",
+        "npm-asset/maplibre-gl": "^4",
         "npm-asset/maplibre--maplibre-gl-leaflet": "^0.0.20",
         "npm-asset/font-awesome": "^5",
-        "npm-asset/axios": "^1",
-        "npm-asset/caman": "^4.1",
-        "maplibre/maplibre-gl": "3.6.2",
-        "mapbox/mapbox-gl": "3.0.0",
         "oomphinc/composer-installers-extender": "^2",
         "composer/installers": "^2",
         "anthonymartin/geo-location": "^1.0",
