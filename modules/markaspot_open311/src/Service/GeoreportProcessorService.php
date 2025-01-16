@@ -688,22 +688,35 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
       $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->get('field_category')->target_id);
-      if ($term->hasTranslation($langcode)) {
-        $term = $term->getTranslation($langcode);
-      }
 
-      $extendedAttributes['category_hex'] = $term->get('field_category_hex')->color;
-      $extendedAttributes['category_icon'] = $term->get('field_category_icon')->value;
+      if ($term) {
+        if ($term->hasTranslation($langcode)) {
+          $term = $term->getTranslation($langcode);
+        }
+
+        $extendedAttributes['category_hex'] = $term->get('field_category_hex')->color ?? '';
+        $extendedAttributes['category_icon'] = $term->get('field_category_icon')->value ?? '';
+      } else {
+        // Handle the case where the term is null
+        \Drupal::logger('markaspot_open311')->warning('Field category term could not be loaded for node ID @nid.', ['@nid' => $node->id()]);
+        $extendedAttributes['category_hex'] = '';
+        $extendedAttributes['category_icon'] = '';
+      }
     }
     if ($node->hasField('field_status') && !$node->get('field_status')->isEmpty()) {
       $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->get('field_status')->target_id);
-      $extendedAttributes['status_descriptive_name'] = $term->getName();
-      $extendedAttributes['status_hex'] = $term->get('field_status_hex')->color;
+      if ($term) {
+        $extendedAttributes['status_descriptive_name'] = $term->getName() ?? '';
+        $extendedAttributes['status_hex'] = $term->get('field_status_hex')->color ?? '';
+      } else {
+        // Log warning and set defaults if the term is missing
+        \Drupal::logger('markaspot_open311')->warning('Field status term could not be loaded for node ID @nid.', ['@nid' => $node->id()]);
+        $extendedAttributes['status_descriptive_name'] = '';
+        $extendedAttributes['status_hex'] = '';
+      }
     }
-
-
-
     if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
+
       $statusNotes = [];
       $logCount = -1;
 
