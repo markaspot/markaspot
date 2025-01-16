@@ -59,7 +59,6 @@
         "drupal/field_group": "^4",
         "drupal/geolocation": "^3",
         "drupal/media_parent_entity_link": "^1.0",
-        "drupal/metatag": "^2",
         "drupal/services_api_key_auth": "dev-3.0.x",
         "drupal/search_api": "^1.5",
         "drupal/views_infinite_scroll": "^2",
