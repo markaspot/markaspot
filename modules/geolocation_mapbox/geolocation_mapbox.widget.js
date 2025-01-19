@@ -163,16 +163,29 @@
     map.on('geosearch/showlocation', handleResult);
 
     // Init default values.
+// Init default values.
     if (mapSettings.lat && mapSettings.lng) {
       // Map lat and lng are always set to user defined values or 0 initially.
       // If field values already set, use only those and set marker.
       const fieldValues = {
-        lat: $('.geolocation-widget-lat.for--' + mapSettings.id, context).attr('value'),
-        lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value')
+        lat: $('.geolocation-widget-lat.for--' + mapSettings.id, context).attr('value') || mapSettings.lat,
+        lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value') || mapSettings.lng
       };
 
-      map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
-      reverseGeocode(fieldValues);
+      // Validate coordinates before setting view
+      if (isValidCoordinate(fieldValues.lat) && isValidCoordinate(fieldValues.lng)) {
+        map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
+        reverseGeocode(fieldValues);
+      } else {
+        // Fall back to default coordinates
+        map.setView([mapSettings.lat, mapSettings.lng], mapSettings.zoom);
+      }
+    }
+
+// Helper function to validate coordinates
+    function isValidCoordinate(coord) {
+      const num = parseFloat(coord);
+      return !isNaN(num) && isFinite(num) && Math.abs(num) <= 90;
     }
 
 
