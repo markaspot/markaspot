@@ -96,12 +96,6 @@
             "drush/contrib/{$name}": [
                 "type:drupal-drush"
             ]
-        },
-        "enable-patching": true,
-        "patches": {
-            "drupal/core": {
-                "Translate field group": "https://www.drupal.org/files/issues/2022-09-19/2546212-193.patch"
-            }
         }
     }
 }
