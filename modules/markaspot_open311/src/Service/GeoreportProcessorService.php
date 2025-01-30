@@ -415,7 +415,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     return $service;
   }
-
   /**
    * Queries the database for service request nodes.
    *
@@ -428,20 +427,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    *
    * @return array
    *   An array of service request definitions.
-   *
-   * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
-   * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
-   * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
-   *   If no service requests are found.
    */
-  public function getResults(object $query, object $user, array $parameters): array
-  {
+  public function getResults(object $query, object $user, array $parameters): array {
     $nids = $query->execute();
     $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
-    $extendedRole = $user->hasPermission('access open311 extension') ? 'user' : 'anonymous';
-    if ($user->hasPermission('access open311 advanced properties')) {
-      $extendedRole = 'manager';
-    }
+
+    // Use the proper role determination method
+    $extendedRole = $this->determineExtendedRole($user);
 
     $serviceRequests = [];
     foreach ($nodes as $node) {
@@ -450,12 +442,75 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     if (!empty($serviceRequests)) {
       return $serviceRequests;
-    } else {
-      return [];
     }
 
+    return [];
   }
 
+  /**
+   * Determines the extended role based on user permissions.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $user
+   *   The user account to check.
+   *
+   * @return string
+   *   The determined role ('anonymous', 'user', or 'manager').
+   */
+  private function determineExtendedRole($user): string {
+    // First check if user is anonymous regardless of permissions
+    if ($user->isAnonymous()) {
+      return 'anonymous';
+    }
+
+    // Then check permissions for authenticated users only
+    if ($user->hasPermission('access open311 advanced properties')) {
+      return 'manager';
+    }
+
+    if ($user->hasPermission('access open311 extension')) {
+      return 'user';
+    }
+
+    return 'anonymous';
+  }
+
+  /**
+   * Creates a node query with proper access checks.
+   *
+   * @param array $parameters
+   *   Query parameters.
+   * @param \Drupal\Core\Session\AccountInterface $user
+   *   The user account.
+   *
+   * @return \Drupal\Core\Entity\Query\QueryInterface
+   *   The configured query object.
+   */
+  public function createNodeQuery(array $parameters, $user): \Drupal\Core\Entity\Query\QueryInterface {
+    $query = $this->entityTypeManager->getStorage('node')->getQuery();
+
+    // Add node_access tag for proper access checking
+    $query->addTag('node_access');
+    $query->accessCheck(TRUE);
+
+    // Add base conditions
+    $query->condition('type', 'service_request');
+
+    // Check for either admin access or Open311 advanced properties permission
+    if (!($user->id() == 1 ||
+      $user->hasPermission('bypass node access') ||
+      $user->hasPermission('access open311 advanced properties'))) {
+      // For users without advanced permissions, show only published content
+      $query->condition('status', 1);
+    }
+
+    \Drupal::logger('markaspot_open311')->debug('User @uid, Open311 Advanced: @advanced, Query: @query', [
+      '@uid' => $user->id(),
+      '@advanced' => $user->hasPermission('access open311 advanced properties') ? 'yes' : 'no',
+      '@query' => (string) $query,
+    ]);
+
+    return $query;
+  }
   /**
    * Maps a node object to a service request definition.
    *
@@ -469,11 +524,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    * @return array
    *   An associative array representing the service request definition.
    */
-  public function mapNodeToServiceRequest(object $node, string $extendedRole, array $parameters): array
-  {
-    $id = $node->get('request_id')->value;
+  /**
+   * Maps a node object to a service request definition.
+   */
+  public function mapNodeToServiceRequest(object $node, string $extendedRole, array $parameters): array {
     $request = [
-      'service_request_id' => $id,
+      'service_request_id' => $node->get('request_id')->value,
       'title' => $node->getTitle(),
       'description' => $node->get('body')->value,
       'lat' => (float) $node->get('field_geolocation')->lat,
@@ -497,21 +553,31 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     if ($extendedRole === 'manager') {
       $request['email'] = $node->get('field_e_mail')->value;
       $request['phone'] = $node->get('field_phone')->value ?? null;
-      $request['first_name'] = $node->get('field_first_name')->value ?? $node->get('field_first_name')->value ?? null;
-      $request['last_name'] = $node->get('field_last_name')->value ?? $node->get('field_last_name')->value ?? null;
+      $request['first_name'] = $node->get('field_first_name')->value ?? null;
+      $request['last_name'] = $node->get('field_last_name')->value ?? null;
     }
+
+    //var_dump($extendedRole);
 
     if ($extendedRole !== '' && isset($parameters['extensions'])) {
       $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $parameters['langcode'] ?? 'en');
     }
 
+    // Handle fields parameter with role-based access
+    if (isset($parameters['fields']) && $extendedRole !== 'anonymous') {
+      $allowedFields = $this->getAllowedFields($extendedRole);
+      $requestedFields = explode(',', $parameters['fields']);
+      $accessibleFields = array_intersect($requestedFields, $allowedFields);
+
+      if (!empty($accessibleFields)) {
+        $request['extended_attributes']['drupal'] = $this->getFieldValues($node, implode(',', $accessibleFields));
+      }
+    }
+
+    // Manager specific additional data
     if ($extendedRole === 'manager') {
       $request['extended_attributes']['author'] = $node->get('uid')->entity->label();
       $request['extended_attributes']['e-mail'] = $node->get('field_e_mail')->value;
-
-      if (isset($parameters['fields'])) {
-        $request['extended_attributes']['drupal'] = $this->getFieldValues($node, $parameters['fields']);
-      }
 
       if (isset($parameters['full'])) {
         $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
@@ -520,6 +586,73 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     return $request;
   }
+
+  /**
+   * Gets the list of allowed fields based on role.
+   *
+   * @param string $extendedRole
+   *   The extended role of the user.
+   *
+   * @return array
+   *   Array of allowed field names.
+   */
+  private function getAllowedFields(string $extendedRole): array {
+    // Fields accessible to users with 'access open311 extension'
+    $publicFields = [
+      'field_status',
+      'field_category',
+      'field_address',
+      'field_geolocation',
+      'field_service_code'
+    ];
+
+    // Additional fields for manager-role
+    $managerFields = [
+      'field_e_mail',
+      'field_phone',
+      'field_first_name',
+      'field_last_name',
+      'uid',
+      'revision_timestamp',
+      'revision_uid',
+      'revision_log',
+      'field_request_media',
+      'status'
+    ];
+
+    return $extendedRole === 'manager' ? array_merge($publicFields, $managerFields) : $publicFields;
+  }
+
+  /**
+   * Retrieves the complete values of public fields from a node.
+   *
+   * @param object $node
+   *   The node object.
+   * @param string $fieldNames
+   *   A comma-separated list of field names.
+   *
+   * @return array
+   *   An associative array of complete field values.
+   */
+  private function getPublicFieldValues(object $node, string $fieldNames): array {
+    $fieldValues = [];
+    $fieldNames = explode(',', $fieldNames);
+
+    foreach ($fieldNames as $fieldName) {
+      if ($node->hasField($fieldName)) {
+        $field = $node->get($fieldName);
+        $fieldAccess = $field->access('view', null, true);
+
+        if ($fieldAccess->isAllowed()) {
+          // Return the complete field value array including all properties
+          $fieldValues[$fieldName] = $field->getValue();
+        }
+      }
+    }
+
+    return $fieldValues;
+  }
+
 
   /**
    * Formats an address field value as a string.
@@ -756,9 +889,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
           } else {
             $value = $field->getValue();
           }
-
-
-
           $fieldValues[$fieldName] = $value;
         }
       }
