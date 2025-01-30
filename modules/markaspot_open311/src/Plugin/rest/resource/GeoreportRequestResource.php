@@ -244,23 +244,24 @@ class GeoreportRequestResource extends ResourceBase {
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   public function get(string $id) {
-
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
-    // Filtering the configured content type.
-    $bundle = $this->config->get('bundle');
-    $bundle = (isset($bundle)) ? $bundle : 'service_request';
-    $query = $this->entityTypeManager->getStorage('node')->getQuery()
-      ->condition('type', $bundle);
+
+    // Start with the secure base query
+    $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
+
+    // Add bundle condition
+    $bundle = $this->config->get('bundle') ?? 'service_request';
+    $query->condition('type', $bundle);
+
+    // Handle the main request ID
     if ($id != "") {
       $query->condition('request_id', $this->getRequestId($id));
     }
 
-    // Checking for service_code and map the code with taxonomy terms:
+    // Handle additional ID parameter if present
     if (isset($parameters['id'])) {
-      // Get the service of the current node:
       $query->condition('request_id', $parameters['id']);
     }
-    $query->accessCheck(FALSE);
 
     return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
   }

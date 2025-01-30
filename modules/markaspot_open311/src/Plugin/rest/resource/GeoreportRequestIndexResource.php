@@ -243,36 +243,23 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function get() {
-
-    /*
-     * todo: Check if permission check is needed
-
-    $permission = 'access GET georeport resource';
-    if(!$this->currentUser->hasPermission($permission)) {
-    throw new AccessDeniedHttpException
-    ("Unauthorized can't proceed with create_request.");
-    }
-     */
     $request_time = $this->time->getRequestTime();
-
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
+    // Add this at the start of your get() method:
+    \Drupal::logger('markaspot_open311')->debug('API Request - User ID: @uid, Roles: @roles, API Key: @key', [
+      '@uid' => $this->currentUser->id(),
+      '@roles' => implode(', ', $this->currentUser->getRoles()),
+      '@key' => $this->requestStack->getCurrentRequest()->query->get('api_key'),
+    ]);
+    // Start with the secure base query from the processor service
+    $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
 
-    // Filtering the configured content type.
-    $bundle = $this->config->get('bundle');
-    $bundle = (isset($bundle)) ? $bundle : 'service_request';
-    $query = $this->entityTypeManager->getStorage('node')->getQuery()
-      ->condition('changed', $request_time, '<')
+    // Apply common filters
+    $bundle = $this->config->get('bundle') ?? 'service_request';
+    $query->condition('changed', $request_time, '<')
       ->condition('type', $bundle);
 
-    if (in_array('administrator', $this->currentUser->getRoles()) || $this->currentUser->hasPermission('access open311 advanced properties')) {
-      $query->condition('status', [0, 1], 'IN');
-    }
-    else {
-      $query->condition('status', 1);
-    }
-
-    // Checking for a limit parameter:
-    // Handle limit parameters for user one and other users.
+    // Handle limit parameters
     $limit = (isset($parameters['limit']) && $parameters['limit'] <= 200) ? $parameters['limit'] : 100;
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
@@ -284,30 +271,22 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->pager($limit);
     }
 
-    // Process params to Drupal.
-    if (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) {
-      $sort = 'DESC';
-    }
-    else {
-      $sort = 'ASC';
-    }
+    // Handle sorting
+    $sort = (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) ? 'DESC' : 'ASC';
 
     if (isset($parameters['updated'])) {
-      // $seconds = strtotime($parameters['updated']);
-      $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=');
-      $query->sort('changed', 'DESC');
-    }
-    else {
+      $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=')
+        ->sort('changed', 'DESC');
+    } else {
       $query->sort('created', $sort);
     }
 
-    // Checking for service_code and map the code with taxonomy terms:
+    // Handle specific request ID
     if (isset($parameters['id'])) {
-      // Get the service of the current node:
       $query->condition('request_id', $parameters['id']);
     }
 
-    // Check for field_* arguments.
+    // Handle custom field filters
     $fields = array_filter(
       $parameters,
       function ($key) {
@@ -315,49 +294,43 @@ class GeoreportRequestIndexResource extends ResourceBase {
       },
       ARRAY_FILTER_USE_KEY
     );
-    if (isset($fields)) {
-      foreach ($fields as $field => $value) {
-        $query->condition($field, $value, '=');
-      }
+    foreach ($fields as $field => $value) {
+      $query->condition($field, $value, '=');
     }
+
+    // Handle bounding box
     if (isset($parameters['bbox'])) {
       $bbox = explode(',', $parameters['bbox']);
-      $minLon = $bbox[0];
-      $minLat = $bbox[1];
-      $maxLon = $bbox[2];
-      $maxLat = $bbox[3];
-
-      $query->condition('field_geolocation.lat', $minLat, '>')
-        ->condition('field_geolocation.lat', $maxLat, '<')
-        ->condition('field_geolocation.lng', $minLon, '>')
-        ->condition('field_geolocation.lng', $maxLon, '<');
+      $query->condition('field_geolocation.lat', $bbox[1], '>')
+        ->condition('field_geolocation.lat', $bbox[3], '<')
+        ->condition('field_geolocation.lng', $bbox[0], '>')
+        ->condition('field_geolocation.lng', $bbox[2], '<');
     }
 
-    // Checking for service_code and map the code with taxonomy terms:
+    // Handle search query
     if (isset($parameters['q'])) {
-      // Get the service of the current node:
       $group = $query->orConditionGroup()
         ->condition('request_id', '%' . $parameters['q'] . '%', 'LIKE')
         ->condition('body', '%' . $parameters['q'] . '%', 'LIKE')
         ->condition('title', '%' . $parameters['q'] . '%', 'LIKE');
-
       $query->condition($group);
     }
 
+    // Handle date range
     if (!isset($parameters['nids']) && (!isset($parameters['updated']))) {
-      // start_date param or max 90days.
-      $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '') ? strtotime($parameters['start_date']) : strtotime("- 90days");
+      $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '')
+        ? strtotime($parameters['start_date'])
+        : strtotime("- 90days");
       $query->condition('created', $start_timestamp, '>=');
 
-      // End_date param or create a timestamp now:
-      $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
+      $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '')
+        ? strtotime($parameters['end_date'])
+        : time();
       $query->condition('created', $end_timestamp, '<=');
     }
-    $query->accessCheck(FALSE);
 
-    // Checking for status-parameter and map the code with taxonomy terms:
+    // Handle status filtering
     if (isset($parameters['status'])) {
-      // Get the service of the current node:
       $tids = $this->georeportProcessor->mapStatusToTaxonomyIds($parameters['status']);
       $or = $query->orConditionGroup();
       foreach ($tids as $tid) {
@@ -365,9 +338,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
       $query->condition($or);
     }
-    // Checking for service_code and map the code with taxonomy terms:
+
+    // Handle service code filtering
     if (isset($parameters['service_code'])) {
-      // Get the service of the current node:
       $service_codes = explode(',', $parameters['service_code']);
       $or = $query->orConditionGroup();
       foreach ($service_codes as $service_code) {
@@ -376,8 +349,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
       $query->condition($or);
     }
-
-    $debug_query = $query->__toString();
 
     return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
   }
