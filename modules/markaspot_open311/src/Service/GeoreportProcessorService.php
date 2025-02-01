@@ -487,27 +487,17 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    */
   public function createNodeQuery(array $parameters, $user): \Drupal\Core\Entity\Query\QueryInterface {
     $query = $this->entityTypeManager->getStorage('node')->getQuery();
-
-    // Add node_access tag for proper access checking
-    $query->addTag('node_access');
-    $query->accessCheck(TRUE);
-
-    // Add base conditions
     $query->condition('type', 'service_request');
 
-    // Check for either admin access or Open311 advanced properties permission
-    if (!($user->id() == 1 ||
-      $user->hasPermission('bypass node access') ||
-      $user->hasPermission('access open311 advanced properties'))) {
-      // For users without advanced permissions, show only published content
+    if (!($user->hasPermission('bypass node access') || $user->id() == 1)) {
       $query->condition('status', 1);
+      $query->accessCheck(TRUE);
+    } else {
+      \Drupal::logger('markaspot_open311')->debug('User @uid has bypass node access, allowing unpublished nodes.', [
+        '@uid' => $user->id(),
+      ]);
+      $query->accessCheck(FALSE);
     }
-
-    \Drupal::logger('markaspot_open311')->debug('User @uid, Open311 Advanced: @advanced, Query: @query', [
-      '@uid' => $user->id(),
-      '@advanced' => $user->hasPermission('access open311 advanced properties') ? 'yes' : 'no',
-      '@query' => (string) $query,
-    ]);
 
     return $query;
   }
