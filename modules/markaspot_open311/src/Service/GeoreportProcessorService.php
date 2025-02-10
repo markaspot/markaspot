@@ -587,30 +587,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    *   Array of allowed field names.
    */
   private function getAllowedFields(string $extendedRole): array {
-    // Fields accessible to users with 'access open311 extension'
-    $publicFields = [
-      'field_status',
-      'field_category',
-      'field_address',
-      'field_geolocation',
-      'field_service_code'
-    ];
+    $config = $this->configFactory->get('markaspot_open311.settings');
 
-    // Additional fields for manager-role
-    $managerFields = [
-      'field_e_mail',
-      'field_phone',
-      'field_first_name',
-      'field_last_name',
-      'uid',
-      'revision_timestamp',
-      'revision_uid',
-      'revision_log',
-      'field_request_media',
-      'status'
-    ];
-
-    return $extendedRole === 'manager' ? array_merge($publicFields, $managerFields) : $publicFields;
+    switch ($extendedRole) {
+      case 'manager':
+        return $config->get('field_access.manager_fields') ?: [];
+      case 'user':
+        return $config->get('field_access.user_fields') ?: [];
+      case 'anonymous':
+        return $config->get('field_access.public_fields') ?: [];
+      default:
+        return [];
+    }
   }
 
   /**
