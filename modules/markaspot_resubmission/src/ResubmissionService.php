@@ -37,13 +37,18 @@ class ResubmissionService implements ResubmissionServiceInterface {
   /**
    * Helper function.
    *
+   * @param array|null $array
+   *   The array to flatten.
+   *
    * @return array
    *   return $result.
    */
   public function arrayFlatten($array) {
     $result = [];
-    foreach ($array as $value) {
-      $result[] = $value;
+    if (!empty($array) && is_array($array)) {
+      foreach ($array as $value) {
+        $result[] = $value;
+      }
     }
     return $result;
   }
@@ -52,37 +57,33 @@ class ResubmissionService implements ResubmissionServiceInterface {
    * Load nodes by status.
    *
    * @return \Drupal\Core\Entity\EntityInterface[]
-   *   An array of entity objects indexed by their IDs. Returns an empty array
-   *   if no matching entities are found.
+   *   An array of entity objects indexed by their IDs.
    */
   public function load(): array {
     $config = $this->configFactory->get('markaspot_resubmission.settings');
-
     $days = $config->get('days');
     $tids = $this->arrayFlatten($config->get('status_resubmissive'));
     $storage = $this->entityTypeManager->getStorage('node');
+    $nids = [];
 
-    foreach ($days as $key => $day) {
-      $category_tid = $key;
-
-      $date = ($day !== '') ? strtotime(' - ' . $day . 'days') : strtotime(' - ' . 30 . 'days');
-      $query = $storage->getQuery()
-        ->condition('field_category', $category_tid, 'IN')
-        ->condition('changed', $date, '<=')
-        ->condition('type', 'service_request')
-        ->condition('field_status', $tids, 'IN');
-      $query->accessCheck(FALSE);
-
-      $nids[] = $query->execute();
-
+    if (!empty($days)) {
+      foreach ($days as $key => $day) {
+        $category_tid = $key;
+        $date = ($day !== '') ? strtotime(' - ' . $day . 'days') : strtotime(' - ' . 30 . 'days');
+        $query = $storage->getQuery()
+          ->condition('field_category', $category_tid, 'IN')
+          ->condition('changed', $date, '<=')
+          ->condition('type', 'service_request')
+          ->condition('field_status', $tids, 'IN');
+        $query->accessCheck(FALSE);
+        $result = $query->execute();
+        if (!empty($result)) {
+          $nids = array_merge($nids, $result);
+        }
+      }
     }
-    if (!empty($ids)) {
-      $nids = array_reduce($nids, 'array_merge', []);
-      return $storage->loadMultiple($nids);
-    }
-    else {
-      return [];
-    }
+
+    return !empty($nids) ? $storage->loadMultiple($nids) : [];
   }
 
 }
