@@ -59,14 +59,14 @@
         "drupal/field_group": "^4",
         "drupal/geolocation": "^3",
         "drupal/media_parent_entity_link": "^1.0",
-        "drupal/services_api_key_auth": "dev-3.0.x",
+        "drupal/services_api_key_auth": "dev-4.x",
         "drupal/search_api": "^1.5",
         "drupal/views_infinite_scroll": "^2",
         "drupal/color_field": "^3",
         "drupal/field_permissions": "^1.1",
         "drupal/field_formatter_class": "^1.0",
         "drupal/inline_entity_form": "^3",
-        "drupal/shs": "^2"
+        "drupal/shs": "^3"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
