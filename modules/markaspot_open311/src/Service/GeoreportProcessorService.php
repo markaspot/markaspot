@@ -827,16 +827,21 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       }
     }
     if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
-
       $statusNotes = [];
       $logCount = -1;
+
+      // Get default initial status term ID
+      $initialStatusId = $this->configFactory->get('markaspot_open311.settings')->get('status_open_start')[0] ?? null;
 
       foreach ($node->get('field_status_notes') as $note) {
         $logCount++;
         $noteEntity = $note->entity;
-        $statusTerm = $this->entityTypeManager->getStorage('taxonomy_term')->load($noteEntity->get('field_status_term')->target_id);
+        
+        // Get status term ID with fallback
+        $statusTermId = $noteEntity->get('field_status_term')->target_id ?? $initialStatusId;
+        $statusTerm = $this->entityTypeManager->getStorage('taxonomy_term')->load($statusTermId);
 
-        if ($statusTerm->hasTranslation($langcode)) {
+        if ($statusTerm && $statusTerm->hasTranslation($langcode)) {
           $statusTerm = $statusTerm->getTranslation($langcode);
         }
 
