@@ -57,7 +57,7 @@
         "drupal/diff": "^1.0",
         "drupal/exif_orientation": "^1",
         "drupal/field_group": "^4",
-        "drupal/geolocation": "^3",
+        "drupal/geolocation": "^4",
         "drupal/media_parent_entity_link": "^1.0",
         "drupal/services_api_key_auth": "dev-4.x",
         "drupal/search_api": "^1.5",
