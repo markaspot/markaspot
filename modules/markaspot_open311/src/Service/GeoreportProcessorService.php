@@ -27,6 +27,7 @@ use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\paragraphs\Entity\Paragraph;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -131,6 +132,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected $hierarchyResolver;
 
   /**
+   * The logger channel.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
+  protected $logger;
+
+  /**
    * GeoreportProcessorService constructor.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -157,6 +165,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The language manager service.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchyResolver
    *   The jurisdiction hierarchy resolver.
+   * @param \Psr\Log\LoggerInterface|null $logger
+   *   The logger channel.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -171,6 +181,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     Token $token,
     LanguageManagerInterface $languageManager,
     ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
+    ?LoggerInterface $logger = NULL,
   ) {
     $this->configFactory = $configFactory;
     $this->currentUser = $currentUser;
@@ -184,6 +195,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $this->token = $token;
     $this->languageManager = $languageManager;
     $this->hierarchyResolver = $hierarchyResolver;
+    $this->logger = $logger;
   }
 
   /**
@@ -757,9 +769,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Apply jurisdiction filter (gid or jurisdiction slug).
     // This filters by a specific group (jurisdiction type) for multi-tenant setups.
+    // Uses hierarchy resolver to include child jurisdiction nodes (Phase 2).
     $jurisdiction_gid = $this->resolveJurisdictionId($parameters);
     if ($jurisdiction_gid) {
-      $node_ids = $this->getNodeIdsInGroup($jurisdiction_gid);
+      $node_ids = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getNodeIdsInJurisdiction($jurisdiction_gid)
+        : $this->getNodeIdsInGroup($jurisdiction_gid);
       if (!empty($node_ids)) {
         $query->condition('nid', $node_ids, 'IN');
       }
@@ -773,7 +788,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // This filters by a specific organisation group for department/agency filtering.
     // Unlike jurisdiction filter, this uses organisation groups (type 'org').
     $org_group_id = $this->resolveOrganisationGroupId($parameters);
-    if ($org_group_id) {
+    if ($org_group_id !== NULL) {
       $node_ids = $this->getNodeIdsInGroup($org_group_id);
       if (!empty($node_ids)) {
         $query->condition('nid', $node_ids, 'IN');
@@ -790,7 +805,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   /**
    * Resolves jurisdiction parameter to a group ID.
    *
-   * Supports both numeric group ID ('gid') and URL slug ('jurisdiction').
+   * Checks parameters in priority order:
+   * 1. 'jurisdiction_id' (new canonical name, numeric or slug)
+   * 2. 'jurisdiction' (deprecated alias)
+   * 3. 'gid' (deprecated legacy)
    *
    * @param array $parameters
    *   Query parameters.
@@ -799,81 +817,97 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The group ID or NULL if not specified/found.
    */
   protected function resolveJurisdictionId(array $parameters): ?int {
-    // Check for direct group ID.
-    if (!empty($parameters['gid']) && is_numeric($parameters['gid'])) {
-      return (int) $parameters['gid'];
+    // New canonical parameter.
+    $value = $parameters['jurisdiction_id'] ?? NULL;
+
+    // Deprecated aliases (backward compat, one release cycle).
+    if (empty($value) && !empty($parameters['jurisdiction'])) {
+      $value = $parameters['jurisdiction'];
+      $this->logger?->notice('Deprecated API parameter "jurisdiction". Use "jurisdiction_id" instead.');
+    }
+    if (empty($value) && !empty($parameters['gid'])) {
+      $value = $parameters['gid'];
+      $this->logger?->notice('Deprecated API parameter "gid". Use "jurisdiction_id" instead.');
     }
 
-    // Check for jurisdiction slug.
-    if (!empty($parameters['jurisdiction'])) {
-      $slug = $parameters['jurisdiction'];
+    if (empty($value)) {
+      return NULL;
+    }
 
-      // If numeric, treat as group ID.
-      if (is_numeric($slug)) {
-        return (int) $slug;
-      }
+    // Numeric = direct group ID.
+    if (is_numeric($value)) {
+      return (int) $value;
+    }
 
-      // Validate slug format (alphanumeric, hyphens, underscores, max 64 chars).
-      if (!preg_match('/^[a-z0-9_-]{1,64}$/i', $slug)) {
-        return NULL;
-      }
+    // Validate slug format (alphanumeric, hyphens, underscores, max 64 chars).
+    if (!preg_match('/^[a-z0-9_-]{1,64}$/i', $value)) {
+      return NULL;
+    }
 
-      // Load jurisdiction group type from config (supports legacy 'jurisdiction' naming).
-      $config = $this->configFactory->get('markaspot_open311.settings');
-      $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
+    // Load jurisdiction group type from config (supports legacy 'jurisdiction' naming).
+    $config = $this->configFactory->get('markaspot_open311.settings');
+    $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
 
-      // Lookup by slug.
-      $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
-        'type' => $jur_type,
-        'field_slug' => $slug,
-      ]);
-      $group = reset($groups);
-      if ($group) {
-        return (int) $group->id();
-      }
+    // Lookup by slug.
+    $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
+      'type' => $jur_type,
+      'field_slug' => $value,
+    ]);
+    $group = reset($groups);
+    if ($group) {
+      return (int) $group->id();
     }
 
     return NULL;
   }
 
   /**
-   * Resolves organisation group_id parameter to a group ID.
+   * Resolves organisation group parameter to a group ID.
    *
-   * Supports numeric group ID via 'group_id' parameter.
-   * This is used to filter service requests by a specific organisation/department.
+   * Checks parameters in priority order:
+   * 1. 'org_id' (new canonical name)
+   * 2. 'group_id' (deprecated alias)
    *
    * @param array $parameters
    *   Query parameters.
    *
    * @return int|null
    *   The organisation group ID or NULL if not specified.
-   *   Returns -1 if the group_id was specified but the group doesn't exist.
+   *   Returns -1 if the org_id was specified but the group doesn't exist.
    */
   protected function resolveOrganisationGroupId(array $parameters): ?int {
-    // Check for group_id parameter.
-    if (!empty($parameters['group_id']) && is_numeric($parameters['group_id'])) {
-      $group_id = (int) $parameters['group_id'];
+    // New canonical parameter.
+    $group_id_value = $parameters['org_id'] ?? NULL;
 
-      // Validate that this group exists.
-      $group = $this->entityTypeManager->getStorage('group')->load($group_id);
-      if ($group) {
-        // Security: Verify user has membership in the requested group.
-        // This prevents unauthorized access to other groups' requests.
-        $member = $group->getMember($this->currentUser);
-        if ($member) {
-          return $group_id;
-        }
+    // Deprecated alias (backward compat, one release cycle).
+    if (empty($group_id_value) && !empty($parameters['group_id'])) {
+      $group_id_value = $parameters['group_id'];
+      $this->logger?->notice('Deprecated API parameter "group_id". Use "org_id" instead.');
+    }
 
-        // User is not a member of this group - deny access by returning -1.
-        return -1;
+    if (empty($group_id_value) || !is_numeric($group_id_value)) {
+      return NULL;
+    }
+
+    $group_id = (int) $group_id_value;
+
+    // Validate that this group exists.
+    $group = $this->entityTypeManager->getStorage('group')->load($group_id);
+    if ($group) {
+      // Security: Verify user has membership in the requested group.
+      // This prevents unauthorized access to other groups' requests.
+      $member = $group->getMember($this->currentUser);
+      if ($member) {
+        return $group_id;
       }
 
-      // Group doesn't exist - return -1 to signal that filtering was requested
-      // but the group is invalid. This will result in an empty result set.
+      // User is not a member of this group - deny access by returning -1.
       return -1;
     }
 
-    return NULL;
+    // Group doesn't exist - return -1 to signal that filtering was requested
+    // but the group is invalid. This will result in an empty result set.
+    return -1;
   }
 
   /**

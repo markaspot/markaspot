@@ -10,6 +10,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -95,6 +96,13 @@ class SentimentService {
   protected ModuleHandlerInterface $moduleHandler;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null
+   */
+  protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Constructs a new SentimentService.
    *
    * @param \Drupal\markaspot_ai\Service\AiClientService $ai_client
@@ -113,6 +121,8 @@ class SentimentService {
    *   The time service.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   *   The jurisdiction hierarchy resolver (optional).
    */
   public function __construct(
     AiClientService $ai_client,
@@ -123,6 +133,7 @@ class SentimentService {
     TokenTrackingService $token_tracking,
     TimeInterface $time,
     ModuleHandlerInterface $module_handler,
+    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->aiClient = $ai_client;
     $this->database = $database;
@@ -132,6 +143,7 @@ class SentimentService {
     $this->tokenTracking = $token_tracking;
     $this->time = $time;
     $this->moduleHandler = $module_handler;
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -425,7 +437,10 @@ PROMPT;
       $query->innerJoin('groups_field_data', 'grp',
         'gr.gid = grp.id AND grp.default_langcode = 1');
       $query->condition('grp.type', 'jur');
-      $query->condition('grp.id', (int) $options['jurisdiction_id']);
+      $jurisdictionIds = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getDescendantIds((int) $options['jurisdiction_id'])
+        : [(int) $options['jurisdiction_id']];
+      $query->condition('grp.id', $jurisdictionIds, 'IN');
     }
 
     $query->addExpression('sentiment');

@@ -8,6 +8,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -42,6 +43,11 @@ class MetricsCalculatorService {
   protected LoggerInterface $logger;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   */
+  protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Constructs a MetricsCalculatorService object.
    *
    * @param \Drupal\Core\Database\Connection $database
@@ -52,17 +58,21 @@ class MetricsCalculatorService {
    *   The config factory.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger factory.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   *   The jurisdiction hierarchy resolver (optional).
    */
   public function __construct(
     Connection $database,
     EntityTypeManagerInterface $entity_type_manager,
     ConfigFactoryInterface $config_factory,
     LoggerChannelFactoryInterface $logger_factory,
+    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
     $this->logger = $logger_factory->get('markaspot_dashboard');
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -140,7 +150,10 @@ class MetricsCalculatorService {
       $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
       $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
       $query->condition('g.type', 'jur');
-      $query->condition('g.id', $filters['jurisdiction_id']);
+      $jurisdictionIds = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
+        : [(int) $filters['jurisdiction_id']];
+      $query->condition('g.id', $jurisdictionIds, 'IN');
     }
 
     // Organization filter.
@@ -595,7 +608,10 @@ class MetricsCalculatorService {
       $closed_query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
       $closed_query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
       $closed_query->condition('g.type', 'jur');
-      $closed_query->condition('g.id', $filters['jurisdiction_id']);
+      $jurisdictionIds = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
+        : [(int) $filters['jurisdiction_id']];
+      $closed_query->condition('g.id', $jurisdictionIds, 'IN');
     }
 
     // Category filter.
@@ -996,7 +1012,10 @@ class MetricsCalculatorService {
       $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
       $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
       $query->condition('g.type', 'jur');
-      $query->condition('g.id', $filters['jurisdiction_id']);
+      $jurisdictionIds = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
+        : [(int) $filters['jurisdiction_id']];
+      $query->condition('g.id', $jurisdictionIds, 'IN');
     }
 
     if (!empty($filters['category_id'])) {

@@ -64,14 +64,16 @@ interface JurisdictionHierarchyResolverInterface {
   /**
    * Gets node IDs belonging to a jurisdiction and its descendants.
    *
+   * Validates that the group is a 'jur' bundle before querying. Returns empty
+   * array for non-jurisdiction groups to prevent cross-type data leakage.
    * Queries group_relationship_field_data for group_node:service_request
    * relationships across the jurisdiction subtree.
    *
    * @param int $groupId
    *   The jurisdiction group ID.
    *
-   * @return array
-   *   Array of node IDs, or empty array if none found.
+   * @return array<int>
+   *   Array of integer node IDs, or empty array if none found or invalid group.
    */
   public function getNodeIdsInJurisdiction(int $groupId): array;
 

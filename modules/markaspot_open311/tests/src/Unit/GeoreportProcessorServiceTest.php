@@ -8,6 +8,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Psr\Log\LoggerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
@@ -78,6 +79,13 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   protected $hierarchyResolver;
 
   /**
+   * Mocked logger.
+   *
+   * @var \Psr\Log\LoggerInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $logger;
+
+  /**
    * Mocked node storage.
    *
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -109,6 +117,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $this->logger = $this->createMock(LoggerInterface::class);
 
     // Set up entity storages.
     $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
@@ -159,6 +168,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       $token,
       $languageManager,
       $this->hierarchyResolver,
+      $this->logger,
     );
   }
 
@@ -610,6 +620,203 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
 
     $result = $this->processor->getJurisdictionIdFromNode($node);
     $this->assertNull($result);
+  }
+
+  // =========================================================================
+  // resolveJurisdictionId() tests (API parameter cleanup)
+  // =========================================================================
+
+  /**
+   * Tests that jurisdiction_id parameter is resolved as canonical name.
+   */
+  public function testResolveJurisdictionIdCanonical(): void {
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => '42'],
+    ]);
+    $this->assertEquals(42, $result);
+  }
+
+  /**
+   * Tests that deprecated 'jurisdiction' parameter still resolves.
+   */
+  public function testResolveJurisdictionIdDeprecatedJurisdiction(): void {
+    $this->logger->expects($this->once())
+      ->method('notice')
+      ->with($this->stringContains('Deprecated API parameter "jurisdiction"'));
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction' => '42'],
+    ]);
+    $this->assertEquals(42, $result);
+  }
+
+  /**
+   * Tests that deprecated 'gid' parameter still resolves.
+   */
+  public function testResolveJurisdictionIdDeprecatedGid(): void {
+    $this->logger->expects($this->once())
+      ->method('notice')
+      ->with($this->stringContains('Deprecated API parameter "gid"'));
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['gid' => '42'],
+    ]);
+    $this->assertEquals(42, $result);
+  }
+
+  /**
+   * Tests that jurisdiction_id takes priority over deprecated aliases.
+   */
+  public function testResolveJurisdictionIdCanonicalTakesPriority(): void {
+    $this->logger->expects($this->never())->method('notice');
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => '10', 'jurisdiction' => '20', 'gid' => '30'],
+    ]);
+    $this->assertEquals(10, $result);
+  }
+
+  /**
+   * Tests that empty parameters return NULL.
+   */
+  public function testResolveJurisdictionIdEmpty(): void {
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [[]]);
+    $this->assertNull($result);
+  }
+
+  // =========================================================================
+  // resolveOrganisationGroupId() tests (API parameter cleanup)
+  // =========================================================================
+
+  /**
+   * Tests that org_id parameter is resolved as canonical name.
+   */
+  public function testResolveOrganisationGroupIdCanonical(): void {
+    // org_id=5 with valid group and user membership.
+    $membership = $this->createMock(GroupMembership::class);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('getMember')->with($this->currentUser)->willReturn($membership);
+    $this->groupStorage->method('load')->with(5)->willReturn($group);
+
+    $result = $this->invokeMethod($this->processor, 'resolveOrganisationGroupId', [
+      ['org_id' => '5'],
+    ]);
+    $this->assertEquals(5, $result);
+  }
+
+  /**
+   * Tests that deprecated 'group_id' parameter still resolves.
+   */
+  public function testResolveOrganisationGroupIdDeprecatedGroupId(): void {
+    $this->logger->expects($this->once())
+      ->method('notice')
+      ->with($this->stringContains('Deprecated API parameter "group_id"'));
+
+    $membership = $this->createMock(GroupMembership::class);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('getMember')->with($this->currentUser)->willReturn($membership);
+    $this->groupStorage->method('load')->with(5)->willReturn($group);
+
+    $result = $this->invokeMethod($this->processor, 'resolveOrganisationGroupId', [
+      ['group_id' => '5'],
+    ]);
+    $this->assertEquals(5, $result);
+  }
+
+  /**
+   * Tests that org_id takes priority over deprecated group_id.
+   */
+  public function testResolveOrganisationGroupIdCanonicalTakesPriority(): void {
+    $this->logger->expects($this->never())->method('notice');
+
+    $membership = $this->createMock(GroupMembership::class);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('getMember')->with($this->currentUser)->willReturn($membership);
+    $this->groupStorage->method('load')->with(5)->willReturn($group);
+
+    $result = $this->invokeMethod($this->processor, 'resolveOrganisationGroupId', [
+      ['org_id' => '5', 'group_id' => '99'],
+    ]);
+    $this->assertEquals(5, $result);
+  }
+
+  /**
+   * Tests that empty parameters return NULL.
+   */
+  public function testResolveOrganisationGroupIdEmpty(): void {
+    $result = $this->invokeMethod($this->processor, 'resolveOrganisationGroupId', [[]]);
+    $this->assertNull($result);
+  }
+
+  // =========================================================================
+  // resolveJurisdictionId() slug resolution tests
+  // =========================================================================
+
+  /**
+   * Tests that a non-numeric slug triggers entity lookup by field_slug.
+   */
+  public function testResolveJurisdictionIdSlugLookup(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+
+    $this->groupStorage->method('loadByProperties')
+      ->with([
+        'type' => 'jur',
+        'field_slug' => 'bonn',
+      ])
+      ->willReturn([42 => $group]);
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => 'bonn'],
+    ]);
+    $this->assertEquals(42, $result);
+  }
+
+  /**
+   * Tests that a slug with no matching group returns NULL.
+   */
+  public function testResolveJurisdictionIdSlugNotFound(): void {
+    $this->groupStorage->method('loadByProperties')
+      ->with([
+        'type' => 'jur',
+        'field_slug' => 'nonexistent',
+      ])
+      ->willReturn([]);
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => 'nonexistent'],
+    ]);
+    $this->assertNull($result);
+  }
+
+  // =========================================================================
+  // resolveOrganisationGroupId() sentinel value tests
+  // =========================================================================
+
+  /**
+   * Tests that a non-existent group returns -1 sentinel.
+   */
+  public function testResolveOrganisationGroupIdNonExistentGroupReturnsSentinel(): void {
+    $this->groupStorage->method('load')->with(999)->willReturn(NULL);
+
+    $result = $this->invokeMethod($this->processor, 'resolveOrganisationGroupId', [
+      ['org_id' => '999'],
+    ]);
+    $this->assertEquals(-1, $result);
+  }
+
+  /**
+   * Tests that a valid group where user is not a member returns -1 sentinel.
+   */
+  public function testResolveOrganisationGroupIdNonMemberReturnsSentinel(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('getMember')->with($this->currentUser)->willReturn(NULL);
+    $this->groupStorage->method('load')->with(5)->willReturn($group);
+
+    $result = $this->invokeMethod($this->processor, 'resolveOrganisationGroupId', [
+      ['org_id' => '5'],
+    ]);
+    $this->assertEquals(-1, $result);
   }
 
   // =========================================================================

@@ -539,7 +539,12 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
    * @covers ::getNodeIdsInJurisdiction
    */
   public function testGetNodeIdsInJurisdiction(): void {
-    // Group 10 has no children, and has 3 service request nodes.
+    // Group 10 is a jur group with no children, and has 3 service request nodes.
+    $group = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($group);
+
     $childStatement = $this->createMock(StatementInterface::class);
     $childStatement->method('fetchCol')->willReturn([]);
 
@@ -569,13 +574,19 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
       });
 
     $result = $this->resolver->getNodeIdsInJurisdiction(10);
-    $this->assertEquals(['100', '101', '102'], $result);
+    $this->assertEquals([100, 101, 102], $result);
   }
 
   /**
    * @covers ::getNodeIdsInJurisdiction
    */
   public function testGetNodeIdsInJurisdictionEmpty(): void {
+    // Group 10 is a valid jur group but has no nodes.
+    $group = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($group);
+
     $childStatement = $this->createMock(StatementInterface::class);
     $childStatement->method('fetchCol')->willReturn([]);
 
@@ -598,6 +609,31 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
       });
 
     $result = $this->resolver->getNodeIdsInJurisdiction(10);
+    $this->assertEquals([], $result);
+  }
+
+  /**
+   * @covers ::getNodeIdsInJurisdiction
+   */
+  public function testGetNodeIdsInJurisdictionRejectsNonJurGroup(): void {
+    $org = $this->createMockGroup(5, 'org');
+    $this->groupStorage->method('load')
+      ->with(5)
+      ->willReturn($org);
+
+    $result = $this->resolver->getNodeIdsInJurisdiction(5);
+    $this->assertEquals([], $result);
+  }
+
+  /**
+   * @covers ::getNodeIdsInJurisdiction
+   */
+  public function testGetNodeIdsInJurisdictionRejectsNonExistentGroup(): void {
+    $this->groupStorage->method('load')
+      ->with(999)
+      ->willReturn(NULL);
+
+    $result = $this->resolver->getNodeIdsInJurisdiction(999);
     $this->assertEquals([], $result);
   }
 

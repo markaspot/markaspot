@@ -1136,6 +1136,308 @@ else {
 }
 
 // ===========================================================================
+// 15. Child Jurisdiction - API Key POST with jurisdiction_id
+// ===========================================================================
+
+test_group('15. Child Jurisdiction API Key POST');
+
+// Find a parent-child pair from the hierarchy.
+$child_pair = NULL;
+foreach ($parent_of as $child_id => $pid) {
+  if (isset($jurs[$child_id]) && isset($jurs[$pid])) {
+    $child_pair = ['child' => $child_id, 'parent' => $pid];
+    break;
+  }
+}
+
+if (!$child_pair) {
+  skip_test('No parent-child jurisdiction pair found');
+}
+else {
+  $child_id = $child_pair['child'];
+  $parent_id_val = $child_pair['parent'];
+  $child_jur = $jurs[$child_id];
+  $parent_jur = $jurs[$parent_id_val];
+  echo "  Testing: {$child_jur['label']} (child=$child_id) -> {$parent_jur['label']} (parent=$parent_id_val)\n";
+
+  // --- Setup: Ensure jur-editorial group role exists (may already exist from section 12) ---
+  $role_storage = $etm->getStorage('group_role');
+  if (!$role_storage->load('jur-editorial')) {
+    $role_storage->create([
+      'id' => 'jur-editorial',
+      'label' => 'Editorial',
+      'weight' => 2,
+      'admin' => FALSE,
+      'scope' => 'individual',
+      'global_role' => NULL,
+      'group_type' => 'jur',
+      'permissions' => [
+        'view group',
+        'view group_node:service_request entity',
+        'view group_node:service_request relationship',
+        'create group_node:service_request entity',
+        'create group_node:service_request relationship',
+        'update any group_node:service_request entity',
+        'update own group_node:service_request entity',
+        'view own unpublished group_node:service_request entity',
+        'view unpublished group_node:service_request entity',
+      ],
+    ])->save();
+  }
+
+  // --- Setup: Create a user for the child jurisdiction ---
+  $user_storage = $etm->getStorage('user');
+  $key_storage = $etm->getStorage('api_key');
+  $child_user_name = 'test_child_editorial';
+  $existing = $user_storage->loadByProperties(['name' => $child_user_name]);
+  if (empty($existing)) {
+    $child_user = $user_storage->create([
+      'name' => $child_user_name,
+      'mail' => 'test-child-editorial@example.com',
+      'status' => 1,
+      'pass' => 'test-child-editorial',
+      'roles' => ['api_editor'],
+    ]);
+    $child_user->save();
+  }
+  else {
+    $child_user = reset($existing);
+    if (!$child_user->hasRole('api_editor')) {
+      $child_user->addRole('api_editor');
+      $child_user->save();
+    }
+  }
+
+  // Add user to child group with jur-editorial role.
+  $child_group = $child_jur['group'];
+  if (!$child_group->getMember($child_user)) {
+    $child_group->addMember($child_user, ['group_roles' => ['jur-editorial']]);
+  }
+
+  // --- Setup: API key for child user ---
+  $child_key_id = 'test_child_editorial_key';
+  $child_key_value = 'test-child-editorial-key-2026';
+  if (!$key_storage->load($child_key_id)) {
+    $key_storage->create([
+      'id' => $child_key_id,
+      'label' => 'Test Child Editorial Key',
+      'key' => $child_key_value,
+      'user_uuid' => $child_user->uuid(),
+    ])->save();
+  }
+
+  // Get a service_code valid for the child jurisdiction.
+  // Child jurisdictions inherit services from the parent root via taxonomy.
+  $root_id_for_child = $resolve_root($child_id);
+  $child_svc_codes = $svc_codes_by_jur[$child_id] ?? $svc_codes_by_jur[$root_id_for_child] ?? [];
+
+  if (empty($child_svc_codes)) {
+    skip_test("No service codes for child jurisdiction {$child_jur['label']}");
+  }
+  else {
+    $child_svc_code = $child_svc_codes[0];
+
+    // Compute test coordinates from child jurisdiction boundary.
+    $test_lat = NULL;
+    $test_lng = NULL;
+    $boundary_field = $child_group->hasField('field_boundary') ? $child_group->get('field_boundary') : NULL;
+    if ($boundary_field && !$boundary_field->isEmpty()) {
+      $geo = json_decode(strip_tags($boundary_field->value), TRUE);
+      $geom = $geo;
+      if (($geom['type'] ?? '') === 'FeatureCollection') $geom = $geom['features'][0] ?? [];
+      if (($geom['type'] ?? '') === 'Feature') $geom = $geom['geometry'] ?? [];
+      $ring = [];
+      if (($geom['type'] ?? '') === 'MultiPolygon') $ring = $geom['coordinates'][0][0] ?? [];
+      elseif (($geom['type'] ?? '') === 'Polygon') $ring = $geom['coordinates'][0] ?? [];
+
+      if (!empty($ring) && is_array($ring[0]) && is_float($ring[0][0] ?? NULL)) {
+        $sum_lng = $sum_lat = 0;
+        foreach ($ring as $c) { $sum_lng += $c[0]; $sum_lat += $c[1]; }
+        $test_lng = $sum_lng / count($ring);
+        $test_lat = $sum_lat / count($ring);
+      }
+    }
+    // Fallback: use parent's boundary centroid if child has no own boundary.
+    if ($test_lat === NULL) {
+      $parent_group = $parent_jur['group'];
+      $pbf = $parent_group->hasField('field_boundary') ? $parent_group->get('field_boundary') : NULL;
+      if ($pbf && !$pbf->isEmpty()) {
+        $geo = json_decode(strip_tags($pbf->value), TRUE);
+        $geom = $geo;
+        if (($geom['type'] ?? '') === 'FeatureCollection') $geom = $geom['features'][0] ?? [];
+        if (($geom['type'] ?? '') === 'Feature') $geom = $geom['geometry'] ?? [];
+        $ring = [];
+        if (($geom['type'] ?? '') === 'MultiPolygon') $ring = $geom['coordinates'][0][0] ?? [];
+        elseif (($geom['type'] ?? '') === 'Polygon') $ring = $geom['coordinates'][0] ?? [];
+
+        if (!empty($ring) && is_array($ring[0]) && is_float($ring[0][0] ?? NULL)) {
+          $sum_lng = $sum_lat = 0;
+          foreach ($ring as $c) { $sum_lng += $c[0]; $sum_lat += $c[1]; }
+          $test_lng = $sum_lng / count($ring);
+          $test_lat = $sum_lat / count($ring);
+        }
+      }
+    }
+    $lat = $test_lat ?? 52.3702;
+    $lng = $test_lng ?? 4.8952;
+
+    // --- Test 15a: POST to child jurisdiction with jurisdiction_id (spec-compliant name) ---
+    $post_body = json_encode([
+      'service_code' => $child_svc_code,
+      'lat' => $lat,
+      'long' => $lng,
+      'address_string' => 'Child jurisdiction test address',
+      'description' => 'Child jurisdiction API key test - ' . date('c'),
+      'jurisdiction_id' => (string) $child_id,
+    ]);
+
+    $r = $http->post("$base/georeport/v2/requests.json?api_key=$child_key_value", [
+      'headers' => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+      'body' => $post_body,
+      'http_errors' => FALSE,
+    ]);
+    $create_code = $r->getStatusCode();
+    $create_body = json_decode($r->getBody()->getContents(), TRUE);
+    $created_id = $create_body['service_requests']['request']['service_request_id'] ?? NULL;
+    assert_true(
+      $create_code === 200 && $created_id !== NULL,
+      "Child editorial: create in {$child_jur['label']} with jurisdiction_id=$child_id (HTTP $create_code)"
+    );
+
+    if ($created_id) {
+      // --- Test 15b: Request visible in child jurisdiction scope ---
+      // Verify node was created correctly.
+      $created_nodes = $etm->getStorage('node')->loadByProperties(['request_id' => $created_id]);
+      $created_node = !empty($created_nodes) ? reset($created_nodes) : NULL;
+
+      // Wait 1s so the node's 'changed' timestamp is strictly less than the
+      // GET request's REQUEST_TIME. The API filters: changed < request_time.
+      sleep(1);
+
+      // Use child api_key to check visibility in child jurisdiction.
+      $bust = time() . rand(1000, 9999);
+      $r = $http->get("$base/georeport/v2/requests.json?jurisdiction_id=$child_id&limit=500&api_key=$child_key_value&_=$bust", $opts);
+      $child_reqs = json_decode($r->getBody()->getContents(), TRUE);
+      $child_req_ids = is_array($child_reqs) ? array_column($child_reqs, 'service_request_id') : [];
+
+      assert_true(
+        in_array($created_id, $child_req_ids),
+        "Child editorial: request $created_id visible in child jurisdiction (ID=$child_id, got " . count($child_req_ids) . " requests)"
+      );
+
+      // --- Test 15c: Node is assigned to child group (not parent) at DB level ---
+      // ECA assigns nodes to the child group ONLY (not propagated to parent).
+      // Hierarchical resolution (getNodeIdsInJurisdiction) queries the subtree at
+      // read time, so parent jurisdiction queries still include child content.
+      if ($created_node) {
+        $nid = $created_node->id();
+        $db = \Drupal::database();
+
+        // Verify direct child group membership.
+        $child_group_nids = $db->select('group_relationship_field_data', 'gr')
+          ->fields('gr', ['entity_id'])
+          ->condition('gid', $child_id)
+          ->condition('plugin_id', 'group_node:service_request')
+          ->execute()
+          ->fetchCol();
+        assert_true(
+          in_array($nid, $child_group_nids),
+          "Child editorial: node $nid has direct group membership in child (gid=$child_id)"
+        );
+
+        // Verify: node is NOT in parent group at DB level (no upward propagation).
+        $parent_group_nids = $db->select('group_relationship_field_data', 'gr')
+          ->fields('gr', ['entity_id'])
+          ->condition('gid', $parent_id_val)
+          ->condition('plugin_id', 'group_node:service_request')
+          ->execute()
+          ->fetchCol();
+        assert_true(
+          !in_array($nid, $parent_group_nids),
+          "Child editorial: node $nid NOT in parent group at DB level (gid=$parent_id_val)"
+        );
+
+        // Verify: hierarchy resolver DOES include child node when querying parent.
+        $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+        $parent_subtree_nids = $resolver->getNodeIdsInJurisdiction($parent_id_val);
+        assert_true(
+          in_array($nid, $parent_subtree_nids),
+          "Hierarchy resolver: node $nid visible in parent subtree (jurisdiction_id=$parent_id_val, subtree has " . count($parent_subtree_nids) . " nodes)"
+        );
+      }
+
+      // --- Test 15f: Parent jurisdiction API includes child node (hierarchical resolution) ---
+      $r = $http->get("$base/georeport/v2/requests.json?jurisdiction_id=$parent_id_val", $opts);
+      $parent_reqs = json_decode($r->getBody()->getContents(), TRUE);
+      $parent_req_ids = is_array($parent_reqs) ? array_column($parent_reqs, 'service_request_id') : [];
+      assert_true(
+        in_array($created_id, $parent_req_ids),
+        "Hierarchical: request $created_id visible from parent jurisdiction_id=$parent_id_val (got " . count($parent_req_ids) . " requests)"
+      );
+
+      // --- Test 15d: Child user denied in parent jurisdiction (no membership) ---
+      $parent_svc_codes = $svc_codes_by_jur[$parent_id_val] ?? [];
+      if (!empty($parent_svc_codes)) {
+        $post_body_parent = json_encode([
+          'service_code' => $parent_svc_codes[0],
+          'lat' => $lat,
+          'long' => $lng,
+          'address_string' => 'Should be denied',
+          'description' => 'Child user in parent jurisdiction test',
+          'jurisdiction_id' => (string) $parent_id_val,
+        ]);
+
+        $r = $http->post("$base/georeport/v2/requests.json?api_key=$child_key_value", [
+          'headers' => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+          'body' => $post_body_parent,
+          'http_errors' => FALSE,
+        ]);
+        $deny_code = $r->getStatusCode();
+        assert_true(
+          $deny_code === 403,
+          "Child editorial: denied in parent {$parent_jur['label']} (HTTP $deny_code)"
+        );
+      }
+      else {
+        skip_test("No service codes for parent jurisdiction {$parent_jur['label']}");
+      }
+
+      // --- Test 15e: Stats endpoint respects jurisdiction_id for child ---
+      $r = $http->get("$base/georeport/v2/stats.json?jurisdiction_id=$child_id", $opts);
+      $stats_code = $r->getStatusCode();
+      $stats_data = json_decode($r->getBody()->getContents(), TRUE);
+      assert_equal(200, $stats_code, "Stats: child jurisdiction_id=$child_id returns 200");
+      $child_total = $stats_data['total'] ?? 0;
+      assert_true(
+        $child_total >= 1,
+        "Stats: child jurisdiction has total >= 1 after POST (got: $child_total)"
+      );
+
+      // --- Test 15g: Stats endpoint for parent includes child jurisdiction counts ---
+      $r = $http->get("$base/georeport/v2/stats.json?jurisdiction_id=$parent_id_val", $opts);
+      $parent_stats = json_decode($r->getBody()->getContents(), TRUE);
+      $parent_total = $parent_stats['total'] ?? 0;
+      assert_true(
+        $parent_total >= $child_total,
+        "Stats: parent total ($parent_total) >= child total ($child_total) via hierarchical resolution"
+      );
+
+      // --- Cleanup: delete test report ---
+      $nodes = $etm->getStorage('node')->loadByProperties(['request_id' => $created_id]);
+      foreach ($nodes as $node) {
+        $node->delete();
+      }
+      echo "  Cleanup: deleted test report $created_id\n";
+    }
+    else {
+      $err_body = json_encode($create_body) ?: 'no body';
+      echo "  Skipping visibility tests (create failed: HTTP $create_code, body: $err_body)\n";
+      skip_test('Request 15b-15e skipped (create failed)');
+    }
+  }
+}
+
+// ===========================================================================
 // Summary
 // ===========================================================================
 

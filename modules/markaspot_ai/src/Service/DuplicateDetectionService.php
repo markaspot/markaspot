@@ -8,6 +8,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -56,6 +57,13 @@ class DuplicateDetectionService {
   protected LoggerInterface $logger;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null
+   */
+  protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Constructs a new DuplicateDetectionService.
    *
    * @param \Drupal\markaspot_ai\Service\EmbeddingService $embedding_service
@@ -68,6 +76,8 @@ class DuplicateDetectionService {
    *   The config factory.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger factory.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   *   The jurisdiction hierarchy resolver (optional).
    */
   public function __construct(
     EmbeddingService $embedding_service,
@@ -75,12 +85,14 @@ class DuplicateDetectionService {
     EntityTypeManagerInterface $entity_type_manager,
     ConfigFactoryInterface $config_factory,
     LoggerChannelFactoryInterface $logger_factory,
+    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->embeddingService = $embedding_service;
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
     $this->logger = $logger_factory->get('markaspot_ai');
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -168,7 +180,10 @@ class DuplicateDetectionService {
         $query->innerJoin('groups_field_data', 'grp',
           'gr.gid = grp.id AND grp.default_langcode = 1');
         $query->condition('grp.type', 'jur');
-        $query->condition('grp.id', (int) $options['jurisdiction_id']);
+        $jurisdictionIds = $this->hierarchyResolver
+          ? $this->hierarchyResolver->getDescendantIds((int) $options['jurisdiction_id'])
+          : [(int) $options['jurisdiction_id']];
+        $query->condition('grp.id', $jurisdictionIds, 'IN');
       }
 
       // Apply geographic bounding box filter if coordinates available.
@@ -624,7 +639,10 @@ class DuplicateDetectionService {
         $query->innerJoin('groups_field_data', 'grp',
           'gr.gid = grp.id AND grp.default_langcode = 1');
         $query->condition('grp.type', 'jur');
-        $query->condition('grp.id', $jurisdictionId);
+        $jurisdictionIds = $this->hierarchyResolver
+          ? $this->hierarchyResolver->getDescendantIds((int) $jurisdictionId)
+          : [(int) $jurisdictionId];
+        $query->condition('grp.id', $jurisdictionIds, 'IN');
       }
 
       return $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
@@ -657,7 +675,10 @@ class DuplicateDetectionService {
         $query->innerJoin('groups_field_data', 'grp',
           'gr.gid = grp.id AND grp.default_langcode = 1');
         $query->condition('grp.type', 'jur');
-        $query->condition('grp.id', $jurisdictionId);
+        $jurisdictionIds = $this->hierarchyResolver
+          ? $this->hierarchyResolver->getDescendantIds((int) $jurisdictionId)
+          : [(int) $jurisdictionId];
+        $query->condition('grp.id', $jurisdictionIds, 'IN');
       }
 
       $results = $query->execute()->fetchAllKeyed();

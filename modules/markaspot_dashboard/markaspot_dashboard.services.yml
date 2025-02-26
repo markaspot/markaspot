@@ -6,6 +6,7 @@ services:
       - '@entity_type.manager'
       - '@config.factory'
       - '@logger.factory'
+      - '@?markaspot_group.hierarchy_resolver'
 
   logger.channel.markaspot_dashboard:
     parent: logger.channel_base

@@ -7,8 +7,10 @@ namespace Drupal\markaspot_open311\Controller;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -34,19 +36,30 @@ class GeoreportStatsController extends ControllerBase {
   protected RequestStack $requestStack;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null
+   */
+  protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Constructs a GeoreportStatsController object.
    *
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
    * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
    *   The request stack.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   *   The jurisdiction hierarchy resolver (optional).
    */
   public function __construct(
     Connection $database,
     RequestStack $request_stack,
+    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->database = $database;
     $this->requestStack = $request_stack;
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -55,7 +68,10 @@ class GeoreportStatsController extends ControllerBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('database'),
-      $container->get('request_stack')
+      $container->get('request_stack'),
+      $container->has('markaspot_group.hierarchy_resolver')
+        ? $container->get('markaspot_group.hierarchy_resolver')
+        : NULL
     );
   }
 
@@ -73,7 +89,7 @@ class GeoreportStatsController extends ControllerBase {
   public function getStatusStats(): JsonResponse {
     $request = $this->requestStack->getCurrentRequest();
     $group_filter = $request->query->get('group_filter');
-    $gid = $request->query->get('gid');
+    $jurisdiction_id = $this->resolveJurisdictionIdFromRequest($request);
 
     // Check if group filtering is requested and user is authenticated.
     $use_group_filter = FALSE;
@@ -86,7 +102,7 @@ class GeoreportStatsController extends ControllerBase {
       if ($group_filter_enabled) {
         $use_group_filter = TRUE;
         $group_type = $config->get('group_filter_type') ?? 'org';
-        $specific_gid = $gid ? (int) $gid : NULL;
+        $specific_gid = $jurisdiction_id ? (int) $jurisdiction_id : NULL;
         $node_ids = $this->getNodeIdsInUserGroups($group_type, $specific_gid);
       }
     }
@@ -128,11 +144,12 @@ class GeoreportStatsController extends ControllerBase {
         ORDER BY t.weight ASC
       ");
     }
-    elseif ($gid) {
-      // No group filter but jurisdiction-scoped via gid parameter.
-      $gid_node_ids = $this->getNodeIdsInGroup((int) $gid);
-      if (!empty($gid_node_ids)) {
-        $placeholders = implode(',', array_fill(0, count($gid_node_ids), '?'));
+    elseif ($jurisdiction_id) {
+      // No group filter but jurisdiction-scoped via jurisdiction_id parameter.
+      // Uses hierarchy resolver to include child jurisdiction nodes.
+      $jur_node_ids = $this->getNodeIdsForJurisdiction((int) $jurisdiction_id);
+      if (!empty($jur_node_ids)) {
+        $placeholders = implode(',', array_fill(0, count($jur_node_ids), '?'));
         $query = $this->database->query("
           SELECT
             t.tid,
@@ -147,7 +164,7 @@ class GeoreportStatsController extends ControllerBase {
           WHERE t.vid = 'service_status' AND t.default_langcode = 1
           GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
           ORDER BY t.weight ASC
-        ", $gid_node_ids);
+        ", $jur_node_ids);
       }
       else {
         // No nodes in this group - return zeros.
@@ -167,7 +184,7 @@ class GeoreportStatsController extends ControllerBase {
       }
     }
     else {
-      // No group filter, no gid - count all service requests.
+      // No group filter, no jurisdiction_id - count all service requests.
       $query = $this->database->query("
         SELECT
           t.tid,
@@ -312,6 +329,51 @@ class GeoreportStatsController extends ControllerBase {
   }
 
   /**
+   * Gets node IDs for a jurisdiction, including child jurisdictions.
+   *
+   * Uses the hierarchy resolver when available to include nodes from
+   * descendant jurisdictions. Falls back to flat single-group query.
+   *
+   * @param int $gid
+   *   The jurisdiction group ID.
+   *
+   * @return array<int>
+   *   Array of node IDs belonging to the jurisdiction subtree.
+   */
+  protected function getNodeIdsForJurisdiction(int $gid): array {
+    if ($this->hierarchyResolver) {
+      return $this->hierarchyResolver->getNodeIdsInJurisdiction($gid);
+    }
+    return $this->getNodeIdsInGroup($gid);
+  }
+
+  /**
+   * Resolves jurisdiction_id from request with backward compat for 'gid'.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The current request.
+   *
+   * @return string|null
+   *   The jurisdiction ID value or NULL if not specified.
+   */
+  private function resolveJurisdictionIdFromRequest(Request $request): ?string {
+    $value = $request->query->get('jurisdiction_id')
+      ?? $request->query->get('gid');
+    if ($request->query->has('gid') && !$request->query->has('jurisdiction_id')) {
+      $this->getLogger('markaspot_open311')->notice(
+        'Deprecated API parameter "gid" on stats endpoint. Use "jurisdiction_id".'
+      );
+    }
+    // Only accept numeric values. The stats controller does not support
+    // slug resolution (unlike GeoreportProcessorService). Non-numeric values
+    // like 'bonn' would silently cast to 0, causing empty/incorrect results.
+    if ($value !== NULL && !is_numeric($value)) {
+      return NULL;
+    }
+    return $value;
+  }
+
+  /**
    * Returns statistics by category.
    *
    * Supports ?group_filter=true to filter by current user's group memberships.
@@ -323,8 +385,8 @@ class GeoreportStatsController extends ControllerBase {
   public function getCategoryStats(): JsonResponse {
     $request = $this->requestStack->getCurrentRequest();
     $group_filter = $request->query->get('group_filter');
-    $gid = $request->query->get('gid');
-    $limit = (int) ($request->query->get('limit') ?? 10);
+    $limit = min(100, max(1, (int) ($request->query->get('limit') ?? 10)));
+    $jurisdiction_id = $this->resolveJurisdictionIdFromRequest($request);
 
     // Check if group filtering is requested and user is authenticated.
     $use_group_filter = FALSE;
@@ -337,7 +399,7 @@ class GeoreportStatsController extends ControllerBase {
       if ($group_filter_enabled) {
         $use_group_filter = TRUE;
         $group_type = $config->get('group_filter_type') ?? 'org';
-        $specific_gid = $gid ? (int) $gid : NULL;
+        $specific_gid = $jurisdiction_id ? (int) $jurisdiction_id : NULL;
         $node_ids = $this->getNodeIdsInUserGroups($group_type, $specific_gid);
       }
     }
@@ -371,11 +433,12 @@ class GeoreportStatsController extends ControllerBase {
         'group_filter' => TRUE,
       ]);
     }
-    elseif ($gid) {
-      // No group filter but jurisdiction-scoped via gid parameter.
-      $gid_node_ids = $this->getNodeIdsInGroup((int) $gid);
-      if (!empty($gid_node_ids)) {
-        $placeholders = implode(',', array_fill(0, count($gid_node_ids), '?'));
+    elseif ($jurisdiction_id) {
+      // No group filter but jurisdiction-scoped via jurisdiction_id parameter.
+      // Uses hierarchy resolver to include child jurisdiction nodes.
+      $jur_node_ids = $this->getNodeIdsForJurisdiction((int) $jurisdiction_id);
+      if (!empty($jur_node_ids)) {
+        $placeholders = implode(',', array_fill(0, count($jur_node_ids), '?'));
         $query = $this->database->query("
           SELECT
             t.tid,
@@ -392,7 +455,7 @@ class GeoreportStatsController extends ControllerBase {
           GROUP BY t.tid, t.name, h.field_category_hex_color, i.field_category_icon_value
           ORDER BY count DESC
           LIMIT $limit
-        ", $gid_node_ids);
+        ", $jur_node_ids);
       }
       else {
         // No nodes in this group - return empty.
@@ -404,7 +467,7 @@ class GeoreportStatsController extends ControllerBase {
       }
     }
     else {
-      // No group filter, no gid - count all service requests.
+      // No group filter, no jurisdiction_id - count all service requests.
       $query = $this->database->query("
         SELECT
           t.tid,

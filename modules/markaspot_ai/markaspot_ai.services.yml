@@ -23,6 +23,7 @@ services:
       - '@entity_type.manager'
       - '@config.factory'
       - '@logger.factory'
+      - '@?markaspot_group.hierarchy_resolver'
 
   markaspot_ai.token_tracking:
     class: Drupal\markaspot_ai\Service\TokenTrackingService
@@ -42,6 +43,7 @@ services:
       - '@markaspot_ai.token_tracking'
       - '@datetime.time'
       - '@module_handler'
+      - '@?markaspot_group.hierarchy_resolver'
 
   logger.channel.markaspot_ai:
     parent: logger.channel_base
