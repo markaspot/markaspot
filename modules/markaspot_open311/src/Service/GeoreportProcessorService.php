@@ -1649,7 +1649,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       'field_open311_mapping' => 'initial',
     ];
     if ($jurisdictionId) {
-      $properties['field_jurisdiction'] = $jurisdictionId;
+      // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
+      $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
     }
     $terms = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadByProperties($properties);
@@ -2069,6 +2070,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $logCount = -1;
 
       // Get default initial status term ID (jurisdiction-aware).
+      // Category terms are always stored on the root jurisdiction (ensured by
+      // presave), so field_jurisdiction here is already the root ID.
+      // getInitialStatusTid() also resolves to root as a safety net.
       $jurisdictionId = NULL;
       if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
         $categoryTerm = $node->get('field_category')->entity;

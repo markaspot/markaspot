@@ -123,18 +123,45 @@ class GroupMembersController extends ControllerBase {
     try {
       $groups = $this->loadVisibleGroups($groupTypeFilter);
       $availableRolesByType = $this->loadAvailableRoles($groups);
-      [$users, $totalUsers] = $this->loadUsers($page, $pageSize, $search, $groups);
+      $isDrupalAdmin = in_array('administrator', $this->currentUser()->getRoles(), TRUE);
+      [$users, $totalUsers] = $this->loadUsers($page, $pageSize, $search, $groups, $isDrupalAdmin);
 
+      // Build group data with hierarchy metadata.
       $groupsData = [];
       foreach ($groups as $group) {
         $groupType = $group->bundle();
-        $groupsData[] = [
+        $entry = [
           'id' => (int) $group->id(),
           'label' => $group->label(),
           'type' => $groupType,
           'available_roles' => $availableRolesByType[$groupType] ?? [],
+          'parent_id' => NULL,
+          'depth' => 0,
+          'jurisdiction_id' => NULL,
         ];
+
+        if ($groupType === 'jur') {
+          // Read parent from field_parent_jurisdiction.
+          if ($group->hasField('field_parent_jurisdiction')
+              && !$group->get('field_parent_jurisdiction')->isEmpty()) {
+            $entry['parent_id'] = (int) $group->get('field_parent_jurisdiction')->target_id;
+          }
+          // Calculate depth by traversing parent chain.
+          $entry['depth'] = $this->calculateJurisdictionDepth($group);
+        }
+        elseif ($groupType === 'org') {
+          // Read jurisdiction reference.
+          if ($group->hasField('field_jurisdiction')
+              && !$group->get('field_jurisdiction')->isEmpty()) {
+            $entry['jurisdiction_id'] = (int) $group->get('field_jurisdiction')->target_id;
+          }
+        }
+
+        $groupsData[] = $entry;
       }
+
+      // Sort jur groups in tree order (depth-first).
+      $groupsData = $this->sortGroupsTreeOrder($groupsData);
 
       return new JsonResponse([
         'groups' => $groupsData,
@@ -174,11 +201,19 @@ class GroupMembersController extends ControllerBase {
       return new JsonResponse(['error' => 'Invalid request body. Expected "memberships" object.'], 400);
     }
 
+    $currentAccount = $this->currentUser();
+    $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
+
     $userStorage = $this->entityTypeManager()->getStorage('user');
     /** @var \Drupal\user\UserInterface|null $targetUser */
     $targetUser = $userStorage->load($uid);
     if (!$targetUser) {
       return new JsonResponse(['error' => 'User not found.'], 404);
+    }
+
+    // Verify the target user is within the caller's admin scope.
+    if (!$isDrupalAdmin && !$this->isUserInAdminScope($targetUser, $currentAccount)) {
+      return new JsonResponse(['error' => 'Access denied to this user.'], 403);
     }
 
     // Check field_all_groups_member flag.
@@ -188,8 +223,12 @@ class GroupMembersController extends ControllerBase {
     }
 
     $groupStorage = $this->entityTypeManager()->getStorage('group');
-    $currentAccount = $this->currentUser();
-    $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
+
+    // Pre-compute admin scope once to avoid N+1 per group.
+    $adminJurIds = [];
+    if (!$isDrupalAdmin) {
+      $adminJurIds = $this->getAdminJurisdictionIds($currentAccount);
+    }
 
     $updated = [];
     $errors = [];
@@ -206,7 +245,7 @@ class GroupMembersController extends ControllerBase {
       }
 
       // Verify requesting user has admin scope over this group.
-      if (!$isDrupalAdmin && !$this->isGroupInAdminScope($group, $currentAccount)) {
+      if (!$isDrupalAdmin && !$this->isGroupInAdminScopeWith($group, $adminJurIds)) {
         $errors[] = "No access to group $groupId.";
         continue;
       }
@@ -370,6 +409,10 @@ class GroupMembersController extends ControllerBase {
   /**
    * Loads users with their group memberships.
    *
+   * For non-admin callers, restricts results to users who are members of
+   * at least one of the provided visible groups. This prevents cross-tenant
+   * PII exposure.
+   *
    * @param int $page
    *   The page number (0-based).
    * @param int $pageSize
@@ -378,11 +421,13 @@ class GroupMembersController extends ControllerBase {
    *   Optional search term for name or email.
    * @param \Drupal\group\Entity\GroupInterface[] $groups
    *   The visible groups to load memberships for.
+   * @param bool $isDrupalAdmin
+   *   Whether the requesting user is a Drupal administrator.
    *
    * @return array
    *   Tuple of [users array, total count].
    */
-  protected function loadUsers(int $page, int $pageSize, string $search, array $groups): array {
+  protected function loadUsers(int $page, int $pageSize, string $search, array $groups, bool $isDrupalAdmin = FALSE): array {
     $userStorage = $this->entityTypeManager()->getStorage('user');
 
     // Build user query.
@@ -399,6 +444,26 @@ class GroupMembersController extends ControllerBase {
         ->condition('name', '%' . $escapedSearch . '%', 'LIKE')
         ->condition('mail', '%' . $escapedSearch . '%', 'LIKE');
       $query->condition($orGroup);
+    }
+
+    // For non-admin callers, restrict to users who are members of visible
+    // groups. This prevents tenant admins from seeing users outside their
+    // jurisdiction scope.
+    if (!$isDrupalAdmin && !empty($groups)) {
+      $groupIds = array_map(fn($g) => (int) $g->id(), $groups);
+      $connection = \Drupal\Core\Database\Database::getConnection();
+      $memberUids = $connection->select('group_relationship_field_data', 'gr')
+        ->fields('gr', ['entity_id'])
+        ->condition('gid', $groupIds, 'IN')
+        ->condition('type', ['jur-group_membership', 'org-group_membership'], 'IN')
+        ->distinct()
+        ->execute()
+        ->fetchCol();
+
+      if (empty($memberUids)) {
+        return [[], 0];
+      }
+      $query->condition('uid', array_unique(array_map('intval', $memberUids)), 'IN');
     }
 
     // Count query (before pagination).
@@ -509,10 +574,10 @@ class GroupMembersController extends ControllerBase {
 
     // Cannot self-remove tenant_admin role.
     if ((int) $targetUser->id() === (int) $currentAccount->id()) {
-      $member = $group->getMember($currentAccount);
+      $member = $group->getMember($targetUser);
       if ($member) {
         foreach ($member->getRoles(FALSE) as $role) {
-          if ($role->id() === 'jur-tenant_admin') {
+          if (str_ends_with($role->id(), '-tenant_admin')) {
             return [
               'success' => FALSE,
               'error' => "Cannot remove yourself from group $groupId while holding tenant_admin role.",
@@ -581,16 +646,18 @@ class GroupMembersController extends ControllerBase {
 
     // Self-protection: cannot remove own tenant_admin role.
     if ((int) $targetUser->id() === (int) $currentAccount->id()) {
-      $member = $group->getMember($currentAccount);
+      $member = $group->getMember($targetUser);
       if ($member) {
         $hadTenantAdmin = FALSE;
+        $tenantAdminRoleId = NULL;
         foreach ($member->getRoles(FALSE) as $existingRole) {
-          if ($existingRole->id() === 'jur-tenant_admin') {
+          if (str_ends_with($existingRole->id(), '-tenant_admin')) {
             $hadTenantAdmin = TRUE;
+            $tenantAdminRoleId = $existingRole->id();
             break;
           }
         }
-        if ($hadTenantAdmin && !in_array('jur-tenant_admin', $roleIds, TRUE)) {
+        if ($hadTenantAdmin && !in_array($tenantAdminRoleId, $roleIds, TRUE)) {
           return [
             'success' => FALSE,
             'error' => "Cannot remove your own tenant_admin role in group $groupId.",
@@ -619,40 +686,142 @@ class GroupMembersController extends ControllerBase {
   }
 
   /**
-   * Checks whether a group falls within the current user's admin scope.
-   *
-   * A tenant admin can manage groups within their jurisdiction hierarchy:
-   * - Jur groups they administer or their descendants.
-   * - Org groups whose field_jurisdiction references an administered jur.
+   * Calculates the depth of a jurisdiction in its hierarchy.
    *
    * @param \Drupal\group\Entity\GroupInterface $group
-   *   The group to check.
-   * @param \Drupal\Core\Session\AccountInterface $account
-   *   The requesting user account.
+   *   The jurisdiction group entity.
    *
-   * @return bool
-   *   TRUE if the user has admin scope over this group.
+   * @return int
+   *   Depth level: 0 for root, 1 for child, 2 for grandchild, etc.
    */
-  protected function isGroupInAdminScope(GroupInterface $group, AccountInterface $account): bool {
-    $tenantMemberships = $this->membershipLoader->loadByUser($account, ['jur-tenant_admin']);
-    if (empty($tenantMemberships)) {
-      return FALSE;
+  protected function calculateJurisdictionDepth(GroupInterface $group): int {
+    $depth = 0;
+    $visited = [(int) $group->id()];
+    $current = $group;
+
+    while ($current->hasField('field_parent_jurisdiction')
+           && !$current->get('field_parent_jurisdiction')->isEmpty()) {
+      $parentId = (int) $current->get('field_parent_jurisdiction')->target_id;
+      if (in_array($parentId, $visited, TRUE)) {
+        break;
+      }
+      $visited[] = $parentId;
+      $depth++;
+      $parent = $this->entityTypeManager()->getStorage('group')->load($parentId);
+      if (!$parent || $parent->bundle() !== 'jur') {
+        break;
+      }
+      $current = $parent;
     }
 
-    // Build the set of jur IDs this user administers (including descendants).
+    return $depth;
+  }
+
+  /**
+   * Sorts groups in tree order: jur groups depth-first, then org groups.
+   *
+   * @param array $groupsData
+   *   Flat array of group data entries.
+   *
+   * @return array
+   *   Groups sorted with jur in tree order followed by org groups.
+   */
+  protected function sortGroupsTreeOrder(array $groupsData): array {
+    $jurGroups = [];
+    $orgGroups = [];
+
+    foreach ($groupsData as $entry) {
+      if ($entry['type'] === 'jur') {
+        $jurGroups[$entry['id']] = $entry;
+      }
+      else {
+        $orgGroups[] = $entry;
+      }
+    }
+
+    // Build children map for depth-first traversal.
+    $childrenMap = [];
+    $roots = [];
+    foreach ($jurGroups as $id => $entry) {
+      $parentId = $entry['parent_id'];
+      if ($parentId === NULL || !isset($jurGroups[$parentId])) {
+        $roots[] = $id;
+      }
+      else {
+        $childrenMap[$parentId][] = $id;
+      }
+    }
+
+    // Sort roots and children alphabetically by label.
+    usort($roots, fn($a, $b) => strcasecmp($jurGroups[$a]['label'], $jurGroups[$b]['label']));
+    foreach ($childrenMap as &$children) {
+      usort($children, fn($a, $b) => strcasecmp($jurGroups[$a]['label'], $jurGroups[$b]['label']));
+    }
+
+    // Depth-first traversal.
+    $sorted = [];
+    $stack = array_reverse($roots);
+    while (!empty($stack)) {
+      $id = array_pop($stack);
+      if (isset($jurGroups[$id])) {
+        $sorted[] = $jurGroups[$id];
+      }
+      if (!empty($childrenMap[$id])) {
+        foreach (array_reverse($childrenMap[$id]) as $childId) {
+          $stack[] = $childId;
+        }
+      }
+    }
+
+    // Org groups follow, sorted alphabetically.
+    usort($orgGroups, fn($a, $b) => strcasecmp($a['label'], $b['label']));
+
+    return array_merge($sorted, $orgGroups);
+  }
+
+  /**
+   * Builds the set of jurisdiction IDs a tenant admin can manage.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The user account to check.
+   *
+   * @return int[]
+   *   Array of jurisdiction group IDs (including descendants).
+   */
+  protected function getAdminJurisdictionIds(AccountInterface $account): array {
+    $tenantMemberships = $this->membershipLoader->loadByUser($account, ['jur-tenant_admin']);
+    if (empty($tenantMemberships)) {
+      return [];
+    }
+
     $adminJurIds = [];
     foreach ($tenantMemberships as $membership) {
       $jurId = (int) $membership->getGroup()->id();
       $adminJurIds[] = $jurId;
       $adminJurIds = array_merge($adminJurIds, $this->hierarchyResolver->getDescendantIds($jurId));
     }
-    $adminJurIds = array_unique($adminJurIds);
+    return array_values(array_unique($adminJurIds));
+  }
 
-    $groupId = (int) $group->id();
+  /**
+   * Checks whether a group falls within a pre-computed admin scope.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The group to check.
+   * @param int[] $adminJurIds
+   *   Pre-computed array of administered jurisdiction IDs.
+   *
+   * @return bool
+   *   TRUE if the group is in scope.
+   */
+  protected function isGroupInAdminScopeWith(GroupInterface $group, array $adminJurIds): bool {
+    if (empty($adminJurIds)) {
+      return FALSE;
+    }
 
     // Jur group: must be in the administered set.
     if ($group->bundle() === 'jur') {
-      return in_array($groupId, $adminJurIds, TRUE);
+      return in_array((int) $group->id(), $adminJurIds, TRUE);
     }
 
     // Org group: its field_jurisdiction must reference an administered jur.
@@ -663,6 +832,53 @@ class GroupMembersController extends ControllerBase {
       }
     }
 
+    return FALSE;
+  }
+
+  /**
+   * Checks whether a group falls within the current user's admin scope.
+   *
+   * Convenience wrapper that computes the admin scope on the fly.
+   * For batch operations, prefer getAdminJurisdictionIds() +
+   * isGroupInAdminScopeWith() to avoid N+1.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The group to check.
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The requesting user account.
+   *
+   * @return bool
+   *   TRUE if the user has admin scope over this group.
+   */
+  protected function isGroupInAdminScope(GroupInterface $group, AccountInterface $account): bool {
+    return $this->isGroupInAdminScopeWith($group, $this->getAdminJurisdictionIds($account));
+  }
+
+  /**
+   * Checks whether a target user is within the caller's admin scope.
+   *
+   * A target user is in scope if they hold membership in at least one group
+   * that the calling tenant admin can see (via loadVisibleGroups).
+   *
+   * @param \Drupal\user\UserInterface $targetUser
+   *   The user to check.
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The requesting user account.
+   *
+   * @return bool
+   *   TRUE if the target user is in at least one of the caller's visible
+   *   groups.
+   */
+  protected function isUserInAdminScope(UserInterface $targetUser, AccountInterface $account): bool {
+    $visibleGroups = $this->loadVisibleGroups('');
+    $visibleGroupIds = array_map(fn($g) => (int) $g->id(), $visibleGroups);
+
+    $targetMemberships = $this->membershipLoader->loadByUser($targetUser);
+    foreach ($targetMemberships as $membership) {
+      if (in_array((int) $membership->getGroup()->id(), $visibleGroupIds, TRUE)) {
+        return TRUE;
+      }
+    }
     return FALSE;
   }
 

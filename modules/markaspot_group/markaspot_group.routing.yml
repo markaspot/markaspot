@@ -16,6 +16,7 @@ markaspot_group.member_update:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
+    _csrf_token: 'TRUE'
     uid: \d+
   options:
     _format: 'json'
