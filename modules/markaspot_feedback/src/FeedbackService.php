@@ -120,21 +120,64 @@ class FeedbackService implements FeedbackServiceInterface {
     $tids = $this->arrayFlatten($config->get('status_resubmissive'));
     $storage = $this->entityTypeManager->getStorage('node');
 
-    $date = ($days !== '') ? strtotime(' - ' . $days . 'days') : strtotime(' - ' . 30 . 'days');
+    // Use entity_id as cursor for pagination to avoid offset/range memory issues
+    $last_processed_nid = \Drupal::state()->get('markaspot_feedback.last_processed_nid', 0);
+    
+    // Time-based filtering: Only process nodes that were marked as completed 
+    // between X days ago and X+10 days ago
+    // This creates a 10-day window of eligibility
+    $newest_date = ($days !== '') ? strtotime(' - ' . $days . ' days') : strtotime(' - 30 days');
+    $oldest_date = ($days !== '') ? strtotime(' - ' . ($days + 10) . ' days') : strtotime(' - 40 days');
+    
+    // Get a small batch for processing (only 10 nodes)
     $query = $storage->getQuery()
-      // ->condition('field_category', $category_tid, 'IN')
-      ->condition('created', $date, '<=')
       ->condition('type', 'service_request')
-      ->condition('field_status', $tids, 'IN');
+      ->condition('field_status', $tids, 'IN')
+      // Only get nodes that have been in status 5 for between $oldest_date and $newest_date
+      // This uses the 'changed' timestamp which is updated when status changes
+      ->condition('changed', $oldest_date, '>=')
+      ->condition('changed', $newest_date, '<=')
+      ->condition('nid', $last_processed_nid, '>')
+      ->condition('field_e_mail', '', '<>') // Only process nodes with an email
+      ->sort('nid', 'ASC')
+      ->range(0, 10);
     $query->accessCheck(FALSE);
 
-    $nids[] = $query->execute();
-    // $string = $query->__toString();
-
-
-    $nids = array_reduce($nids, 'array_merge', []);
-    $this->logger->notice('Markaspot has found %count requests to collect feedback', ['%count' => count($nids)]);
-    // die;
+    $nids = $query->execute();
+    
+    if (!empty($nids)) {
+      // Update the last processed nid for the next batch
+      $last_nid = max($nids);
+      \Drupal::state()->set('markaspot_feedback.last_processed_nid', $last_nid);
+      
+      $this->logger->notice('Processing @count feedback requests for nodes changed between @oldest and @newest (nids up to @last_nid)', [
+        '@count' => count($nids),
+        '@oldest' => date('Y-m-d', $oldest_date),
+        '@newest' => date('Y-m-d', $newest_date),
+        '@last_nid' => $last_nid
+      ]);
+      
+      // If we're near the end, reset to start over on the next run
+      $highest_query = $storage->getQuery()
+        ->condition('type', 'service_request')
+        ->condition('field_status', $tids, 'IN')
+        ->condition('changed', $oldest_date, '>=')
+        ->condition('changed', $newest_date, '<=')
+        ->sort('nid', 'DESC')
+        ->range(0, 1);
+      $highest_query->accessCheck(FALSE);
+      $highest_nids = $highest_query->execute();
+      
+      if (!empty($highest_nids) && $last_nid >= reset($highest_nids)) {
+        \Drupal::state()->set('markaspot_feedback.last_processed_nid', 0);
+        $this->logger->notice('Reached the end of the eligible node IDs, resetting cursor for next run');
+      }
+    } else {
+      // No results found, reset to start over
+      \Drupal::state()->set('markaspot_feedback.last_processed_nid', 0);
+      $this->logger->notice('No feedback requests found in current batch, resetting cursor');
+    }
+    
     return $storage->loadMultiple($nids);
   }
 

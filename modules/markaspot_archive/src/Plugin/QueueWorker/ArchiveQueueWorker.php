@@ -91,6 +91,28 @@ class ArchiveQueueWorker extends QueueWorkerBase implements ContainerFactoryPlug
     try {
       // Load configuration.
       $config = \Drupal::configFactory()->getEditable('markaspot_archive.settings');
+      
+      // Check if the node is already archived
+      $archived_status = $config->get('status_archived');
+      $current_status = $node->get('field_status')->target_id;
+      
+      if ($current_status == $archived_status) {
+        $this->logger->notice('Node ID @nid is already archived (status @status). Skipping.', [
+          '@nid' => $nid,
+          '@status' => $archived_status
+        ]);
+        return;
+      }
+      
+      // Check if the node is still eligible for archiving
+      $archivable_statuses = $config->get('status_archivable');
+      if (!isset($archivable_statuses[$current_status])) {
+        $this->logger->notice('Node ID @nid is no longer in an archivable status (current: @current). Skipping.', [
+          '@nid' => $nid,
+          '@current' => $current_status
+        ]);
+        return;
+      }
 
       // Unpublish node if configured.
       if ($config->get('unpublish') == 1) {

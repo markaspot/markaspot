@@ -836,9 +836,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       foreach ($node->get('field_status_notes') as $note) {
         $logCount++;
         $noteEntity = $note->entity;
-        
-        // Get status term ID with fallback
-        $statusTermId = $noteEntity->get('field_status_term')->target_id ?? $initialStatusId;
+
+        $statusTermId = $noteEntity->field_status_term->getValue()[0]['target_id'] ?? $initialStatusId;
         $statusTerm = $this->entityTypeManager->getStorage('taxonomy_term')->load($statusTermId);
 
         if ($statusTerm && $statusTerm->hasTranslation($langcode)) {
@@ -847,11 +846,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
         $statusNotes[$logCount] = [
           'status_note' => $noteEntity->get('field_status_note')->value,
-          'status' => $this->mapStatusToOpenClosedValue($statusTerm->id()),
+          'status' => $this->mapStatusToOpenClosedValue($statusTermId),
           'updated_datetime' => $this->formatDateTime($noteEntity->get('created')->value),
-          'status_descriptive_name' => $statusTerm->getName(),
-          'status_hex' => $statusTerm->get('field_status_hex')->color,
-          'status_icon' => $statusTerm->get('field_status_icon')->value,
+          'status_descriptive_name' => $statusTerm ? $statusTerm->getName() : '',
+          'status_hex' => $statusTerm ? $statusTerm->get('field_status_hex')->color : '',
+          'status_icon' => $statusTerm ? $statusTerm->get('field_status_icon')->value : ''
         ];
       }
 

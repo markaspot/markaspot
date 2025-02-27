@@ -61,24 +61,52 @@ class ArchiveService implements ArchiveServiceInterface {
     $days = $config->get('days');
     $tids = $this->arrayFlatten($config->get('status_archivable'));
     $storage = $this->entityTypeManager->getStorage('node');
-
-    foreach ($days as $key => $day) {
-      $category_tid = $key;
-
+    
+    // Get a limited number of categories per run
+    $categories = array_slice(array_keys($days), 0, 3, true);
+    $nids = [];
+    
+    \Drupal::logger('markaspot_archive')->notice('Processing @count categories in this run', ['@count' => count($categories)]);
+    
+    foreach ($categories as $category_tid) {
+      $day = $days[$category_tid];
+      
       $date = ($day !== '') ? strtotime(' - ' . $day . 'days') : strtotime(' - ' . 30 . 'days');
+      
       $query = $storage->getQuery()
-        ->condition('field_category', $category_tid, 'IN')
+        ->condition('field_category', $category_tid)
         ->condition('changed', $date, '<=')
         ->condition('type', 'service_request')
-        ->condition('field_status', $tids, 'IN');
+        ->condition('field_status', $tids, 'IN')
+        // Limit to 20 nodes per category
+        ->range(0, 20);
       $query->accessCheck(FALSE);
 
-      $nids[] = $query->execute();
-
+      $result = $query->execute();
+      if (!empty($result)) {
+        $nids = array_merge($nids, $result);
+        \Drupal::logger('markaspot_archive')->notice('Found @count archivable nodes for category @cat', [
+          '@count' => count($result),
+          '@cat' => $category_tid
+        ]);
+      }
     }
-    // $nids = $this->arrayFlatten($nids);
-    $nids = array_reduce($nids, 'array_merge', []);
-
+    
+    // Rotate the processed categories to the end of the list
+    if (!empty($categories)) {
+      foreach ($categories as $category_tid) {
+        $value = $days[$category_tid];
+        unset($days[$category_tid]);
+        $days[$category_tid] = $value;
+      }
+      $config_factory = \Drupal::configFactory()->getEditable('markaspot_archive.settings');
+      $config_factory->set('days', $days)->save();
+    }
+    
+    // Return a limited number of nodes
+    $nids = array_slice($nids, 0, 50);
+    \Drupal::logger('markaspot_archive')->notice('Returning @count nodes for archiving', ['@count' => count($nids)]);
+    
     return $storage->loadMultiple($nids);
   }
 
