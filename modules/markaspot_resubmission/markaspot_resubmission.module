@@ -29,7 +29,7 @@ function markaspot_resubmission_help($route_name, RouteMatchInterface $route_mat
 function markaspot_resubmission_cron() {
   // We access our configuration.
   $config = \Drupal::config('markaspot_resubmission.settings');
-  $mailText = $config->get('mailtext');
+  
   // Default to an hourly interval. Of course, cron has to be running at least
   // hourly for this to work.
   $interval = $config->get('interval');
@@ -41,46 +41,25 @@ function markaspot_resubmission_cron() {
     ->get('markaspot_resubmission.next_execution', 0);
   if (\Drupal::time()->getRequestTime() >= $next_execution) {
 
+    // Get all nodes eligible for resubmission from the service.
     $resubmissionSendable = \Drupal::service('markaspot_resubmission.resubmission')->load();
-    // $config = \Drupal::configFactory()->getEditable('markaspot_resubmission.settings');
-    $count = count($resubmissionSendable);
+    $count = 0;
 
-    foreach ($resubmissionSendable as $resubmissionSend) {
-
-      $node = $resubmissionSend;
-
-      $mailManager = \Drupal::service('plugin.manager.mail');
-      $module = "markaspot_resubmission";
-      $key = 'resubmit_request';
-      $moduleHandler = \Drupal::service('module_handler');
-      if ($moduleHandler->moduleExists('markaspot_groups')){
-        $to = markaspot_resubmission_getGroupField($node);
-      } else {
-        $to = markaspot_resubmission_getOrganisationTermField($node);
-      }
-
-      $params['message'] = markaspot_resubmission_getBody($node, $mailText);
-
-      $params['node_title'] = $node->label();
-      $langcode = \Drupal::currentUser()->getPreferredLangcode();
-      if (isset($to) && $to !== '') {
-        \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('Mail will be sent.'));
-
-        $result = $mailManager->mail($module, $key, $to, $langcode, $params, 'no-reply@example.com', TRUE);
-        if ($result['result'] == TRUE) {
-          \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('Mail was sent.'));
-        }
-        else {
-          \Drupal::logger('Mark-a-Spot Resubmission')->error(t('Mail was not sent.'));
-        }
-      }
-
+    // Get the queue for the resubmission worker.
+    $queue = \Drupal::queue('markaspot_resubmission_queue_worker');
+    
+    foreach ($resubmissionSendable as $node) {
+      // Queue the node for processing.
+      $queue->createItem(['nid' => $node->id()]);
+      $count++;
     }
 
+    \Drupal::logger('markaspot_resubmission')->notice('Enqueued @count nodes for resubmission notifications.', ['@count' => $count]);
+
+    // Set the next execution time.
     \Drupal::state()
       ->set('markaspot_resubmission.next_execution', \Drupal::time()->getRequestTime() + $interval);
   }
-
 }
 
 

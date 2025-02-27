@@ -29,7 +29,7 @@ function markaspot_feedback_help($route_name, RouteMatchInterface $route_match) 
 function markaspot_feedback_cron() {
   // We access our configuration.
   $config = \Drupal::config('markaspot_feedback.settings');
-  $mailText = $config->get('mailtext');
+  
   // Default to an hourly interval. Of course, cron has to be running at least
   // hourly for this to work.
   $interval = $config->get('interval');
@@ -41,42 +41,25 @@ function markaspot_feedback_cron() {
     ->get('markaspot_feedback.next_execution', 0);
   if (\Drupal::time()->getRequestTime() >= $next_execution && $config->get('enable') == 1) {
 
+    // Get all nodes eligible for feedback from the service.
     $feedbackSendable = \Drupal::service('markaspot_feedback.feedback')->load();
-    // $config = \Drupal::configFactory()->getEditable('markaspot_feedback.settings');
-    // $count = count($feedbackSendable);
+    $count = 0;
 
+    // Get the queue for the feedback worker.
+    $queue = \Drupal::queue('markaspot_feedback_queue_worker');
+    
     foreach ($feedbackSendable as $node) {
-
-      $mailManager = \Drupal::service('plugin.manager.mail');
-      $module = "markaspot_feedback";
-      $key = 'resubmit_request';
-      $params['message'] = markaspot_feedback_getBody($node, $mailText);
-
-      $params['node_title'] = $node->label();
-      $langcode = \Drupal::currentUser()->getPreferredLangcode();
-      $to = $node->field_e_mail->value;
-      \Drupal::logger('Mark-a-Spot Feedback')->notice(t('Mail will be sent to.' . $to));
-
-      if (isset($to) && $to !== '') {
-        \Drupal::logger('Mark-a-Spot Feedback')->notice(t('Mail will be sent.'));
-        $result = $mailManager->mail($module, $key, $to, $langcode, $params, 'no-reply@site', TRUE);
-        if ($result['result'] == TRUE) {
-          \Drupal::logger('Mark-a-Spot Feedback')->notice(t('Mail was sent.'));
-          // Set status to archive, service request wont be run through cron loop again.
-          $node->field_status->target_id = key($config->get('set_archive_tid'));
-          $node->save();
-        }
-        else {
-          \Drupal::logger('Mark-a-Spot Feedback')->error(t('Mail was not sent.'));
-        }
-      }
-
+      // Queue the node for processing.
+      $queue->createItem(['nid' => $node->id()]);
+      $count++;
     }
 
+    \Drupal::logger('markaspot_feedback')->notice('Enqueued @count nodes for feedback emails.', ['@count' => $count]);
+
+    // Set the next execution time.
     \Drupal::state()
       ->set('markaspot_feedback.next_execution', \Drupal::time()->getRequestTime() + $interval);
   }
-
 }
 
 
