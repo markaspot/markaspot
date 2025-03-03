@@ -169,13 +169,23 @@
     if (mapSettings.lat && mapSettings.lng) {
       // Map lat and lng are always set to user defined values or 0 initially.
       // If field values already set, use only those and set marker.
+      const $latField = $('.geolocation-widget-lat.for--' + mapSettings.id, context);
+      const $lngField = $('.geolocation-widget-lng.for--' + mapSettings.id, context);
+      
+      // Use mapSettings center coordinates as fallback
       const fieldValues = {
-        lat: $('.geolocation-widget-lat.for--' + mapSettings.id, context).attr('value'),
-        lng: $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value')
+        lat: $latField.val() || $latField.attr('value') || mapSettings.centerLat,
+        lng: $lngField.val() || $lngField.attr('value') || mapSettings.centerLng
       };
 
-      map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
-      reverseGeocode(fieldValues);
+      // Make sure we have valid coordinates before setting view
+      if (fieldValues.lat && fieldValues.lng) {
+        map.setView([fieldValues.lat, fieldValues.lng], mapSettings.zoom);
+        reverseGeocode(fieldValues);
+      } else {
+        // Use map center coordinates as fallback
+        map.setView([mapSettings.centerLat, mapSettings.centerLng], mapSettings.zoom);
+      }
     }
 
 
