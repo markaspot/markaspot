@@ -193,7 +193,43 @@
         reverseGeocode(newPosition, geosearchMarker);
       });
 
+      // Process location data from search result
       const location = Drupal.geolocationNominatimParseReverseGeo(result.location.raw);
+      
+      // Update address field with selected location
+      if (location && mapSettings.setAddressField && result.location.raw.address) {
+        // Target the address-line1 field directly
+        const addressSelector = '.field--type-address.field--name-field-address .js-form-item-field-address-0-address-address-line1 input';
+        const $addressField = $(addressSelector);
+        
+        if ($addressField.length) {
+          // Include house number if available
+          let addressValue = location.road || '';
+          if (location.house_number) {
+            addressValue += ' ' + location.house_number;
+          }
+          
+          $addressField.val(addressValue);
+          
+          // Also try to update postal code if available
+          if (location.postcode) {
+            const $postalField = $('.field--type-address.field--name-field-address .js-form-item-field-address-0-address-postal-code input');
+            if ($postalField.length) {
+              $postalField.val(location.postcode);
+            }
+          }
+          
+          // Also try to update city if available
+          const localityValue = location.city || location.town || location.village || location.hamlet || location.county || location.municipality;
+          if (localityValue) {
+            const $cityField = $('.field--type-address.field--name-field-address .js-form-item-field-address-0-address-locality input');
+            if ($cityField.length) {
+              $cityField.val(localityValue);
+            }
+          }
+        }
+      }
+      
       updateCallback(geosearchMarker, map, location);
 
       $('.geolocation-widget-lng.for--geolocation-nominatim-map')
@@ -345,7 +381,22 @@
      *   The latitude and longitude to geocode.
      */
     function reverseGeocode(latlng) {
-      const url = mapSettings.serviceUrl + 'reverse?' + 'lon=' + latlng.lng + '&lat=' + latlng.lat + '&format=json';
+      // Build base URL with required parameters
+      let url = mapSettings.serviceUrl + 'reverse?' + 'lon=' + latlng.lng + '&lat=' + latlng.lat + '&format=json';
+      
+      // Add viewbox parameter if available
+      if (mapSettings.limitViewbox) {
+        url += '&viewbox=' + mapSettings.limitViewbox;
+      }
+      
+      // Add language parameter if available
+      if (mapSettings.limitCountryCodes) {
+        url += '&accept-language=' + mapSettings.limitCountryCodes;
+      }
+      
+      // Always request address details
+      url += '&addressdetails=1';
+      
       fetch(url)
         .then(function (response) {
           return response.json();

@@ -74,7 +74,7 @@
         'access_token': mapSettings.mapboxToken,
         'country': mapSettings.limitCountryCodes,
         'language': mapSettings.limitCountryCodes,
-        'bbox': [mapSettings.limitViewbox],
+        'bbox': mapSettings.limitViewbox,
         'bounded': 1,
         'limit': 5,
         'city': mapSettings.city
@@ -142,7 +142,18 @@
      *   The latitude and longitude to geocode.
      */
     function reverseGeocode(latlng) {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${latlng.lng},${latlng.lat}.json?types=address&access_token=${mapSettings.mapboxToken}`;
+      // Build the URL with appropriate parameters
+      let url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${latlng.lng},${latlng.lat}.json?types=address&access_token=${mapSettings.mapboxToken}`;
+      
+      // Add bbox parameter if available
+      if (mapSettings.limitViewbox) {
+        url += `&bbox=${mapSettings.limitViewbox}`;
+      }
+      
+      // Add country limitation if available
+      if (mapSettings.limitCountryCodes) {
+        url += `&country=${mapSettings.limitCountryCodes}`;
+      }
       
       fetch(url)
         .then(response => {
@@ -237,6 +248,41 @@
       });
 
       const location = Drupal.geolocationMapboxParseReverseGeo(result.location.raw);
+      
+      // Update address field with selected location.
+      if (location && mapSettings.setAddressField) {
+        // Target the address-line1 field directly.
+        const addressSelector = '.field--type-address.field--name-field-address .js-form-item-field-address-0-address-address-line1 input';
+        const $addressField = $(addressSelector);
+        
+        if ($addressField.length) {
+          // Include house number if available.
+          let addressValue = location.text || '';
+          if (location.address || location.housenumber || location.house_number) {
+            const houseNumber = location.address || location.housenumber || location.house_number;
+            addressValue += ' ' + houseNumber;
+          }
+          
+          $addressField.val(addressValue);
+          
+          // Update postal code if available.
+          if (location.postcode) {
+            const $postalField = $('.field--type-address.field--name-field-address .js-form-item-field-address-0-address-postal-code input');
+            if ($postalField.length) {
+              $postalField.val(location.postcode);
+            }
+          }
+          
+          // Update city if available.
+          if (location.place) {
+            const $cityField = $('.field--type-address.field--name-field-address .js-form-item-field-address-0-address-locality input');
+            if ($cityField.length) {
+              $cityField.val(location.place);
+            }
+          }
+        }
+      }
+      
       updateCallback(geosearchMarker, map, location);
 
       $('.geolocation-widget-lng.for--geolocation-mapbox-map')
