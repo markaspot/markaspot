@@ -39,7 +39,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'wmsLayer' => '',
       'mapboxStyle' => '',
       'mapboxToken' => '',
-      'maplibre' => '',
+      'maplibre' => '1',
       'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
@@ -268,7 +268,6 @@ class GeolocationNominatimWidget extends WidgetBase {
     $element['#attached'] = [
       'library' => [
         'geolocation_nominatim/leaflet',
-        'geolocation_nominatim/mapbox',
         'geolocation_nominatim/maplibre',
         'geolocation_nominatim/leaflet-locatecontrol',
         'geolocation_nominatim/leaflet-geosearch',

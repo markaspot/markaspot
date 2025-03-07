@@ -31,6 +31,8 @@ maplibre:
   css:
     component:
       /libraries/maplibre-gl/dist/maplibre-gl.css: {}
+  dependencies:
+    - geolocation_nominatim/leaflet
 
 font-awesome:
   css:
