@@ -85,6 +85,12 @@ map:
     - core/Drupal
     - core/once
     - markaspot_map/leaflet
+    - markaspot_map/leaflet-markercluster
+    - markaspot_map/leaflet-awesome-markers
+    - markaspot_map/leaflet-fullscreen
+    - markaspot_map/leaflet-easyButton
+    - markaspot_map/leaflet-heatmap
+    - markaspot_map/leaflet
     - markaspot_map/leaflet-timeline
   js:
     js/map.js: {}
