@@ -245,12 +245,16 @@ class GeoreportRequestIndexResource extends ResourceBase {
   public function get() {
     $request_time = $this->time->getRequestTime();
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
-    // Add this at the start of your get() method:
-    \Drupal::logger('markaspot_open311')->debug('API Request - User ID: @uid, Roles: @roles, API Key: @key', [
-      '@uid' => $this->currentUser->id(),
-      '@roles' => implode(', ', $this->currentUser->getRoles()),
-      '@key' => $this->requestStack->getCurrentRequest()->query->get('api_key'),
-    ]);
+    
+    // Only log in development environment or when debug parameter is set
+    if (isset($parameters['debug'])) {
+      \Drupal::logger('markaspot_open311')->debug('API Request - User ID: @uid, Roles: @roles, API Key: @key', [
+        '@uid' => $this->currentUser->id(),
+        '@roles' => implode(', ', $this->currentUser->getRoles()),
+        '@key' => $this->requestStack->getCurrentRequest()->query->get('api_key'),
+      ]);
+    }
+    
     // Start with the secure base query from the processor service
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
 
@@ -259,43 +263,56 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $query->condition('changed', $request_time, '<')
       ->condition('type', $bundle);
 
-    // Handle limit parameters
-    $limit = (isset($parameters['limit']) && $parameters['limit'] <= 200) ? $parameters['limit'] : 100;
+    // Optimize query for common cases - direct ID lookup is fastest
+    if (isset($parameters['id'])) {
+      $query->condition('request_id', $parameters['id']);
+      return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
+    }
+    
+    // Direct NID lookup is also fast
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
       $query->condition('nid', $nids, 'IN');
-      $limit = NULL;
-    }
-
-    if (isset($limit)) {
-      $query->pager($limit);
-    }
-
-    // Handle sorting
-    $sort = (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) ? 'DESC' : 'ASC';
-
-    if (isset($parameters['updated'])) {
-      $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=')
-        ->sort('changed', 'DESC');
     } else {
-      $query->sort('created', $sort);
+      // Apply limit only if not querying specific nodes
+      $limit = (isset($parameters['limit']) && $parameters['limit'] <= 200) ? $parameters['limit'] : 100;
+      $query->range(0, $limit);
+      
+      // Handle date range early to reduce result set
+      if (!isset($parameters['updated'])) {
+        $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '')
+          ? strtotime($parameters['start_date'])
+          : strtotime("- 90days");
+        $query->condition('created', $start_timestamp, '>=');
+
+        $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '')
+          ? strtotime($parameters['end_date'])
+          : time();
+        $query->condition('created', $end_timestamp, '<=');
+      }
+      
+      // Handle sorting - add indexes to these fields in your DB
+      $sort = (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) ? 'DESC' : 'ASC';
+      if (isset($parameters['updated'])) {
+        $query->condition('changed', strtotime($parameters['updated']), '>=')
+          ->sort('changed', 'DESC');
+      } else {
+        $query->sort('created', $sort);
+      }
     }
 
-    // Handle specific request ID
-    if (isset($parameters['id'])) {
-      $query->condition('request_id', $parameters['id']);
-    }
-
-    // Handle custom field filters
-    $fields = array_filter(
-      $parameters,
-      function ($key) {
-        return(strpos($key, 'field_') !== FALSE);
-      },
-      ARRAY_FILTER_USE_KEY
-    );
-    foreach ($fields as $field => $value) {
-      $query->condition($field, $value, '=');
+    // Handle custom field filters - move these after main filters
+    if (!empty($parameters)) {
+      $fields = array_filter(
+        $parameters,
+        function ($key) {
+          return(strpos($key, 'field_') !== FALSE);
+        },
+        ARRAY_FILTER_USE_KEY
+      );
+      foreach ($fields as $field => $value) {
+        $query->condition($field, $value, '=');
+      }
     }
 
     // Handle bounding box
@@ -307,47 +324,48 @@ class GeoreportRequestIndexResource extends ResourceBase {
         ->condition('field_geolocation.lng', $bbox[2], '<');
     }
 
-    // Handle search query
+    // Handle search query (more expensive operation)
     if (isset($parameters['q'])) {
       $group = $query->orConditionGroup()
         ->condition('request_id', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('body', '%' . $parameters['q'] . '%', 'LIKE')
         ->condition('title', '%' . $parameters['q'] . '%', 'LIKE');
+      // Text search on body is expensive, only do if really needed
+      if (strlen($parameters['q']) > 3) {
+        $group->condition('body', '%' . $parameters['q'] . '%', 'LIKE');
+      }
       $query->condition($group);
-    }
-
-    // Handle date range
-    if (!isset($parameters['nids']) && (!isset($parameters['updated']))) {
-      $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '')
-        ? strtotime($parameters['start_date'])
-        : strtotime("- 90days");
-      $query->condition('created', $start_timestamp, '>=');
-
-      $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '')
-        ? strtotime($parameters['end_date'])
-        : time();
-      $query->condition('created', $end_timestamp, '<=');
     }
 
     // Handle status filtering
     if (isset($parameters['status'])) {
       $tids = $this->georeportProcessor->mapStatusToTaxonomyIds($parameters['status']);
-      $or = $query->orConditionGroup();
-      foreach ($tids as $tid) {
-        $or->condition('field_status', $tid);
+      if (!empty($tids)) {
+        $query->condition('field_status', $tids, 'IN');
       }
-      $query->condition($or);
     }
 
     // Handle service code filtering
     if (isset($parameters['service_code'])) {
       $service_codes = explode(',', $parameters['service_code']);
-      $or = $query->orConditionGroup();
-      foreach ($service_codes as $service_code) {
-        $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_code);
-        $or->condition('field_category', $tid);
+      if (count($service_codes) == 1) {
+        // Single service code lookup is simpler
+        $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_codes[0]);
+        $query->condition('field_category', $tid);
+      } else {
+        // Multiple codes need OR condition
+        $categoryTids = [];
+        foreach ($service_codes as $service_code) {
+          try {
+            $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_code);
+            $categoryTids[] = $tid;
+          } catch (\Exception $e) {
+            // Skip invalid service codes
+          }
+        }
+        if (!empty($categoryTids)) {
+          $query->condition('field_category', $categoryTids, 'IN');
+        }
       }
-      $query->condition($or);
     }
 
     return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);

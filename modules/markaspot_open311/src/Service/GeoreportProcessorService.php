@@ -430,21 +430,55 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    */
   public function getResults(object $query, object $user, array $parameters): array {
     $nids = $query->execute();
+    if (empty($nids)) {
+      return [];
+    }
+    
     $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
-
+    
     // Use the proper role determination method
     $extendedRole = $this->determineExtendedRole($user);
-
+    
+    // Preload all taxonomy terms needed by these nodes
+    $this->preloadTaxonomyTerms($nodes);
+    
     $serviceRequests = [];
     foreach ($nodes as $node) {
       $serviceRequests[] = $this->mapNodeToServiceRequest($node, $extendedRole, $parameters);
     }
 
-    if (!empty($serviceRequests)) {
-      return $serviceRequests;
+    return $serviceRequests;
+  }
+  
+  /**
+   * Preloads taxonomy terms for a collection of nodes to avoid individual loads.
+   *
+   * @param array $nodes
+   *   Array of node entities.
+   */
+  private function preloadTaxonomyTerms(array $nodes): void {
+    $categoryIds = [];
+    $statusIds = [];
+    
+    // Collect all term IDs used in the nodes
+    foreach ($nodes as $node) {
+      if ($node->hasField('field_category') && !$node->field_category->isEmpty()) {
+        $categoryIds[] = $node->field_category->target_id;
+      }
+      
+      if ($node->hasField('field_status') && !$node->field_status->isEmpty()) {
+        $statusIds[] = $node->field_status->target_id;
+      }
     }
-
-    return [];
+    
+    // Preload all terms in a single operation
+    if (!empty($categoryIds)) {
+      $this->entityTypeManager->getStorage('taxonomy_term')->loadMultiple(array_unique($categoryIds));
+    }
+    
+    if (!empty($statusIds)) {
+      $this->entityTypeManager->getStorage('taxonomy_term')->loadMultiple(array_unique($statusIds));
+    }
   }
 
   /**
@@ -518,42 +552,94 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    * Maps a node object to a service request definition.
    */
   public function mapNodeToServiceRequest(object $node, string $extendedRole, array $parameters): array {
+    // Get core field values efficiently
+    $categoryId = !$node->get('field_category')->isEmpty() ? $node->get('field_category')->target_id : null;
+    $statusId = !$node->get('field_status')->isEmpty() ? $node->get('field_status')->target_id : null;
+    
+    // Use a static cache for this node's details to avoid recalculation on repeated calls
+    static $serviceRequestCache = [];
+    $cacheKey = $node->id() . '_' . $extendedRole . '_' . md5(serialize($parameters));
+    
+    if (isset($serviceRequestCache[$cacheKey])) {
+      return $serviceRequestCache[$cacheKey];
+    }
+    
+    // Build base request data - only include fields that are actually used
     $request = [
       'service_request_id' => $node->get('request_id')->value,
       'title' => $node->getTitle(),
-      'description' => $node->get('body')->value,
-      'lat' => (float) $node->get('field_geolocation')->lat,
-      'long' => (float) $node->get('field_geolocation')->lng,
-      'address_string' => $this->formatAddress($node->get('field_address')),
-      'service_name' => $this->getTaxonomyTermField($node->get('field_category')->target_id, 'name'),
       'requested_datetime' => $this->formatDateTime($node->get('created')->value),
       'updated_datetime' => $this->formatDateTime($node->get('changed')->value),
-      'status' => $this->mapStatusToOpenClosedValue($node->get('field_status')->target_id),
+      'status' => $this->mapStatusToOpenClosedValue($statusId),
     ];
-
-    // Handle media URLs
-    $request['media_url'] = $this->getMediaUrls($node);
-
-    // Handle status notes
-    $request['status_note'] = $this->getStatusNote($node);
-
-    // Handle service code
-    $request['service_code'] = $this->getTaxonomyTermField($node->get('field_category')->target_id, 'field_service_code');
-
-    if ($extendedRole === 'manager') {
-      $request['email'] = $node->get('field_e_mail')->value;
-      $request['phone'] = $node->get('field_phone')->value ?? null;
-      $request['first_name'] = $node->get('field_first_name')->value ?? null;
-      $request['last_name'] = $node->get('field_last_name')->value ?? null;
+    
+    // Add description if the field exists and isn't empty
+    if ($node->hasField('body') && !$node->get('body')->isEmpty()) {
+      $request['description'] = $node->get('body')->value;
+    }
+    
+    // Add geolocation data if available
+    if ($node->hasField('field_geolocation') && !$node->get('field_geolocation')->isEmpty()) {
+      $request['lat'] = (float) $node->get('field_geolocation')->lat;
+      $request['long'] = (float) $node->get('field_geolocation')->lng;
+    }
+    
+    // Add address if available
+    if ($node->hasField('field_address') && !$node->get('field_address')->isEmpty()) {
+      $request['address_string'] = $this->formatAddress($node->get('field_address'));
+    }
+    
+    // Add service details if available
+    if ($categoryId) {
+      $request['service_name'] = $this->getTaxonomyTermField($categoryId, 'name');
+      $request['service_code'] = $this->getTaxonomyTermField($categoryId, 'field_service_code');
     }
 
-    //var_dump($extendedRole);
+    // Handle media URLs - only if requested or always needed
+    if (isset($parameters['include_media']) || isset($parameters['extensions'])) {
+      $request['media_url'] = $this->getMediaUrls($node);
+    }
 
-    if ($extendedRole !== '' && isset($parameters['extensions'])) {
+    // Handle status notes - only if requested or always needed
+    if (isset($parameters['include_notes']) || isset($parameters['extensions'])) {
+      $request['status_note'] = $this->getStatusNote($node);
+    }
+
+    // Add manager-only fields
+    if ($extendedRole === 'manager') {
+      if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
+        $request['email'] = $node->get('field_e_mail')->value;
+        $request['extended_attributes']['e-mail'] = $node->get('field_e_mail')->value;
+      }
+      
+      if ($node->hasField('field_phone') && !$node->get('field_phone')->isEmpty()) {
+        $request['phone'] = $node->get('field_phone')->value;
+      }
+      
+      if ($node->hasField('field_first_name') && !$node->get('field_first_name')->isEmpty()) {
+        $request['first_name'] = $node->get('field_first_name')->value;
+      }
+      
+      if ($node->hasField('field_last_name') && !$node->get('field_last_name')->isEmpty()) {
+        $request['last_name'] = $node->get('field_last_name')->value;
+      }
+      
+      if ($node->hasField('uid') && !$node->get('uid')->isEmpty() && $node->get('uid')->entity) {
+        $request['extended_attributes']['author'] = $node->get('uid')->entity->label();
+      }
+      
+      // Add full field data if requested
+      if (isset($parameters['full'])) {
+        $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
+      }
+    }
+
+    // Add extended attributes if extensions parameter is set
+    if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
       $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $parameters['langcode'] ?? 'en');
     }
 
-    // Handle fields parameter with role-based access
+    // Add specifically requested fields if user has permission
     if (isset($parameters['fields']) && $extendedRole !== 'anonymous') {
       $allowedFields = $this->getAllowedFields($extendedRole);
       $requestedFields = explode(',', $parameters['fields']);
@@ -563,15 +649,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
         $request['extended_attributes']['drupal'] = $this->getFieldValues($node, implode(',', $accessibleFields));
       }
     }
-
-    // Manager specific additional data
-    if ($extendedRole === 'manager') {
-      $request['extended_attributes']['author'] = $node->get('uid')->entity->label();
-      $request['extended_attributes']['e-mail'] = $node->get('field_e_mail')->value;
-
-      if (isset($parameters['full'])) {
-        $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
-      }
+    
+    // Store in cache for repeated use
+    $serviceRequestCache[$cacheKey] = $request;
+    
+    // Limit cache size to avoid memory issues
+    if (count($serviceRequestCache) > 50) {
+      array_shift($serviceRequestCache);
     }
 
     return $request;
@@ -665,11 +749,28 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       return null;
     }
 
-    // Attempt to load the taxonomy term
-    $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($tid);
+    // Use static cache to avoid repeated loads of the same terms
+    static $termCache = [];
+    
+    // If term is not in cache, load it
+    if (!isset($termCache[$tid])) {
+      $termCache[$tid] = $this->entityTypeManager->getStorage('taxonomy_term')->load($tid);
+      
+      // Limit cache size to avoid memory issues
+      if (count($termCache) > 100) {
+        array_shift($termCache);
+      }
+    }
+    
+    $term = $termCache[$tid];
 
     // Check if the term exists and if the specified field exists on the term
     if ($term !== null && $term->hasField($fieldName)) {
+      // Special case for name field which doesn't have a value property
+      if ($fieldName === 'name') {
+        return $term->getName();
+      }
+      
       // Safely return the field value, ensuring null is returned if the field is not set
       return $term->get($fieldName)->value ?? null;
     }
@@ -793,53 +894,96 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    */
   private function getExtendedAttributes(object $node, string $langcode): array
   {
+    static $extendedAttributesCache = [];
+    $cacheKey = $node->id() . '_' . $langcode;
+    
+    // Return from cache if available
+    if (isset($extendedAttributesCache[$cacheKey])) {
+      return $extendedAttributesCache[$cacheKey];
+    }
+    
     $extendedAttributes = [
       'nid' => $node->id(),
     ];
 
+    // Preload taxonomy terms we'll need to avoid individual loads
+    $termIds = [];
     if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
-      $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->get('field_category')->target_id);
-
-      if ($term) {
+      $termIds[] = $node->get('field_category')->target_id;
+    }
+    if ($node->hasField('field_status') && !$node->get('field_status')->isEmpty()) {
+      $termIds[] = $node->get('field_status')->target_id;
+    }
+    
+    // Also collect status note term IDs
+    $statusNoteTermIds = [];
+    if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
+      foreach ($node->get('field_status_notes') as $note) {
+        if ($note->entity && $note->entity->hasField('field_status_term') && !$note->entity->get('field_status_term')->isEmpty()) {
+          $statusNoteTermIds[] = $note->entity->get('field_status_term')->target_id;
+        }
+      }
+    }
+    
+    // Combine all term IDs and load them at once
+    $allTermIds = array_merge($termIds, $statusNoteTermIds);
+    if (!empty($allTermIds)) {
+      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadMultiple(array_unique($allTermIds));
+    } else {
+      $terms = [];
+    }
+    
+    // Process category information
+    if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+      $categoryId = $node->get('field_category')->target_id;
+      if (isset($terms[$categoryId])) {
+        $term = $terms[$categoryId];
         if ($term->hasTranslation($langcode)) {
           $term = $term->getTranslation($langcode);
         }
-
         $extendedAttributes['category_hex'] = $term->get('field_category_hex')->color ?? '';
         $extendedAttributes['category_icon'] = $term->get('field_category_icon')->value ?? '';
       } else {
-        // Handle the case where the term is null
-        \Drupal::logger('markaspot_open311')->warning('Field category term could not be loaded for node ID @nid.', ['@nid' => $node->id()]);
         $extendedAttributes['category_hex'] = '';
         $extendedAttributes['category_icon'] = '';
       }
     }
+    
+    // Process status information
     if ($node->hasField('field_status') && !$node->get('field_status')->isEmpty()) {
-      $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($node->get('field_status')->target_id);
-      if ($term) {
+      $statusId = $node->get('field_status')->target_id;
+      if (isset($terms[$statusId])) {
+        $term = $terms[$statusId];
+        if ($term->hasTranslation($langcode)) {
+          $term = $term->getTranslation($langcode);
+        }
         $extendedAttributes['status_descriptive_name'] = $term->getName() ?? '';
         $extendedAttributes['status_hex'] = $term->get('field_status_hex')->color ?? '';
       } else {
-        // Log warning and set defaults if the term is missing
-        \Drupal::logger('markaspot_open311')->warning('Field status term could not be loaded for node ID @nid.', ['@nid' => $node->id()]);
         $extendedAttributes['status_descriptive_name'] = '';
         $extendedAttributes['status_hex'] = '';
       }
     }
+    
+    // Process status notes with preloaded terms
     if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
       $statusNotes = [];
       $logCount = -1;
-
+      
       // Get default initial status term ID
       $initialStatusId = $this->configFactory->get('markaspot_open311.settings')->get('status_open_start')[0] ?? null;
 
       foreach ($node->get('field_status_notes') as $note) {
         $logCount++;
         $noteEntity = $note->entity;
+        if (!$noteEntity) {
+          continue;
+        }
 
         $statusTermId = $noteEntity->field_status_term->getValue()[0]['target_id'] ?? $initialStatusId;
-        $statusTerm = $this->entityTypeManager->getStorage('taxonomy_term')->load($statusTermId);
-
+        
+        // Get the term from our preloaded collection
+        $statusTerm = isset($terms[$statusTermId]) ? $terms[$statusTermId] : null;
         if ($statusTerm && $statusTerm->hasTranslation($langcode)) {
           $statusTerm = $statusTerm->getTranslation($langcode);
         }
@@ -855,6 +999,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       }
 
       $extendedAttributes['status_notes'] = $statusNotes;
+    }
+    
+    // Cache the result for future use
+    $extendedAttributesCache[$cacheKey] = $extendedAttributes;
+    
+    // Limit cache size to avoid memory issues
+    if (count($extendedAttributesCache) > 50) {
+      array_shift($extendedAttributesCache);
     }
 
     return $extendedAttributes;

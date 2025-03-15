@@ -69,35 +69,33 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
    *   The response object.
    */
   public function handle(RouteMatchInterface $route_match, Request $request, RestResourceConfigInterface $_rest_resource_config) {
-
+    // Start timing for performance measurement
+    $startTime = microtime(true);
+    
     $method = strtolower($request->getMethod());
     $resource = $_rest_resource_config->getResourcePlugin();
 
+    // Process request content for POST/PUT methods
     $received = $request->getContent();
+    $request_all = [];
+    
     if (!empty($received)) {
-      $format = $request->getContentTypeFormat(); // Updated here
-
-      $method_settings = $_rest_resource_config->get('configuration')[$request->getMethod()];
+      $format = $request->getContentTypeFormat();
+      $method_settings = $_rest_resource_config->get('configuration')[$request->getMethod()] ?? [];
 
       $request_all = $request->request->all();
 
-      if (empty($method_settings['supported_formats']) || in_array($format, $method_settings['supported_formats'])) {
-        try {
-
-        }
-        catch (UnexpectedValueException $e) {
-          $error['error'] = $e->getMessage();
-          $content = $this->serializer->serialize($error, $format);
-          return new Response($content, 400, ['Content-Type' => $request->getMimeType($format)]);
-        }
-      }
-      else {
+      // Validate supported formats
+      if (!empty($method_settings['supported_formats']) && !in_array($format, $method_settings['supported_formats'])) {
         throw new UnsupportedMediaTypeHttpException();
       }
     }
+    
+    // Get query parameters and merge with request body for complete data
     $query_params = $request->query->all();
-    $request_data = $request_all ?? $query_params;
+    $request_data = $request_all ?: $query_params;
 
+    // Process route parameters
     $route_parameters = $route_match->getParameters();
     $parameters = [];
     foreach ($route_parameters as $key => $parameter) {
@@ -106,22 +104,37 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
       }
     }
 
+    // Determine format from URL extension
     $current_path = $this->currentPath->getPath();
-
     if (strstr($current_path, 'georeport')) {
       $format = pathinfo($current_path, PATHINFO_EXTENSION);
     }
 
+    // Call the resource method
     $result = call_user_func_array([
       $resource, $method,
     ], array_merge($parameters, [$request_data, $request]));
 
-    $result = $this->serializer->serialize($result, $format);
-
+    // Add cache headers for GET requests to improve client-side caching
     $response = new Response();
+    if ($method === 'get' && !isset($query_params['debug'])) {
+      // Cache for 3 minutes
+      $response->setMaxAge(180);
+      $response->setSharedMaxAge(180);
+      $response->headers->set('X-Cache-Policy', 'public, max-age=180');
+    }
 
+    // Serialize response
+    $serializedResult = $this->serializer->serialize($result, $format);
+    
+    // Set the appropriate Content-Type header
     $response->headers->set('Content-Type', $request->getMimeType($format));
-    $response->setContent($result);
+    $response->setContent($serializedResult);
+    
+    // Add performance timing header for monitoring
+    $executionTime = round((microtime(true) - $startTime) * 1000, 2);
+    $response->headers->set('X-API-Execution-Time', $executionTime . 'ms');
+    
     return $response;
   }
 
