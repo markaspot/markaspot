@@ -1,0 +1,4 @@
+services:
+  markaspot_nuxt.voting_api_controller:
+    class: Drupal\markaspot_nuxt\Controller\VotingApiController
+    arguments: ['@entity_type.manager']

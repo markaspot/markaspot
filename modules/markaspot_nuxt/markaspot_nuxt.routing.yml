@@ -1,0 +1,21 @@
+markaspot_nuxt.form_mode_settings:
+  path: '/jsonapi/mark-a-spot-form-mode-settings/{entity_type}/{bundle}/{form_mode}'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getFormModeSettings'
+    _title: 'Form Mode Settings'
+  requirements:
+    _permission: 'access content'
+markaspot_nuxt.markaspot_settings:
+  path: '/jsonapi/mark-a-spot-settings'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getMarkASpotSettings'
+    _title: 'Mark-a-Spot Settings'
+  requirements:
+    _permission: 'access content'
+markaspot_nuxt.vote_sum:
+  path: '/jsonapi/vote-sum/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\VotingApiController::voteSum'
+    _format: 'json'
+  requirements:
+    _permission: 'access content'

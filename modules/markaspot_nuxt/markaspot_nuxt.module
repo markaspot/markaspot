@@ -1,0 +1,72 @@
+<?php
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Component\Utility\Unicode;
+use Drupal\file\FileRepositoryInterface;
+use Drupal\file\Entity\File;
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Session\AccountInterface;
+
+/**
+ * Implements hook_entity_presave().
+ */
+function markaspot_nuxt_entity_presave(EntityInterface $entity)
+{
+  // Check if the entity is a file and is temporary.
+  if ($entity->getEntityTypeId() === 'file' && $entity->isTemporary()) {
+    $original_uri = $entity->getFileUri();
+
+    // Load the file repository service.
+    $file_repository = \Drupal::service('file.repository');
+
+    // Use the file repository to load the file by URI.
+    $existing_file = $file_repository->loadByUri($original_uri);
+
+    if ($existing_file) {
+      if ($existing_file->isTemporary()) {
+        // Delete the existing temporary file.
+        $existing_file->delete();
+        \Drupal::logger('markaspot_nuxt')->notice('Deleted existing temporary file: @uri', [
+          '@uri' => $original_uri,
+        ]);
+      } else {
+        // Generate a new unique filename if the existing file is permanent.
+        $directory = dirname($original_uri);
+        $filename = Unicode::basename($original_uri);
+        $unique_filename = file_munge_filename(uniqid() . '_' . $filename, 'private');
+        $new_uri = $directory . '/' . $unique_filename;
+        $entity->setFileUri($new_uri);
+
+        \Drupal::logger('markaspot_nuxt')->notice('Renamed conflicting file URI: @old -> @new', [
+          '@old' => $original_uri,
+          '@new' => $new_uri,
+        ]);
+      }
+    }
+
+    // Mark the file as permanent.
+    $entity->setPermanent();
+  }
+}
+
+
+/**
+ * Implements hook_file_access().
+ */
+function markaspot_nuxt_file_access(File $file, $operation, AccountInterface $account)
+{
+  $uri = $file->getFileUri();
+
+  // Log all access attempts for debugging.
+  \Drupal::logger('markaspot_nuxt')->notice('S3 File access: URI=@uri Op=@op User=@uid', [
+    '@uri' => $uri,
+    '@op' => $operation,
+    '@uid' => $account->id(),
+  ]);
+
+  // Always allow access to files.
+  // This is more permissive - adjust based on your security needs.
+  return AccessResult::allowed()
+    ->addCacheableDependency($file)
+    ->addCacheableDependency($account);
+}
