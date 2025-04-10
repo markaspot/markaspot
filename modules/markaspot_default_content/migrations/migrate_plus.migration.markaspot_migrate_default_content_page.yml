@@ -8,7 +8,7 @@ source:
   ids: [title]
 process:
   title: title
-  body__value: description__value
+  body__value: body
   body__format: full_html
 destination:
   plugin: 'entity:node'
