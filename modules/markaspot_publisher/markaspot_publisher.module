@@ -1,0 +1,51 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_publisher.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_publisher_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    // Main module help for the markaspot_publisher module.
+    case 'help.page.markaspot_publisher':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Mark-a-Spot Publisher') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function markaspot_publisher_cron() {
+  // Get the configuration to determine what "published" means.
+  $config = \Drupal::config('markaspot_publisher.settings');
+  $published_status = $config->get('status_published');
+
+  // Get all nodes eligible for publishing from the service.
+  $publishables = \Drupal::service('markaspot_publisher.publisher')->load();
+
+  // Get the queue for the publisher worker.
+  $queue = \Drupal::queue('markaspot_publisher_queue_worker');
+  $count = 0;
+
+  foreach ($publishables as $publishable) {
+    // Check if the node already has the target status.
+    if ($publishable->get('field_status')->target_id != $published_status) {
+      // Only enqueue nodes that are not already published with the target status.
+      $queue->createItem(['nid' => $publishable->id()]);
+      $count++;
+    }
+  }
+
+  \Drupal::logger('markaspot_publisher')->notice('Enqueued @count nodes for publishing.', ['@count' => $count]);
+}

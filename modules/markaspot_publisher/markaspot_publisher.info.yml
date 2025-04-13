@@ -1,0 +1,5 @@
+name: 'Mark-a-Spot Publisher'
+type: module
+description: 'Publishes service requests after a configurable time period'
+core_version_requirement: ^10 || ^11
+package: 'Mark-a-Spot'
