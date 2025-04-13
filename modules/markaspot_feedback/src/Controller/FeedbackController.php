@@ -120,9 +120,39 @@ class FeedbackController extends ControllerBase {
         return new JsonResponse(['message' => 'Not a service request'], 400);
       }
       
-      // Update the feedback field
+      // Check if feedback already exists
+      if ($node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty()) {
+        $logger->warning('Feedback already exists for node @nid, ignoring update attempt', ['@nid' => $node->id()]);
+        
+        // Include field_has_feedback flag in the response if it exists
+        $field_has_feedback = false;
+        if ($node->hasField('field_has_feedback')) {
+          $field_has_feedback = (bool) $node->get('field_has_feedback')->value;
+        }
+        
+        return new JsonResponse([
+          'message' => 'Feedback already exists for this service request', 
+          'existing_feedback' => $node->get('field_feedback')->value,
+          'nid' => $node->id(),
+          'field_has_feedback' => $field_has_feedback
+        ], 409); // 409 Conflict - indicating the request couldn't be completed due to a conflict
+      }
+      
+      // Update the feedback field if it doesn't exist yet
       if (isset($data['feedback'])) {
         $node->set('field_feedback', $data['feedback']);
+        
+        // Set the field_has_feedback flag to TRUE
+        if ($node->hasField('field_has_feedback')) {
+          $node->set('field_has_feedback', TRUE);
+          $logger->notice('Setting field_has_feedback to TRUE for node @nid', [
+            '@nid' => $node->id(),
+          ]);
+        } else {
+          $logger->warning('field_has_feedback not found on node @nid', [
+            '@nid' => $node->id(),
+          ]);
+        }
       }
       
       // Update the status if reopen flag is set
@@ -149,9 +179,16 @@ class FeedbackController extends ControllerBase {
         '@uuid' => $uuid,
       ]);
       
+      // Get the value of field_has_feedback for the response
+      $field_has_feedback = false;
+      if ($node->hasField('field_has_feedback')) {
+        $field_has_feedback = (bool) $node->get('field_has_feedback')->value;
+      }
+      
       return new JsonResponse([
         'message' => 'Feedback updated successfully',
         'nid' => $node->id(),
+        'field_has_feedback' => $field_has_feedback,
       ]);
     }
     catch (\Exception $e) {
@@ -203,6 +240,11 @@ class FeedbackController extends ControllerBase {
         'status' => $node->hasField('field_status') ? $node->get('field_status')->target_id : null,
         'has_feedback' => $node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty(),
       ];
+      
+      // Include the field_has_feedback flag in the response if it exists
+      if ($node->hasField('field_has_feedback')) {
+        $response_data['field_has_feedback'] = (bool) $node->get('field_has_feedback')->value;
+      }
       
       // Add feedback if it exists
       if ($node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty()) {

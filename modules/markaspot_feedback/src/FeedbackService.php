@@ -143,13 +143,16 @@ class FeedbackService implements FeedbackServiceInterface {
     
     // Build a query that finds nodes:
     // 1. Of type 'service_request'
-    // 2. With the specified status term IDs
-    // 3. That were last updated before 'days' ago
-    // 4. That haven't been processed for feedback yet
+    // 2. That are published
+    // 3. With the specified status term IDs
+    // 4. That were last updated before 'days' ago
+    // 5. That haven't been processed for feedback yet
     $query = $this->database->select('node_field_data', 'n');
     $query->join('node__field_status', 's', 'n.nid = s.entity_id');
     $query->fields('n', ['nid'])
       ->condition('n.type', 'service_request')
+      // Only include published nodes
+      ->condition('n.status', 1)
       ->condition('s.field_status_target_id', array_keys($status_resubmissive), 'IN')
       ->condition('n.changed', $timestamp, '<')
       ->orderBy('n.nid', 'ASC')
@@ -162,6 +165,16 @@ class FeedbackService implements FeedbackServiceInterface {
     }
     
     $result = $query->execute()->fetchCol();
+    
+    // Log a simple summary
+    $logger = $this->loggerFactory->get('markaspot_feedback');
+    if (!empty($result)) {
+      $logger->notice('Found @count service requests eligible for feedback processing', [
+        '@count' => count($result),
+      ]);
+    } else {
+      $logger->notice('No service requests found eligible for feedback processing');
+    }
     
     return $result;
   }
@@ -180,6 +193,18 @@ class FeedbackService implements FeedbackServiceInterface {
         return FALSE;
       }
       
+      // Check if the node is published
+      if (!$node->isPublished()) {
+        $logger->warning('Node @nid is not published, skipping feedback processing.', ['@nid' => $node->id()]);
+        return FALSE;
+      }
+      
+      // Check if the node has the required field_status field
+      if (!$node->hasField('field_status') || $node->get('field_status')->isEmpty()) {
+        $logger->warning('Node @nid is missing the field_status field or it is empty.', ['@nid' => $node->id()]);
+        return FALSE;
+      }
+      
       // Check if the node status is eligible for feedback.
       $status_resubmissive = $config->get('status_resubmissive');
       $current_status = $node->get('field_status')->target_id;
@@ -189,17 +214,41 @@ class FeedbackService implements FeedbackServiceInterface {
         return FALSE;
       }
       
-      // Send feedback request email to the node author if they have an email.
-      $user = $node->getOwner();
-      if ($user && $user->getEmail()) {
-        $this->sendFeedbackRequestEmail($node, $user->getEmail());
-        $logger->notice('Feedback request email sent to user @uid for node @nid.', [
-          '@uid' => $user->id(),
+      // Check if this node has already been processed for feedback
+      $processed_nids = $this->state->get('markaspot_feedback.processed_nids', []);
+      if (in_array($node->id(), $processed_nids)) {
+        $logger->notice('Node @nid has already been processed for feedback.', [
           '@nid' => $node->id(),
+        ]);
+        return FALSE;
+      }
+      
+      // Check if the node has a field_e_mail field and it's not empty
+      $recipientEmail = NULL;
+      if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
+        $recipientEmail = $node->get('field_e_mail')->value;
+      }
+      // Fallback to the node author's email as a last resort
+      else {
+        $user = $node->getOwner();
+        if ($user && $user->getEmail()) {
+          $recipientEmail = $user->getEmail();
+        }
+      }
+      
+      // Send the email if we found a recipient
+      if ($recipientEmail) {
+        $this->sendFeedbackRequestEmail($node, $recipientEmail);
+        $logger->notice('Feedback request email sent for node @nid to @email.', [
+          '@nid' => $node->id(),
+          '@email' => $recipientEmail,
         ]);
       }
       else {
-        $logger->warning('No email found for node @nid author.', ['@nid' => $node->id()]);
+        $logger->warning('No email address found for node @nid (checked field_e_mail and author).', [
+          '@nid' => $node->id(),
+        ]);
+        return FALSE;
       }
       
       // Set the node status to the progress status, if configured.
@@ -277,16 +326,12 @@ class FeedbackService implements FeedbackServiceInterface {
       // Replace tokens in the mail text.
       $mailtext = $this->token->replace($mailtext, ['node' => $node]);
       
-      // Generate a feedback URL with a unique token.
-      $feedback_token = md5($node->id() . $to . time());
-      $this->state->set('markaspot_feedback.token.' . $feedback_token, [
-        'nid' => $node->id(),
-        'email' => $to,
-        'created' => time(),
-      ]);
+      // Simply use the node's UUID for the feedback URL.
+      // This matches the frontend's expected format and simplifies the process.
+      $node_uuid = $node->uuid();
       
       $feedback_url = \Drupal::request()->getSchemeAndHttpHost() . 
-                     '/feedback/' . $node->id() . '/' . $feedback_token;
+                     '/feedback/' . $node_uuid;
       
       // Prepare mail parameters.
       $site_config = $this->configFactory->get('system.site');

@@ -104,3 +104,4 @@ function markaspot_feedback_cron() {
   // Update the last run time.
   \Drupal::state()->set('markaspot_feedback.last_run', $time);
 }
+

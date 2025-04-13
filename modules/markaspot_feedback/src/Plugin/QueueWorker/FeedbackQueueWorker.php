@@ -113,10 +113,23 @@ class FeedbackQueueWorker extends QueueWorkerBase implements ContainerFactoryPlu
         return;
       }
       
-      // Check if the node has an author with email
-      $user = $node->getOwner();
-      if (!$user || !$user->getEmail()) {
-        $this->logger->warning('Node ID @nid has no author with email address. Cannot send feedback request.', [
+      // Check if the node has a valid email address to send feedback to
+      $hasEmail = FALSE;
+      
+      // Check if the node has a field_e_mail field and it's not empty
+      if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
+        $hasEmail = TRUE;
+      }
+      // Fallback to the node author's email as a last resort
+      else {
+        $user = $node->getOwner();
+        if ($user && $user->getEmail()) {
+          $hasEmail = TRUE;
+        }
+      }
+      
+      if (!$hasEmail) {
+        $this->logger->warning('Node ID @nid has no email address (field_e_mail or author). Cannot send feedback request.', [
           '@nid' => $nid
         ]);
         return;
