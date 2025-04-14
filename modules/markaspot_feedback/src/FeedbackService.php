@@ -263,8 +263,8 @@ class FeedbackService implements FeedbackServiceInterface {
           // Create a status note paragraph and attach it to the node.
           $paragraph_storage = $this->entityTypeManager->getStorage('paragraph');
           $status_note_paragraph = $paragraph_storage->create([
-            'type' => 'status_note',
-            'field_note_text' => [
+            'type' => 'status',
+            'field_status_note' => [
               'value' => $status_note,
               'format' => 'full_html',
             ],

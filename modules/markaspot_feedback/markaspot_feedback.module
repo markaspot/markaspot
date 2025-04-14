@@ -44,8 +44,8 @@ function markaspot_feedback_cron() {
   // Get module configuration.
   $config = \Drupal::config('markaspot_feedback.settings');
   
-  // Check if the module is enabled.
-  if ($config->get('enable') != 1) {
+  // Check if the module is enabled and if cron processing is enabled.
+  if ($config->get('enable') != 1 || $config->get('cron_enable') != 1) {
     return;
   }
   
