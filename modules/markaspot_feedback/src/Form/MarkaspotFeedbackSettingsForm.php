@@ -87,12 +87,12 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
     ];
 
-    $form['markaspot_feedback']['status_resubmissive'] = [
+    $form['markaspot_feedback']['status_feedback_enabled'] = [
       '#type' => 'select',
       '#multiple' => TRUE,
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_feedback.settings')->get('tax_status')),
-      '#default_value' => $config->get('status_resubmissive'),
+      '#default_value' => $config->get('status_feedback_enabled'),
       '#title' => $this->t('Please choose which status values make a service request eligible for feedback collection'),
     ];
 
@@ -117,8 +117,8 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_feedback.settings')->get('tax_status')),
       '#default_value' => $config->get('set_progress_tid'),
-      '#title' => $this->t('Status to set when sending feedback email'),
-      '#description' => $this->t('This status will be applied to service requests when the feedback email is sent, indicating that feedback has been requested.'),
+      '#title' => $this->t('Status to set when user requests status update via feedback form'),
+      '#description' => $this->t('This status will be applied to the service request when the user selects the status update option in the feedback form.'),
     ];
 
 
@@ -171,7 +171,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       ->set('enable', $values['enable'])
       ->set('cron_enable', $values['cron_enable'])
       ->set('tax_status', $values['tax_status'])
-      ->set('status_resubmissive', $values['status_resubmissive'])
+      ->set('status_feedback_enabled', $values['status_feedback_enabled'])
       ->set('set_progress_tid', $values['set_progress_tid'])
       ->set('set_status_note', $values['set_status_note'])
       ->set('days', $values['days'])

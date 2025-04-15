@@ -155,18 +155,17 @@ class FeedbackController extends ControllerBase {
         }
       }
       
-      // Update the status if reopen flag is set
-      if (!empty($data['reopen'])) {
-        // Get configuration for status to set when reopening
+      // Update the status if set_status flag is set
+      if (!empty($data['set_status'])) {
+        // Get configuration for status to set when feedback is submitted
         $config = $this->configFactory->get('markaspot_feedback.settings');
-        $reopen_status_tid = $config->get('status_resubmissive');
-        
-        if (!empty($reopen_status_tid)) {
-          $reopen_status = key($reopen_status_tid);
-          $node->set('field_status', $reopen_status);
-          $logger->notice('Reopening service request @nid with status @status', [
+        $progress_statuses = $config->get('set_progress_tid');
+        if (!empty($progress_statuses)) {
+          $progress_tid = is_array($progress_statuses) ? reset($progress_statuses) : $progress_statuses;
+          $node->set('field_status', $progress_tid);
+          $logger->notice('Setting service request @nid status to @status via feedback', [
             '@nid' => $node->id(),
-            '@status' => $reopen_status,
+            '@status' => $progress_tid,
           ]);
         }
       }

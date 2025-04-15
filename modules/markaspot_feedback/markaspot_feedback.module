@@ -75,9 +75,9 @@ function markaspot_feedback_cron() {
   $status_terms = [];
   $status_vocabulary = $config->get('tax_status') ?: 'service_status';
   $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
-  $status_terms_resubmissive = $config->get('status_resubmissive');
+  $status_terms_feedback_enabled = $config->get('status_feedback_enabled');
   
-  foreach ($status_terms_resubmissive as $tid => $enabled) {
+  foreach ($status_terms_feedback_enabled as $tid => $enabled) {
     if ($term = $term_storage->load($tid)) {
       $status_terms[$tid] = $term->label();
     }
