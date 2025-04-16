@@ -1,0 +1,15 @@
+markaspot_stats.status:
+  path: '/api/stats/status'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\StatsController::getStatusStats'
+    _title: 'Service Request Status Statistics'
+  requirements:
+    _permission: 'access content'
+
+markaspot_stats.categories:
+  path: '/api/stats/categories'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\StatsController::getCategoryStats'
+    _title: 'Service Request Category Statistics'
+  requirements:
+    _permission: 'access content'

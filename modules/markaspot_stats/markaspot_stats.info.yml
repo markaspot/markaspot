@@ -1,0 +1,7 @@
+name: 'Mark-a-Spot Stats'
+type: module
+description: 'Provides optimized statistics API for Mark-a-Spot'
+core_version_requirement: ^9 || ^10 || ^11
+package: 'Mark-a-Spot'
+dependencies:
+  - drupal:rest
