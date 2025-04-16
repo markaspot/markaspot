@@ -1,4 +1,6 @@
 tax_status: service_status
+enable: 1
+cron_enable: 1
 status_resubmissive:
   5: '5'
 set_status_note: 'Die/der Bürger:in hat einen zusätzlichen Kommentar über die Feedback-Funktion hinterlassen.'

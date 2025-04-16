@@ -63,9 +63,21 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
 
     $form['markaspot_feedback']['enable'] = [
       '#type' => 'checkbox',
-      '#title' => $this->t('Feedback loops Enabled'),
+      '#title' => $this->t('Enable Feedback Module'),
       '#default_value' => $config->get('enable'),
-      '#description' => $this->t('Enable feedback cron runs'),
+      '#description' => $this->t('Master switch for all feedback functionality. When disabled, the entire feedback system is turned off, including both automated (cron) and manual processing.'),
+    ];
+    
+    $form['markaspot_feedback']['cron_enable'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Automated Processing via Cron'),
+      '#default_value' => $config->get('cron_enable'),
+      '#description' => $this->t('When disabled, emails will need to be handled via ECA or manually'),
+      '#states' => [
+        'visible' => [
+          ':input[name="markaspot_feedback[enable]"]' => ['checked' => TRUE],
+        ],
+      ],
     ];
 
     $form['markaspot_feedback']['common']['tax_status'] = [
@@ -75,26 +87,15 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
     ];
 
-    $form['markaspot_feedback']['status_resubmissive'] = [
+    $form['markaspot_feedback']['status_feedback_enabled'] = [
       '#type' => 'select',
       '#multiple' => TRUE,
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_feedback.settings')->get('tax_status')),
-      '#default_value' => $config->get('status_resubmissive'),
-      '#title' => $this->t('Please choose the status for resubmissable reports.'),
+      '#default_value' => $config->get('status_feedback_enabled'),
+      '#title' => $this->t('Please choose which status values make a service request eligible for feedback collection'),
     ];
 
-    $form['markaspot_feedback']['days'] = [
-      '#tree' => TRUE,
-      '#title' => $this->t('Feedback period settings'),
-      '#description' => $this->t('You can change the period in which content is notified for being submissive.'),
-      '#open' => TRUE,
-      '#type' => 'number',
-      '#step' => '1',
-      '#default_value' =>  $config->get('days'),
-      '#required' => TRUE,
-      '#weight' => '0',
-    ];
 
     $form['markaspot_feedback']['mailtext'] = [
       '#type' => 'textarea',
@@ -116,27 +117,25 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#options' => self::getTaxonomyTermOptions(
         $this->config('markaspot_feedback.settings')->get('tax_status')),
       '#default_value' => $config->get('set_progress_tid'),
-      '#title' => $this->t('Please choose the status to be set when the re-opening option is chosen by citizens'),
+      '#title' => $this->t('Status to set when user requests status update via feedback form'),
+      '#description' => $this->t('This status will be applied to the service request when the user selects the status update option in the feedback form.'),
     ];
 
-    $form['markaspot_feedback']['set_archive_tid'] = [
-      '#type' => 'select',
-      '#multiple' => TRUE,
-      '#options' => self::getTaxonomyTermOptions(
-        $this->config('markaspot_feedback.settings')->get('tax_status')),
-      '#default_value' => $config->get('set_archive_tid'),
-      '#title' => $this->t('Please choose the status to be set as archive'),
-    ];
 
     $form['markaspot_feedback']['days'] = [
       '#type' => 'number',
       '#min' => 1,
       '#max' => 1000,
       '#step' => 1,
-      '#title' => $this->t('Period in days'),
+      '#title' => $this->t('Waiting period in days'),
       '#default_value' => $config->get('days'),
-      '#description' => $this->t('Enter here after how many days an e-mail should be sent.')
-
+      '#description' => $this->t('Specify after how many days since a service request was completed that a feedback email should be sent. This helps ensure citizens have had time to verify the resolution.'),
+      '#required' => TRUE,
+      '#states' => [
+        'visible' => [
+          ':input[name="markaspot_feedback[cron_enable]"]' => ['checked' => TRUE],
+        ],
+      ],
     ];
 
     $form['markaspot_feedback']['interval'] = [
@@ -153,6 +152,11 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
         432000 => $this->t('5 days'),
         604800 => $this->t('1 week'),
       ],
+      '#states' => [
+        'visible' => [
+          ':input[name="markaspot_feedback[cron_enable]"]' => ['checked' => TRUE],
+        ],
+      ],
     ];
 
     return parent::buildForm($form, $form_state);
@@ -165,10 +169,10 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
     $this->config('markaspot_feedback.settings')
       ->set('enable', $values['enable'])
+      ->set('cron_enable', $values['cron_enable'])
       ->set('tax_status', $values['tax_status'])
-      ->set('status_resubmissive', $values['status_resubmissive'])
+      ->set('status_feedback_enabled', $values['status_feedback_enabled'])
       ->set('set_progress_tid', $values['set_progress_tid'])
-      ->set('set_archive_tid', $values['set_archive_tid'])
       ->set('set_status_note', $values['set_status_note'])
       ->set('days', $values['days'])
       ->set('mailtext', $values['mailtext'])

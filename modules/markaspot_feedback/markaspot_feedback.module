@@ -44,8 +44,8 @@ function markaspot_feedback_cron() {
   // Get module configuration.
   $config = \Drupal::config('markaspot_feedback.settings');
   
-  // Check if the module is enabled.
-  if ($config->get('enable') != 1) {
+  // Check if the module is enabled and if cron processing is enabled.
+  if ($config->get('enable') != 1 || $config->get('cron_enable') != 1) {
     return;
   }
   
@@ -75,9 +75,9 @@ function markaspot_feedback_cron() {
   $status_terms = [];
   $status_vocabulary = $config->get('tax_status') ?: 'service_status';
   $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
-  $status_terms_resubmissive = $config->get('status_resubmissive');
+  $status_terms_feedback_enabled = $config->get('status_feedback_enabled');
   
-  foreach ($status_terms_resubmissive as $tid => $enabled) {
+  foreach ($status_terms_feedback_enabled as $tid => $enabled) {
     if ($term = $term_storage->load($tid)) {
       $status_terms[$tid] = $term->label();
     }
