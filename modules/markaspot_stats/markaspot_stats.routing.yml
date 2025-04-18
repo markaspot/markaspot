@@ -1,15 +1,29 @@
 markaspot_stats.status:
-  path: '/api/stats/status'
+  path: '/stats/status'
   defaults:
     _controller: '\Drupal\markaspot_stats\Controller\StatsController::getStatusStats'
     _title: 'Service Request Status Statistics'
   requirements:
-    _permission: 'access content'
+    _custom_access: '\Drupal\markaspot_stats\Controller\StatsController::access'
+  options:
+    _auth: ['cookie']
 
 markaspot_stats.categories:
-  path: '/api/stats/categories'
+  path: '/stats/categories'
   defaults:
     _controller: '\Drupal\markaspot_stats\Controller\StatsController::getCategoryStats'
     _title: 'Service Request Category Statistics'
   requirements:
-    _permission: 'access content'
+    _custom_access: '\Drupal\markaspot_stats\Controller\StatsController::access'
+  options:
+    _auth: ['cookie']
+
+markaspot_stats.categories_hierarchical:
+  path: '/stats/categories/hierarchical'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\StatsController::getHierarchicalCategoryStats'
+    _title: 'Hierarchical Service Request Category Statistics'
+  requirements:
+    _custom_access: '\Drupal\markaspot_stats\Controller\StatsController::access'
+  options:
+    _auth: ['cookie']
