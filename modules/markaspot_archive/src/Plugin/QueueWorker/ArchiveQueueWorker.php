@@ -122,9 +122,35 @@ class ArchiveQueueWorker extends QueueWorkerBase implements ContainerFactoryPlug
 
       // Anonymize fields if configured.
       if ($config->get('anonymize') == 1) {
-        $anonymize_fields = $config->get('anonymize_fields');
-        markaspot_archive_anonymize($node, $anonymize_fields);
-        $this->logger->notice('Node ID @nid anonymized.', ['@nid' => $nid]);
+        // Ensure fields list is an array.
+        $anonymize_fields = (array) $config->get('anonymize_fields');
+        if (!empty($anonymize_fields)) {
+          // For backward compatibility: transform numeric keys to field machine names
+          $processed_fields = [];
+          foreach ($anonymize_fields as $key => $value) {
+            // If the key is numeric, try to find a matching field definition
+            if (is_numeric($key) || is_numeric($value)) {
+              // Look for fields that might contain personal data
+              $personal_fields = [
+                'field_e_mail', 'field_first_name', 'field_last_name',
+                'field_phone', 'field_address', 'field_citizen'
+              ];
+              foreach ($personal_fields as $field) {
+                if ($node->hasField($field)) {
+                  $processed_fields[$field] = $field;
+                }
+              }
+            } else {
+              // Already a field machine name
+              $processed_fields[$key] = $value;
+            }
+          }
+          markaspot_archive_anonymize($node, $processed_fields);
+          $this->logger->notice('Node ID @nid anonymized with fields: @fields', [
+            '@nid' => $nid,
+            '@fields' => implode(', ', array_keys($processed_fields))
+          ]);
+        }
       }
 
       // Update the node status to "archived".
@@ -132,7 +158,7 @@ class ArchiveQueueWorker extends QueueWorkerBase implements ContainerFactoryPlug
       $node->save();
       $this->logger->notice('Node ID @nid archived successfully.', ['@nid' => $nid]);
     }
-    catch (\Exception $e) {
+    catch (\Throwable $e) {
       $this->logger->critical('Queue processing failed for node @nid: @error', [
         '@nid' => $nid,
         '@error' => $e->getMessage() . "\n" . $e->getTraceAsString()

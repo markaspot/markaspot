@@ -27,8 +27,28 @@ function markaspot_archive_help($route_name, RouteMatchInterface $route_match) {
  * Implements hook_cron().
  */
 function markaspot_archive_cron() {
-  // Get the configuration to determine what "archived" means.
+  // Get the configuration and check if cron‐based archiving is enabled.
   $config = \Drupal::config('markaspot_archive.settings');
+  // Bail out only if cron_enable is explicitly disabled (0).
+  if ($config->get('cron_enable') === 0) {
+    return;
+  }
+  // Always run flag.
+  $always = (bool) $config->get('cron_always_run');
+  // Throttle interval (seconds).
+  $interval = (int) $config->get('cron_interval');
+  $state = \Drupal::state();
+  $now = \Drupal::time()->getRequestTime();
+  if (!$always && $interval > 0) {
+    $last_run = $state->get('markaspot_archive.last_run', 0);
+    if (($now - $last_run) < $interval) {
+      // Not yet time to run again.
+      return;
+    }
+    // Update last run time immediately to avoid race conditions.
+    $state->set('markaspot_archive.last_run', $now);
+  }
+  // Determine what "archived" status is.
   $archived_status = $config->get('status_archived');
 
   // Get all nodes eligible for archiving from your service.
@@ -54,34 +74,43 @@ function markaspot_archive_cron() {
 
 
 /**
- * Anoynmize archivable node's archivable fields
+ * Anonymize configured fields on a service_request node.
  *
- * @param $archivable
- * @param $anonymize_fields
+ * @param \Drupal\Core\Entity\EntityInterface $archivable
+ *   The node entity to anonymize.
+ * @param string[] $anonymize_fields
+ *   Array of field machine names to anonymize.
  *
- * @return object
+ * @return \Drupal\Core\Entity\EntityInterface
+ *   The modified node.
  */
-function markaspot_archive_anonymize($archivable, $anonymize_fields) {
-  $definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', 'service_request');
-  $count_defintions = array_values($definitions);
-
-  foreach ($anonymize_fields as $anonymize_field) {
-
-    $type = $count_defintions[$anonymize_field]->getType();
-    $name = $count_defintions[$anonymize_field]->getName();
-
-    $random_string = substr(str_shuffle(MD5(microtime())), 0, 10);
+function markaspot_archive_anonymize(\Drupal\Core\Entity\EntityInterface $archivable, array $anonymize_fields) {
+  foreach ($anonymize_fields as $field_name) {
+    if (!$archivable->hasField($field_name)) {
+      continue;
+    }
+    $items = $archivable->get($field_name);
+    if ($items->isEmpty()) {
+      continue;
+    }
+    $definition = $items->getFieldDefinition();
+    $type = $definition->getType();
+    $random = substr(md5(uniqid(mt_rand(), TRUE)), 0, 10);
     switch ($type) {
       case 'email':
-        $value =  $random_string. '@' . 'anonymized.off';
+        $anon_value = $random . '@anonymized.off';
         break;
       case 'telephone':
-        $value = '+49-0123459995555';
+        $anon_value = '+49-0123459995555';
         break;
       default:
-        $value = $random_string;
+        $anon_value = $random;
     }
-    $archivable->{$name}->value = $value;
+    foreach ($items as $item) {
+      if (isset($item->value)) {
+        $item->value = $anon_value;
+      }
+    }
   }
   return $archivable;
 }

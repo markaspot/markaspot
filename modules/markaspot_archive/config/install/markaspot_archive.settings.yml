@@ -4,10 +4,9 @@ status_archivable:
 status_archived: '6'
 unpublish: 1
 anonymize: 1
-anonymize_fields:
-  24: '24'
-days:
-  3: '99'
-  1: '99'
-  2: '99'
-  4: '99'
+anonymize_fields: []
+## Toggle automatic archiving on cron and its interval.
+cron_enable: 1
+cron_always_run: 0
+cron_interval: 86400
+default_days: 30
