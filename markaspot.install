@@ -65,6 +65,39 @@ function markaspot_update_9600( ){
 }
 
 /**
+ * Remove obsolete action configurations.
+ */
+function markaspot_update_9700() {
+  // List of obsolete action configurations to delete.
+  $obsolete_actions = [
+    'system.action.comment_delete_action',
+    'system.action.node_delete_action',
+  ];
+
+  $config_factory = \Drupal::configFactory();
+  $count = 0;
+  $deleted = [];
+
+  foreach ($obsolete_actions as $config_name) {
+    if ($config_factory->get($config_name)->get()) {
+      $config_factory->getEditable($config_name)->delete();
+      $deleted[] = $config_name;
+      $count++;
+    }
+  }
+
+  if ($count > 0) {
+    return t('Removed @count obsolete action configurations: @names', [
+      '@count' => $count,
+      '@names' => implode(', ', $deleted),
+    ]);
+  }
+  else {
+    return t('No obsolete action configurations found.');
+  }
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {
