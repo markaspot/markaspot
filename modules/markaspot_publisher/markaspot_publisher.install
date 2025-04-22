@@ -1,0 +1,120 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for the Mark‑a‑Spot Publisher module.
+ */
+
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+
+/**
+ * Adds an integer field 'field_publish_days' to the 'service_category' vocabulary.
+ *
+ * @return bool
+ *   TRUE on success, FALSE on failure.
+ */
+function markaspot_publisher_update_9001() {
+  // Create field storage if it does not already exist.
+  $storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_publish_days');
+  if (!$storage) {
+    $storage = FieldStorageConfig::create([
+      'field_name' => 'field_publish_days',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'integer',
+      'settings' => [
+        'min' => 1,
+        'max' => null,
+        'prefix' => '',
+        'suffix' => '',
+      ],
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'persist_with_no_fields' => FALSE,
+      'locked' => FALSE,
+    ]);
+    $storage->save();
+  }
+
+  // Determine default_days from module config.
+  $config = \Drupal::config('markaspot_publisher.settings');
+  $default_days = (int) $config->get('default_days') ?: 0;
+  // Create or update field instance on the service_category bundle.
+  $instance = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_publish_days');
+  if (!$instance) {
+    $instance = FieldConfig::create([
+      'field_name' => 'field_publish_days',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => 'service_category',
+      'label' => 'Publish period (days)',
+      'description' => 'Override the default publishing period for this category. Leave empty to use global default.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [],
+      'default_value' => [[ 'value' => $default_days ]],
+      'default_value_callback' => '',
+    ]);
+    $instance->save();
+  }
+  else {
+    // Update existing field to set default value.
+    $instance->set('default_value', [[ 'value' => $default_days ]]);
+    $instance->save();
+  }
+
+  // Add to form and view displays.
+  if ($storage && $instance) {
+    /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+    $display_repo = \Drupal::service('entity_display.repository');
+    $form_display = $display_repo
+      ->getFormDisplay('taxonomy_term', 'service_category', 'default');
+    $form_display->setComponent('field_publish_days', [
+      'type' => 'number',
+      'weight' => 10,
+      'settings' => [],
+    ])->save();
+
+    $view_display = $display_repo
+      ->getViewDisplay('taxonomy_term', 'service_category', 'default');
+    $view_display->setComponent('field_publish_days', [
+      'type' => 'number_integer',
+      'weight' => 10,
+      'label' => 'above',
+      'settings' => [],
+    ])->save();
+  }
+
+  return TRUE;
+}
+
+/**
+ * Add cron_always_run, cron_interval, and default_days settings with defaults if missing.
+ */
+function markaspot_publisher_update_9002() {
+  $config = \Drupal::configFactory()->getEditable('markaspot_publisher.settings');
+  if ($config->get('cron_enable') === NULL) {
+    $config->set('cron_enable', 1);
+  }
+  if ($config->get('cron_always_run') === NULL) {
+    $config->set('cron_always_run', 0);
+  }
+  if ($config->get('cron_interval') === NULL) {
+    $config->set('cron_interval', 86400);
+  }
+  if ($config->get('default_days') === NULL) {
+    $config->set('default_days', 30);
+  }
+  $config->save();
+  return TRUE;
+}
+
+/**
+ * Add manual_unpublish_threshold setting with default value of 6 hours.
+ */
+function markaspot_publisher_update_9003() {
+  $config = \Drupal::configFactory()->getEditable('markaspot_publisher.settings');
+  if ($config->get('manual_unpublish_threshold') === NULL) {
+    $config->set('manual_unpublish_threshold', 6);
+  }
+  $config->save();
+  return TRUE;
+}

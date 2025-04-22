@@ -1,0 +1,9 @@
+markaspot_ui.settings_list:
+  path: '/admin/config/markaspot'
+  defaults:
+    _controller: 'markaspot_ui_settings_list'
+    _title: 'Mark-a-Spot settings'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    _admin_route: TRUE

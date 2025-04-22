@@ -26,26 +26,36 @@ function markaspot_publisher_help($route_name, RouteMatchInterface $route_match)
 /**
  * Implements hook_cron().
  */
+/**
+ * Implements hook_cron().
+ */
 function markaspot_publisher_cron() {
-  // Get the configuration to determine what "published" means.
   $config = \Drupal::config('markaspot_publisher.settings');
-  $published_status = $config->get('status_published');
+  // Bail out if cron-based publishing is disabled.
+  if ($config->get('cron_enable') === 0) {
+    return;
+  }
+  $always = (bool) $config->get('cron_always_run');
+  $interval = (int) $config->get('cron_interval');
+  $state = \Drupal::state();
+  $now = \Drupal::time()->getRequestTime();
+  if (!$always && $interval > 0) {
+    $last_run = $state->get('markaspot_publisher.last_run', 0);
+    if (($now - $last_run) < $interval) {
+      // Not yet time to run again.
+      return;
+    }
+    // Update last run time immediately to avoid race conditions.
+    $state->set('markaspot_publisher.last_run', $now);
+  }
 
   // Get all nodes eligible for publishing from the service.
   $publishables = \Drupal::service('markaspot_publisher.publisher')->load();
-
-  // Get the queue for the publisher worker.
   $queue = \Drupal::queue('markaspot_publisher_queue_worker');
   $count = 0;
-
   foreach ($publishables as $publishable) {
-    // Check if the node already has the target status.
-    if ($publishable->get('field_status')->target_id != $published_status) {
-      // Only enqueue nodes that are not already published with the target status.
-      $queue->createItem(['nid' => $publishable->id()]);
-      $count++;
-    }
+    $queue->createItem(['nid' => $publishable->id()]);
+    $count++;
   }
-
   \Drupal::logger('markaspot_publisher')->notice('Enqueued @count nodes for publishing.', ['@count' => $count]);
 }

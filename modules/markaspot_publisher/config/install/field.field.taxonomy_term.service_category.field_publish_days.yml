@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_publish_days
+  module:
+    - markaspot_publisher
+  taxonomy_term:
+    - service_category
+id: taxonomy_term.service_category.field_publish_days
+field_name: field_publish_days
+entity_type: taxonomy_term
+bundle: service_category
+label: 'Publish period (days)'
+description: 'Override the default publishing period for this category. Leave empty to use global default.'
+required: false
+translatable: false
+default_value:
+  - value: 30
+default_value_callback: ''
+settings: {  }
+field_type: integer

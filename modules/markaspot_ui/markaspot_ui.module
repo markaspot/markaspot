@@ -14,6 +14,7 @@ use Drupal\node\Entity\Node;
  * Implements hook_toolbar().
  */
 function markaspot_ui_toolbar() {
+  // Check permissions
   if (!\Drupal::currentUser()->hasPermission('administer site configuration')){
     $items = [];
     return $items;
@@ -25,9 +26,13 @@ function markaspot_ui_toolbar() {
     'markaspot_validation' => 'markaspot_validation.settings',
     'markaspot_privacy' => 'markaspot_privacy.settings',
     'markaspot_archive' => 'markaspot_archive.settings',
+    'markaspot_publisher' => 'markaspot_publisher.settings_form',
+    'markaspot_ui' => 'markaspot_ui.settings_list',
     'markaspot_resubmission' => 'markaspot_resubmission.settings',
     'markaspot_feedback' => 'markaspot_feedback.settings',
     'markaspot_static_json' => 'markaspot_static_json.settings',
+    'markaspot_vision' => 'markaspot_vision.settings',
+    'markaspot_geocoder' => 'markaspot_geocoder.settings',
     'services_api_key_auth' => 'entity.api_key.collection',
   );
 
@@ -57,8 +62,7 @@ function markaspot_ui_toolbar() {
     'tab' => array(
       '#type' => 'link',
       '#title' => t('Mark-a-Spot'),
-      // @todo: Once it is created, use the example index page.
-      '#url' => Url::fromRoute('<front>'),
+      '#url' => Url::fromRoute('markaspot_map.settings'),
       '#attributes' => array(
         'title' => t('Mark-a-Spot modules and settings'),
         'class' => array('toolbar-icon', 'toolbar-icon-markaspot-ui'),
@@ -105,5 +109,83 @@ function markaspot_ui_inline_entity_form_entity_form_alter(&$entity_form, &$form
   $entity_form["field_media_image"]["widget"][0]["#default_value"]["alt"] = t('Open311 file from ') . date('Y-m-d H:i:s', $form_state->getValue("changed"));
   if (!\Drupal::currentUser()->hasPermission('access toolbar')) {
     unset($entity_form["status"]);
+  }
+}
+
+/**
+ * Controller callback for listing Mark-a-Spot settings pages.
+ */
+function markaspot_ui_settings_list() {
+  $links = [];
+  $moduleHandler = \Drupal::service('module_handler');
+  $markaspot_modules = array(
+    'markaspot_map' => 'markaspot_map.settings',
+    'markaspot_request_id' => 'markaspot_request_id.settings',
+    'markaspot_open311' => 'markaspot_open311.settings',
+    'markaspot_validation' => 'markaspot_validation.settings',
+    'markaspot_privacy' => 'markaspot_privacy.settings',
+    'markaspot_archive' => 'markaspot_archive.settings',
+    'markaspot_publisher' => 'markaspot_publisher.settings_form',
+    'markaspot_resubmission' => 'markaspot_resubmission.settings',
+    'markaspot_feedback' => 'markaspot_feedback.settings',
+    'markaspot_static_json' => 'markaspot_static_json.settings',
+    'markaspot_vision' => 'markaspot_vision.settings',
+    'markaspot_geocoder' => 'markaspot_geocoder.settings',
+    'services_api_key_auth' => 'entity.api_key.collection',
+  );
+  
+  foreach ($markaspot_modules as $module => $route) {
+    if ($moduleHandler->moduleExists($module)) {
+      $info = \Drupal::service('extension.list.module')->getExtensionInfo($module);
+      if (!empty($info)) {
+        try {
+          $title = $info['name'];
+          $links[] = [
+            '#type' => 'link',
+            '#title' => t($title),
+            '#url' => \Drupal\Core\Url::fromRoute($route),
+            '#attributes' => [
+              'class' => ['admin-item'],
+            ],
+          ];
+        }
+        catch (\Exception $e) {
+          // Skip routes that don't exist
+        }
+      }
+    }
+  }
+  
+  return [
+    '#theme' => 'item_list',
+    '#title' => t('Mark-a-Spot module settings'),
+    '#items' => $links,
+    '#attributes' => ['class' => ['admin-list']],
+    '#wrapper_attributes' => ['class' => ['container-inline']],
+    '#cache' => ['max-age' => 0],
+  ];
+}
+
+/**
+ * Implements hook_menu_links_discovered_alter().
+ *
+ * Reparent all markaspot_* settings links under the Mark‑a‑Spot group.
+ */
+function markaspot_ui_menu_links_discovered_alter(array &$links) {
+  // Ensure our group link exists.
+  $links['markaspot_ui.settings_list'] = [
+    'title' => t('Mark‑a‑Spot settings'),
+    'description' => t('Configure all Mark‑a‑Spot modules'),
+    'route_name' => 'markaspot_ui.settings_list',
+    'parent' => 'system.admin_config',
+    'weight' => 100,
+  ];
+  // Reparent individual settings forms.
+  foreach ($links as $key => &$link) {
+    if (strpos($key, 'markaspot_') === 0 &&
+        (strpos($key, '.settings') !== FALSE || strpos($key, '.settings_form') !== FALSE)
+    ) {
+      $link['parent'] = 'markaspot_ui.settings_list';
+    }
   }
 }

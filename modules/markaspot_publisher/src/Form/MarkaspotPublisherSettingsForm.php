@@ -89,27 +89,43 @@ class MarkaspotPublisherSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Service requests with these statuses will be eligible for publishing after the configured time.'),
     ];
 
-    $catOptions = $this->getTaxonomyTermOptions('service_category');
-    $form['markaspot_publisher']['days'] = [
-      '#tree' => TRUE,
-      '#type' => 'details',
-      '#title' => $this->t('Publishing period settings per category'),
-      '#description' => $this->t('You can set the waiting period (in days) before unpublished content is published.'),
-      // Controls the HTML5 'open' attribute. Defaults to FALSE.
-      '#open' => TRUE,
+    // Cron control: enable/interval.
+    $form['markaspot_publisher']['cron_enable'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable cron-based publishing'),
+      '#description' => $this->t('Run the publishing enqueue on cron at the configured interval.'),
+      '#default_value' => $config->get('cron_enable'),
     ];
-
-    foreach ($catOptions as $tid => $category_name) {
-      $form['markaspot_publisher']['days'][$tid] = [
-        '#type' => 'number',
-        '#min' => 1,
-        '#max' => 1000,
-        '#step' => 1,
-        '#title' => $this->t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
-        '#default_value' => $config->get('days.' . $tid),
-        '#description' => $this->t('How many days to wait before publishing?'),
-      ];
-    }
+    $form['markaspot_publisher']['cron_always_run'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Always run on every cron'),
+      '#description' => $this->t('If checked, publishing will run on every cron invocation, ignoring the interval.'),
+      '#default_value' => $config->get('cron_always_run'),
+    ];
+    $form['markaspot_publisher']['cron_interval'] = [
+      '#type' => 'number',
+      '#min' => 0,
+      '#title' => $this->t('Cron interval (seconds)'),
+      '#description' => $this->t('Number of seconds to wait before next publishing run. Set to 0 to run on every cron.'),
+      '#default_value' => $config->get('cron_interval'),
+    ];
+    // Global default publishing period (days) for categories without override.
+    $form['markaspot_publisher']['default_days'] = [
+      '#type' => 'number',
+      '#min' => 1,
+      '#title' => $this->t('Default publishing period (days)'),
+      '#default_value' => $config->get('default_days'),
+      '#description' => $this->t('Global default number of days before publishing for categories without override.'),
+    ];
+    
+    // Time threshold to determine intentional unpublishing.
+    $form['markaspot_publisher']['manual_unpublish_threshold'] = [
+      '#type' => 'number',
+      '#min' => 1,
+      '#title' => $this->t('Manual unpublish detection threshold (hours)'),
+      '#default_value' => $config->get('manual_unpublish_threshold') ?: 6,
+      '#description' => $this->t('If a node was modified more than this many hours after creation, it will be considered manually unpublished and not republished automatically.'),
+    ];
     return parent::buildForm($form, $form_state);
   }
 
@@ -121,7 +137,11 @@ class MarkaspotPublisherSettingsForm extends ConfigFormBase {
     $this->config('markaspot_publisher.settings')
       ->set('tax_status', $values['tax_status'])
       ->set('status_publishable', $values['status_publishable'])
-      ->set('days', $values['days'])
+      ->set('cron_enable', $values['cron_enable'])
+      ->set('cron_always_run', $values['cron_always_run'])
+      ->set('cron_interval', $values['cron_interval'])
+      ->set('default_days', $values['default_days'])
+      ->set('manual_unpublish_threshold', $values['manual_unpublish_threshold'])
       ->save();
 
     parent::submitForm($form, $form_state);
