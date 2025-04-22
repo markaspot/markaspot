@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Contains markaspot_uuid.module for accessing Mark-a-Spot admin features.
+ * Contains markaspot_ui.module for accessing Mark-a-Spot admin features.
  */
 
 use Drupal\Core\Url;
@@ -10,16 +10,15 @@ use Drupal\media\Entity\Media;
 use Drupal\image\Entity\ImageStyle;
 use Drupal\media_entity\MediaInterface;
 use Drupal\node\Entity\Node;
+
 /**
  * Implements hook_toolbar().
  */
 function markaspot_ui_toolbar() {
-  // Check permissions
-  if (!\Drupal::currentUser()->hasPermission('administer site configuration')){
-    $items = [];
-    return $items;
+  if (!\Drupal::currentUser()->hasPermission('administer site configuration')) {
+    return [];
   }
-  $markaspot_modules = array(
+  $markaspot_modules = [
     'markaspot_map' => 'markaspot_map.settings',
     'markaspot_request_id' => 'markaspot_request_id.settings',
     'markaspot_open311' => 'markaspot_open311.settings',
@@ -34,88 +33,71 @@ function markaspot_ui_toolbar() {
     'markaspot_vision' => 'markaspot_vision.settings',
     'markaspot_geocoder' => 'markaspot_geocoder.settings',
     'services_api_key_auth' => 'entity.api_key.collection',
-  );
-
-  // Build a list of links for the menu.
-  $links = array();
+  ];
+  $links = [];
+  $moduleHandler = \Drupal::service('module_handler');
   foreach ($markaspot_modules as $module => $route) {
-    // Get the module info (title, description) from Drupal.
-    $moduleHandler = \Drupal::service('module_handler');
     if ($moduleHandler->moduleExists($module)) {
       $info = \Drupal::service('extension.list.module')->getExtensionInfo($module);
       if (!empty($info)) {
         // Attempt to generate a URL for the settings route; skip if route not found.
         try {
           $url = Url::fromRoute($route);
-          $links[$module] = array(
+          $links[$module] = [
             'title' => t($info['name']),
             'url' => $url,
-            'attributes' => array(
+            'attributes' => [
               'title' => t($info['description']),
-            ),
-          );
+            ],
+          ];
         }
         catch (\Symfony\Component\Routing\Exception\RouteNotFoundException $e) {
           // Skip modules without a valid settings route.
         }
       }
     }
-
   }
-
-  // Create the markaspot_modules toolbar render array.
-  $items['markaspot_modules'] = array(
+  return [
     '#type' => 'toolbar_item',
-    'tab' => array(
+    'tab' => [
       '#type' => 'link',
       '#title' => t('Mark-a-Spot'),
       '#url' => Url::fromRoute('markaspot_map.settings'),
-      '#attributes' => array(
+      '#attributes' => [
         'title' => t('Mark-a-Spot modules and settings'),
-        'class' => array('toolbar-icon', 'toolbar-icon-markaspot-ui'),
-      ),
-    ),
-    'tray' => array(
+        'class' => ['toolbar-icon', 'toolbar-icon-markaspot-ui'],
+      ],
+    ],
+    'tray' => [
       '#heading' => t('Mark-a-Spot modules and settings'),
-      'shortcuts' => array(
+      'shortcuts' => [
         '#theme' => 'links__toolbar_markaspot',
         '#links' => $links,
-        '#attributes' => array(
-          'class' => array('toolbar-menu'),
-        ),
-      ),
-    ),
+        '#attributes' => ['class' => ['toolbar-menu']],
+      ],
+    ],
     '#weight' => 99,
-    '#attached' => array(
-      'library' => array(
-        'markaspot_ui/markaspot_ui.icons',
-      ),
-    ),
-  );
-
-  return $items;
+    '#attached' => ['library' => ['markaspot_ui/markaspot_ui.icons']],
+  ];
 }
 
 /**
  * Implements hook_form_alter().
  */
 function markaspot_ui_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
-
-  // todo:
-  // Maybe remove this later, bet we need this hook for some tweaks.
-  // //https://www.drupal.org/node/2117411
-  if ($form_id == "views_exposed_form") {
-    if (isset($form['search_api_fulltext'])) {
-      $form['search_api_fulltext']['#attributes'] = array('placeholder' => array(t('Request #, Keyword')));
-    }
+  if ($form_id === 'views_exposed_form' && isset($form['search_api_fulltext'])) {
+    $form['search_api_fulltext']['#attributes']['placeholder'] = t('Request #, Keyword');
   }
 }
 
-function markaspot_ui_inline_entity_form_entity_form_alter(&$entity_form, &$form_state){
-  $entity_form["field_media_image"]["widget"][0]["#alt_field_required"] = FALSE;
-  $entity_form["field_media_image"]["widget"][0]["#default_value"]["alt"] = t('Open311 file from ') . date('Y-m-d H:i:s', $form_state->getValue("changed"));
+/**
+ * Alters inline entity forms for media images.
+ */
+function markaspot_ui_inline_entity_form_entity_form_alter(&$entity_form, &$form_state) {
+  $entity_form['field_media_image']['widget'][0]['#alt_field_required'] = FALSE;
+  $entity_form['field_media_image']['widget'][0]['#default_value']['alt'] = t('Open311 file from ') . date('Y-m-d H:i:s', $form_state->getValue('changed'));
   if (!\Drupal::currentUser()->hasPermission('access toolbar')) {
-    unset($entity_form["status"]);
+    unset($entity_form['status']);
   }
 }
 
@@ -125,7 +107,7 @@ function markaspot_ui_inline_entity_form_entity_form_alter(&$entity_form, &$form
 function markaspot_ui_settings_list() {
   $links = [];
   $moduleHandler = \Drupal::service('module_handler');
-  $markaspot_modules = array(
+  $markaspot_modules = [
     'markaspot_map' => 'markaspot_map.settings',
     'markaspot_request_id' => 'markaspot_request_id.settings',
     'markaspot_open311' => 'markaspot_open311.settings',
@@ -139,30 +121,25 @@ function markaspot_ui_settings_list() {
     'markaspot_vision' => 'markaspot_vision.settings',
     'markaspot_geocoder' => 'markaspot_geocoder.settings',
     'services_api_key_auth' => 'entity.api_key.collection',
-  );
-  
+  ];
   foreach ($markaspot_modules as $module => $route) {
     if ($moduleHandler->moduleExists($module)) {
       $info = \Drupal::service('extension.list.module')->getExtensionInfo($module);
       if (!empty($info)) {
         try {
-          $title = $info['name'];
           $links[] = [
             '#type' => 'link',
-            '#title' => t($title),
-            '#url' => \Drupal\Core\Url::fromRoute($route),
-            '#attributes' => [
-              'class' => ['admin-item'],
-            ],
+            '#title' => t($info['name']),
+            '#url' => Url::fromRoute($route),
+            '#attributes' => ['class' => ['admin-item']],
           ];
         }
         catch (\Exception $e) {
-          // Skip routes that don't exist
+          // Skip routes that don't exist.
         }
       }
     }
   }
-  
   return [
     '#theme' => 'item_list',
     '#title' => t('Mark-a-Spot module settings'),
@@ -171,28 +148,4 @@ function markaspot_ui_settings_list() {
     '#wrapper_attributes' => ['class' => ['container-inline']],
     '#cache' => ['max-age' => 0],
   ];
-}
-
-/**
- * Implements hook_menu_links_discovered_alter().
- *
- * Reparent all markaspot_* settings links under the Mark‑a‑Spot group.
- */
-function markaspot_ui_menu_links_discovered_alter(array &$links) {
-  // Ensure our group link exists.
-  $links['markaspot_ui.settings_list'] = [
-    'title' => t('Mark‑a‑Spot settings'),
-    'description' => t('Configure all Mark‑a‑Spot modules'),
-    'route_name' => 'markaspot_ui.settings_list',
-    'parent' => 'system.admin_config',
-    'weight' => 100,
-  ];
-  // Reparent individual settings forms.
-  foreach ($links as $key => &$link) {
-    if (strpos($key, 'markaspot_') === 0 &&
-        (strpos($key, '.settings') !== FALSE || strpos($key, '.settings_form') !== FALSE)
-    ) {
-      $link['parent'] = 'markaspot_ui.settings_list';
-    }
-  }
 }
