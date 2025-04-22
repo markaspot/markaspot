@@ -44,13 +44,20 @@ function markaspot_ui_toolbar() {
     if ($moduleHandler->moduleExists($module)) {
       $info = \Drupal::service('extension.list.module')->getExtensionInfo($module);
       if (!empty($info)) {
-        $links[$module] = array(
-          'title' => t($info['name']),
-          'url' => Url::fromRoute($route),
-          'attributes' => array(
-            'title' => t($info['description']),
-          ),
-        );
+        // Attempt to generate a URL for the settings route; skip if route not found.
+        try {
+          $url = Url::fromRoute($route);
+          $links[$module] = array(
+            'title' => t($info['name']),
+            'url' => $url,
+            'attributes' => array(
+              'title' => t($info['description']),
+            ),
+          );
+        }
+        catch (\Symfony\Component\Routing\Exception\RouteNotFoundException $e) {
+          // Skip modules without a valid settings route.
+        }
       }
     }
 

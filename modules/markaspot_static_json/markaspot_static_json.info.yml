@@ -1,5 +1,0 @@
-name: Mark-a-Spot Static JSON
-type: module
-description: Generate static json for map view's heatmap and timecontroller
-core_version_requirement: ^10 || ^11
-package: Mark-a-Spot
