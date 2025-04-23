@@ -7,6 +7,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\taxonomy\Entity\Term;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Controller for SHS Tweak module.
@@ -48,8 +49,8 @@ class SHSTweakController extends ControllerBase {
   /**
    * Getting taxonomy term description for given term.
    *
-   * @param \Drupal\taxonomy\Entity\Term $term
-   *   The Term.
+   * @param string $term
+   *   The term parameter from the route (UUID or ID).
    * @param int $last_child
    *   If true only terms with no children will return description.
    *
@@ -59,16 +60,62 @@ class SHSTweakController extends ControllerBase {
    * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
-  public function taxonomyDescription(Term $term, int $last_child = 0) {
-    $description = $term->getDescription();
+  public function taxonomyDescription($term, int $last_child = 0) {
+    // If we already have a Term entity, use it directly
+    if ($term instanceof Term) {
+      $termEntity = $term;
+    }
+    else {
+      $termEntity = NULL;
+      
+      // Check if this is a UUID (contains dashes)
+      if (is_string($term) && strpos($term, '-') !== FALSE) {
+        // Try to load the term by UUID
+        $terms = $this->entityTypeManager
+          ->getStorage('taxonomy_term')
+          ->loadByProperties(['uuid' => $term]);
+          
+        if (!empty($terms)) {
+          $termEntity = reset($terms);
+        }
+      }
+      
+      // If not found by UUID, try numeric ID
+      if (!$termEntity && is_numeric($term)) {
+        $termEntity = $this->entityTypeManager
+          ->getStorage('taxonomy_term')
+          ->load($term);
+      }
+      
+      // If term is still not found, return error
+      if (!$termEntity) {
+        return new JsonResponse([
+          'data' => '',
+          'error' => 'Term not found',
+          'method' => 'GET',
+        ], 404);
+      }
+    }
+    
+    // Get the description
+    $description = $termEntity->getDescription();
+    
+    // Handle the last_child parameter
     if ($last_child === 1) {
       $childs = $this->entityTypeManager
         ->getStorage('taxonomy_term')
-        ->loadTree($term->get('vid')->target_id, $term->id(), 1);
+        ->loadTree($termEntity->get('vid')->target_id, $termEntity->id(), 1);
       if (!empty($childs)) {
         $description = '';
       }
     }
+    
+    // For the API endpoint, return just the description text for easier frontend consumption
+    if (strpos(\Drupal::request()->getPathInfo(), '/api/markaspotshstweak/') === 0) {
+      return new JsonResponse($description);
+    }
+    
+    // For the original endpoint, keep the existing response format
     return new JsonResponse([
       'data' => $description,
       'method' => 'GET',
