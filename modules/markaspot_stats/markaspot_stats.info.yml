@@ -5,3 +5,4 @@ core_version_requirement: ^9 || ^10 || ^11
 package: 'Mark-a-Spot'
 dependencies:
   - drupal:rest
+  - drupal:serialization

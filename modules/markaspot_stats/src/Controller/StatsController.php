@@ -6,10 +6,6 @@ use Drupal\Core\Controller\ControllerBase;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Drupal\Core\Database\Connection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Drupal\Core\Cache\CacheableJsonResponse;
-use Drupal\Core\Cache\CacheableMetadata;
-use Drupal\Core\Access\AccessResult;
-use Drupal\Core\Session\AccountInterface;
 
 /**
  * Class StatsController.
@@ -45,140 +41,80 @@ class StatsController extends ControllerBase {
   }
 
   /**
-   * Check access for statistics endpoints.
-   *
-   * @param \Drupal\Core\Session\AccountInterface $account
-   *   The current user account.
-   *
-   * @return \Drupal\Core\Access\AccessResultInterface
-   *   The access result.
-   */
-  public function access(AccountInterface $account) {
-    // First check if user has custom 'access statistics' permission.
-    if ($account->hasPermission('access markaspot statistics')) {
-      return AccessResult::allowed();
-    }
-    
-    // Fall back to 'access content' permission.
-    return AccessResult::allowedIfHasPermission($account, 'access content');
-  }
-
-  /**
    * Gets statistics by service request status.
    *
-   * @return \Drupal\Core\Cache\CacheableJsonResponse
-   *   The JSON response with cache metadata.
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   The JSON response.
    */
   public function getStatusStats() {
-    try {
-      $query = $this->database->select('taxonomy_term_field_data', 't');
-      $query->fields('t', ['name']);
-      $query->addField('h', 'field_status_hex_color', 'color');
-      $query->addExpression('COUNT(DISTINCT n.nid)', 'count');
-      $query->leftJoin('taxonomy_term__field_status_hex', 'h', 't.tid = h.entity_id AND h.deleted = 0');
-      $query->leftJoin('node__field_status', 'fs', 't.tid = fs.field_status_target_id AND fs.deleted = 0');
-      $query->leftJoin('node_field_data', 'n', 'fs.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
-      $query->condition('t.vid', 'service_status');
-      $query->groupBy('t.tid');
-      $query->groupBy('t.name');
-      $query->groupBy('h.field_status_hex_color');
-      $query->orderBy('t.weight', 'ASC');
-      
-      $results = $query->execute()->fetchAll();
-      $output = [];
-      
-      foreach ($results as $row) {
-        $output[] = [
-          'status' => $row->name,
-          'count' => $row->count,
-          'color' => $row->color,
-        ];
-      }
-      
-      // Create a response with cache metadata.
-      $response = new CacheableJsonResponse($output);
-      
-      // Add cache metadata.
-      $cache_metadata = new CacheableMetadata();
-      $cache_metadata->setCacheTags([
-        'node_list:service_request',
-        'taxonomy_term_list:service_status',
-      ]);
-      $cache_metadata->setCacheMaxAge(3600); // Cache for 1 hour.
-      $response->addCacheableDependency($cache_metadata);
-      
-      return $response;
+    $query = $this->database->query("
+      SELECT 
+        t.name AS status, 
+        COUNT(DISTINCT n.nid) AS count,
+        h.field_status_hex_color AS color
+      FROM taxonomy_term_field_data t
+      LEFT JOIN taxonomy_term__field_status_hex h ON t.tid = h.entity_id AND h.deleted = 0
+      LEFT JOIN node__field_status fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
+      LEFT JOIN node_field_data n ON fs.entity_id = n.nid AND n.type = 'service_request'
+      WHERE t.vid = 'service_status'
+      GROUP BY t.tid, t.name, h.field_status_hex_color
+      ORDER BY t.weight ASC
+    ");
+
+    $results = $query->fetchAll();
+    $output = [];
+
+    foreach ($results as $row) {
+      $output[] = [
+        'status' => $row->status,
+        'count' => $row->count,
+        'color' => $row->color,
+      ];
     }
-    catch (\Exception $e) {
-      // Log the error.
-      $this->getLogger('markaspot_stats')->error('Error retrieving status statistics: @error', ['@error' => $e->getMessage()]);
-      
-      // Return an error response.
-      return new JsonResponse(['error' => 'An error occurred while retrieving statistics'], 500);
-    }
+
+    return new JsonResponse($output);
   }
 
   /**
    * Gets statistics by service request category.
    *
-   * @return \Drupal\Core\Cache\CacheableJsonResponse
-   *   The JSON response with cache metadata.
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   The JSON response.
    */
   public function getCategoryStats() {
-    try {
-      $query = $this->database->select('taxonomy_term_field_data', 't');
-      $query->fields('t', ['tid', 'name']);
-      $query->addField('h', 'field_category_hex_color', 'color');
-      $query->addExpression('COUNT(DISTINCT n.nid)', 'count');
-      $query->leftJoin('taxonomy_term__field_category_hex', 'h', 't.tid = h.entity_id AND h.deleted = 0');
-      $query->leftJoin('node__field_category', 'fc', 't.tid = fc.field_category_target_id AND fc.deleted = 0');
-      $query->leftJoin('node_field_data', 'n', 'fc.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
-      $query->condition('t.vid', 'service_category');
-      $query->groupBy('t.tid');
-      $query->groupBy('t.name');
-      $query->groupBy('h.field_category_hex_color');
-      $query->orderBy('t.weight', 'ASC');
-      
-      $results = $query->execute()->fetchAll();
-      $output = [];
-      
-      foreach ($results as $row) {
-        $output[] = [
-          'tid' => $row->tid,
-          'category' => $row->name,
-          'count' => $row->count,
-          'color' => $row->color,
-        ];
-      }
-      
-      // Create a response with cache metadata.
-      $response = new CacheableJsonResponse($output);
-      
-      // Add cache metadata.
-      $cache_metadata = new CacheableMetadata();
-      $cache_metadata->setCacheTags([
-        'node_list:service_request',
-        'taxonomy_term_list:service_category',
-      ]);
-      $cache_metadata->setCacheMaxAge(3600); // Cache for 1 hour.
-      $response->addCacheableDependency($cache_metadata);
-      
-      return $response;
-    }
-    catch (\Exception $e) {
-      // Log the error.
-      $this->getLogger('markaspot_stats')->error('Error retrieving category statistics: @error', ['@error' => $e->getMessage()]);
-      
-      // Return an error response.
-      return new JsonResponse(['error' => 'An error occurred while retrieving statistics'], 500);
-    }
-  }
+    $query = $this->database->query("
+      SELECT 
+        t.name AS category, 
+        COUNT(DISTINCT n.nid) AS count,
+        h.field_category_hex_color AS color
+      FROM taxonomy_term_field_data t
+      LEFT JOIN taxonomy_term__field_category_hex h ON t.tid = h.entity_id AND h.deleted = 0
+      LEFT JOIN node__field_category fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
+      LEFT JOIN node_field_data n ON fc.entity_id = n.nid AND n.type = 'service_request'
+      WHERE t.vid = 'service_category'
+      GROUP BY t.tid, t.name, h.field_category_hex_color
+      ORDER BY t.weight ASC
+    ");
 
+    $results = $query->fetchAll();
+    $output = [];
+
+    foreach ($results as $row) {
+      $output[] = [
+        'category' => $row->category,
+        'count' => $row->count,
+        'color' => $row->color,
+      ];
+    }
+
+    return new JsonResponse($output);
+  }
+  
   /**
    * Gets hierarchical statistics by service request category.
    *
-   * @return \Drupal\Core\Cache\CacheableJsonResponse
-   *   The JSON response with cache metadata.
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   The JSON response.
    */
   public function getHierarchicalCategoryStats() {
     try {
@@ -249,19 +185,7 @@ class StatsController extends ControllerBase {
         }
       }
       
-      // Create a response with cache metadata.
-      $response = new CacheableJsonResponse($output);
-      
-      // Add cache metadata.
-      $cache_metadata = new CacheableMetadata();
-      $cache_metadata->setCacheTags([
-        'node_list:service_request',
-        'taxonomy_term_list:service_category',
-      ]);
-      $cache_metadata->setCacheMaxAge(3600); // Cache for 1 hour.
-      $response->addCacheableDependency($cache_metadata);
-      
-      return $response;
+      return new JsonResponse($output);
     }
     catch (\Exception $e) {
       // Log the error.
