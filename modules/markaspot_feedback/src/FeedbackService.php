@@ -131,10 +131,10 @@ class FeedbackService implements FeedbackServiceInterface {
   public function loadEligibleNodes($limit = 50) {
     $config = $this->configFactory->get('markaspot_feedback.settings');
     $days = $config->get('days');
-    $status_resubmissive = $config->get('status_resubmissive');
+    $feedback_eligible_statuses = $config->get('feedback_eligible_statuses') ?: $config->get('status_feedback_enabled');
     
-    if (empty($status_resubmissive)) {
-      $this->loggerFactory->get('markaspot_feedback')->warning('No resubmissive status terms configured.');
+    if (empty($feedback_eligible_statuses)) {
+      $this->loggerFactory->get('markaspot_feedback')->warning('No feedback eligible status terms configured.');
       return [];
     }
     
@@ -153,7 +153,7 @@ class FeedbackService implements FeedbackServiceInterface {
       ->condition('n.type', 'service_request')
       // Only include published nodes
       ->condition('n.status', 1)
-      ->condition('s.field_status_target_id', array_keys($status_resubmissive), 'IN')
+      ->condition('s.field_status_target_id', array_keys($feedback_eligible_statuses), 'IN')
       ->condition('n.changed', $timestamp, '<')
       ->orderBy('n.nid', 'ASC')
       ->range(0, $limit);
@@ -206,10 +206,10 @@ class FeedbackService implements FeedbackServiceInterface {
       }
       
       // Check if the node status is eligible for feedback.
-      $status_resubmissive = $config->get('status_resubmissive');
+      $feedback_eligible_statuses = $config->get('feedback_eligible_statuses') ?: $config->get('status_feedback_enabled');
       $current_status = $node->get('field_status')->target_id;
       
-      if (!isset($status_resubmissive[$current_status])) {
+      if (!isset($feedback_eligible_statuses[$current_status])) {
         $logger->notice('Node @nid is not eligible for feedback.', ['@nid' => $node->id()]);
         return FALSE;
       }
@@ -337,8 +337,13 @@ class FeedbackService implements FeedbackServiceInterface {
       $site_config = $this->configFactory->get('system.site');
       $langcode = $this->languageManager->getDefaultLanguage()->getId();
       
+      // Get the email subject from the configuration, or use a default if not set.
+      $mail_subject = $config->get('mail_subject') ?: 'Feedback request for service request #[node:request_id]';
+      // Replace tokens in the mail subject.
+      $mail_subject = $this->token->replace($mail_subject, ['node' => $node]);
+      
       $params = [
-        'subject' => t('Feedback request for service request #@nid', ['@nid' => $node->id()]),
+        'subject' => $mail_subject,
         'body' => [
           'text' => $mailtext,
           'node' => $node,

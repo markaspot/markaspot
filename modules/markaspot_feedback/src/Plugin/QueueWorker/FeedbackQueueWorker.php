@@ -93,10 +93,10 @@ class FeedbackQueueWorker extends QueueWorkerBase implements ContainerFactoryPlu
       $config = \Drupal::configFactory()->getEditable('markaspot_feedback.settings');
       
       // Check if the node is in the proper status for feedback
-      $resubmissive_statuses = $config->get('status_resubmissive');
+      $feedback_eligible_statuses = $config->get('feedback_eligible_statuses') ?: $config->get('status_feedback_enabled');
       $current_status = $node->get('field_status')->target_id;
       
-      if (!isset($resubmissive_statuses[$current_status])) {
+      if (!isset($feedback_eligible_statuses[$current_status])) {
         $this->logger->notice('Node ID @nid is not in a status eligible for feedback (current: @current). Skipping.', [
           '@nid' => $nid,
           '@current' => $current_status
