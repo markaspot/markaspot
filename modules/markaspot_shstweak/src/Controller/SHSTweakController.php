@@ -110,14 +110,28 @@ class SHSTweakController extends ControllerBase {
       }
     }
     
-    // For the API endpoint, return just the description text for easier frontend consumption
+    // Check if this term has the disable_form field and if it's true
+    $disableForm = FALSE;
+    if ($termEntity->hasField('field_disable_form') && !$termEntity->get('field_disable_form')->isEmpty()) {
+      $disableForm = (bool) $termEntity->get('field_disable_form')->value;
+    }
+    
+    // For the API endpoint, return a JSON object with description and options
     if (strpos(\Drupal::request()->getPathInfo(), '/api/markaspotshstweak/') === 0) {
-      return new JsonResponse($description);
+      return new JsonResponse([
+        'description' => $description,
+        'options' => [
+          'disableForm' => $disableForm
+        ]
+      ]);
     }
     
     // For the original endpoint, keep the existing response format
     return new JsonResponse([
       'data' => $description,
+      'options' => [
+        'disableForm' => $disableForm
+      ],
       'method' => 'GET',
     ]);
   }
