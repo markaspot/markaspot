@@ -1,0 +1,4 @@
+services:
+  markaspot_ui.toolbar_builder:
+    class: Drupal\markaspot_ui\ToolbarBuilder
+    arguments: ['@module_handler', '@extension.list.module', '@router.route_provider']

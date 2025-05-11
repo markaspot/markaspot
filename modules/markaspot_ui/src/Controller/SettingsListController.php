@@ -8,6 +8,7 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Routing\RouteProviderInterface;
 use Drupal\Core\Link;
 use Drupal\Core\Url;
+use Drupal\Core\Cache\CacheableMetadata;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -70,44 +71,103 @@ class SettingsListController extends ControllerBase {
    *   A render array.
    */
   public function listSettings() {
+    // Define markaspot module routes.
+    $markaspot_modules = [
+      'markaspot_map' => 'markaspot_map.settings',
+      'markaspot_request_id' => 'markaspot_request_id.settings',
+      'markaspot_open311' => 'markaspot_open311.settings',
+      'markaspot_validation' => 'markaspot_validation.settings',
+      'markaspot_privacy' => 'markaspot_privacy.settings',
+      'markaspot_archive' => 'markaspot_archive.settings',
+      'markaspot_publisher' => 'markaspot_publisher.settings_form',
+      'markaspot_resubmission' => 'markaspot_resubmission.settings',
+      'markaspot_feedback' => 'markaspot_feedback.settings',
+      'markaspot_vision' => 'markaspot_vision.settings',
+      'markaspot_geocoder' => 'markaspot_geocoder.settings',
+      'services_api_key_auth' => 'entity.api_key.collection',
+    ];
+    
     $links = [];
-    // Iterate over enabled modules.
-    foreach ($this->moduleHandler->getModuleList() as $module => $info) {
-      $extension = $this->extensionList->getExtensionInfo($module);
-      // Only include modules in the Mark-a-Spot profile path.
-      if (empty($extension['path']) || strpos($extension['path'], 'profiles/contrib/markaspot/modules/') !== 0) {
-        continue;
-      }
-      // Try to find a settings route: modulename.settings or modulename.settings_form.
-      $route_name = NULL;
-      foreach ([$module . '.settings', $module . '.settings_form'] as $candidate) {
-        try {
-          $route = $this->routeProvider->getDefinition($candidate);
-          if ($route->hasDefault('_form')) {
-            $route_name = $candidate;
-            break;
+    
+    // Collect settings links from all enabled Mark-a-Spot modules.
+    foreach ($markaspot_modules as $module => $route_name) {
+      if ($this->moduleHandler->moduleExists($module)) {
+        $info = $this->extensionList->getExtensionInfo($module);
+        if (!empty($info)) {
+          try {
+            // Verify route exists
+            $this->routeProvider->getRouteByName($route_name);
+            
+            // Create link
+            $links[] = [
+              '#type' => 'link',
+              '#title' => $this->t($info['name']),
+              '#url' => Url::fromRoute($route_name),
+              '#attributes' => [
+                'class' => ['admin-item'],
+                'title' => !empty($info['description']) ? $this->t($info['description']) : '',
+              ],
+            ];
+          }
+          catch (\Exception $e) {
+            // Skip routes that don't exist.
           }
         }
-        catch (\Exception $e) {
-          continue;
+      }
+    }
+    
+    // Add custom modules from the web/modules/custom directory
+    $custom_modules = [
+      'markaspot_vision' => 'markaspot_vision.settings',
+      'markaspot_geocoder' => 'markaspot_geocoder.settings',
+    ];
+    
+    foreach ($custom_modules as $module => $route_name) {
+      // Only add if not already added and module exists
+      if (!isset($markaspot_modules[$module]) && $this->moduleHandler->moduleExists($module)) {
+        $info = $this->extensionList->getExtensionInfo($module);
+        if (!empty($info)) {
+          try {
+            // Verify route exists
+            $this->routeProvider->getRouteByName($route_name);
+            
+            // Create link
+            $links[] = [
+              '#type' => 'link',
+              '#title' => $this->t($info['name']),
+              '#url' => Url::fromRoute($route_name),
+              '#attributes' => [
+                'class' => ['admin-item'],
+                'title' => !empty($info['description']) ? $this->t($info['description']) : '',
+              ],
+            ];
+          }
+          catch (\Exception $e) {
+            // Skip routes that don't exist.
+          }
         }
       }
-      if (!$route_name) {
-        continue;
-      }
-      $title = $route->getDefault('_title');
-      $links[] = Link::fromTextAndUrl($title, Url::fromRoute($route_name));
     }
-    // Sort links by title.
+    
+    // Sort links alphabetically by title
     usort($links, function($a, $b) {
-      return strcmp($a->toString(), $b->toString());
+      return strcasecmp($a['#title'], $b['#title']);
     });
-    return [
+    
+    $build = [
       '#theme' => 'item_list',
-      '#title' => $this->t('Mark‑a‑Spot module settings'),
+      '#title' => $this->t('Mark-a-Spot module settings'),
       '#items' => $links,
-      '#attributes' => ['class' => ['markaspot-ui-settings-list']],
-      '#cache' => ['max-age' => 0],
+      '#attributes' => ['class' => ['admin-list']],
+      '#wrapper_attributes' => ['class' => ['container-inline']],
     ];
+    
+    // Make the render array cacheable but invalidate on module changes
+    $cache_metadata = new CacheableMetadata();
+    $cache_metadata->setCacheTags(['markaspot_ui', 'module_list']);
+    $cache_metadata->setCacheMaxAge(86400); // 24 hours
+    $cache_metadata->applyTo($build);
+    
+    return $build;
   }
 }

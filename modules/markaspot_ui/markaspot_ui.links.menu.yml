@@ -1,6 +1,6 @@
-markaspot_ui.settings_list:
+markaspot_ui.settings:
   title: 'Mark-a-Spot settings'
-  description: 'Configure all Mark-a-Spot modules'
+  description: 'Configure all Mark-a-Spot modules in one place'
   parent: system.admin_config
-  route_name: markaspot_ui.settings_list
-  weight: 100
+  route_name: markaspot_ui.settings
+  weight: 50

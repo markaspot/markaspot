@@ -1,0 +1,87 @@
+/**
+ * @file
+ * Styling for Mark-a-Spot settings overview page.
+ */
+
+.markaspot-settings-overview {
+  margin: 1em 0;
+  padding: 1em;
+  background-color: #fff;
+  border-radius: 4px;
+}
+
+.markaspot-settings-overview h2 {
+  margin-top: 0;
+  color: #333;
+  font-weight: 500;
+}
+
+.markaspot-settings-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  margin-top: 1.5em;
+}
+
+.markaspot-setting-item {
+  display: flex;
+  padding: 1em;
+  background-color: #f7f7f7;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  width: 100%;
+  max-width: 350px;
+}
+
+.markaspot-setting-item:hover {
+  background-color: #f0f0f0;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+  border-color: #ccc;
+}
+
+.markaspot-icon {
+  flex: 0 0 2.5em;
+  height: 2.5em;
+  margin-right: 1em;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-image: url(../images/logo.svg);
+}
+
+.markaspot-setting-title {
+  font-weight: bold;
+  font-size: 1.15em;
+  color: #0074bd;
+  text-decoration: none;
+  margin-bottom: 0.3em;
+  display: block;
+}
+
+.markaspot-setting-title:hover {
+  text-decoration: underline;
+}
+
+.markaspot-setting-description {
+  font-size: 0.9em;
+  color: #666;
+  line-height: 1.4;
+}
+
+/* Module-specific icons */
+.markaspot-map-icon {
+  background-image: url(../images/logo.svg);
+}
+
+/* Responsive styling */
+@media screen and (max-width: 767px) {
+  .markaspot-settings-list {
+    flex-direction: column;
+  }
+  
+  .markaspot-setting-item {
+    max-width: 100%;
+  }
+}

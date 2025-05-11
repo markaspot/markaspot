@@ -60,7 +60,6 @@ dependencies:
   - markaspot_map
   - markaspot_media
   - markaspot_token
-  - markaspot_ui
   - markaspot_request_id
   - markaspot_validation
   - service_request

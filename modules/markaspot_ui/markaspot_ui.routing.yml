@@ -1,8 +1,8 @@
-markaspot_ui.settings_list:
+markaspot_ui.settings:
   path: '/admin/config/markaspot'
   defaults:
-    _controller: 'markaspot_ui_settings_list'
-    _title: 'Mark-a-Spot settings'
+    _controller: '\Drupal\markaspot_ui\Controller\SettingsController::overview'
+    _title: 'Mark-a-Spot Settings'
   requirements:
     _permission: 'administer site configuration'
   options:

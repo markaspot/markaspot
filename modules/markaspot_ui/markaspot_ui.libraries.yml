@@ -1,5 +1,16 @@
-markaspot_ui.icons:
+toolbar:
+  version: VERSION
+  css:
+    component:
+      css/markaspot-toolbar.css: {}
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+
+settings:
   version: VERSION
   css:
     theme:
-      css/markaspot_ui.icons.css: {}
+      css/markaspot-settings.css: {}
+  dependencies:
+    - core/drupal
