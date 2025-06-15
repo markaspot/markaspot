@@ -57,7 +57,7 @@ class StatsController extends ControllerBase {
       LEFT JOIN node__field_status fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
       LEFT JOIN node_field_data n ON fs.entity_id = n.nid AND n.type = 'service_request'
       WHERE t.vid = 'service_status'
-      GROUP BY t.tid, t.name, h.field_status_hex_color
+      GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
       ORDER BY t.weight ASC
     ");
 
@@ -92,7 +92,7 @@ class StatsController extends ControllerBase {
       LEFT JOIN node__field_category fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
       LEFT JOIN node_field_data n ON fc.entity_id = n.nid AND n.type = 'service_request'
       WHERE t.vid = 'service_category'
-      GROUP BY t.tid, t.name, h.field_category_hex_color
+      GROUP BY t.tid, t.name, h.field_category_hex_color, t.weight
       ORDER BY t.weight ASC
     ");
 
