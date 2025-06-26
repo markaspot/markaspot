@@ -1,5 +1,12 @@
 map_type: '2'
 mapbox: ''
+mapbox_token: ''
+mapbox_style: ''
+mapbox_style_dark: ''
+fallback_style: ''
+fallback_style_dark: ''
+fallback_api_key: ''
+fallback_attribution: '© <a href="https://www.maptiler.com/copyright/" target="_blank">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
 osm_custom_tile_url: 'https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png'
 osm_custom_attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>'
 map_background: '#ddd'
@@ -12,3 +19,8 @@ center_lat: '40.7370610'
 center_lng: '-73.935242'
 request_list_path: /requests
 visualization_path: /visualization
+maplibre: 0
+marker: ''
+iconAnchor: '[25, 30]'
+wms_service: ''
+wms_layer: ''

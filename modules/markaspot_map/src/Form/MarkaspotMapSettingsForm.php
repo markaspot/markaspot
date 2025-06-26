@@ -81,6 +81,32 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('mapbox_style_dark'),
       '#description' => $this->t('Mapbox Style Url (e.g. mapbox://styles/mapbox/streets-v8) here'),
     ];
+    
+    // Fallback tile service configuration
+    $form['markaspot_map']['fallback_style'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Fallback Style Url / MapLibre JSON Url'),
+      '#default_value' => $config->get('fallback_style'),
+      '#description' => $this->t('Fallback style URL to use when primary style fails (e.g. MapTiler, Mapbox, or other MapLibre style)'),
+    ];
+    $form['markaspot_map']['fallback_style_dark'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Fallback Style Url / MapLibre JSON Url for dark modes'),
+      '#default_value' => $config->get('fallback_style_dark'),
+      '#description' => $this->t('Fallback style URL for dark mode when primary style fails'),
+    ];
+    $form['markaspot_map']['fallback_api_key'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Fallback Service API Key'),
+      '#default_value' => $config->get('fallback_api_key'),
+      '#description' => $this->t('API key for the fallback tile service (e.g. MapTiler API key: pk.abc123...)'),
+    ];
+    $form['markaspot_map']['fallback_attribution'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Fallback Service Attribution'),
+      '#default_value' => $config->get('fallback_attribution'),
+      '#description' => $this->t('Attribution text for the fallback tile service (e.g. © MapTiler © OpenStreetMap contributors)'),
+    ];
     $form['markaspot_map']['maplibre'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable MapLibre'),
@@ -208,6 +234,10 @@ xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><defs>
       ->set('mapbox_token', $values['mapbox_token'])
       ->set('mapbox_style', $values['mapbox_style'])
       ->set('mapbox_style_dark', $values['mapbox_style_dark'])
+      ->set('fallback_style', $values['fallback_style'])
+      ->set('fallback_style_dark', $values['fallback_style_dark'])
+      ->set('fallback_api_key', $values['fallback_api_key'])
+      ->set('fallback_attribution', $values['fallback_attribution'])
       ->set('osm_custom_tile_url', $values['osm_custom_tile_url'])
       ->set('wms_service', $values['wms_service'])
       ->set('wms_layer', $values['wms_layer'])
