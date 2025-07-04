@@ -768,10 +768,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    */
   private function getStatusNote(object $node): string {
     if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
-      $fieldValues = $node->get('field_status_notes')->getValue();
-      $latestNoteValue = end($fieldValues);
-      if (isset($latestNoteValue['entity'])) {
-        $latestNote = $latestNoteValue['entity'];
+      $statusNotes = $node->get('field_status_notes')->referencedEntities();
+      if (!empty($statusNotes)) {
+        $latestNote = end($statusNotes);
         if ($latestNote instanceof Paragraph && $latestNote->hasField('field_status_note')) {
           return $latestNote->get('field_status_note')->value;
         }
