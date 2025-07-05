@@ -55,21 +55,52 @@ function service_request_node_presave(EntityInterface $node) {
   }
   // Service Request Update
   elseif ($node->bundle() == 'service_request' && $node->id()) {
-
-    foreach ($node->field_status_notes as $paragraph) {
-      // Access the paragraph entity like this:
-      $status_notes[] = $paragraph->entity;
-    }
-    // Get new Status from Taxonomy Reference.
+    // Get the new status from the field_status field.
     $newStatus = $node->field_status->target_id;
-    if (isset($status_notes)) {
-      if (is_array(end($status_notes))) {
-        // Load last Paragraph and Update the Status there.
-        $paragraph = Paragraph::load(end($status_notes)->id());
-
-        $paragraph->field_status_term->target_id = $newStatus;
-        // Save paragraph.
+    
+    // Get the original node to check if status has changed.
+    $original = $node->original;
+    $originalStatus = $original ? $original->field_status->target_id : null;
+    
+    // Only process if status has actually changed.
+    if ($newStatus && $originalStatus && $newStatus != $originalStatus) {
+      // Check if there are existing status notes.
+      $hasStatusNotes = false;
+      $lastParagraphStatus = null;
+      
+      if (!$node->field_status_notes->isEmpty()) {
+        $hasStatusNotes = true;
+        // Get the last paragraph to check its status.
+        $lastParagraph = $node->field_status_notes->last()->entity;
+        if ($lastParagraph && $lastParagraph->hasField('field_status_term')) {
+          $lastParagraphStatus = $lastParagraph->field_status_term->target_id;
+        }
+      }
+      
+      // Create a new status note paragraph if:
+      // 1. There are no status notes yet, OR
+      // 2. The new status is different from the last paragraph's status
+      if (!$hasStatusNotes || $newStatus != $lastParagraphStatus) {
+        // Create a new paragraph for this status change.
+        $status_note_text = t('Status changed.');
+        
+        $paragraph = Paragraph::create([
+          'type' => 'status',
+          'field_status_note' => [
+            'value' => $status_note_text,
+            'format' => 'plain_text',
+          ],
+          'field_status_term' => [
+            'target_id' => $newStatus,
+          ],
+        ]);
         $paragraph->save();
+        
+        // Add the new paragraph to the status notes field.
+        $node->field_status_notes->appendItem([
+          'target_id' => $paragraph->id(),
+          'target_revision_id' => $paragraph->getRevisionId(),
+        ]);
       }
     }
   }
