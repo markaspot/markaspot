@@ -131,12 +131,12 @@
         reverseGeocode(newPosition, geosearchMarker);
       });
 
-      const location = Drupal.geolactionMapboxParseReverseGeo(result.location.raw);
+      const location = Drupal.geolocationMapboxParseReverseGeo(result.location.raw);
       updateCallback(geosearchMarker, map, location);
 
-      $('.geolocation-widget-lng.for--geolocation-mapbox-map')
+      $('.geolocation-widget-lng.for--' + mapSettings.id)
         .attr('value', result.location.x);
-      $('.geolocation-widget-lat.for--geolocation-mapbox-map')
+      $('.geolocation-widget-lat.for--' + mapSettings.id)
         .attr('value', result.location.y);
     };
 
@@ -247,18 +247,18 @@
       $input.val($val);
     }
 
-    function reverseGeocode(latlng) {
+    function reverseGeocode(latlng, existingMarker) {
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${latlng.lng},${latlng.lat}.json?types=address&access_token=${mapSettings.mapboxToken}`;
       fetch(url)
         .then(response => response.json())
         .then(body => {
-          const location = Drupal.geolactionMapboxParseReverseGeo(body.features[0]);
+          const location = Drupal.geolocationMapboxParseReverseGeo(body.features[0]);
           setMarker(location, latlng);
           updateCallback(marker, map, location);
         });
 
-      $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lat').attr('value', latlng.lat);
-      $('.field--widget-geolocation-mapbox-widget .geolocation-hidden-lng').attr('value', latlng.lng);
+      $('.geolocation-widget-lat.for--' + mapSettings.id).val(latlng.lat).trigger('change');
+      $('.geolocation-widget-lng.for--' + mapSettings.id).val(latlng.lng).trigger('change');
     }
   };
 
@@ -268,8 +268,8 @@
     }
 
     const address = location;
-    const $form = $('.geolocation-widget-lat.for--' + mapSettings.id, context).parents('form');
-    const $address = $form.find('.field--type-address').first();
+    // Find the address field directly without relying on context
+    const $address = $('[data-drupal-selector="edit-field-address-0"]').first();
 
     if ($address.length) {
       // Bind to addressfields AJAX complete event.
@@ -295,9 +295,11 @@
       });
 
       if (
+        address.country_code &&
+        $('select.country', $address).val() &&
         $('select.country', $address)
           .val()
-          .toLowerCase() != address.country_code
+          .toLowerCase() != address.country_code.toLowerCase()
       ) {
         $('select.country', $address)
           .val(address.country_code.toUpperCase())
@@ -312,7 +314,7 @@
 
     function waitForAddressFields(callback) {
       // Check if the text input fields are available in the DOM.
-      const $addressLine1 = $form.find('input.address-line1').first();
+      const $addressLine1 = $address.find('input.address-line1').first();
       if ($addressLine1.length) {
         // Text input fields are present, execute the callback.
         callback();
@@ -325,55 +327,53 @@
     }
   };
 
-  Drupal.geolactionMaboxParseReverseGeo = (geoData) => {
-    let address = {};
-    if (geoData) {
-      address = geoData.address;
-      address.place_name = `${address.road} ${address.house_number}`;
-      address.text = geoData.display_name;
-    }
-    return address;
-  };
+  // Remove this duplicate function - using only the Mapbox version below
 
   Drupal.geolocationMapboxSetAddressDetails = ($address, details) => {
+    // Update postal code
     if ('postcode' in details) {
-      $('input.postal-code', $address).val(details.postcode);
+      const $postalCode = $('input.postal-code', $address);
+      $postalCode.val(details.postcode).trigger('change');
     }
 
-    if ('suburb' in details) {
-      $('select#edit-field-district option').each(function () {
-        if ($(this).text() == details.suburb) {
-          $(this).attr('selected', 'selected');
-        }
-      });
-    }
-
-    if ('state' in details) {
-      $('select.administrative-area option').each(function () {
-        if ($(this).text() == details.state) {
-          $(this).attr('selected', 'selected');
-        }
-      });
-    }
+    // Update locality/city
     if ('place' in details) {
-      $('input.locality', $address).val(details.place);
+      const $locality = $('input.locality', $address);
+      $locality.val(details.place).trigger('change');
     }
-    if ('text' in details || 'building' in details) {
-      if (typeof details.housenumber !== 'undefined') {
-        $('input.address-line1', $address).val(details.text + " " + details.housenumber);
-      } else {
-        $('input.address-line1', $address).val(details.text);
+
+    // Update street address
+    if ('text' in details) {
+      // For Mapbox, text is the street name and housenumber is the street number
+      let addressLine1 = details.text;
+      if ('housenumber' in details && details.housenumber) {
+        addressLine1 = details.text + ' ' + details.housenumber;
       }
-      $('input.address-line2', $address).val(details.building);
+      const $addressLine1 = $('input.address-line1', $address);
+      $addressLine1.val(addressLine1).trigger('change');
     }
-    if ('house_number' in details) {
-      $('input.address-line1', $address)
-        .val($('input.address-line1', $address)
-          .val() + ' ' + details.house_number);
+
+    // Administrative area/state handling if needed
+    if ('region' in details) {
+      const $adminArea = $('select.administrative-area', $address);
+      if ($adminArea.length) {
+        $adminArea.find('option').each(function () {
+          if ($(this).text() == details.region) {
+            $(this).prop('selected', true).trigger('change');
+          }
+        });
+      }
+    }
+    
+    // Clear address line 2 if no building info
+    if ('building' in details) {
+      $('input.address-line2', $address).val(details.building).trigger('change');
+    } else {
+      $('input.address-line2', $address).val('').trigger('change');
     }
   };
 
-  Drupal.geolactionMapboxParseReverseGeo = function (geoData) {
+  Drupal.geolocationMapboxParseReverseGeo = function (geoData) {
     let address = {};
     if (geoData.context) {
       address.housenumber = geoData.address;
@@ -403,10 +403,10 @@
       if (settings.geolocationMapbox.widgetMaps) {
         $.each(settings.geolocationMapbox.widgetMaps, function (index, mapSettings) {
           Drupal.geolocationMapboxWidget(mapSettings, context, function (marker, map, result) {
-            $('.geolocation-widget-lat.for--' + mapSettings.id, context).attr('value', marker.getLatLng().lat);
-            $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value', marker.getLatLng().lng);
+            $('.geolocation-widget-lat.for--' + mapSettings.id, context).val(marker.getLatLng().lat).trigger('change');
+            $('.geolocation-widget-lng.for--' + mapSettings.id, context).val(marker.getLatLng().lng).trigger('change');
             $('.geolocation-widget-zoom.for--' + mapSettings.id, context)
-              .attr('value', map.getZoom());
+              .val(map.getZoom());
             if (mapSettings.setAddressField) {
               Drupal.geolocationMapboxSetAddressField(mapSettings, result, context);
             }

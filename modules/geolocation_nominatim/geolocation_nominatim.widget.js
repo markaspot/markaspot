@@ -113,10 +113,8 @@
 
     function parseResult(result, mapSettings) {
       if (!result) return '';
-      console.log(result)
 
       const address = result;
-      console.log(address)
       const placeholders = {
         road: address.road || '',
         house_number: address.house_number || '',
@@ -164,13 +162,13 @@
         reverseGeocode(newPosition, geosearchMarker);
       });
 
-      const location = Drupal.geolactionNominatimParseReverseGeo(result.location.raw);
+      const location = Drupal.geolocationNominatimParseReverseGeo(result.location.raw);
       updateCallback(geosearchMarker, map, location);
 
-      $('.geolocation-widget-lng.for--geolocation-nominatim-map')
-        .attr('value', result.location.x);
-      $('.geolocation-widget-lat.for--geolocation-nominatim-map')
-        .attr('value', result.location.y);
+      $('.geolocation-widget-lng.for--' + mapSettings.id)
+        .val(result.location.x).trigger('change');
+      $('.geolocation-widget-lat.for--' + mapSettings.id)
+        .val(result.location.y).trigger('change');
     };
 
     map.on('click', function (e) {
@@ -282,15 +280,13 @@
         return response.json();
       })
         .then(function (body) {
-          const location = Drupal.geolactionNominatimParseReverseGeo(body);
+          const location = Drupal.geolocationNominatimParseReverseGeo(body);
           setMarker(location, latlng);
           updateCallback(marker, map, location);
         });
 
-      $('.field--widget-geolocation-nominatim-widget .geolocation-hidden-lat')
-        .attr('value', latlng.lat);
-      $('.field--widget-geolocation-nominatim-widget .geolocation-hidden-lng')
-        .attr('value', latlng.lng);
+      $('.geolocation-widget-lat.for--' + mapSettings.id).val(latlng.lat).trigger('change');
+      $('.geolocation-widget-lng.for--' + mapSettings.id).val(latlng.lng).trigger('change');
     }
 
     // geocoder.addTo(map);
@@ -302,9 +298,8 @@
     }
 
     const address = result;
-    const $form = $('.geolocation-widget-lat.for--' + mapSettings.id, context)
-      .parents('form');
-    const $address = $form.find('.field--type-address').first();
+    // Find the address field directly without relying on context
+    const $address = $('[data-drupal-selector="edit-field-address-0"]').first();
 
     if ($address.length) {
       // Bind to addressfields AJAX complete event.
@@ -322,7 +317,7 @@
 
             // Wait for the text input fields to be loaded via AJAX.
             waitForAddressFields(() => {
-              const $addressNew = $form.find('.field--type-address').first();
+              const $addressNew = $('[data-drupal-selector="edit-field-address-0"]').first();
               Drupal.geolocationNominatimSetAddressDetails($addressNew, address);
             });
           };
@@ -330,9 +325,11 @@
       });
 
       if (
+        address.country_code &&
+        $('select.country', $address).val() &&
         $('select.country', $address)
           .val()
-          .toLowerCase() != address.country_code
+          .toLowerCase() != address.country_code.toLowerCase()
       ) {
         $('select.country', $address)
           .val(address.country_code.toUpperCase())
@@ -347,7 +344,7 @@
 
     function waitForAddressFields(callback) {
       // Check if the text input fields are available in the DOM.
-      const $addressLine1 = $form.find('input.address-line1').first();
+      const $addressLine1 = $address.find('input.address-line1').first();
       if ($addressLine1.length) {
         // Text input fields are present, execute the callback.
         callback();
@@ -360,7 +357,7 @@
     }
   };
 
-  Drupal.geolactionNominatimParseReverseGeo = (geoData) => {
+  Drupal.geolocationNominatimParseReverseGeo = (geoData) => {
     let address = {};
     if (geoData) {
       address = geoData.address;
@@ -372,7 +369,7 @@
 
   Drupal.geolocationNominatimSetAddressDetails = ($address, details) => {
     if ('postcode' in details) {
-      $('input.postal-code', $address).val(details.postcode);
+      $('input.postal-code', $address).val(details.postcode).trigger('change');
     }
 
     if ('suburb' in details) {
@@ -406,7 +403,7 @@
         details.hamlet ||
         details.county ||
         details.neighbourhood;
-      $('input.locality', $address).val(localityType);
+      $('input.locality', $address).val(localityType).trigger('change');
     }
 
     if (
@@ -422,16 +419,15 @@
         details.footway ||
         details.pedestrian ||
         details.path;
-      $('input.address-line1', $address).val(streetType);
-      $('input.address-line2', $address).val(details.building);
+      $('input.address-line1', $address).val(streetType).trigger('change');
+      $('input.address-line2', $address).val(details.building).trigger('change');
     }
 
     if ('house_number' in details) {
+      const currentVal = $('input.address-line1', $address).val();
       $('input.address-line1', $address)
-        .val(
-          $('input.address-line1', $address)
-            .val() + ' ' + details.house_number
-        );
+        .val(currentVal + ' ' + details.house_number)
+        .trigger('change');
     }
   };
 
@@ -441,10 +437,10 @@
         if (settings.geolocationNominatim.widgetMaps) {
           $.each(settings.geolocationNominatim.widgetMaps, function (index, mapSettings) {
             Drupal.geolocationNominatimWidget(mapSettings, context, function (marker, map, result) {
-              $('.geolocation-widget-lat.for--' + mapSettings.id, context).attr('value', marker.getLatLng().lat);
-              $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value', marker.getLatLng().lng);
+              $('.geolocation-widget-lat.for--' + mapSettings.id, context).val(marker.getLatLng().lat).trigger('change');
+              $('.geolocation-widget-lng.for--' + mapSettings.id, context).val(marker.getLatLng().lng).trigger('change');
               $('.geolocation-widget-zoom.for--' + mapSettings.id, context)
-                .attr('value', map.getZoom());
+                .val(map.getZoom());
               if (mapSettings.setAddressField) {
                 Drupal.geolocationNominatimSetAddressField(mapSettings, result, context);
               }
