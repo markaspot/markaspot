@@ -940,8 +940,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
         if ($term->hasTranslation($langcode)) {
           $term = $term->getTranslation($langcode);
         }
-        $extendedAttributes['category_hex'] = $term->get('field_category_hex')->color ?? '';
-        $extendedAttributes['category_icon'] = $term->get('field_category_icon')->value ?? '';
+        $extendedAttributes['category_hex'] = ($term->hasField('field_category_hex') && !$term->get('field_category_hex')->isEmpty()) 
+          ? $term->get('field_category_hex')->color 
+          : '';
+        $extendedAttributes['category_icon'] = ($term->hasField('field_category_icon') && !$term->get('field_category_icon')->isEmpty()) 
+          ? $term->get('field_category_icon')->value 
+          : '';
       } else {
         $extendedAttributes['category_hex'] = '';
         $extendedAttributes['category_icon'] = '';
@@ -957,7 +961,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
           $term = $term->getTranslation($langcode);
         }
         $extendedAttributes['status_descriptive_name'] = $term->getName() ?? '';
-        $extendedAttributes['status_hex'] = $term->get('field_status_hex')->color ?? '';
+        $extendedAttributes['status_hex'] = ($term->hasField('field_status_hex') && !$term->get('field_status_hex')->isEmpty()) 
+          ? $term->get('field_status_hex')->color 
+          : '';
       } else {
         $extendedAttributes['status_descriptive_name'] = '';
         $extendedAttributes['status_hex'] = '';
@@ -992,8 +998,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
           'status' => $this->mapStatusToOpenClosedValue($statusTermId),
           'updated_datetime' => $this->formatDateTime($noteEntity->get('created')->value),
           'status_descriptive_name' => $statusTerm ? $statusTerm->getName() : '',
-          'status_hex' => $statusTerm ? $statusTerm->get('field_status_hex')->color : '',
-          'status_icon' => $statusTerm ? $statusTerm->get('field_status_icon')->value : ''
+          'status_hex' => ($statusTerm && $statusTerm->hasField('field_status_hex') && !$statusTerm->get('field_status_hex')->isEmpty()) 
+            ? $statusTerm->get('field_status_hex')->color 
+            : '',
+          'status_icon' => ($statusTerm && $statusTerm->hasField('field_status_icon') && !$statusTerm->get('field_status_icon')->isEmpty()) 
+            ? $statusTerm->get('field_status_icon')->value 
+            : ''
         ];
       }
 
