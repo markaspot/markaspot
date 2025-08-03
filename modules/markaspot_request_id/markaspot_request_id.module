@@ -252,7 +252,7 @@ function markaspot_request_id_create_title($node, $request_id) {
   $tid = $node->field_category->target_id;
   // Instead of contributed module auto entity_title:
   // Get the service name by ID and update the title field.
-  $service_name = "";
+  $service_name_text = "";
   if (isset($tid)) {
     $taxonomy_term = \Drupal::entityTypeManager()
       ->getStorage('taxonomy_term')
@@ -261,9 +261,10 @@ function markaspot_request_id_create_title($node, $request_id) {
     if ($taxonomy_term !== NULL) {
       $service_name = \Drupal::service('entity.repository')
         ->getTranslationFromContext($taxonomy_term, $language);
+      $service_name_text = $service_name->name->value ?? '';
     }
   }
-  return '#' . $request_id . ' ' . $service_name->name->value;
+  return '#' . $request_id . ' ' . $service_name_text;
 
 }
 

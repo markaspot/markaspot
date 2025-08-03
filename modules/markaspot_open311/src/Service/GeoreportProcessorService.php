@@ -575,7 +575,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     
     // Add description if the field exists and isn't empty
     if ($node->hasField('body') && !$node->get('body')->isEmpty()) {
-      $request['description'] = $node->get('body')->value;
+      $request['description'] = $node->get('body')->value ?? '';
     }
     
     // Add geolocation data if available
@@ -608,20 +608,20 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     // Add manager-only fields
     if ($extendedRole === 'manager') {
       if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
-        $request['email'] = $node->get('field_e_mail')->value;
-        $request['extended_attributes']['e-mail'] = $node->get('field_e_mail')->value;
+        $request['email'] = $node->get('field_e_mail')->value ?? '';
+        $request['extended_attributes']['e-mail'] = $node->get('field_e_mail')->value ?? '';
       }
       
       if ($node->hasField('field_phone') && !$node->get('field_phone')->isEmpty()) {
-        $request['phone'] = $node->get('field_phone')->value;
+        $request['phone'] = $node->get('field_phone')->value ?? '';
       }
       
       if ($node->hasField('field_first_name') && !$node->get('field_first_name')->isEmpty()) {
-        $request['first_name'] = $node->get('field_first_name')->value;
+        $request['first_name'] = $node->get('field_first_name')->value ?? '';
       }
       
       if ($node->hasField('field_last_name') && !$node->get('field_last_name')->isEmpty()) {
-        $request['last_name'] = $node->get('field_last_name')->value;
+        $request['last_name'] = $node->get('field_last_name')->value ?? '';
       }
       
       if ($node->hasField('uid') && !$node->get('uid')->isEmpty() && $node->get('uid')->entity) {
@@ -873,7 +873,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       if (!empty($statusNotes)) {
         $latestNote = end($statusNotes);
         if ($latestNote instanceof Paragraph && $latestNote->hasField('field_status_note')) {
-          return $latestNote->get('field_status_note')->value;
+          return $latestNote->get('field_status_note')->value ?? '';
         }
       }
     }
@@ -944,7 +944,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
           ? $term->get('field_category_hex')->color 
           : '';
         $extendedAttributes['category_icon'] = ($term->hasField('field_category_icon') && !$term->get('field_category_icon')->isEmpty()) 
-          ? $term->get('field_category_icon')->value 
+          ? $term->get('field_category_icon')->value ?? '' 
           : '';
       } else {
         $extendedAttributes['category_hex'] = '';
@@ -994,7 +994,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
         }
 
         $statusNotes[$logCount] = [
-          'status_note' => $noteEntity->get('field_status_note')->value,
+          'status_note' => $noteEntity->get('field_status_note')->value ?? '',
           'status' => $this->mapStatusToOpenClosedValue($statusTermId),
           'updated_datetime' => $this->formatDateTime($noteEntity->get('created')->value),
           'status_descriptive_name' => $statusTerm ? $statusTerm->getName() : '',
@@ -1002,7 +1002,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
             ? $statusTerm->get('field_status_hex')->color 
             : '',
           'status_icon' => ($statusTerm && $statusTerm->hasField('field_status_icon') && !$statusTerm->get('field_status_icon')->isEmpty()) 
-            ? $statusTerm->get('field_status_icon')->value 
+            ? $statusTerm->get('field_status_icon')->value ?? '' 
             : ''
         ];
       }
