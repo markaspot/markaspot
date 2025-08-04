@@ -584,9 +584,38 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       $request['long'] = (float) $node->get('field_geolocation')->lng;
     }
     
-    // Add address if available
+    // Add address fields if available
     if ($node->hasField('field_address') && !$node->get('field_address')->isEmpty()) {
       $request['address_string'] = $this->formatAddress($node->get('field_address'));
+      
+      // Add standard spec fields
+      $request['address'] = $this->formatAddress($node->get('field_address'));
+      
+      // Add zipcode if available
+      $postalCode = $node->get('field_address')->postal_code;
+      if (!empty($postalCode)) {
+        $request['zipcode'] = $postalCode;
+      }
+    }
+    
+    // Add agency_responsible if available
+    if ($node->hasField('field_agency_responsible') && !$node->get('field_agency_responsible')->isEmpty()) {
+      $request['agency_responsible'] = $node->get('field_agency_responsible')->value ?? '';
+    }
+    
+    // Add service_notice if available
+    if ($node->hasField('field_service_notice') && !$node->get('field_service_notice')->isEmpty()) {
+      $request['service_notice'] = $node->get('field_service_notice')->value ?? '';
+    }
+    
+    // Add expected_datetime if available
+    if ($node->hasField('field_expected_datetime') && !$node->get('field_expected_datetime')->isEmpty()) {
+      $request['expected_datetime'] = $this->formatDateTime($node->get('field_expected_datetime')->value);
+    }
+    
+    // Add address_id if available
+    if ($node->hasField('field_address_id') && !$node->get('field_address_id')->isEmpty()) {
+      $request['address_id'] = $node->get('field_address_id')->value ?? '';
     }
     
     // Add service details if available
@@ -595,14 +624,17 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       $request['service_code'] = $this->getTaxonomyTermField($categoryId, 'field_service_code');
     }
 
-    // Handle media URLs - only if requested or always needed
-    if (isset($parameters['include_media']) || isset($parameters['extensions'])) {
-      $request['media_url'] = $this->getMediaUrls($node);
+    // Add media_url if available (standard optional field per GeoReport v2 spec)
+    $mediaUrls = $this->getMediaUrls($node);
+    if (!empty($mediaUrls)) {
+      $request['media_url'] = $mediaUrls;
     }
 
-    // Handle status notes - only if requested or always needed
-    if (isset($parameters['include_notes']) || isset($parameters['extensions'])) {
-      $request['status_note'] = $this->getStatusNote($node);
+    // Add status_notes if available (standard optional field per GeoReport v2 spec)
+    // Note: spec uses 'status_notes' not 'status_note'
+    $statusNote = $this->getStatusNote($node);
+    if (!empty($statusNote)) {
+      $request['status_notes'] = $statusNote;
     }
 
     // Add manager-only fields
