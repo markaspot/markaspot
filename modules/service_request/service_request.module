@@ -26,8 +26,11 @@ function service_request_node_presave(EntityInterface $node) {
 
     $status_open_start = $config->get('status_open_start');
 
-    // todo: put this in config.
-    $status_note_initial = t('The service request has been created.');
+    // Get the node's language (which should be the site default for new nodes)
+    $node_langcode = $node->language()->getId();
+    
+    // Get the translation in the node's language
+    $status_note_initial = t('The service request has been created.', [], ['langcode' => $node_langcode]);
 
     $paragraph = Paragraph::create([
       'type' => 'status',
@@ -82,7 +85,9 @@ function service_request_node_presave(EntityInterface $node) {
       // 2. The new status is different from the last paragraph's status
       if (!$hasStatusNotes || $newStatus != $lastParagraphStatus) {
         // Create a new paragraph for this status change.
-        $status_note_text = t('Status changed.');
+        // Get the node's language for translation
+        $node_langcode = $node->language()->getId();
+        $status_note_text = t('Status changed.', [], ['langcode' => $node_langcode]);
         
         $paragraph = Paragraph::create([
           'type' => 'status',
