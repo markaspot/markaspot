@@ -814,14 +814,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
   /**
    * Maps a taxonomy term ID to an "open" or "closed" status value.
    *
-   * @param int $taxonomyId
-   *   The taxonomy term ID.
+   * @param int|null $taxonomyId
+   *   The taxonomy term ID, or null if no status is set.
    *
    * @return string
    *   The status value ("open" or "closed").
    */
-  public function mapStatusToOpenClosedValue(int $taxonomyId): string
+  public function mapStatusToOpenClosedValue(?int $taxonomyId): string
   {
+    if ($taxonomyId === null) {
+      return 'open'; // Default to 'open' for requests without status
+    }
+    
     $statusOpen = array_values($this->configFactory->get('markaspot_open311.settings')->get('status_open'));
     return in_array($taxonomyId, $statusOpen) ? 'open' : 'closed';
   }
