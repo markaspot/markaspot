@@ -158,12 +158,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
   /**
    * Get discovery from configuration.
    *
-   * @return object
+   * @return array
    *   Returns the discovery configuration.
    */
-  public function getDiscovery(): object
+  public function getDiscovery(): array
   {
-    return $this->configFactory->get('markaspot_open311.settings')->get('discovery');
+    $discovery = $this->configFactory->get('markaspot_open311.settings')->get('discovery');
+    return $discovery ?: [];
   }
 
   /**
@@ -895,6 +896,43 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
   }
 
   /**
+   * Retrieves the alt texts for media associated with a node.
+   *
+   * @param object $node
+   *   The node object.
+   *
+   * @return array
+   *   An array of alt text strings corresponding to media URLs.
+   */
+  private function getMediaAltTexts(object $node): array
+  {
+    $mediaAltTexts = [];
+
+    if ($node->hasField('field_request_image') && !$node->get('field_request_image')->isEmpty()) {
+      // For legacy field_request_image, use fallback text
+      $mediaAltTexts[] = $this->t('Situation documented in image according to description')->render();
+    }
+
+    if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
+      foreach ($node->get('field_request_media')->referencedEntities() as $media) {
+        if ($media->isPublished() && $media->hasField('field_media_image') && !$media->get('field_media_image')->isEmpty()) {
+          $fieldMediaImage = $media->get('field_media_image');
+          
+          // Get alt text from media entity or use fallback
+          if (!$fieldMediaImage->isEmpty() && !empty($fieldMediaImage->alt)) {
+            $mediaAltTexts[] = $fieldMediaImage->alt;
+          } else {
+            // Use translatable fallback for missing alt text
+            $mediaAltTexts[] = $this->t('Situation documented in image according to description')->render();
+          }
+        }
+      }
+    }
+
+    return $mediaAltTexts;
+  }
+
+  /**
    * Retrieves the latest status note from a node.
    *
    * @param object $node
@@ -1044,6 +1082,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       }
 
       $extendedAttributes['status_notes'] = $statusNotes;
+    }
+    
+    // Add media alt text information for accessibility
+    $mediaAltTexts = $this->getMediaAltTexts($node);
+    if (!empty($mediaAltTexts)) {
+      $extendedAttributes['media_alt_text'] = $mediaAltTexts;
     }
     
     // Cache the result for future use
