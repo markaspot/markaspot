@@ -274,21 +274,41 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $nids = explode(',', $parameters['nids']);
       $query->condition('nid', $nids, 'IN');
     } else {
-      // Apply limit only if not querying specific nodes
-      $limit = (isset($parameters['limit']) && $parameters['limit'] <= 200) ? $parameters['limit'] : 100;
-      $query->range(0, $limit);
+      // Handle pagination parameters
+      $limit = isset($parameters['limit']) ? (int)$parameters['limit'] : 100;
+      $offset = 0;
       
-      // Handle date range early to reduce result set
-      if (!isset($parameters['updated'])) {
-        $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '')
-          ? strtotime($parameters['start_date'])
-          : strtotime("- 90days");
-        $query->condition('created', $start_timestamp, '>=');
+      // Support both 'page' (1-based) and 'offset' (0-based) parameters
+      if (isset($parameters['page']) && $parameters['page'] > 0) {
+        $page = (int)$parameters['page'];
+        $offset = ($page - 1) * $limit;
+      } elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
+        $offset = (int)$parameters['offset'];
+      }
+      
+      // Performance protection: require explicit limits for queries without date filters
+      if (!isset($parameters['start_date']) && !isset($parameters['updated'])) {
+        $limit = min($limit, 100);
+      } else {
+        // Apply limit for date-filtered queries (can be larger since they're more specific)
+        $limit = min($limit, 500);
+      }
+      
+      $query->range($offset, $limit);
+      
+      // Handle explicit date range filters only
+      if (isset($parameters['start_date']) && $parameters['start_date'] != '') {
+        $start_timestamp = strtotime($parameters['start_date']);
+        if ($start_timestamp !== false) {
+          $query->condition('created', $start_timestamp, '>=');
+        }
+      }
 
-        $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '')
-          ? strtotime($parameters['end_date'])
-          : time();
-        $query->condition('created', $end_timestamp, '<=');
+      if (isset($parameters['end_date']) && $parameters['end_date'] != '') {
+        $end_timestamp = strtotime($parameters['end_date']);
+        if ($end_timestamp !== false) {
+          $query->condition('created', $end_timestamp, '<=');
+        }
       }
       
       // Handle sorting - add indexes to these fields in your DB
