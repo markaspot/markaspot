@@ -25,14 +25,16 @@ class MarkaspotFeedbackForm extends FormBase {
    *
    */
   public function isValid($uuid) {
-    return \Drupal::service('markaspot_feedback.feedback')->get($uuid);
+    $nodes = \Drupal::entityTypeManager()->getStorage('node')->loadByProperties(['uuid' => $uuid]);
+    return !empty($nodes) ? reset($nodes) : FALSE;
   }
 
   /**
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state, $uuid = NULL) {
-    $node = \Drupal::service('markaspot_feedback.feedback')->get($uuid);
+    $nodes = \Drupal::entityTypeManager()->getStorage('node')->loadByProperties(['uuid' => $uuid]);
+    $node = !empty($nodes) ? reset($nodes) : NULL;
 
     if ($this->isValid($uuid)) {
       // $form['feedback']['fieldset']
