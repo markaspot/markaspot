@@ -342,6 +342,13 @@ class FeedbackController extends ControllerBase {
         $response_data['feedback'] = $node->get('field_feedback')->value;
       }
       
+      // Add service provider email information for service provider mode
+      $service_provider_emails = $this->getServiceProviderEmails($node);
+      if (!empty($service_provider_emails)) {
+        $response_data['service_provider_emails'] = $service_provider_emails;
+        $response_data['service_provider_emails_count'] = count($service_provider_emails);
+      }
+      
       $logger->notice('Retrieved service request data for node @nid (UUID: @uuid)', [
         '@nid' => $node->id(),
         '@uuid' => $uuid,
@@ -387,15 +394,82 @@ class FeedbackController extends ControllerBase {
       return $this->t('Service provider has no email address configured');
     }
 
-    // Get the service provider email and compare with provided email
-    $service_provider_email = $service_provider_term->get('field_sp_email')->value;
+    // Get all service provider emails (multi-value field)
+    $service_provider_emails = $service_provider_term->get('field_sp_email')->getValue();
+    $valid_emails = [];
+    $provided_email_clean = strtolower(trim($email));
     
-    // Case-insensitive email comparison
-    if (strtolower(trim($email)) === strtolower(trim($service_provider_email))) {
-      return TRUE;
+    // Check against all configured email addresses
+    foreach ($service_provider_emails as $email_item) {
+      $sp_email_clean = strtolower(trim($email_item['value']));
+      $valid_emails[] = $email_item['value']; // Keep original case for display
+      
+      // Case-insensitive email comparison
+      if ($provided_email_clean === $sp_email_clean) {
+        // Log which email was matched for debugging
+        $this->loggerFactory->get('markaspot_feedback')->notice('Service provider email validation successful: @provided matched @configured for node @nid', [
+          '@provided' => $email,
+          '@configured' => $email_item['value'],
+          '@nid' => $node->id(),
+        ]);
+        return TRUE;
+      }
     }
     
-    return $this->t('Email does not match assigned service provider');
+    // Enhanced error message showing valid emails
+    $valid_emails_string = implode(', ', $valid_emails);
+    $error_message = $this->t('Email "@provided" does not match any configured service provider email. Valid emails: @valid_emails', [
+      '@provided' => $email,
+      '@valid_emails' => $valid_emails_string,
+    ]);
+    
+    // Log the validation failure with details
+    $this->loggerFactory->get('markaspot_feedback')->warning('Service provider email validation failed for node @nid: @error', [
+      '@nid' => $node->id(),
+      '@error' => $error_message,
+    ]);
+    
+    return $error_message;
+  }
+
+  /**
+   * Get all valid email addresses for a service provider.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   *
+   * @return array
+   *   Array of valid email addresses for the assigned service provider.
+   */
+  protected function getServiceProviderEmails($node) {
+    $valid_emails = [];
+    
+    // Check if the node has a service provider assigned
+    if (!$node->hasField('field_service_provider') || $node->get('field_service_provider')->isEmpty()) {
+      return $valid_emails;
+    }
+
+    // Get the referenced service provider taxonomy term
+    $service_provider_term = $node->get('field_service_provider')->entity;
+    if (!$service_provider_term) {
+      return $valid_emails;
+    }
+
+    // Check if the service provider has email addresses configured
+    if (!$service_provider_term->hasField('field_sp_email') || $service_provider_term->get('field_sp_email')->isEmpty()) {
+      return $valid_emails;
+    }
+
+    // Get all service provider emails (multi-value field)
+    $service_provider_emails = $service_provider_term->get('field_sp_email')->getValue();
+    
+    foreach ($service_provider_emails as $email_item) {
+      if (!empty($email_item['value'])) {
+        $valid_emails[] = trim($email_item['value']);
+      }
+    }
+    
+    return $valid_emails;
   }
 
   /**
