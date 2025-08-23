@@ -1,7 +1,6 @@
 <?php
 
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\Component\Utility\Unicode;
 use Drupal\file\FileRepositoryInterface;
 use Drupal\file\Entity\File;
 use Drupal\Core\Access\AccessResult;
@@ -15,6 +14,14 @@ function markaspot_nuxt_entity_presave(EntityInterface $entity)
   // Check if the entity is a file and is temporary.
   if ($entity->getEntityTypeId() === 'file' && $entity->isTemporary()) {
     $original_uri = $entity->getFileUri();
+    
+    // Only process files that are in the request media directory
+    // Skip views_data_export and other system temporary files
+    if (strpos($original_uri, 'public://') !== 0 || 
+        strpos($original_uri, 'views_data_export') !== false ||
+        strpos($original_uri, 'batch') !== false) {
+      return;
+    }
 
     // Load the file repository service.
     $file_repository = \Drupal::service('file.repository');
@@ -34,7 +41,7 @@ function markaspot_nuxt_entity_presave(EntityInterface $entity)
           // Generate unique filename instead of deleting
           $directory = dirname($original_uri);
           $filename = \Drupal::service('file_system')->basename($original_uri);
-          $unique_filename = file_munge_filename(uniqid() . '_' . $filename, '');
+          $unique_filename = \Drupal::service('file.repository')->mungeFilename(uniqid() . '_' . $filename);
           $new_uri = $directory . '/' . $unique_filename;
           $entity->setFileUri($new_uri);
           
