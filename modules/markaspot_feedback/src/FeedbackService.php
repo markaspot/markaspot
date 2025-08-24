@@ -401,6 +401,33 @@ class FeedbackService implements FeedbackServiceInterface {
   /**
    * {@inheritdoc}
    */
+  public function get($uuid) {
+    try {
+      // Load node by UUID
+      $node_storage = $this->entityTypeManager->getStorage('node');
+      $nodes = $node_storage->loadByProperties([
+        'uuid' => $uuid,
+        'type' => 'service_request',
+      ]);
+      
+      if (empty($nodes)) {
+        throw new \Exception("Service request with UUID {$uuid} not found.");
+      }
+      
+      return reset($nodes);
+    }
+    catch (\Exception $e) {
+      $this->loggerFactory->get('markaspot_feedback')->error('Error loading node by UUID @uuid: @error', [
+        '@uuid' => $uuid,
+        '@error' => $e->getMessage(),
+      ]);
+      throw $e;
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function getStatistics() {
     // Get statistics from state storage
     $stats = $this->state->get('markaspot_feedback.stats', [

@@ -153,7 +153,10 @@ class FeedbackController extends ControllerBase {
         
         // If there are existing completions, check reassignment flag
         if (!empty($existing_completions)) {
-          $reassignment_allowed = $node->get('field_reassign_sp')->value;
+          $reassignment_allowed = FALSE;
+          if ($node->hasField('field_reassign_sp') && !$node->get('field_reassign_sp')->isEmpty()) {
+            $reassignment_allowed = $node->get('field_reassign_sp')->value;
+          }
           if (!$reassignment_allowed) {
             $logger->warning('Service provider @email attempted completion without reassignment flag for node @nid', [
               '@email' => $data['email_verification'],
@@ -180,6 +183,23 @@ class FeedbackController extends ControllerBase {
           return new JsonResponse([
             'message' => $validation_result,
             'service_provider_mode' => true
+          ], 403); // 403 Forbidden
+        }
+      }
+      
+      // For citizen mode, validate email against the original author's email
+      if (!$is_service_provider_mode && !empty($data['email_verification'])) {
+        $validation_result = $this->validateAuthorEmail($node, $data['email_verification']);
+        
+        if ($validation_result !== TRUE) {
+          $logger->warning('Author email validation failed for @email on node @nid: @reason', [
+            '@email' => $data['email_verification'],
+            '@nid' => $node->id(),
+            '@reason' => $validation_result
+          ]);
+          return new JsonResponse([
+            'message' => $validation_result,
+            'service_provider_mode' => false
           ], 403); // 403 Forbidden
         }
       }
@@ -427,6 +447,57 @@ class FeedbackController extends ControllerBase {
     $this->loggerFactory->get('markaspot_feedback')->warning('Service provider email validation failed for node @nid: @error', [
       '@nid' => $node->id(),
       '@error' => $error_message,
+    ]);
+    
+    return $error_message;
+  }
+
+  /**
+   * Validates that the provided email matches the original service request author.
+   *
+   * @param \Drupal\node\Entity\Node $node
+   *   The service request node.
+   * @param string $email
+   *   The email to validate.
+   *
+   * @return bool|string
+   *   TRUE if the email matches the author, error message string otherwise.
+   */
+  protected function validateAuthorEmail($node, $email) {
+    // Check if the node has an author email field
+    if (!$node->hasField('field_e_mail') || $node->get('field_e_mail')->isEmpty()) {
+      return $this->t('No author email found for this service request');
+    }
+
+    // Get the original author's email
+    $author_email = $node->get('field_e_mail')->value;
+    if (empty($author_email)) {
+      return $this->t('Author email is not configured for this service request');
+    }
+
+    // Case-insensitive email comparison
+    $provided_email_clean = strtolower(trim($email));
+    $author_email_clean = strtolower(trim($author_email));
+    
+    if ($provided_email_clean === $author_email_clean) {
+      // Log successful validation
+      $this->loggerFactory->get('markaspot_feedback')->notice('Author email validation successful: @provided matched @author for node @nid', [
+        '@provided' => $email,
+        '@author' => $author_email,
+        '@nid' => $node->id(),
+      ]);
+      return TRUE;
+    }
+    
+    // Log the validation failure
+    $error_message = $this->t('Email "@provided" does not match the original service request author email', [
+      '@provided' => $email,
+    ]);
+    
+    $this->loggerFactory->get('markaspot_feedback')->warning('Author email validation failed for node @nid: provided "@provided", expected "@author"', [
+      '@nid' => $node->id(),
+      '@provided' => $email,
+      '@author' => $author_email,
     ]);
     
     return $error_message;

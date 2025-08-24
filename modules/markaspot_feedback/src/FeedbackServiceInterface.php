@@ -43,6 +43,20 @@ interface FeedbackServiceInterface {
   public function queueNodeForProcessing($nid);
 
   /**
+   * Loads a service request node by UUID.
+   *
+   * @param string $uuid
+   *   The UUID of the service request node.
+   *
+   * @return \Drupal\node\NodeInterface
+   *   The loaded node.
+   *
+   * @throws \Exception
+   *   If the node cannot be found or loaded.
+   */
+  public function get($uuid);
+
+  /**
    * Gets statistics about feedback processing.
    *
    * @return array
