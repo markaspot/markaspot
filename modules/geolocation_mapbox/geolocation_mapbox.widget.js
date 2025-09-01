@@ -297,9 +297,10 @@
       });
 
       if (
+        address.country_code &&
         $('select.country', $address)
           .val()
-          .toLowerCase() != address.country_code
+          .toLowerCase() != address.country_code.toLowerCase()
       ) {
         $('select.country', $address)
           .val(address.country_code.toUpperCase())
