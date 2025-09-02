@@ -1,0 +1,15 @@
+markaspot_icons.settings:
+  path: '/admin/config/markaspot/icons'
+  defaults:
+    _form: '\Drupal\markaspot_icons\Form\IconSettingsForm'
+    _title: 'Mark-a-Spot Icon Settings'
+  requirements:
+    _permission: 'administer mark-a-spot icons'
+
+markaspot_icons.migrate:
+  path: '/admin/config/markaspot/icons/migrate'
+  defaults:
+    _form: '\Drupal\markaspot_icons\Form\IconMigrationForm'
+    _title: 'Migrate Icon Field Data'
+  requirements:
+    _permission: 'administer mark-a-spot icons'

@@ -68,6 +68,7 @@
         "drupal/color_field": "^3",
         "drupal/field_permissions": "^1.1",
         "drupal/field_formatter_class": "^1.0",
+        "drupal/iconify_field": "^1.2",
         "drupal/inline_entity_form": "^3",
         "drupal/shs": "^3"
     },

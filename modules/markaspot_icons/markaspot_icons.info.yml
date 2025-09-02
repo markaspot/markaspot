@@ -1,0 +1,11 @@
+name: Mark-a-Spot Icons
+type: module
+description: 'Icon field management and migration utilities for Mark-a-Spot'
+package: Mark-a-Spot
+core_version_requirement: ^10 || ^11
+dependencies:
+  - fa_icon_class
+  - iconify_field
+  - field
+  - system
+configure: markaspot_icons.settings

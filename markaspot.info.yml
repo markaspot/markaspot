@@ -27,6 +27,8 @@ dependencies:
   - editor
   - entity_reference_revisions
   - fa_icon_class
+  - iconify_field
+  - field_formatter_class
   - field_group
   - field_ui
   - field_permissions
@@ -61,6 +63,7 @@ dependencies:
   - markaspot_token
   - markaspot_request_id
   - markaspot_validation
+  - markaspot_icons
   - service_request
 
 themes:

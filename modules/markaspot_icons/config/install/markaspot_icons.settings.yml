@@ -1,0 +1,6 @@
+icon_system: fa_icon_class
+iconify_collections:
+  - heroicons
+  - lucide
+  - fa6-solid
+default_collection: heroicons
