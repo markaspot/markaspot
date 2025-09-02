@@ -272,6 +272,25 @@
     const address = location;
     const $form = $('.geolocation-widget-lat.for--' + mapSettings.id, context).parents('form');
     const $address = $form.find('.field--type-address').first();
+    
+    // If no .field--type-address found, try to find address fields directly
+    if ($address.length === 0) {
+      // Use global jQuery selectors instead of $form.find() to ensure we find the fields
+      if ('postcode' in address) {
+        $('input.postal-code').val(address.postcode);
+      }
+      if ('place' in address) {
+        $('input.locality').val(address.place);
+      }
+      if ('text' in address) {
+        let streetAddress = address.text;
+        if (typeof address.housenumber !== 'undefined') {
+          streetAddress = streetAddress + " " + address.housenumber;
+        }
+        $('input.address-line1').val(streetAddress);
+      }
+      return;
+    }
 
     if ($address.length) {
       // Bind to addressfields AJAX complete event.
@@ -339,6 +358,7 @@
   };
 
   Drupal.geolocationMapboxSetAddressDetails = ($address, details) => {
+    
     if ('postcode' in details) {
       $('input.postal-code', $address).val(details.postcode);
     }
@@ -361,18 +381,18 @@
     if ('place' in details) {
       $('input.locality', $address).val(details.place);
     }
-    if ('text' in details || 'building' in details) {
+    
+    // Handle street address from Mapbox data
+    if ('text' in details) {
+      let streetAddress = details.text;
       if (typeof details.housenumber !== 'undefined') {
-        $('input.address-line1', $address).val(details.text + " " + details.housenumber );
-      } else {
-        $('input.address-line1', $address).val(details.text);
+        streetAddress = streetAddress + " " + details.housenumber;
       }
-      $('input.address-line2', $address).val(details.building);
+      $('input.address-line1', $address).val(streetAddress);
     }
-    if ('house_number' in details) {
-      $('input.address-line1', $address)
-        .val($('input.address-line1', $address)
-          .val() + ' ' + details.house_number);
+    
+    if ('building' in details) {
+      $('input.address-line2', $address).val(details.building);
     }
   };
 
@@ -410,7 +430,7 @@
             $('.geolocation-widget-lng.for--' + mapSettings.id, context).attr('value', marker.getLatLng().lng);
             $('.geolocation-widget-zoom.for--' + mapSettings.id, context)
               .attr('value', map.getZoom());
-            if (mapSettings.setAddressField) {
+            if (mapSettings.setAddressField && mapSettings.setAddressField == "1") {
               Drupal.geolocationMapboxSetAddressField(mapSettings, result, context);
             }
           });
