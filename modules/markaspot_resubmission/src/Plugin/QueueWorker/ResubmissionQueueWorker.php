@@ -206,7 +206,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     $group_ids = [];
     $headOrganisationEmails = NULL;
 
-    $group_contents = \Drupal\group\Entity\GroupContent::loadByEntity($node);
+    $group_contents = \Drupal\group\Entity\GroupRelationship::loadByEntity($node);
     foreach ($group_contents as $group_content) {
       $group_ids[] = $group_content->getGroup()->id();
       foreach ($group_ids as $group) {
