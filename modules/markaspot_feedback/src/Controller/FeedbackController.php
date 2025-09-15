@@ -121,10 +121,46 @@ class FeedbackController extends ControllerBase {
       }
       
       // Check if this is service provider mode
+      // Prefer explicit JSON body flag, but also honor query param (?sp=true or ?serviceprovider=true)
       $is_service_provider_mode = !empty($data['service_provider_mode']);
-      
-      // For citizen mode, check if citizen feedback already exists (single value)
       if (!$is_service_provider_mode) {
+        $sp_query = $request->query->get('sp', $request->query->get('serviceprovider'));
+        if (!empty($sp_query)) {
+          $sp_query_str = strtolower(trim((string) $sp_query));
+          $is_service_provider_mode = in_array($sp_query_str, ['1', 'true', 'yes'], TRUE);
+        }
+      }
+
+      // Normalize email verification from either JSON body or query param
+      $email_verification = isset($data['email_verification']) ? $data['email_verification'] : $request->query->get('email_verification');
+      
+      // For citizen mode, enforce that the node is eligible to receive feedback
+      if (!$is_service_provider_mode) {
+        $config = $this->configFactory->get('markaspot_feedback.settings');
+        $eligible_statuses = $config->get('feedback_eligible_statuses') ?: $config->get('status_feedback_enabled');
+
+        if (!$node->hasField('field_status') || $node->get('field_status')->isEmpty()) {
+          $logger->warning('Node @nid has no field_status; rejecting citizen feedback', ['@nid' => $node->id()]);
+          return new JsonResponse([
+            'message' => $this->t('This service request cannot receive feedback at this time'),
+            'reason' => 'missing_status_field',
+          ], 403);
+        }
+
+        $current_status_tid = $node->get('field_status')->target_id;
+        if (empty($eligible_statuses) || !isset($eligible_statuses[$current_status_tid])) {
+          $logger->notice('Node @nid status @status not eligible for citizen feedback', [
+            '@nid' => $node->id(),
+            '@status' => $current_status_tid,
+          ]);
+          return new JsonResponse([
+            'message' => $this->t('This service request is not eligible for feedback'),
+            'reason' => 'status_not_eligible',
+            'status_tid' => $current_status_tid,
+          ], 403);
+        }
+
+        // Check if citizen feedback already exists (single value)
         $feedback_field = 'field_feedback';
         if ($node->hasField($feedback_field) && !$node->get($feedback_field)->isEmpty()) {
           $logger->warning('Feedback already exists for node @nid, ignoring update attempt', [
@@ -171,8 +207,8 @@ class FeedbackController extends ControllerBase {
       }
       
       // For service provider mode, validate email against service provider field
-      if ($is_service_provider_mode && !empty($data['email_verification'])) {
-        $validation_result = $this->validateServiceProviderEmail($node, $data['email_verification']);
+      if ($is_service_provider_mode && !empty($email_verification)) {
+        $validation_result = $this->validateServiceProviderEmail($node, $email_verification);
         
         if ($validation_result !== TRUE) {
           $logger->warning('Service provider validation failed for @email on node @nid: @reason', [
@@ -208,7 +244,13 @@ class FeedbackController extends ControllerBase {
       if (isset($data['feedback'])) {
         if ($is_service_provider_mode) {
           // Add service provider completion to multi-value field with metadata
-          $this->addServiceProviderCompletion($node, $data['email_verification'], $data['feedback']);
+          if ($node->hasField('field_service_provider_notes')) {
+            $this->addServiceProviderCompletion($node, $email_verification, $data['feedback']);
+          }
+          // If a legacy or alternate SP feedback field exists, populate it as well
+          elseif ($node->hasField('field_sp_feedback')) {
+            $node->set('field_sp_feedback', $data['feedback']);
+          }
           
           $logger->notice('Added service provider completion for node @nid', [
             '@nid' => $node->id(),
@@ -351,6 +393,19 @@ class FeedbackController extends ControllerBase {
         'status' => $node->hasField('field_status') ? $node->get('field_status')->target_id : null,
         'has_feedback' => $node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty(),
       ];
+
+      // Compute whether the node is eligible to receive citizen feedback now
+      $is_receivable = FALSE;
+      $eligible_statuses = $this->configFactory->get('markaspot_feedback.settings')->get('feedback_eligible_statuses')
+        ?: $this->configFactory->get('markaspot_feedback.settings')->get('status_feedback_enabled');
+      $current_status_tid = $node->hasField('field_status') && !$node->get('field_status')->isEmpty()
+        ? $node->get('field_status')->target_id
+        : NULL;
+      $already_has_feedback = $response_data['has_feedback'];
+      if (!empty($eligible_statuses) && $current_status_tid && isset($eligible_statuses[$current_status_tid]) && !$already_has_feedback) {
+        $is_receivable = TRUE;
+      }
+      $response_data['is_receivable'] = $is_receivable;
       
       // Include the field_has_feedback flag in the response if it exists
       if ($node->hasField('field_has_feedback')) {
