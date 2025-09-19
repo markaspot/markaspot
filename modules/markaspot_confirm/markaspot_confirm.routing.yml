@@ -1,0 +1,26 @@
+markaspot_confirm.settings:
+  path: '/admin/structure/markaspot/confirm/settings'
+  defaults:
+    _form: '\Drupal\markaspot_confirm\Form\MarkaspotConfirmSettingsForm'
+    _title: 'Confirmation settings'
+  requirements:
+    _permission: 'administer site configuration'
+
+markaspot_confirm.doConfirm:
+  path: '/confirm/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_confirm\Controller\ConfirmController::doConfirm'
+    _title: 'Thanks for confirming'
+  requirements:
+    _permission: 'access content'
+
+markaspot_confirm.api:
+  path: '/api/confirm/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_confirm\Controller\ConfirmController::doConfirm'
+    _title: 'Confirmation API'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'
+  options:
+    _format: json

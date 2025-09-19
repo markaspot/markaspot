@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_approved
+    - node.type.service_request
+id: node.service_request.field_approved
+field_name: field_approved
+entity_type: node
+bundle: service_request
+label: Approved
+description: 'User approves usage of information provided, including calls'
+required: false
+translatable: false
+default_value:
+  -
+    value: 0
+default_value_callback: ''
+settings:
+  on_label: An
+  off_label: Aus
+field_type: boolean

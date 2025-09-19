@@ -1,0 +1,4 @@
+services:
+  markaspot_confirm.confirm:
+    class: Drupal\markaspot_confirm\ConfirmService
+    arguments: ['@entity_type.manager', '@config.factory', '@markaspot_nuxt.frontend_url']
