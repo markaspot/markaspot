@@ -28,14 +28,29 @@ class MarkASpotSettingsController extends ControllerBase {
 
   public function getMarkASpotSettings() {
     // Load the 'markaspot_map.settings' configuration.
-    $config = $this->configFactory->get('markaspot_map.settings');
+    $map_config = $this->configFactory->get('markaspot_map.settings');
 
-    if (!$config) {
+    if (!$map_config) {
       return new JsonResponse(['error' => 'Configuration not found'], 404);
     }
 
-    // Return the configuration as a JSON response.
-    return new JsonResponse($config->getRawData());
+    // Also load Nuxt frontend settings
+    $nuxt_config = $this->configFactory->get('markaspot_nuxt.settings');
+
+    // Merge configurations
+    $settings = $map_config->getRawData();
+
+    // Add frontend settings
+    if ($nuxt_config) {
+      $settings['frontend'] = [
+        'base_url' => $nuxt_config->get('frontend_base_url'),
+        'enabled' => $nuxt_config->get('frontend_enabled'),
+        'cors_enabled' => $nuxt_config->get('api_cors_enabled'),
+      ];
+    }
+
+    // Return the merged configuration as a JSON response.
+    return new JsonResponse($settings);
   }
 
   /**
