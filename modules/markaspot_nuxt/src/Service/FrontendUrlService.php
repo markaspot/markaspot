@@ -81,7 +81,7 @@ class FrontendUrlService {
 
     // Final fallback to current site base URL + path
     global $base_url;
-    return $base_url . '/' . ltrim($path, '/');
+    return rtrim($base_url, '/') . '/' . ltrim($path, '/');
   }
 
   /**

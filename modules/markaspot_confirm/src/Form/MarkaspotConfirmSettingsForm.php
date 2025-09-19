@@ -34,28 +34,12 @@ class MarkaspotConfirmSettingsForm extends ConfigFormBase {
       '#group' => 'settings',
     ];
 
-    // General Settings
-    $form['markaspot_confirm']['general'] = [
-      '#type' => 'fieldset',
-      '#title' => $this->t('General Settings'),
-      '#collapsible' => FALSE,
-      '#weight' => 0,
-    ];
-
-    $form['markaspot_confirm']['general']['frontend_base_url'] = [
-      '#type' => 'url',
-      '#title' => $this->t('Frontend Base URL'),
-      '#default_value' => $config->get('frontend_base_url') ?: '',
-      '#description' => $this->t('The base URL of your frontend application where confirmation links should point (e.g., https://example.com:3001). This value is also exposed via the [markaspot_frontend:url] token. If empty, Drupal backend URLs are used.'),
-      '#placeholder' => 'https://example.com:3001',
-    ];
-
     // Email Template Settings
     $form['markaspot_confirm']['email'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Email Template Settings'),
       '#collapsible' => FALSE,
-      '#weight' => 1,
+      '#weight' => 0,
     ];
 
     $form['markaspot_confirm']['email']['subject'] = [
@@ -80,7 +64,7 @@ class MarkaspotConfirmSettingsForm extends ConfigFormBase {
       '#type' => 'fieldset',
       '#title' => $this->t('API Settings'),
       '#collapsible' => FALSE,
-      '#weight' => 2,
+      '#weight' => 1,
     ];
 
     $form['markaspot_confirm']['api']['success_message'] = [
@@ -109,14 +93,10 @@ class MarkaspotConfirmSettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
 
     // Extract values from fieldsets following markaspot_feedback pattern
-    $general = $values['general'] ?? [];
     $email = $values['email'] ?? [];
     $api = $values['api'] ?? [];
 
     $this->config('markaspot_confirm.settings')
-      // General settings
-      ->set('frontend_base_url', $general['frontend_base_url'] ?? $values['frontend_base_url'])
-
       // Email settings
       ->set('email.subject', $email['subject'] ?? $values['subject'])
       ->set('email.body', $email['body'] ?? $values['body'])
