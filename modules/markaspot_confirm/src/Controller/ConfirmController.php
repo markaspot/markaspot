@@ -70,18 +70,43 @@ class ConfirmController extends ControllerBase {
     }
 
     if (!empty($nodes)) {
-      foreach ($nodes as $node){
-        $node->field_approved->value = 1;
-        $node->save();
+      $already_confirmed_count = 0;
+      $newly_confirmed_count = 0;
+
+      foreach ($nodes as $node) {
+        // Check if already approved
+        if ($node->field_approved->value == 1) {
+          $already_confirmed_count++;
+        } else {
+          $node->field_approved->value = 1;
+          $node->save();
+          $newly_confirmed_count++;
+        }
       }
 
-      $message = $config->get('api.success_message') ?: $this->t('Thanks for approving this request.');
+      // Determine appropriate message and status
+      if ($already_confirmed_count > 0 && $newly_confirmed_count == 0) {
+        // All nodes were already confirmed
+        $message = $config->get('api.already_confirmed_message') ?: $this->t('This request has already been confirmed.');
+        $status = 'already_confirmed';
+      } else if ($newly_confirmed_count > 0) {
+        // Some or all nodes were newly confirmed
+        $message = $config->get('api.success_message') ?: $this->t('Thanks for approving this request.');
+        $status = 'confirmed';
+      } else {
+        // Edge case - shouldn't happen but handle gracefully
+        $message = $config->get('api.success_message') ?: $this->t('Thanks for approving this request.');
+        $status = 'confirmed';
+      }
 
       if ($is_json_request) {
         return new JsonResponse([
           'success' => TRUE,
           'message' => $message,
-          'status' => 'confirmed'
+          'status' => $status,
+          'already_confirmed' => $already_confirmed_count > 0,
+          'newly_confirmed_count' => $newly_confirmed_count,
+          'already_confirmed_count' => $already_confirmed_count
         ]);
       }
 

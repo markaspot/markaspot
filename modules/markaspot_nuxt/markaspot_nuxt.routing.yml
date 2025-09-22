@@ -2,7 +2,7 @@ markaspot_nuxt.settings:
   path: '/admin/structure/markaspot/nuxt/settings'
   defaults:
     _form: '\Drupal\markaspot_nuxt\Form\MarkaspotNuxtSettingsForm'
-    _title: 'Nuxt Frontend settings'
+    _title: 'Frontend Settings'
   requirements:
     _permission: 'administer site configuration'
 markaspot_nuxt.form_mode_settings:

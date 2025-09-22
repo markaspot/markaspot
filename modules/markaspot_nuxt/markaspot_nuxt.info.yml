@@ -1,4 +1,4 @@
-name: 'markaspot_nuxt'
+name: 'Markaspot Nuxt'
 type: module
 description: 'expose api data to frontend'
 package: Mark-a-Spot
