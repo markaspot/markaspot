@@ -1,0 +1,8 @@
+administer emergency mode:
+  title: 'Administer emergency mode'
+  description: 'Activate, deactivate, and configure emergency mode settings.'
+  restrict access: true
+
+view emergency status:
+  title: 'View emergency status'
+  description: 'View current emergency mode status and configuration.'

@@ -1,0 +1,23 @@
+uuid: null
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_emergency_category
+    - taxonomy.vocabulary.service_category
+id: taxonomy_term.service_category.field_emergency_category
+field_name: field_emergency_category
+entity_type: taxonomy_term
+bundle: service_category
+label: 'Emergency Category'
+description: 'Mark this category as an emergency category used during disaster response.'
+required: false
+translatable: false
+default_value:
+  -
+    value: 0
+default_value_callback: ''
+settings:
+  on_label: 'Emergency'
+  off_label: 'Regular'
+field_type: boolean

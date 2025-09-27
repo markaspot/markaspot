@@ -1,0 +1,61 @@
+emergency_mode:
+  status: 'off'  # off, active
+  mode_type: 'disaster'  # disaster, crisis, maintenance
+  force_redirect: true
+  lite_ui: true
+  bypass_roles:
+    - administrator
+    - moderator
+  activated_at: null
+  activated_by: null
+
+categories:
+  unpublish_regular: true
+  restore_on_deactivation: true
+  emergency_presets:
+    - name: 'Injured Persons'
+      icon: 'medical'
+      color: '#FF0000'
+      weight: 0
+    - name: 'Blocked Roads'
+      icon: 'roadblock'
+      color: '#FF6600'
+      weight: 1
+    - name: 'Shelter Needed'
+      icon: 'home'
+      color: '#0066FF'
+      weight: 2
+    - name: 'Water/Food Needed'
+      icon: 'water'
+      color: '#00AA00'
+      weight: 3
+    - name: 'Missing Persons'
+      icon: 'person'
+      color: '#9900FF'
+      weight: 4
+    - name: 'Power Outage'
+      icon: 'power'
+      color: '#FFCC00'
+      weight: 5
+    - name: 'Gas Leak'
+      icon: 'gas'
+      color: '#FF3300'
+      weight: 6
+    - name: 'Building Damage'
+      icon: 'building'
+      color: '#666666'
+      weight: 7
+
+auto_deactivate:
+  enabled: true
+  duration: 72  # hours
+
+network_detection:
+  enabled: true
+  auto_switch_threshold: '2g'  # Auto-switch to lite mode on 2g or slower
+
+allowed_urls:
+  - '/'
+  - '/sos'
+  - '/emergency'
+  - '/api/system/status'

@@ -1,0 +1,23 @@
+markaspot_emergency.settings:
+  path: '/admin/config/markaspot/emergency'
+  defaults:
+    _form: '\Drupal\markaspot_emergency\Form\EmergencySettingsForm'
+    _title: 'Emergency Mode Settings'
+  requirements:
+    _permission: 'administer emergency mode'
+
+markaspot_emergency.status:
+  path: '/api/system/status'
+  defaults:
+    _controller: '\Drupal\markaspot_emergency\Controller\EmergencyModeController::getStatus'
+  requirements:
+    _access: 'TRUE'
+  methods: [GET]
+
+markaspot_emergency.sos:
+  path: '/sos'
+  defaults:
+    _controller: '\Drupal\markaspot_emergency\Controller\EmergencyModeController::sosRedirect'
+    _title: 'Emergency Response'
+  requirements:
+    _access: 'TRUE'
