@@ -1,0 +1,54 @@
+{#
+/**
+ * @file
+ * Theme override for a paragraphs summary.
+ *
+ * Available variables:
+ * - expanded: Whether the summary is expanded or not.
+ * - content: Array of content summary items.
+ * - behaviors: Array of behavior summary items.
+ * - status_class: CSS class for status term (from preprocess).
+ * - status_color: Hex color for status term (from preprocess).
+ * - status_name: Name of the status term (from preprocess).
+ *
+ * @see template_preprocess()
+ * @see markaspot_custom_preprocess_paragraphs_summary()
+ *
+ * @ingroup themeable
+ */
+#}
+{% set classes = [
+  'paragraphs-description',
+  expanded ? 'paragraphs-expanded-description' : 'paragraphs-collapsed-description'
+] %}
+{% apply spaceless %}
+  {% if content is not empty or behaviors is not empty %}
+    <div{{ attributes.addClass(classes) }}>
+      {% if content is not empty %}
+        <div class="paragraphs-content-wrapper">
+          {%- for content_item in content -%}
+            {# Add status class to first item if available #}
+            {%- if loop.first and status_class is defined -%}
+              <span class="summary-content {{ status_class }}">{{ content_item }}</span>
+            {%- else -%}
+              <span class="summary-content">{{ content_item }}</span>
+            {%- endif -%}
+            {%- if not loop.last -%}, {% endif %}
+          {%- endfor -%}
+        </div>
+      {% endif %}
+      {% if behaviors is not empty %}
+        <div class="paragraphs-plugin-wrapper">
+          {%- for behavior_item in behaviors -%}
+            <span class="summary-plugin">
+              {%- if behavior_item.label is not null -%}
+                <span class="summary-plugin-label">{{ behavior_item.label }}</span>
+              {%- endif -%}
+              {{ behavior_item.value -}}
+            </span>
+          {%- endfor -%}
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endapply %}

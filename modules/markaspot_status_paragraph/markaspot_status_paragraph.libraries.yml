@@ -1,0 +1,11 @@
+status_paragraph:
+  version: 1.x
+  css:
+    theme:
+      css/status_paragraph.css: {}
+  js:
+    js/status_paragraph.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - core/jquery

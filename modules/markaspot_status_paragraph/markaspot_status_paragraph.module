@@ -1,0 +1,155 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_status_paragraph.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Render\Element;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_status_paragraph_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.markaspot_status_paragraph':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Provides custom styling and behavior for status paragraph fields.') . '</p>';
+      return $output;
+
+    default:
+  }
+}
+
+/**
+ * Implements hook_page_attachments().
+ */
+function markaspot_status_paragraph_page_attachments(array &$attachments) {
+  $attachments['#attached']['library'][] = 'markaspot_status_paragraph/status_paragraph';
+
+  // Load status terms and generate class mapping for JavaScript
+  $status_class_map = markaspot_status_paragraph_get_status_class_map();
+  $attachments['#attached']['drupalSettings']['markaspot_status_paragraph']['statusClassMap'] = $status_class_map;
+}
+
+/**
+ * Helper function to get status term class mapping.
+ *
+ * @return array
+ *   Array mapping term names to CSS classes and colors.
+ */
+function markaspot_status_paragraph_get_status_class_map() {
+  $class_map = [];
+
+  // Query database directly to load all terms with status_hex field
+  // regardless of language to avoid language filtering issues
+  $connection = \Drupal::database();
+
+  $query = $connection->select('taxonomy_term__field_status_hex', 'h');
+  $query->join('taxonomy_term_field_data', 't', 'h.entity_id = t.tid AND h.langcode = t.langcode');
+  $query->fields('t', ['name']);
+  $query->fields('h', ['field_status_hex_color']);
+  $query->groupBy('t.name');
+  $query->groupBy('h.field_status_hex_color');
+
+  $results = $query->execute()->fetchAll();
+
+  foreach ($results as $result) {
+    $term_name = $result->name;
+    $hex_color = $result->field_status_hex_color;
+
+    // Generate CSS class the same way as in preprocess
+    $status_class = 'status-' . strtolower(preg_replace('/[^a-z0-9]+/i', '-', $term_name));
+
+    // Store both class and color
+    $class_map[$term_name] = [
+      'class' => $status_class,
+      'color' => $hex_color,
+    ];
+  }
+
+  return $class_map;
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for the service request edit form.
+ */
+function markaspot_status_paragraph_form_node_service_request_edit_form_alter(&$form, &$form_state, $form_id) {
+  // Attach library
+  $form['#attached']['library'][] = 'markaspot_status_paragraph/status_paragraph';
+
+  // Apply the filter directly to the boilerplate field in the subform
+  if (isset($form['field_status_notes']['widget'])) {
+    foreach (Element::children($form['field_status_notes']['widget']) as $delta) {
+      if (isset($form['field_status_notes']['widget'][$delta]['subform']['field_boilerplate']['widget'])) {
+        $form['field_status_notes']['widget'][$delta]['subform']['field_boilerplate']['widget']['#pre_render'][] =
+          ['\\Drupal\\markaspot_custom\\BoilerplateFilter', 'filterBoilerplateField'];
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for the service request management form.
+ */
+function markaspot_status_paragraph_form_node_service_request_management_form_alter(&$form, &$form_state, $form_id) {
+  // Attach library
+  $form['#attached']['library'][] = 'markaspot_status_paragraph/status_paragraph';
+
+  // Apply the filter directly to the boilerplate field in the subform
+  if (isset($form['field_status_notes']['widget'])) {
+    foreach (Element::children($form['field_status_notes']['widget']) as $delta) {
+      if (isset($form['field_status_notes']['widget'][$delta]['subform']['field_boilerplate']['widget'])) {
+        $form['field_status_notes']['widget'][$delta]['subform']['field_boilerplate']['widget']['#pre_render'][] =
+          ['\\Drupal\\markaspot_custom\\BoilerplateFilter', 'filterBoilerplateField'];
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_preprocess_HOOK() for paragraphs summary.
+ */
+function markaspot_status_paragraph_preprocess_paragraphs_summary(&$variables) {
+  /** @var \Drupal\paragraphs\Entity\Paragraph $paragraph */
+  $paragraph = $variables['paragraph'] ?? NULL;
+
+  // Return early if paragraph doesn't exist or isn't a status paragraph
+  if (!$paragraph || $paragraph->bundle() !== 'status') {
+    return;
+  }
+
+  // Get the status term
+  if ($paragraph->hasField('field_status_term') && !$paragraph->get('field_status_term')->isEmpty()) {
+    $status_term = $paragraph->get('field_status_term')->entity;
+
+    if ($status_term && $status_term->hasField('field_status_hex') && !$status_term->get('field_status_hex')->isEmpty()) {
+      $hex_color = $status_term->get('field_status_hex')->color;
+
+      // Create a safe CSS class from the term name
+      $status_name = $status_term->getName();
+      $status_class = strtolower(preg_replace('/[^a-z0-9]+/i', '-', $status_name));
+
+      // Add the color and class to variables
+      $variables['status_color'] = $hex_color;
+      $variables['status_class'] = 'status-' . $status_class;
+      $variables['status_name'] = $status_name;
+    }
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function markaspot_status_paragraph_theme($existing, $type, $theme, $path) {
+  return [
+    'paragraphs_summary' => [
+      'render element' => 'elements',
+      'template' => 'paragraphs-summary',
+      'path' => $path . '/templates',
+    ],
+  ];
+}
