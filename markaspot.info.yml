@@ -2,8 +2,8 @@ name: Mark-a-Spot
 description: 'Mark-a-Spot Installation Profile'
 type: profile
 core_version_requirement: ^10 || ^11
-version: '6.x-dev'
-distibution:
+version: '7.x-dev'
+distribution:
   name: Mark-a-Spot
   install:
     finish_url: admin/content
