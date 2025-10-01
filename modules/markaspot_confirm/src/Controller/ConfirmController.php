@@ -70,7 +70,6 @@ class ConfirmController extends ControllerBase {
     }
 
     if (!empty($nodes)) {
-<<<<<<< Updated upstream
       $already_confirmed_count = 0;
       $newly_confirmed_count = 0;
 
@@ -99,27 +98,15 @@ class ConfirmController extends ControllerBase {
         $message = $config->get('api.success_message') ?: $this->t('Thanks for approving this request.');
         $status = 'confirmed';
       }
-=======
-      foreach ($nodes as $node){
-        $node->field_approved->value = 1;
-        $node->save();
-      }
-
-      $message = $config->get('api.success_message') ?: $this->t('Thanks for approving this request.');
->>>>>>> Stashed changes
 
       if ($is_json_request) {
         return new JsonResponse([
           'success' => TRUE,
           'message' => $message,
-<<<<<<< Updated upstream
           'status' => $status,
           'already_confirmed' => $already_confirmed_count > 0,
           'newly_confirmed_count' => $newly_confirmed_count,
           'already_confirmed_count' => $already_confirmed_count
-=======
-          'status' => 'confirmed'
->>>>>>> Stashed changes
         ]);
       }
 
