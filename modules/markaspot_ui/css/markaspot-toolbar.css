@@ -83,8 +83,51 @@
   .markaspot-settings-list {
     flex-direction: column;
   }
-  
+
   .markaspot-setting-item {
     max-width: 100%;
   }
+}
+
+/* Override Gin's hiding of toolbar tabs - show user menu and markaspot at all breakpoints */
+@media (min-width: 61em) {
+  /* Match Gin's specificity exactly and override */
+  body.gin--vertical-toolbar .toolbar .toolbar-bar .toolbar-tab.user-menu,
+  body.gin--vertical-toolbar .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui,
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui {
+    display: block !important;
+  }
+
+  /* Show the toolbar items but hide text, show only icons */
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-icon,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-icon,
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-item,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-item {
+    display: block !important;
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 0 !important;
+    text-indent: -9999px !important;
+  }
+
+  /* Ensure the ::before icons are visible and centered */
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-icon::before,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-icon::before {
+    font-size: 1rem !important;
+    text-indent: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: 2rem !important;
+  }
+}
+
+/* Hide "Back to site" breadcrumb link - not relevant for our use case */
+.gin-breadcrumb__item a[data-gin-toolbar-escape-admin] {
+  display: none !important;
+}
+
+/* Also hide the entire breadcrumb item if it only contains the back to site link */
+.gin-breadcrumb__item:has(a[data-gin-toolbar-escape-admin]:only-child) {
+  display: none !important;
 }

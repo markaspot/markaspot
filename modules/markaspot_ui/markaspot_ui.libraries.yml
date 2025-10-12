@@ -1,11 +1,12 @@
 toolbar:
   version: VERSION
   css:
-    component:
-      css/markaspot-toolbar.css: {}
+    theme:
+      css/markaspot-toolbar.css: { weight: 100 }
   dependencies:
     - core/drupal
     - core/drupalSettings
+    - gin/gin
 
 settings:
   version: VERSION

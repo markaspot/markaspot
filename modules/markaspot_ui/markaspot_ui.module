@@ -89,3 +89,19 @@ function markaspot_ui_modules_uninstalled($modules) {
   // Clear caches when modules are uninstalled to update the toolbar.
   Cache::invalidateTags(['markaspot_ui']);
 }
+
+/**
+ * Implements hook_menu_local_tasks_alter().
+ */
+function markaspot_ui_menu_local_tasks_alter(&$data, $route_name) {
+  // Override the View tab link for service request nodes to point to frontend.
+  if ($route_name == 'entity.node.edit_form' && isset($data['tabs'][0]['entity.node.canonical'])) {
+    $node = \Drupal::routeMatch()->getParameter('node');
+    if ($node && $node->bundle() == 'service_request' && !empty($node->request_id->value)) {
+      // Get frontend URL from config, fallback to localhost.
+      $frontend_url = \Drupal::config('markaspot_nuxt.settings')->get('frontend_base_url') ?: 'http://localhost:3000';
+      $frontend_url = rtrim($frontend_url, '/');
+      $data['tabs'][0]['entity.node.canonical']['#link']['url'] = Url::fromUri($frontend_url . '/requests/' . $node->request_id->value);
+    }
+  }
+}
