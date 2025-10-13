@@ -1,0 +1,8 @@
+langcode: en
+status: true
+dependencies: {  }
+name: 'Service Provider'
+vid: service_provider
+description: 'Taxonomy for managing external service providers who complete service requests'
+weight: 0
+new_revision: false

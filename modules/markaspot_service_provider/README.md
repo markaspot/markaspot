@@ -6,10 +6,10 @@ Provides service provider workflow management for Mark-a-Spot service requests.
 
 This module handles the service provider side of the service request workflow, allowing external service providers to:
 
-- Receive notification emails when assigned to service requests
 - Access a dedicated response form at `/service-response/{uuid}`
 - Submit completion notes and mark requests as completed
 - Support multiple completions with reassignment workflow
+- Receive notifications via ECA (Event-Condition-Action) rules
 
 ## Features
 
@@ -85,17 +85,20 @@ When `set_status` is enabled in a completion:
 
 **Path**: `/admin/structure/markaspot/service-provider/settings`
 
-**Settings**:
+**Completion Settings**:
 
 - **Completion Status**: The status term to apply when a provider marks a request as completed
 - **Completion Status Note**: Optional note text to add to status notes (supports tokens)
 - **Allow Multiple Completions**: Global setting for multiple completion support
-- **Email Subject**: Subject line for service provider notification emails (supports tokens)
-- **Email Body**: Body text for service provider notification emails (supports tokens)
+
+**Cron Notification Settings**:
+
+- **Enable Cron Notifications**: Toggle periodic notifications to service providers
+- **Notification Interval**: How often to check for pending requests (15 minutes to daily)
 
 ### Token Support
 
-Both email templates and status notes support Drupal tokens. Available tokens include:
+Status notes support Drupal tokens. Available tokens include:
 
 - `[node:title]` - Service request title
 - `[node:request_id]` - Service request ID
@@ -123,16 +126,45 @@ The module references the `field_service_provider` field which should link to a 
 - **Name**: Service provider organization name
 - **field_sp_email**: One or more email addresses (multi-value field)
 
-## Email Notifications
+## Email Notifications via ECA
 
-The module provides email notification functionality through `ServiceProviderService::sendServiceProviderNotification()`. This can be called programmatically when a service provider is assigned.
+Email notifications to service providers are handled using **ECA (Event-Condition-Action)** rules, similar to the `markaspot_resubmission` module pattern. This provides maximum flexibility and allows site administrators to customize notification logic without code changes.
 
-Example usage:
+### Setting Up ECA Notifications
+
+1. **Install ECA Module**: Ensure the ECA module is installed and enabled
+2. **Create an ECA Model**: Configure events to trigger notifications
+3. **Use Helper Methods**: Access service provider emails via the service
+
+### Getting Service Provider Emails
+
+The module provides a helper method to retrieve service provider emails:
 
 ```php
-$service_provider_service = \Drupal::service('markaspot_service_provider.service_provider');
-$service_provider_service->sendServiceProviderNotification($node);
+$service = \Drupal::service('markaspot_service_provider.service_provider');
+$emails = $service->getServiceProviderEmails($node);
+
+// Returns array of email addresses from field_sp_email on the service provider term
+// Example: ['provider@example.com', 'backup@example.com']
 ```
+
+### Cron-based Notifications (Optional)
+
+When **Enable Cron Notifications** is enabled in module settings:
+
+- The module's cron hook runs at the configured interval
+- It finds all service requests with assigned service providers
+- Logs the count of eligible requests
+- Can be integrated with ECA to trigger notification events
+
+This allows for periodic reminder emails to service providers about pending work.
+
+### Example ECA Use Cases
+
+- **Assignment Notification**: Send email when `field_service_provider` is set
+- **Reminder Notification**: Use cron to send periodic reminders about pending requests
+- **Completion Notification**: Notify admin when provider submits completion notes
+- **Custom Logic**: Add conditions based on status, category, location, etc.
 
 ## Security
 
@@ -164,8 +196,7 @@ This module is separated from `markaspot_feedback`, which handles citizen satisf
 
 The `ServiceProviderService` class provides helper methods:
 
-- `sendServiceProviderNotification($node, $recipient_email)` - Send notification email
-- `getServiceProviderEmails($node)` - Get all valid provider emails for a request
+- `getServiceProviderEmails($node)` - Get all valid provider emails for a request (for use in ECA rules)
 - `isReassignmentAllowed($node)` - Check if multiple completions are allowed
 - `getCompletionNotes($node)` - Get all completion notes for a request
 

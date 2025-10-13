@@ -4,10 +4,4 @@ services:
     arguments:
       - '@config.factory'
       - '@entity_type.manager'
-      - '@database'
-      - '@queue'
       - '@logger.factory'
-      - '@state'
-      - '@plugin.manager.mail'
-      - '@language_manager'
-      - '@token'

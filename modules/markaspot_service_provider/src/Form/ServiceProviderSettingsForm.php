@@ -93,27 +93,46 @@ class ServiceProviderSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('allow_multiple_completions') ?? TRUE,
     ];
 
-    // Email notification settings.
-    $form['service_provider']['notification'] = [
-      '#type' => 'details',
-      '#title' => $this->t('Email Notification Settings'),
-      '#open' => TRUE,
+    $form['service_provider']['eca_info'] = [
+      '#type' => 'markup',
+      '#markup' => '<p>' . $this->t('<strong>Email Notifications:</strong> Configure email notifications to service providers using ECA (Event-Condition-Action) rules, similar to the markaspot_resubmission module. Use the <code>getServiceProviderEmails()</code> method from the service provider service to retrieve email addresses.') . '</p>',
     ];
 
-    $form['service_provider']['notification']['mail_subject'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Email Subject'),
-      '#description' => $this->t('Subject line for service provider notification emails. Supports tokens.'),
-      '#default_value' => $config->get('mail_subject') ?: 'Service Request Assignment: [node:title]',
-      '#maxlength' => 255,
+    // Cron-based notifications.
+    $form['cron_notifications'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Cron-based Notifications'),
+      '#collapsible' => TRUE,
+      '#description' => $this->t('Configure periodic notifications to service providers about pending requests.'),
+      '#group' => 'settings',
     ];
 
-    $form['service_provider']['notification']['mailtext'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Email Body'),
-      '#description' => $this->t('Email body for service provider notifications. Supports tokens.'),
-      '#default_value' => $config->get('mailtext') ?: 'A new service request has been assigned to you.',
-      '#rows' => 10,
+    $form['cron_notifications']['enable_cron_notifications'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Cron Notifications'),
+      '#description' => $this->t('If enabled, service providers will receive periodic notifications about pending service requests (requires cron to be running).'),
+      '#default_value' => $config->get('enable_cron_notifications') ?? FALSE,
+    ];
+
+    $form['cron_notifications']['cron_interval'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Notification Interval'),
+      '#description' => $this->t('How often to check for and send notifications to service providers.'),
+      '#options' => [
+        '900' => $this->t('Every 15 minutes'),
+        '1800' => $this->t('Every 30 minutes'),
+        '3600' => $this->t('Every hour'),
+        '7200' => $this->t('Every 2 hours'),
+        '21600' => $this->t('Every 6 hours'),
+        '43200' => $this->t('Every 12 hours'),
+        '86400' => $this->t('Once a day'),
+      ],
+      '#default_value' => $config->get('cron_interval') ?? 3600,
+      '#states' => [
+        'visible' => [
+          ':input[name="enable_cron_notifications"]' => ['checked' => TRUE],
+        ],
+      ],
     ];
 
     return parent::buildForm($form, $form_state);
@@ -127,8 +146,8 @@ class ServiceProviderSettingsForm extends ConfigFormBase {
       ->set('completion_status_tid', $form_state->getValue('completion_status_tid'))
       ->set('status_note', $form_state->getValue('status_note'))
       ->set('allow_multiple_completions', $form_state->getValue('allow_multiple_completions'))
-      ->set('mail_subject', $form_state->getValue('mail_subject'))
-      ->set('mailtext', $form_state->getValue('mailtext'))
+      ->set('enable_cron_notifications', $form_state->getValue('enable_cron_notifications'))
+      ->set('cron_interval', $form_state->getValue('cron_interval'))
       ->save();
 
     parent::submitForm($form, $form_state);

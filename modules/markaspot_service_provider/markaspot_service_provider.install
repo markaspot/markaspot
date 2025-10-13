@@ -1,0 +1,203 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the markaspot_service_provider module.
+ */
+
+use Drupal\Core\Field\BaseFieldDefinition;
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_service_provider_install() {
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Service Provider module installed successfully.'));
+
+  // Log field status for debugging
+  $logger = \Drupal::logger('markaspot_service_provider');
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Check if critical fields exist
+  $field_storage = $entity_type_manager->getStorage('field_storage_config');
+
+  $fields_to_check = [
+    'field_service_provider_notes' => 'node',
+    'field_reassign_sp' => 'node',
+    'field_sp_email' => 'taxonomy_term',
+  ];
+
+  foreach ($fields_to_check as $field_name => $entity_type) {
+    $field_id = "{$entity_type}.{$field_name}";
+    $field = $field_storage->load($field_id);
+
+    if ($field) {
+      $logger->info('Field @field_name exists for @entity_type', [
+        '@field_name' => $field_name,
+        '@entity_type' => $entity_type,
+      ]);
+    }
+    else {
+      $logger->warning('Field @field_name does not exist for @entity_type. Please install field configuration from config/optional/', [
+        '@field_name' => $field_name,
+        '@entity_type' => $entity_type,
+      ]);
+    }
+  }
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_service_provider_requirements($phase) {
+  $requirements = [];
+
+  if ($phase === 'runtime') {
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $field_storage = $entity_type_manager->getStorage('field_storage_config');
+
+    // Check for required field: field_service_provider_notes
+    $field_service_provider_notes = $field_storage->load('node.field_service_provider_notes');
+
+    if (!$field_service_provider_notes) {
+      $requirements['markaspot_service_provider_notes_field'] = [
+        'title' => t('Service Provider Notes Field'),
+        'value' => t('Missing'),
+        'description' => t('The field_service_provider_notes field is required but not installed. Please import the field configuration from the module\'s config/optional directory or create it manually.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+    else {
+      // Check cardinality
+      $cardinality = $field_service_provider_notes->getCardinality();
+      if ($cardinality != -1) {
+        $requirements['markaspot_service_provider_notes_field'] = [
+          'title' => t('Service Provider Notes Field'),
+          'value' => t('Incorrect cardinality'),
+          'description' => t('The field_service_provider_notes field must have unlimited cardinality (-1) to support multiple completion entries. Current cardinality: @cardinality', ['@cardinality' => $cardinality]),
+          'severity' => REQUIREMENT_WARNING,
+        ];
+      }
+      else {
+        $requirements['markaspot_service_provider_notes_field'] = [
+          'title' => t('Service Provider Notes Field'),
+          'value' => t('Configured correctly'),
+          'severity' => REQUIREMENT_OK,
+        ];
+      }
+    }
+
+    // Check for reassignment field
+    $field_reassign_sp = $field_storage->load('node.field_reassign_sp');
+
+    if (!$field_reassign_sp) {
+      $requirements['markaspot_service_provider_reassign_field'] = [
+        'title' => t('Service Provider Reassignment Field'),
+        'value' => t('Missing'),
+        'description' => t('The field_reassign_sp field is required but not installed. Please import the field configuration from the module\'s config/optional directory or create it manually.'),
+        'severity' => REQUIREMENT_WARNING,
+      ];
+    }
+    else {
+      // Check cardinality for boolean field
+      $cardinality = $field_reassign_sp->getCardinality();
+      if ($cardinality != 1) {
+        $requirements['markaspot_service_provider_reassign_field'] = [
+          'title' => t('Service Provider Reassignment Field'),
+          'value' => t('Incorrect cardinality'),
+          'description' => t('The field_reassign_sp boolean field should have cardinality of 1. Current cardinality: @cardinality', ['@cardinality' => $cardinality]),
+          'severity' => REQUIREMENT_WARNING,
+        ];
+      }
+      else {
+        $requirements['markaspot_service_provider_reassign_field'] = [
+          'title' => t('Service Provider Reassignment Field'),
+          'value' => t('Configured correctly'),
+          'severity' => REQUIREMENT_OK,
+        ];
+      }
+    }
+
+    // Check for service provider email field
+    $field_sp_email = $field_storage->load('taxonomy_term.field_sp_email');
+
+    if (!$field_sp_email) {
+      $requirements['markaspot_service_provider_email_field'] = [
+        'title' => t('Service Provider Email Field'),
+        'value' => t('Missing'),
+        'description' => t('The field_sp_email field is required on the service_provider taxonomy vocabulary but not installed. Please import the field configuration from the module\'s config/optional directory or create it manually.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+    else {
+      // Check cardinality
+      $cardinality = $field_sp_email->getCardinality();
+      if ($cardinality != -1) {
+        $requirements['markaspot_service_provider_email_field'] = [
+          'title' => t('Service Provider Email Field'),
+          'value' => t('Incorrect cardinality'),
+          'description' => t('The field_sp_email field must have unlimited cardinality (-1) to support multiple email addresses. Current cardinality: @cardinality', ['@cardinality' => $cardinality]),
+          'severity' => REQUIREMENT_WARNING,
+        ];
+      }
+      else {
+        $requirements['markaspot_service_provider_email_field'] = [
+          'title' => t('Service Provider Email Field'),
+          'value' => t('Configured correctly'),
+          'severity' => REQUIREMENT_OK,
+        ];
+      }
+    }
+
+    // Check if service_provider vocabulary exists
+    $vocabulary_storage = $entity_type_manager->getStorage('taxonomy_vocabulary');
+    $service_provider_vocab = $vocabulary_storage->load('service_provider');
+
+    if (!$service_provider_vocab) {
+      $requirements['markaspot_service_provider_vocabulary'] = [
+        'title' => t('Service Provider Vocabulary'),
+        'value' => t('Missing'),
+        'description' => t('The service_provider taxonomy vocabulary is required but not installed. Please import the vocabulary configuration from the module\'s config/optional directory or create it manually.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+    else {
+      $requirements['markaspot_service_provider_vocabulary'] = [
+        'title' => t('Service Provider Vocabulary'),
+        'value' => t('Installed'),
+        'severity' => REQUIREMENT_OK,
+      ];
+    }
+  }
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_service_provider_uninstall() {
+  // Clean up any state variables
+  \Drupal::state()->delete('markaspot_service_provider.last_notification');
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Service Provider module uninstalled successfully.'));
+}
+
+/**
+ * Update hook to fix field_reassign_sp cardinality from unlimited to 1.
+ */
+function markaspot_service_provider_update_9001() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $field_storage = $entity_type_manager->getStorage('field_storage_config');
+
+  $field_reassign_sp = $field_storage->load('node.field_reassign_sp');
+
+  if ($field_reassign_sp && $field_reassign_sp->getCardinality() == -1) {
+    // Cannot change cardinality if there are existing values
+    // Log a warning and provide instructions
+    \Drupal::logger('markaspot_service_provider')->warning('field_reassign_sp has unlimited cardinality but should be 1 (single value). Please manually update the field storage configuration if no data exists, or contact an administrator.');
+
+    return t('The field_reassign_sp field has unlimited cardinality but should be limited to 1. This cannot be automatically changed if data exists. Please review the field configuration.');
+  }
+
+  return t('field_reassign_sp field cardinality check completed.');
+}
