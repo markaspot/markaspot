@@ -1,0 +1,8 @@
+name: 'Mark-a-Spot Service Provider'
+type: module
+description: 'Service provider feedback and completion tracking for Mark-a-Spot service requests.'
+core_version_requirement: ^10 || ^11
+package: 'Mark-a-Spot'
+dependencies:
+  - drupal:node
+  - markaspot:markaspot_open311

@@ -119,114 +119,57 @@ class FeedbackController extends ControllerBase {
         $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
         return new JsonResponse(['message' => $this->t('Not a service request')], 400);
       }
-      
-      // Check if this is service provider mode
-      // Prefer explicit JSON body flag, but also honor query param (?sp=true or ?serviceprovider=true)
-      $is_service_provider_mode = !empty($data['service_provider_mode']);
-      if (!$is_service_provider_mode) {
-        $sp_query = $request->query->get('sp', $request->query->get('serviceprovider'));
-        if (!empty($sp_query)) {
-          $sp_query_str = strtolower(trim((string) $sp_query));
-          $is_service_provider_mode = in_array($sp_query_str, ['1', 'true', 'yes'], TRUE);
-        }
+
+      // Enforce that the node is eligible to receive citizen feedback
+      $config = $this->configFactory->get('markaspot_feedback.settings');
+      $eligible_statuses = $config->get('feedback_eligible_statuses') ?: $config->get('status_feedback_enabled');
+
+      if (!$node->hasField('field_status') || $node->get('field_status')->isEmpty()) {
+        $logger->warning('Node @nid has no field_status; rejecting citizen feedback', ['@nid' => $node->id()]);
+        return new JsonResponse([
+          'message' => $this->t('This service request cannot receive feedback at this time'),
+          'reason' => 'missing_status_field',
+        ], 403);
       }
 
-      // Normalize email verification from either JSON body or query param
-      $email_verification = isset($data['email_verification']) ? $data['email_verification'] : $request->query->get('email_verification');
-      
-      // For citizen mode, enforce that the node is eligible to receive feedback
-      if (!$is_service_provider_mode) {
-        $config = $this->configFactory->get('markaspot_feedback.settings');
-        $eligible_statuses = $config->get('feedback_eligible_statuses') ?: $config->get('status_feedback_enabled');
+      $current_status_tid = $node->get('field_status')->target_id;
+      if (empty($eligible_statuses) || !isset($eligible_statuses[$current_status_tid])) {
+        $logger->notice('Node @nid status @status not eligible for citizen feedback', [
+          '@nid' => $node->id(),
+          '@status' => $current_status_tid,
+        ]);
+        return new JsonResponse([
+          'message' => $this->t('This service request is not eligible for feedback'),
+          'reason' => 'status_not_eligible',
+          'status_tid' => $current_status_tid,
+        ], 403);
+      }
 
-        if (!$node->hasField('field_status') || $node->get('field_status')->isEmpty()) {
-          $logger->warning('Node @nid has no field_status; rejecting citizen feedback', ['@nid' => $node->id()]);
-          return new JsonResponse([
-            'message' => $this->t('This service request cannot receive feedback at this time'),
-            'reason' => 'missing_status_field',
-          ], 403);
-        }
+      // Check if citizen feedback already exists (single value)
+      $feedback_field = 'field_feedback';
+      if ($node->hasField($feedback_field) && !$node->get($feedback_field)->isEmpty()) {
+        $logger->warning('Feedback already exists for node @nid, ignoring update attempt', [
+          '@nid' => $node->id()
+        ]);
 
-        $current_status_tid = $node->get('field_status')->target_id;
-        if (empty($eligible_statuses) || !isset($eligible_statuses[$current_status_tid])) {
-          $logger->notice('Node @nid status @status not eligible for citizen feedback', [
-            '@nid' => $node->id(),
-            '@status' => $current_status_tid,
-          ]);
-          return new JsonResponse([
-            'message' => $this->t('This service request is not eligible for feedback'),
-            'reason' => 'status_not_eligible',
-            'status_tid' => $current_status_tid,
-          ], 403);
+        // Include field_has_feedback flag in the response if it exists
+        $field_has_feedback = FALSE;
+        if ($node->hasField('field_has_feedback')) {
+          $field_has_feedback = (bool) $node->get('field_has_feedback')->value;
         }
 
-        // Check if citizen feedback already exists (single value)
-        $feedback_field = 'field_feedback';
-        if ($node->hasField($feedback_field) && !$node->get($feedback_field)->isEmpty()) {
-          $logger->warning('Feedback already exists for node @nid, ignoring update attempt', [
-            '@nid' => $node->id()
-          ]);
-          
-          // Include field_has_feedback flag in the response if it exists
-          $field_has_feedback = false;
-          if ($node->hasField('field_has_feedback')) {
-            $field_has_feedback = (bool) $node->get('field_has_feedback')->value;
-          }
-          
-          return new JsonResponse([
-            'message' => $this->t('Feedback already exists for this service request'), 
-            'existing_feedback' => $node->get($feedback_field)->value,
-            'nid' => $node->id(),
-            'field_has_feedback' => $field_has_feedback,
-            'service_provider_mode' => false
-          ], 409); // 409 Conflict - indicating the request couldn't be completed due to a conflict
-        }
+        return new JsonResponse([
+          'message' => $this->t('Feedback already exists for this service request'),
+          'existing_feedback' => $node->get($feedback_field)->value,
+          'nid' => $node->id(),
+          'field_has_feedback' => $field_has_feedback,
+        ], 409); // 409 Conflict
       }
-      
-      // For service provider mode, check if multiple completions are allowed
-      if ($is_service_provider_mode) {
-        $existing_completions = $node->get('field_service_provider_notes')->getValue();
-        
-        // If there are existing completions, check reassignment flag
-        if (!empty($existing_completions)) {
-          $reassignment_allowed = FALSE;
-          if ($node->hasField('field_reassign_sp') && !$node->get('field_reassign_sp')->isEmpty()) {
-            $reassignment_allowed = $node->get('field_reassign_sp')->value;
-          }
-          if (!$reassignment_allowed) {
-            $logger->warning('Service provider @email attempted completion without reassignment flag for node @nid', [
-              '@email' => $data['email_verification'],
-              '@nid' => $node->id()
-            ]);
-            return new JsonResponse([
-              'message' => $this->t('Service request already completed. Contact administrator for reassignment.'),
-              'service_provider_mode' => true
-            ], 403); // 403 Forbidden
-          }
-        }
-      }
-      
-      // For service provider mode, validate email against service provider field
-      if ($is_service_provider_mode && !empty($email_verification)) {
-        $validation_result = $this->validateServiceProviderEmail($node, $email_verification);
-        
-        if ($validation_result !== TRUE) {
-          $logger->warning('Service provider validation failed for @email on node @nid: @reason', [
-            '@email' => $data['email_verification'],
-            '@nid' => $node->id(),
-            '@reason' => $validation_result
-          ]);
-          return new JsonResponse([
-            'message' => $validation_result,
-            'service_provider_mode' => true
-          ], 403); // 403 Forbidden
-        }
-      }
-      
-      // For citizen mode, validate email against the original author's email
-      if (!$is_service_provider_mode && !empty($data['email_verification'])) {
+
+      // Validate email against the original author's email
+      if (!empty($data['email_verification'])) {
         $validation_result = $this->validateAuthorEmail($node, $data['email_verification']);
-        
+
         if ($validation_result !== TRUE) {
           $logger->warning('Author email validation failed for @email on node @nid: @reason', [
             '@email' => $data['email_verification'],
@@ -235,113 +178,69 @@ class FeedbackController extends ControllerBase {
           ]);
           return new JsonResponse([
             'message' => $validation_result,
-            'service_provider_mode' => false
-          ], 403); // 403 Forbidden
+          ], 403);
         }
       }
-      
+
       // Update the feedback field
       if (isset($data['feedback'])) {
-        if ($is_service_provider_mode) {
-          // Add service provider completion to multi-value field with metadata
-          if ($node->hasField('field_service_provider_notes')) {
-            $this->addServiceProviderCompletion($node, $email_verification, $data['feedback']);
-          }
-          // If a legacy or alternate SP feedback field exists, populate it as well
-          elseif ($node->hasField('field_sp_feedback')) {
-            $node->set('field_sp_feedback', $data['feedback']);
-          }
-          
-          $logger->notice('Added service provider completion for node @nid', [
+        // Citizen feedback - single value field
+        $node->set('field_feedback', $data['feedback']);
+
+        $logger->notice('Updated field_feedback for node @nid with citizen feedback', [
+          '@nid' => $node->id(),
+        ]);
+
+        // Set the field_has_feedback flag to TRUE
+        if ($node->hasField('field_has_feedback')) {
+          $node->set('field_has_feedback', TRUE);
+          $logger->notice('Setting field_has_feedback to TRUE for node @nid', [
             '@nid' => $node->id(),
           ]);
-        } else {
-          // Citizen feedback - single value field
-          $node->set('field_feedback', $data['feedback']);
-          
-          $logger->notice('Updated field_feedback for node @nid with citizen feedback', [
-            '@nid' => $node->id(),
-          ]);
-          
-          // Set the field_has_feedback flag to TRUE for citizen feedback only
-          if ($node->hasField('field_has_feedback')) {
-            $node->set('field_has_feedback', TRUE);
-            $logger->notice('Setting field_has_feedback to TRUE for node @nid', [
-              '@nid' => $node->id(),
-            ]);
-          }
         }
       }
       
-      // Update the status if set_status flag is set
+      // Update the status if set_status flag is set (reopen)
       if (!empty($data['set_status'])) {
-        $config = $this->configFactory->get('markaspot_feedback.settings');
-        
-        if ($is_service_provider_mode) {
-          // For service provider mode, use service provider completion status
-          $completion_status = $config->get('service_provider_completion_status_tid');
-          if (!empty($completion_status)) {
-            $status_tid = is_array($completion_status) ? reset($completion_status) : $completion_status;
-            $node->set('field_status', $status_tid);
-            $logger->notice('Setting service request @nid status to @status via service provider completion', [
+        $progress_statuses = $config->get('set_progress_tid');
+        if (!empty($progress_statuses)) {
+          $progress_tid = is_array($progress_statuses) ? reset($progress_statuses) : $progress_statuses;
+          $node->set('field_status', $progress_tid);
+          $logger->notice('Setting service request @nid status to @status via citizen feedback', [
+            '@nid' => $node->id(),
+            '@status' => $progress_tid,
+          ]);
+
+          // Add status note if configured
+          $status_note = $config->get('set_status_note');
+          if (!empty($status_note)) {
+            $this->addStatusNote($node, $status_note);
+            $logger->notice('Added status note for node @nid', [
               '@nid' => $node->id(),
-              '@status' => $status_tid,
             ]);
-            
-            // Add service provider status note if configured
-            $service_provider_status_note = $config->get('service_provider_status_note');
-            if (!empty($service_provider_status_note)) {
-              $this->addStatusNote($node, $service_provider_status_note);
-              $logger->notice('Added service provider status note for node @nid', [
-                '@nid' => $node->id(),
-              ]);
-            }
-          }
-        } else {
-          // For citizen feedback, use regular progress status (reopen)
-          $progress_statuses = $config->get('set_progress_tid');
-          if (!empty($progress_statuses)) {
-            $progress_tid = is_array($progress_statuses) ? reset($progress_statuses) : $progress_statuses;
-            $node->set('field_status', $progress_tid);
-            $logger->notice('Setting service request @nid status to @status via citizen feedback', [
-              '@nid' => $node->id(),
-              '@status' => $progress_tid,
-            ]);
-            
-            // Add citizen status note if configured (existing logic)
-            $citizen_status_note = $config->get('set_status_note');
-            if (!empty($citizen_status_note)) {
-              $this->addStatusNote($node, $citizen_status_note);
-              $logger->notice('Added citizen status note for node @nid', [
-                '@nid' => $node->id(),
-              ]);
-            }
           }
         }
       }
       
       // Save the node
       $node->save();
-      
+
       $logger->notice('Updated feedback for node @nid (UUID: @uuid)', [
         '@nid' => $node->id(),
         '@uuid' => $uuid,
       ]);
-      
+
       // Get the value of field_has_feedback for the response
-      $field_has_feedback = false;
+      $field_has_feedback = FALSE;
       if ($node->hasField('field_has_feedback')) {
         $field_has_feedback = (bool) $node->get('field_has_feedback')->value;
       }
-      
-      $success_message = $is_service_provider_mode ? $this->t('Service request completed by service provider') : $this->t('Feedback updated successfully');
-      
+
       return new JsonResponse([
-        'message' => $success_message,
+        'message' => $this->t('Feedback updated successfully'),
         'nid' => $node->id(),
         'field_has_feedback' => $field_has_feedback,
-        'service_provider_mode' => $is_service_provider_mode,
-        'success' => true
+        'success' => TRUE
       ]);
     }
     catch (\Exception $e) {
@@ -416,14 +315,7 @@ class FeedbackController extends ControllerBase {
       if ($node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty()) {
         $response_data['feedback'] = $node->get('field_feedback')->value;
       }
-      
-      // Add service provider email information for service provider mode
-      $service_provider_emails = $this->getServiceProviderEmails($node);
-      if (!empty($service_provider_emails)) {
-        $response_data['service_provider_emails'] = $service_provider_emails;
-        $response_data['service_provider_emails_count'] = count($service_provider_emails);
-      }
-      
+
       $logger->notice('Retrieved service request data for node @nid (UUID: @uuid)', [
         '@nid' => $node->id(),
         '@uuid' => $uuid,
@@ -439,72 +331,6 @@ class FeedbackController extends ControllerBase {
       
       return new JsonResponse(['message' => $this->t('Error retrieving service request')], 500);
     }
-  }
-
-  /**
-   * Validates that the provided email matches the assigned service provider.
-   *
-   * @param \Drupal\node\Entity\Node $node
-   *   The service request node.
-   * @param string $email
-   *   The email to validate.
-   *
-   * @return bool|string
-   *   TRUE if the email matches the service provider, error message string otherwise.
-   */
-  protected function validateServiceProviderEmail($node, $email) {
-    // Check if the node has a service provider assigned
-    if (!$node->hasField('field_service_provider') || $node->get('field_service_provider')->isEmpty()) {
-      return $this->t('No service provider assigned to this service request');
-    }
-
-    // Get the referenced service provider taxonomy term
-    $service_provider_term = $node->get('field_service_provider')->entity;
-    if (!$service_provider_term) {
-      return $this->t('Service provider configuration error');
-    }
-
-    // Check if the service provider has an email field
-    if (!$service_provider_term->hasField('field_sp_email') || $service_provider_term->get('field_sp_email')->isEmpty()) {
-      return $this->t('Service provider has no email address configured');
-    }
-
-    // Get all service provider emails (multi-value field)
-    $service_provider_emails = $service_provider_term->get('field_sp_email')->getValue();
-    $valid_emails = [];
-    $provided_email_clean = strtolower(trim($email));
-    
-    // Check against all configured email addresses
-    foreach ($service_provider_emails as $email_item) {
-      $sp_email_clean = strtolower(trim($email_item['value']));
-      $valid_emails[] = $email_item['value']; // Keep original case for display
-      
-      // Case-insensitive email comparison
-      if ($provided_email_clean === $sp_email_clean) {
-        // Log which email was matched for debugging
-        $this->loggerFactory->get('markaspot_feedback')->notice('Service provider email validation successful: @provided matched @configured for node @nid', [
-          '@provided' => $email,
-          '@configured' => $email_item['value'],
-          '@nid' => $node->id(),
-        ]);
-        return TRUE;
-      }
-    }
-    
-    // Enhanced error message showing valid emails
-    $valid_emails_string = implode(', ', $valid_emails);
-    $error_message = $this->t('Email "@provided" does not match any configured service provider email. Valid emails: @valid_emails', [
-      '@provided' => $email,
-      '@valid_emails' => $valid_emails_string,
-    ]);
-    
-    // Log the validation failure with details
-    $this->loggerFactory->get('markaspot_feedback')->warning('Service provider email validation failed for node @nid: @error', [
-      '@nid' => $node->id(),
-      '@error' => $error_message,
-    ]);
-    
-    return $error_message;
   }
 
   /**
@@ -559,46 +385,6 @@ class FeedbackController extends ControllerBase {
   }
 
   /**
-   * Get all valid email addresses for a service provider.
-   *
-   * @param \Drupal\node\NodeInterface $node
-   *   The service request node.
-   *
-   * @return array
-   *   Array of valid email addresses for the assigned service provider.
-   */
-  protected function getServiceProviderEmails($node) {
-    $valid_emails = [];
-    
-    // Check if the node has a service provider assigned
-    if (!$node->hasField('field_service_provider') || $node->get('field_service_provider')->isEmpty()) {
-      return $valid_emails;
-    }
-
-    // Get the referenced service provider taxonomy term
-    $service_provider_term = $node->get('field_service_provider')->entity;
-    if (!$service_provider_term) {
-      return $valid_emails;
-    }
-
-    // Check if the service provider has email addresses configured
-    if (!$service_provider_term->hasField('field_sp_email') || $service_provider_term->get('field_sp_email')->isEmpty()) {
-      return $valid_emails;
-    }
-
-    // Get all service provider emails (multi-value field)
-    $service_provider_emails = $service_provider_term->get('field_sp_email')->getValue();
-    
-    foreach ($service_provider_emails as $email_item) {
-      if (!empty($email_item['value'])) {
-        $valid_emails[] = trim($email_item['value']);
-      }
-    }
-    
-    return $valid_emails;
-  }
-
-  /**
    * Add a status note paragraph to a service request node.
    *
    * @param \Drupal\node\NodeInterface $node
@@ -627,44 +413,4 @@ class FeedbackController extends ControllerBase {
     $node->set('field_notes', $notes);
   }
 
-  /**
-   * Add a service provider completion entry to the multi-value notes field.
-   *
-   * @param \Drupal\node\NodeInterface $node
-   *   The service request node.
-   * @param string $email
-   *   The service provider email.
-   * @param string $completion_notes
-   *   The completion notes from the service provider.
-   */
-  protected function addServiceProviderCompletion($node, $email, $completion_notes) {
-    // Get service provider information
-    $service_provider_name = '';
-    if ($node->hasField('field_service_provider') && !$node->get('field_service_provider')->isEmpty()) {
-      $service_provider_term = $node->get('field_service_provider')->entity;
-      if ($service_provider_term) {
-        $service_provider_name = $service_provider_term->getName();
-      }
-    }
-
-    // Create translatable metadata footer with German formatting
-    $timestamp = \Drupal::service('date.formatter')->format(time(), 'custom', 'd.m.Y - H:i', 'Europe/Berlin');
-    
-    $metadata_footer = "\n\n---\n" . 
-      t('Completed by: @email', ['@email' => $email]) . "\n" .
-      t('Completed on: @timestamp', ['@timestamp' => $timestamp]) . "\n" .
-      t('Service Provider: @name', ['@name' => $service_provider_name ?: t('Unknown')]);
-
-    $completion_entry = $completion_notes . $metadata_footer;
-
-    // Add to multi-value field
-    if ($node->hasField('field_service_provider_notes')) {
-      $current_notes = $node->get('field_service_provider_notes')->getValue();
-      $current_notes[] = [
-        'value' => $completion_entry,
-        'format' => 'full_html',
-      ];
-      $node->set('field_service_provider_notes', $current_notes);
-    }
-  }
 }

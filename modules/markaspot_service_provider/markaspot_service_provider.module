@@ -1,0 +1,41 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_service_provider.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_service_provider_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.markaspot_service_provider':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Mark-a-Spot Service Provider module provides functionality for service providers to respond to and complete service requests.') . '</p>';
+      $output .= '<h3>' . t('Features') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('Service provider completion tracking') . '</li>';
+      $output .= '<li>' . t('Multi-value completion notes with metadata') . '</li>';
+      $output .= '<li>' . t('Email validation against service provider records') . '</li>';
+      $output .= '<li>' . t('Status management for completed work') . '</li>';
+      $output .= '<li>' . t('Support for reassignment workflow') . '</li>';
+      $output .= '</ul>';
+      return $output;
+  }
+}
+
+/**
+ * Implements hook_mail().
+ */
+function markaspot_service_provider_mail($key, &$message, $params) {
+  switch ($key) {
+    case 'service_provider_notification':
+      $message['subject'] = $params['subject'];
+      $message['body'][] = $params['body'];
+      break;
+  }
+}
