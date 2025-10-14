@@ -12,7 +12,9 @@ use Drupal\Core\Database\Database;
  */
 function markaspot_resubmission_install() {
   // Entity schema is auto-created by Drupal for content entities.
-  // Add any additional setup here if needed.
+  // Create field_resubmission_days on taxonomy_term.service_category.
+  _markaspot_resubmission_create_resubmission_days_field();
+
   \Drupal::messenger()->addStatus(t('Mark-a-Spot Resubmission module installed successfully.'));
 }
 
@@ -30,6 +32,9 @@ function markaspot_resubmission_uninstall() {
       '@count' => count($entities),
     ]);
   }
+
+  // Delete field_resubmission_days from taxonomy_term.service_category.
+  _markaspot_resubmission_delete_resubmission_days_field();
 
   // Clean up state variables.
   \Drupal::state()->delete('markaspot_resubmission.next_execution');
@@ -234,4 +239,136 @@ function markaspot_resubmission_update_9004() {
   \Drupal::service('plugin.manager.menu.link')->rebuild();
 
   return t('Imported resubmission reminders view configuration.');
+}
+
+/**
+ * Helper function to create field_resubmission_days field.
+ *
+ * Used by both hook_install() and update hook 9003.
+ */
+function _markaspot_resubmission_create_resubmission_days_field() {
+  // Check if field storage already exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => ['module' => ['taxonomy']],
+      'id' => 'taxonomy_term.field_resubmission_days',
+      'field_name' => 'field_resubmission_days',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'integer',
+      'settings' => [
+        'min' => 1,
+        'max' => NULL,
+        'prefix' => '',
+        'suffix' => '',
+      ],
+      'module' => 'core',
+      'locked' => FALSE,
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+  }
+
+  // Check if field instance already exists.
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => ['field.storage.taxonomy_term.field_resubmission_days'],
+        'module' => ['markaspot_resubmission'],
+      ],
+      'id' => 'taxonomy_term.service_category.field_resubmission_days',
+      'field_name' => 'field_resubmission_days',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => 'service_category',
+      'label' => 'Resubmission reminder period (days)',
+      'description' => 'Override the default reminder period for this category. Leave empty to use global default (42 days).',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [['value' => 42]],
+      'default_value_callback' => '',
+      'settings' => [],
+      'field_type' => 'integer',
+    ];
+
+    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+  }
+
+  // Add field to entity displays if it exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
+
+  if ($field_storage && $field_instance) {
+    /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+    $display_repo = \Drupal::service('entity_display.repository');
+
+    // Add to form display.
+    $form_display = $display_repo->getFormDisplay('taxonomy_term', 'service_category', 'default');
+    if (!$form_display->getComponent('field_resubmission_days')) {
+      $form_display->setComponent('field_resubmission_days', [
+        'type' => 'number',
+        'weight' => 10,
+        'region' => 'content',
+        'settings' => [
+          'placeholder' => '',
+        ],
+      ])->save();
+    }
+
+    // Add to view display.
+    $view_display = $display_repo->getViewDisplay('taxonomy_term', 'service_category', 'default');
+    if (!$view_display->getComponent('field_resubmission_days')) {
+      $view_display->setComponent('field_resubmission_days', [
+        'type' => 'number_integer',
+        'weight' => 10,
+        'region' => 'content',
+        'label' => 'above',
+        'settings' => [
+          'thousand_separator' => '',
+          'prefix_suffix' => TRUE,
+        ],
+      ])->save();
+    }
+  }
+
+  // Set default_resubmission_days in config if not already set.
+  $config = \Drupal::configFactory()->getEditable('markaspot_resubmission.settings');
+  if (!$config->get('default_resubmission_days')) {
+    $config->set('default_resubmission_days', 42);
+    $config->save();
+  }
+}
+
+/**
+ * Helper function to delete field_resubmission_days field.
+ *
+ * Used by hook_uninstall().
+ */
+function _markaspot_resubmission_delete_resubmission_days_field() {
+  // Delete the field instance first.
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
+  if ($field_instance) {
+    $field_instance->delete();
+    \Drupal::logger('markaspot_resubmission')->notice('Deleted field_resubmission_days field instance from service_category taxonomy.');
+  }
+
+  // Delete the field storage.
+  // Note: Field storage should only be deleted if no other bundles use it.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
+  if ($field_storage) {
+    $field_storage->delete();
+    \Drupal::logger('markaspot_resubmission')->notice('Deleted field_resubmission_days field storage from taxonomy_term entity type.');
+  }
+
+  // Purge field data from database tables.
+  field_purge_batch(100);
 }
