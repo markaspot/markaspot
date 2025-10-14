@@ -23,6 +23,8 @@ function markaspot_resubmission_install() {
  */
 function markaspot_resubmission_uninstall() {
   // Delete all resubmission reminder entities.
+  // This is correct: custom entity types created by the module should be
+  // cleaned up on uninstall to avoid orphaned data.
   $storage = \Drupal::entityTypeManager()->getStorage('resubmission_reminder');
   $entities = $storage->loadMultiple();
 
@@ -33,9 +35,6 @@ function markaspot_resubmission_uninstall() {
     ]);
   }
 
-  // Delete field_resubmission_days from taxonomy_term.service_category.
-  _markaspot_resubmission_delete_resubmission_days_field();
-
   // Clean up state variables.
   \Drupal::state()->delete('markaspot_resubmission.next_execution');
   \Drupal::state()->delete('markaspot_resubmission.last_category_index');
@@ -43,7 +42,13 @@ function markaspot_resubmission_uninstall() {
   // Clean up configuration.
   \Drupal::configFactory()->getEditable('markaspot_resubmission.settings')->delete();
 
-  \Drupal::messenger()->addStatus(t('Mark-a-Spot Resubmission module uninstalled. All reminder data has been deleted.'));
+  // Note: We intentionally do NOT delete field_resubmission_days or its data.
+  // This follows Drupal best practices: fields are content/data and should
+  // be preserved when modules are uninstalled. Site administrators can
+  // manually delete fields via the Field UI if desired.
+  \Drupal::logger('markaspot_resubmission')->notice('Module uninstalled. Field field_resubmission_days and its data have been preserved.');
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Resubmission module uninstalled. Resubmission reminder entities have been deleted. The field_resubmission_days field and its data have been preserved. To remove the field, use the Field UI at /admin/structure/taxonomy/manage/service_category/overview/fields or run: drush field:delete taxonomy_term.service_category.field_resubmission_days'));
 }
 
 /**
@@ -351,7 +356,12 @@ function _markaspot_resubmission_create_resubmission_days_field() {
 /**
  * Helper function to delete field_resubmission_days field.
  *
- * Used by hook_uninstall().
+ * DEPRECATED: This function is no longer called by hook_uninstall().
+ * Fields should be preserved when modules are uninstalled, following
+ * Drupal best practices. Site administrators can manually delete fields
+ * via the Field UI if desired.
+ *
+ * Kept for reference only.
  */
 function _markaspot_resubmission_delete_resubmission_days_field() {
   // Delete the field instance first.

@@ -11,38 +11,16 @@ use Drupal\Core\Field\BaseFieldDefinition;
  * Implements hook_install().
  */
 function markaspot_service_provider_install() {
-  \Drupal::messenger()->addStatus(t('Mark-a-Spot Service Provider module installed successfully.'));
+  // Create service_provider vocabulary.
+  _markaspot_service_provider_create_vocabulary();
 
-  // Log field status for debugging
-  $logger = \Drupal::logger('markaspot_service_provider');
-  $entity_type_manager = \Drupal::entityTypeManager();
+  // Create all required fields.
+  _markaspot_service_provider_create_service_provider_notes_field();
+  _markaspot_service_provider_create_reassign_sp_field();
+  _markaspot_service_provider_create_sp_email_field();
 
-  // Check if critical fields exist
-  $field_storage = $entity_type_manager->getStorage('field_storage_config');
-
-  $fields_to_check = [
-    'field_service_provider_notes' => 'node',
-    'field_reassign_sp' => 'node',
-    'field_sp_email' => 'taxonomy_term',
-  ];
-
-  foreach ($fields_to_check as $field_name => $entity_type) {
-    $field_id = "{$entity_type}.{$field_name}";
-    $field = $field_storage->load($field_id);
-
-    if ($field) {
-      $logger->info('Field @field_name exists for @entity_type', [
-        '@field_name' => $field_name,
-        '@entity_type' => $entity_type,
-      ]);
-    }
-    else {
-      $logger->warning('Field @field_name does not exist for @entity_type. Please install field configuration from config/optional/', [
-        '@field_name' => $field_name,
-        '@entity_type' => $entity_type,
-      ]);
-    }
-  }
+  \Drupal::logger('markaspot_service_provider')->notice('Mark-a-Spot Service Provider module installed successfully.');
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Service Provider module installed successfully. All fields and vocabulary have been created.'));
 }
 
 /**
@@ -62,7 +40,7 @@ function markaspot_service_provider_requirements($phase) {
       $requirements['markaspot_service_provider_notes_field'] = [
         'title' => t('Service Provider Notes Field'),
         'value' => t('Missing'),
-        'description' => t('The field_service_provider_notes field is required but not installed. Please import the field configuration from the module\'s config/optional directory or create it manually.'),
+        'description' => t('The field_service_provider_notes field is required but not installed. Please reinstall the module or manually create the field.'),
         'severity' => REQUIREMENT_ERROR,
       ];
     }
@@ -93,7 +71,7 @@ function markaspot_service_provider_requirements($phase) {
       $requirements['markaspot_service_provider_reassign_field'] = [
         'title' => t('Service Provider Reassignment Field'),
         'value' => t('Missing'),
-        'description' => t('The field_reassign_sp field is required but not installed. Please import the field configuration from the module\'s config/optional directory or create it manually.'),
+        'description' => t('The field_reassign_sp field is required but not installed. Please reinstall the module or manually create the field.'),
         'severity' => REQUIREMENT_WARNING,
       ];
     }
@@ -124,7 +102,7 @@ function markaspot_service_provider_requirements($phase) {
       $requirements['markaspot_service_provider_email_field'] = [
         'title' => t('Service Provider Email Field'),
         'value' => t('Missing'),
-        'description' => t('The field_sp_email field is required on the service_provider taxonomy vocabulary but not installed. Please import the field configuration from the module\'s config/optional directory or create it manually.'),
+        'description' => t('The field_sp_email field is required on the service_provider taxonomy vocabulary but not installed. Please reinstall the module or manually create the field.'),
         'severity' => REQUIREMENT_ERROR,
       ];
     }
@@ -156,7 +134,7 @@ function markaspot_service_provider_requirements($phase) {
       $requirements['markaspot_service_provider_vocabulary'] = [
         'title' => t('Service Provider Vocabulary'),
         'value' => t('Missing'),
-        'description' => t('The service_provider taxonomy vocabulary is required but not installed. Please import the vocabulary configuration from the module\'s config/optional directory or create it manually.'),
+        'description' => t('The service_provider taxonomy vocabulary is required but not installed. Please reinstall the module or manually create it.'),
         'severity' => REQUIREMENT_ERROR,
       ];
     }
@@ -179,7 +157,364 @@ function markaspot_service_provider_uninstall() {
   // Clean up any state variables
   \Drupal::state()->delete('markaspot_service_provider.last_notification');
 
-  \Drupal::messenger()->addStatus(t('Mark-a-Spot Service Provider module uninstalled successfully.'));
+  // Clean up configuration.
+  \Drupal::configFactory()->getEditable('markaspot_service_provider.settings')->delete();
+
+  // Note: We intentionally do NOT delete fields or the service_provider vocabulary.
+  // This follows Drupal best practices: fields and vocabularies are content/data
+  // and should be preserved when modules are uninstalled. Site administrators can
+  // manually delete them via the UI if desired.
+  \Drupal::logger('markaspot_service_provider')->notice('Module uninstalled. Fields (field_service_provider_notes, field_reassign_sp, field_sp_email) and service_provider vocabulary have been preserved.');
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Service Provider module uninstalled. All fields and the service_provider vocabulary have been preserved. To remove fields, use the Field UI or drush field:delete commands. To remove the vocabulary, visit /admin/structure/taxonomy.'));
+}
+
+/**
+ * Helper function to create service_provider vocabulary.
+ */
+function _markaspot_service_provider_create_vocabulary() {
+  $vocabulary_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_vocabulary');
+  $vocab = $vocabulary_storage->load('service_provider');
+
+  if (!$vocab) {
+    $vocab = $vocabulary_storage->create([
+      'vid' => 'service_provider',
+      'name' => 'Service Provider',
+      'description' => 'Service providers responsible for handling service requests.',
+      'weight' => 0,
+    ]);
+    $vocab->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created service_provider taxonomy vocabulary.');
+  }
+  else {
+    \Drupal::logger('markaspot_service_provider')->notice('Service provider vocabulary already exists.');
+  }
+}
+
+/**
+ * Helper function to create field_service_provider_notes field.
+ *
+ * Creates a text_long field with unlimited cardinality on node.service_request.
+ */
+function _markaspot_service_provider_create_service_provider_notes_field() {
+  // Check if field storage already exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'node',
+          'text',
+        ],
+      ],
+      'id' => 'node.field_service_provider_notes',
+      'field_name' => 'field_service_provider_notes',
+      'entity_type' => 'node',
+      'type' => 'text_long',
+      'settings' => [],
+      'module' => 'text',
+      'locked' => FALSE,
+      'cardinality' => -1,  // Unlimited
+      'translatable' => TRUE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_service_provider_notes field storage on node entity type.');
+  }
+
+  // Check if field instance already exists.
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_service_provider_notes');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.node.field_service_provider_notes',
+          'node.type.service_request',
+        ],
+        'module' => [
+          'text',
+        ],
+      ],
+      'id' => 'node.service_request.field_service_provider_notes',
+      'field_name' => 'field_service_provider_notes',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Service Provider Notes',
+      'description' => 'Internal notes and completion messages from service providers.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [],
+      'field_type' => 'text_long',
+    ];
+
+    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_service_provider_notes field instance on service_request content type.');
+  }
+
+  // Add field to entity displays if it exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_service_provider_notes');
+
+  if ($field_storage && $field_instance) {
+    /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+    $display_repo = \Drupal::service('entity_display.repository');
+
+    // Add to form display (default).
+    $form_display = $display_repo->getFormDisplay('node', 'service_request', 'default');
+    if (!$form_display->getComponent('field_service_provider_notes')) {
+      $form_display->setComponent('field_service_provider_notes', [
+        'type' => 'text_textarea',
+        'weight' => 60,
+        'region' => 'content',
+        'settings' => [
+          'rows' => 5,
+          'placeholder' => '',
+        ],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_service_provider')->notice('Added field_service_provider_notes to service_request form display.');
+    }
+
+    // Add to view display (default).
+    $view_display = $display_repo->getViewDisplay('node', 'service_request', 'default');
+    if (!$view_display->getComponent('field_service_provider_notes')) {
+      $view_display->setComponent('field_service_provider_notes', [
+        'type' => 'text_default',
+        'weight' => 60,
+        'region' => 'content',
+        'label' => 'above',
+        'settings' => [],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_service_provider')->notice('Added field_service_provider_notes to service_request view display.');
+    }
+  }
+}
+
+/**
+ * Helper function to create field_reassign_sp field.
+ *
+ * Creates a boolean field with cardinality 1 on node.service_request.
+ */
+function _markaspot_service_provider_create_reassign_sp_field() {
+  // Check if field storage already exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_reassign_sp');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'node',
+        ],
+      ],
+      'id' => 'node.field_reassign_sp',
+      'field_name' => 'field_reassign_sp',
+      'entity_type' => 'node',
+      'type' => 'boolean',
+      'settings' => [
+        'on_label' => 'Yes',
+        'off_label' => 'No',
+      ],
+      'module' => 'core',
+      'locked' => FALSE,
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_reassign_sp field storage on node entity type.');
+  }
+
+  // Check if field instance already exists.
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_reassign_sp');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.node.field_reassign_sp',
+          'node.type.service_request',
+        ],
+      ],
+      'id' => 'node.service_request.field_reassign_sp',
+      'field_name' => 'field_reassign_sp',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Reassign Service Provider',
+      'description' => 'Check to trigger reassignment to a different service provider.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [['value' => 0]],
+      'default_value_callback' => '',
+      'settings' => [
+        'on_label' => 'Yes',
+        'off_label' => 'No',
+      ],
+      'field_type' => 'boolean',
+    ];
+
+    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_reassign_sp field instance on service_request content type.');
+  }
+
+  // Add field to entity displays if it exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_reassign_sp');
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_reassign_sp');
+
+  if ($field_storage && $field_instance) {
+    /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+    $display_repo = \Drupal::service('entity_display.repository');
+
+    // Add to form display (default).
+    $form_display = $display_repo->getFormDisplay('node', 'service_request', 'default');
+    if (!$form_display->getComponent('field_reassign_sp')) {
+      $form_display->setComponent('field_reassign_sp', [
+        'type' => 'boolean_checkbox',
+        'weight' => 61,
+        'region' => 'content',
+        'settings' => [
+          'display_label' => TRUE,
+        ],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_service_provider')->notice('Added field_reassign_sp to service_request form display.');
+    }
+
+    // Add to view display (default).
+    $view_display = $display_repo->getViewDisplay('node', 'service_request', 'default');
+    if (!$view_display->getComponent('field_reassign_sp')) {
+      $view_display->setComponent('field_reassign_sp', [
+        'type' => 'boolean',
+        'weight' => 61,
+        'region' => 'content',
+        'label' => 'above',
+        'settings' => [
+          'format' => 'yes-no',
+        ],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_service_provider')->notice('Added field_reassign_sp to service_request view display.');
+    }
+  }
+}
+
+/**
+ * Helper function to create field_sp_email field.
+ *
+ * Creates an email field with unlimited cardinality on taxonomy_term.service_provider.
+ */
+function _markaspot_service_provider_create_sp_email_field() {
+  // Check if field storage already exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'taxonomy',
+        ],
+      ],
+      'id' => 'taxonomy_term.field_sp_email',
+      'field_name' => 'field_sp_email',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'email',
+      'settings' => [],
+      'module' => 'core',
+      'locked' => FALSE,
+      'cardinality' => -1,  // Unlimited
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_sp_email field storage on taxonomy_term entity type.');
+  }
+
+  // Check if field instance already exists.
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_sp_email');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.taxonomy_term.field_sp_email',
+          'taxonomy.vocabulary.service_provider',
+        ],
+      ],
+      'id' => 'taxonomy_term.service_provider.field_sp_email',
+      'field_name' => 'field_sp_email',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => 'service_provider',
+      'label' => 'Email Address(es)',
+      'description' => 'Email addresses for this service provider. Multiple addresses can be added.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [],
+      'field_type' => 'email',
+    ];
+
+    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_sp_email field instance on service_provider vocabulary.');
+  }
+
+  // Add field to entity displays if it exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_sp_email');
+
+  if ($field_storage && $field_instance) {
+    /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+    $display_repo = \Drupal::service('entity_display.repository');
+
+    // Add to form display (default).
+    $form_display = $display_repo->getFormDisplay('taxonomy_term', 'service_provider', 'default');
+    if (!$form_display->getComponent('field_sp_email')) {
+      $form_display->setComponent('field_sp_email', [
+        'type' => 'email_default',
+        'weight' => 10,
+        'region' => 'content',
+        'settings' => [
+          'size' => 60,
+          'placeholder' => '',
+        ],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_service_provider')->notice('Added field_sp_email to service_provider form display.');
+    }
+
+    // Add to view display (default).
+    $view_display = $display_repo->getViewDisplay('taxonomy_term', 'service_provider', 'default');
+    if (!$view_display->getComponent('field_sp_email')) {
+      $view_display->setComponent('field_sp_email', [
+        'type' => 'email_mailto',
+        'weight' => 10,
+        'region' => 'content',
+        'label' => 'above',
+        'settings' => [],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_service_provider')->notice('Added field_sp_email to service_provider view display.');
+    }
+  }
 }
 
 /**
@@ -200,4 +535,51 @@ function markaspot_service_provider_update_9001() {
   }
 
   return t('field_reassign_sp field cardinality check completed.');
+}
+
+/**
+ * Create service_provider vocabulary if missing.
+ */
+function markaspot_service_provider_update_9002() {
+  _markaspot_service_provider_create_vocabulary();
+  return t('Ensured service_provider vocabulary exists.');
+}
+
+/**
+ * Create all required fields if missing.
+ */
+function markaspot_service_provider_update_9003() {
+  $messages = [];
+
+  // Create field_service_provider_notes
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
+  if (!$field_storage) {
+    _markaspot_service_provider_create_service_provider_notes_field();
+    $messages[] = 'Created field_service_provider_notes field.';
+  }
+  else {
+    $messages[] = 'field_service_provider_notes field already exists.';
+  }
+
+  // Create field_reassign_sp
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_reassign_sp');
+  if (!$field_storage) {
+    _markaspot_service_provider_create_reassign_sp_field();
+    $messages[] = 'Created field_reassign_sp field.';
+  }
+  else {
+    $messages[] = 'field_reassign_sp field already exists.';
+  }
+
+  // Create field_sp_email
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
+  if (!$field_storage) {
+    _markaspot_service_provider_create_sp_email_field();
+    $messages[] = 'Created field_sp_email field.';
+  }
+  else {
+    $messages[] = 'field_sp_email field already exists.';
+  }
+
+  return implode(' ', $messages);
 }

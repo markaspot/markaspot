@@ -19,13 +19,16 @@ function markaspot_feedback_install() {
  * Implements hook_uninstall().
  */
 function markaspot_feedback_uninstall() {
-  // Delete field_feedback from node.service_request.
-  _markaspot_feedback_delete_feedback_field();
-
   // Clean up configuration.
   \Drupal::configFactory()->getEditable('markaspot_feedback.settings')->delete();
 
-  \Drupal::messenger()->addStatus(t('Mark-a-Spot Feedback module uninstalled. All feedback field data has been deleted.'));
+  // Note: We intentionally do NOT delete field_feedback or its data.
+  // This follows Drupal best practices: fields are content/data and should
+  // be preserved when modules are uninstalled. Site administrators can
+  // manually delete fields via the Field UI if desired.
+  \Drupal::logger('markaspot_feedback')->notice('Module uninstalled. Field field_feedback and its data have been preserved.');
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Feedback module uninstalled. The field_feedback field and its data have been preserved. To remove the field, use the Field UI at /admin/structure/types/manage/service_request/fields or run: drush field:delete node.service_request.field_feedback'));
 }
 
 /**
@@ -153,7 +156,12 @@ function _markaspot_feedback_create_feedback_field() {
 /**
  * Helper function to delete field_feedback field.
  *
- * Used by hook_uninstall().
+ * DEPRECATED: This function is no longer called by hook_uninstall().
+ * Fields should be preserved when modules are uninstalled, following
+ * Drupal best practices. Site administrators can manually delete fields
+ * via the Field UI if desired.
+ *
+ * Kept for reference only.
  */
 function _markaspot_feedback_delete_feedback_field() {
   // Delete the field instance first.
