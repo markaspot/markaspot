@@ -1,0 +1,194 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for markaspot_feedback module.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_feedback_install() {
+  // Create field_feedback on node.service_request.
+  _markaspot_feedback_create_feedback_field();
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Feedback module installed successfully.'));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_feedback_uninstall() {
+  // Delete field_feedback from node.service_request.
+  _markaspot_feedback_delete_feedback_field();
+
+  // Clean up configuration.
+  \Drupal::configFactory()->getEditable('markaspot_feedback.settings')->delete();
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Feedback module uninstalled. All feedback field data has been deleted.'));
+}
+
+/**
+ * Helper function to create field_feedback field.
+ *
+ * Used by hook_install().
+ */
+function _markaspot_feedback_create_feedback_field() {
+  // Check if field storage already exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_feedback');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'field_permissions',
+          'node',
+          'text',
+        ],
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'public',
+        ],
+      ],
+      'id' => 'node.field_feedback',
+      'field_name' => 'field_feedback',
+      'entity_type' => 'node',
+      'type' => 'text_long',
+      'settings' => [],
+      'module' => 'text',
+      'locked' => FALSE,
+      'cardinality' => 1,
+      'translatable' => TRUE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    \Drupal::logger('markaspot_feedback')->notice('Created field_feedback field storage on node entity type.');
+  }
+
+  // Check if field instance already exists.
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_feedback');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.node.field_feedback',
+          'node.type.service_request',
+        ],
+        'module' => [
+          'text',
+        ],
+      ],
+      'id' => 'node.service_request.field_feedback',
+      'field_name' => 'field_feedback',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Additional Feedback',
+      'description' => 'This is additional citizen feedback which has been collected via E-Mail.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [],
+      'field_type' => 'text_long',
+    ];
+
+    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    \Drupal::logger('markaspot_feedback')->notice('Created field_feedback field instance on service_request content type.');
+  }
+
+  // Add field to entity displays if it exists.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_feedback');
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_feedback');
+
+  if ($field_storage && $field_instance) {
+    /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+    $display_repo = \Drupal::service('entity_display.repository');
+
+    // Add to form display (default).
+    $form_display = $display_repo->getFormDisplay('node', 'service_request', 'default');
+    if (!$form_display->getComponent('field_feedback')) {
+      $form_display->setComponent('field_feedback', [
+        'type' => 'text_textarea',
+        'weight' => 50,
+        'region' => 'content',
+        'settings' => [
+          'rows' => 5,
+          'placeholder' => '',
+        ],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_feedback')->notice('Added field_feedback to service_request form display.');
+    }
+
+    // Add to view display (default).
+    $view_display = $display_repo->getViewDisplay('node', 'service_request', 'default');
+    if (!$view_display->getComponent('field_feedback')) {
+      $view_display->setComponent('field_feedback', [
+        'type' => 'text_default',
+        'weight' => 50,
+        'region' => 'content',
+        'label' => 'above',
+        'settings' => [],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_feedback')->notice('Added field_feedback to service_request view display.');
+    }
+
+    // Add to teaser view display if it exists.
+    $teaser_display = $display_repo->getViewDisplay('node', 'service_request', 'teaser');
+    if ($teaser_display && !$teaser_display->getComponent('field_feedback')) {
+      // Hide from teaser by default - can be shown via UI if needed.
+      $teaser_display->removeComponent('field_feedback')->save();
+    }
+  }
+}
+
+/**
+ * Helper function to delete field_feedback field.
+ *
+ * Used by hook_uninstall().
+ */
+function _markaspot_feedback_delete_feedback_field() {
+  // Delete the field instance first.
+  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_feedback');
+  if ($field_instance) {
+    $field_instance->delete();
+    \Drupal::logger('markaspot_feedback')->notice('Deleted field_feedback field instance from service_request content type.');
+  }
+
+  // Delete the field storage.
+  // Note: Field storage should only be deleted if no other bundles use it.
+  // Check if any other bundles are using this field before deletion.
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_feedback');
+  if ($field_storage) {
+    // Check if field is used by other bundles.
+    $field_map = \Drupal::service('entity_field.manager')->getFieldMap();
+    $bundles_using_field = isset($field_map['node']['field_feedback']['bundles']) ?
+      $field_map['node']['field_feedback']['bundles'] : [];
+
+    // Only delete if service_request is the only bundle using this field
+    // or if no bundles are using it anymore.
+    if (empty($bundles_using_field) || $bundles_using_field === ['service_request']) {
+      $field_storage->delete();
+      \Drupal::logger('markaspot_feedback')->notice('Deleted field_feedback field storage from node entity type.');
+
+      // Purge field data from database tables.
+      // This is a batch operation, so it may take multiple cron runs
+      // to fully purge all data depending on the amount.
+      field_purge_batch(100);
+      \Drupal::logger('markaspot_feedback')->notice('Initiated field data purge for field_feedback (batch size: 100).');
+    }
+    else {
+      \Drupal::logger('markaspot_feedback')->warning('Field storage field_feedback not deleted because it is used by other bundles: @bundles', [
+        '@bundles' => implode(', ', $bundles_using_field),
+      ]);
+    }
+  }
+}
