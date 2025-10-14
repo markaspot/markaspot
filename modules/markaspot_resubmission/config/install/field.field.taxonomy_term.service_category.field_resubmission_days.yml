@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_resubmission_days
+  module:
+    - markaspot_resubmission
+  taxonomy_term:
+    - service_category
+id: taxonomy_term.service_category.field_resubmission_days
+field_name: field_resubmission_days
+entity_type: taxonomy_term
+bundle: service_category
+label: 'Resubmission reminder period (days)'
+description: 'Override the default reminder period for this category. Leave empty to use global default (42 days).'
+required: false
+translatable: false
+default_value:
+  - value: 42
+default_value_callback: ''
+settings: {  }
+field_type: integer

@@ -1,0 +1,4 @@
+administer markaspot resubmission:
+  title: 'Administer Mark-a-Spot Resubmission'
+  description: 'Configure resubmission settings and view reminder history.'
+  restrict access: true

@@ -10,6 +10,11 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Utility\Token;
+use Drupal\markaspot_resubmission\ReminderManager;
+use Drupal\markaspot_resubmission\Event\ResubmissionReminderEvent;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Processes resubmission notifications for service request nodes.
@@ -58,6 +63,34 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
   protected $languageManager;
 
   /**
+   * The reminder manager.
+   *
+   * @var \Drupal\markaspot_resubmission\ReminderManager
+   */
+  protected $reminderManager;
+
+  /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
+  protected $moduleHandler;
+
+  /**
+   * The token service.
+   *
+   * @var \Drupal\Core\Utility\Token
+   */
+  protected $token;
+
+  /**
+   * The event dispatcher.
+   *
+   * @var \Symfony\Component\EventDispatcher\EventDispatcherInterface
+   */
+  protected $eventDispatcher;
+
+  /**
    * Constructs a new ResubmissionQueueWorker.
    *
    * @param array $configuration
@@ -76,6 +109,14 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
    *   The mail manager.
    * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
    *   The language manager.
+   * @param \Drupal\markaspot_resubmission\ReminderManager $reminder_manager
+   *   The reminder manager.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   *   The module handler.
+   * @param \Drupal\Core\Utility\Token $token
+   *   The token service.
+   * @param \Symfony\Component\EventDispatcher\EventDispatcherInterface $event_dispatcher
+   *   The event dispatcher.
    */
   public function __construct(
     array $configuration,
@@ -85,7 +126,11 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     ConfigFactoryInterface $config_factory,
     EntityTypeManagerInterface $entity_type_manager,
     MailManagerInterface $mail_manager,
-    LanguageManagerInterface $language_manager
+    LanguageManagerInterface $language_manager,
+    ReminderManager $reminder_manager,
+    ModuleHandlerInterface $module_handler,
+    Token $token,
+    EventDispatcherInterface $event_dispatcher
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->logger = $logger;
@@ -93,6 +138,10 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     $this->entityTypeManager = $entity_type_manager;
     $this->mailManager = $mail_manager;
     $this->languageManager = $language_manager;
+    $this->reminderManager = $reminder_manager;
+    $this->moduleHandler = $module_handler;
+    $this->token = $token;
+    $this->eventDispatcher = $event_dispatcher;
   }
 
   /**
@@ -107,7 +156,11 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
       $container->get('config.factory'),
       $container->get('entity_type.manager'),
       $container->get('plugin.manager.mail'),
-      $container->get('language_manager')
+      $container->get('language_manager'),
+      $container->get('markaspot_resubmission.reminder_manager'),
+      $container->get('module_handler'),
+      $container->get('token'),
+      $container->get('event_dispatcher')
     );
   }
 
@@ -136,8 +189,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
       $mailText = $config->get('mailtext');
 
       // Determine the recipient email.
-      $moduleHandler = \Drupal::service('module_handler');
-      if ($moduleHandler->moduleExists('markaspot_groups')) {
+      if ($this->moduleHandler->moduleExists('markaspot_groups')) {
         $to = $this->getGroupField($node);
       }
       else {
@@ -149,23 +201,23 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
         return;
       }
 
-      // Prepare mail parameters.
-      $module = "markaspot_resubmission";
-      $key = 'resubmit_request';
-      $params['message'] = $this->getBody($node, $mailText);
-      $params['node_title'] = $node->label();
-      $langcode = $this->languageManager->getDefaultLanguage()->getId();
+      // Get reminder count for this node.
+      $reminder_count = $this->reminderManager->getReminderCount($node->id()) + 1;
 
-      // Send the email.
-      $this->logger->notice('Sending resubmission notification to: @to', ['@to' => $to]);
-      $result = $this->mailManager->mail($module, $key, $to, $langcode, $params, 'no-reply@example.com', TRUE);
+      // Dispatch event for ECA to handle email sending.
+      $event = new ResubmissionReminderEvent($node, $to, $mailText, $reminder_count);
+      $this->eventDispatcher->dispatch($event, ResubmissionReminderEvent::EVENT_NAME);
 
-      if ($result['result']) {
-        $this->logger->notice('Resubmission notification sent for node @nid.', ['@nid' => $nid]);
-      }
-      else {
-        $this->logger->error('Failed to send resubmission notification for node @nid.', ['@nid' => $nid]);
-      }
+      $this->logger->notice('Dispatched resubmission reminder event for node @nid to @email (reminder #@count)', [
+        '@nid' => $nid,
+        '@email' => $to,
+        '@count' => $reminder_count,
+      ]);
+
+      // Create reminder record.
+      // Note: We assume ECA handles email sending successfully.
+      // For failure tracking, implement an event subscriber.
+      $this->reminderManager->createReminder($node, $to, 'sent');
     }
     catch (\Exception $e) {
       $this->logger->critical('Error processing resubmission notification for node @nid: @error', [
@@ -190,7 +242,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     $data = [
       'node' => $node,
     ];
-    return \Drupal::token()->replace($mailText, $data);
+    return $this->token->replace($mailText, $data);
   }
 
   /**
@@ -209,9 +261,15 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     $group_contents = \Drupal\group\Entity\GroupRelationship::loadByEntity($node);
     foreach ($group_contents as $group_content) {
       $group_ids[] = $group_content->getGroup()->id();
-      foreach ($group_ids as $group) {
-        $affectedGroup = \Drupal\group\Entity\Group::load($group);
+    }
+
+    foreach ($group_ids as $group) {
+      $affectedGroup = \Drupal\group\Entity\Group::load($group);
+      if ($affectedGroup && $affectedGroup->hasField('field_head_organisation_e_mail')) {
         $headOrganisationEmails = $affectedGroup->get('field_head_organisation_e_mail')->getString();
+        if (!empty($headOrganisationEmails)) {
+          break; // Get first non-empty email.
+        }
       }
     }
 

@@ -6,7 +6,7 @@ use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Drupal\Core\Entity\EntityTypeManager;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 
 /**
  * Configure resubmission settings for this site.
@@ -18,17 +18,17 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
   /**
    * The Entity Type manager variable.
    *
-   * @var Drupal\Core\Entity\EntityTypeManager
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
    */
   protected $entityTypeManager;
 
   /**
    * Class constructor.
    *
-   * @param \Drupal\Core\Entity\EntityTypeManager $entity
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity
    *   The Entity type manager service.
    */
-  public function __construct(EntityTypeManager $entity) {
+  public function __construct(EntityTypeManagerInterface $entity) {
     $this->entityTypeManager = $entity;
   }
 
@@ -78,14 +78,15 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
 
     ];
 
-    $catOptions = $this->getTaxonomyTermOptions('service_category');
-    $form['markaspot_resubmission']['days'] = [
-      '#tree' => TRUE,
-      '#type' => 'details',
-      '#title' => $this->t('Resubmission period settings per category'),
-      '#description' => $this->t('You can change the period in which content is notified for being submissive.'),
-    // Controls the HTML5 'open' attribute. Defaults to FALSE.
-      '#open' => TRUE,
+    $form['markaspot_resubmission']['default_resubmission_days'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Default resubmission period (days)'),
+      '#description' => $this->t('Default number of days before sending a resubmission reminder. This can be overridden per category by editing the category term and setting a value in the "Resubmission reminder period" field.'),
+      '#default_value' => $config->get('default_resubmission_days') ?: 42,
+      '#min' => 1,
+      '#max' => 365,
+      '#step' => 1,
+      '#required' => TRUE,
     ];
 
     $form['markaspot_resubmission']['mailtext'] = [
@@ -94,18 +95,6 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Mailtext'),
       '#default_value' => $config->get('mailtext') ?: 'Hello [current-user:name]!',
     ];
-
-    foreach ($catOptions as $tid => $category_name) {
-      $form['markaspot_resubmission']['days'][$tid] = [
-        '#type' => 'number',
-        '#min' => 1,
-        '#max' => 1000,
-        '#step' => 1,
-        '#title' => $this->t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
-        '#default_value' => $config->get('days.' . $tid),
-        '#description' => $this->t('After how many days reminding e-mails should be sent?'),
-      ];
-    }
     $form['markaspot_resubmission']['interval'] = [
       '#type' => 'select',
       '#title' => $this->t('Cron interval'),
@@ -123,6 +112,39 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
       ],
     ];
 
+    $form['markaspot_resubmission']['reminder_settings'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Reminder frequency settings'),
+      '#description' => $this->t('Control how often reminders are sent for the same service request.'),
+      '#open' => TRUE,
+    ];
+
+    $form['markaspot_resubmission']['reminder_settings']['reminder_interval'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Reminder interval'),
+      '#description' => $this->t('How often to send reminders for the same request after the initial reminder.'),
+      '#default_value' => $config->get('reminder_interval') ?: 604800,
+      '#options' => [
+        86400 => $this->t('1 day'),
+        172800 => $this->t('2 days'),
+        259200 => $this->t('3 days'),
+        432000 => $this->t('5 days'),
+        604800 => $this->t('1 week'),
+        1209600 => $this->t('2 weeks'),
+        2592000 => $this->t('30 days'),
+      ],
+    ];
+
+    $form['markaspot_resubmission']['reminder_settings']['max_reminders'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Maximum reminders'),
+      '#description' => $this->t('Maximum number of reminders to send per request. Set to 0 for unlimited reminders.'),
+      '#default_value' => $config->get('max_reminders') ?: 0,
+      '#min' => 0,
+      '#max' => 100,
+      '#step' => 1,
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -134,9 +156,11 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
     $this->config('markaspot_resubmission.settings')
       ->set('tax_status', $values['tax_status'])
       ->set('status_resubmissive', $values['status_resubmissive'])
-      ->set('days', $values['days'])
+      ->set('default_resubmission_days', $values['default_resubmission_days'])
       ->set('mailtext', $values['mailtext'])
       ->set('interval', $values['interval'])
+      ->set('reminder_interval', $values['reminder_interval'])
+      ->set('max_reminders', $values['max_reminders'])
       ->save();
 
     parent::submitForm($form, $form_state);
@@ -163,15 +187,25 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
   public function getTaxonomyTermOptions($machine_name) {
     $options = [];
 
-    // $vid = taxonomy_vocabulary_machine_name_load($machine_name)->vid;
-    $vid = $machine_name;
-    $options_source = $this->entityTypeManager->getStorage('taxonomy_term')
-      ->loadTree($vid);
+    if (empty($machine_name)) {
+      return $options;
+    }
 
-    foreach ($options_source as $item) {
-      $key = $item->tid;
-      $value = $item->name;
-      $options[$key] = $value;
+    try {
+      $options_source = $this->entityTypeManager->getStorage('taxonomy_term')
+        ->loadTree($machine_name);
+
+      foreach ($options_source as $item) {
+        $key = $item->tid;
+        $value = $item->name;
+        $options[$key] = $value;
+      }
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_resubmission')->error('Failed to load taxonomy terms for @vid: @error', [
+        '@vid' => $machine_name,
+        '@error' => $e->getMessage(),
+      ]);
     }
 
     return $options;

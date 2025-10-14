@@ -4,4 +4,4 @@ markaspot_resubmission.settings:
     _form: '\Drupal\markaspot_resubmission\Form\MarkaspotResubmissionSettingsForm'
     _title: 'Resubmission settings'
   requirements:
-    _permission: 'administer site configuration'
+    _permission: 'administer markaspot resubmission'
