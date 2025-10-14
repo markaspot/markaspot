@@ -122,6 +122,34 @@
   }
 }
 
+/* At wider viewports, restore text alongside icons (matching Gin's Devel menu behavior) */
+@media (min-width: 80em) {
+  /* Reset icon-only styles to allow text */
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-icon,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-icon,
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-item,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-item {
+    width: auto !important;
+    height: auto !important;
+    font-size: inherit !important;
+    text-indent: 0 !important;
+    padding-left: 2.5em !important;
+    position: relative !important;
+  }
+
+  /* Position icons to the left of text, matching Gin's secondary toolbar style */
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-icon::before,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-icon::before {
+    width: var(--gin-icon-size-toolbar-secondary) !important;
+    height: var(--gin-icon-size-toolbar-secondary) !important;
+    position: absolute !important;
+    inset-block-start: 50% !important;
+    inset-inline-start: 12px !important;
+    left: 12px !important;
+    transform: translateY(-50%) !important;
+  }
+}
+
 /* Hide "Back to site" breadcrumb link - not relevant for our use case */
 .gin-breadcrumb__item a[data-gin-toolbar-escape-admin] {
   display: none !important;
