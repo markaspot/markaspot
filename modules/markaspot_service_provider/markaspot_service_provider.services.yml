@@ -1,0 +1,7 @@
+services:
+  markaspot_service_provider.service_provider:
+    class: Drupal\markaspot_service_provider\ServiceProviderService
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@logger.factory'

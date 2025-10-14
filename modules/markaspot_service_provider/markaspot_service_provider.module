@@ -1,0 +1,85 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_service_provider.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_service_provider_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.markaspot_service_provider':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Mark-a-Spot Service Provider module provides functionality for service providers to respond to and complete service requests.') . '</p>';
+      $output .= '<h3>' . t('Features') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('Service provider completion tracking') . '</li>';
+      $output .= '<li>' . t('Multi-value completion notes with metadata') . '</li>';
+      $output .= '<li>' . t('Email validation against service provider records') . '</li>';
+      $output .= '<li>' . t('Status management for completed work') . '</li>';
+      $output .= '<li>' . t('Support for reassignment workflow') . '</li>';
+      $output .= '</ul>';
+      $output .= '<h3>' . t('Email Notifications') . '</h3>';
+      $output .= '<p>' . t('Email notifications to service providers are handled via ECA (Event-Condition-Action) rules, similar to the markaspot_resubmission module. Configure ECA to send notifications when service providers are assigned to service requests.') . '</p>';
+      $output .= '<h3>' . t('Cron Notifications') . '</h3>';
+      $output .= '<p>' . t('Optionally enable periodic notifications to service providers about pending requests. This requires cron to be running and ECA rules to be configured for sending the actual notifications.') . '</p>';
+      return $output;
+  }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function markaspot_service_provider_cron() {
+  $config = \Drupal::config('markaspot_service_provider.settings');
+
+  // Check if cron notifications are enabled.
+  $enabled = $config->get('enable_cron_notifications');
+  if (!$enabled) {
+    return;
+  }
+
+  // Get the interval setting (default to 1 hour).
+  $interval = $config->get('cron_interval');
+  $interval = !empty($interval) ? $interval : 3600;
+
+  // Check if it's time to run based on the interval.
+  $next_execution = \Drupal::state()
+    ->get('markaspot_service_provider.next_execution', 0);
+
+  if (\Drupal::time()->getRequestTime() >= $next_execution) {
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $node_storage = $entity_type_manager->getStorage('node');
+
+    // Find service requests with assigned service providers.
+    // You can customize this query based on your specific needs.
+    $query = $node_storage->getQuery()
+      ->condition('type', 'service_request')
+      ->condition('status', 1)
+      ->exists('field_service_provider')
+      ->accessCheck(FALSE);
+
+    $nids = $query->execute();
+    $count = count($nids);
+
+    if ($count > 0) {
+      // Dispatch an event or trigger ECA rules here.
+      // For now, just log that nodes are ready for notification.
+      \Drupal::logger('markaspot_service_provider')
+        ->notice('Found @count service requests with assigned providers ready for cron notification.',
+          ['@count' => $count]);
+
+      // TODO: Implement event dispatching or queue worker for ECA integration.
+    }
+
+    // Set the next execution time.
+    \Drupal::state()
+      ->set('markaspot_service_provider.next_execution',
+        \Drupal::time()->getRequestTime() + $interval);
+  }
+}

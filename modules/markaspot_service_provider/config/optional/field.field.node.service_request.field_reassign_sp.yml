@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_reassign_sp
+    - node.type.service_request
+id: node.service_request.field_reassign_sp
+field_name: field_reassign_sp
+entity_type: node
+bundle: service_request
+label: 'Allow Service Provider Reassignment'
+description: 'When enabled, allows service providers to submit multiple completions for this request'
+required: false
+translatable: false
+default_value:
+  -
+    value: 0
+default_value_callback: ''
+settings:
+  on_label: 'Yes'
+  off_label: 'No'
+field_type: boolean

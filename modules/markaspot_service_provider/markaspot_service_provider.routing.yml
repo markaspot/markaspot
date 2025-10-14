@@ -1,0 +1,33 @@
+markaspot_service_provider.settings:
+  path: '/admin/structure/markaspot/service-provider/settings'
+  defaults:
+    _form: '\Drupal\markaspot_service_provider\Form\ServiceProviderSettingsForm'
+    _title: 'Service Provider settings'
+  requirements:
+    _permission: 'administer site configuration'
+
+markaspot_service_provider.response_form:
+  path: '/service-response/{uuid}'
+  defaults:
+    _title: 'Service Provider Response'
+    _form: '\Drupal\markaspot_service_provider\Form\ServiceProviderResponseForm'
+  requirements:
+    _permission: 'access content'
+
+markaspot_service_provider.rest_update:
+  path: '/api/service-response/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_service_provider\Controller\ServiceProviderController::updateResponse'
+    _title: 'Service Provider Response API'
+  methods: [POST, PATCH]
+  requirements:
+    _access: 'TRUE'
+
+markaspot_service_provider.rest_get:
+  path: '/api/service-response/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_service_provider\Controller\ServiceProviderController::getServiceRequest'
+    _title: 'Get Service Request by UUID'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'

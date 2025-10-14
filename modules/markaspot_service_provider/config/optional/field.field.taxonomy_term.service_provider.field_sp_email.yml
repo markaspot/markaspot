@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_sp_email
+    - taxonomy.vocabulary.service_provider
+id: taxonomy_term.service_provider.field_sp_email
+field_name: field_sp_email
+entity_type: taxonomy_term
+bundle: service_provider
+label: 'Service Provider Email'
+description: 'Email address(es) for service provider authentication and notifications. Multiple emails can be added.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: email

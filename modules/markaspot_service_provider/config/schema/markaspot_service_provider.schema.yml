@@ -1,0 +1,19 @@
+markaspot_service_provider.settings:
+  type: config_object
+  label: 'Service Provider settings'
+  mapping:
+    completion_status_tid:
+      type: string
+      label: 'Completion Status Term ID'
+    status_note:
+      type: text
+      label: 'Completion Status Note'
+    allow_multiple_completions:
+      type: boolean
+      label: 'Allow Multiple Completions'
+    enable_cron_notifications:
+      type: boolean
+      label: 'Enable Cron-based Notifications'
+    cron_interval:
+      type: integer
+      label: 'Cron Notification Interval'
