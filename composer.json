@@ -50,8 +50,6 @@
         "npm-asset/vue": "^2.5",
         "npm-asset/vue-chartjs": "3.5.1",
         "npm-asset/vue-router": "^3.0",
-        "maplibre/maplibre-gl": "3.6.2",
-        "mapbox/mapbox-gl": "3.0.0",
         "oomphinc/composer-installers-extender": "^2",
         "composer/installers": "^2",
         "anthonymartin/geo-location": "^1.0",
