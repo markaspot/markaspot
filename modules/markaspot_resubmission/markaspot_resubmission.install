@@ -41,6 +41,7 @@ function markaspot_resubmission_uninstall() {
 
   // Clean up configuration.
   \Drupal::configFactory()->getEditable('markaspot_resubmission.settings')->delete();
+  \Drupal::configFactory()->getEditable('markaspot_resubmission.mail')->delete();
 
   // Note: We intentionally do NOT delete field_resubmission_days or its data.
   // This follows Drupal best practices: fields are content/data and should
@@ -244,6 +245,44 @@ function markaspot_resubmission_update_9004() {
   \Drupal::service('plugin.manager.menu.link')->rebuild();
 
   return t('Imported resubmission reminders view configuration.');
+}
+
+/**
+ * Import mail template configuration for existing installations.
+ */
+function markaspot_resubmission_update_9005() {
+  $messages = [];
+
+  // Get module path.
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_resubmission');
+  $config_path = $module_path . '/config/install';
+
+  // Import English mail config.
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_factory = \Drupal::configFactory();
+
+  if ($data = $source->read('markaspot_resubmission.mail')) {
+    $config_factory->getEditable('markaspot_resubmission.mail')
+      ->setData($data)
+      ->save();
+    $messages[] = t('Imported English mail templates.');
+  }
+
+  // Import German language overrides if locale module is enabled.
+  if (\Drupal::moduleHandler()->moduleExists('locale')) {
+    $lang_path = $config_path . '/language/de';
+    $lang_source = new \Drupal\Core\Config\FileStorage($lang_path);
+
+    if ($lang_data = $lang_source->read('markaspot_resubmission.mail')) {
+      \Drupal::languageManager()
+        ->getLanguageConfigOverride('de', 'markaspot_resubmission.mail')
+        ->setData($lang_data)
+        ->save();
+      $messages[] = t('Imported German mail template translations.');
+    }
+  }
+
+  return !empty($messages) ? implode(' ', $messages) : t('Mail template configuration already up to date.');
 }
 
 /**

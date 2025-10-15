@@ -26,13 +26,28 @@ function markaspot_feedback_help($route_name, RouteMatchInterface $route_match) 
 function markaspot_feedback_mail($key, &$message, $params) {
   switch ($key) {
     case 'feedback_request':
-      $message['subject'] = $params['subject'];
-      $message['body'][] = $params['body']['text'];
-      
-      // Add the feedback URL to the email.
-      $message['body'][] = t('Please provide your feedback at this link: @url', [
-        '@url' => $params['body']['feedback_url'],
-      ]);
+      // Validate required parameters.
+      if (empty($params['node'])) {
+        \Drupal::logger('markaspot_feedback')->error('Missing node parameter in hook_mail() for key @key', ['@key' => $key]);
+        return;
+      }
+
+      // Load mail config in the message's language.
+      $mail_config = \Drupal::languageManager()
+        ->getLanguageConfigOverride($message['langcode'], 'markaspot_feedback.mail')
+        ->get($key);
+
+      // Fallback to default language if translation doesn't exist.
+      if (empty($mail_config)) {
+        $mail_config = \Drupal::config('markaspot_feedback.mail')->get($key);
+      }
+
+      // Replace tokens in subject and body.
+      $token_service = \Drupal::token();
+      $token_data = ['node' => $params['node']];
+
+      $message['subject'] = $token_service->replace($mail_config['subject'], $token_data, ['langcode' => $message['langcode']]);
+      $message['body'][] = $token_service->replace($mail_config['body'], $token_data, ['langcode' => $message['langcode']]);
       break;
   }
 }

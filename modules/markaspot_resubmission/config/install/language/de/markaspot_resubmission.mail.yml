@@ -1,0 +1,20 @@
+langcode: de
+resubmit_request:
+  subject: 'Erinnerung: [node:title]'
+  body: |
+    Guten Tag,
+
+    diese Meldung wurde vor mehr als 6 Wochen in unserem System erfasst und ist noch unbearbeitet:
+
+    Titel: [node:title]
+    Kategorie: [node:field_category:entity:name]
+    Status: [node:field_status:entity:name]
+    Gemeldet am: [node:created:medium]
+    Letzte Änderung: [node:changed:medium]
+
+    Link zur Meldung: [node:url]
+
+    Bitte prüfen Sie den Status dieser Meldung und aktualisieren Sie diese entsprechend.
+
+    Mit freundlichen Grüßen
+    Ihr Mängelmelder-Team

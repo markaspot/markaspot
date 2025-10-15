@@ -1,0 +1,22 @@
+langcode: de
+feedback_request:
+  subject: 'Ihre Meldung [node:request_id] auf dem Mängelmelder: Feedback willkommen'
+  body: |
+    Sehr geehrte(r) Bürger/in,
+
+    vielen Dank, dass Sie den Mängelmelder der Stadt Bonn genutzt haben.
+
+    Ihre Meldung "[node:title]" wurde bearbeitet und ist in unserem System als erledigt markiert. Bevor wir diesen Vorgang abschließen, möchten wir Sie um Ihr Feedback bitten.
+
+    Sind Sie mit dem Ergebnis zufrieden, oder besteht aus Ihrer Sicht noch Handlungsbedarf? Wir würden uns über Ihre Rückmeldung sehr freuen.
+
+    Klicken Sie bitte auf den folgenden Link, um Ihr Feedback zu geben:
+    [markaspot_frontend:url]/feedback/[node:uuid]
+
+    Falls Sie der Meinung sind, dass Ihr Anliegen noch nicht vollständig bearbeitet wurde, haben Sie über den Link auch die Möglichkeit, den Vorgang wieder zu öffnen.
+
+    Vielen Dank für Ihre Unterstützung bei der Verbesserung unserer Dienstleistungen.
+
+    Mit freundlichen Grüßen,
+    Ihr Team des Mängelmelders
+    Stadt Bonn

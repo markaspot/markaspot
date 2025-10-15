@@ -21,6 +21,7 @@ function markaspot_feedback_install() {
 function markaspot_feedback_uninstall() {
   // Clean up configuration.
   \Drupal::configFactory()->getEditable('markaspot_feedback.settings')->delete();
+  \Drupal::configFactory()->getEditable('markaspot_feedback.mail')->delete();
 
   // Note: We intentionally do NOT delete field_feedback or its data.
   // This follows Drupal best practices: fields are content/data and should
@@ -29,6 +30,52 @@ function markaspot_feedback_uninstall() {
   \Drupal::logger('markaspot_feedback')->notice('Module uninstalled. Field field_feedback and its data have been preserved.');
 
   \Drupal::messenger()->addStatus(t('Mark-a-Spot Feedback module uninstalled. The field_feedback field and its data have been preserved. To remove the field, use the Field UI at /admin/structure/types/manage/service_request/fields or run: drush field:delete node.service_request.field_feedback'));
+}
+
+/**
+ * Import mail template configuration for existing installations.
+ */
+function markaspot_feedback_update_9001() {
+  $messages = [];
+
+  // Get module path.
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_feedback');
+  $config_path = $module_path . '/config/install';
+
+  // Import English mail config.
+  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $config_factory = \Drupal::configFactory();
+
+  if ($data = $source->read('markaspot_feedback.mail')) {
+    $config_factory->getEditable('markaspot_feedback.mail')
+      ->setData($data)
+      ->save();
+    $messages[] = t('Imported English mail templates.');
+  }
+
+  // Import German language overrides if locale module is enabled.
+  if (\Drupal::moduleHandler()->moduleExists('locale')) {
+    $lang_path = $config_path . '/language/de';
+    $lang_source = new \Drupal\Core\Config\FileStorage($lang_path);
+
+    if ($lang_data = $lang_source->read('markaspot_feedback.mail')) {
+      \Drupal::languageManager()
+        ->getLanguageConfigOverride('de', 'markaspot_feedback.mail')
+        ->setData($lang_data)
+        ->save();
+      $messages[] = t('Imported German mail template translations.');
+    }
+  }
+
+  return !empty($messages) ? implode(' ', $messages) : t('Mail template configuration already up to date.');
+}
+
+/**
+ * Ensure field_feedback exists on service_request content type.
+ */
+function markaspot_feedback_update_9002() {
+  _markaspot_feedback_create_feedback_field();
+  return t('Ensured field_feedback exists on service_request content type.');
 }
 
 /**

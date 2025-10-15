@@ -52,3 +52,21 @@ markaspot_feedback.settings:
       sequence:
         type: string
         label: 'Term ID'
+
+markaspot_feedback.mail:
+  type: config_object
+  label: 'Mark-a-Spot Feedback mail templates'
+  mapping:
+    langcode:
+      type: string
+      label: 'Language code'
+    feedback_request:
+      type: mapping
+      label: 'Feedback request email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'

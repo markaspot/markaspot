@@ -310,6 +310,12 @@ class FeedbackService implements FeedbackServiceInterface {
   /**
    * Sends a feedback request email for a service request.
    *
+   * Note: This method uses direct MailManager::mail() calls rather than
+   * the EventSubscriber pattern used in markaspot_resubmission. This is
+   * intentional - feedback emails are simple, one-time notifications that
+   * don't require the extensibility overhead of events. If customization
+   * is needed, use hook_mail_alter() to modify templates.
+   *
    * @param \Drupal\node\NodeInterface $node
    *   The node to send feedback request for.
    * @param string $to
@@ -320,37 +326,17 @@ class FeedbackService implements FeedbackServiceInterface {
    */
   protected function sendFeedbackRequestEmail(NodeInterface $node, $to) {
     try {
-      $config = $this->configFactory->get('markaspot_feedback.settings');
-      $mailtext = $config->get('mailtext') ?: 'Hello [node:author:name]!';
-      
-      // Replace tokens in the mail text.
-      $mailtext = $this->token->replace($mailtext, ['node' => $node]);
-      
-      // Simply use the node's UUID for the feedback URL.
-      // This matches the frontend's expected format and simplifies the process.
-      $node_uuid = $node->uuid();
-      
-      $feedback_url = \Drupal::request()->getSchemeAndHttpHost() . 
-                     '/feedback/' . $node_uuid;
-      
       // Prepare mail parameters.
+      // Token replacement happens in hook_mail() using the mail config.
       $site_config = $this->configFactory->get('system.site');
-      $langcode = $this->languageManager->getDefaultLanguage()->getId();
-      
-      // Get the email subject from the configuration, or use a default if not set.
-      $mail_subject = $config->get('mail_subject') ?: 'Feedback request for service request #[node:request_id]';
-      // Replace tokens in the mail subject.
-      $mail_subject = $this->token->replace($mail_subject, ['node' => $node]);
-      
+
+      // Use node language if available, otherwise default.
+      $langcode = $node->language()->getId();
+
       $params = [
-        'subject' => $mail_subject,
-        'body' => [
-          'text' => $mailtext,
-          'node' => $node,
-          'feedback_url' => $feedback_url,
-        ],
+        'node' => $node,
       ];
-      
+
       // Send the email.
       $result = $this->mailManager->mail(
         'markaspot_feedback',
@@ -360,7 +346,7 @@ class FeedbackService implements FeedbackServiceInterface {
         $params,
         $site_config->get('mail')
       );
-      
+
       return !empty($result['result']);
     }
     catch (\Exception $e) {

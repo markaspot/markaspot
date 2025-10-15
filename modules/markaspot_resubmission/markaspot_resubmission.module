@@ -62,61 +62,35 @@ function markaspot_resubmission_cron() {
   }
 }
 
-
-function markaspot_resubmission_getBody($node, $mailText) {
-
-  $data = [
-    'node' => $node,
-  ];
-  $token_service = \Drupal::token();
-  // Replace the token for subject.
-  return $token_service->replace($mailText, $data);
-}
-
-function markaspot_resubmission_getGroupField($node){
-  $group_ids = [];
-
-  $group_contents = \Drupal\group\Entity\GroupContent::loadByEntity($node);
-  foreach ($group_contents as $group_content) {
-    $group_ids[] = $group_content->getGroup()->id();
-    foreach ($group_ids as $group) {
-      $affectedGroup = \Drupal\group\Entity\Group::load($group);
-
-      $headOrganisationEmails = $affectedGroup->get('field_head_organisation_e_mail')->getString();
-    }
-  }
-
-  return $headOrganisationEmails;
-}
-
-
-function markaspot_resubmission_getOrganisationTermField($node){
-  $tid = $node->get('field_organisation')->target_id;
-  if ($tid !== NULL) {
-    $term = Drupal\taxonomy\Entity\Term::load($tid);
-    $headOrganisationEmails = $term->get('field_head_organisation_e_mail')->getString();
-    return $headOrganisationEmails;
-  } else {
-    \Drupal::logger('Mark-a-Spot Resubmission')->notice(t('We have\'nt found an e-Mail Address'));
-    return false;
-  }
-}
-
-
 /**
  * Implements hook_mail().
  */
-
 function markaspot_resubmission_mail($key, &$message, $params) {
-  $options = array(
-    'langcode' => $message['langcode'],
-  );
-
   switch ($key) {
     case 'resubmit_request':
+      // Validate required parameters.
+      if (empty($params['node'])) {
+        \Drupal::logger('markaspot_resubmission')->error('Missing node parameter in hook_mail() for key @key', ['@key' => $key]);
+        return;
+      }
+
+      // Load mail config in the message's language.
+      $mail_config = \Drupal::languageManager()
+        ->getLanguageConfigOverride($message['langcode'], 'markaspot_resubmission.mail')
+        ->get($key);
+
+      // Fallback to default language if translation doesn't exist.
+      if (empty($mail_config)) {
+        $mail_config = \Drupal::config('markaspot_resubmission.mail')->get($key);
+      }
+
+      // Replace tokens in subject and body.
+      $token_service = \Drupal::token();
+      $token_data = ['node' => $params['node']];
+
       $message['from'] = \Drupal::config('system.site')->get('mail');
-      $message['subject'] = t('Reminder created: @title', array('@title' => $params['node_title']), $options);
-      $message['body'][] = $params['message'];
+      $message['subject'] = $token_service->replace($mail_config['subject'], $token_data, ['langcode' => $message['langcode']]);
+      $message['body'][] = $token_service->replace($mail_config['body'], $token_data, ['langcode' => $message['langcode']]);
       break;
   }
 }

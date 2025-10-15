@@ -28,3 +28,21 @@ markaspot_resubmission.settings:
     max_reminders:
       type: integer
       label: 'Maximum number of reminders (0 for unlimited)'
+
+markaspot_resubmission.mail:
+  type: config_object
+  label: 'Mark-a-Spot Resubmission mail templates'
+  mapping:
+    langcode:
+      type: string
+      label: 'Language code'
+    resubmit_request:
+      type: mapping
+      label: 'Resubmission reminder email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'

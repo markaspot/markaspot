@@ -1,0 +1,19 @@
+langcode: en
+feedback_request:
+  subject: 'Your report [node:request_id] - Feedback welcome'
+  body: |
+    Dear citizen,
+
+    Thank you for using the issue tracker. Your report "[node:title]" has been processed and marked as completed in our system. Before we close this case, we would like to ask for your feedback.
+
+    Are you satisfied with the result, or is there still action needed from your perspective? We would greatly appreciate your feedback.
+
+    Please click the following link to provide your feedback:
+    [markaspot_frontend:url]/feedback/[node:uuid]
+
+    If you believe your concern has not been fully addressed, you can also reopen the case through this link.
+
+    Thank you for your support in improving our services.
+
+    Best regards,
+    Your Issue Tracking Team

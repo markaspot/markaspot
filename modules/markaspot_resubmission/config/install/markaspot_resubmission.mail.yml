@@ -1,0 +1,20 @@
+langcode: en
+resubmit_request:
+  subject: 'Reminder: [node:title]'
+  body: |
+    Hello,
+
+    This report was submitted more than 6 weeks ago and is still unprocessed in our system:
+
+    Title: [node:title]
+    Category: [node:field_category:entity:name]
+    Status: [node:field_status:entity:name]
+    Reported on: [node:created:medium]
+    Last changed: [node:changed:medium]
+
+    Link to report: [node:url]
+
+    Please review the status of this report and update it accordingly.
+
+    Best regards,
+    Your Issue Tracking Team

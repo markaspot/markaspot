@@ -204,7 +204,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
       // Get reminder count for this node.
       $reminder_count = $this->reminderManager->getReminderCount($node->id()) + 1;
 
-      // Dispatch event for ECA to handle email sending.
+      // Dispatch event for EventSubscriber to handle email sending.
       $event = new ResubmissionReminderEvent($node, $to, $mailText, $reminder_count);
       $this->eventDispatcher->dispatch($event, ResubmissionReminderEvent::EVENT_NAME);
 
@@ -215,8 +215,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
       ]);
 
       // Create reminder record.
-      // Note: We assume ECA handles email sending successfully.
-      // For failure tracking, implement an event subscriber.
+      // Note: EventSubscriber handles email sending.
       $this->reminderManager->createReminder($node, $to, 'sent');
     }
     catch (\Exception $e) {
