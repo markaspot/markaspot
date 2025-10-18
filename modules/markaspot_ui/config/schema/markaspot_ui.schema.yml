@@ -1,0 +1,9 @@
+# Configuration schema for Mark-a-Spot UI module.
+
+markaspot_ui.settings:
+  type: config_object
+  label: 'Mark-a-Spot UI settings'
+  mapping:
+    headless_mode_protection:
+      type: boolean
+      label: 'Enable headless mode protection'

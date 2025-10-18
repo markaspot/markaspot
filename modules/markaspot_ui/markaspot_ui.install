@@ -1,0 +1,27 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the markaspot_ui module.
+ */
+
+/**
+ * Enable headless mode protection by default for existing installations.
+ */
+function markaspot_ui_update_9001() {
+  $config = \Drupal::configFactory()->getEditable('markaspot_ui.settings');
+
+  // Only set if config doesn't exist yet (new installations already have it).
+  if ($config->isNew()) {
+    $config->set('headless_mode_protection', TRUE)->save();
+    return t('Headless mode protection has been enabled.');
+  }
+
+  // For existing installations, enable it unless explicitly set to FALSE.
+  if (!$config->get('headless_mode_protection')) {
+    $config->set('headless_mode_protection', TRUE)->save();
+    return t('Headless mode protection has been enabled. Visit /admin/config/markaspot/ui to configure.');
+  }
+
+  return t('Headless mode protection was already configured.');
+}

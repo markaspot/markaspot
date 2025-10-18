@@ -7,3 +7,13 @@ markaspot_ui.settings:
     _permission: 'administer site configuration'
   options:
     _admin_route: TRUE
+
+markaspot_ui.settings_form:
+  path: '/admin/config/markaspot/ui'
+  defaults:
+    _form: '\Drupal\markaspot_ui\Form\MarkaspotUiSettingsForm'
+    _title: 'Mark-a-Spot UI Settings'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    _admin_route: TRUE

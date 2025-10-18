@@ -4,3 +4,10 @@ markaspot_ui.settings:
   parent: system.admin_config
   route_name: markaspot_ui.settings
   weight: 50
+
+markaspot_ui.settings_form:
+  title: 'UI Settings'
+  description: 'Configure Mark-a-Spot UI module settings'
+  parent: markaspot_ui.settings
+  route_name: markaspot_ui.settings_form
+  weight: 0
