@@ -1,0 +1,48 @@
+# Configuration schema for Mark-a-Spot Nuxt module.
+
+markaspot_nuxt.settings:
+  type: config_object
+  label: 'Mark-a-Spot Nuxt settings'
+  mapping:
+    frontend_base_url:
+      type: string
+      label: 'Frontend Base URL'
+    frontend_enabled:
+      type: boolean
+      label: 'Enable Frontend URL Generation'
+    api_cors_enabled:
+      type: boolean
+      label: 'Enable CORS for API endpoints'
+    mapbox_token:
+      type: string
+      label: 'Mapbox Access Token'
+    mapbox_style:
+      type: string
+      label: 'Mapbox/MapLibre Style URL (Light Mode)'
+    mapbox_style_dark:
+      type: string
+      label: 'Mapbox/MapLibre Style URL (Dark Mode)'
+    osm_custom_attribution:
+      type: text
+      label: 'Main Style Attribution'
+    fallback_style:
+      type: string
+      label: 'Fallback Style URL (Light Mode)'
+    fallback_style_dark:
+      type: string
+      label: 'Fallback Style URL (Dark Mode)'
+    fallback_api_key:
+      type: string
+      label: 'Fallback Service API Key'
+    fallback_attribution:
+      type: text
+      label: 'Fallback Style Attribution'
+    zoom_initial:
+      type: integer
+      label: 'Initial Zoom Level'
+    center_lat:
+      type: float
+      label: 'Center Latitude'
+    center_lng:
+      type: float
+      label: 'Center Longitude'

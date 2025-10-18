@@ -27,29 +27,38 @@ class MarkASpotSettingsController extends ControllerBase {
   }
 
   public function getMarkASpotSettings() {
-    // Load the 'markaspot_map.settings' configuration.
-    $map_config = $this->configFactory->get('markaspot_map.settings');
+    // Load the 'markaspot_nuxt.settings' configuration.
+    $nuxt_config = $this->configFactory->get('markaspot_nuxt.settings');
 
-    if (!$map_config) {
+    if (!$nuxt_config || $nuxt_config->isNew()) {
       return new JsonResponse(['error' => 'Configuration not found'], 404);
     }
 
-    // Also load Nuxt frontend settings
-    $nuxt_config = $this->configFactory->get('markaspot_nuxt.settings');
-
-    // Merge configurations
-    $settings = $map_config->getRawData();
-
-    // Add frontend settings
-    if ($nuxt_config) {
-      $settings['frontend'] = [
+    // Build settings array from markaspot_nuxt.settings
+    $settings = [
+      // Frontend configuration
+      'frontend' => [
         'base_url' => $nuxt_config->get('frontend_base_url'),
         'enabled' => $nuxt_config->get('frontend_enabled'),
         'cors_enabled' => $nuxt_config->get('api_cors_enabled'),
-      ];
-    }
+      ],
+      // Map configuration - Mapbox/MapLibre
+      'mapbox_token' => $nuxt_config->get('mapbox_token'),
+      'mapbox_style' => $nuxt_config->get('mapbox_style'),
+      'mapbox_style_dark' => $nuxt_config->get('mapbox_style_dark'),
+      'osm_custom_attribution' => $nuxt_config->get('osm_custom_attribution'),
+      // Fallback style configuration
+      'fallback_style' => $nuxt_config->get('fallback_style'),
+      'fallback_style_dark' => $nuxt_config->get('fallback_style_dark'),
+      'fallback_api_key' => $nuxt_config->get('fallback_api_key'),
+      'fallback_attribution' => $nuxt_config->get('fallback_attribution'),
+      // Map position
+      'zoom_initial' => $nuxt_config->get('zoom_initial') ?: 13,
+      'center_lat' => $nuxt_config->get('center_lat'),
+      'center_lng' => $nuxt_config->get('center_lng'),
+    ];
 
-    // Return the merged configuration as a JSON response.
+    // Return the configuration as a JSON response.
     return new JsonResponse($settings);
   }
 

@@ -1,0 +1,14 @@
+frontend_base_url: ''
+frontend_enabled: false
+api_cors_enabled: false
+mapbox_token: ''
+mapbox_style: ''
+mapbox_style_dark: ''
+osm_custom_attribution: ''
+fallback_style: ''
+fallback_style_dark: ''
+fallback_api_key: ''
+fallback_attribution: ''
+zoom_initial: 13
+center_lat: 0
+center_lng: 0

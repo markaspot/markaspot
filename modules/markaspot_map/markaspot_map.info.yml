@@ -1,7 +1,7 @@
 name: 'Mark-a-Spot Map'
 package: Mark-a-Spot
 core_version_requirement: ^10 || ^11
-description: 'Provides a map block for a Mark-a-Spot Installation'
+description: 'Provides map configuration storage and optional Drupal map block. Required by markaspot_nuxt for headless setups.'
 type: module
 
 dependencies:

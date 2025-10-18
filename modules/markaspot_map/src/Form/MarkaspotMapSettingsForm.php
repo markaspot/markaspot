@@ -81,7 +81,7 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('mapbox_style_dark'),
       '#description' => $this->t('Mapbox Style Url (e.g. mapbox://styles/mapbox/streets-v8) here'),
     ];
-    
+
     // Fallback tile service configuration
     $form['markaspot_map']['fallback_style'] = [
       '#type' => 'textfield',
@@ -107,64 +107,17 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('fallback_attribution'),
       '#description' => $this->t('Attribution text for the fallback tile service (e.g. © MapTiler © OpenStreetMap contributors)'),
     ];
-    $form['markaspot_map']['maplibre'] = [
-      '#type' => 'checkbox',
-      '#title' => $this->t('Enable MapLibre'),
-      '#default_value' => $config->get('maplibre'),
-      // Use the #states property to make this checkbox dependent on the Mapbox/MapLibre selection
-      '#states' => [
-        'visible' => [
-          ':input[name="map_type"]' => ['value' => '0'],
-        ],
-      ],
-    ];
     $form['markaspot_map']['osm_custom_tile_url'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Tile URL, if not from Mapbox'),
       '#default_value' => $config->get('osm_custom_tile_url'),
       '#description' => $this->t('If you want to use a different tile service, enter the url pattern, e.g. http://{s}.somedomain.com/your-api-key/{z}/{x}/{y}.png'),
     ];
-    $form['markaspot_map']['wms_service'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('WMS Service'),
-      '#default_value' => $config->get('wms_service'),
-    ];
-    $form['markaspot_map']['wms_layer'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('WMS Layer ID'),
-      '#default_value' => $config->get('wms_layer'),
-      '#description' => $this->t('Enter the layer ID like "layer:layer"'),
-    ];
-    $form['markaspot_map']['map_background'] = [
-      '#type' => 'textfield',
-      '#size' => 6,
-      '#title' => $this->t('Define a background color the map container'),
-      '#default_value' => $config->get('map_background'),
-      '#description' => $this->t('This should be of similar tone of the tile style'),
-    ];
     $form['markaspot_map']['osm_custom_attribution'] = [
       '#type' => 'textarea',
       '#title' => $this->t('Attribution Statement, if not from Mapbox'),
       '#default_value' => $config->get('osm_custom_attribution'),
       '#description' => $this->t('If you use an alternative Operator for serving tiles show special attribution'),
-    ];
-    $form['markaspot_map']['timeline_date_format'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Dateformat'),
-      '#default_value' => $config->get('timeline_date_format'),
-      '#description' => $this->t('Dateformat'),
-    ];
-    $form['markaspot_map']['timeline_period'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Timeline Period'),
-      '#default_value' => $config->get('timeline_period'),
-      '#description' => $this->t('Timeline period'),
-    ];
-    $form['markaspot_map']['timeline_fps'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Timeline Period FPS'),
-      '#default_value' => $config->get('timeline_fps'),
-      '#description' => $this->t('Timeline period frame per seconds'),
     ];
 
     $form['markaspot_map']['nid_selector'] = [
@@ -190,7 +143,6 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Enter in decimal format, e.g 50.21'),
     ];
     $form['markaspot_map']['center_lng'] = [
-
       '#type' => 'textfield',
       '#size' => 10,
       '#title' => $this->t('Longitude value for the map center'),
@@ -198,25 +150,6 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Enter in decimal format, e.g 6.8232'),
     ];
 
-    $default_svg = '<div class="fa {mapIconSymbol}" style="color: {mapIconColor}"><svg class="icon" width="50" height="50"
-xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><defs>
-<filter id="dropshadow" height="130%"><feDropShadow dx="-0.8" dy="-0.8" stdDeviation="2"
-    flood-color="black" flood-opacity="0.5"/></filter></defs><g><path filter="url(#dropshadow)"
-        fill="{mapIconFill}" d="m25,2.55778c-7.27846,0 -15.7703,4.44805 -15.7703,15.7703c0,7.68272 12.13107,24.6661 15.7703,29.11415c3.23497,-4.44804 15.7703,-21.02687 15.7703,-29.11415c0,-11.32225 -8.49184,-15.7703 -15.7703,-15.7703z"
-        id="path4133"/></g></svg></div>';
-
-    $form['markaspot_map']['marker'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('Marker SVG / Markup'),
-      '#default_value' => $config->get('marker') !== '' ? $config->get('marker') : $default_svg,
-      '#description' => $this->t('SVG for the marker'),
-    ];
-    $form['markaspot_map']['iconAnchor'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Icon Anchor'),
-      '#default_value' => $config->get('iconAnchor') !== '' ? $config->get('iconAnchor') : "[25, 30]",
-      '#description' => $this->t('SVG for the marker, https://leafletjs.com/examples/custom-icons/'),
-    ];
     return parent::buildForm($form, $form_state);
   }
 
@@ -230,7 +163,6 @@ xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><defs>
       ->set('request_list_path', $values['request_list_path'])
       ->set('visualization_path', $values['visualization_path'])
       ->set('map_type', $values['map_type'])
-      ->set('maplibre', $values['maplibre'])
       ->set('mapbox_token', $values['mapbox_token'])
       ->set('mapbox_style', $values['mapbox_style'])
       ->set('mapbox_style_dark', $values['mapbox_style_dark'])
@@ -239,19 +171,11 @@ xmlns="http://www.w3.org/2000/svg" xml:space="preserve" version="1.1"><defs>
       ->set('fallback_api_key', $values['fallback_api_key'])
       ->set('fallback_attribution', $values['fallback_attribution'])
       ->set('osm_custom_tile_url', $values['osm_custom_tile_url'])
-      ->set('wms_service', $values['wms_service'])
-      ->set('wms_layer', $values['wms_layer'])
       ->set('osm_custom_attribution', $values['osm_custom_attribution'])
-      ->set('map_background', $values['map_background'])
-      ->set('timeline_date_format', $values['timeline_date_format'])
-      ->set('timeline_period', $values['timeline_period'])
-      ->set('timeline_fps', $values['timeline_fps'])
       ->set('nid_selector', $values['nid_selector'])
       ->set('zoom_initial', $values['zoom_initial'])
       ->set('center_lat', $values['center_lat'])
       ->set('center_lng', $values['center_lng'])
-      ->set('marker', $values['marker'])
-      ->set('iconAnchor', $values['iconAnchor'])
       ->save();
 
     parent::submitForm($form, $form_state);

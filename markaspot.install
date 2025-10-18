@@ -98,6 +98,20 @@ function markaspot_update_9700() {
 }
 
 /**
+ * Mark-a-Spot Map module is now optional for headless setups.
+ */
+function markaspot_update_9701() {
+  $module_handler = \Drupal::moduleHandler();
+
+  // Check if markaspot_map is installed
+  if ($module_handler->moduleExists('markaspot_map')) {
+    return t('The markaspot_map module is now optional. It is only needed if you use Drupal theme-based map blocks. For headless setups using markaspot_nuxt, all map configuration is now stored independently in markaspot_nuxt.settings. You can uninstall markaspot_map if you only use the Nuxt frontend: drush pm:uninstall markaspot_map');
+  }
+
+  return t('Mark-a-Spot Map module was not installed.');
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {

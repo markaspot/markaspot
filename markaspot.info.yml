@@ -58,7 +58,7 @@ dependencies:
   - user
   - views
   - markaspot_open311
-  - markaspot_map
+  - markaspot_nuxt
   - markaspot_media
   - markaspot_token
   - markaspot_request_id

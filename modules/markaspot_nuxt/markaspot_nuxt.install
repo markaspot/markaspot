@@ -1,0 +1,53 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the markaspot_nuxt module.
+ */
+
+use Drupal\Core\Config\FileStorage;
+
+/**
+ * Migrate map configuration from markaspot_map.settings to markaspot_nuxt.settings.
+ */
+function markaspot_nuxt_update_9001() {
+  $config_factory = \Drupal::configFactory();
+  $map_config = $config_factory->getEditable('markaspot_map.settings');
+  $nuxt_config = $config_factory->getEditable('markaspot_nuxt.settings');
+
+  // Check if markaspot_map.settings exists
+  if ($map_config->isNew()) {
+    return t('No markaspot_map.settings found to migrate.');
+  }
+
+  // Define the fields to migrate from markaspot_map to markaspot_nuxt
+  $fields_to_migrate = [
+    'mapbox_token',
+    'mapbox_style',
+    'mapbox_style_dark',
+    'osm_custom_attribution',
+    'zoom_initial',
+    'center_lat',
+    'center_lng',
+  ];
+
+  $migrated_count = 0;
+
+  foreach ($fields_to_migrate as $field) {
+    $value = $map_config->get($field);
+
+    // Only migrate if the field has a non-null value
+    if ($value !== NULL) {
+      $nuxt_config->set($field, $value);
+      $migrated_count++;
+    }
+  }
+
+  // Save the nuxt config only if we migrated any values
+  if ($migrated_count > 0) {
+    $nuxt_config->save();
+    return t('Migrated @count map configuration settings from markaspot_map.settings to markaspot_nuxt.settings.', ['@count' => $migrated_count]);
+  }
+
+  return t('No map configuration values found to migrate.');
+}

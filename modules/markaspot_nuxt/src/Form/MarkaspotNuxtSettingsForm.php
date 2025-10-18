@@ -67,6 +67,114 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Allow cross-origin requests to Mark-a-Spot API endpoints from the frontend domain.'),
     ];
 
+    // Map Configuration
+    $form['markaspot_nuxt']['map'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Map Configuration'),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+      '#description' => $this->t('Configure map settings for the Nuxt frontend.'),
+      '#weight' => 2,
+    ];
+
+    $form['markaspot_nuxt']['map']['mapbox_token'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mapbox Access Token'),
+      '#default_value' => $config->get('mapbox_token'),
+      '#description' => $this->t('Your Mapbox API token (e.g., pk.eyJ1zN2UyOTRxaDkifQ.RYWA5UQ-B5)'),
+    ];
+
+    $form['markaspot_nuxt']['map']['mapbox_style'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mapbox/MapLibre Style URL (Light Mode)'),
+      '#default_value' => $config->get('mapbox_style'),
+      '#description' => $this->t('Style URL or path to style.json (e.g., mapbox://styles/mapbox/streets-v12)'),
+    ];
+
+    $form['markaspot_nuxt']['map']['mapbox_style_dark'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Mapbox/MapLibre Style URL (Dark Mode)'),
+      '#default_value' => $config->get('mapbox_style_dark'),
+      '#description' => $this->t('Style URL for dark mode (e.g., mapbox://styles/mapbox/dark-v11)'),
+    ];
+
+    $form['markaspot_nuxt']['map']['osm_custom_attribution'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Main Style Attribution'),
+      '#default_value' => $config->get('osm_custom_attribution'),
+      '#rows' => 2,
+      '#description' => $this->t('Attribution text for the main map style (e.g., © Mapbox © OpenStreetMap contributors)'),
+    ];
+
+    // Fallback configuration
+    $form['markaspot_nuxt']['map']['fallback'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Fallback Style Configuration'),
+      '#open' => FALSE,
+      '#description' => $this->t('Configure a backup map style in case the primary style fails to load.'),
+    ];
+
+    $form['markaspot_nuxt']['map']['fallback']['fallback_style'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Fallback Style URL (Light Mode)'),
+      '#default_value' => $config->get('fallback_style'),
+      '#description' => $this->t('Backup style URL (e.g., MapTiler or alternative provider)'),
+    ];
+
+    $form['markaspot_nuxt']['map']['fallback']['fallback_style_dark'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Fallback Style URL (Dark Mode)'),
+      '#default_value' => $config->get('fallback_style_dark'),
+      '#description' => $this->t('Backup style URL for dark mode'),
+    ];
+
+    $form['markaspot_nuxt']['map']['fallback']['fallback_api_key'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Fallback Service API Key'),
+      '#default_value' => $config->get('fallback_api_key'),
+      '#description' => $this->t('API key for the fallback tile service (e.g., MapTiler API key)'),
+    ];
+
+    $form['markaspot_nuxt']['map']['fallback']['fallback_attribution'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Fallback Style Attribution'),
+      '#default_value' => $config->get('fallback_attribution'),
+      '#rows' => 2,
+      '#description' => $this->t('Attribution text for the fallback style'),
+    ];
+
+    // Map position
+    $form['markaspot_nuxt']['map']['position'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Default Map Position'),
+      '#open' => TRUE,
+    ];
+
+    $form['markaspot_nuxt']['map']['position']['zoom_initial'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Initial Zoom Level'),
+      '#default_value' => $config->get('zoom_initial') ?: 13,
+      '#min' => 1,
+      '#max' => 20,
+      '#description' => $this->t('Default zoom level when the map loads (1-20)'),
+    ];
+
+    $form['markaspot_nuxt']['map']['position']['center_lat'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Center Latitude'),
+      '#default_value' => $config->get('center_lat'),
+      '#step' => 0.000001,
+      '#description' => $this->t('Latitude for map center (e.g., 51.4556)'),
+    ];
+
+    $form['markaspot_nuxt']['map']['position']['center_lng'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Center Longitude'),
+      '#default_value' => $config->get('center_lng'),
+      '#step' => 0.000001,
+      '#description' => $this->t('Longitude for map center (e.g., 6.8528)'),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -79,15 +187,37 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
     // Extract values from fieldsets
     $frontend = $values['frontend'] ?? [];
     $api = $values['api'] ?? [];
+    $map = $values['map'] ?? [];
+    $fallback = $map['fallback'] ?? [];
+    $position = $map['position'] ?? [];
 
-    $this->config('markaspot_nuxt.settings')
-      // Frontend settings
-      ->set('frontend_base_url', $frontend['frontend_base_url'] ?? $values['frontend_base_url'])
+    $config = $this->config('markaspot_nuxt.settings');
+
+    // Frontend settings
+    $config->set('frontend_base_url', $frontend['frontend_base_url'] ?? $values['frontend_base_url'])
       ->set('frontend_enabled', $frontend['frontend_enabled'] ?? $values['frontend_enabled'])
 
       // API settings
       ->set('api_cors_enabled', $api['api_cors_enabled'] ?? $values['api_cors_enabled'])
-      ->save();
+
+      // Map settings - Mapbox/MapLibre configuration
+      ->set('mapbox_token', $map['mapbox_token'] ?? '')
+      ->set('mapbox_style', $map['mapbox_style'] ?? '')
+      ->set('mapbox_style_dark', $map['mapbox_style_dark'] ?? '')
+      ->set('osm_custom_attribution', $map['osm_custom_attribution'] ?? '')
+
+      // Fallback style configuration
+      ->set('fallback_style', $fallback['fallback_style'] ?? '')
+      ->set('fallback_style_dark', $fallback['fallback_style_dark'] ?? '')
+      ->set('fallback_api_key', $fallback['fallback_api_key'] ?? '')
+      ->set('fallback_attribution', $fallback['fallback_attribution'] ?? '')
+
+      // Map position settings
+      ->set('zoom_initial', $position['zoom_initial'] ?? 13)
+      ->set('center_lat', $position['center_lat'] ?? 0)
+      ->set('center_lng', $position['center_lng'] ?? 0);
+
+    $config->save();
 
     parent::submitForm($form, $form_state);
   }
