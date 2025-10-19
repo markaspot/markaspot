@@ -134,6 +134,9 @@ class EmergencyModeController extends ControllerBase {
       usort($available_categories, fn($a, $b) => $a['weight'] <=> $b['weight'] ?: strcmp($a['name'], $b['name']));
     }
 
+    // Generate banner data based on configuration and current mode
+    $banner = $this->getBannerData($config, $active);
+
     $payload = [
       // Simple flags for frontend consumption.
       'emergency_mode' => $active,
@@ -141,6 +144,8 @@ class EmergencyModeController extends ControllerBase {
       'mode_type' => (string) $config->get('emergency_mode.mode_type'),
       'lite_ui' => (bool) $config->get('emergency_mode.lite_ui'),
       'available_categories' => $available_categories,
+      'allowed_urls' => (array) ($config->get('allowed_urls') ?: []),
+      'banner' => $banner,
 
       // Detailed structure for advanced clients.
       'details' => [
@@ -159,6 +164,10 @@ class EmergencyModeController extends ControllerBase {
         'network_detection' => [
           'enabled' => $config->get('network_detection.enabled'),
           'auto_switch_threshold' => $config->get('network_detection.auto_switch_threshold'),
+        ],
+        'maintenance' => [
+          'force_redirect' => (bool) $config->get('maintenance.force_redirect'),
+          'banner_text' => (string) ($config->get('maintenance.banner_text') ?: ''),
         ],
       ],
     ];
@@ -202,21 +211,45 @@ class EmergencyModeController extends ControllerBase {
       ->set('emergency_mode.activated_by', $this->currentUser->id())
       ->save();
 
-    // Snapshot and unpublish regular categories if requested.
-    if ($data['unpublish_categories'] ?? $config->get('categories.unpublish_regular')) {
-      $state = \Drupal::state();
-      $key = 'markaspot_emergency.original_published_tids';
-      // Only capture once if not already set.
-      if (empty($state->get($key))) {
-        $original_tids = $this->getRegularPublishedTermIds();
-        $state->set($key, $original_tids);
-      }
-      $this->unpublishRegularCategories();
-    }
+    // Behavior by mode type.
+    $mode_type = (string) ($data['mode_type'] ?? $config->get('emergency_mode.mode_type') ?? 'disaster');
 
-    // Create/publish emergency categories.
-    if ($data['create_emergency_categories'] ?? TRUE) {
-      $this->createEmergencyCategories();
+    if ($mode_type === 'maintenance') {
+      // Load maintenance settings.
+      $keep_tids = (array) $config->get('maintenance.show_only_categories') ?: [];
+      $hide_others = (bool) $config->get('maintenance.unpublish_non_selected');
+
+      if ($hide_others) {
+        // Snapshot all published categories once before unpublishing any.
+        $state = \Drupal::state();
+        $key = 'markaspot_emergency.original_published_tids';
+        if (empty($state->get($key))) {
+          $state->set($key, $this->getAllPublishedTermIds());
+        }
+        $this->unpublishNonSelectedCategories($keep_tids);
+      }
+
+      if (!empty($keep_tids)) {
+        $this->publishSelectedCategories($keep_tids);
+      }
+    }
+    else {
+      // Emergency/crisis: unpublish regular categories if requested.
+      if ($data['unpublish_categories'] ?? $config->get('categories.unpublish_regular')) {
+        $state = \Drupal::state();
+        $key = 'markaspot_emergency.original_published_tids';
+        // Only capture once if not already set.
+        if (empty($state->get($key))) {
+          $original_tids = $this->getRegularPublishedTermIds();
+          $state->set($key, $original_tids);
+        }
+        $this->unpublishRegularCategories();
+      }
+
+      // Create/publish emergency categories.
+      if ($data['create_emergency_categories'] ?? TRUE) {
+        $this->createEmergencyCategories();
+      }
     }
 
     $this->logger->notice('Emergency mode activated by user @user (ID: @uid)', [
@@ -257,7 +290,11 @@ class EmergencyModeController extends ControllerBase {
 
     // Restore categories if requested.
     if ($data['restore_categories'] ?? $config->get('categories.restore_on_deactivation')) {
-      $this->unpublishEmergencyCategories();
+      // Only unpublish emergency categories when we were in emergency/crisis.
+      $last_mode = (string) $config->get('emergency_mode.mode_type');
+      if ($last_mode !== 'maintenance') {
+        $this->unpublishEmergencyCategories();
+      }
       $this->restoreRegularCategories();
     }
 
@@ -343,6 +380,43 @@ class EmergencyModeController extends ControllerBase {
     }
   }
 
+  /** Publish selected categories (ensure published). */
+  protected function publishSelectedCategories(array $tids): void {
+    $tids = array_values(array_filter(array_map('intval', $tids)));
+    if (!$tids) return;
+    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
+    $terms = $storage->loadMultiple($tids);
+    foreach ($terms as $term) {
+      if ($term->get('vid')->value !== 'service_category') continue;
+      if (!$term->isPublished()) {
+        $term->set('status', 1);
+        $term->save();
+      }
+    }
+  }
+
+  /** Unpublish all published categories except the provided TIDs. */
+  protected function unpublishNonSelectedCategories(array $keep_tids): void {
+    $keep = array_values(array_unique(array_filter(array_map('intval', $keep_tids))));
+    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
+    $query = $storage->getQuery()
+      ->condition('vid', 'service_category')
+      ->condition('status', 1)
+      ->accessCheck(FALSE);
+    if ($keep) {
+      $query->condition('tid', $keep, 'NOT IN');
+    }
+    $tounpublish = $query->execute();
+    if (!empty($tounpublish)) {
+      $terms = $storage->loadMultiple($tounpublish);
+      foreach ($terms as $term) {
+        $term->set('status', 0);
+        $term->save();
+      }
+      $this->logger->info('Unpublished @count non-selected maintenance categories.', ['@count' => count($terms)]);
+    }
+  }
+
   /**
    * Get IDs of currently published regular categories.
    *
@@ -360,6 +434,16 @@ class EmergencyModeController extends ControllerBase {
       ->condition('field_emergency_category', FALSE);
     $query->condition($regular);
 
+    return array_values($query->execute());
+  }
+
+  /** Get IDs of all currently published categories. */
+  protected function getAllPublishedTermIds(): array {
+    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
+    $query = $storage->getQuery()
+      ->condition('vid', 'service_category')
+      ->condition('status', 1)
+      ->accessCheck(FALSE);
     return array_values($query->execute());
   }
 
@@ -444,6 +528,84 @@ class EmergencyModeController extends ControllerBase {
         '@count' => $published_count,
       ]);
     }
+  }
+
+  /**
+   * Get banner data based on configuration and current mode.
+   */
+  protected function getBannerData($config, $emergency_active) {
+    $banner_config = $config->get('banner') ?: [];
+
+    // Check if banner is enabled
+    if (!($banner_config['enabled'] ?? false)) {
+      return null;
+    }
+
+    $message = trim($banner_config['message'] ?? '');
+    if (empty($message)) {
+      return null;
+    }
+
+    // Check display conditions
+    $conditions = $banner_config['display_conditions'] ?? [];
+    $mode_type = (string) $config->get('emergency_mode.mode_type');
+    $maintenance_mode = $mode_type === 'maintenance';
+
+    $should_display = false;
+
+    // Always visible
+    if ($conditions['always_visible'] ?? false) {
+      $should_display = true;
+    }
+    // Emergency mode only
+    elseif (($conditions['emergency_mode_only'] ?? false) && $emergency_active) {
+      $should_display = true;
+    }
+    // Maintenance mode
+    elseif (($conditions['maintenance_mode'] ?? true) && $maintenance_mode) {
+      $should_display = true;
+
+      // Use maintenance banner text if CAP banner message is empty
+      $maintenance_text = trim($config->get('maintenance.banner_text') ?? '');
+      if (empty($message) && !empty($maintenance_text)) {
+        $message = $maintenance_text;
+      }
+    }
+    // Emergency mode (non-maintenance)
+    elseif ($emergency_active && !$maintenance_mode) {
+      $should_display = true;
+    }
+
+    if (!$should_display) {
+      return null;
+    }
+
+    // Determine appropriate level based on mode if not explicitly set
+    $level = $banner_config['level'] ?? 'info';
+    if ($emergency_active && $level === 'info') {
+      switch ($mode_type) {
+        case 'disaster':
+          $level = 'extreme';
+          break;
+        case 'crisis':
+          $level = 'severe';
+          break;
+        case 'maintenance':
+          $level = 'warning';
+          break;
+        default:
+          $level = 'moderate';
+          break;
+      }
+    }
+
+    return [
+      'message' => $message,
+      'level' => $level,
+      'title' => $banner_config['title'] ?? '',
+      'mode_type' => $mode_type,
+      'emergency_active' => $emergency_active,
+    ];
   }
 
   /**

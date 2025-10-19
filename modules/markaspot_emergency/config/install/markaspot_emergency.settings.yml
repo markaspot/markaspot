@@ -18,7 +18,7 @@ categories:
       color: '#FF0000'
       weight: 0
     - name: 'Blocked Roads'
-      icon: 'roadblock'
+      icon: 'road-barrier'
       color: '#FF6600'
       weight: 1
     - name: 'Shelter Needed'
@@ -59,3 +59,20 @@ allowed_urls:
   - '/sos'
   - '/emergency'
   - '/api/system/status'
+
+maintenance:
+  unpublish_non_selected: false
+  show_only_categories: []
+  force_redirect: false
+  banner_text: ''
+
+# CAP (Common Alerting Protocol) Banner System
+banner:
+  enabled: true
+  message: ''
+  level: 'info'  # minor, moderate, severe, extreme (CAP levels), or info, warning, error, critical, success
+  title: ''
+  display_conditions:
+    emergency_mode_only: false  # Show only during emergency mode
+    maintenance_mode: true      # Show during maintenance
+    always_visible: false       # Always show regardless of mode

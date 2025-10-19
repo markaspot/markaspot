@@ -1,0 +1,198 @@
+# German translation for Mark-a-Spot Emergency module
+# Copyright (c) 2024 Mark-a-Spot
+# This file is distributed under the same license as the Mark-a-Spot package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Mark-a-Spot Emergency\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-09-29 12:00+0000\n"
+"PO-Revision-Date: 2024-09-29 12:00+0000\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# Emergency Mode Configuration
+msgid "Emergency Mode Configuration"
+msgstr "Notfallmodus-Konfiguration"
+
+msgid "Current Status"
+msgstr "Aktueller Status"
+
+msgid "Off"
+msgstr "Aus"
+
+msgid "Standby"
+msgstr "Bereitschaft"
+
+msgid "Active"
+msgstr "Aktiv"
+
+msgid "Emergency mode type"
+msgstr "Notfallmodus-Typ"
+
+msgid "Disaster"
+msgstr "Katastrophe"
+
+msgid "Crisis"
+msgstr "Krise"
+
+msgid "Maintenance"
+msgstr "Wartung"
+
+msgid "Force redirect to lite UI"
+msgstr "Umleitung zur Lite-Benutzeroberfläche erzwingen"
+
+msgid "Unpublish regular categories"
+msgstr "Reguläre Kategorien zurückziehen"
+
+msgid "Restore categories on deactivation"
+msgstr "Kategorien bei Deaktivierung wiederherstellen"
+
+# CAP Banner System
+msgid "CAP Alert Banner System"
+msgstr "CAP-Alarmsystem (Gemeinsames Alarmprotokoll)"
+
+msgid "Configure Common Alerting Protocol (CAP) compliant banners for high-priority information."
+msgstr "Konfigurieren Sie Gemeinsames Alarmprotokoll (CAP) konforme Banner für hochpriorisierte Informationen."
+
+msgid "Enable CAP banner system"
+msgstr "CAP-Banner-System aktivieren"
+
+msgid "Allow emergency banners to be displayed on the frontend."
+msgstr "Ermöglichen Sie die Anzeige von Notfall-Bannern im Frontend."
+
+msgid "Banner message"
+msgstr "Banner-Nachricht"
+
+msgid "The text to display in the banner. Leave empty to hide banner."
+msgstr "Der im Banner anzuzeigende Text. Leer lassen, um Banner zu verbergen."
+
+msgid "Alert level"
+msgstr "Warnstufe"
+
+msgid "Info (Blue)"
+msgstr "Information (Blau)"
+
+msgid "Minor - CAP (Blue)"
+msgstr "Geringfügig - CAP (Blau)"
+
+msgid "Moderate - CAP (Amber)"
+msgstr "Mäßig - CAP (Gelb)"
+
+msgid "Severe - CAP (Red)"
+msgstr "Schwerwiegend - CAP (Rot)"
+
+msgid "Extreme - CAP (Dark Red)"
+msgstr "Extrem - CAP (Dunkelrot)"
+
+msgid "Warning (Amber)"
+msgstr "Warnung (Gelb)"
+
+msgid "Error (Red)"
+msgstr "Fehler (Rot)"
+
+msgid "Critical (Dark Red)"
+msgstr "Kritisch (Dunkelrot)"
+
+msgid "Success (Green)"
+msgstr "Erfolg (Grün)"
+
+msgid "Choose alert level. CAP levels follow international Common Alerting Protocol standards."
+msgstr "Wählen Sie die Alarmstufe. CAP-Stufen folgen internationalen Standards des Gemeinsamen Alarmprotokolls."
+
+msgid "Banner title (optional)"
+msgstr "Banner-Titel (optional)"
+
+msgid "Optional title for the banner. If empty, a default title based on alert level will be used."
+msgstr "Optionaler Titel für das Banner. Falls leer, wird ein Standardtitel basierend auf der Warnstufe verwendet."
+
+msgid "Display Conditions"
+msgstr "Anzeigebedingungen"
+
+msgid "Show only during emergency mode"
+msgstr "Nur während Notfallmodus anzeigen"
+
+msgid "Banner will only be visible when emergency mode is active."
+msgstr "Banner wird nur sichtbar sein, wenn der Notfallmodus aktiv ist."
+
+msgid "Show during maintenance mode"
+msgstr "Während Wartungsmodus anzeigen"
+
+msgid "Banner will be visible during maintenance mode."
+msgstr "Banner wird während des Wartungsmodus sichtbar sein."
+
+msgid "Always visible"
+msgstr "Immer sichtbar"
+
+msgid "Banner will always be visible regardless of emergency/maintenance mode."
+msgstr "Banner wird immer sichtbar sein, unabhängig vom Notfall-/Wartungsmodus."
+
+# Actions
+msgid "Activate Emergency Mode"
+msgstr "Notfallmodus aktivieren"
+
+msgid "Deactivate Emergency Mode"
+msgstr "Notfallmodus deaktivieren"
+
+msgid "Emergency mode has been activated."
+msgstr "Notfallmodus wurde aktiviert."
+
+msgid "Emergency mode has been deactivated."
+msgstr "Notfallmodus wurde deaktiviert."
+
+msgid "Error activating emergency mode: @error"
+msgstr "Fehler beim Aktivieren des Notfallmodus: @error"
+
+msgid "Error deactivating emergency mode: @error"
+msgstr "Fehler beim Deaktivieren des Notfallmodus: @error"
+
+# Emergency Categories
+msgid "Injured Persons"
+msgstr "Verletzte Personen"
+
+msgid "Blocked Roads"
+msgstr "Gesperrte Straßen"
+
+msgid "Shelter Needed"
+msgstr "Unterkunft benötigt"
+
+msgid "Water/Food Needed"
+msgstr "Wasser/Nahrung benötigt"
+
+msgid "Missing Persons"
+msgstr "Vermisste Personen"
+
+msgid "Power Outage"
+msgstr "Stromausfall"
+
+msgid "Gas Leak"
+msgstr "Gasleck"
+
+msgid "Building Damage"
+msgstr "Gebäudeschäden"
+
+# SOS Page
+msgid "Emergency Mode Active"
+msgstr "Notfallmodus aktiv"
+
+msgid "The system is currently in emergency mode. Please use the emergency reporting categories."
+msgstr "Das System befindet sich derzeit im Notfallmodus. Bitte verwenden Sie die Notfall-Meldekategorien."
+
+msgid "Go to Emergency Reporting"
+msgstr "Zur Notfallmeldung gehen"
+
+# Maintenance
+msgid "Maintenance banner text"
+msgstr "Wartungs-Banner-Text"
+
+msgid "Optional message shown by the frontend while maintenance mode is active."
+msgstr "Optionale Nachricht, die vom Frontend angezeigt wird, während der Wartungsmodus aktiv ist."
+
+msgid "Force redirect to lite UI in maintenance"
+msgstr "Umleitung zur Lite-Benutzeroberfläche in Wartung erzwingen"
+
+msgid "Usually disabled. Enable only if you want to use the lite UI during maintenance."
+msgstr "Normalerweise deaktiviert. Aktivieren Sie dies nur, wenn Sie die Lite-Benutzeroberfläche während der Wartung verwenden möchten."

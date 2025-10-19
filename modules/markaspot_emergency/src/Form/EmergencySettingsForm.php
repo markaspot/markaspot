@@ -32,6 +32,7 @@ class EmergencySettingsForm extends ConfigFormBase {
     $config = $this->config('markaspot_emergency.settings');
     $restore_queue = \Drupal::state()->get('markaspot_emergency.original_published_tids', []);
     $restore_count = is_array($restore_queue) ? count($restore_queue) : 0;
+    $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
 
     $form['emergency_mode'] = [
       '#type' => 'details',
@@ -132,6 +133,151 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#open' => FALSE,
     ];
 
+    // Routing exceptions (paths that should never be redirected to lite).
+    $form['routing'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Routing Exceptions'),
+      '#open' => FALSE,
+    ];
+
+    $default_allowed = (array) ($config->get('allowed_urls') ?? []);
+    $form['routing']['allowed_urls'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Allowed URLs (one per line)'),
+      '#default_value' => implode("\n", $default_allowed),
+      '#description' => $this->t('Paths that will NOT be redirected during emergency or maintenance force-redirect (e.g., "/", "/sos", "/api/system/status"). One per line; must start with "/".'),
+      '#rows' => 4,
+    ];
+
+    // Maintenance mode configuration.
+    $form['maintenance'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Maintenance Mode'),
+      '#open' => FALSE,
+    ];
+
+    $form['maintenance']['maintenance_unpublish_non_selected'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Unpublish non-selected categories during maintenance'),
+      '#default_value' => (bool) $config->get('maintenance.unpublish_non_selected'),
+      '#description' => $this->t('If enabled, only the selected categories below remain published while maintenance mode is active. Others will be temporarily unpublished and restored on deactivation.'),
+    ];
+
+    $selected_tids = $config->get('maintenance.show_only_categories') ?: [];
+    $selected_terms = !empty($selected_tids) ? $term_storage->loadMultiple($selected_tids) : [];
+
+    $form['maintenance']['maintenance_show_only_categories'] = [
+      '#type' => 'entity_autocomplete',
+      '#title' => $this->t('Categories to keep published'),
+      '#target_type' => 'taxonomy_term',
+      '#selection_settings' => [
+        'target_bundles' => ['service_category' => 'service_category'],
+      ],
+      '#tags' => TRUE,
+      '#default_value' => $selected_terms,
+      '#description' => $this->t('Select service categories to keep published when maintenance mode is active (used if the option above is enabled).'),
+    ];
+
+    $form['maintenance']['maintenance_force_redirect'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Force redirect to lite UI in maintenance'),
+      '#default_value' => (bool) $config->get('maintenance.force_redirect'),
+      '#description' => $this->t('Usually disabled. Enable only if you want to use the lite UI during maintenance.'),
+    ];
+
+    $form['maintenance']['maintenance_banner_text'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Maintenance banner text'),
+      '#default_value' => (string) ($config->get('maintenance.banner_text') ?: ''),
+      '#description' => $this->t('Optional message shown by the frontend while maintenance mode is active.'),
+    ];
+
+    // CAP Banner Configuration
+    $form['banner'] = [
+      '#type' => 'details',
+      '#title' => $this->t('CAP Alert Banner System'),
+      '#description' => $this->t('Configure Common Alerting Protocol (CAP) compliant banners for high-priority information.'),
+      '#open' => FALSE,
+    ];
+
+    $form['banner']['banner_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable CAP banner system'),
+      '#default_value' => (bool) $config->get('banner.enabled'),
+      '#description' => $this->t('Allow emergency banners to be displayed on the frontend.'),
+    ];
+
+    $form['banner']['banner_message'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Banner message'),
+      '#default_value' => (string) ($config->get('banner.message') ?: ''),
+      '#description' => $this->t('The text to display in the banner. Leave empty to hide banner.'),
+      '#states' => [
+        'visible' => [':input[name="banner_enabled"]' => ['checked' => TRUE]],
+      ],
+    ];
+
+    $form['banner']['banner_level'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Alert level'),
+      '#options' => [
+        'info' => $this->t('Info (Blue)'),
+        'minor' => $this->t('Minor - CAP (Blue)'),
+        'moderate' => $this->t('Moderate - CAP (Amber)'),
+        'severe' => $this->t('Severe - CAP (Red)'),
+        'extreme' => $this->t('Extreme - CAP (Dark Red)'),
+        'warning' => $this->t('Warning (Amber)'),
+        'error' => $this->t('Error (Red)'),
+        'critical' => $this->t('Critical (Dark Red)'),
+        'success' => $this->t('Success (Green)'),
+      ],
+      '#default_value' => (string) ($config->get('banner.level') ?: 'info'),
+      '#description' => $this->t('Choose alert level. CAP levels follow international Common Alerting Protocol standards.'),
+      '#states' => [
+        'visible' => [':input[name="banner_enabled"]' => ['checked' => TRUE]],
+      ],
+    ];
+
+    $form['banner']['banner_title'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Banner title (optional)'),
+      '#default_value' => (string) ($config->get('banner.title') ?: ''),
+      '#description' => $this->t('Optional title for the banner. If empty, a default title based on alert level will be used.'),
+      '#states' => [
+        'visible' => [':input[name="banner_enabled"]' => ['checked' => TRUE]],
+      ],
+    ];
+
+    $form['banner']['display_conditions'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Display Conditions'),
+      '#open' => FALSE,
+      '#states' => [
+        'visible' => [':input[name="banner_enabled"]' => ['checked' => TRUE]],
+      ],
+    ];
+
+    $form['banner']['display_conditions']['emergency_mode_only'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Show only during emergency mode'),
+      '#default_value' => (bool) $config->get('banner.display_conditions.emergency_mode_only'),
+      '#description' => $this->t('Banner will only be visible when emergency mode is active.'),
+    ];
+
+    $form['banner']['display_conditions']['maintenance_mode'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Show during maintenance mode'),
+      '#default_value' => (bool) ($config->get('banner.display_conditions.maintenance_mode') ?? TRUE),
+      '#description' => $this->t('Banner will be visible during maintenance mode.'),
+    ];
+
+    $form['banner']['display_conditions']['always_visible'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Always visible'),
+      '#default_value' => (bool) $config->get('banner.display_conditions.always_visible'),
+      '#description' => $this->t('Banner will always be visible regardless of emergency/maintenance mode.'),
+    ];
+
     $form['actions']['activate'] = [
       '#type' => 'submit',
       '#value' => $this->t('Activate Emergency Mode'),
@@ -193,6 +339,32 @@ class EmergencySettingsForm extends ConfigFormBase {
       ->set('categories.restore_on_deactivation', $form_state->getValue('restore_on_deactivation'))
       ->set('auto_deactivate.enabled', $form_state->getValue('enabled'))
       ->set('auto_deactivate.duration', $form_state->getValue('duration'))
+      // Normalize allowed URLs from textarea (one per line, ensure leading slash, unique, non-empty)
+      ->set('allowed_urls', (function($raw) {
+        $lines = preg_split('/\r\n|\r|\n/', (string) $raw);
+        $clean = [];
+        foreach ($lines as $line) {
+          $v = trim($line);
+          if ($v === '') { continue; }
+          if ($v[0] !== '/') { $v = '/' . $v; }
+          $clean[] = $v;
+        }
+        return array_values(array_unique($clean));
+      })($form_state->getValue('allowed_urls')))
+      ->set('maintenance.unpublish_non_selected', (bool) $form_state->getValue('maintenance_unpublish_non_selected'))
+      ->set('maintenance.force_redirect', (bool) $form_state->getValue('maintenance_force_redirect'))
+      ->set('maintenance.banner_text', (string) $form_state->getValue('maintenance_banner_text'))
+      ->set('maintenance.show_only_categories', array_values(array_filter(array_map(function ($item) {
+        return isset($item['target_id']) ? (int) $item['target_id'] : NULL;
+      }, (array) $form_state->getValue('maintenance_show_only_categories')))))
+      // CAP Banner configuration
+      ->set('banner.enabled', (bool) $form_state->getValue('banner_enabled'))
+      ->set('banner.message', (string) $form_state->getValue('banner_message'))
+      ->set('banner.level', (string) $form_state->getValue('banner_level'))
+      ->set('banner.title', (string) $form_state->getValue('banner_title'))
+      ->set('banner.display_conditions.emergency_mode_only', (bool) $form_state->getValue('emergency_mode_only'))
+      ->set('banner.display_conditions.maintenance_mode', (bool) $form_state->getValue('maintenance_mode'))
+      ->set('banner.display_conditions.always_visible', (bool) $form_state->getValue('always_visible'))
       ->save();
 
     parent::submitForm($form, $form_state);

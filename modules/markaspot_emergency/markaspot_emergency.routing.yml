@@ -12,7 +12,9 @@ markaspot_emergency.status:
     _controller: '\Drupal\markaspot_emergency\Controller\EmergencyModeController::getStatus'
   requirements:
     _access: 'TRUE'
+
   methods: [GET]
+
 
 markaspot_emergency.sos:
   path: '/sos'
