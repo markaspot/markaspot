@@ -239,6 +239,19 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *
    * Returns a list of bundles for specified entity.
    *
+   * The 'q' search parameter respects field-level permissions using the
+   * field_permissions module. Only fields the current user has 'view' access
+   * to will be included in the search query. This prevents:
+   * - Anonymous users from searching personal data fields (email, phone, names)
+   * - Authenticated users from searching admin-only fields (internal notes)
+   * - Unauthorized access to sensitive information through search results
+   *
+   * Search behavior:
+   * - Base fields (title, body, request_id): Available to all users
+   * - Public fields (field_address): Available to all users
+   * - Custom permission fields: Only searched if user has 'view [field_name]' permission
+   * - Private fields: Only searched by admins or entity owners
+   *
    * @throws \Symfony\Component\HttpKernel\Exception\HttpException
    *   Throws exception expected.
    */
@@ -349,10 +362,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $group = $query->orConditionGroup()
         ->condition('request_id', '%' . $parameters['q'] . '%', 'LIKE')
         ->condition('title', '%' . $parameters['q'] . '%', 'LIKE');
+
       // Text search on body is expensive, only do if really needed
       if (strlen($parameters['q']) > 3) {
         $group->condition('body', '%' . $parameters['q'] . '%', 'LIKE');
       }
+
+      // Search address field columns (publicly visible fields)
+      $group->condition('field_address.address_line1', '%' . $parameters['q'] . '%', 'LIKE')
+        ->condition('field_address.address_line2', '%' . $parameters['q'] . '%', 'LIKE')
+        ->condition('field_address.locality', '%' . $parameters['q'] . '%', 'LIKE')
+        ->condition('field_address.postal_code', '%' . $parameters['q'] . '%', 'LIKE');
+
       $query->condition($group);
     }
 

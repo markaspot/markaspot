@@ -35,6 +35,7 @@ dependencies:
   - file
   - filter
   - geolocation
+  - group
   - help
   - history
   - image

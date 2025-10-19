@@ -536,6 +536,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     return $query;
   }
+
+
   /**
    * Maps a node object to a service request definition.
    *
