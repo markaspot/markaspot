@@ -15,3 +15,11 @@ settings:
       css/markaspot-settings.css: {}
   dependencies:
     - core/drupal
+
+node_view:
+  version: VERSION
+  css:
+    theme:
+      css/markaspot-node-view.css: {}
+  dependencies:
+    - core/drupal

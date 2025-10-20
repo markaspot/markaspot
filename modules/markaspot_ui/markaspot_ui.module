@@ -105,3 +105,12 @@ function markaspot_ui_menu_local_tasks_alter(&$data, $route_name) {
     }
   }
 }
+
+/**
+ * Implements hook_node_view().
+ */
+function markaspot_ui_node_view(array &$build, $node, $display, $view_mode) {
+  if ($node->bundle() == 'service_request' && $view_mode == 'full') {
+    $build['#attached']['library'][] = 'markaspot_ui/node_view';
+  }
+}
