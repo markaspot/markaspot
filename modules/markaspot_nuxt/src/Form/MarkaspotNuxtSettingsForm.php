@@ -184,40 +184,22 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
 
-    // Extract values from fieldsets
-    $frontend = $values['frontend'] ?? [];
-    $api = $values['api'] ?? [];
-    $map = $values['map'] ?? [];
-    $fallback = $map['fallback'] ?? [];
-    $position = $map['position'] ?? [];
-
-    $config = $this->config('markaspot_nuxt.settings');
-
-    // Frontend settings
-    $config->set('frontend_base_url', $frontend['frontend_base_url'] ?? $values['frontend_base_url'])
-      ->set('frontend_enabled', $frontend['frontend_enabled'] ?? $values['frontend_enabled'])
-
-      // API settings
-      ->set('api_cors_enabled', $api['api_cors_enabled'] ?? $values['api_cors_enabled'])
-
-      // Map settings - Mapbox/MapLibre configuration
-      ->set('mapbox_token', $map['mapbox_token'] ?? '')
-      ->set('mapbox_style', $map['mapbox_style'] ?? '')
-      ->set('mapbox_style_dark', $map['mapbox_style_dark'] ?? '')
-      ->set('osm_custom_attribution', $map['osm_custom_attribution'] ?? '')
-
-      // Fallback style configuration
-      ->set('fallback_style', $fallback['fallback_style'] ?? '')
-      ->set('fallback_style_dark', $fallback['fallback_style_dark'] ?? '')
-      ->set('fallback_api_key', $fallback['fallback_api_key'] ?? '')
-      ->set('fallback_attribution', $fallback['fallback_attribution'] ?? '')
-
-      // Map position settings
-      ->set('zoom_initial', $position['zoom_initial'] ?? 13)
-      ->set('center_lat', $position['center_lat'] ?? 0)
-      ->set('center_lng', $position['center_lng'] ?? 0);
-
-    $config->save();
+    $this->config('markaspot_nuxt.settings')
+      ->set('frontend_base_url', $values['frontend_base_url'])
+      ->set('frontend_enabled', $values['frontend_enabled'])
+      ->set('api_cors_enabled', $values['api_cors_enabled'])
+      ->set('mapbox_token', $values['mapbox_token'])
+      ->set('mapbox_style', $values['mapbox_style'])
+      ->set('mapbox_style_dark', $values['mapbox_style_dark'])
+      ->set('osm_custom_attribution', $values['osm_custom_attribution'])
+      ->set('fallback_style', $values['fallback_style'])
+      ->set('fallback_style_dark', $values['fallback_style_dark'])
+      ->set('fallback_api_key', $values['fallback_api_key'])
+      ->set('fallback_attribution', $values['fallback_attribution'])
+      ->set('zoom_initial', $values['zoom_initial'])
+      ->set('center_lat', $values['center_lat'])
+      ->set('center_lng', $values['center_lng'])
+      ->save();
 
     parent::submitForm($form, $form_state);
   }
