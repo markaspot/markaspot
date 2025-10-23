@@ -35,7 +35,7 @@ dependencies:
   - file
   - filter
   - geolocation
-  - group
+  - geolocation_nominatim
   - help
   - history
   - image
@@ -68,6 +68,5 @@ dependencies:
   - service_request
 
 themes:
-  - mas_olivero
   - gin
 
