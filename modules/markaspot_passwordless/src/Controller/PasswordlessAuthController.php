@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_passwordless\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -30,16 +31,26 @@ class PasswordlessAuthController extends ControllerBase {
   protected $currentUser;
 
   /**
+   * The flood service.
+   *
+   * @var \Drupal\Core\Flood\FloodInterface
+   */
+  protected $flood;
+
+  /**
    * Constructs a PasswordlessAuthController object.
    *
    * @param \Drupal\markaspot_passwordless\Service\OtpService $otp_service
    *   The OTP service.
    * @param \Drupal\Core\Session\AccountInterface $current_user
    *   The current user.
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   The flood service.
    */
-  public function __construct(OtpService $otp_service, AccountInterface $current_user) {
+  public function __construct(OtpService $otp_service, AccountInterface $current_user, FloodInterface $flood) {
     $this->otpService = $otp_service;
     $this->currentUser = $current_user;
+    $this->flood = $flood;
   }
 
   /**
@@ -48,7 +59,8 @@ class PasswordlessAuthController extends ControllerBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('markaspot_passwordless.otp'),
-      $container->get('current_user')
+      $container->get('current_user'),
+      $container->get('flood')
     );
   }
 
@@ -83,11 +95,30 @@ class PasswordlessAuthController extends ControllerBase {
       ], Response::HTTP_BAD_REQUEST);
     }
 
+    // Rate limit by email (3 requests per hour).
+    if (!$this->flood->isAllowed('passwordless.request_code', 3, 3600, $email)) {
+      return new JsonResponse([
+        'error' => 'Too many code requests. Please try again in an hour.',
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+
+    // Rate limit by IP (10 requests per hour).
+    $ip = $request->getClientIp();
+    if (!$this->flood->isAllowed('passwordless.request_code.ip', 10, 3600, $ip)) {
+      return new JsonResponse([
+        'error' => 'Too many requests from your location. Please try again later.',
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+
     try {
       // Request OTP code.
       $result = $this->otpService->requestCode($email);
 
       if ($result['success']) {
+        // Register the successful request for rate limiting.
+        $this->flood->register('passwordless.request_code', 3600, $email);
+        $this->flood->register('passwordless.request_code.ip', 3600, $ip);
+
         return new JsonResponse([
           'success' => TRUE,
           'message' => $result['message'],
@@ -149,17 +180,43 @@ class PasswordlessAuthController extends ControllerBase {
       ], Response::HTTP_BAD_REQUEST);
     }
 
+    // Combine email and IP for verification rate limiting.
+    $ip = $request->getClientIp();
+    $identifier = $email . ':' . $ip;
+
+    // Check for hard lockout (5+ failed attempts in 15 minutes).
+    if (!$this->flood->isAllowed('passwordless.verify.lockout', 5, 900, $identifier)) {
+      return new JsonResponse([
+        'error' => 'Too many failed attempts. Account temporarily locked. Please try again in 15 minutes.',
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+
+    // Check exponential backoff (3+ attempts in 1 minute).
+    if (!$this->flood->isAllowed('passwordless.verify.backoff', 3, 60, $identifier)) {
+      return new JsonResponse([
+        'error' => 'Too many attempts. Please wait a moment before trying again.',
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+
     try {
       // Verify OTP code.
       $result = $this->otpService->verifyCode($email, $code);
 
       if ($result['success']) {
+        // Clear all failed attempt records on successful verification.
+        $this->flood->clear('passwordless.verify.lockout', $identifier);
+        $this->flood->clear('passwordless.verify.backoff', $identifier);
+
         return new JsonResponse([
           'success' => TRUE,
           'message' => $result['message'],
           'user' => $result['user'],
         ]);
       }
+
+      // Register failed verification attempt.
+      $this->flood->register('passwordless.verify.lockout', 900, $identifier);
+      $this->flood->register('passwordless.verify.backoff', 60, $identifier);
 
       return new JsonResponse([
         'error' => $result['error'] ?? 'Invalid or expired code',

@@ -47,6 +47,7 @@ class MarkASpotSettingsController extends ControllerBase {
       'mapbox_style' => $nuxt_config->get('mapbox_style'),
       'mapbox_style_dark' => $nuxt_config->get('mapbox_style_dark'),
       'osm_custom_attribution' => $nuxt_config->get('osm_custom_attribution'),
+      'osm_custom_tile_url' => $nuxt_config->get('osm_custom_tile_url'),
       // Fallback style configuration
       'fallback_style' => $nuxt_config->get('fallback_style'),
       'fallback_style_dark' => $nuxt_config->get('fallback_style_dark'),
