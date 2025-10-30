@@ -8,6 +8,50 @@
 use Drupal\Core\Config\FileStorage;
 
 /**
+ * Implements hook_install().
+ */
+function markaspot_nuxt_install() {
+  $config_factory = \Drupal::configFactory();
+  $nuxt_config = $config_factory->getEditable('markaspot_nuxt.settings');
+
+  // If config doesn't exist, create it with defaults from config/install
+  if ($nuxt_config->isNew()) {
+    $config_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt') . '/config/install';
+    $source = new FileStorage($config_path);
+    $config_data = $source->read('markaspot_nuxt.settings');
+
+    if ($config_data) {
+      foreach ($config_data as $key => $value) {
+        $nuxt_config->set($key, $value);
+      }
+    }
+  }
+
+  // Immediately migrate from markaspot_map if it exists
+  $map_config = $config_factory->get('markaspot_map.settings');
+  if (!$map_config->isNew()) {
+    $fields_to_migrate = [
+      'mapbox_token',
+      'mapbox_style',
+      'mapbox_style_dark',
+      'osm_custom_attribution',
+      'zoom_initial',
+      'center_lat',
+      'center_lng',
+    ];
+
+    foreach ($fields_to_migrate as $field) {
+      $value = $map_config->get($field);
+      if ($value !== NULL && $value !== '') {
+        $nuxt_config->set($field, $value);
+      }
+    }
+  }
+
+  $nuxt_config->save();
+}
+
+/**
  * Migrate map configuration from markaspot_map.settings to markaspot_nuxt.settings.
  */
 function markaspot_nuxt_update_9001() {
@@ -50,4 +94,56 @@ function markaspot_nuxt_update_9001() {
   }
 
   return t('No map configuration values found to migrate.');
+}
+
+/**
+ * Ensure markaspot_nuxt.settings exists and migrate from markaspot_map if needed.
+ */
+function markaspot_nuxt_update_9002() {
+  $config_factory = \Drupal::configFactory();
+  $nuxt_config = $config_factory->getEditable('markaspot_nuxt.settings');
+
+  // If config doesn't exist, create it with defaults from config/install
+  if ($nuxt_config->isNew()) {
+    $config_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt') . '/config/install';
+    $source = new FileStorage($config_path);
+    $config_data = $source->read('markaspot_nuxt.settings');
+
+    if ($config_data) {
+      foreach ($config_data as $key => $value) {
+        $nuxt_config->set($key, $value);
+      }
+    }
+
+    // Migrate from markaspot_map if it exists
+    $map_config = $config_factory->get('markaspot_map.settings');
+    if (!$map_config->isNew()) {
+      $fields_to_migrate = [
+        'mapbox_token',
+        'mapbox_style',
+        'mapbox_style_dark',
+        'osm_custom_attribution',
+        'zoom_initial',
+        'center_lat',
+        'center_lng',
+      ];
+
+      $migrated_count = 0;
+      foreach ($fields_to_migrate as $field) {
+        $value = $map_config->get($field);
+        if ($value !== NULL && $value !== '') {
+          $nuxt_config->set($field, $value);
+          $migrated_count++;
+        }
+      }
+
+      $nuxt_config->save();
+      return t('Created markaspot_nuxt.settings and migrated @count settings from markaspot_map.settings.', ['@count' => $migrated_count]);
+    }
+
+    $nuxt_config->save();
+    return t('Created markaspot_nuxt.settings with default values.');
+  }
+
+  return t('markaspot_nuxt.settings already exists.');
 }
