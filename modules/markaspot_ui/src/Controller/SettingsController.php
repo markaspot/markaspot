@@ -199,6 +199,10 @@ class SettingsController extends ControllerBase {
     foreach ($route_patterns as $pattern) {
       try {
         $this->routeProvider->getRouteByName($pattern);
+        // Skip the overview page route itself to avoid circular reference.
+        if ($pattern === 'markaspot_ui.settings') {
+          continue;
+        }
         $route_name = $pattern;
         break;
       }
