@@ -111,6 +111,15 @@ class MarkASpotSettingsController extends ControllerBase {
           'validation' => $this->getFieldValidation($field_config),
         ];
 
+        // For list fields, include allowed_values from field storage
+        if ($field_storage && in_array($field_config->getType(), ['list_integer', 'list_float', 'list_string'])) {
+          $storage_settings = $field_storage->getSettings();
+          if (!empty($storage_settings['allowed_values'])) {
+            // Allowed values are already in [value => label] format
+            $field_data['settings']['allowed_values'] = $storage_settings['allowed_values'];
+          }
+        }
+
         // If the field is a reference to media, include media-specific data.
         if ($field_config->getType() === 'entity_reference' && $field_config->getSetting('target_type') === 'media') {
           $field_data['reference_type'] = 'media';
@@ -193,5 +202,49 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     return $media_details;
+  }
+
+  /**
+   * Returns field options (allowed_values) for a specific field.
+   *
+   * This is useful for conditional fields that aren't in the form display
+   * but need their options loaded dynamically.
+   *
+   * @param string $entity_type
+   *   The entity type (e.g., node, user).
+   * @param string $field_name
+   *   The field name (e.g., field_party, field_oktoberfest).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   The field options in JSON format.
+   */
+  public function getFieldOptions($entity_type, $field_name) {
+    // Load the field storage to get allowed_values.
+    $field_storage = FieldStorageConfig::loadByName($entity_type, $field_name);
+
+    if (!$field_storage) {
+      return new JsonResponse(['error' => 'Field not found'], 404);
+    }
+
+    $field_type = $field_storage->getType();
+    $settings = $field_storage->getSettings();
+    $options = [];
+
+    // Handle list fields (list_integer, list_float, list_string).
+    if (in_array($field_type, ['list_integer', 'list_float', 'list_string'])) {
+      if (!empty($settings['allowed_values'])) {
+        foreach ($settings['allowed_values'] as $item) {
+          if (isset($item['value']) && isset($item['label'])) {
+            $options[$item['value']] = $item['label'];
+          }
+        }
+      }
+    }
+
+    return new JsonResponse([
+      'field_name' => $field_name,
+      'field_type' => $field_type,
+      'options' => $options,
+    ]);
   }
 }

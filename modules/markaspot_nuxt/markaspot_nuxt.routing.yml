@@ -26,3 +26,10 @@ markaspot_nuxt.vote_sum:
     _format: 'json'
   requirements:
     _permission: 'access content'
+markaspot_nuxt.field_options:
+  path: '/api/field-options/{entity_type}/{field_name}'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getFieldOptions'
+    _title: 'Field Options'
+  requirements:
+    _permission: 'access content'
