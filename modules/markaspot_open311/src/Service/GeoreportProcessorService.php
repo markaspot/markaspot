@@ -646,42 +646,43 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
         $request['email'] = $node->get('field_e_mail')->value ?? '';
         $request['extended_attributes']['e-mail'] = $node->get('field_e_mail')->value ?? '';
       }
-      
+
       if ($node->hasField('field_phone') && !$node->get('field_phone')->isEmpty()) {
         $request['phone'] = $node->get('field_phone')->value ?? '';
       }
-      
+
       if ($node->hasField('field_first_name') && !$node->get('field_first_name')->isEmpty()) {
         $request['first_name'] = $node->get('field_first_name')->value ?? '';
       }
-      
+
       if ($node->hasField('field_last_name') && !$node->get('field_last_name')->isEmpty()) {
         $request['last_name'] = $node->get('field_last_name')->value ?? '';
       }
-      
+
       if ($node->hasField('uid') && !$node->get('uid')->isEmpty() && $node->get('uid')->entity) {
         $request['extended_attributes']['author'] = $node->get('uid')->entity->label();
-      }
-      
-      // Add full field data if requested
-      if (isset($parameters['full'])) {
-        $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
       }
     }
 
     // Add extended attributes if extensions parameter is set
     if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
       $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $parameters['langcode'] ?? 'en');
-    }
 
-    // Add specifically requested fields if user has permission
-    if (isset($parameters['fields']) && $extendedRole !== 'anonymous') {
-      $allowedFields = $this->getAllowedFields($extendedRole);
-      $requestedFields = explode(',', $parameters['fields']);
-      $accessibleFields = array_intersect($requestedFields, $allowedFields);
+      // Add drupal extended attributes when extensions=true
+      // Priority: 1) full parameter, 2) specific fields, 3) all field values for manager role
+      if (isset($parameters['full'])) {
+        $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
+      } elseif (isset($parameters['fields'])) {
+        $allowedFields = $this->getAllowedFields($extendedRole);
+        $requestedFields = explode(',', $parameters['fields']);
+        $accessibleFields = array_intersect($requestedFields, $allowedFields);
 
-      if (!empty($accessibleFields)) {
-        $request['extended_attributes']['drupal'] = $this->getFieldValues($node, implode(',', $accessibleFields));
+        if (!empty($accessibleFields)) {
+          $request['extended_attributes']['drupal'] = $this->getFieldValues($node, implode(',', $accessibleFields));
+        }
+      } elseif ($extendedRole === 'manager') {
+        // For manager role with extensions=true, always include drupal extended attributes
+        $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
       }
     }
     
