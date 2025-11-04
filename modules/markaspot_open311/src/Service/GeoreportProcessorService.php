@@ -261,6 +261,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
         $requestData['extended_attributes']['drupal']['revision_log_message'] ??
         null;
       $values += $this->handleExtendedAttributes($requestData['extended_attributes']['drupal'] ?? []);
+
+      // Handle media published status updates
+      if (isset($requestData['extended_attributes']['media'])) {
+        $values['_media_updates'] = $requestData['extended_attributes']['media'];
+      }
     }
 
     return array_filter($values, function ($value) {
@@ -668,6 +673,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
       $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $parameters['langcode'] ?? 'en');
 
+      // Add media details with published status
+      $mediaDetails = $this->getMediaDetails($node);
+      if (!empty($mediaDetails)) {
+        $request['extended_attributes']['media'] = $mediaDetails;
+      }
+
       // Add drupal extended attributes when extensions=true
       // Priority: 1) full parameter, 2) specific fields, 3) all field values for manager role
       if (isset($parameters['full'])) {
@@ -896,6 +907,55 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     }
 
     return implode(',', $mediaUrls);
+  }
+
+  /**
+   * Retrieves detailed media information including published status.
+   *
+   * @param object $node
+   *   The node object.
+   *
+   * @return array
+   *   An array of media details with mid, url, and published status.
+   */
+  private function getMediaDetails(object $node): array
+  {
+    $mediaDetails = [];
+
+    // Include legacy field_request_image if present
+    if ($node->hasField('field_request_image') && !$node->get('field_request_image')->isEmpty()) {
+      $file = $node->get('field_request_image')->entity;
+      if ($file) {
+        $mediaDetails[] = [
+          'mid' => 'legacy',
+          'url' => $this->fileUrlGenerator->generateAbsoluteString($file->getFileUri()),
+          'published' => true,
+        ];
+      }
+    }
+
+    // Process field_request_media
+    if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
+      foreach ($node->get('field_request_media')->referencedEntities() as $media) {
+        // Check if current user has permission to view this media entity
+        if (!$media || !$media->access('view')) {
+          continue;
+        }
+
+        if ($media->hasField('field_media_image') && !$media->get('field_media_image')->isEmpty()) {
+          $file = $media->get('field_media_image')->entity;
+          if ($file) {
+            $mediaDetails[] = [
+              'mid' => (int) $media->id(),
+              'url' => $this->fileUrlGenerator->generateAbsoluteString($file->getFileUri()),
+              'published' => (bool) $media->isPublished(),
+            ];
+          }
+        }
+      }
+    }
+
+    return $mediaDetails;
   }
 
   /**
@@ -1344,6 +1404,61 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     }
 
     return $fieldValues;
+  }
+
+  /**
+   * Updates the published status of media entities.
+   *
+   * @param array $mediaUpdates
+   *   Array of media items with mid and published status.
+   *
+   * @return void
+   *
+   * @throws \Drupal\Core\Entity\EntityStorageException
+   *   If there is an error saving the media entity.
+   */
+  public function updateMediaPublishedStatus(array $mediaUpdates): void {
+    foreach ($mediaUpdates as $mediaUpdate) {
+      // Validate array structure
+      if (!is_array($mediaUpdate)) {
+        continue;
+      }
+
+      // Skip if mid is not numeric (e.g., 'legacy')
+      if (!isset($mediaUpdate['mid']) || !is_numeric($mediaUpdate['mid'])) {
+        continue;
+      }
+
+      // Skip if published status is not provided
+      if (!isset($mediaUpdate['published'])) {
+        continue;
+      }
+
+      $mid = (int) $mediaUpdate['mid'];
+      $published = (bool) $mediaUpdate['published'];
+
+      // Load and update the media entity
+      $media = $this->entityTypeManager->getStorage('media')->load($mid);
+      if (!$media) {
+        continue;
+      }
+
+      // Check if current user has permission to update this media entity
+      if (!$media->access('update')) {
+        continue;
+      }
+
+      $currentStatus = $media->isPublished();
+      // Only update if status is changing
+      if ($currentStatus !== $published) {
+        if ($published) {
+          $media->setPublished();
+        } else {
+          $media->setUnpublished();
+        }
+        $media->save();
+      }
+    }
   }
 
 

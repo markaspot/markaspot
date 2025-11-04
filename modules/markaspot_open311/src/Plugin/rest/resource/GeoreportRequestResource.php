@@ -275,7 +275,6 @@ class GeoreportRequestResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function post($id, $request_data) {
-
     try {
       if (!$this->currentUser->hasPermission('access open311 advanced properties')) {
         throw new AccessDeniedHttpException();
@@ -347,6 +346,13 @@ class GeoreportRequestResource extends ResourceBase {
    *   An associative array of field values to update.
    */
   protected function processUpdateFields(ContentEntityInterface $node, array $values): void {
+    // Handle media updates first
+    if (isset($values['_media_updates'])) {
+      $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates']);
+      // Don't process this as a field
+      unset($values['_media_updates']);
+    }
+
     foreach ($values as $field_name => $value) {
       // Skip special handling fields; they are processed separately.
       if (in_array($field_name, ['field_status_notes', 'revision_log_message', 'type'])) {

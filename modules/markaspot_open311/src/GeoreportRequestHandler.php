@@ -78,19 +78,32 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
     // Process request content for POST/PUT methods
     $received = $request->getContent();
     $request_all = [];
-    
+
     if (!empty($received)) {
       $format = $request->getContentTypeFormat();
       $method_settings = $_rest_resource_config->get('configuration')[$request->getMethod()] ?? [];
-
-      $request_all = $request->request->all();
 
       // Validate supported formats
       if (!empty($method_settings['supported_formats']) && !in_array($format, $method_settings['supported_formats'])) {
         throw new UnsupportedMediaTypeHttpException();
       }
+
+      // Deserialize JSON content if present
+      if ($format === 'json' && !empty($received)) {
+        try {
+          $request_all = $this->serializer->decode($received, $format);
+        }
+        catch (UnexpectedValueException $e) {
+          // Fall back to form parameters
+          $request_all = $request->request->all();
+        }
+      }
+      else {
+        // For non-JSON formats (form, xml), use request parameters
+        $request_all = $request->request->all();
+      }
     }
-    
+
     // Get query parameters and merge with request body for complete data
     $query_params = $request->query->all();
     $request_data = $request_all ?: $query_params;
