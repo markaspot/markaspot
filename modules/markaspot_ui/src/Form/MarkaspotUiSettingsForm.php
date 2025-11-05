@@ -39,6 +39,31 @@ class MarkaspotUiSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('headless_mode_protection') ?? FALSE,
     ];
 
+    $form['login_redirect'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Login redirect settings'),
+      '#open' => TRUE,
+    ];
+
+    $form['login_redirect']['login_redirect_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable automatic redirect after login'),
+      '#description' => $this->t('When enabled, users will be automatically redirected to a specific path after successful login. Does not affect password reset flow.'),
+      '#default_value' => $config->get('login_redirect_enabled') ?? FALSE,
+    ];
+
+    $form['login_redirect']['login_redirect_path'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Redirect path'),
+      '#description' => $this->t('The path to redirect to after login (e.g., /admin/content/management). Leave empty to use the default.'),
+      '#default_value' => $config->get('login_redirect_path') ?? '/admin/content/management',
+      '#states' => [
+        'visible' => [
+          ':input[name="login_redirect_enabled"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     $form['info'] = [
       '#type' => 'details',
       '#title' => $this->t('About headless mode protection'),
@@ -76,9 +101,39 @@ class MarkaspotUiSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
+  public function validateForm(array &$form, FormStateInterface $form_state): void {
+    parent::validateForm($form, $form_state);
+
+    // Validate redirect path if enabled.
+    if ($form_state->getValue('login_redirect_enabled')) {
+      $path = $form_state->getValue('login_redirect_path');
+
+      if (empty($path)) {
+        $form_state->setErrorByName('login_redirect_path', $this->t('Redirect path is required when login redirect is enabled.'));
+        return;
+      }
+
+      // Validate it's an internal path.
+      try {
+        $url = \Drupal\Core\Url::fromUserInput($path);
+        if ($url->isExternal()) {
+          $form_state->setErrorByName('login_redirect_path', $this->t('Redirect path must be an internal path starting with /.'));
+        }
+      }
+      catch (\Exception $e) {
+        $form_state->setErrorByName('login_redirect_path', $this->t('Invalid redirect path: @error', ['@error' => $e->getMessage()]));
+      }
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $this->config('markaspot_ui.settings')
       ->set('headless_mode_protection', $form_state->getValue('headless_mode_protection'))
+      ->set('login_redirect_enabled', $form_state->getValue('login_redirect_enabled'))
+      ->set('login_redirect_path', $form_state->getValue('login_redirect_path'))
       ->save();
 
     parent::submitForm($form, $form_state);

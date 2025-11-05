@@ -112,6 +112,15 @@ class ToolbarBuilder implements TrustedCallbackInterface {
       ],
     ];
 
+    // Add UI Settings link.
+    $links['markaspot_ui_settings'] = [
+      'title' => $this->t('Mark-a-Spot UI'),
+      'url' => Url::fromRoute('markaspot_ui.settings_form'),
+      'attributes' => [
+        'class' => ['markaspot-toolbar-item', 'markaspot-ui-settings'],
+      ],
+    ];
+
     // Get all installed modules.
     $modules = $this->moduleHandler->getModuleList();
     

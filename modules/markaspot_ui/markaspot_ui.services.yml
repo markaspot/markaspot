@@ -18,3 +18,9 @@ services:
     arguments: ['@current_user', '@logger.channel.markaspot_ui', '@config.factory']
     tags:
       - { name: event_subscriber }
+
+  markaspot_ui.login_redirect_subscriber:
+    class: Drupal\markaspot_ui\EventSubscriber\LoginRedirectSubscriber
+    arguments: ['@config.factory', '@current_user', '@request_stack']
+    tags:
+      - { name: event_subscriber }

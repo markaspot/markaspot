@@ -7,3 +7,9 @@ markaspot_ui.settings:
     headless_mode_protection:
       type: boolean
       label: 'Enable headless mode protection'
+    login_redirect_enabled:
+      type: boolean
+      label: 'Enable login redirect'
+    login_redirect_path:
+      type: string
+      label: 'Login redirect path'
