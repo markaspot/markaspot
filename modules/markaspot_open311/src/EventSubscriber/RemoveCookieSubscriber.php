@@ -37,14 +37,24 @@ class RemoveCookieSubscriber implements EventSubscriberInterface {
    */
   public function onRespond(ResponseEvent $event) {
     $request = $event->getRequest();
-    $queryContainsApiKey = strpos($request->getQueryString() ?: '', 'api_key') !== false;
+    $queryContainsApiKey = strpos($request->getQueryString() ?: '', 'api_key') !== FALSE;
     $headerContainsApiKey = $request->headers->has('apikey');
     $formContainsApiKey = $request->request->has('api_key');
+
+    // Only clear cookies for anonymous API key requests
+    // Preserve session cookies for authenticated users (e.g., passwordless auth)
     if ($queryContainsApiKey || $headerContainsApiKey || $formContainsApiKey) {
-      $session = \session_name();
-      $event->getResponse()->headers->clearCookie($session);
-      $event->getRequest()->getSession()->clear();
-      // Optionally add a log message or some other form of notification.
+      // Check session UID directly instead of currentUser() to avoid timing issues
+      // currentUser()->isAnonymous() may not be reliable at this point in the request cycle
+      $session = $request->getSession();
+      $uid = $session->get('uid');
+
+      // Only clear session for anonymous users (uid is 0 or not set)
+      if (empty($uid) || $uid == 0) {
+        $session_name = \session_name();
+        $event->getResponse()->headers->clearCookie($session_name);
+        $session->clear();
+      }
     }
   }
 
