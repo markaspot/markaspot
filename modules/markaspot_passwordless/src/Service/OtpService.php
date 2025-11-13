@@ -232,6 +232,7 @@ class OtpService {
           'name' => $user->getAccountName(),
           'email' => $user->getEmail(),
           'roles' => $user->getRoles(),
+          'groups' => $this->getUserGroups($user),
         ],
       ];
     }
@@ -338,6 +339,58 @@ class OtpService {
     $this->database->delete('markaspot_passwordless_codes')
       ->condition('expires', time() - 3600, '<')
       ->execute();
+  }
+
+  /**
+   * Get user's group memberships.
+   *
+   * @param \Drupal\user\Entity\User $user
+   *   The user entity.
+   *
+   * @return array
+   *   Array of group information with id, label, and roles.
+   */
+  protected function getUserGroups(User $user): array {
+    $groups = [];
+
+    // Check if Group module is available.
+    if (!\Drupal::moduleHandler()->moduleExists('group')) {
+      return $groups;
+    }
+
+    try {
+      // Load group membership service.
+      $membership_loader = \Drupal::service('group.membership_loader');
+      $memberships = $membership_loader->loadByUser($user);
+
+      foreach ($memberships as $membership) {
+        $group = $membership->getGroup();
+        $group_roles = [];
+
+        // Get group roles for this membership.
+        foreach ($membership->getRoles() as $role) {
+          $group_roles[] = [
+            'id' => $role->id(),
+            'label' => $role->label(),
+          ];
+        }
+
+        $groups[] = [
+          'id' => $group->id(),
+          'uuid' => $group->uuid(),
+          'label' => $group->label(),
+          'type' => $group->bundle(),
+          'roles' => $group_roles,
+        ];
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Failed to load user groups: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+
+    return $groups;
   }
 
 }
