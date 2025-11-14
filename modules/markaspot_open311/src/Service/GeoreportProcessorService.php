@@ -680,7 +680,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       }
 
       // Add drupal extended attributes when extensions=true
-      // Priority: 1) full parameter, 2) specific fields, 3) all field values for manager role
+      // Priority: 1) full parameter, 2) specific fields from allowed list
       if (isset($parameters['full'])) {
         $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
       } elseif (isset($parameters['fields'])) {
@@ -691,9 +691,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
         if (!empty($accessibleFields)) {
           $request['extended_attributes']['drupal'] = $this->getFieldValues($node, implode(',', $accessibleFields));
         }
-      } elseif ($extendedRole === 'manager') {
-        // For manager role with extensions=true, always include drupal extended attributes
-        $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
       }
     }
     
