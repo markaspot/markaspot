@@ -2,7 +2,10 @@
 
 namespace Drupal\markaspot_passwordless\Service;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\user\Entity\User;
@@ -17,16 +20,6 @@ class OtpService {
    * OTP code length (6 digits).
    */
   const CODE_LENGTH = 6;
-
-  /**
-   * OTP lifetime in seconds (10 minutes).
-   */
-  const CODE_LIFETIME = 600;
-
-  /**
-   * Maximum verification attempts.
-   */
-  const MAX_ATTEMPTS = 3;
 
   /**
    * The database connection.
@@ -57,6 +50,27 @@ class OtpService {
   protected $logger;
 
   /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactory;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected $entityTypeManager;
+
+  /**
+   * The language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected $languageManager;
+
+  /**
    * Constructs an OtpService object.
    *
    * @param \Drupal\Core\Database\Connection $database
@@ -67,17 +81,29 @@ class OtpService {
    *   The current user service.
    * @param \Psr\Log\LoggerInterface $logger
    *   The logger service.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   *   The language manager.
    */
   public function __construct(
     Connection $database,
     MailManagerInterface $mail_manager,
     AccountProxyInterface $current_user,
-    LoggerInterface $logger
+    LoggerInterface $logger,
+    ConfigFactoryInterface $config_factory,
+    EntityTypeManagerInterface $entity_type_manager,
+    LanguageManagerInterface $language_manager
   ) {
     $this->database = $database;
     $this->mailManager = $mail_manager;
     $this->currentUser = $current_user;
     $this->logger = $logger;
+    $this->configFactory = $config_factory;
+    $this->entityTypeManager = $entity_type_manager;
+    $this->languageManager = $language_manager;
   }
 
   /**
@@ -110,6 +136,10 @@ class OtpService {
     // Clean up expired codes first.
     $this->cleanupExpiredCodes();
 
+    // Get configuration values.
+    $config = $this->configFactory->get('markaspot_passwordless.settings');
+    $code_lifetime = $config->get('code_lifetime') ?? 600;
+
     // Invalidate any existing codes for this email.
     $this->database->update('markaspot_passwordless_codes')
       ->fields(['verified' => 2]) // Mark as invalidated
@@ -120,7 +150,7 @@ class OtpService {
     // Generate new code.
     $code = $this->generateCode();
     $now = time();
-    $expires = $now + self::CODE_LIFETIME;
+    $expires = $now + $code_lifetime;
 
     // Store code in database.
     try {
@@ -146,13 +176,13 @@ class OtpService {
     }
 
     // Send email.
-    $sent = $this->sendCode($email, $code);
+    $sent = $this->sendCode($email, $code, $code_lifetime);
 
     if ($sent) {
       return [
         'success' => TRUE,
         'message' => 'Verification code sent to your email',
-        'expiresIn' => self::CODE_LIFETIME,
+        'expiresIn' => $code_lifetime,
       ];
     }
 
@@ -174,6 +204,10 @@ class OtpService {
    *   Result array with status, message, and optional user data.
    */
   public function verifyCode(string $email, string $code): array {
+    // Get configuration values.
+    $config = $this->configFactory->get('markaspot_passwordless.settings');
+    $max_attempts = $config->get('max_attempts') ?? 3;
+
     // Look up the code.
     $record = $this->database->select('markaspot_passwordless_codes', 'c')
       ->fields('c')
@@ -201,7 +235,7 @@ class OtpService {
     }
 
     // Check attempts.
-    if ($record['attempts'] >= self::MAX_ATTEMPTS) {
+    if ($record['attempts'] >= $max_attempts) {
       return [
         'success' => FALSE,
         'error' => 'Too many attempts. Please request a new code.',
@@ -254,7 +288,7 @@ class OtpService {
    */
   protected function authenticateUser(string $email): ?User {
     // Look up user by email.
-    $users = \Drupal::entityTypeManager()
+    $users = $this->entityTypeManager
       ->getStorage('user')
       ->loadByProperties(['mail' => $email]);
 
@@ -263,6 +297,17 @@ class OtpService {
       $user = reset($users);
     }
     else {
+      // Check if auto-registration is enabled.
+      $config = $this->configFactory->get('markaspot_passwordless.settings');
+      $auto_register = $config->get('auto_register') ?? FALSE;
+
+      if (!$auto_register) {
+        $this->logger->notice('Login attempt for non-existent user @email. Auto-registration is disabled.', [
+          '@email' => $email,
+        ]);
+        return NULL;
+      }
+
       // Auto-create user if they don't exist.
       try {
         $user = User::create([
@@ -298,15 +343,17 @@ class OtpService {
    *   The email address.
    * @param string $code
    *   The 6-digit OTP code.
+   * @param int $code_lifetime
+   *   The code lifetime in seconds.
    *
    * @return bool
    *   TRUE if email was sent successfully.
    */
-  protected function sendCode(string $email, string $code): bool {
+  protected function sendCode(string $email, string $code, int $code_lifetime): bool {
     $params = [
       'code' => $code,
       'email' => $email,
-      'expires_in' => self::CODE_LIFETIME / 60, // Convert to minutes
+      'expires_in' => $code_lifetime / 60, // Convert to minutes
     ];
 
     try {
@@ -314,7 +361,7 @@ class OtpService {
         'markaspot_passwordless',
         'verification_code',
         $email,
-        \Drupal::languageManager()->getDefaultLanguage()->getId(),
+        $this->languageManager->getDefaultLanguage()->getId(),
         $params,
         NULL,
         TRUE

@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_passwordless\Controller;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -38,6 +39,13 @@ class PasswordlessAuthController extends ControllerBase {
   protected $flood;
 
   /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactory;
+
+  /**
    * Constructs a PasswordlessAuthController object.
    *
    * @param \Drupal\markaspot_passwordless\Service\OtpService $otp_service
@@ -46,11 +54,14 @@ class PasswordlessAuthController extends ControllerBase {
    *   The current user.
    * @param \Drupal\Core\Flood\FloodInterface $flood
    *   The flood service.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
    */
-  public function __construct(OtpService $otp_service, AccountInterface $current_user, FloodInterface $flood) {
+  public function __construct(OtpService $otp_service, AccountInterface $current_user, FloodInterface $flood, ConfigFactoryInterface $config_factory) {
     $this->otpService = $otp_service;
     $this->currentUser = $current_user;
     $this->flood = $flood;
+    $this->configFactory = $config_factory;
   }
 
   /**
@@ -60,7 +71,8 @@ class PasswordlessAuthController extends ControllerBase {
     return new static(
       $container->get('markaspot_passwordless.otp'),
       $container->get('current_user'),
-      $container->get('flood')
+      $container->get('flood'),
+      $container->get('config.factory')
     );
   }
 
@@ -95,16 +107,21 @@ class PasswordlessAuthController extends ControllerBase {
       ], Response::HTTP_BAD_REQUEST);
     }
 
-    // Rate limit by email (3 requests per hour).
-    if (!$this->flood->isAllowed('passwordless.request_code', 3, 3600, $email)) {
+    // Get configuration values.
+    $config = $this->configFactory->get('markaspot_passwordless.settings');
+    $request_limit_per_email = $config->get('request_limit_per_email') ?? 3;
+    $request_limit_per_ip = $config->get('request_limit_per_ip') ?? 10;
+
+    // Rate limit by email.
+    if (!$this->flood->isAllowed('passwordless.request_code', $request_limit_per_email, 3600, $email)) {
       return new JsonResponse([
         'error' => 'Too many code requests. Please try again in an hour.',
       ], Response::HTTP_TOO_MANY_REQUESTS);
     }
 
-    // Rate limit by IP (10 requests per hour).
+    // Rate limit by IP.
     $ip = $request->getClientIp();
-    if (!$this->flood->isAllowed('passwordless.request_code.ip', 10, 3600, $ip)) {
+    if (!$this->flood->isAllowed('passwordless.request_code.ip', $request_limit_per_ip, 3600, $ip)) {
       return new JsonResponse([
         'error' => 'Too many requests from your location. Please try again later.',
       ], Response::HTTP_TOO_MANY_REQUESTS);
@@ -184,10 +201,16 @@ class PasswordlessAuthController extends ControllerBase {
     $ip = $request->getClientIp();
     $identifier = $email . ':' . $ip;
 
-    // Check for hard lockout (5+ failed attempts in 15 minutes).
-    if (!$this->flood->isAllowed('passwordless.verify.lockout', 5, 900, $identifier)) {
+    // Get configuration values.
+    $config = $this->configFactory->get('markaspot_passwordless.settings');
+    $verify_lockout_attempts = $config->get('verify_lockout_attempts') ?? 5;
+    $verify_lockout_duration = $config->get('verify_lockout_duration') ?? 900;
+
+    // Check for hard lockout.
+    if (!$this->flood->isAllowed('passwordless.verify.lockout', $verify_lockout_attempts, $verify_lockout_duration, $identifier)) {
+      $minutes = ceil($verify_lockout_duration / 60);
       return new JsonResponse([
-        'error' => 'Too many failed attempts. Account temporarily locked. Please try again in 15 minutes.',
+        'error' => "Too many failed attempts. Account temporarily locked. Please try again in {$minutes} minutes.",
       ], Response::HTTP_TOO_MANY_REQUESTS);
     }
 
@@ -215,7 +238,7 @@ class PasswordlessAuthController extends ControllerBase {
       }
 
       // Register failed verification attempt.
-      $this->flood->register('passwordless.verify.lockout', 900, $identifier);
+      $this->flood->register('passwordless.verify.lockout', $verify_lockout_duration, $identifier);
       $this->flood->register('passwordless.verify.backoff', 60, $identifier);
 
       return new JsonResponse([
