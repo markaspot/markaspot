@@ -279,6 +279,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
             } elseif (isset($mediaData['mid'])) {
               $mediaUpdate['mid'] = $mediaData['mid'];
             }
+            // If no mid provided, store delta for later lookup
+            // The delta from the foreach loop will be used in updateMediaPublishedStatus
 
             // Handle published status (convert TRUE/FALSE strings to boolean)
             if (isset($mediaData['published'])) {
@@ -287,10 +289,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
               $mediaUpdate['published'] = filter_var($mediaData['status'], FILTER_VALIDATE_BOOLEAN);
             }
 
-            // Only add if we have a valid media ID
-            if (isset($mediaUpdate['mid'])) {
-              $mediaUpdates[] = $mediaUpdate;
-            }
+            // Add media update - delta will be used for lookup if no mid
+            $mediaUpdates[$delta] = $mediaUpdate;
           }
         }
 
