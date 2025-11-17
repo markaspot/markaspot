@@ -260,9 +260,50 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
       $values['revision_log_message'] = $requestData['extended_attributes']['revision_log_message'] ??
         $requestData['extended_attributes']['drupal']['revision_log_message'] ??
         null;
-      $values += $this->handleExtendedAttributes($requestData['extended_attributes']['drupal'] ?? []);
 
-      // Handle media published status updates
+      // Extract extended attributes, handling field_request_media specially
+      $extendedDrupal = $requestData['extended_attributes']['drupal'] ?? [];
+
+      // Check if field_request_media contains status/published updates
+      if (isset($extendedDrupal['field_request_media']) && is_array($extendedDrupal['field_request_media'])) {
+        $mediaUpdates = [];
+        foreach ($extendedDrupal['field_request_media'] as $delta => $mediaData) {
+          // Check if this is a status update (has 'status' or 'published' key)
+          if (is_array($mediaData) && (isset($mediaData['status']) || isset($mediaData['published']))) {
+            // Convert to media update format
+            $mediaUpdate = [];
+
+            // Get media ID if provided
+            if (isset($mediaData['target_id'])) {
+              $mediaUpdate['mid'] = $mediaData['target_id'];
+            } elseif (isset($mediaData['mid'])) {
+              $mediaUpdate['mid'] = $mediaData['mid'];
+            }
+
+            // Handle published status (convert TRUE/FALSE strings to boolean)
+            if (isset($mediaData['published'])) {
+              $mediaUpdate['published'] = filter_var($mediaData['published'], FILTER_VALIDATE_BOOLEAN);
+            } elseif (isset($mediaData['status'])) {
+              $mediaUpdate['published'] = filter_var($mediaData['status'], FILTER_VALIDATE_BOOLEAN);
+            }
+
+            // Only add if we have a valid media ID
+            if (isset($mediaUpdate['mid'])) {
+              $mediaUpdates[] = $mediaUpdate;
+            }
+          }
+        }
+
+        // If we found media updates, set them and remove from regular field processing
+        if (!empty($mediaUpdates)) {
+          $values['_media_updates'] = $mediaUpdates;
+          unset($extendedDrupal['field_request_media']);
+        }
+      }
+
+      $values += $this->handleExtendedAttributes($extendedDrupal);
+
+      // Handle media published status updates (original path)
       if (isset($requestData['extended_attributes']['media'])) {
         $values['_media_updates'] = $requestData['extended_attributes']['media'];
       }
@@ -1408,21 +1449,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    *
    * @param array $mediaUpdates
    *   Array of media items with mid and published status.
+   *   Can also use 'delta' instead of 'mid' to reference media by position.
+   * @param \Drupal\Core\Entity\ContentEntityInterface|null $node
+   *   Optional node entity to look up media by delta position.
    *
    * @return void
    *
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If there is an error saving the media entity.
    */
-  public function updateMediaPublishedStatus(array $mediaUpdates): void {
-    foreach ($mediaUpdates as $mediaUpdate) {
+  public function updateMediaPublishedStatus(array $mediaUpdates, $node = NULL): void {
+    foreach ($mediaUpdates as $delta => $mediaUpdate) {
       // Validate array structure
       if (!is_array($mediaUpdate)) {
-        continue;
-      }
-
-      // Skip if mid is not numeric (e.g., 'legacy')
-      if (!isset($mediaUpdate['mid']) || !is_numeric($mediaUpdate['mid'])) {
         continue;
       }
 
@@ -1431,8 +1470,35 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
         continue;
       }
 
-      $mid = (int) $mediaUpdate['mid'];
       $published = (bool) $mediaUpdate['published'];
+      $mid = null;
+
+      // Determine media ID - either explicit mid, or lookup by delta
+      if (isset($mediaUpdate['mid']) && is_numeric($mediaUpdate['mid'])) {
+        $mid = (int) $mediaUpdate['mid'];
+      } elseif (isset($mediaUpdate['delta']) && is_numeric($mediaUpdate['delta']) && $node) {
+        // Look up media by delta position
+        $delta = (int) $mediaUpdate['delta'];
+        if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
+          $mediaItems = $node->get('field_request_media')->getValue();
+          if (isset($mediaItems[$delta]['target_id'])) {
+            $mid = (int) $mediaItems[$delta]['target_id'];
+          }
+        }
+      } elseif (is_numeric($delta) && $node && !isset($mediaUpdate['mid'])) {
+        // If no mid specified, use the array key as delta
+        if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
+          $mediaItems = $node->get('field_request_media')->getValue();
+          if (isset($mediaItems[$delta]['target_id'])) {
+            $mid = (int) $mediaItems[$delta]['target_id'];
+          }
+        }
+      }
+
+      // Skip if we couldn't determine a valid media ID
+      if (!$mid || $mid === 'legacy') {
+        continue;
+      }
 
       // Load and update the media entity
       $media = $this->entityTypeManager->getStorage('media')->load($mid);

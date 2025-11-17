@@ -348,7 +348,7 @@ class GeoreportRequestResource extends ResourceBase {
   protected function processUpdateFields(ContentEntityInterface $node, array $values): void {
     // Handle media updates first
     if (isset($values['_media_updates'])) {
-      $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates']);
+      $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates'], $node);
       // Don't process this as a field
       unset($values['_media_updates']);
     }
