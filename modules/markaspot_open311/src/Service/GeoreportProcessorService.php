@@ -570,14 +570,25 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     $query = $this->entityTypeManager->getStorage('node')->getQuery();
     $query->condition('type', 'service_request');
 
-    if (!($user->hasPermission('bypass node access') || $user->id() == 1)) {
-      $query->condition('status', 1);
-      $query->accessCheck(TRUE);
-    } else {
+    // User 1 and users with bypass node access can see everything
+    if ($user->hasPermission('bypass node access') || $user->id() == 1) {
       \Drupal::logger('markaspot_open311')->debug('User @uid has bypass node access, allowing unpublished nodes.', [
         '@uid' => $user->id(),
       ]);
       $query->accessCheck(FALSE);
+    }
+    // Authenticated users can see published nodes + their own unpublished nodes
+    elseif (!$user->isAnonymous()) {
+      $orGroup = $query->orConditionGroup()
+        ->condition('status', 1)
+        ->condition('uid', $user->id());
+      $query->condition($orGroup);
+      $query->accessCheck(TRUE);
+    }
+    // Anonymous users can only see published nodes
+    else {
+      $query->condition('status', 1);
+      $query->accessCheck(TRUE);
     }
 
     return $query;
@@ -1190,7 +1201,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
     if (!empty($mediaAltTexts)) {
       $extendedAttributes['media_alt_text'] = $mediaAltTexts;
     }
-    
+
+    // Add published status for nodes
+    // This flag allows frontend to show an unpublished indicator icon
+    $extendedAttributes['published'] = $node->isPublished();
+
     // Cache the result for future use
     $extendedAttributesCache[$cacheKey] = $extendedAttributes;
     

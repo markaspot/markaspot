@@ -259,15 +259,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $request_time = $this->time->getRequestTime();
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
     
-    // Only log in development environment or when debug parameter is set
-    if (isset($parameters['debug'])) {
-      \Drupal::logger('markaspot_open311')->debug('API Request - User ID: @uid, Roles: @roles, API Key: @key', [
-        '@uid' => $this->currentUser->id(),
-        '@roles' => implode(', ', $this->currentUser->getRoles()),
-        '@key' => $this->requestStack->getCurrentRequest()->query->get('api_key'),
-      ]);
-    }
-    
     // Start with the secure base query from the processor service
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
 
