@@ -122,7 +122,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     TimeInterface $time,
     RequestStack $request_stack,
     EntityTypeManagerInterface $entity_type_manager,
-    GeoreportProcessorService $georeport_processor
+    GeoreportProcessorService $georeport_processor,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -258,10 +258,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
   public function get() {
     $request_time = $this->time->getRequestTime();
 
-    // Get all query parameters first
+    // Get all query parameters first.
     $allParameters = $this->requestStack->getCurrentRequest()->query->all();
 
-    // Preserve important API parameters before filtering
+    // Preserve important API parameters before filtering.
     $preservedParams = [];
     if (isset($allParameters['extensions'])) {
       $preservedParams['extensions'] = $allParameters['extensions'];
@@ -270,76 +270,80 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // Filter standard Drupal parameters (q, page, _format)
     $parameters = UrlHelper::filterQueryParameters($allParameters);
 
-    // Restore preserved API parameters
+    // Restore preserved API parameters.
     $parameters = array_merge($parameters, $preservedParams);
-    
-    // Start with the secure base query from the processor service
+
+    // Start with the secure base query from the processor service.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
 
-    // Apply common filters
+    // Apply common filters.
     $bundle = $this->config->get('bundle') ?? 'service_request';
     $query->condition('changed', $request_time, '<')
       ->condition('type', $bundle);
 
-    // Optimize query for common cases - direct ID lookup is fastest
+    // Optimize query for common cases - direct ID lookup is fastest.
     if (isset($parameters['id'])) {
       $query->condition('request_id', $parameters['id']);
       return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
     }
-    
-    // Direct NID lookup is also fast
+
+    // Direct NID lookup is also fast.
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
       $query->condition('nid', $nids, 'IN');
-    } else {
-      // Handle pagination parameters
-      $limit = isset($parameters['limit']) ? (int)$parameters['limit'] : 100;
+    }
+    else {
+      // Handle pagination parameters.
+      $limit = isset($parameters['limit']) ? (int) $parameters['limit'] : 100;
       $offset = 0;
-      
-      // Support both 'page' (1-based) and 'offset' (0-based) parameters
+
+      // Support both 'page' (1-based) and 'offset' (0-based) parameters.
       if (isset($parameters['page']) && $parameters['page'] > 0) {
-        $page = (int)$parameters['page'];
+        $page = (int) $parameters['page'];
         $offset = ($page - 1) * $limit;
-      } elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
-        $offset = (int)$parameters['offset'];
       }
-      
-      // Performance protection: require explicit limits for queries without date filters
+      elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
+        $offset = (int) $parameters['offset'];
+      }
+
+      // Performance protection: require explicit limits for queries without date filters.
       if (!isset($parameters['start_date']) && !isset($parameters['updated'])) {
         $limit = min($limit, 100);
-      } else {
+      }
+      else {
         // Apply limit for date-filtered queries (can be larger since they're more specific)
         $limit = min($limit, 500);
       }
-      
+
       $query->range($offset, $limit);
-      
-      // Handle explicit date range filters only
+
+      // Handle explicit date range filters only.
       if (isset($parameters['start_date']) && $parameters['start_date'] != '') {
         $start_timestamp = strtotime($parameters['start_date']);
-        if ($start_timestamp !== false) {
+        if ($start_timestamp !== FALSE) {
           $query->condition('created', $start_timestamp, '>=');
         }
       }
 
       if (isset($parameters['end_date']) && $parameters['end_date'] != '') {
         $end_timestamp = strtotime($parameters['end_date']);
-        if ($end_timestamp !== false) {
+        if ($end_timestamp !== FALSE) {
           $query->condition('created', $end_timestamp, '<=');
         }
       }
-      
-      // Handle sorting - add indexes to these fields in your DB
+
+      // Handle sorting - add indexes to these fields in your DB.
       $sort = (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) ? 'DESC' : 'ASC';
       if (isset($parameters['updated'])) {
         $query->condition('changed', strtotime($parameters['updated']), '>=')
           ->sort('changed', 'DESC');
-      } else {
+      }
+      else {
         $query->sort('created', $sort);
       }
     }
 
-    // Handle custom field filters - move these after main filters
+    // Handle custom field filters - move these after main filters.
     if (!empty($parameters)) {
       $fields = array_filter(
         $parameters,
@@ -353,7 +357,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
     }
 
-    // Handle bounding box
+    // Handle bounding box.
     if (isset($parameters['bbox'])) {
       $bbox = explode(',', $parameters['bbox']);
       $query->condition('field_geolocation.lat', $bbox[1], '>')
@@ -368,7 +372,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
         ->condition('request_id', '%' . $parameters['q'] . '%', 'LIKE')
         ->condition('title', '%' . $parameters['q'] . '%', 'LIKE');
 
-      // Text search on body is expensive, only do if really needed
+      // Text search on body is expensive, only do if really needed.
       if (strlen($parameters['q']) > 3) {
         $group->condition('body', '%' . $parameters['q'] . '%', 'LIKE');
       }
@@ -382,7 +386,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->condition($group);
     }
 
-    // Handle status filtering
+    // Handle status filtering.
     if (isset($parameters['status'])) {
       $tids = $this->georeportProcessor->mapStatusToTaxonomyIds($parameters['status']);
       if (!empty($tids)) {
@@ -390,22 +394,24 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
     }
 
-    // Handle service code filtering
+    // Handle service code filtering.
     if (isset($parameters['service_code'])) {
       $service_codes = explode(',', $parameters['service_code']);
       if (count($service_codes) == 1) {
-        // Single service code lookup is simpler
+        // Single service code lookup is simpler.
         $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_codes[0]);
         $query->condition('field_category', $tid);
-      } else {
-        // Multiple codes need OR condition
+      }
+      else {
+        // Multiple codes need OR condition.
         $categoryTids = [];
         foreach ($service_codes as $service_code) {
           try {
             $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_code);
             $categoryTids[] = $tid;
-          } catch (\Exception $e) {
-            // Skip invalid service codes
+          }
+          catch (\Exception $e) {
+            // Skip invalid service codes.
           }
         }
         if (!empty($categoryTids)) {
@@ -434,7 +440,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
       throw new HttpException(500, 'Internal Server Error', $e);
     }
   }
-
 
   /**
    * Create Node in Drupal from request data.
@@ -520,13 +525,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
       foreach ($violations as $violation) {
         $dotPosition = strpos($violation->getPropertyPath(), '.');
 
-        $propertyPath = $dotPosition !== false ? substr($violation->getPropertyPath(), $dotPosition + 1) : $violation->getPropertyPath();
+        $propertyPath = $dotPosition !== FALSE ? substr($violation->getPropertyPath(), $dotPosition + 1) : $violation->getPropertyPath();
         $messages[$propertyPath] = $violation->getMessage();
         $this->logger->error('Node validation error: @message', ['@message' => $violation->getMessage()]);
 
       }
 
-      // Convert messages to a string or format that you want to show in the response
+      // Convert messages to a string or format that you want to show in the response.
       $detailedMessage = json_encode($messages);
       throw new GeoreportException($detailedMessage, 400);
 
