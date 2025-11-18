@@ -477,11 +477,62 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
    */
   public function getResults(object $query, object $user, array $parameters): array {
     $nids = $query->execute();
+
+    // Debug logging
+    \Drupal::logger('markaspot_open311')->debug('getResults: Found @count nids for user @uid: @nids', [
+      '@count' => count($nids),
+      '@uid' => $user->id(),
+      '@nids' => implode(', ', $nids),
+    ]);
+
     if (empty($nids)) {
       return [];
     }
-    
-    $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
+
+    // Load nodes - for privileged users we need to bypass entity access
+    $storage = $this->entityTypeManager->getStorage('node');
+    $bypass_access = $user->hasPermission('bypass node access') || $user->id() == 1;
+
+    \Drupal::logger('markaspot_open311')->debug('getResults: bypass_access=@bypass for user @uid', [
+      '@bypass' => $bypass_access ? 'TRUE' : 'FALSE',
+      '@uid' => $user->id(),
+    ]);
+
+    if ($bypass_access) {
+      // Switch to root user account to bypass all access checks during node loading
+      $account_switcher = \Drupal::service('account_switcher');
+      $root_user = \Drupal\user\Entity\User::load(1);
+      $account_switcher->switchTo($root_user);
+
+      // Load nodes as root user (bypasses access control)
+      $nodes = $storage->loadMultiple($nids);
+
+      \Drupal::logger('markaspot_open311')->debug('getResults: Loaded @count nodes after account switch', [
+        '@count' => count($nodes),
+      ]);
+
+      // Switch back to original user
+      $account_switcher->switchBack();
+    } else {
+      // For regular users, load with normal access checks
+      $nodes = $storage->loadMultiple($nids);
+      // Additional filtering for authenticated users' own unpublished content
+      if (!$user->isAnonymous()) {
+        foreach ($nids as $nid) {
+          if (!isset($nodes[$nid])) {
+            // Temporarily switch to check if this is user's own content
+            $account_switcher = \Drupal::service('account_switcher');
+            $account_switcher->switchTo(\Drupal\user\Entity\User::load(1));
+            $node = $storage->load($nid);
+            $account_switcher->switchBack();
+
+            if ($node && !$node->isPublished() && $node->getOwnerId() == $user->id()) {
+              $nodes[$nid] = $node;
+            }
+          }
+        }
+      }
+    }
     
     // Use the proper role determination method
     $extendedRole = $this->determineExtendedRole($user);
@@ -572,7 +623,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface
 
     // User 1 and users with bypass node access can see everything
     if ($user->hasPermission('bypass node access') || $user->id() == 1) {
-      \Drupal::logger('markaspot_open311')->debug('User @uid has bypass node access, allowing unpublished nodes.', [
+      \Drupal::logger('markaspot_open311')->info('createNodeQuery: User @uid has bypass node access, using accessCheck(FALSE)', [
         '@uid' => $user->id(),
       ]);
       $query->accessCheck(FALSE);

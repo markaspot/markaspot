@@ -257,7 +257,21 @@ class GeoreportRequestIndexResource extends ResourceBase {
    */
   public function get() {
     $request_time = $this->time->getRequestTime();
-    $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
+
+    // Get all query parameters first
+    $allParameters = $this->requestStack->getCurrentRequest()->query->all();
+
+    // Preserve important API parameters before filtering
+    $preservedParams = [];
+    if (isset($allParameters['extensions'])) {
+      $preservedParams['extensions'] = $allParameters['extensions'];
+    }
+
+    // Filter standard Drupal parameters (q, page, _format)
+    $parameters = UrlHelper::filterQueryParameters($allParameters);
+
+    // Restore preserved API parameters
+    $parameters = array_merge($parameters, $preservedParams);
     
     // Start with the secure base query from the processor service
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
