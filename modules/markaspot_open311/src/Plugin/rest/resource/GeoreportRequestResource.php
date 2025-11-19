@@ -359,10 +359,29 @@ class GeoreportRequestResource extends ResourceBase {
         continue;
       }
 
+      // Skip if field doesn't exist on the node.
+      if (!$node->hasField($field_name)) {
+        continue;
+      }
+
+      $fieldType = $node->get($field_name)->getFieldDefinition()->getType();
+
       // For entity references, except for 'field_request_media'.
-      if ($node->get($field_name)->getFieldDefinition()->getType() == 'entity_reference' && $field_name != 'field_request_media') {
+      if ($fieldType == 'entity_reference' && $field_name != 'field_request_media') {
         $node->set($field_name, ['target_id' => $value]);
-      } else {
+      }
+      // For formatted text fields (text_long, text_with_summary), set with format.
+      elseif (in_array($fieldType, ['text_long', 'text_with_summary'])) {
+        // Check if value already has format structure.
+        if (is_array($value) && isset($value['value'])) {
+          $node->set($field_name, $value);
+        }
+        else {
+          // Wrap plain string with user's default format.
+          $node->set($field_name, ['value' => $value, 'format' => filter_default_format()]);
+        }
+      }
+      else {
         $node->set($field_name, $value);
       }
     }
@@ -381,7 +400,8 @@ class GeoreportRequestResource extends ResourceBase {
   protected function specialFieldHandling(ContentEntityInterface $node, array $values): void {
     // Handling of field_status_notes.
     if (isset($values['field_status_notes'])) {
-      $status = $values['field_status'] ?? $node->get('field_status')->value;
+      // Use target_id for entity reference field, not value.
+      $status = $values['field_status'] ?? $node->get('field_status')->target_id;
       $paragraphData = [$status, $values['field_status_notes']];
       $paragraph = $this->georeportProcessor->createStatusNoteParagraph($paragraphData);
 
@@ -462,18 +482,30 @@ class GeoreportRequestResource extends ResourceBase {
   protected function validate(object $node) {
     $violations = $node->validate();
     if (count($violations) > 0) {
-      $messages = [];
+      $errors = [];
       foreach ($violations as $violation) {
-        $dotPosition = strpos($violation->getPropertyPath(), '.');
+        $fullPath = $violation->getPropertyPath();
+        $message = $violation->getMessage();
+        $messageText = is_object($message) ? (string) $message : ($message ?? '');
 
-        $propertyPath = $dotPosition !== false ? substr($violation->getPropertyPath(), $dotPosition + 1) : $violation->getPropertyPath();
-        $messages[$propertyPath] = $violation->getMessage();
-        $this->logger->error('Node validation error: @message', ['@message' => $violation->getMessage()]);
+        // Get the invalid value for debugging.
+        $invalidValue = $violation->getInvalidValue();
+        $valueInfo = is_scalar($invalidValue) ? $invalidValue : gettype($invalidValue);
 
+        $errors[$fullPath] = [
+          'message' => $messageText,
+          'value' => $valueInfo,
+        ];
+
+        $this->logger->error('Node validation error - Path: @fullpath, Message: @message, Value: @value', [
+          '@fullpath' => $fullPath,
+          '@message' => $messageText,
+          '@value' => is_scalar($invalidValue) ? $invalidValue : json_encode($invalidValue),
+        ]);
       }
 
-      // Convert messages to a string or format that you want to show in the response
-      $detailedMessage = json_encode($messages);
+      // Convert errors to a string for the response
+      $detailedMessage = json_encode($errors);
       throw new GeoreportException($detailedMessage, 400);
 
     }

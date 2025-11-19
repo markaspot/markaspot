@@ -257,9 +257,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     if (array_key_exists('extended_attributes', $requestData)) {
-      $values['revision_log_message'] = $requestData['extended_attributes']['revision_log_message'] ??
-        $requestData['extended_attributes']['drupal']['revision_log_message'] ??
-        NULL;
+      // Check for revision_log_message at multiple possible locations.
+      $revisionLogMessage = $requestData['extended_attributes']['revision_log_message']
+        ?? $requestData['extended_attributes']['drupal']['revision_log_message']
+        ?? NULL;
+      // Only set if not null to avoid Html::escape() errors.
+      if ($revisionLogMessage !== NULL) {
+        $values['revision_log_message'] = $revisionLogMessage;
+      }
 
       // Extract extended attributes, handling field_request_media specially.
       $extendedDrupal = $requestData['extended_attributes']['drupal'] ?? [];
@@ -975,7 +980,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   public function createStatusNoteParagraph(array $paragraphData): Paragraph {
     $paragraph = Paragraph::create(['type' => 'status']);
     $paragraph->set('field_status_term', $paragraphData[0]);
-    $paragraph->set('field_status_note', $paragraphData[1]);
+    // Set with user's default format.
+    $paragraph->set('field_status_note', [
+      'value' => $paragraphData[1],
+      'format' => filter_default_format(),
+    ]);
     $paragraph->save();
     return $paragraph;
   }
