@@ -192,12 +192,6 @@ class ServiceProviderController extends ControllerBase
                 elseif ($node->hasField('field_sp_feedback')) {
                     $node->set('field_sp_feedback', $data['completion_notes']);
                 }
-
-                $logger->notice(
-                    'Added service provider completion for node @nid', [
-                    '@nid' => $node->id(),
-                    ]
-                );
             }
 
             // Update the status if set_status flag is set.
@@ -208,36 +202,11 @@ class ServiceProviderController extends ControllerBase
                 if (!empty($completion_status)) {
                     $status_tid = is_array($completion_status) ? reset($completion_status) : $completion_status;
                     $node->set('field_status', $status_tid);
-                    $logger->notice(
-                        'Setting service request @nid status to @status via service provider completion', [
-                        '@nid' => $node->id(),
-                        '@status' => $status_tid,
-                        ]
-                    );
 
                     // Add service provider status note if configured.
                     $status_note = $config->get('status_note');
-                    $logger->debug(
-                        'Status note from config: "@note" (empty: @empty)', [
-                        '@note' => $status_note,
-                        '@empty' => empty($status_note) ? 'yes' : 'no',
-                        ]
-                    );
                     if (!empty($status_note)) {
-                              $this->addStatusNote($node, $status_note);
-                            $logger->notice(
-                                'Added service provider status note for node @nid with text: "@text"', [
-                                '@nid' => $node->id(),
-                                '@text' => $status_note,
-                                ]
-                            );
-                    }
-                    else {
-                        $logger->notice(
-                            'Skipping status note for node @nid - config value is empty', [
-                            '@nid' => $node->id(),
-                            ]
-                        );
+                        $this->addStatusNote($node, $status_note);
                     }
                 }
             }
@@ -396,13 +365,6 @@ class ServiceProviderController extends ControllerBase
             $valid_emails[] = $email_item['value'];
 
             if ($provided_email_clean === $sp_email_clean) {
-                $this->loggerFactory->get('markaspot_service_provider')->notice(
-                    'Service provider email validation successful: @provided matched @configured for node @nid', [
-                    '@provided' => $email,
-                    '@configured' => $email_item['value'],
-                    '@nid' => $node->id(),
-                    ]
-                );
                 return true;
             }
         }
@@ -410,13 +372,10 @@ class ServiceProviderController extends ControllerBase
         // Generic error message (don't expose valid email addresses for security).
         $error_message = $this->t('The provided email address is not authorized for this service request');
 
-        // Log detailed info (including valid emails) for debugging, but don't expose it to the user.
-        $valid_emails_string = implode(', ', $valid_emails);
+        // Log validation failure (don't expose valid emails for security)
         $this->loggerFactory->get('markaspot_service_provider')->warning(
-            'Service provider email validation failed for node @nid. Provided: @provided, Valid emails: @valid_emails', [
+            'Service provider email validation failed for node @nid', [
             '@nid' => $node->id(),
-            '@provided' => $email,
-            '@valid_emails' => $valid_emails_string,
             ]
         );
 

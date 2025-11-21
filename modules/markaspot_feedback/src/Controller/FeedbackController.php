@@ -187,16 +187,9 @@ class FeedbackController extends ControllerBase {
         // Citizen feedback - single value field
         $node->set('field_feedback', $data['feedback']);
 
-        $logger->notice('Updated field_feedback for node @nid with citizen feedback', [
-          '@nid' => $node->id(),
-        ]);
-
         // Set the field_has_feedback flag to TRUE
         if ($node->hasField('field_has_feedback')) {
           $node->set('field_has_feedback', TRUE);
-          $logger->notice('Setting field_has_feedback to TRUE for node @nid', [
-            '@nid' => $node->id(),
-          ]);
         }
       }
       
@@ -206,18 +199,11 @@ class FeedbackController extends ControllerBase {
         if (!empty($progress_statuses)) {
           $progress_tid = is_array($progress_statuses) ? reset($progress_statuses) : $progress_statuses;
           $node->set('field_status', $progress_tid);
-          $logger->notice('Setting service request @nid status to @status via citizen feedback', [
-            '@nid' => $node->id(),
-            '@status' => $progress_tid,
-          ]);
 
           // Add status note if configured
           $status_note = $config->get('set_status_note');
           if (!empty($status_note)) {
             $this->addStatusNote($node, $status_note);
-            $logger->notice('Added status note for node @nid', [
-              '@nid' => $node->id(),
-            ]);
           }
         }
       }
@@ -359,28 +345,21 @@ class FeedbackController extends ControllerBase {
     // Case-insensitive email comparison
     $provided_email_clean = strtolower(trim($email));
     $author_email_clean = strtolower(trim($author_email));
-    
+
+
     if ($provided_email_clean === $author_email_clean) {
-      // Log successful validation
-      $this->loggerFactory->get('markaspot_feedback')->notice('Author email validation successful: @provided matched @author for node @nid', [
-        '@provided' => $email,
-        '@author' => $author_email,
-        '@nid' => $node->id(),
-      ]);
       return TRUE;
     }
-    
+
     // Log the validation failure
     $error_message = $this->t('Email "@provided" does not match the original service request author email', [
       '@provided' => $email,
     ]);
-    
-    $this->loggerFactory->get('markaspot_feedback')->warning('Author email validation failed for node @nid: provided "@provided", expected "@author"', [
+
+    $this->loggerFactory->get('markaspot_feedback')->warning('Author email validation failed for node @nid', [
       '@nid' => $node->id(),
-      '@provided' => $email,
-      '@author' => $author_email,
     ]);
-    
+
     return $error_message;
   }
 

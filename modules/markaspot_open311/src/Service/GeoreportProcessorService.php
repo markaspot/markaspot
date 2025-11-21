@@ -628,9 +628,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // User 1 and users with bypass node access can see everything.
     if ($user->hasPermission('bypass node access') || $user->id() == 1) {
-      \Drupal::logger('markaspot_open311')->info('createNodeQuery: User @uid has bypass node access, using accessCheck(FALSE)', [
-        '@uid' => $user->id(),
-      ]);
       $query->accessCheck(FALSE);
     }
     // Authenticated users can see published nodes + their own unpublished nodes.
