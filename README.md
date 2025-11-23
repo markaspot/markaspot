@@ -9,9 +9,14 @@ https://github.com/markaspot/mark-a-spot
 
 For issues and feature requests, please use the GitHub issue tracker on the main repository.
 
-## Module Overview
+## Sponsors
 
-Mark-a-Spot consists of multiple modules that work together to provide a complete citizen reporting platform. Each module has its own README.md file with detailed information.
+Mark-a-Spot development is supported by:
+
+- **Landeshauptstadt München**
+- **Bundesstadt Bonn**
+- **Wirtschaftsbetriebe Duisburg**
+- And many others who support continued development through paid support
 
 ## License
 

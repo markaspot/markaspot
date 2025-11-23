@@ -1,6 +1,89 @@
 
 # Changelog
 
+## [11.7.0] - 2025-01-23
+
+### Added
+- **Passwordless Authentication**: New module for passwordless login with configurable redirect and group support
+- **Emergency Mode**: New module with translations and configuration options
+- **Jurisdiction Support**: Added as optional group type for multi-tenant setups
+- **Icon Module**: New markaspot_icon module for enhanced iconography
+- **Publisher Module**: Queue-based publishing workflow for service requests
+- **Stats Module**: Enhanced statistics module with improved routing
+- **Confirm Module**: New confirmation flow module for Mark-a-Spot workflows
+- **Feedback Module**: Service provider assignment feedback notes and citizen feedback validation by status
+- **Address Field**: Added to GeoReport search functionality
+- **Media Status Updates**: Support for delta-based updates via extended_attributes
+- **Published Status Flag**: Added to Open311 API extended attributes
+- **Media Alt Text**: Added to extended GeoReport property
+- **Custom Token**: New token for use as site:url replacement in emails
+- **Queue Workers**: Implemented for high-volume jobs and cron-related tasks
+- **Field Disable**: Added field_disable_form for category terms
+- **Dark Mode**: Added dark mode style for MapLibre
+
+### Changed
+- **Drupal 11 Compatibility**: Updated dependencies and constraints for Drupal 11 support
+- **Map Configuration**: Separated map config for headless setups, made markaspot_map optional
+- **Headless Architecture**: Cleaned up routes for decoupled Nuxt frontend with UUID-based routing
+- **Group Module API**: Updated from deprecated GroupContent to GroupRelationship
+- **Icon Picker**: Switched to modern iconpicker widget and library
+- **MapBox Migration**: Removed MapBox dependencies, replaced with MapLibre
+- **ECA to EventSubscriber**: Replaced ECA with EventSubscriber for email sending in resubmission module
+- **API Performance**: Improved with caching and query optimization
+- **Gin Theme Integration**: Updated Mark-a-Spot UI module to work with Gin theme and Gin Toolbar
+- **Vector Styles**: Added fallback map vector style URL
+- **Field Group**: Bumped to 4.0 to resolve doubled asterisk issue
+- **Archive Days**: Refactored handling with new taxonomy term field for config overrides
+
+### Fixed
+- **markaspot_request_id**: Removed ineffective database update function, added field existence checks, fixed form labels, cleaned up legacy module references
+- **GeoReport API**: Improved field handling and validation errors
+- **Extended Attributes**: Ensured Drupal extended attributes appear in single request endpoint
+- **Unpublished Nodes**: Enable user 1 and bypass node access users to view unpublished nodes via GeoReport API
+- **Cookie Handling**: RemoveCookieSubscriber now checks session UID directly
+- **Installation**: Resolved dependencies and cleaned up optional modules
+- **Node Display**: Enhanced in Gin theme
+- **Service Request Links**: Only link to published service requests
+- **Migration**: Added migration from markaspot_map to markaspot_nuxt
+- **Email Validation**: Restored email verification for citizen feedback, support multiple email addresses
+- **File Deletion**: Prevented aggressive file deletion in markaspot_nuxt module
+- **Page Parameters**: Restored page and offset parameters for service requests
+- **Address Updates**: Fixed address update handling
+- **Status Notes**: Fixed field_status changes to add status_note automatically
+- **Symfony Compatibility**: Fixed Symfony incompatibility issues
+- **MapLibre**: Fixed map initialization, scrolling, and library loading
+- **Media URLs**: Fixed protocol handling to respect current request stack
+- **Nominatim**: Improved formatting of Nominatim addresses
+- **Type Safety**: Fixed type safety in GeoreportProcessorService and request_id module
+- **Null Values**: Added fallback for empty initial status and undefined color properties
+- **JSON/XML Format**: Switched to event subscriber to check for request format
+- **Widget Hooks**: Updated deprecated __WIDGET_TYPE_form_alter hook in shstweak module
+- **Library Aggregation**: Fixed JavaScript error when aggregation of MapBox library enabled
+
+### Deprecated
+- **markaspot_action_front**: Deprecated for headless architectures (optional for traditional themes)
+- **markaspot_action_stats**: Deprecated for headless architectures (optional for traditional themes)
+
+### Removed
+- **MapBox**: Removed all MapBox dependencies in favor of MapLibre
+- **Trend Module**: Removed deprecated trend module
+- **Metatag Module**: Removed from dependencies
+- **Views Data Export Hook**: Removed deprecated hook
+- **Field Formatter Class**: Removed as dependency
+- **Deprecated Actions**: Created update hook to remove deprecated actions
+
+### Security
+- **Headless Mode Protection**: Added protection for standard Drupal routes in headless mode
+- **Session Handling**: Remove session when api_key is passed as form parameter
+
+### Refactored
+- **Code Quality**: Extensive linting and PHP_CodeSniffer fixes across multiple modules
+- **Logging**: Reduced excessive logging in feedback, open311, and service provider modules
+- **Publisher Module**: Refactored with Drupal best practices
+- **Open311 Server**: Major refactoring of Open311 server code
+- **Uninstall Hooks**: Added hooks to preserve crucial field data on uninstall
+- **Service Provider**: Separated service provider from feedback module
+
 ## [10.6.0] - 2023-12-06
 ### New Features
 - **Map Integrations**: Integrated Maplibre and Mapbox into a dedicated git package with added dependencies for enhanced map functionalities. Included maplibre-gl-js for improved map and widget integration.
