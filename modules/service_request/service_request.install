@@ -44,3 +44,31 @@ function service_request_uninstall() {
   \Drupal::configFactory()->getEditable('node.settings')->set('use_admin_theme', TRUE)->save(TRUE);
 
 }
+
+/**
+ * Fix allowed_formats for body field to support Open311 API updates.
+ *
+ * In Drupal 11, when allowed_formats is set to an empty array, it means
+ * no formats are allowed, which causes validation errors when the Open311
+ * API tries to update service requests with text fields.
+ */
+function service_request_update_11001() {
+  $config = \Drupal::configFactory()->getEditable('field.field.node.service_request.body');
+
+  if ($config && $config->get('id') === 'node.service_request.body') {
+    $settings = $config->get('settings') ?: [];
+
+    // Set allowed_formats to allow common text formats
+    $settings['allowed_formats'] = [
+      'plain_text' => 'plain_text',
+      'basic_html' => 'basic_html',
+      'full_html' => 'full_html',
+    ];
+
+    $config->set('settings', $settings)->save(TRUE);
+
+    return t('Updated body field configuration to allow text formats for Open311 API compatibility.');
+  }
+
+  return t('Body field configuration not found or already updated.');
+}

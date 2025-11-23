@@ -24,4 +24,9 @@ default_value: {  }
 default_value_callback: ''
 settings:
   display_summary: true
+  required_summary: false
+  allowed_formats:
+    plain_text: plain_text
+    basic_html: basic_html
+    full_html: full_html
 field_type: text_with_summary
