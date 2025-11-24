@@ -16,14 +16,6 @@ leaflet:
     component:
       /libraries/leaflet/dist/leaflet.css: {}
 
-mapbox:
-  js:
-    /libraries/mapbox-gl/dist/mapbox-gl.js: { weight: -1, preprocess: false}
-    /libraries/mapbox-gl-leaflet/leaflet-mapbox-gl.js: {}
-  css:
-    component:
-      /libraries/mapbox-gl/dist/mapbox-gl.css: {}
-
 maplibre:
   js:
     /libraries/maplibre-gl/dist/maplibre-gl.js: { weight: -1, preprocess: false}
