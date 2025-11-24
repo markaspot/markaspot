@@ -477,30 +477,58 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   An array of query parameters.
    *
    * @return array
-   *   An array of service request definitions.
+   *   An array of service request definitions, or structured response with
+   *   metadata when extensions=true.
    */
   public function getResults(object $query, object $user, array $parameters): array {
+    // Check if extensions parameter requests metadata.
+    $includeMetadata = !empty($parameters['extensions']) &&
+                       (strtolower($parameters['extensions']) === 'true' || $parameters['extensions'] === '1');
+
+    // Get total count before applying range, if metadata is requested.
+    $totalCount = 0;
+    $limit = 0;
+    $offset = 0;
+
+    if ($includeMetadata) {
+      // Extract limit/offset from parameters (they were set before query creation).
+      $limit = isset($parameters['limit']) ? (int) $parameters['limit'] : 100;
+
+      // Support both 'page' (1-based) and 'offset' (0-based) parameters.
+      if (isset($parameters['page']) && $parameters['page'] > 0) {
+        $page = (int) $parameters['page'];
+        $offset = ($page - 1) * $limit;
+      }
+      elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
+        $offset = (int) $parameters['offset'];
+      }
+
+      // Clone query to get total count without range.
+      $countQuery = clone $query;
+      $countQuery->range(NULL, NULL);
+      $totalCount = (int) $countQuery->count()->execute();
+    }
+
     $nids = $query->execute();
 
-    // Debug logging.
-    \Drupal::logger('markaspot_open311')->debug('getResults: Found @count nids for user @uid: @nids', [
-      '@count' => count($nids),
-      '@uid' => $user->id(),
-      '@nids' => implode(', ', $nids),
-    ]);
-
     if (empty($nids)) {
+      // Return empty structure based on metadata flag.
+      if ($includeMetadata) {
+        return [
+          'requests' => [],
+          'meta' => [
+            'total' => 0,
+            'limit' => $limit,
+            'offset' => $offset,
+          ],
+        ];
+      }
       return [];
     }
 
     // Load nodes - for privileged users we need to bypass entity access.
     $storage = $this->entityTypeManager->getStorage('node');
     $bypass_access = $user->hasPermission('bypass node access') || $user->id() == 1;
-
-    \Drupal::logger('markaspot_open311')->debug('getResults: bypass_access=@bypass for user @uid', [
-      '@bypass' => $bypass_access ? 'TRUE' : 'FALSE',
-      '@uid' => $user->id(),
-    ]);
 
     if ($bypass_access) {
       // Switch to root user account to bypass all access checks during node loading.
@@ -510,10 +538,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
       // Load nodes as root user (bypasses access control)
       $nodes = $storage->loadMultiple($nids);
-
-      \Drupal::logger('markaspot_open311')->debug('getResults: Loaded @count nodes after account switch', [
-        '@count' => count($nodes),
-      ]);
 
       // Switch back to original user.
       $account_switcher->switchBack();
@@ -548,6 +572,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $serviceRequests = [];
     foreach ($nodes as $node) {
       $serviceRequests[] = $this->mapNodeToServiceRequest($node, $extendedRole, $parameters);
+    }
+
+    // Return structured response with metadata if extensions enabled.
+    if ($includeMetadata) {
+      return [
+        'requests' => $serviceRequests,
+        'meta' => [
+          'total' => $totalCount,
+          'limit' => $limit,
+          'offset' => $offset,
+        ],
+      ];
     }
 
     return $serviceRequests;
