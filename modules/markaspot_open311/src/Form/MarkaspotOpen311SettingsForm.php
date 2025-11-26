@@ -216,6 +216,42 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       '#description' => $this->t('Track changes to service requests by creating new revisions.'),
     ];
 
+    // Group Integration Settings.
+    $form['markaspot_open311']['group_integration'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Group Integration'),
+      '#description' => $this->t('Configure integration with the Group module for organisation-based filtering.'),
+      '#collapsible' => TRUE,
+      '#group' => 'settings',
+    ];
+
+    // Check if Group module is enabled.
+    $group_module_enabled = \Drupal::moduleHandler()->moduleExists('group');
+
+    $form['markaspot_open311']['group_integration']['group_filter_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Group Filtering'),
+      '#default_value' => $config->get('group_filter_enabled') ?? FALSE,
+      '#description' => $this->t('Allow API requests to filter service requests by user group membership using the <code>group_filter=1</code> parameter.'),
+      '#disabled' => !$group_module_enabled,
+    ];
+
+    if (!$group_module_enabled) {
+      $form['markaspot_open311']['group_integration']['group_filter_enabled']['#description'] .= '<br><strong>' . $this->t('Note: The Group module is not installed.') . '</strong>';
+    }
+
+    $form['markaspot_open311']['group_integration']['group_filter_type'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Group Type for Filtering'),
+      '#default_value' => $config->get('group_filter_type') ?? 'organisation',
+      '#description' => $this->t('The group type machine name to use for filtering (e.g., "organisation"). Users will only see requests assigned to groups of this type that they are members of.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="group_filter_enabled"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -242,6 +278,9 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       ->set('node_options_status', $values['node_options_status'])
       ->set('nid_limit', $values['nid_limit'])
       ->set('revisions', $values['revisions'])
+      // Group Integration
+      ->set('group_filter_enabled', $values['group_filter_enabled'])
+      ->set('group_filter_type', $values['group_filter_type'])
       ->save();
 
     parent::submitForm($form, $form_state);

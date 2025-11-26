@@ -24,6 +24,7 @@ use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\paragraphs\Entity\Paragraph;
+use Drupal\group\Entity\GroupMembership;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -478,12 +479,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @return array
    *   An array of service request definitions, or structured response with
-   *   metadata when extensions=true.
+   *   metadata when meta=true.
    */
   public function getResults(object $query, object $user, array $parameters): array {
-    // Check if extensions parameter requests metadata.
-    $includeMetadata = !empty($parameters['extensions']) &&
-                       (strtolower($parameters['extensions']) === 'true' || $parameters['extensions'] === '1');
+    // Check if meta parameter requests wrapped response with metadata.
+    // Note: extensions=true alone returns plain array for backwards compatibility.
+    $includeMetadata = !empty($parameters['meta']) &&
+                       (strtolower($parameters['meta']) === 'true' || $parameters['meta'] === '1');
 
     // Get total count before applying range, if metadata is requested.
     $totalCount = 0;
@@ -662,17 +664,36 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $query = $this->entityTypeManager->getStorage('node')->getQuery();
     $query->condition('type', 'service_request');
 
+    // Check if group filtering is requested and enabled.
+    $use_group_filter = FALSE;
+    if (!empty($parameters['group_filter']) && !$user->isAnonymous()) {
+      $config = $this->configFactory->get('markaspot_open311.settings');
+      $use_group_filter = $config->get('group_filter_enabled') ?? FALSE;
+    }
+
     // User 1 and users with bypass node access can see everything.
     if ($user->hasPermission('bypass node access') || $user->id() == 1) {
       $query->accessCheck(FALSE);
     }
-    // Authenticated users can see published nodes + their own unpublished nodes.
+    // When group filtering is active, we handle access via group membership.
+    // Disable Drupal's access check to avoid conflicts with Group module grants.
+    elseif ($use_group_filter) {
+      // Filter to published nodes + user's own unpublished nodes.
+      $orGroup = $query->orConditionGroup()
+        ->condition('status', 1)
+        ->condition('uid', $user->id());
+      $query->condition($orGroup);
+      // Disable access check - group membership IS the access control.
+      $query->accessCheck(FALSE);
+    }
+    // Authenticated users can see all published nodes + their own unpublished nodes.
+    // Access check is disabled to show ALL requests (editability is controlled separately).
     elseif (!$user->isAnonymous()) {
       $orGroup = $query->orConditionGroup()
         ->condition('status', 1)
         ->condition('uid', $user->id());
       $query->condition($orGroup);
-      $query->accessCheck(TRUE);
+      $query->accessCheck(FALSE);
     }
     // Anonymous users can only see published nodes.
     else {
@@ -680,7 +701,184 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $query->accessCheck(TRUE);
     }
 
+    // Apply group membership filter.
+    if ($use_group_filter) {
+      $config = $this->configFactory->get('markaspot_open311.settings');
+      $group_type = $config->get('group_filter_type') ?? 'organisation';
+      $node_ids = $this->getNodeIdsInUserGroups($user, $group_type);
+      if (!empty($node_ids)) {
+        $query->condition('nid', $node_ids, 'IN');
+      }
+      else {
+        // User has no group memberships - return no results.
+        $query->condition('nid', [0], 'IN');
+      }
+    }
+
     return $query;
+  }
+
+  /**
+   * Gets node IDs that belong to the user's groups of the specified type.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $user
+   *   The user account.
+   * @param string $group_type
+   *   The group type machine name to filter by (e.g., 'organisation').
+   *
+   * @return array
+   *   Array of node IDs belonging to user's groups of the specified type.
+   */
+  protected function getNodeIdsInUserGroups($user, string $group_type = 'organisation'): array {
+    // Check if Group module is available.
+    if (!$this->moduleHandler->moduleExists('group')) {
+      return [];
+    }
+
+    // Load user's group memberships.
+    $memberships = GroupMembership::loadByUser($user);
+    $group_ids = [];
+
+    foreach ($memberships as $membership) {
+      $group = $membership->getGroup();
+      // Only include groups of the specified type.
+      if ($group && $group->bundle() === $group_type) {
+        $group_ids[] = $membership->getGroupId();
+      }
+    }
+
+    if (empty($group_ids)) {
+      return [];
+    }
+
+    // Use Entity Query API for group relationships.
+    $relationship_storage = $this->entityTypeManager->getStorage('group_relationship');
+
+    $relationship_ids = $relationship_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('gid', $group_ids, 'IN')
+      ->condition('plugin_id', 'group_node:service_request')
+      ->execute();
+
+    if (empty($relationship_ids)) {
+      return [];
+    }
+
+    // Load relationships and extract entity IDs.
+    $relationships = $relationship_storage->loadMultiple($relationship_ids);
+
+    $node_ids = [];
+    foreach ($relationships as $relationship) {
+      $node_ids[] = $relationship->get('entity_id')->target_id;
+    }
+
+    return array_unique($node_ids);
+  }
+
+  /**
+   * Checks if a user can edit a node.
+   *
+   * This method avoids using $node->access('update') which triggers
+   * Group module's buggy node access handler with missing group_roles field.
+   *
+   * @param object $node
+   *   The node object.
+   * @param \Drupal\Core\Session\AccountProxyInterface $user
+   *   The user to check access for.
+   *
+   * @return bool
+   *   TRUE if the user can edit the node, FALSE otherwise.
+   */
+  protected function checkNodeEditability(object $node, $user): bool {
+    // Admin and users with bypass permission can edit anything.
+    if ($user->hasPermission('bypass node access') || $user->id() == 1) {
+      return TRUE;
+    }
+
+    // Anonymous users cannot edit.
+    if ($user->isAnonymous()) {
+      return FALSE;
+    }
+
+    // Check if user owns the node.
+    if ($node->getOwnerId() == $user->id()) {
+      return TRUE;
+    }
+
+    // Check if user has general 'edit any service_request content' permission.
+    if ($user->hasPermission('edit any service_request content')) {
+      return TRUE;
+    }
+
+    // If Group module is enabled, check group membership permissions.
+    if ($this->moduleHandler->moduleExists('group')) {
+      return $this->checkGroupEditPermission($node, $user);
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Checks if user has edit permission via Group module membership.
+   *
+   * @param object $node
+   *   The node object.
+   * @param \Drupal\Core\Session\AccountProxyInterface $user
+   *   The user to check.
+   *
+   * @return bool
+   *   TRUE if user can edit via group membership.
+   */
+  protected function checkGroupEditPermission(object $node, $user): bool {
+    try {
+      // Get the groups this node belongs to.
+      $relationship_storage = $this->entityTypeManager->getStorage('group_relationship');
+      $relationships = $relationship_storage->loadByProperties([
+        'entity_id' => $node->id(),
+        'plugin_id' => 'group_node:service_request',
+      ]);
+
+      if (empty($relationships)) {
+        return FALSE;
+      }
+
+      // Get user's group memberships.
+      $memberships = GroupMembership::loadByUser($user);
+      $user_group_ids = [];
+      foreach ($memberships as $membership) {
+        $user_group_ids[] = $membership->getGroupId();
+      }
+
+      if (empty($user_group_ids)) {
+        return FALSE;
+      }
+
+      // Check if node is in any of user's groups.
+      foreach ($relationships as $relationship) {
+        $group_id = $relationship->getGroupId();
+        if (in_array($group_id, $user_group_ids)) {
+          // User is in this group - check their role permissions.
+          // For members (insider scope), they can edit any node in the group.
+          // For now, we assume group members can edit group content.
+          // A more complete check would verify specific group permissions.
+          foreach ($memberships as $membership) {
+            if ($membership->getGroupId() == $group_id) {
+              // Check if member has 'update any' permission.
+              $group = $membership->getGroup();
+              if ($group && $group->hasPermission('update any group_node:service_request entity', $user)) {
+                return TRUE;
+              }
+            }
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // If Group module throws an error, fall back to FALSE.
+      return FALSE;
+    }
+
+    return FALSE;
   }
 
   /**
@@ -813,6 +1011,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Add extended attributes if extensions parameter is set.
     if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
       $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $parameters['langcode'] ?? 'en');
+
+      // Add editability flag - checks if current user can update this node.
+      // We avoid using $node->access('update') as it triggers Group module's
+      // buggy node access handler. Instead, we check manually.
+      $request['extended_attributes']['markaspot']['editable'] = $this->checkNodeEditability($node, $this->currentUser);
 
       // Add media details with published status.
       $mediaDetails = $this->getMediaDetails($node);
