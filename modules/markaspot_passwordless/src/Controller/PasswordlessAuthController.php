@@ -268,19 +268,39 @@ class PasswordlessAuthController extends ControllerBase {
    *   JSON response with logout status.
    */
   public function logout(Request $request): JsonResponse {
+    // Get session cookie name before logout destroys the session.
+    $session_config = \Drupal::service('session_configuration');
+    $session_options = $session_config->getOptions($request);
+    $session_name = $session_options['name'] ?? session_name();
+
     if ($this->currentUser->isAuthenticated()) {
       user_logout();
-
-      return new JsonResponse([
-        'success' => TRUE,
-        'message' => 'Logged out successfully',
-      ]);
     }
 
-    return new JsonResponse([
+    // Build response with explicit cookie expiration.
+    $response = new JsonResponse([
       'success' => TRUE,
-      'message' => 'Not logged in',
+      'message' => 'Logged out successfully',
     ]);
+
+    // Explicitly expire the session cookie to ensure browser deletes it.
+    // This is necessary because HttpOnly cookies can't be deleted by JavaScript.
+    $cookie_domain = $session_options['cookie_domain'] ?? '';
+    $response->headers->setCookie(
+      new \Symfony\Component\HttpFoundation\Cookie(
+        $session_name,
+        '',
+        1, // Expire in the past
+        '/',
+        $cookie_domain,
+        TRUE, // Secure
+        TRUE, // HttpOnly
+        FALSE, // Raw
+        'None' // SameSite
+      )
+    );
+
+    return $response;
   }
 
   /**
