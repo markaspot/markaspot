@@ -130,12 +130,31 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    // Return the form display settings with fields as a JSON response.
+    // Get field groups from third_party_settings.
+    $field_groups = [];
+    $third_party_settings = $form_display->getThirdPartySettings('field_group');
+    if (!empty($third_party_settings)) {
+      foreach ($third_party_settings as $group_name => $group_config) {
+        $field_groups[$group_name] = [
+          'id' => $group_name,
+          'label' => $group_config['label'] ?? $group_name,
+          'type' => $group_config['format_type'] ?? 'fieldset',
+          'weight' => $group_config['weight'] ?? 0,
+          'region' => $group_config['region'] ?? 'content',
+          'parent' => $group_config['parent_name'] ?? null,
+          'children' => $group_config['children'] ?? [],
+          'settings' => $group_config['format_settings'] ?? [],
+        ];
+      }
+    }
+
+    // Return the form display settings with fields and groups as a JSON response.
     return new JsonResponse([
       'entity_type' => $entity_type,
       'bundle' => $bundle,
       'form_mode' => $form_mode,
       'fields' => $fields,
+      'field_groups' => $field_groups,
     ]);
   }
 
