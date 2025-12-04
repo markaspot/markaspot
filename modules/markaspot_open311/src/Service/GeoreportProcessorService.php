@@ -675,15 +675,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     if ($user->hasPermission('bypass node access') || $user->id() == 1) {
       $query->accessCheck(FALSE);
     }
-    // When group filtering is active, we handle access via group membership.
-    // Disable Drupal's access check to avoid conflicts with Group module grants.
+    // When group filtering is active, group membership IS the access control.
+    // Users see all nodes in their groups (published and unpublished).
     elseif ($use_group_filter) {
-      // Filter to published nodes + user's own unpublished nodes.
-      $orGroup = $query->orConditionGroup()
-        ->condition('status', 1)
-        ->condition('uid', $user->id());
-      $query->condition($orGroup);
-      // Disable access check - group membership IS the access control.
+      // No status filter - group membership controls access.
       $query->accessCheck(FALSE);
     }
     // Authenticated users can see all published nodes + their own unpublished nodes.
@@ -830,6 +825,23 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   TRUE if user can edit via group membership.
    */
   protected function checkGroupEditPermission(object $node, $user): bool {
+    return $this->checkGroupPermission($node, $user, 'update');
+  }
+
+  /**
+   * Checks if user has a specific permission via Group module membership.
+   *
+   * @param object $node
+   *   The node object.
+   * @param \Drupal\Core\Session\AccountProxyInterface $user
+   *   The user to check.
+   * @param string $operation
+   *   The operation to check: 'view', 'update', or 'delete'.
+   *
+   * @return bool
+   *   TRUE if user has the permission via group membership.
+   */
+  protected function checkGroupPermission(object $node, $user, string $operation): bool {
     try {
       // Get the groups this node belongs to.
       $relationship_storage = $this->entityTypeManager->getStorage('group_relationship');
@@ -858,15 +870,22 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $group_id = $relationship->getGroupId();
         if (in_array($group_id, $user_group_ids)) {
           // User is in this group - check their role permissions.
-          // For members (insider scope), they can edit any node in the group.
-          // For now, we assume group members can edit group content.
-          // A more complete check would verify specific group permissions.
           foreach ($memberships as $membership) {
             if ($membership->getGroupId() == $group_id) {
-              // Check if member has 'update any' permission.
               $group = $membership->getGroup();
-              if ($group && $group->hasPermission('update any group_node:service_request entity', $user)) {
-                return TRUE;
+              if ($group) {
+                // Check for 'any' permission first.
+                $any_permission = "{$operation} any group_node:service_request entity";
+                if ($group->hasPermission($any_permission, $user)) {
+                  return TRUE;
+                }
+                // Check for 'own' permission if user owns the node.
+                if ($node->getOwnerId() == $user->id()) {
+                  $own_permission = "{$operation} own group_node:service_request entity";
+                  if ($group->hasPermission($own_permission, $user)) {
+                    return TRUE;
+                  }
+                }
               }
             }
           }
@@ -879,6 +898,72 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Gets all permissions (view, update, delete) for a node.
+   *
+   * @param object $node
+   *   The node object.
+   * @param \Drupal\Core\Session\AccountProxyInterface $user
+   *   The user to check.
+   *
+   * @return array
+   *   Array with 'view', 'update', 'delete' boolean values.
+   */
+  protected function getNodePermissions(object $node, $user): array {
+    $permissions = [
+      'view' => FALSE,
+      'update' => FALSE,
+      'delete' => FALSE,
+    ];
+
+    // Admin and users with bypass permission can do anything.
+    if ($user->hasPermission('bypass node access') || $user->id() == 1) {
+      return ['view' => TRUE, 'update' => TRUE, 'delete' => TRUE];
+    }
+
+    // Anonymous users: only view published content.
+    if ($user->isAnonymous()) {
+      $permissions['view'] = $node->isPublished();
+      return $permissions;
+    }
+
+    // Check view permission.
+    $permissions['view'] = $node->isPublished() || $node->getOwnerId() == $user->id()
+      || $user->hasPermission('view any unpublished content')
+      || $user->hasPermission('access content overview');
+
+    // Check update permission.
+    if ($node->getOwnerId() == $user->id() && $user->hasPermission('edit own service_request content')) {
+      $permissions['update'] = TRUE;
+    }
+    elseif ($user->hasPermission('edit any service_request content')) {
+      $permissions['update'] = TRUE;
+    }
+
+    // Check delete permission.
+    if ($node->getOwnerId() == $user->id() && $user->hasPermission('delete own service_request content')) {
+      $permissions['delete'] = TRUE;
+    }
+    elseif ($user->hasPermission('delete any service_request content')) {
+      $permissions['delete'] = TRUE;
+    }
+
+    // If Group module is enabled, check group permissions.
+    if ($this->moduleHandler->moduleExists('group')) {
+      if (!$permissions['view']) {
+        $permissions['view'] = $this->checkGroupPermission($node, $user, 'view');
+      }
+      if (!$permissions['update']) {
+        $permissions['update'] = $this->checkGroupPermission($node, $user, 'update');
+      }
+      if (!$permissions['delete']) {
+        $permissions['delete'] = $this->checkGroupPermission($node, $user, 'delete');
+      }
+    }
+
+    return $permissions;
   }
 
   /**
@@ -1012,10 +1097,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
       $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $parameters['langcode'] ?? 'en');
 
-      // Add editability flag - checks if current user can update this node.
-      // We avoid using $node->access('update') as it triggers Group module's
+      // Add permissions - checks what operations the current user can perform.
+      // We avoid using $node->access() as it triggers Group module's
       // buggy node access handler. Instead, we check manually.
-      $request['extended_attributes']['markaspot']['editable'] = $this->checkNodeEditability($node, $this->currentUser);
+      $permissions = $this->getNodePermissions($node, $this->currentUser);
+      $request['extended_attributes']['markaspot']['permissions'] = $permissions;
+      // Keep backward compatibility with 'editable' flag.
+      $request['extended_attributes']['markaspot']['editable'] = $permissions['update'];
 
       // Add media details with published status.
       $mediaDetails = $this->getMediaDetails($node);
