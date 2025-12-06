@@ -1,4 +1,4 @@
-uuid: d4567890-bcde-f012-3456-789abcdef012
+uuid: 3d4acab0-0c43-461a-9f6e-7141d86660dc
 langcode: en
 status: true
 dependencies:
@@ -9,9 +9,9 @@ dependencies:
 id: jur-member
 label: Member
 weight: 0
-internal: false
-audience: member
+admin: false
+scope: individual
+global_role: null
 group_type: jur
-permissions_ui: true
 permissions:
   - 'view group'

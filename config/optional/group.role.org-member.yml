@@ -1,4 +1,4 @@
-uuid: b2345678-9abc-def0-1234-56789abcdef0
+uuid: 9b9deebd-0694-4d19-9173-d452b0aa8ce0
 langcode: en
 status: true
 dependencies:
@@ -9,9 +9,9 @@ dependencies:
 id: org-member
 label: Member
 weight: 0
-internal: false
-audience: member
+admin: false
+scope: individual
+global_role: null
 group_type: org
-permissions_ui: true
 permissions:
   - 'view group'
