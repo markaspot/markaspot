@@ -4,11 +4,11 @@ status: true
 dependencies:
   module:
     - group
-id: jurisdiction
+id: jur
 label: Jurisdiction
 description: "Jurisdiction level for municipalities, villages, or cities. Contains organizations and manages territorial boundaries for service requests."
 new_revision: true
 creator_membership: true
 creator_wizard: true
 creator_roles:
-  - jurisdiction-admin
+  - jur-admin

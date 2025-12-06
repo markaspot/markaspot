@@ -3,15 +3,15 @@ langcode: en
 status: true
 dependencies:
   config:
-    - group.type.jurisdiction
+    - group.type.jur
   module:
     - group
-id: jurisdiction-member
+id: jur-member
 label: Member
 weight: 0
 internal: false
 audience: member
-group_type: jurisdiction
+group_type: jur
 permissions_ui: true
 permissions:
   - 'view group'

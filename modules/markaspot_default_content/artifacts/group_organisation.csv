@@ -1,3 +1,3 @@
 uuid,langcode,type,label,field_head_organisation_e_mail
-550e8400-e29b-41d4-a716-446655440002,en,organisation,Department 1,department1@example.com
-550e8400-e29b-41d4-a716-446655440003,en,organisation,Department 2,department2@example.com
+550e8400-e29b-41d4-a716-446655440002,en,org,Department 1,department1@example.com
+550e8400-e29b-41d4-a716-446655440003,en,org,Department 2,department2@example.com

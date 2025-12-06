@@ -4,7 +4,7 @@ status: true
 dependencies:
   config:
     - field.storage.node.field_jurisdiction
-    - group.type.jurisdiction
+    - group.type.jur
     - node.type.service_request
   module:
     - group
@@ -22,7 +22,7 @@ settings:
   handler: 'default:group'
   handler_settings:
     target_bundles:
-      jurisdiction: jurisdiction
+      jur: jur
     sort:
       field: _none
     auto_create: false

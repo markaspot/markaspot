@@ -4,7 +4,7 @@ status: true
 dependencies:
   config:
     - field.storage.node.field_organisation
-    - group.type.organisation
+    - group.type.org
     - node.type.service_request
   module:
     - group
@@ -12,7 +12,7 @@ id: node.service_request.field_organisation
 field_name: field_organisation
 entity_type: node
 bundle: service_request
-label: Organisation
+label: Department
 description: 'The organisation responsible for handling this service request.'
 required: false
 translatable: false
@@ -22,7 +22,7 @@ settings:
   handler: 'default:group'
   handler_settings:
     target_bundles:
-      organisation: organisation
+      org: org
     sort:
       field: _none
     auto_create: false

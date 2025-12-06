@@ -4,11 +4,11 @@ status: true
 dependencies:
   module:
     - group
-id: organisation
+id: org
 label: Organisation
 description: "Organisation or department responsible for handling service requests within a jurisdiction."
 new_revision: true
 creator_membership: true
 creator_wizard: true
 creator_roles:
-  - organisation-admin
+  - org-admin

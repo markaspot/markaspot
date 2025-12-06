@@ -1,17 +1,17 @@
-uuid: c3456789-abcd-ef01-2345-6789abcdef01
+uuid: a1234567-89ab-cdef-0123-456789abcdef
 langcode: en
 status: true
 dependencies:
   config:
-    - group.type.jurisdiction
+    - group.type.org
   module:
     - group
-id: jurisdiction-admin
+id: org-admin
 label: Administrator
 weight: -100
 internal: false
 audience: member
-group_type: jurisdiction
+group_type: org
 permissions_ui: true
 permissions:
   - 'administer group'

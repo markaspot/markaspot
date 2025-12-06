@@ -683,7 +683,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Authenticated users: let Group module handle access control.
     // Group module's EntityQueryAlter applies outsider/insider permissions,
     // including 'view unpublished group_node:service_request entity' for
-    // moderators with the organisation-moderator outsider role.
+    // moderators with the org-moderator outsider role.
     elseif (!$user->isAnonymous()) {
       $query->accessCheck(TRUE);
     }
@@ -696,7 +696,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Apply group membership filter.
     if ($use_group_filter) {
       $config = $this->configFactory->get('markaspot_open311.settings');
-      $group_type = $config->get('group_filter_type') ?? 'organisation';
+      $group_type = $config->get('group_filter_type') ?? 'org';
       $node_ids = $this->getNodeIdsInUserGroups($user, $group_type);
       if (!empty($node_ids)) {
         $query->condition('nid', $node_ids, 'IN');
@@ -716,12 +716,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @param \Drupal\Core\Session\AccountInterface $user
    *   The user account.
    * @param string $group_type
-   *   The group type machine name to filter by (e.g., 'organisation').
+   *   The group type machine name to filter by (e.g., 'org').
    *
    * @return array
    *   Array of node IDs belonging to user's groups of the specified type.
    */
-  protected function getNodeIdsInUserGroups($user, string $group_type = 'organisation'): array {
+  protected function getNodeIdsInUserGroups($user, string $group_type = 'org'): array {
     // Check if Group module is available.
     if (!$this->moduleHandler->moduleExists('group')) {
       return [];

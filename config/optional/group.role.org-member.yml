@@ -3,15 +3,15 @@ langcode: en
 status: true
 dependencies:
   config:
-    - group.type.organisation
+    - group.type.org
   module:
     - group
-id: organisation-member
+id: org-member
 label: Member
 weight: 0
 internal: false
 audience: member
-group_type: organisation
+group_type: org
 permissions_ui: true
 permissions:
   - 'view group'

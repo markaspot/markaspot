@@ -260,7 +260,7 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
     $form['markaspot_open311']['group_integration'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Group Integration'),
-      '#description' => $this->t('Configure integration with the Group module for organisation-based filtering.'),
+      '#description' => $this->t('Configure integration with the Group module for group-based filtering.'),
       '#collapsible' => TRUE,
       '#group' => 'settings',
     ];
@@ -283,8 +283,8 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
     $form['markaspot_open311']['group_integration']['group_filter_type'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Group Type for Filtering'),
-      '#default_value' => $config->get('group_filter_type') ?? 'organisation',
-      '#description' => $this->t('The group type machine name to use for filtering (e.g., "organisation"). Users will only see requests assigned to groups of this type that they are members of.'),
+      '#default_value' => $config->get('group_filter_type') ?? 'org',
+      '#description' => $this->t('The group type machine name to use for filtering (e.g., "org"). Users will only see requests assigned to groups of this type that they are members of.'),
       '#states' => [
         'visible' => [
           ':input[name="group_filter_enabled"]' => ['checked' => TRUE],

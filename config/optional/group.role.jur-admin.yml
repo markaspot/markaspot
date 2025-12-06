@@ -1,17 +1,17 @@
-uuid: a1234567-89ab-cdef-0123-456789abcdef
+uuid: c3456789-abcd-ef01-2345-6789abcdef01
 langcode: en
 status: true
 dependencies:
   config:
-    - group.type.organisation
+    - group.type.jur
   module:
     - group
-id: organisation-admin
+id: jur-admin
 label: Administrator
 weight: -100
 internal: false
 audience: member
-group_type: organisation
+group_type: jur
 permissions_ui: true
 permissions:
   - 'administer group'

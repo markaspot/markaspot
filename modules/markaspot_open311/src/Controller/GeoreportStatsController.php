@@ -83,7 +83,7 @@ class GeoreportStatsController extends ControllerBase {
 
       if ($group_filter_enabled) {
         $use_group_filter = TRUE;
-        $group_type = $config->get('group_filter_type') ?? 'organisation';
+        $group_type = $config->get('group_filter_type') ?? 'org';
         $node_ids = $this->getNodeIdsInUserGroups($group_type);
       }
     }
@@ -180,7 +180,7 @@ class GeoreportStatsController extends ControllerBase {
    * that are related to groups where the current user is a member.
    *
    * @param string $group_type
-   *   The group type machine name (e.g., 'organisation', 'juris').
+   *   The group type machine name (e.g., 'org', 'jur').
    *
    * @return array<int>
    *   Array of node IDs belonging to the user's groups.
@@ -251,7 +251,7 @@ class GeoreportStatsController extends ControllerBase {
 
       if ($group_filter_enabled) {
         $use_group_filter = TRUE;
-        $group_type = $config->get('group_filter_type') ?? 'organisation';
+        $group_type = $config->get('group_filter_type') ?? 'org';
         $node_ids = $this->getNodeIdsInUserGroups($group_type);
       }
     }
