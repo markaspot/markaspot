@@ -1,0 +1,18 @@
+id: markaspot_migrate_default_content_group_jurisdiction
+label: 'Import jurisdiction groups'
+migration_group: custom
+source:
+  plugin: csv
+  path: /artifacts/group_jurisdiction.csv
+  header_row_count: 1
+  ids: [uuid]
+process:
+  uuid: uuid
+  langcode: langcode
+  type: type
+  label: label
+  field_head_organisation_e_mail: field_head_organisation_e_mail
+destination:
+  plugin: 'entity:group'
+  default_bundle: jurisdiction
+migration_dependencies: {}
