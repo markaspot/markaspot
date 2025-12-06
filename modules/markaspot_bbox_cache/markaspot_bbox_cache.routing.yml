@@ -1,0 +1,7 @@
+markaspot_bbox_cache.settings:
+  path: '/admin/config/markaspot/bbox-cache'
+  defaults:
+    _form: '\Drupal\markaspot_bbox_cache\Form\BboxCacheSettingsForm'
+    _title: 'Bbox Cache Settings'
+  requirements:
+    _permission: 'administer markaspot_bbox_cache'

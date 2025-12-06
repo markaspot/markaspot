@@ -1,0 +1,3 @@
+administer markaspot_bbox_cache:
+  title: 'Administer Mark-a-Spot Bbox Cache'
+  description: 'Configure bbox cache settings for the Mark-a-Spot Open311 API.'
