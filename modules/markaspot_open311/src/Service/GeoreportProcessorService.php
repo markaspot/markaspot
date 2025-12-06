@@ -24,7 +24,6 @@ use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\paragraphs\Entity\Paragraph;
-use Drupal\group\Entity\GroupMembership;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -675,20 +674,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     if ($user->hasPermission('bypass node access') || $user->id() == 1) {
       $query->accessCheck(FALSE);
     }
-    // When group filtering is active, group membership IS the access control.
-    // Users see all nodes in their groups (published and unpublished).
+    // When group filtering is active, let Group module handle access control.
+    // Group module's EntityQueryAlter adds conditions for grouped content,
+    // including author access to own unpublished content.
     elseif ($use_group_filter) {
-      // No status filter - group membership controls access.
-      $query->accessCheck(FALSE);
+      $query->accessCheck(TRUE);
     }
-    // Authenticated users can see all published nodes + their own unpublished nodes.
-    // Access check is disabled to show ALL requests (editability is controlled separately).
+    // Authenticated users: let Group module handle access control.
+    // Group module's EntityQueryAlter applies outsider/insider permissions,
+    // including 'view unpublished group_node:service_request entity' for
+    // moderators with the organisation-moderator outsider role.
     elseif (!$user->isAnonymous()) {
-      $orGroup = $query->orConditionGroup()
-        ->condition('status', 1)
-        ->condition('uid', $user->id());
-      $query->condition($orGroup);
-      $query->accessCheck(FALSE);
+      $query->accessCheck(TRUE);
     }
     // Anonymous users can only see published nodes.
     else {
@@ -731,7 +728,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Load user's group memberships.
-    $memberships = GroupMembership::loadByUser($user);
+    $memberships = \Drupal\group\Entity\GroupMembership::loadByUser($user);
     $group_ids = [];
 
     foreach ($memberships as $membership) {
@@ -855,7 +852,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
 
       // Get user's group memberships.
-      $memberships = GroupMembership::loadByUser($user);
+      $memberships = \Drupal\group\Entity\GroupMembership::loadByUser($user);
       $user_group_ids = [];
       foreach ($memberships as $membership) {
         $user_group_ids[] = $membership->getGroupId();
@@ -912,58 +909,20 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   Array with 'view', 'update', 'delete' boolean values.
    */
   protected function getNodePermissions(object $node, $user): array {
-    $permissions = [
-      'view' => FALSE,
-      'update' => FALSE,
-      'delete' => FALSE,
+    // Use Drupal's entity access API which is the authoritative source for
+    // permission checks. This API automatically:
+    // - Calls hook_node_access() implementations
+    // - Checks node_access grants
+    // - Respects Group module's entity-level restrictions when enabled
+    // - Falls back to standard node permissions when Group module is disabled
+    //
+    // This approach ensures consistency between what the API reports and
+    // what users can actually do, avoiding permission mismatches.
+    return [
+      'view' => $node->access('view', $user),
+      'update' => $node->access('update', $user),
+      'delete' => $node->access('delete', $user),
     ];
-
-    // Admin and users with bypass permission can do anything.
-    if ($user->hasPermission('bypass node access') || $user->id() == 1) {
-      return ['view' => TRUE, 'update' => TRUE, 'delete' => TRUE];
-    }
-
-    // Anonymous users: only view published content.
-    if ($user->isAnonymous()) {
-      $permissions['view'] = $node->isPublished();
-      return $permissions;
-    }
-
-    // Check view permission.
-    $permissions['view'] = $node->isPublished() || $node->getOwnerId() == $user->id()
-      || $user->hasPermission('view any unpublished content')
-      || $user->hasPermission('access content overview');
-
-    // Check update permission.
-    if ($node->getOwnerId() == $user->id() && $user->hasPermission('edit own service_request content')) {
-      $permissions['update'] = TRUE;
-    }
-    elseif ($user->hasPermission('edit any service_request content')) {
-      $permissions['update'] = TRUE;
-    }
-
-    // Check delete permission.
-    if ($node->getOwnerId() == $user->id() && $user->hasPermission('delete own service_request content')) {
-      $permissions['delete'] = TRUE;
-    }
-    elseif ($user->hasPermission('delete any service_request content')) {
-      $permissions['delete'] = TRUE;
-    }
-
-    // If Group module is enabled, check group permissions.
-    if ($this->moduleHandler->moduleExists('group')) {
-      if (!$permissions['view']) {
-        $permissions['view'] = $this->checkGroupPermission($node, $user, 'view');
-      }
-      if (!$permissions['update']) {
-        $permissions['update'] = $this->checkGroupPermission($node, $user, 'update');
-      }
-      if (!$permissions['delete']) {
-        $permissions['delete'] = $this->checkGroupPermission($node, $user, 'delete');
-      }
-    }
-
-    return $permissions;
   }
 
   /**

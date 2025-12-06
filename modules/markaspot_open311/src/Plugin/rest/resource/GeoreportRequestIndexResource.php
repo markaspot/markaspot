@@ -332,14 +332,55 @@ class GeoreportRequestIndexResource extends ResourceBase {
         }
       }
 
-      // Handle sorting - add indexes to these fields in your DB.
-      $sort = (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) ? 'DESC' : 'ASC';
+      // Handle sorting - supports JSON:API style sort parameter.
+      // Examples: sort=created, sort=-created, sort=status, sort=-updated
+      // The '-' prefix indicates descending order.
+      // For backward compatibility: sort=DESC or sort=ASC defaults to 'created' field.
+      $sortField = 'created';
+      $sortDirection = 'ASC';
+
+      if (isset($parameters['sort'])) {
+        $sortParam = $parameters['sort'];
+
+        // Backward compatibility: handle legacy sort=DESC or sort=ASC.
+        if (strcasecmp($sortParam, 'DESC') === 0) {
+          $sortDirection = 'DESC';
+        }
+        elseif (strcasecmp($sortParam, 'ASC') === 0) {
+          $sortDirection = 'ASC';
+        }
+        else {
+          // JSON:API style: check for '-' prefix for descending order.
+          if (str_starts_with($sortParam, '-')) {
+            $sortDirection = 'DESC';
+            $sortParam = substr($sortParam, 1);
+          }
+          else {
+            $sortDirection = 'ASC';
+          }
+
+          // Map sort field names to Drupal entity fields.
+          $fieldMapping = [
+            'created' => 'created',
+            'updated' => 'changed',
+            'status' => 'field_status',
+            'service_code' => 'field_category',
+            'request_id' => 'request_id',
+          ];
+
+          if (isset($fieldMapping[$sortParam])) {
+            $sortField = $fieldMapping[$sortParam];
+          }
+        }
+      }
+
+      // Apply the updated filter if present (overrides sort for this use case).
       if (isset($parameters['updated'])) {
         $query->condition('changed', strtotime($parameters['updated']), '>=')
           ->sort('changed', 'DESC');
       }
       else {
-        $query->sort('created', $sort);
+        $query->sort($sortField, $sortDirection);
       }
     }
 

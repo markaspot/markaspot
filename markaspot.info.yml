@@ -36,6 +36,7 @@ dependencies:
   - filter
   - geolocation
   - geolocation_nominatim
+  - group
   - help
   - history
   - image

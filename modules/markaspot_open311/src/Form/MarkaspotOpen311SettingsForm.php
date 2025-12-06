@@ -130,6 +130,46 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    // Status Notes Configuration.
+    $form['markaspot_open311']['status_notes'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Status Notes Configuration'),
+      '#description' => $this->t('Configure automatic status note creation.'),
+      '#collapsible' => TRUE,
+      '#group' => 'settings',
+    ];
+
+    $form['markaspot_open311']['status_notes']['status_note_auto_create'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Auto-create status notes on status change'),
+      '#default_value' => $config->get('status_note_auto_create') ?? TRUE,
+      '#description' => $this->t('When enabled, automatically creates a status note when the status changes. Disable if the frontend handles status notes.'),
+    ];
+
+    $form['markaspot_open311']['status_notes']['status_note_created'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Initial Status Note Text'),
+      '#default_value' => $config->get('status_note_created') ?? 'The service request has been created.',
+      '#description' => $this->t('Default text for the initial status note when a new request is created. Leave empty to skip.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="status_note_auto_create"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
+    $form['markaspot_open311']['status_notes']['status_note_changed'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Status Changed Note Text'),
+      '#default_value' => $config->get('status_note_changed') ?? 'Status changed.',
+      '#description' => $this->t('Default text for status notes when status changes. Leave empty to skip auto-creation on status change.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="status_note_auto_create"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     // Field Access Configuration.
     $form['markaspot_open311']['field_access'] = [
       '#type' => 'fieldset',
@@ -270,6 +310,10 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       ->set('status_open_start', $values['status_open_start'])
       ->set('status_open', $values['status_open'])
       ->set('status_closed', $values['status_closed'])
+      // Status Notes Configuration
+      ->set('status_note_auto_create', $values['status_note_auto_create'])
+      ->set('status_note_created', $values['status_note_created'])
+      ->set('status_note_changed', $values['status_note_changed'])
       // Field Access
       ->set('field_access.public_fields', $values['public_fields'])
       ->set('field_access.user_fields', $values['user_fields'])

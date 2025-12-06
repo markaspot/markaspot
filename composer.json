@@ -48,6 +48,7 @@
         "drupal/gin": "^5",
         "drupal/gin_login": "^2.1",
         "drupal/gin_toolbar": "^3",
+        "drupal/group": "^3",
         "drupal/address": "~2",
         "drupal/pathauto": "^1",
         "drupal/restui": "^1",

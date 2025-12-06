@@ -27,6 +27,7 @@ Retrieve service requests with optional filtering.
 | `end_date` | string | Filter by date range end |
 | `bbox` | string | Bounding box filter: `minLng,minLat,maxLng,maxLat` |
 | `q` | string | Text search in title/body/address |
+| `sort` | string | Sort field with optional direction prefix (see below) |
 | `extensions` | bool | Enable Mark-a-Spot extensions (includes `meta.total`) |
 | `group_filter` | bool | Filter by user's organisation membership (see below) |
 
@@ -99,6 +100,43 @@ Group module controls view/edit permissions:
 | Anonymous | Published only | None |
 
 Configure group permissions at: `/admin/group/types/manage/[type]/permissions`
+
+## Sorting
+
+The `sort` parameter supports JSON:API style sorting with a `-` prefix for descending order.
+
+### Supported Sort Fields
+
+| Parameter Value | Entity Field | Description |
+|-----------------|--------------|-------------|
+| `created` | `created` | Creation date (ascending) |
+| `-created` | `created` | Creation date (descending, default) |
+| `updated` | `changed` | Last modified date (ascending) |
+| `-updated` | `changed` | Last modified date (descending) |
+| `status` | `field_status` | Status taxonomy term (ascending) |
+| `-status` | `field_status` | Status taxonomy term (descending) |
+| `service_code` | `field_category` | Category taxonomy term (ascending) |
+| `-service_code` | `field_category` | Category taxonomy term (descending) |
+| `request_id` | `request_id` | Request ID (ascending) |
+| `-request_id` | `request_id` | Request ID (descending) |
+
+### Examples
+
+```
+GET /georeport/v2/requests.json?sort=-created     # Newest first (default)
+GET /georeport/v2/requests.json?sort=created      # Oldest first
+GET /georeport/v2/requests.json?sort=-updated     # Recently updated first
+GET /georeport/v2/requests.json?sort=request_id   # By request ID ascending
+```
+
+### Backward Compatibility
+
+The legacy `sort=DESC` and `sort=ASC` values are still supported and default to sorting by `created` date:
+
+```
+GET /georeport/v2/requests.json?sort=DESC  # Same as sort=-created
+GET /georeport/v2/requests.json?sort=ASC   # Same as sort=created
+```
 
 ## Mark-a-Spot Extensions
 
