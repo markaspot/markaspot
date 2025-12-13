@@ -2,6 +2,7 @@
 namespace Drupal\markaspot_language;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\field\Entity\FieldConfig;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -59,6 +60,32 @@ class MarkaspotLanguageTaxonomy {
   }
 
   /**
+   * Enable translation for the body field on specific node bundles.
+   *
+   * @param string[] $bundles
+   *   Node bundles to update.
+   * @param string $fieldName
+   *   Field machine name to update.
+   *
+   * @return int
+   *   The number of field configs updated.
+   */
+  public function enableTranslationForNodeBodyFields(array $bundles = ['page', 'boilerplate'], $fieldName = 'body') {
+    $updated = 0;
+
+    foreach ($bundles as $bundle) {
+      $field = FieldConfig::loadByName('node', $bundle, $fieldName);
+      if ($field && !$field->isTranslatable()) {
+        $field->setTranslatable(TRUE);
+        $field->save();
+        $updated++;
+      }
+    }
+
+    return $updated;
+  }
+
+  /**
    * Disable translation for all taxonomy vocabularies.
    */
   public function disableTranslationForAllVocabularies() {
@@ -75,4 +102,3 @@ class MarkaspotLanguageTaxonomy {
     }
   }
 }
-

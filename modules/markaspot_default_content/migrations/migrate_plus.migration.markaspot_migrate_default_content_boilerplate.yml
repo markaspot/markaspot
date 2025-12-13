@@ -5,10 +5,17 @@ source:
   plugin: csv
   path: /artifacts/boilerplate.csv
   header_row_count: 1
-  ids: [title]
+  ids: [uuid]
 process:
+  uuid: uuid
+  langcode:
+    plugin: default_value
+    default_value: en
   title: title
-  body: body
+  body/value: body
+  body/format:
+    plugin: default_value
+    default_value: full_html
 destination:
   plugin: 'entity:node'
   default_bundle: boilerplate

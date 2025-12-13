@@ -3,7 +3,6 @@ status: true
 dependencies:
   config:
     - group.type.jur
-    - user.role.administrator
 id: jur-admin
 label: Admin
 weight: -99

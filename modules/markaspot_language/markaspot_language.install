@@ -1,27 +1,32 @@
 <?php
 
-use Drupal\markaspot_language\MarkaspotLanguageTaxonomy;
-
 /**
  * Implements hook_install().
  */
 function markaspot_language_install() {
-  // Get the service container.
-  $container = \Drupal::getContainer();
-
-  // Instantiate the class and call the method.
-  $class = $container->get('markaspot_language.language_service');
-  $class->enableTranslationForAllVocabularies();
+  $service = \Drupal::service('markaspot_language.language_service');
+  $service->enableTranslationForAllVocabularies();
+  $service->enableTranslationForNodeBodyFields();
 }
 
 /**
  * Implements hook_uninstall().
  */
 function markaspot_language_uninstall() {
-  // Get the service container.
-  $container = \Drupal::getContainer();
+  $service = \Drupal::service('markaspot_language.language_service');
+  $service->disableTranslationForAllVocabularies();
+}
 
-  // Instantiate the class and call the method.
-  $class = $container->get('markaspot_language.language_service');
-  $class->disableTranslationForAllVocabularies();
+/**
+ * Enable translation for node body fields on existing sites.
+ */
+function markaspot_language_update_11001() {
+  $service = \Drupal::service('markaspot_language.language_service');
+  $updated = $service->enableTranslationForNodeBodyFields();
+
+  return \Drupal::translation()->formatPlural(
+    $updated,
+    'Enabled translation for 1 node body field configuration.',
+    'Enabled translation for @count node body field configurations.'
+  );
 }

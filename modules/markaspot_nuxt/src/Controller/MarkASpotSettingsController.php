@@ -92,6 +92,27 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
+    // Add boundary GeoJSON from group's field_boundary if available.
+    if ($group && $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty()) {
+      $boundary_json = $group->get('field_boundary')->value;
+      $boundary_data = json_decode($boundary_json, TRUE);
+      if (is_array($boundary_data)) {
+        // Ensure boundary is a FeatureCollection (wrap single Feature if needed)
+        if (isset($boundary_data['type']) && $boundary_data['type'] === 'Feature') {
+          $settings['boundary'] = [
+            'type' => 'FeatureCollection',
+            'features' => [$boundary_data],
+          ];
+        }
+        elseif (isset($boundary_data['type']) && $boundary_data['type'] === 'FeatureCollection') {
+          $settings['boundary'] = $boundary_data;
+        }
+        else {
+          $settings['boundary'] = $boundary_data;
+        }
+      }
+    }
+
     // Return the configuration as a JSON response.
     return new JsonResponse($settings);
   }
