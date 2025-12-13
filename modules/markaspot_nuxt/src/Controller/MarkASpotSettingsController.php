@@ -4,6 +4,7 @@ namespace Drupal\markaspot_nuxt\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -26,7 +27,7 @@ class MarkASpotSettingsController extends ControllerBase {
     );
   }
 
-  public function getMarkASpotSettings() {
+  public function getMarkASpotSettings(Request $request) {
     // Load the 'markaspot_nuxt.settings' configuration.
     $nuxt_config = $this->configFactory->get('markaspot_nuxt.settings');
 
@@ -58,6 +59,38 @@ class MarkASpotSettingsController extends ControllerBase {
       'center_lat' => $nuxt_config->get('center_lat'),
       'center_lng' => $nuxt_config->get('center_lng'),
     ];
+
+    // Load jurisdiction-specific configuration from group entity.
+    $jurisdiction_id = $request->query->get('jurisdiction');
+    if ($jurisdiction_id) {
+      $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
+    }
+    else {
+      // Default to first jurisdiction group if none specified.
+      $groups = $this->entityTypeManager->getStorage('group')->loadByProperties(['type' => 'jur']);
+      $group = reset($groups);
+    }
+
+    if ($group && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $nuxt_json = $group->get('field_nuxt_config')->value;
+      $jurisdiction_config = json_decode($nuxt_json, TRUE);
+
+      if (is_array($jurisdiction_config)) {
+        // Add jurisdiction info.
+        $settings['jurisdiction'] = [
+          'id' => (int) $group->id(),
+          'name' => $group->label(),
+        ];
+
+        // Merge jurisdiction config into settings.
+        // These override/extend the base settings.
+        foreach (['client', 'theme', 'features', 'languages', 'ui', 'media', 'i18n'] as $key) {
+          if (!empty($jurisdiction_config[$key])) {
+            $settings[$key] = $jurisdiction_config[$key];
+          }
+        }
+      }
+    }
 
     // Return the configuration as a JSON response.
     return new JsonResponse($settings);
