@@ -1,0 +1,15 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+    - user.role.anonymous
+id: org-anonymous
+label: Anonymous
+weight: -102
+admin: false
+scope: outsider
+global_role: anonymous
+group_type: org
+permissions:
+  - 'view group_node:service_request entity'

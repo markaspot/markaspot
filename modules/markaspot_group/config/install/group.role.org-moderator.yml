@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+    - user.role.moderator
+id: org-moderator
+label: 'Moderator External'
+weight: 1
+admin: false
+scope: outsider
+global_role: moderator
+group_type: org
+permissions:
+  - 'access group_node overview'
+  - 'create group_node:service_request entity'
+  - 'view group'
+  - 'view group_node:service_request entity'
+  - 'view group_node:service_request relationship'
+  - 'view own unpublished group_node:service_request entity'
+  - 'view unpublished group_node:service_request entity'

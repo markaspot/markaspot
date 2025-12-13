@@ -1,0 +1,13 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+id: org-admin
+label: Admin
+weight: -8
+admin: true
+scope: individual
+global_role: null
+group_type: org
+permissions: {  }

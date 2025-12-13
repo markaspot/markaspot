@@ -67,6 +67,7 @@ dependencies:
   - markaspot_request_id
   - markaspot_validation
   - markaspot_icons
+  - markaspot_group
   - service_request
 
 themes:

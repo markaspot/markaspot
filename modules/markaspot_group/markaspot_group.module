@@ -1,62 +1,8 @@
 <?php
 
-use Drupal\Core\Entity\EntityInterface;
-use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\Form;
-
-
 /**
- * Implements hook_form_alter().
+ * @file
+ * Mark-a-Spot Group module.
+ *
+ * Provides group-based access control for service requests using the Group module.
  */
-function markaspot_group_form_alter(&$form, FormStateInterface $form_state, $form_id) {
-  switch ($form_id) {
-    case 'node_service_request_edit_form':
-
-  }
-}
-
-/**
- * Implements hook_node_presave().
- */
-function markaspot_group_node_presave(EntityInterface $node) {
-
-  if ($node->bundle() == 'service_request') {
-
-    $anonymous = [
-      'target_id' => 'anonymous',
-      'grant_public' => 0,
-      'grant_view' => 1,
-      'grant_update' => 0,
-      'grant_delete' => 0,
-    ];
-    $authenticated = [
-      'target_id' => 'authenticated',
-      'grant_public' => 0,
-      'grant_view' => 1,
-      'grant_update' => 0,
-      'grant_delete' => 0,
-    ];
-
-    $values = [
-      $anonymous,
-      $authenticated
-    ];
-
-    $node->set('field_pbf_ref_role', $values);
-
-    $orga_id = $node->get('field_organisation')->getValue();
-
-    // Setting the edit and view permission of the current organisation.
-    // Only Users of the same organisation can edit the request.
-    if (isset($orga_id[0])){
-      $value = [
-        'target_id' => $orga_id[0]['target_id'],
-        'grant_public' => 0,
-        'grant_view' => 1,
-        'grant_update' => 1,
-        'grant_delete' => 0,
-      ];
-      $node->set('field_pbf_ref_group', $value);
-    }
-  }
-}

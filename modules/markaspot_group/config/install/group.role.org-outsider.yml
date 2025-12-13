@@ -1,0 +1,16 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+    - user.role.authenticated
+id: org-outsider
+label: Outsider
+weight: -10
+admin: false
+scope: outsider
+global_role: authenticated
+group_type: org
+permissions:
+  - 'view group'
+  - 'view group_node:service_request entity'

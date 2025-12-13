@@ -1,0 +1,11 @@
+langcode: en
+status: true
+dependencies: {  }
+id: jur
+label: Jurisdiction
+description: "Use this group type for hierarchical access authorisation of content.\r\n"
+new_revision: true
+creator_membership: true
+creator_wizard: true
+creator_roles:
+  - jur-admin
