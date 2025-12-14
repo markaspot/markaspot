@@ -1,0 +1,325 @@
+{
+  "client": {
+    "ui:options": {
+      "title": "Branding",
+      "description": "Application identity and branding",
+      "weight": 10
+    },
+    "properties": {
+      "name": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "z.B. Maengelmelder Bonn"
+        }
+      },
+      "shortName": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "z.B. Bonn"
+        }
+      },
+      "domain": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "z.B. melder.bonn.de"
+        }
+      }
+    }
+  },
+
+  "theme": {
+    "ui:options": {
+      "title": "Farbschema",
+      "description": "Tailwind CSS Farben fuer das Frontend",
+      "weight": 20
+    },
+    "properties": {
+      "primary": {
+        "ui:options": {
+          "description": "Hauptfarbe fuer Buttons, Links und Akzente"
+        }
+      },
+      "secondary": {
+        "ui:options": {
+          "description": "Sekundaerfarbe fuer weniger wichtige Aktionen"
+        }
+      },
+      "neutral": {
+        "ui:options": {
+          "description": "Hintergrund- und Textfarben"
+        }
+      }
+    }
+  },
+
+  "features": {
+    "ui:options": {
+      "title": "Features",
+      "description": "Aktiviere oder deaktiviere Features fuer diese Jurisdiction",
+      "weight": 30
+    },
+    "properties": {
+      "voting": {
+        "ui:options": {
+          "description": "Buerger koennen fuer Meldungen abstimmen"
+        }
+      },
+      "statistics": {
+        "ui:options": {
+          "description": "Statistik-Tab in der Sidebar anzeigen"
+        }
+      },
+      "photoReporting": {
+        "ui:options": {
+          "description": "Photo-First Meldungsflow aktivieren"
+        }
+      },
+      "dashboard": {
+        "ui:options": {
+          "description": "Admin-Dashboard fuer Mitarbeiter"
+        }
+      },
+      "passwordless": {
+        "ui:options": {
+          "description": "E-Mail-basierte Anmeldung (erfordert Drupal-Modul)"
+        }
+      },
+      "aiAnalysis": {
+        "ui:options": {
+          "description": "KI-gestuetzte Bildanalyse"
+        }
+      },
+      "feedback": {
+        "ui:options": {
+          "description": "Feedback auf Antworten ermoeglichen"
+        }
+      },
+      "formFirst": {
+        "ui:options": {
+          "description": "Formular vor Karte auf Mobilgeraeten"
+        }
+      }
+    }
+  },
+
+  "ui": {
+    "ui:options": {
+      "title": "Layout",
+      "description": "UI-Anpassungen",
+      "weight": 40
+    },
+    "properties": {
+      "headerHeight": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "120px"
+        }
+      },
+      "logoHeight": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "100px"
+        }
+      },
+      "sidebar": {
+        "ui:options": {
+          "title": "Sidebar (Desktop)"
+        },
+        "properties": {
+          "width": {
+            "ui:options": {
+              "widget": "textfield",
+              "placeholder": "420px"
+            }
+          },
+          "enabled": {
+            "ui:options": {}
+          }
+        }
+      },
+      "bottomSheet": {
+        "ui:options": {
+          "title": "Bottom Sheet (Mobile)"
+        },
+        "properties": {
+          "position": {
+            "ui:options": {}
+          },
+          "minimumHeight": {
+            "ui:options": {}
+          },
+          "showHandle": {
+            "ui:options": {}
+          }
+        }
+      }
+    }
+  },
+
+  "media": {
+    "ui:options": {
+      "title": "Medien",
+      "description": "Foto-Upload Einstellungen",
+      "weight": 50
+    },
+    "properties": {
+      "maxFiles": {
+        "ui:options": {
+          "description": "Maximale Anzahl Fotos pro Meldung"
+        }
+      },
+      "maxFileSize": {
+        "ui:options": {
+          "description": "Maximale Dateigroesse in MB"
+        }
+      }
+    }
+  },
+
+  "languages": {
+    "ui:options": {
+      "title": "Sprachen",
+      "weight": 60
+    },
+    "properties": {
+      "available": {
+        "ui:options": {}
+      },
+      "default": {
+        "ui:options": {}
+      }
+    }
+  },
+
+  "map": {
+    "ui:options": {
+      "title": "Karte",
+      "description": "Kartenverhalten und Controls",
+      "weight": 70
+    },
+    "properties": {
+      "loadMarkersOnInit": {
+        "ui:options": {}
+      },
+      "deferredMap": {
+        "ui:options": {}
+      },
+      "controls": {
+        "ui:options": {
+          "title": "Karten-Controls"
+        },
+        "properties": {
+          "zoom": {
+            "ui:options": {}
+          },
+          "geolocation": {
+            "ui:options": {}
+          },
+          "theme": {
+            "ui:options": {}
+          },
+          "heatmap": {
+            "ui:options": {}
+          }
+        }
+      }
+    }
+  },
+
+  "navigation": {
+    "ui:options": {
+      "title": "Navigation",
+      "weight": 80
+    },
+    "properties": {
+      "activeTab": {
+        "ui:options": {}
+      },
+      "tabs": {
+        "ui:options": {
+          "title": "Tab-Sichtbarkeit"
+        },
+        "properties": {
+          "info": {
+            "ui:options": {}
+          },
+          "list": {
+            "ui:options": {}
+          },
+          "following": {
+            "ui:options": {}
+          },
+          "stats": {
+            "ui:options": {}
+          }
+        }
+      }
+    }
+  },
+
+  "filters": {
+    "ui:options": {
+      "title": "Filter",
+      "weight": 90
+    },
+    "properties": {
+      "status": {
+        "ui:options": {}
+      },
+      "category": {
+        "ui:options": {}
+      },
+      "time": {
+        "ui:options": {}
+      }
+    }
+  },
+
+  "forms": {
+    "ui:options": {
+      "title": "Formular-Einstellungen",
+      "weight": 100
+    },
+    "properties": {
+      "autoTriggerGeolocation": {
+        "ui:options": {}
+      },
+      "allowParentCategorySelection": {
+        "ui:options": {}
+      },
+      "pickOnMapButton": {
+        "ui:options": {}
+      }
+    }
+  },
+
+  "privacy": {
+    "ui:options": {
+      "title": "Datenschutz",
+      "weight": 110
+    },
+    "properties": {
+      "enabled": {
+        "ui:options": {}
+      },
+      "modal": {
+        "ui:options": {}
+      },
+      "nodeId": {
+        "ui:options": {
+          "placeholder": "Node ID der Datenschutzseite"
+        }
+      }
+    }
+  },
+
+  "i18n": {
+    "ui:options": {
+      "title": "Uebersetzungs-Overrides",
+      "description": "Ueberschreibe einzelne Uebersetzungsschluessel",
+      "weight": 120,
+      "widget": "textarea",
+      "rows": 10
+    }
+  }
+}

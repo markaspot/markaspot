@@ -1,0 +1,402 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://mark-a-spot.org/schemas/nuxt-config.json",
+  "title": "Mark-a-Spot Nuxt Configuration",
+  "description": "Jurisdiction-specific configuration for the Nuxt frontend",
+  "type": "object",
+  "properties": {
+    "client": {
+      "type": "object",
+      "title": "Client Branding",
+      "description": "Branding and identity settings",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Application Name",
+          "description": "Full name shown in header and title",
+          "minLength": 1,
+          "maxLength": 100,
+          "examples": ["Mängelmelder Bonn", "Sags uns Köln"]
+        },
+        "shortName": {
+          "type": "string",
+          "title": "Short Name",
+          "description": "Abbreviated name for mobile/PWA",
+          "maxLength": 20,
+          "examples": ["Bonn", "Köln"]
+        },
+        "domain": {
+          "type": "string",
+          "title": "Domain",
+          "description": "Primary domain for this jurisdiction",
+          "format": "hostname",
+          "examples": ["melder.bonn.de"]
+        }
+      },
+      "required": ["name"]
+    },
+    "theme": {
+      "type": "object",
+      "title": "Theme Colors",
+      "description": "Tailwind color palette names",
+      "properties": {
+        "primary": {
+          "type": "string",
+          "title": "Primary Color",
+          "description": "Main brand color (buttons, links, accents)",
+          "enum": [
+            "slate", "gray", "zinc", "neutral", "stone",
+            "red", "orange", "amber", "yellow", "lime",
+            "green", "emerald", "teal", "cyan", "sky",
+            "blue", "indigo", "violet", "purple", "fuchsia",
+            "pink", "rose"
+          ],
+          "default": "blue"
+        },
+        "secondary": {
+          "type": "string",
+          "title": "Secondary Color",
+          "description": "Accent color for secondary actions",
+          "enum": [
+            "slate", "gray", "zinc", "neutral", "stone",
+            "red", "orange", "amber", "yellow", "lime",
+            "green", "emerald", "teal", "cyan", "sky",
+            "blue", "indigo", "violet", "purple", "fuchsia",
+            "pink", "rose"
+          ],
+          "default": "violet"
+        },
+        "neutral": {
+          "type": "string",
+          "title": "Neutral Color",
+          "description": "Background and text colors",
+          "enum": ["slate", "gray", "zinc", "neutral", "stone"],
+          "default": "slate"
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "title": "Feature Toggles",
+      "description": "Enable or disable features for this jurisdiction",
+      "properties": {
+        "voting": {
+          "type": "boolean",
+          "title": "Voting",
+          "description": "Allow citizens to vote on reports",
+          "default": false
+        },
+        "statistics": {
+          "type": "boolean",
+          "title": "Statistics Tab",
+          "description": "Show statistics/analytics tab",
+          "default": false
+        },
+        "photoReporting": {
+          "type": "boolean",
+          "title": "Photo Reporting",
+          "description": "Enable photo-first reporting flow",
+          "default": true
+        },
+        "dashboard": {
+          "type": "boolean",
+          "title": "Dashboard",
+          "description": "Enable admin dashboard for staff",
+          "default": false
+        },
+        "passwordless": {
+          "type": "boolean",
+          "title": "Passwordless Auth",
+          "description": "Enable email-based login (requires Drupal module)",
+          "default": false
+        },
+        "aiAnalysis": {
+          "type": "boolean",
+          "title": "AI Analysis",
+          "description": "Enable AI-powered image analysis",
+          "default": false
+        },
+        "feedback": {
+          "type": "boolean",
+          "title": "Feedback",
+          "description": "Allow feedback on service provider responses",
+          "default": true
+        },
+        "formFirst": {
+          "type": "boolean",
+          "title": "Form-First Mobile",
+          "description": "Show form before map on mobile devices",
+          "default": true
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "title": "UI Layout",
+      "description": "Layout and UI customization",
+      "properties": {
+        "headerHeight": {
+          "type": "string",
+          "title": "Header Height",
+          "description": "CSS value for header height",
+          "pattern": "^(auto|\\d+px|\\d+rem)$",
+          "default": "120px",
+          "examples": ["auto", "100px", "80px"]
+        },
+        "logoHeight": {
+          "type": "string",
+          "title": "Logo Height",
+          "description": "CSS value for logo height",
+          "pattern": "^\\d+px$",
+          "default": "100px"
+        },
+        "sidebar": {
+          "type": "object",
+          "title": "Sidebar Settings",
+          "properties": {
+            "width": {
+              "type": "string",
+              "title": "Width",
+              "description": "Sidebar width on desktop",
+              "pattern": "^\\d+px$",
+              "default": "420px"
+            },
+            "enabled": {
+              "type": "boolean",
+              "title": "Enabled",
+              "description": "Show sidebar on desktop",
+              "default": true
+            }
+          }
+        },
+        "bottomSheet": {
+          "type": "object",
+          "title": "Bottom Sheet (Mobile)",
+          "properties": {
+            "position": {
+              "type": "string",
+              "title": "Initial Position",
+              "enum": ["low", "medium", "high"],
+              "default": "medium"
+            },
+            "minimumHeight": {
+              "type": "integer",
+              "title": "Minimum Height (px)",
+              "minimum": 100,
+              "maximum": 500,
+              "default": 140
+            },
+            "showHandle": {
+              "type": "boolean",
+              "title": "Show Handle",
+              "default": true
+            }
+          }
+        }
+      }
+    },
+    "media": {
+      "type": "object",
+      "title": "Media Settings",
+      "description": "Photo upload configuration",
+      "properties": {
+        "maxFiles": {
+          "type": "integer",
+          "title": "Max Files",
+          "description": "Maximum number of photos per report",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 3
+        },
+        "maxFileSize": {
+          "type": "integer",
+          "title": "Max File Size (MB)",
+          "description": "Maximum file size in megabytes",
+          "minimum": 1,
+          "maximum": 50,
+          "default": 20
+        }
+      }
+    },
+    "languages": {
+      "type": "object",
+      "title": "Language Settings",
+      "properties": {
+        "available": {
+          "type": "array",
+          "title": "Available Languages",
+          "description": "Language codes available for this jurisdiction",
+          "items": {
+            "type": "string",
+            "enum": ["de", "en", "fr", "es", "nl", "tr", "ar", "uk", "pl"]
+          },
+          "default": ["de", "en"],
+          "uniqueItems": true
+        },
+        "default": {
+          "type": "string",
+          "title": "Default Language",
+          "enum": ["de", "en", "fr", "es", "nl", "tr", "ar", "uk", "pl"],
+          "default": "de"
+        }
+      }
+    },
+    "map": {
+      "type": "object",
+      "title": "Map Settings",
+      "description": "Map behavior and controls",
+      "properties": {
+        "loadMarkersOnInit": {
+          "type": "boolean",
+          "title": "Load Markers on Init",
+          "description": "Load markers when map first loads",
+          "default": true
+        },
+        "deferredMap": {
+          "type": "boolean",
+          "title": "Deferred Map Loading",
+          "description": "Defer map loading on mobile for performance",
+          "default": true
+        },
+        "controls": {
+          "type": "object",
+          "title": "Map Controls",
+          "properties": {
+            "zoom": {
+              "type": "boolean",
+              "title": "Zoom Controls",
+              "default": true
+            },
+            "geolocation": {
+              "type": "boolean",
+              "title": "Geolocation Button",
+              "default": true
+            },
+            "theme": {
+              "type": "boolean",
+              "title": "Theme Toggle",
+              "default": true
+            },
+            "heatmap": {
+              "type": "boolean",
+              "title": "Heatmap Toggle",
+              "default": false
+            }
+          }
+        }
+      }
+    },
+    "navigation": {
+      "type": "object",
+      "title": "Navigation Tabs",
+      "description": "Configure visible tabs in the sidebar/bottom sheet",
+      "properties": {
+        "activeTab": {
+          "type": "string",
+          "title": "Default Active Tab",
+          "enum": ["info", "list", "following", "stats"],
+          "default": "info"
+        },
+        "tabs": {
+          "type": "object",
+          "title": "Tab Visibility",
+          "properties": {
+            "info": {
+              "type": "boolean",
+              "title": "Info Tab",
+              "default": true
+            },
+            "list": {
+              "type": "boolean",
+              "title": "List Tab",
+              "default": true
+            },
+            "following": {
+              "type": "boolean",
+              "title": "Following Tab",
+              "default": true
+            },
+            "stats": {
+              "type": "boolean",
+              "title": "Stats Tab",
+              "default": false
+            }
+          }
+        }
+      }
+    },
+    "filters": {
+      "type": "object",
+      "title": "Filter Settings",
+      "properties": {
+        "status": {
+          "type": "boolean",
+          "title": "Status Filters",
+          "default": true
+        },
+        "category": {
+          "type": "boolean",
+          "title": "Category Filters",
+          "default": true
+        },
+        "time": {
+          "type": "boolean",
+          "title": "Time Filters",
+          "default": true
+        }
+      }
+    },
+    "forms": {
+      "type": "object",
+      "title": "Form Settings",
+      "properties": {
+        "autoTriggerGeolocation": {
+          "type": "boolean",
+          "title": "Auto-trigger Geolocation",
+          "description": "Request location when form opens",
+          "default": true
+        },
+        "allowParentCategorySelection": {
+          "type": "boolean",
+          "title": "Allow Parent Category Selection",
+          "description": "Let users select parent categories",
+          "default": false
+        },
+        "pickOnMapButton": {
+          "type": "boolean",
+          "title": "Pick on Map Button",
+          "description": "Show 'Pick on map' button in location field",
+          "default": true
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "title": "Privacy Settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "Show Privacy Notice",
+          "default": true
+        },
+        "modal": {
+          "type": "boolean",
+          "title": "Use Modal",
+          "description": "Show privacy text in modal instead of external link",
+          "default": true
+        },
+        "nodeId": {
+          "type": "integer",
+          "title": "Privacy Page Node ID",
+          "description": "Drupal node ID containing privacy text"
+        }
+      }
+    },
+    "i18n": {
+      "type": "string",
+      "title": "Translation Overrides",
+      "description": "Override specific translation keys as JSON object. Example: {\"de\": {\"form.submit\": \"Meldung absenden\"}}"
+    }
+  },
+  "additionalProperties": false
+}
