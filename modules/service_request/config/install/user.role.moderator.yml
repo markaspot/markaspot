@@ -1,0 +1,9 @@
+langcode: en
+status: true
+dependencies: {}
+id: moderator
+label: Moderator
+weight: -5
+is_admin: null
+permissions:
+  - 'access content'
