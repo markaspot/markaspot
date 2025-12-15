@@ -9,19 +9,19 @@
       "name": {
         "ui:options": {
           "widget": "textfield",
-          "placeholder": "z.B. Maengelmelder Bonn"
+          "placeholder": "e.g. Issue Reporter Bonn"
         }
       },
       "shortName": {
         "ui:options": {
           "widget": "textfield",
-          "placeholder": "z.B. Bonn"
+          "placeholder": "e.g. Bonn"
         }
       },
       "domain": {
         "ui:options": {
           "widget": "textfield",
-          "placeholder": "z.B. melder.bonn.de"
+          "placeholder": "e.g. reporter.bonn.gov"
         }
       }
     }
@@ -29,24 +29,24 @@
 
   "theme": {
     "ui:options": {
-      "title": "Farbschema",
-      "description": "Tailwind CSS Farben fuer das Frontend",
+      "title": "Color Scheme",
+      "description": "Tailwind CSS colors for the frontend",
       "weight": 20
     },
     "properties": {
       "primary": {
         "ui:options": {
-          "description": "Hauptfarbe fuer Buttons, Links und Akzente"
+          "description": "Primary color for buttons, links and accents"
         }
       },
       "secondary": {
         "ui:options": {
-          "description": "Sekundaerfarbe fuer weniger wichtige Aktionen"
+          "description": "Secondary color for less important actions"
         }
       },
       "neutral": {
         "ui:options": {
-          "description": "Hintergrund- und Textfarben"
+          "description": "Background and text colors"
         }
       }
     }
@@ -55,48 +55,48 @@
   "features": {
     "ui:options": {
       "title": "Features",
-      "description": "Aktiviere oder deaktiviere Features fuer diese Jurisdiction",
+      "description": "Enable or disable features for this jurisdiction",
       "weight": 30
     },
     "properties": {
       "voting": {
         "ui:options": {
-          "description": "Buerger koennen fuer Meldungen abstimmen"
+          "description": "Allow citizens to vote on reports"
         }
       },
       "statistics": {
         "ui:options": {
-          "description": "Statistik-Tab in der Sidebar anzeigen"
+          "description": "Show statistics tab in the sidebar"
         }
       },
       "photoReporting": {
         "ui:options": {
-          "description": "Photo-First Meldungsflow aktivieren"
+          "description": "Enable photo-first reporting flow"
         }
       },
       "dashboard": {
         "ui:options": {
-          "description": "Admin-Dashboard fuer Mitarbeiter"
+          "description": "Admin dashboard for staff members"
         }
       },
       "passwordless": {
         "ui:options": {
-          "description": "E-Mail-basierte Anmeldung (erfordert Drupal-Modul)"
+          "description": "Email-based login (requires Drupal module)"
         }
       },
       "aiAnalysis": {
         "ui:options": {
-          "description": "KI-gestuetzte Bildanalyse"
+          "description": "AI-powered image analysis"
         }
       },
       "feedback": {
         "ui:options": {
-          "description": "Feedback auf Antworten ermoeglichen"
+          "description": "Allow feedback on responses"
         }
       },
       "formFirst": {
         "ui:options": {
-          "description": "Formular vor Karte auf Mobilgeraeten"
+          "description": "Show form before map on mobile devices"
         }
       }
     }
@@ -105,7 +105,7 @@
   "ui": {
     "ui:options": {
       "title": "Layout",
-      "description": "UI-Anpassungen",
+      "description": "UI customizations",
       "weight": 40
     },
     "properties": {
@@ -158,19 +158,19 @@
 
   "media": {
     "ui:options": {
-      "title": "Medien",
-      "description": "Foto-Upload Einstellungen",
+      "title": "Media",
+      "description": "Photo upload settings",
       "weight": 50
     },
     "properties": {
       "maxFiles": {
         "ui:options": {
-          "description": "Maximale Anzahl Fotos pro Meldung"
+          "description": "Maximum number of photos per report"
         }
       },
       "maxFileSize": {
         "ui:options": {
-          "description": "Maximale Dateigroesse in MB"
+          "description": "Maximum file size in MB"
         }
       }
     }
@@ -178,23 +178,30 @@
 
   "languages": {
     "ui:options": {
-      "title": "Sprachen",
+      "title": "Languages",
       "weight": 60
     },
     "properties": {
       "available": {
-        "ui:options": {}
+        "ui:options": {
+          "description": "Available languages (de-ls = Easy Language)"
+        }
       },
       "default": {
         "ui:options": {}
+      },
+      "locales": {
+        "ui:options": {
+          "description": "Optional custom display names for languages"
+        }
       }
     }
   },
 
   "map": {
     "ui:options": {
-      "title": "Karte",
-      "description": "Kartenverhalten und Controls",
+      "title": "Map",
+      "description": "Map behavior and controls",
       "weight": 70
     },
     "properties": {
@@ -206,7 +213,7 @@
       },
       "controls": {
         "ui:options": {
-          "title": "Karten-Controls"
+          "title": "Map Controls"
         },
         "properties": {
           "zoom": {
@@ -237,7 +244,7 @@
       },
       "tabs": {
         "ui:options": {
-          "title": "Tab-Sichtbarkeit"
+          "title": "Tab Visibility"
         },
         "properties": {
           "info": {
@@ -259,7 +266,7 @@
 
   "filters": {
     "ui:options": {
-      "title": "Filter",
+      "title": "Filters",
       "weight": 90
     },
     "properties": {
@@ -277,7 +284,7 @@
 
   "forms": {
     "ui:options": {
-      "title": "Formular-Einstellungen",
+      "title": "Form Settings",
       "weight": 100
     },
     "properties": {
@@ -295,7 +302,7 @@
 
   "privacy": {
     "ui:options": {
-      "title": "Datenschutz",
+      "title": "Privacy",
       "weight": 110
     },
     "properties": {
@@ -307,7 +314,7 @@
       },
       "nodeId": {
         "ui:options": {
-          "placeholder": "Node ID der Datenschutzseite"
+          "placeholder": "Node ID of the privacy page"
         }
       }
     }
@@ -315,8 +322,8 @@
 
   "i18n": {
     "ui:options": {
-      "title": "Uebersetzungs-Overrides",
-      "description": "Ueberschreibe einzelne Uebersetzungsschluessel",
+      "title": "Translation Overrides",
+      "description": "Override individual translation keys",
       "weight": 120,
       "widget": "textarea",
       "rows": 10
