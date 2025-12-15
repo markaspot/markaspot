@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311\Service;
 
+use Drupal\group\Entity\GroupMembership;
 use Drupal\media\MediaInterface;
 use Drupal\Core\File\Exception\InvalidStreamWrapperException;
 use Drupal\Core\File\Exception\FileException;
@@ -728,7 +729,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Load user's group memberships.
-    $memberships = \Drupal\group\Entity\GroupMembership::loadByUser($user);
+    $memberships = GroupMembership::loadByUser($user);
     $group_ids = [];
 
     foreach ($memberships as $membership) {
@@ -852,7 +853,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
 
       // Get user's group memberships.
-      $memberships = \Drupal\group\Entity\GroupMembership::loadByUser($user);
+      $memberships = GroupMembership::loadByUser($user);
       $user_group_ids = [];
       foreach ($memberships as $membership) {
         $user_group_ids[] = $membership->getGroupId();
@@ -943,13 +944,20 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * Maps a node object to a service request definition.
    */
   public function mapNodeToServiceRequest(object $node, string $extendedRole, array $parameters): array {
+    // Get translated node if translation exists for requested language.
+    $langcode = $parameters['langcode'] ?? 'en';
+    if ($node->hasTranslation($langcode)) {
+      $node = $node->getTranslation($langcode);
+    }
+
     // Get core field values efficiently.
     $categoryId = !$node->get('field_category')->isEmpty() ? $node->get('field_category')->target_id : NULL;
     $statusId = !$node->get('field_status')->isEmpty() ? $node->get('field_status')->target_id : NULL;
 
     // Use a static cache for this node's details to avoid recalculation on repeated calls.
+    // Include langcode in cache key to properly cache translated content.
     static $serviceRequestCache = [];
-    $cacheKey = $node->id() . '_' . $extendedRole . '_' . md5(serialize($parameters));
+    $cacheKey = $node->id() . '_' . $langcode . '_' . $extendedRole . '_' . md5(serialize($parameters));
 
     if (isset($serviceRequestCache[$cacheKey])) {
       return $serviceRequestCache[$cacheKey];
@@ -1011,7 +1019,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Add service details if available.
     if ($categoryId) {
-      $request['service_name'] = $this->getTaxonomyTermField($categoryId, 'name');
+      $request['service_name'] = $this->getTranslatedTaxonomyTermField($categoryId, 'name', $langcode);
       $request['service_code'] = $this->getTaxonomyTermField($categoryId, 'field_service_code');
     }
 
@@ -1199,6 +1207,64 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     $term = $termCache[$tid];
+
+    // Check if the term exists and if the specified field exists on the term.
+    if ($term !== NULL && $term->hasField($fieldName)) {
+      // Special case for name field which doesn't have a value property.
+      if ($fieldName === 'name') {
+        return $term->getName();
+      }
+
+      // Safely return the field value, ensuring null is returned if the field is not set.
+      return $term->get($fieldName)->value ?? NULL;
+    }
+
+    // Return null if the term doesn't exist, the field doesn't exist, or $tid is invalid.
+    return NULL;
+  }
+
+  /**
+   * Retrieves a translated field value from a taxonomy term.
+   *
+   * @param int|null $tid
+   *   The taxonomy term ID.
+   * @param string $fieldName
+   *   The field name.
+   * @param string $langcode
+   *   The language code for translation.
+   *
+   * @return mixed
+   *   The translated field value, or null if the field or term is not found.
+   */
+  public function getTranslatedTaxonomyTermField(?int $tid, string $fieldName, string $langcode): mixed {
+    // Early return if $tid is null or not positive.
+    if (is_null($tid) || $tid <= 0) {
+      return NULL;
+    }
+
+    // Use static cache keyed by tid and langcode.
+    static $translatedTermCache = [];
+    $cacheKey = $tid . '_' . $langcode;
+
+    // If translated term is not in cache, load it.
+    if (!isset($translatedTermCache[$cacheKey])) {
+      $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($tid);
+
+      if ($term && $term->hasTranslation($langcode)) {
+        $translatedTermCache[$cacheKey] = $term->getTranslation($langcode);
+      }
+      else {
+        // Fall back to original term if translation not available.
+        $translatedTermCache[$cacheKey] = $term;
+      }
+
+      // Limit cache size to avoid memory issues.
+      if (count($translatedTermCache) > 200) {
+        array_shift($translatedTermCache);
+      }
+    }
+
+    $term = $translatedTermCache[$cacheKey];
 
     // Check if the term exists and if the specified field exists on the term.
     if ($term !== NULL && $term->hasField($fieldName)) {
