@@ -7,6 +7,7 @@ use Drupal\Core\Url;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -17,24 +18,19 @@ use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 
 /**
- * Validates the LatLon constraint.
- *
- * @todo Make this possible for polygons
- * with something like geoPHP or
- *    this: http://assemblysys.com/php-point-in-polygon-algorithm/
- * 1. Get Place in Geocoder, check details, get relation id
- * 2. via https://www.openstreetmap.org/relation/175905
- * 3. http://polygons.openstreetmap.fr/index.py?id=175905
- */
-
-/**
  * Class DoublePostConstraintValidator.
  *
- *  Validates new service request against identical existing requests.
+ * Validates new service request against identical existing requests.
+ * Supports headless/JSON:API via X-Acknowledge-Duplicate header.
  */
 class DoublePostConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
   use StringTranslationTrait;
+
+  /**
+   * Header name for acknowledging duplicate warning in headless mode.
+   */
+  const ACKNOWLEDGE_HEADER = 'X-Acknowledge-Duplicate';
 
   /**
    * The time service.
@@ -42,7 +38,6 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
    * @var \Drupal\Component\Datetime\TimeInterface
    */
   protected $time;
-
 
   /**
    * The request stack.
@@ -59,11 +54,11 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
   protected $entityTypeManager;
 
   /**
-   * The config factory.
+   * The module configuration.
    *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   * @var \Drupal\Core\Config\ImmutableConfig
    */
-  protected $configFactory;
+  protected $config;
 
   /**
    * The current user.
@@ -73,7 +68,7 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
   protected $account;
 
   /**
-   * Constructs a Validation object.
+   * Constructs a DoublePostConstraintValidator object.
    *
    * @param \Drupal\Component\Datetime\TimeInterface $time
    *   The time service.
@@ -90,7 +85,8 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
     $this->time = $time;
     $this->requestStack = $request_stack;
     $this->entityTypeManager = $entity_type_manager;
-    $this->configFactory = $config_factory->getEditable('markaspot_validation.settings');
+    // Use get() for read-only access, not getEditable().
+    $this->config = $config_factory->get('markaspot_validation.settings');
     $this->account = $account;
   }
 
@@ -111,71 +107,133 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
    * {@inheritdoc}
    */
   public function validate($field, Constraint $constraint) {
-    $session = $this->requestStack->getCurrentRequest()->getSession();
-    $config = $this->configFactory;
-    $status = $config->get('duplicate_check');
-    if ($status === 0) {
+    $config = $this->config;
+    $request = $this->requestStack->getCurrentRequest();
+
+    // Check if duplicate validation is enabled.
+    if (!$config->get('duplicate_check')) {
       return;
     }
-    $user = $this->account;
-    // var_dump($this->$current_user);.
-    $user->hasPermission('bypass mas validation');
-    if (!$user->hasPermission('bypass mas validation')) {
-      $nids = $this->checkEnvironment(floatval($field->lng), floatval($field->lat));
-      $session_ident = !empty($nids) ? end($nids) : '';
-    }
-    else {
-      $session_ident = '';
-      $nids = [];
+
+    // Users with bypass permission skip validation entirely.
+    if ($this->account->hasPermission('bypass mas validation')) {
+      return;
     }
 
-    if (count($nids) > 0) {
-      $nodes = $this->entityTypeManager->getStorage('node')
-        ->loadMultiple($nids);
-      foreach ($nodes as $node) {
-        $options = ['absolute' => TRUE];
-        $url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], $options);
-        $link_options = [
-          'attributes' => [
-            'class' => [
-              'doublepost',
-              'use-ajax',
-            ],
-            'data-dialog-type' => 'modal',
-            'data-history-node-id' => [
-              $node->id(),
-            ],
-          ],
-        ];
-        $url->setOptions($link_options);
-        $unit = $config->get('unit');
-        $unit = ($unit == 'yards') ? 'yards' : 'meters';
+    // Find potential duplicates.
+    $nids = $this->checkEnvironment(floatval($field->lng), floatval($field->lat));
 
-
-        $message_string = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
-          '@id' => $node->request_id->value,
-          '@radius' => $config->get('radius'),
-          '@unit' => $unit,
-        ]);
-        $link = Link::fromTextAndUrl($message_string, $url);
-        $message = $link->toString();
-      }
-      $iteration = $session->get('ignore_dublicate_' . $session_ident);
-      $treshold = $config->get('treshold') ? $config->get('treshold') : '0';
-      if ($iteration <= $treshold && $config->get('hint') == TRUE) {
-        $message_append = $this->t('You can ignore this message or help us by comparing the possible duplicate and clicking on the link.');
-        $this->context->addViolation($message . '</br>' . $message_append);
-        $session->set('ignore_dublicate_' . $session_ident, $iteration + 1);
-      }
-      elseif ($config->get('hint') == FALSE) {
-        $message_append = $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!');
-        $this->context->addViolation($message . '</br>' . $message_append);
-      }
+    if (empty($nids)) {
+      return;
     }
-    else {
-      $session->set('ignore_dublicate_' . $session_ident, 0);
+
+    // Check if this is a headless request with acknowledgment header.
+    $isAcknowledged = $this->isAcknowledgedDuplicate($request);
+    $isHintMode = (bool) $config->get('hint');
+
+    // In hint mode with acknowledgment: allow submission.
+    if ($isHintMode && $isAcknowledged) {
+      return;
+    }
+
+    // Build the duplicate info for response.
+    $duplicateInfo = $this->buildDuplicateInfo($nids, $config);
+
+    // Hard block mode: always reject.
+    if (!$isHintMode) {
+      $this->context->addViolation(
+        $duplicateInfo['message'] . '</br>' .
+        $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!')
+      );
+      return;
+    }
+
+    // Hint mode without acknowledgment: show warning with instructions.
+    $hintMessage = $this->t(
+      'You can ignore this message by resubmitting. To help us, please compare the possible duplicate by clicking the link above.'
+    );
+
+    $this->context->addViolation(
+      $duplicateInfo['message'] . '</br>' . $hintMessage,
+      [
+        'duplicate_hint' => TRUE,
+        'existing_report_id' => $duplicateInfo['request_id'],
+        'existing_report_nid' => $duplicateInfo['nid'],
+        'existing_report_url' => $duplicateInfo['url'],
+      ]
+    );
+  }
+
+  /**
+   * Check if the request acknowledges a duplicate warning.
+   *
+   * Supports both header-based (headless) and session-based (traditional form).
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The current request.
+   *
+   * @return bool
+   *   TRUE if duplicate was acknowledged.
+   */
+  protected function isAcknowledgedDuplicate($request): bool {
+    // Check for headless acknowledgment header.
+    $headerValue = $request->headers->get(self::ACKNOWLEDGE_HEADER);
+    if ($headerValue && strtolower($headerValue) === 'true') {
       return TRUE;
     }
+
+    // Check for form-based acknowledgment via request body.
+    $content = $request->getContent();
+    if ($content) {
+      $data = json_decode($content, TRUE);
+      if (isset($data['acknowledge_duplicate']) && $data['acknowledge_duplicate'] === TRUE) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Build duplicate information for the validation message.
+   *
+   * @param array $nids
+   *   Array of duplicate node IDs.
+   * @param \Drupal\Core\Config\ImmutableConfig $config
+   *   The module configuration.
+   *
+   * @return array
+   *   Array with message, request_id, nid, and url.
+   */
+  protected function buildDuplicateInfo(array $nids, ImmutableConfig $config): array {
+    $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
+    $node = reset($nodes);
+
+    $url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE]);
+    $link_options = [
+      'attributes' => [
+        'class' => ['doublepost', 'use-ajax'],
+        'data-dialog-type' => 'modal',
+        'data-history-node-id' => [$node->id()],
+      ],
+    ];
+    $url->setOptions($link_options);
+
+    $unit = $config->get('unit') === 'yards' ? 'yards' : 'meters';
+    $message_string = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
+      '@id' => $node->request_id->value,
+      '@radius' => $config->get('radius'),
+      '@unit' => $unit,
+    ]);
+
+    $link = Link::fromTextAndUrl($message_string, $url);
+
+    return [
+      'message' => $link->toString(),
+      'request_id' => $node->request_id->value,
+      'nid' => $node->id(),
+      'url' => $url->toString(),
+    ];
   }
 
   /**
@@ -189,14 +247,9 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
    * @return array|int
    *   Return the nid.
    */
-  public function checkEnvironment(float $lng, float $lat) {
-    /* load all nodes
-     *  > radius of 10m
-     *  > same service_code
-     *  > created or updated < period
-     *  > updated true|false
-     */
-    $config = $this->configFactory;
+  public function checkEnvironment(float $lng, float $lat): array {
+    // Find nodes within radius, same category, created within configured days.
+    $config = $this->config;
     // Filter posted category from context object.
     $entity = $this->context->getRoot();
     $category = $entity->get('field_category')->getValue();
