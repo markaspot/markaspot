@@ -76,7 +76,6 @@ class SettingsListController extends ControllerBase {
       'markaspot_request_id' => 'markaspot_request_id.settings',
       'markaspot_open311' => 'markaspot_open311.settings',
       'markaspot_validation' => 'markaspot_validation.settings',
-      'markaspot_privacy' => 'markaspot_privacy.settings',
       'markaspot_archive' => 'markaspot_archive.settings',
       'markaspot_publisher' => 'markaspot_publisher.settings_form',
       'markaspot_resubmission' => 'markaspot_resubmission.settings',

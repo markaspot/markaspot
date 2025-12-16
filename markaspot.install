@@ -109,6 +109,20 @@ function markaspot_update_9701() {
 }
 
 /**
+ * Uninstall deprecated markaspot_privacy module.
+ */
+function markaspot_update_9702() {
+  $module_handler = \Drupal::moduleHandler();
+
+  if ($module_handler->moduleExists('markaspot_privacy')) {
+    \Drupal::service('module_installer')->uninstall(['markaspot_privacy']);
+    return t('The markaspot_privacy module has been uninstalled. Privacy features are now handled by the Nuxt frontend.');
+  }
+
+  return t('The markaspot_privacy module was not installed.');
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {
