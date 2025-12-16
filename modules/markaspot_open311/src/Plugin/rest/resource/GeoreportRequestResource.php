@@ -433,7 +433,7 @@ class GeoreportRequestResource extends ResourceBase {
    * @param array $values
    *   An associative array of field values to update.
    *
-   * @return $service_request for later response
+   * @return bool
    *   TRUE if the node was successfully validated and updated, FALSE otherwise.
    */
   protected function validateAndUpdateNode(ContentEntityInterface $node, array $values): bool {

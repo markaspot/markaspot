@@ -39,7 +39,7 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
     $config = \Drupal::configFactory()->getEditable('markaspot_validation.settings');
     $wkt = $config->get('wkt');
     if ($wkt !== '') {
-      $coordinates = self::parse_wkt($wkt);
+      $coordinates = self::parseWkt($wkt);
       $polygon = new Polygon($coordinates);
       return $polygon->contain($lng, $lat);
     }
@@ -57,7 +57,7 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
    * @return array
    *   An array of coordinates.
    */
-  private static function parse_wkt($wkt) {
+  private static function parseWkt($wkt) {
     // Remove "POLYGON ((" at start and "))" at end.
     $polygon = substr($wkt, 9, -2);
     // Split into points.

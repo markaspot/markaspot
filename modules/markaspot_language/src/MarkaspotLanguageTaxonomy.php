@@ -8,7 +8,7 @@ use Drupal\taxonomy\Entity\Vocabulary;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
- *
+ * Service for managing taxonomy translation settings.
  */
 class MarkaspotLanguageTaxonomy {
   /**

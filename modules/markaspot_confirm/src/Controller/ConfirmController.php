@@ -9,12 +9,12 @@ use Symfony\Component\HttpFoundation\Request;
 use Drupal\Core\Config\ConfigFactoryInterface;
 
 /**
- * Class ConfirmController.
+ * Controller for handling service request confirmations.
  */
 class ConfirmController extends ControllerBase {
 
   /**
-   *
+   * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
     $confirm_service = $container->get('markaspot_confirm.confirm');
@@ -27,7 +27,7 @@ class ConfirmController extends ControllerBase {
    *
    * @var \Drupal\markaspot_confirm\ConfirmServiceInterface
    */
-  protected $confirm_service;
+  protected $confirmService;
 
   /**
    * The config factory.
@@ -45,7 +45,7 @@ class ConfirmController extends ControllerBase {
    *   The config factory.
    */
   public function __construct($confirm_service, ConfigFactoryInterface $config_factory) {
-    $this->confirm_service = $confirm_service;
+    $this->confirmService = $confirm_service;
     $this->configFactory = $config_factory;
   }
 
@@ -61,7 +61,7 @@ class ConfirmController extends ControllerBase {
    *   Return message or JSON response.
    */
   public function doConfirm($uuid, ?Request $request = NULL) {
-    $confirm = $this->confirm_service;
+    $confirm = $this->confirmService;
     $nodes = array_filter($confirm->load($uuid));
     $config = $this->configFactory->get('markaspot_confirm.settings');
 

@@ -242,7 +242,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * @return bool
    *   Return value.
    */
-  final protected function appendCData(\DOMNode $node, $val) {
+  final protected function appendCdata(\DOMNode $node, $val) {
     $nodeText = $this->dom->createCDATASection($val);
     $node->appendChild($nodeText);
     return TRUE;
@@ -549,7 +549,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       return $this->appendText($node, (string) $val);
     }
     elseif (is_string($val) && $this->needsCdataWrapping($val)) {
-      return $this->appendCData($node, $val);
+      return $this->appendCdata($node, $val);
     }
     elseif (is_string($val)) {
       return $this->appendText($node, $val);

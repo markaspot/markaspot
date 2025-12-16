@@ -2,15 +2,7 @@
 
 /**
  * @file
- */
-
-/**
- * Implements hook_field_widget_single_element__WIDGET_TYPE_form_alter().
- *
- * Attach js and html attributes to dynamically add taxonony term description
- * to SHS widget.
- *
- * currently only applicable for fields with cardinality of 1
+ * Contains SHS widget tweaks for Mark-a-Spot.
  */
 
 use Drupal\field\Entity\FieldConfig;
@@ -21,7 +13,7 @@ use Drupal\Core\Field\EntityReferenceFieldItemList;
 use Drupal\Core\Form\FormStateInterface;
 
 /**
- *
+ * Implements hook_field_widget_single_element_WIDGET_TYPE_form_alter().
  */
 function markaspot_shstweak_field_widget_single_element_options_shs_form_alter(&$element, FormStateInterface $form_state, $context) {
   $items = $context['items'];

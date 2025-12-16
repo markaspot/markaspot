@@ -7,12 +7,12 @@ use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 
 /**
- *
+ * Subscribes to kernel events to handle request format.
  */
 class RequestFormatSubscriber implements EventSubscriberInterface {
 
   /**
-   *
+   * {@inheritdoc}
    */
   public static function getSubscribedEvents() {
     // The priority must be high enough to run before the routing listener.
@@ -22,7 +22,7 @@ class RequestFormatSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   *
+   * Sets the request format based on URL path.
    */
   public function onKernelRequest(RequestEvent $event) {
     $request = $event->getRequest();

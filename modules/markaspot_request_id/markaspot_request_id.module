@@ -29,11 +29,9 @@ function markaspot_request_id_help($route_name, RouteMatchInterface $route_match
 }
 
 /**
- * Implements hook_entity_base_field_info()
+ * Implements hook_entity_base_field_info().
  */
 function markaspot_request_id_entity_base_field_info(EntityTypeInterface $entity_type) {
-  $bundle = $entity_type->getBundleLabel();
-
   if ($entity_type->id() === 'node') {
     // $node_type = NodeType::load();
     // $field_request_id = BaseFieldDefinition::create('string');
@@ -80,8 +78,8 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
       $request_id = markaspot_request_id_create_request_id();
       $node->request_id->value = $request_id;
       $title = markaspot_request_id_create_title($node, $request_id);
-      // Note: Entity API will sync title and request_id to node_field_data during save.
-      // No direct database update needed - $node->id() is NULL during presave for new nodes.
+      // Entity API syncs title and request_id to node_field_data during save.
+      // No direct DB update needed - $node->id() is NULL during presave.
     }
     else {
       $request_id = $node->request_id->value;
@@ -93,7 +91,11 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
 }
 
 /**
+ * Creates a unique request ID for service requests.
+ *
  * @return int|string
+ *   The generated request ID.
+ *
  * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
  * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
  */
@@ -109,7 +111,6 @@ function markaspot_request_id_create_request_id() {
     // Get the latest serial id.
     $id = $connection->insert('markaspot_request_id')
       ->fields([
-        // 'request_id' =>  $id . '-' . DateTime::createFromFormat(Y, $timestamp),
         'timestamp' => $timestamp,
       ])
       ->execute();
@@ -150,7 +151,7 @@ function markaspot_request_id_create_request_id() {
 
           // Calculate the following serial ID.
           $followUpId = $id - $yearly_diff[0] - $offset;
-          $update = $connection->update('markaspot_request_id')
+          $connection->update('markaspot_request_id')
             ->fields([
               'request_id' => $followUpId . $delimiter . $date,
               'offset' => $yearly_diff[0] + $offset,
@@ -194,7 +195,7 @@ function markaspot_request_id_create_request_id() {
       \Drupal::logger('markaspot')
         ->notice("Last Request ID: " . $last_request_id . " | Last NID: " . $last_request_nid);
       $next = explode('-', $last_request_id);
-      // Is one provided count up (needs increment of 2 if no NID is created yet)
+      // Count up if one exists (increment by 2 if no NID created yet).
       $next = (!empty($next[0])) ? $next[0] + 1 : 1;
 
       $id_pattern = $config->get('format');
@@ -206,10 +207,17 @@ function markaspot_request_id_create_request_id() {
 }
 
 /**
- * @param $connection
- * @param $id
- * @param $timestamp
- * @return mixed
+ * Updates the timestamp and request ID in the database.
+ *
+ * @param \Drupal\Core\Database\Connection $connection
+ *   The database connection.
+ * @param int $id
+ *   The record ID to update.
+ * @param int $timestamp
+ *   The timestamp to use for the request ID.
+ *
+ * @return int
+ *   The number of rows affected.
  */
 function markaspot_request_id_update_timestamp($connection, $id, $timestamp) {
   return $connection->update('markaspot_request_id')
@@ -222,10 +230,16 @@ function markaspot_request_id_update_timestamp($connection, $id, $timestamp) {
 }
 
 /**
- * @param $node
- * @param $request_id
+ * Creates a title for a service request node.
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $node
+ *   The service request node.
+ * @param string $request_id
+ *   The request ID to include in the title.
  *
  * @return string
+ *   The generated title.
+ *
  * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
  * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
  */
@@ -253,8 +267,13 @@ function markaspot_request_id_create_title($node, $request_id) {
 }
 
 /**
- * @param $connection
+ * Checks if the markaspot_request_id table exists.
+ *
+ * @param \Drupal\Core\Database\Connection $connection
+ *   The database connection.
+ *
  * @return bool
+ *   TRUE if the table exists, FALSE otherwise.
  */
 function markaspot_request_id_check_table($connection) {
   // Check if table exists, by simply querying it.
