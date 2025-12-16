@@ -92,6 +92,33 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
+    // Add logo URLs from group's file fields if available.
+    if ($group) {
+      $logos = [];
+
+      if ($group->hasField('field_logo_light') && !$group->get('field_logo_light')->isEmpty()) {
+        $file = $group->get('field_logo_light')->entity;
+        if ($file) {
+          $logos['light'] = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
+        }
+      }
+
+      if ($group->hasField('field_logo_dark') && !$group->get('field_logo_dark')->isEmpty()) {
+        $file = $group->get('field_logo_dark')->entity;
+        if ($file) {
+          $logos['dark'] = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
+        }
+      }
+
+      // Merge logos into theme settings.
+      if (!empty($logos)) {
+        if (!isset($settings['theme'])) {
+          $settings['theme'] = [];
+        }
+        $settings['theme']['logos'] = $logos;
+      }
+    }
+
     // Add boundary GeoJSON from group's field_boundary if available.
     if ($group && $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty()) {
       $boundary_json = $group->get('field_boundary')->value;
