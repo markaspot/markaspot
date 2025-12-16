@@ -29,8 +29,8 @@
 
   "theme": {
     "ui:options": {
-      "title": "Color Scheme",
-      "description": "Tailwind CSS colors for the frontend",
+      "title": "Theme",
+      "description": "Colors and typography",
       "weight": 20
     },
     "properties": {
@@ -47,6 +47,25 @@
       "neutral": {
         "ui:options": {
           "description": "Background and text colors"
+        }
+      },
+      "fonts": {
+        "ui:options": {
+          "title": "Typography"
+        },
+        "properties": {
+          "heading": {
+            "ui:options": {
+              "widget": "textfield",
+              "placeholder": "e.g. Inter, Roboto"
+            }
+          },
+          "body": {
+            "ui:options": {
+              "widget": "textfield",
+              "placeholder": "e.g. Inter, Open Sans"
+            }
+          }
         }
       }
     }

@@ -61,12 +61,27 @@ class MarkASpotSettingsController extends ControllerBase {
     ];
 
     // Load jurisdiction-specific configuration from group entity.
-    $jurisdiction_id = $request->query->get('jurisdiction');
-    if ($jurisdiction_id) {
-      $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
+    // Supports both numeric ID and URL slug for routing.
+    $jurisdiction_param = $request->query->get('jurisdiction');
+    $group = NULL;
+
+    if ($jurisdiction_param) {
+      // Try numeric ID first.
+      if (is_numeric($jurisdiction_param)) {
+        $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_param);
+      }
+      // Try slug lookup.
+      if (!$group) {
+        $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
+          'type' => 'jur',
+          'field_slug' => $jurisdiction_param,
+        ]);
+        $group = reset($groups) ?: NULL;
+      }
     }
-    else {
-      // Default to first jurisdiction group if none specified.
+
+    // Default to first jurisdiction group if none specified or found.
+    if (!$group) {
       $groups = $this->entityTypeManager->getStorage('group')->loadByProperties(['type' => 'jur']);
       $group = reset($groups);
     }
@@ -80,6 +95,9 @@ class MarkASpotSettingsController extends ControllerBase {
         $settings['jurisdiction'] = [
           'id' => (int) $group->id(),
           'name' => $group->label(),
+          'slug' => $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()
+            ? $group->get('field_slug')->value
+            : NULL,
         ];
 
         // Merge jurisdiction config into settings.
@@ -92,21 +110,39 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    // Add logo URLs from group's file fields if available.
+    // Add file URLs from group's file fields if available.
+    // Return relative paths - frontend will proxy through /api/images/ or /api/fonts/.
     if ($group) {
+      /** @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $stream_wrapper_manager */
+      $stream_wrapper_manager = \Drupal::service('stream_wrapper_manager');
+
+      // Helper to convert file URI to relative path.
+      $getRelativePath = function ($file) use ($stream_wrapper_manager) {
+        $uri = $file->getFileUri();
+        // Get the stream wrapper (e.g., public://)
+        $scheme = $stream_wrapper_manager->getScheme($uri);
+        if ($scheme === 'public') {
+          // public://fonts/file.woff2 -> /sites/default/files/fonts/file.woff2
+          $target = $stream_wrapper_manager->getTarget($uri);
+          return '/sites/default/files/' . $target;
+        }
+        // Fallback: extract path from URI
+        return '/' . str_replace('://', '/', $uri);
+      };
+
       $logos = [];
 
       if ($group->hasField('field_logo_light') && !$group->get('field_logo_light')->isEmpty()) {
         $file = $group->get('field_logo_light')->entity;
         if ($file) {
-          $logos['light'] = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
+          $logos['light'] = $getRelativePath($file);
         }
       }
 
       if ($group->hasField('field_logo_dark') && !$group->get('field_logo_dark')->isEmpty()) {
         $file = $group->get('field_logo_dark')->entity;
         if ($file) {
-          $logos['dark'] = \Drupal::service('file_url_generator')->generateAbsoluteString($file->getFileUri());
+          $logos['dark'] = $getRelativePath($file);
         }
       }
 
@@ -117,12 +153,47 @@ class MarkASpotSettingsController extends ControllerBase {
         }
         $settings['theme']['logos'] = $logos;
       }
+
+      // Add custom CSS from field_custom_css.
+      if ($group->hasField('field_custom_css') && !$group->get('field_custom_css')->isEmpty()) {
+        $custom_css = $group->get('field_custom_css')->value;
+        if (!empty(trim($custom_css))) {
+          if (!isset($settings['theme'])) {
+            $settings['theme'] = [];
+          }
+          $settings['theme']['customCss'] = $custom_css;
+        }
+      }
+
+      // Add font URLs from file fields (relative paths for frontend proxy).
+      $fonts = [];
+      if ($group->hasField('field_font_heading') && !$group->get('field_font_heading')->isEmpty()) {
+        $file = $group->get('field_font_heading')->entity;
+        if ($file) {
+          $fonts['headingUrl'] = $getRelativePath($file);
+        }
+      }
+      if ($group->hasField('field_font_body') && !$group->get('field_font_body')->isEmpty()) {
+        $file = $group->get('field_font_body')->entity;
+        if ($file) {
+          $fonts['bodyUrl'] = $getRelativePath($file);
+        }
+      }
+      if (!empty($fonts)) {
+        if (!isset($settings['theme'])) {
+          $settings['theme'] = [];
+        }
+        if (!isset($settings['theme']['fonts'])) {
+          $settings['theme']['fonts'] = [];
+        }
+        $settings['theme']['fonts'] = array_merge($settings['theme']['fonts'], $fonts);
+      }
     }
 
     // Add boundary GeoJSON from group's field_boundary if available.
     if ($group && $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty()) {
       $boundary_json = $group->get('field_boundary')->value;
-      // Strip HTML tags (in case field uses text_long with WYSIWYG)
+      // Strip HTML tags as safety measure
       $boundary_json = strip_tags($boundary_json);
       $boundary_data = json_decode($boundary_json, TRUE);
       if (is_array($boundary_data)) {

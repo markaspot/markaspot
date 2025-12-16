@@ -708,7 +708,95 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
     }
 
+    // Apply jurisdiction filter (gid or jurisdiction slug).
+    // This filters by a specific group, typically a 'jur' type for multi-tenant setups.
+    $jurisdiction_gid = $this->resolveJurisdictionId($parameters);
+    if ($jurisdiction_gid) {
+      $node_ids = $this->getNodeIdsInGroup($jurisdiction_gid);
+      if (!empty($node_ids)) {
+        $query->condition('nid', $node_ids, 'IN');
+      }
+      else {
+        // No nodes in this jurisdiction - return empty results.
+        $query->condition('nid', [0], 'IN');
+      }
+    }
+
     return $query;
+  }
+
+  /**
+   * Resolves jurisdiction parameter to a group ID.
+   *
+   * Supports both numeric group ID ('gid') and URL slug ('jurisdiction').
+   *
+   * @param array $parameters
+   *   Query parameters.
+   *
+   * @return int|null
+   *   The group ID or NULL if not specified/found.
+   */
+  protected function resolveJurisdictionId(array $parameters): ?int {
+    // Check for direct group ID.
+    if (!empty($parameters['gid']) && is_numeric($parameters['gid'])) {
+      return (int) $parameters['gid'];
+    }
+
+    // Check for jurisdiction slug.
+    if (!empty($parameters['jurisdiction'])) {
+      $slug = $parameters['jurisdiction'];
+
+      // If numeric, treat as group ID.
+      if (is_numeric($slug)) {
+        return (int) $slug;
+      }
+
+      // Lookup by slug.
+      $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
+        'type' => 'jur',
+        'field_slug' => $slug,
+      ]);
+      $group = reset($groups);
+      if ($group) {
+        return (int) $group->id();
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Gets node IDs that belong to a specific group.
+   *
+   * @param int $group_id
+   *   The group ID.
+   *
+   * @return array
+   *   Array of node IDs belonging to the group.
+   */
+  protected function getNodeIdsInGroup(int $group_id): array {
+    if (!$this->moduleHandler->moduleExists('group')) {
+      return [];
+    }
+
+    $relationship_storage = $this->entityTypeManager->getStorage('group_relationship');
+    $relationship_ids = $relationship_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('gid', $group_id)
+      ->condition('plugin_id', 'group_node:service_request')
+      ->execute();
+
+    if (empty($relationship_ids)) {
+      return [];
+    }
+
+    $relationships = $relationship_storage->loadMultiple($relationship_ids);
+    $node_ids = [];
+    foreach ($relationships as $relationship) {
+      $node_ids[] = $relationship->getEntityId();
+    }
+
+    return array_unique($node_ids);
   }
 
   /**

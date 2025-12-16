@@ -37,8 +37,8 @@
     },
     "theme": {
       "type": "object",
-      "title": "Theme Colors",
-      "description": "Tailwind color palette names",
+      "title": "Theme",
+      "description": "Colors and typography",
       "properties": {
         "primary": {
           "type": "string",
@@ -72,6 +72,27 @@
           "description": "Background and text colors",
           "enum": ["slate", "gray", "zinc", "neutral", "stone"],
           "default": "slate"
+        },
+        "fonts": {
+          "type": "object",
+          "title": "Typography",
+          "description": "Font families for headings and body text",
+          "properties": {
+            "heading": {
+              "type": "string",
+              "title": "Heading Font",
+              "description": "Font for headings (h1-h6)",
+              "maxLength": 100,
+              "examples": ["Inter", "Roboto", "Open Sans", "Montserrat"]
+            },
+            "body": {
+              "type": "string",
+              "title": "Body Font",
+              "description": "Font for body text",
+              "maxLength": 100,
+              "examples": ["Inter", "Roboto", "Open Sans", "Source Sans Pro"]
+            }
+          }
         }
       }
     },
