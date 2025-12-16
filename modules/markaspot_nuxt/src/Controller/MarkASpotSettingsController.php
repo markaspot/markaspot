@@ -461,4 +461,43 @@ class MarkASpotSettingsController extends ControllerBase {
     ]);
   }
 
+  /**
+   * Returns a list of all jurisdiction groups for routing.
+   *
+   * Used by the frontend to determine available jurisdictions and enable
+   * slug-based URL routing when multiple jurisdictions exist.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   List of jurisdictions with id, name, slug, and isDefault flag.
+   */
+  public function getJurisdictions() {
+    $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
+      'type' => 'jur',
+    ]);
+
+    $jurisdictions = [];
+    $first = TRUE;
+
+    foreach ($groups as $group) {
+      $slug = NULL;
+      if ($group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()) {
+        $slug = $group->get('field_slug')->value;
+      }
+
+      $jurisdictions[] = [
+        'id' => (int) $group->id(),
+        'name' => $group->label(),
+        'slug' => $slug,
+        'isDefault' => $first,
+      ];
+      $first = FALSE;
+    }
+
+    return new JsonResponse([
+      'jurisdictions' => $jurisdictions,
+      'count' => count($jurisdictions),
+      'hasMultiple' => count($jurisdictions) > 1,
+    ]);
+  }
+
 }

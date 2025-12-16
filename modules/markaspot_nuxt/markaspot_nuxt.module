@@ -2,6 +2,7 @@
 
 /**
  * @file
+ * Contains Nuxt frontend integration hooks for Mark-a-Spot.
  */
 
 use Drupal\Core\Entity\EntityInterface;

@@ -51,3 +51,11 @@ markaspot_nuxt.status_note_delete:
   methods: [DELETE]
   requirements:
     _permission: 'access content'
+
+markaspot_nuxt.jurisdictions:
+  path: '/api/jurisdictions'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getJurisdictions'
+    _format: 'json'
+  requirements:
+    _permission: 'access content'
