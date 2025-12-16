@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_bbox_cache\Form;
 
+use Drupal\Core\Cache\DatabaseBackend;
 use Drupal\Core\Cache\Cache;
 use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -35,7 +36,7 @@ class BboxCacheSettingsForm extends ConfigFormBase {
   public function __construct(
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typed_config_manager,
-    CacheBackendInterface $cache
+    CacheBackendInterface $cache,
   ) {
     parent::__construct($config_factory, $typed_config_manager);
     $this->cache = $cache;
@@ -150,7 +151,7 @@ class BboxCacheSettingsForm extends ConfigFormBase {
   public function clearCache(array &$form, FormStateInterface $form_state) {
     Cache::invalidateTags(['markaspot_bbox_cache']);
     $this->cache->deleteAll();
-    
+
     $this->messenger->addMessage($this->t('Bbox cache has been cleared.'));
   }
 
@@ -165,7 +166,7 @@ class BboxCacheSettingsForm extends ConfigFormBase {
     $backend = get_class($this->cache);
 
     // For DatabaseBackend, we can count items in the cache table.
-    if ($this->cache instanceof \Drupal\Core\Cache\DatabaseBackend) {
+    if ($this->cache instanceof DatabaseBackend) {
       try {
         $count = \Drupal::database()
           ->select('cache_markaspot_bbox_cache', 'c')

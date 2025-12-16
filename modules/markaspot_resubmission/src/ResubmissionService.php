@@ -4,7 +4,6 @@ namespace Drupal\markaspot_resubmission;
 
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\markaspot_resubmission\ReminderManager;
 
 /**
  * Class ResubmissionService.
@@ -80,7 +79,9 @@ class ResubmissionService implements ResubmissionServiceInterface {
 
     // Load service category term IDs.
     $category_items = $term_storage->loadTree('service_category');
-    $category_ids = array_map(function($item) { return $item->tid; }, $category_items);
+    $category_ids = array_map(function ($item) {
+      return $item->tid;
+    }, $category_items);
 
     // Get a rotating subset of categories to process.
     $state = \Drupal::state();

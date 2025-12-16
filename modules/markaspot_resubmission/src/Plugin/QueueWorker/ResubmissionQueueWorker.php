@@ -2,6 +2,9 @@
 
 namespace Drupal\markaspot_resubmission\Plugin\QueueWorker;
 
+use Drupal\taxonomy\Entity\Term;
+use Drupal\group\Entity\Group;
+use Drupal\group\Entity\GroupRelationship;
 use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -130,7 +133,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     ReminderManager $reminder_manager,
     ModuleHandlerInterface $module_handler,
     Token $token,
-    EventDispatcherInterface $event_dispatcher
+    EventDispatcherInterface $event_dispatcher,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->logger = $logger;
@@ -168,7 +171,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
    * {@inheritdoc}
    */
   public function processItem($data) {
-    $nid = isset($data['nid']) ? $data['nid'] : NULL;
+    $nid = $data['nid'] ?? NULL;
     if (!$nid) {
       $this->logger->warning('Queue item is missing a node ID.');
       return;
@@ -257,17 +260,18 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     $group_ids = [];
     $headOrganisationEmails = NULL;
 
-    $group_contents = \Drupal\group\Entity\GroupRelationship::loadByEntity($node);
+    $group_contents = GroupRelationship::loadByEntity($node);
     foreach ($group_contents as $group_content) {
       $group_ids[] = $group_content->getGroup()->id();
     }
 
     foreach ($group_ids as $group) {
-      $affectedGroup = \Drupal\group\Entity\Group::load($group);
+      $affectedGroup = Group::load($group);
       if ($affectedGroup && $affectedGroup->hasField('field_head_organisation_e_mail')) {
         $headOrganisationEmails = $affectedGroup->get('field_head_organisation_e_mail')->getString();
         if (!empty($headOrganisationEmails)) {
-          break; // Get first non-empty email.
+          // Get first non-empty email.
+          break;
         }
       }
     }
@@ -285,21 +289,22 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
    *   The email address or null if not found.
    */
   protected function getOrganisationTermField($node) {
-    // Check if the field exists
+    // Check if the field exists.
     if (!$node->hasField('field_service_provider')) {
       $this->logger->warning('field_service_provider does not exist on node @nid', [
         '@nid' => $node->id(),
       ]);
       return NULL;
     }
-    
-    // Get the service provider ID
+
+    // Get the service provider ID.
     $tid = $node->get('field_service_provider')->target_id;
     if ($tid !== NULL) {
-      $term = \Drupal\taxonomy\Entity\Term::load($tid);
+      $term = Term::load($tid);
       if ($term && $term->hasField('field_sp_email')) {
         return $term->get('field_sp_email')->getString();
-      } elseif ($term && $term->hasField('field_head_organisation_e_mail')) {
+      }
+      elseif ($term && $term->hasField('field_head_organisation_e_mail')) {
         return $term->get('field_head_organisation_e_mail')->getString();
       }
     }
@@ -308,4 +313,5 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     ]);
     return NULL;
   }
+
 }

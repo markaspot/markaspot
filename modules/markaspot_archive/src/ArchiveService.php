@@ -63,48 +63,51 @@ class ArchiveService implements ArchiveServiceInterface {
     $status_tids = $this->arrayFlatten($config->get('status_archivable'));
     $node_storage = $this->entityTypeManager->getStorage('node');
     $term_storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    // Load service category term IDs 
+    // Load service category term IDs.
     $category_items = $term_storage->loadTree('service_category');
-    $category_ids = array_map(function($item) { return $item->tid; }, $category_items);
-    
-    // Get a rotating subset of categories to process
+    $category_ids = array_map(function ($item) {
+      return $item->tid;
+    }, $category_items);
+
+    // Get a rotating subset of categories to process.
     $state = \Drupal::state();
     $last_processed_index = $state->get('markaspot_archive.last_category_index', 0);
-    
-    // Process up to 10 categories per run, with rotation for fairness
+
+    // Process up to 10 categories per run, with rotation for fairness.
     $total_categories = count($category_ids);
     $batch_size = 10;
-    
+
     if ($last_processed_index >= $total_categories) {
       $last_processed_index = 0;
     }
-    
-    // Get the categories for this run
+
+    // Get the categories for this run.
     if ($total_categories <= $batch_size) {
-      // If we have fewer than batch_size categories, just process all of them
+      // If we have fewer than batch_size categories, just process all of them.
       $categories = $category_ids;
-    } else {
-      // Create a rotating window through the categories
+    }
+    else {
+      // Create a rotating window through the categories.
       $categories = array_slice($category_ids, $last_processed_index, $batch_size);
-      // If we're near the end, wrap around to the beginning
+      // If we're near the end, wrap around to the beginning.
       if (count($categories) < $batch_size) {
         $categories = array_merge(
           $categories,
           array_slice($category_ids, 0, $batch_size - count($categories))
         );
       }
-      // Update the index for next time
-      $state->set('markaspot_archive.last_category_index', 
+      // Update the index for next time.
+      $state->set('markaspot_archive.last_category_index',
         ($last_processed_index + $batch_size) % $total_categories);
     }
-    
+
     \Drupal::logger('markaspot_archive')->notice(
       'Processing categories @start to @end of @total (batch size: @batch)',
       [
         '@start' => $last_processed_index + 1,
         '@end' => min($last_processed_index + $batch_size, $total_categories),
         '@total' => $total_categories,
-        '@batch' => $batch_size
+        '@batch' => $batch_size,
       ]
     );
     $nids = [];
@@ -121,8 +124,8 @@ class ArchiveService implements ArchiveServiceInterface {
       }
       // Calculate cutoff timestamp.
       $date = strtotime('-' . $day . ' days');
-      
-      // Perform a count query first to determine how many potential nodes would match
+
+      // Perform a count query first to determine how many potential nodes would match.
       $count_query = $node_storage->getQuery()
         ->condition('field_category', $category_tid)
         ->condition('changed', $date, '<=')
@@ -130,27 +133,27 @@ class ArchiveService implements ArchiveServiceInterface {
         ->condition('field_status', $status_tids, 'IN');
       $count_query->accessCheck(FALSE);
       $count_result = $count_query->count()->execute();
-      
-      // Debug the query
+
+      // Debug the query.
       \Drupal::logger('markaspot_archive')->notice(
-        'Category @cat (@term): days=@days, cutoff=@cutoff, status_tids=@status, potential_matches=@count', 
+        'Category @cat (@term): days=@days, cutoff=@cutoff, status_tids=@status, potential_matches=@count',
         [
           '@cat' => $category_tid,
           '@term' => $term ? $term->label() : 'unknown',
           '@days' => $day,
           '@cutoff' => date('Y-m-d H:i:s', $date),
           '@status' => implode(',', $status_tids),
-          '@count' => $count_result
+          '@count' => $count_result,
         ]
       );
-      
-      // Now run the actual query with range limit
+
+      // Now run the actual query with range limit.
       $query = $node_storage->getQuery()
         ->condition('field_category', $category_tid)
         ->condition('changed', $date, '<=')
         ->condition('type', 'service_request')
         ->condition('field_status', $status_tids, 'IN')
-        // Limit to 20 nodes per category
+        // Limit to 20 nodes per category.
         ->range(0, 20);
       $query->accessCheck(FALSE);
 
@@ -159,11 +162,11 @@ class ArchiveService implements ArchiveServiceInterface {
         $nids = array_merge($nids, $result);
         \Drupal::logger('markaspot_archive')->notice('Found @count archivable nodes for category @cat', [
           '@count' => count($result),
-          '@cat' => $category_tid
+          '@cat' => $category_tid,
         ]);
       }
     }
-    
+
     // Return a limited number of nodes to process this run.
     $nids = array_slice($nids, 0, 50);
     \Drupal::logger('markaspot_archive')->notice('Returning @count nodes for archiving', ['@count' => count($nids)]);

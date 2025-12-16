@@ -60,7 +60,7 @@ class FeedbackController extends ControllerBase {
     EntityTypeManagerInterface $entity_type_manager,
     LoggerChannelFactoryInterface $logger_factory,
     StateInterface $state,
-    ConfigFactoryInterface $config_factory
+    ConfigFactoryInterface $config_factory,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->loggerFactory = $logger_factory;
@@ -93,34 +93,34 @@ class FeedbackController extends ControllerBase {
    */
   public function updateFeedback($uuid, Request $request) {
     $logger = $this->loggerFactory->get('markaspot_feedback');
-    
+
     try {
-      // Get the JSON data from the request body
+      // Get the JSON data from the request body.
       $content = $request->getContent();
       $data = json_decode($content, TRUE);
-      
+
       if (empty($data)) {
         $logger->warning('Empty request data for feedback update on UUID: @uuid', ['@uuid' => $uuid]);
         return new JsonResponse(['message' => $this->t('No data provided')], 400);
       }
-      
-      // Load the node by UUID
+
+      // Load the node by UUID.
       $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['uuid' => $uuid]);
-      
+
       if (empty($nodes)) {
         $logger->warning('No node found with UUID: @uuid', ['@uuid' => $uuid]);
         return new JsonResponse(['message' => $this->t('Service request not found')], 404);
       }
-      
+
       $node = reset($nodes);
-      
-      // Check if the node is a service request
+
+      // Check if the node is a service request.
       if ($node->getType() != 'service_request') {
         $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
         return new JsonResponse(['message' => $this->t('Not a service request')], 400);
       }
 
-      // Enforce that the node is eligible to receive citizen feedback
+      // Enforce that the node is eligible to receive citizen feedback.
       $config = $this->configFactory->get('markaspot_feedback.settings');
       $eligible_statuses = $config->get('feedback_eligible_statuses') ?: $config->get('status_feedback_enabled');
 
@@ -149,10 +149,10 @@ class FeedbackController extends ControllerBase {
       $feedback_field = 'field_feedback';
       if ($node->hasField($feedback_field) && !$node->get($feedback_field)->isEmpty()) {
         $logger->warning('Feedback already exists for node @nid, ignoring update attempt', [
-          '@nid' => $node->id()
+          '@nid' => $node->id(),
         ]);
 
-        // Include field_has_feedback flag in the response if it exists
+        // Include field_has_feedback flag in the response if it exists.
         $field_has_feedback = FALSE;
         if ($node->hasField('field_has_feedback')) {
           $field_has_feedback = (bool) $node->get('field_has_feedback')->value;
@@ -163,10 +163,11 @@ class FeedbackController extends ControllerBase {
           'existing_feedback' => $node->get($feedback_field)->value,
           'nid' => $node->id(),
           'field_has_feedback' => $field_has_feedback,
-        ], 409); // 409 Conflict
+        // 409 Conflict
+        ], 409);
       }
 
-      // Validate email against the original author's email
+      // Validate email against the original author's email.
       if (!empty($data['email_verification'])) {
         $validation_result = $this->validateAuthorEmail($node, $data['email_verification']);
 
@@ -174,7 +175,7 @@ class FeedbackController extends ControllerBase {
           $logger->warning('Author email validation failed for @email on node @nid: @reason', [
             '@email' => $data['email_verification'],
             '@nid' => $node->id(),
-            '@reason' => $validation_result
+            '@reason' => $validation_result,
           ]);
           return new JsonResponse([
             'message' => $validation_result,
@@ -182,17 +183,17 @@ class FeedbackController extends ControllerBase {
         }
       }
 
-      // Update the feedback field
+      // Update the feedback field.
       if (isset($data['feedback'])) {
-        // Citizen feedback - single value field
+        // Citizen feedback - single value field.
         $node->set('field_feedback', $data['feedback']);
 
-        // Set the field_has_feedback flag to TRUE
+        // Set the field_has_feedback flag to TRUE.
         if ($node->hasField('field_has_feedback')) {
           $node->set('field_has_feedback', TRUE);
         }
       }
-      
+
       // Update the status if set_status flag is set (reopen)
       if (!empty($data['set_status'])) {
         $progress_statuses = $config->get('set_progress_tid');
@@ -200,15 +201,15 @@ class FeedbackController extends ControllerBase {
           $progress_tid = is_array($progress_statuses) ? reset($progress_statuses) : $progress_statuses;
           $node->set('field_status', $progress_tid);
 
-          // Add status note if configured
+          // Add status note if configured.
           $status_note = $config->get('set_status_note');
           if (!empty($status_note)) {
             $this->addStatusNote($node, $status_note);
           }
         }
       }
-      
-      // Save the node
+
+      // Save the node.
       $node->save();
 
       $logger->notice('Updated feedback for node @nid (UUID: @uuid)', [
@@ -216,7 +217,7 @@ class FeedbackController extends ControllerBase {
         '@uuid' => $uuid,
       ]);
 
-      // Get the value of field_has_feedback for the response
+      // Get the value of field_has_feedback for the response.
       $field_has_feedback = FALSE;
       if ($node->hasField('field_has_feedback')) {
         $field_has_feedback = (bool) $node->get('field_has_feedback')->value;
@@ -226,7 +227,7 @@ class FeedbackController extends ControllerBase {
         'message' => $this->t('Feedback updated successfully'),
         'nid' => $node->id(),
         'field_has_feedback' => $field_has_feedback,
-        'success' => TRUE
+        'success' => TRUE,
       ]);
     }
     catch (\Exception $e) {
@@ -234,7 +235,7 @@ class FeedbackController extends ControllerBase {
         '@uuid' => $uuid,
         '@error' => $e->getMessage(),
       ]);
-      
+
       return new JsonResponse(['message' => $this->t('Error processing feedback')], 500);
     }
   }
@@ -250,36 +251,36 @@ class FeedbackController extends ControllerBase {
    */
   public function getServiceRequest($uuid) {
     $logger = $this->loggerFactory->get('markaspot_feedback');
-    
+
     try {
-      // Load the node by UUID
+      // Load the node by UUID.
       $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['uuid' => $uuid]);
-      
+
       if (empty($nodes)) {
         $logger->warning('No node found with UUID: @uuid', ['@uuid' => $uuid]);
         return new JsonResponse(['message' => $this->t('Service request not found')], 404);
       }
-      
+
       $node = reset($nodes);
-      
-      // Check if the node is a service request
+
+      // Check if the node is a service request.
       if ($node->getType() != 'service_request') {
         $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
         return new JsonResponse(['message' => $this->t('Not a service request')], 400);
       }
-      
-      // Build response data
+
+      // Build response data.
       $response_data = [
         'nid' => $node->id(),
         'uuid' => $node->uuid(),
         'title' => $node->getTitle(),
         'created' => $node->getCreatedTime(),
         'changed' => $node->getChangedTime(),
-        'status' => $node->hasField('field_status') ? $node->get('field_status')->target_id : null,
+        'status' => $node->hasField('field_status') ? $node->get('field_status')->target_id : NULL,
         'has_feedback' => $node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty(),
       ];
 
-      // Compute whether the node is eligible to receive citizen feedback now
+      // Compute whether the node is eligible to receive citizen feedback now.
       $is_receivable = FALSE;
       $eligible_statuses = $this->configFactory->get('markaspot_feedback.settings')->get('feedback_eligible_statuses')
         ?: $this->configFactory->get('markaspot_feedback.settings')->get('status_feedback_enabled');
@@ -291,13 +292,13 @@ class FeedbackController extends ControllerBase {
         $is_receivable = TRUE;
       }
       $response_data['is_receivable'] = $is_receivable;
-      
-      // Include the field_has_feedback flag in the response if it exists
+
+      // Include the field_has_feedback flag in the response if it exists.
       if ($node->hasField('field_has_feedback')) {
         $response_data['field_has_feedback'] = (bool) $node->get('field_has_feedback')->value;
       }
-      
-      // Add feedback if it exists
+
+      // Add feedback if it exists.
       if ($node->hasField('field_feedback') && !$node->get('field_feedback')->isEmpty()) {
         $response_data['feedback'] = $node->get('field_feedback')->value;
       }
@@ -306,7 +307,7 @@ class FeedbackController extends ControllerBase {
         '@nid' => $node->id(),
         '@uuid' => $uuid,
       ]);
-      
+
       return new JsonResponse($response_data);
     }
     catch (\Exception $e) {
@@ -314,7 +315,7 @@ class FeedbackController extends ControllerBase {
         '@uuid' => $uuid,
         '@error' => $e->getMessage(),
       ]);
-      
+
       return new JsonResponse(['message' => $this->t('Error retrieving service request')], 500);
     }
   }
@@ -331,27 +332,26 @@ class FeedbackController extends ControllerBase {
    *   TRUE if the email matches the author, error message string otherwise.
    */
   protected function validateAuthorEmail($node, $email) {
-    // Check if the node has an author email field
+    // Check if the node has an author email field.
     if (!$node->hasField('field_e_mail') || $node->get('field_e_mail')->isEmpty()) {
       return $this->t('No author email found for this service request');
     }
 
-    // Get the original author's email
+    // Get the original author's email.
     $author_email = $node->get('field_e_mail')->value;
     if (empty($author_email)) {
       return $this->t('Author email is not configured for this service request');
     }
 
-    // Case-insensitive email comparison
+    // Case-insensitive email comparison.
     $provided_email_clean = strtolower(trim($email));
     $author_email_clean = strtolower(trim($author_email));
-
 
     if ($provided_email_clean === $author_email_clean) {
       return TRUE;
     }
 
-    // Log the validation failure
+    // Log the validation failure.
     $error_message = $this->t('Email "@provided" does not match the original service request author email', [
       '@provided' => $email,
     ]);
@@ -382,7 +382,7 @@ class FeedbackController extends ControllerBase {
       ],
     ]);
     $status_note_paragraph->save();
-    
+
     // Add the status note paragraph to the node.
     $notes = $node->get('field_notes')->getValue();
     $notes[] = [

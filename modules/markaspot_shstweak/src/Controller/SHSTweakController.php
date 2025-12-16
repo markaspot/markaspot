@@ -7,7 +7,6 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\taxonomy\Entity\Term;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Controller for SHS Tweak module.
@@ -61,33 +60,33 @@ class SHSTweakController extends ControllerBase {
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   public function taxonomyDescription($term, int $last_child = 0) {
-    // If we already have a Term entity, use it directly
+    // If we already have a Term entity, use it directly.
     if ($term instanceof Term) {
       $termEntity = $term;
     }
     else {
       $termEntity = NULL;
-      
+
       // Check if this is a UUID (contains dashes)
       if (is_string($term) && strpos($term, '-') !== FALSE) {
-        // Try to load the term by UUID
+        // Try to load the term by UUID.
         $terms = $this->entityTypeManager
           ->getStorage('taxonomy_term')
           ->loadByProperties(['uuid' => $term]);
-          
+
         if (!empty($terms)) {
           $termEntity = reset($terms);
         }
       }
-      
-      // If not found by UUID, try numeric ID
+
+      // If not found by UUID, try numeric ID.
       if (!$termEntity && is_numeric($term)) {
         $termEntity = $this->entityTypeManager
           ->getStorage('taxonomy_term')
           ->load($term);
       }
-      
-      // If term is still not found, return error
+
+      // If term is still not found, return error.
       if (!$termEntity) {
         return new JsonResponse([
           'data' => '',
@@ -96,11 +95,11 @@ class SHSTweakController extends ControllerBase {
         ], 404);
       }
     }
-    
-    // Get the description
+
+    // Get the description.
     $description = $termEntity->getDescription();
-    
-    // Handle the last_child parameter
+
+    // Handle the last_child parameter.
     if ($last_child === 1) {
       $childs = $this->entityTypeManager
         ->getStorage('taxonomy_term')
@@ -109,28 +108,28 @@ class SHSTweakController extends ControllerBase {
         $description = '';
       }
     }
-    
-    // Check if this term has the disable_form field and if it's true
+
+    // Check if this term has the disable_form field and if it's true.
     $disableForm = FALSE;
     if ($termEntity->hasField('field_disable_form') && !$termEntity->get('field_disable_form')->isEmpty()) {
       $disableForm = (bool) $termEntity->get('field_disable_form')->value;
     }
-    
-    // For the API endpoint, return a JSON object with description and options
+
+    // For the API endpoint, return a JSON object with description and options.
     if (strpos(\Drupal::request()->getPathInfo(), '/api/markaspotshstweak/') === 0) {
       return new JsonResponse([
         'description' => $description,
         'options' => [
-          'disableForm' => $disableForm
-        ]
+          'disableForm' => $disableForm,
+        ],
       ]);
     }
-    
-    // For the original endpoint, keep the existing response format
+
+    // For the original endpoint, keep the existing response format.
     return new JsonResponse([
       'data' => $description,
       'options' => [
-        'disableForm' => $disableForm
+        'disableForm' => $disableForm,
       ],
       'method' => 'GET',
     ]);

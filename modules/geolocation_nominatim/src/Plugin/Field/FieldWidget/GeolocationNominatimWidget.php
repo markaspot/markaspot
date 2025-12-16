@@ -49,7 +49,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'LocationIQToken' => '',
       'dragging' => TRUE,
       'zoomControl' => FALSE,
-      'tab' => TRUE
+      'tab' => TRUE,
     ] + parent::defaultSettings();
   }
 
@@ -187,7 +187,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       '#type' => 'textarea',
       '#title' => t('Address Format'),
       '#description' => t('Enter the address format. You can use ${address.road}, ${address.house_number}, ${address.postcode}, ${address.city}, ${address.suburb}'),
-      '#default_value' => $this->getSetting('addressFormat')
+      '#default_value' => $this->getSetting('addressFormat'),
     ];
     $elements['dragging'] = [
       '#type' => 'checkbox',

@@ -5,7 +5,8 @@
  * Install, update and uninstall functions for the markaspot_service_provider module.
  */
 
-use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
 
 /**
  * Implements hook_install().
@@ -33,7 +34,7 @@ function markaspot_service_provider_requirements($phase) {
     $entity_type_manager = \Drupal::entityTypeManager();
     $field_storage = $entity_type_manager->getStorage('field_storage_config');
 
-    // Check for required field: field_service_provider_notes
+    // Check for required field: field_service_provider_notes.
     $field_service_provider_notes = $field_storage->load('node.field_service_provider_notes');
 
     if (!$field_service_provider_notes) {
@@ -45,7 +46,7 @@ function markaspot_service_provider_requirements($phase) {
       ];
     }
     else {
-      // Check cardinality
+      // Check cardinality.
       $cardinality = $field_service_provider_notes->getCardinality();
       if ($cardinality != -1) {
         $requirements['markaspot_service_provider_notes_field'] = [
@@ -64,7 +65,7 @@ function markaspot_service_provider_requirements($phase) {
       }
     }
 
-    // Check for reassignment field
+    // Check for reassignment field.
     $field_reassign_sp = $field_storage->load('node.field_reassign_sp');
 
     if (!$field_reassign_sp) {
@@ -76,7 +77,7 @@ function markaspot_service_provider_requirements($phase) {
       ];
     }
     else {
-      // Check cardinality for boolean field
+      // Check cardinality for boolean field.
       $cardinality = $field_reassign_sp->getCardinality();
       if ($cardinality != 1) {
         $requirements['markaspot_service_provider_reassign_field'] = [
@@ -95,7 +96,7 @@ function markaspot_service_provider_requirements($phase) {
       }
     }
 
-    // Check for service provider email field
+    // Check for service provider email field.
     $field_sp_email = $field_storage->load('taxonomy_term.field_sp_email');
 
     if (!$field_sp_email) {
@@ -107,7 +108,7 @@ function markaspot_service_provider_requirements($phase) {
       ];
     }
     else {
-      // Check cardinality
+      // Check cardinality.
       $cardinality = $field_sp_email->getCardinality();
       if ($cardinality != -1) {
         $requirements['markaspot_service_provider_email_field'] = [
@@ -126,7 +127,7 @@ function markaspot_service_provider_requirements($phase) {
       }
     }
 
-    // Check if service_provider vocabulary exists
+    // Check if service_provider vocabulary exists.
     $vocabulary_storage = $entity_type_manager->getStorage('taxonomy_vocabulary');
     $service_provider_vocab = $vocabulary_storage->load('service_provider');
 
@@ -154,7 +155,7 @@ function markaspot_service_provider_requirements($phase) {
  * Implements hook_uninstall().
  */
 function markaspot_service_provider_uninstall() {
-  // Clean up any state variables
+  // Clean up any state variables.
   \Drupal::state()->delete('markaspot_service_provider.last_notification');
 
   // Clean up configuration.
@@ -198,7 +199,7 @@ function _markaspot_service_provider_create_vocabulary() {
  */
 function _markaspot_service_provider_create_service_provider_notes_field() {
   // Check if field storage already exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
   if (!$field_storage) {
     $field_storage_values = [
       'langcode' => 'en',
@@ -216,19 +217,20 @@ function _markaspot_service_provider_create_service_provider_notes_field() {
       'settings' => [],
       'module' => 'text',
       'locked' => FALSE,
-      'cardinality' => -1,  // Unlimited
+      // Unlimited.
+      'cardinality' => -1,
       'translatable' => TRUE,
       'indexes' => [],
       'persist_with_no_fields' => FALSE,
       'custom_storage' => FALSE,
     ];
 
-    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    FieldStorageConfig::create($field_storage_values)->save();
     \Drupal::logger('markaspot_service_provider')->notice('Created field_service_provider_notes field storage on node entity type.');
   }
 
   // Check if field instance already exists.
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_service_provider_notes');
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_service_provider_notes');
   if (!$field_instance) {
     $field_values = [
       'langcode' => 'en',
@@ -256,13 +258,13 @@ function _markaspot_service_provider_create_service_provider_notes_field() {
       'field_type' => 'text_long',
     ];
 
-    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    FieldConfig::create($field_values)->save();
     \Drupal::logger('markaspot_service_provider')->notice('Created field_service_provider_notes field instance on service_request content type.');
   }
 
   // Add field to entity displays if it exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_service_provider_notes');
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_service_provider_notes');
 
   if ($field_storage && $field_instance) {
     /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
@@ -307,7 +309,7 @@ function _markaspot_service_provider_create_service_provider_notes_field() {
  */
 function _markaspot_service_provider_create_reassign_sp_field() {
   // Check if field storage already exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_reassign_sp');
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_reassign_sp');
   if (!$field_storage) {
     $field_storage_values = [
       'langcode' => 'en',
@@ -334,12 +336,12 @@ function _markaspot_service_provider_create_reassign_sp_field() {
       'custom_storage' => FALSE,
     ];
 
-    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    FieldStorageConfig::create($field_storage_values)->save();
     \Drupal::logger('markaspot_service_provider')->notice('Created field_reassign_sp field storage on node entity type.');
   }
 
   // Check if field instance already exists.
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_reassign_sp');
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_reassign_sp');
   if (!$field_instance) {
     $field_values = [
       'langcode' => 'en',
@@ -367,13 +369,13 @@ function _markaspot_service_provider_create_reassign_sp_field() {
       'field_type' => 'boolean',
     ];
 
-    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    FieldConfig::create($field_values)->save();
     \Drupal::logger('markaspot_service_provider')->notice('Created field_reassign_sp field instance on service_request content type.');
   }
 
   // Add field to entity displays if it exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_reassign_sp');
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_reassign_sp');
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_reassign_sp');
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_reassign_sp');
 
   if ($field_storage && $field_instance) {
     /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
@@ -419,7 +421,7 @@ function _markaspot_service_provider_create_reassign_sp_field() {
  */
 function _markaspot_service_provider_create_sp_email_field() {
   // Check if field storage already exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
   if (!$field_storage) {
     $field_storage_values = [
       'langcode' => 'en',
@@ -436,19 +438,20 @@ function _markaspot_service_provider_create_sp_email_field() {
       'settings' => [],
       'module' => 'core',
       'locked' => FALSE,
-      'cardinality' => -1,  // Unlimited
+      // Unlimited.
+      'cardinality' => -1,
       'translatable' => FALSE,
       'indexes' => [],
       'persist_with_no_fields' => FALSE,
       'custom_storage' => FALSE,
     ];
 
-    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    FieldStorageConfig::create($field_storage_values)->save();
     \Drupal::logger('markaspot_service_provider')->notice('Created field_sp_email field storage on taxonomy_term entity type.');
   }
 
   // Check if field instance already exists.
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_sp_email');
+  $field_instance = FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_sp_email');
   if (!$field_instance) {
     $field_values = [
       'langcode' => 'en',
@@ -473,13 +476,13 @@ function _markaspot_service_provider_create_sp_email_field() {
       'field_type' => 'email',
     ];
 
-    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    FieldConfig::create($field_values)->save();
     \Drupal::logger('markaspot_service_provider')->notice('Created field_sp_email field instance on service_provider vocabulary.');
   }
 
   // Add field to entity displays if it exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_sp_email');
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
+  $field_instance = FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_sp_email');
 
   if ($field_storage && $field_instance) {
     /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
@@ -528,7 +531,7 @@ function markaspot_service_provider_update_9001() {
 
   if ($field_reassign_sp && $field_reassign_sp->getCardinality() == -1) {
     // Cannot change cardinality if there are existing values
-    // Log a warning and provide instructions
+    // Log a warning and provide instructions.
     \Drupal::logger('markaspot_service_provider')->warning('field_reassign_sp has unlimited cardinality but should be 1 (single value). Please manually update the field storage configuration if no data exists, or contact an administrator.');
 
     return t('The field_reassign_sp field has unlimited cardinality but should be limited to 1. This cannot be automatically changed if data exists. Please review the field configuration.');
@@ -551,8 +554,8 @@ function markaspot_service_provider_update_9002() {
 function markaspot_service_provider_update_9003() {
   $messages = [];
 
-  // Create field_service_provider_notes
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
+  // Create field_service_provider_notes.
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_service_provider_notes');
   if (!$field_storage) {
     _markaspot_service_provider_create_service_provider_notes_field();
     $messages[] = 'Created field_service_provider_notes field.';
@@ -561,8 +564,8 @@ function markaspot_service_provider_update_9003() {
     $messages[] = 'field_service_provider_notes field already exists.';
   }
 
-  // Create field_reassign_sp
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_reassign_sp');
+  // Create field_reassign_sp.
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_reassign_sp');
   if (!$field_storage) {
     _markaspot_service_provider_create_reassign_sp_field();
     $messages[] = 'Created field_reassign_sp field.';
@@ -571,8 +574,8 @@ function markaspot_service_provider_update_9003() {
     $messages[] = 'field_reassign_sp field already exists.';
   }
 
-  // Create field_sp_email
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
+  // Create field_sp_email.
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_sp_email');
   if (!$field_storage) {
     _markaspot_service_provider_create_sp_email_field();
     $messages[] = 'Created field_sp_email field.';

@@ -23,7 +23,7 @@ class MarkaspotActionFront extends BlockBase implements BlockPluginInterface {
    * {@inheritdoc}
    */
   public function defaultConfiguration() {
-    // Generate default links using proper URL generation
+    // Generate default links using proper URL generation.
     $report_link = Link::fromTextAndUrl(
       $this->t('<i aria-hidden="true" class="fas fa-map-marker-alt">&nbsp;</i> Anliegen melden'),
       Url::fromUserInput('/report')

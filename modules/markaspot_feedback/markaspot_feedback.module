@@ -58,65 +58,64 @@ function markaspot_feedback_mail($key, &$message, $params) {
 function markaspot_feedback_cron() {
   // Get module configuration.
   $config = \Drupal::config('markaspot_feedback.settings');
-  
+
   // Check if the module is enabled and if cron processing is enabled.
   if ($config->get('enable') != 1 || $config->get('cron_enable') != 1) {
     return;
   }
-  
+
   // Check if we should run based on the configured interval.
   $interval = $config->get('interval') ?: 86400;
   $last_run = \Drupal::state()->get('markaspot_feedback.last_run', 0);
   $time = \Drupal::time()->getRequestTime();
-  
+
   if (($time - $last_run) < $interval) {
     // Not yet time to run again.
     return;
   }
-  
+
   // Get the feedback service.
   $feedback_service = \Drupal::service('markaspot_feedback.feedback');
-  
+
   // Find eligible nodes.
   $eligible_nodes = $feedback_service->loadEligibleNodes(50);
-  
+
   if (empty($eligible_nodes)) {
     \Drupal::logger('markaspot_feedback')->notice('No eligible nodes found for feedback processing.');
     \Drupal::state()->set('markaspot_feedback.last_run', $time);
     return;
   }
-  
-  // Get information about the status terms for better logging
+
+  // Get information about the status terms for better logging.
   $status_terms = [];
   $status_vocabulary = $config->get('tax_status') ?: 'service_status';
   $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
   $status_terms_feedback_enabled = $config->get('status_feedback_enabled');
-  
+
   foreach ($status_terms_feedback_enabled as $tid => $enabled) {
     if ($term = $term_storage->load($tid)) {
       $status_terms[$tid] = $term->label();
     }
   }
-  
+
   \Drupal::logger('markaspot_feedback')->notice('Found @count nodes eligible for feedback processing.', [
-    '@count' => count($eligible_nodes)
+    '@count' => count($eligible_nodes),
   ]);
-  
+
   // Get the queue for the feedback worker.
   $queue = \Drupal::queue('markaspot_feedback_queue_worker');
   $queue_count = 0;
-  
+
   foreach ($eligible_nodes as $nid) {
-    // Add each node to the queue for processing
+    // Add each node to the queue for processing.
     $queue->createItem(['nid' => $nid]);
     $queue_count++;
   }
-  
+
   \Drupal::logger('markaspot_feedback')->notice('Enqueued @count nodes for feedback processing.', [
-    '@count' => $queue_count
+    '@count' => $queue_count,
   ]);
-  
+
   // Update the last run time.
   \Drupal::state()->set('markaspot_feedback.last_run', $time);
 }
-

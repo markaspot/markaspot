@@ -10,7 +10,6 @@
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 
-
 /**
  * Implements hook_node_presave().
  */
@@ -135,7 +134,7 @@ function _service_request_handle_update(EntityInterface $node, $config, bool $au
  */
 function service_request_form_alter(&$form, &$form_state, $form_id) {
   // $status_widget = $form['field_status_notes']['widget'];
-  // todo:
+  // @todo
   // Disable paragraph subform if subform hooks are stable:
   // https://www.drupal.org/project/paragraphs/issues/2868155
   $form['#attached']['library'][] = 'service_request/paragraphs';

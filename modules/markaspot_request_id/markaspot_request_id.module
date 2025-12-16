@@ -12,8 +12,6 @@ use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Datetime\DrupalDateTime;
 
-use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
-
 /**
  * Implements hook_help().
  */
@@ -84,7 +82,8 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
       $title = markaspot_request_id_create_title($node, $request_id);
       // Note: Entity API will sync title and request_id to node_field_data during save.
       // No direct database update needed - $node->id() is NULL during presave for new nodes.
-    }  else {
+    }
+    else {
       $request_id = $node->request_id->value;
       $title = markaspot_request_id_create_title($node, $request_id);
     }
@@ -92,7 +91,6 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
 
   }
 }
-
 
 /**
  * @return int|string
@@ -116,23 +114,23 @@ function markaspot_request_id_create_request_id() {
       ])
       ->execute();
 
-    // Update with the rollover feature
+    // Update with the rollover feature.
     if ($config->get('rollover')) {
       // If rollover data is manually set for development or testing.
       if (!empty($config->get('start'))) {
         $custom_rollover = new DrupalDateTime($config->get('start'));
         $custom_rollover_start = $custom_rollover->getTimestamp();
       }
-      // rollover date should be the last second of the previous year.
+      // Rollover date should be the last second of the previous year.
       $yearly_rollover_start = mktime(23, 59, 59, 12, 31, date('Y') - 1);
       // Create Timestamp of both.
       $last_date = (isset($custom_rollover_start)) ? $custom_rollover_start : $yearly_rollover_start;
 
-      // Get the last request-id of previous year
+      // Get the last request-id of previous year.
       $last_of_year_id = $connection->select('markaspot_request_id', 'r')
-        ->fields('r', ['request_id','offset'])
-        ->condition('timestamp', $last_date,  '<=')
-        ->condition('timestamp', 0,  '<>')
+        ->fields('r', ['request_id', 'offset'])
+        ->condition('timestamp', $last_date, '<=')
+        ->condition('timestamp', 0, '<>')
         ->orderBy('timestamp', 'DESC')
         ->range(0, 1)
         ->execute()
@@ -150,32 +148,35 @@ function markaspot_request_id_create_request_id() {
           // Create date pattern from config and current request timestamp.
           $date = date($config->get('format'), $timestamp);
 
-          // Calculate the following serial ID
+          // Calculate the following serial ID.
           $followUpId = $id - $yearly_diff[0] - $offset;
           $update = $connection->update('markaspot_request_id')
             ->fields([
               'request_id' => $followUpId . $delimiter . $date,
-              'offset' => $yearly_diff[0] + $offset
+              'offset' => $yearly_diff[0] + $offset,
             ])
             ->condition('id', $id)
             ->execute();
         }
-      } else {
+      }
+      else {
         markaspot_request_id_update_timestamp($connection, $id, $timestamp);
       }
-    } else {
+    }
+    else {
       markaspot_request_id_update_timestamp($connection, $id, $timestamp);
     }
     // Get the the latest request id (to be sure).
     $request_ids = $connection->select('markaspot_request_id', 'r')
       ->fields('r', ['request_id'])
-      ->condition('r.id',$id)
+      ->condition('r.id', $id)
       ->execute();
 
     foreach ($request_ids as $id) {
       $id = $id->request_id;
     }
-  } else {
+  }
+  else {
     $query = \Drupal::entityQuery('node')
       ->accessCheck(FALSE)
       ->condition('type', 'service_request')
@@ -187,7 +188,6 @@ function markaspot_request_id_create_request_id() {
     $node_storage = \Drupal::entityTypeManager()->getStorage('node');
 
     // Now load the the last service_request and check the request_id.
-
     $predecessor = $node_storage->load($last_request_nid);
     if (isset($predecessor->request_id->value)) {
       $last_request_id = $predecessor->request_id->value;
@@ -196,7 +196,6 @@ function markaspot_request_id_create_request_id() {
       $next = explode('-', $last_request_id);
       // Is one provided count up (needs increment of 2 if no NID is created yet)
       $next = (!empty($next[0])) ? $next[0] + 1 : 1;
-
 
       $id_pattern = $config->get('format');
       return (isset($id_pattern)) ? $next . '-' . date($id_pattern) : $next;
@@ -215,13 +214,12 @@ function markaspot_request_id_create_request_id() {
 function markaspot_request_id_update_timestamp($connection, $id, $timestamp) {
   return $connection->update('markaspot_request_id')
     ->fields([
-      'request_id' =>  $id . '-' . date('Y', $timestamp)
+      'request_id' => $id . '-' . date('Y', $timestamp),
     ])
     ->condition('id', $id)
     ->execute();
 
 }
-
 
 /**
  * @param $node
@@ -254,12 +252,11 @@ function markaspot_request_id_create_title($node, $request_id) {
 
 }
 
-
 /**
  * @param $connection
  * @return bool
  */
-function markaspot_request_id_check_table($connection){
+function markaspot_request_id_check_table($connection) {
   // Check if table exists, by simply querying it.
   try {
     $table = "markaspot_request_id";

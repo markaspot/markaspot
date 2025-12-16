@@ -51,7 +51,7 @@ class ToolbarBuilder implements TrustedCallbackInterface {
   public function __construct(
     ModuleHandlerInterface $module_handler,
     ModuleExtensionList $module_list,
-    RouteProviderInterface $route_provider
+    RouteProviderInterface $route_provider,
   ) {
     $this->moduleHandler = $module_handler;
     $this->moduleList = $module_list;
@@ -81,16 +81,17 @@ class ToolbarBuilder implements TrustedCallbackInterface {
       '#cache' => [
         'contexts' => ['user.permissions'],
         'tags' => ['module_list', 'markaspot_ui'],
-        'max-age' => 3600, // Cache for 1 hour
+    // Cache for 1 hour.
+        'max-age' => 3600,
       ],
     ];
-    
+
     $cacheable_metadata = new CacheableMetadata();
     $cacheable_metadata->addCacheTags(['module_list', 'markaspot_ui']);
     $cacheable_metadata->addCacheContexts(['user.permissions']);
     $cacheable_metadata->setCacheMaxAge(3600);
     $cacheable_metadata->applyTo($build);
-    
+
     return $build;
   }
 
@@ -123,12 +124,12 @@ class ToolbarBuilder implements TrustedCallbackInterface {
 
     // Get all installed modules.
     $modules = $this->moduleHandler->getModuleList();
-    
+
     // Additional modules that might have settings but don't follow markaspot_ prefix.
     $additional_modules = [
       'services_api_key_auth' => 'entity.api_key.collection',
     ];
-    
+
     // Check each markaspot_ module for settings pages.
     foreach ($modules as $module_name => $module) {
       // Only process markaspot_ modules.
@@ -136,14 +137,14 @@ class ToolbarBuilder implements TrustedCallbackInterface {
         $this->addModuleLink($links, $module_name);
       }
     }
-    
+
     // Add additional related modules.
     foreach ($additional_modules as $module_name => $route_name) {
       if ($this->moduleHandler->moduleExists($module_name)) {
         try {
           // Check if the route exists.
           $this->routeProvider->getRouteByName($route_name);
-          
+
           $info = $this->moduleList->getExtensionInfo($module_name);
           if (!empty($info)) {
             $links[$module_name] = [
@@ -178,7 +179,7 @@ class ToolbarBuilder implements TrustedCallbackInterface {
     if ($module_name === 'markaspot_ui') {
       return;
     }
-    
+
     // Common patterns for settings routes.
     $route_patterns = [
       $module_name . '.settings',
@@ -187,12 +188,12 @@ class ToolbarBuilder implements TrustedCallbackInterface {
       $module_name . '.admin_settings',
       $module_name . '.config',
     ];
-    
+
     $info = $this->moduleList->getExtensionInfo($module_name);
     if (empty($info)) {
       return;
     }
-    
+
     // Try to find a valid settings route.
     $route_name = NULL;
     foreach ($route_patterns as $pattern) {
@@ -205,7 +206,7 @@ class ToolbarBuilder implements TrustedCallbackInterface {
         // Route not found, try next pattern.
       }
     }
-    
+
     // If we found a valid route, add the link.
     if ($route_name) {
       $links[$module_name] = [
@@ -218,4 +219,5 @@ class ToolbarBuilder implements TrustedCallbackInterface {
       ];
     }
   }
+
 }

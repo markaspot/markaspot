@@ -57,7 +57,7 @@ class ReminderManager {
     EntityTypeManagerInterface $entity_type_manager,
     ConfigFactoryInterface $config_factory,
     LoggerChannelInterface $logger,
-    TimeInterface $time
+    TimeInterface $time,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
@@ -76,8 +76,10 @@ class ReminderManager {
    */
   public function shouldSendReminder(NodeInterface $node) {
     $config = $this->configFactory->get('markaspot_resubmission.settings');
-    $reminder_interval = $config->get('reminder_interval') ?: 604800; // Default 7 days
-    $max_reminders = $config->get('max_reminders') ?: 0; // 0 = unlimited
+    // Default 7 days.
+    $reminder_interval = $config->get('reminder_interval') ?: 604800;
+    // 0 = unlimited
+    $max_reminders = $config->get('max_reminders') ?: 0;
 
     // Get the last reminder for this node.
     $last_reminder = $this->getLastReminder($node->id());

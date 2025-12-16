@@ -5,9 +5,6 @@
  * Install, update and uninstall functions for the markaspot installation profile.
  */
 
-use Drupal\user\Entity\User;
-use Drupal\user\RoleInterface;
-use Drupal\shortcut\Entity\Shortcut;
 use Drupal\node\Entity\Node;
 
 /**
@@ -20,35 +17,35 @@ function markaspot_update_8001() {
 /**
  * Update the stats view.
  */
-function markaspot_update_8002( ){
+function markaspot_update_8002() {
   \Drupal::configFactory()->getEditable('views.view.stats')->delete();
   \Drupal::service('module_installer')->install(['markaspot_trend']);
 }
 
 /**
- * Enable Mark-a-Spot Front module
+ * Enable Mark-a-Spot Front module.
  */
-function markaspot_update_8003( ){
+function markaspot_update_8003() {
   \Drupal::service('module_installer')->install(['markaspot_front']);
 }
 
 /**
- * Enable Mark-a-Spot Request ID module
+ * Enable Mark-a-Spot Request ID module.
  */
-function markaspot_update_8004( ){
+function markaspot_update_8004() {
   \Drupal::service('module_installer')->install(['markaspot_request_id']);
   markaspot_update_ids();
 }
 
 /**
- * Move Service Request IDs
+ * Move Service Request IDs.
  */
-function markaspot_update_ids(){
+function markaspot_update_ids() {
 
   $nids = \Drupal::entityQuery('node')
     ->accessCheck(FALSE)
-    ->condition('type','service_request')->execute();
-  $nodes =  \Drupal\node\Entity\Node::loadMultiple($nids);
+    ->condition('type', 'service_request')->execute();
+  $nodes = Node::loadMultiple($nids);
 
   foreach ($nodes as $node) {
     $node->set('request_id', $node->uuid());
@@ -58,9 +55,9 @@ function markaspot_update_ids(){
 }
 
 /**
- * Disable Shariff module
+ * Disable Shariff module.
  */
-function markaspot_update_9600( ){
+function markaspot_update_9600() {
   \Drupal::service("module_installer")->uninstall(["shariff"]);
 }
 
@@ -103,7 +100,7 @@ function markaspot_update_9700() {
 function markaspot_update_9701() {
   $module_handler = \Drupal::moduleHandler();
 
-  // Check if markaspot_map is installed
+  // Check if markaspot_map is installed.
   if ($module_handler->moduleExists('markaspot_map')) {
     return t('The markaspot_map module is now optional. It is only needed if you use Drupal theme-based map blocks. For headless setups using markaspot_nuxt, all map configuration is now stored independently in markaspot_nuxt.settings. You can uninstall markaspot_map if you only use the Nuxt frontend: drush pm:uninstall markaspot_map');
   }
@@ -121,7 +118,7 @@ function markaspot_requirements($phase) {
     $info = \Drupal::service('extension.list.profile')->get('markaspot');
     $requirements['markaspot_profile'] = [
       'title' => t('Mark-a-Spot'),
-      'value' => isset($info->info['version']) ? $info->info['version'] : t('Unknown'),
+      'value' => $info->info['version'] ?? t('Unknown'),
       'severity' => REQUIREMENT_INFO,
     ];
   }

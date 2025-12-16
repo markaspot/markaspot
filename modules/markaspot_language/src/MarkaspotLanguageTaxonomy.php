@@ -1,4 +1,5 @@
 <?php
+
 namespace Drupal\markaspot_language;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -6,6 +7,9 @@ use Drupal\field\Entity\FieldConfig;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
+/**
+ *
+ */
 class MarkaspotLanguageTaxonomy {
   /**
    * The config factory.
@@ -48,7 +52,7 @@ class MarkaspotLanguageTaxonomy {
         ->set('language_alterable', TRUE)
         ->save();
 
-      // Enable translation for name and description fields
+      // Enable translation for name and description fields.
       $fieldConfig = ['name', 'description'];
       foreach ($fieldConfig as $fieldName) {
         $fieldConfig = $this->configFactory->getEditable('core.base_field_override.taxonomy_term.' . $vocabulary_id . '.' . $fieldName);
@@ -101,4 +105,5 @@ class MarkaspotLanguageTaxonomy {
         ->save();
     }
   }
+
 }

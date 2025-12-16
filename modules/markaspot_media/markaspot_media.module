@@ -1,5 +1,14 @@
 <?php
 
-  function markaspot_media_form_editor_image_dialog_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
-    $form['attributes']['alt']['#required'] = FALSE;
-  }
+/**
+ * @file
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ *
+ */
+function markaspot_media_form_editor_image_dialog_alter(&$form, FormStateInterface $form_state, $form_id) {
+  $form['attributes']['alt']['#required'] = FALSE;
+}

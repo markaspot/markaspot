@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_open311\Controller;
 
+use Drupal\group\Entity\GroupMembership;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -191,7 +192,7 @@ class GeoreportStatsController extends ControllerBase {
     }
 
     $user = $this->currentUser();
-    $memberships = \Drupal\group\Entity\GroupMembership::loadByUser($user);
+    $memberships = GroupMembership::loadByUser($user);
     $group_ids = [];
 
     foreach ($memberships as $membership) {

@@ -12,6 +12,7 @@ interface ConfirmServiceInterface {
    *
    * @param string $uuid
    *   The UUID to search for.
+   *
    * @return \Drupal\Core\Entity\EntityInterface[]
    *   Array of entities.
    */
@@ -22,6 +23,7 @@ interface ConfirmServiceInterface {
    *
    * @param string $uuid
    *   The UUID of the service request.
+   *
    * @return string
    *   The confirmation URL.
    */

@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_emergency\Commands;
 
+use Symfony\Component\HttpFoundation\Request;
 use Drush\Commands\DrushCommands;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\markaspot_emergency\Controller\EmergencyModeController;
@@ -77,7 +78,7 @@ class EmergencyCommands extends DrushCommands {
     }
 
     // Simulate request for controller.
-    $request = new \Symfony\Component\HttpFoundation\Request([], [], [], [], [], [], json_encode([
+    $request = new Request([], [], [], [], [], [], json_encode([
       'mode_type' => $options['mode-type'],
       'unpublish_categories' => TRUE,
       'create_emergency_categories' => TRUE,
@@ -89,7 +90,8 @@ class EmergencyCommands extends DrushCommands {
     if ($data['status'] === 'success') {
       $this->output()->writeln('✅ Emergency mode activated successfully.');
       $this->output()->writeln('Mode Type: ' . $options['mode-type']);
-    } else {
+    }
+    else {
       $this->output()->writeln('❌ Failed to activate emergency mode.');
     }
   }
@@ -114,7 +116,7 @@ class EmergencyCommands extends DrushCommands {
     }
 
     // Simulate request for controller.
-    $request = new \Symfony\Component\HttpFoundation\Request([], [], [], [], [], [], json_encode([
+    $request = new Request([], [], [], [], [], [], json_encode([
       'restore_categories' => $options['restore-categories'],
     ]));
 
@@ -126,7 +128,8 @@ class EmergencyCommands extends DrushCommands {
       if ($options['restore-categories']) {
         $this->output()->writeln('Regular categories have been restored.');
       }
-    } else {
+    }
+    else {
       $this->output()->writeln('❌ Failed to deactivate emergency mode.');
     }
   }

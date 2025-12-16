@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_passwordless\Controller;
 
+use Symfony\Component\HttpFoundation\Cookie;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Flood\FloodInterface;
@@ -259,7 +260,7 @@ class PasswordlessAuthController extends ControllerBase {
   /**
    * Logout endpoint.
    *
-   * POST /api/auth/logout
+   * POST /api/auth/logout.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The request object.
@@ -287,16 +288,21 @@ class PasswordlessAuthController extends ControllerBase {
     // This is necessary because HttpOnly cookies can't be deleted by JavaScript.
     $cookie_domain = $session_options['cookie_domain'] ?? '';
     $response->headers->setCookie(
-      new \Symfony\Component\HttpFoundation\Cookie(
+      new Cookie(
         $session_name,
         '',
-        1, // Expire in the past
+    // Expire in the past.
+        1,
         '/',
         $cookie_domain,
-        TRUE, // Secure
-        TRUE, // HttpOnly
-        FALSE, // Raw
-        'None' // SameSite
+    // Secure.
+        TRUE,
+    // HttpOnly.
+        TRUE,
+    // Raw.
+        FALSE,
+    // SameSite.
+        'None'
       )
     );
 
@@ -306,7 +312,7 @@ class PasswordlessAuthController extends ControllerBase {
   /**
    * User status endpoint.
    *
-   * GET /api/auth/status
+   * GET /api/auth/status.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The request object.

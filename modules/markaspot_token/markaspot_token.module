@@ -5,6 +5,7 @@
  * Contains markaspot_token.module.
  */
 
+use Drupal\node\Entity\NodeType;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Render\BubbleableMetadata;
 
@@ -56,17 +57,19 @@ function markaspot_token_token_info() {
 /**
  * Implements hook_tokens().
  */
-function markaspot_token_tokens($type,
- $tokens,
- array $data,
- array $options,
-BubbleableMetadata $bubbleable_metadata) {
+function markaspot_token_tokens(
+  $type,
+  $tokens,
+  array $data,
+  array $options,
+  BubbleableMetadata $bubbleable_metadata,
+) {
 
   $replacements = [];
 
   // Node tokens.
   if ($type == 'node' && !empty($data['node'])) {
-    /* @var \Drupal\node\NodeInterface $node */
+    /** @var \Drupal\node\NodeInterface $node */
     $node = $data['node'];
 
     foreach ($tokens as $name => $original) {
@@ -84,13 +87,13 @@ BubbleableMetadata $bubbleable_metadata) {
 
     // Chained token relationships.
     if (($parent_tokens = \Drupal::token()->findWithPrefix($tokens, 'source')) && $source_node = $node->getUntranslated()) {
-      $replacements += \Drupal::token()->generate('node', $parent_tokens, array('node' => $source_node), $options, $bubbleable_metadata);
+      $replacements += \Drupal::token()->generate('node', $parent_tokens, ['node' => $source_node], $options, $bubbleable_metadata);
     }
-    if (($node_type_tokens = \Drupal::token()->findWithPrefix($tokens, 'content-type')) && $node_type = \Drupal\node\Entity\NodeType::load($node->bundle())) {
-      $replacements += \Drupal::token()->generate('content-type', $node_type_tokens, array('node_type' => $node_type), $options, $bubbleable_metadata);
+    if (($node_type_tokens = \Drupal::token()->findWithPrefix($tokens, 'content-type')) && $node_type = NodeType::load($node->bundle())) {
+      $replacements += \Drupal::token()->generate('content-type', $node_type_tokens, ['node_type' => $node_type], $options, $bubbleable_metadata);
     }
     if (($url_tokens = \Drupal::token()->findWithPrefix($tokens, 'url'))) {
-      $replacements += \Drupal::token()->generate('url', $url_tokens, array('url' => $node->toUrl()), $options, $bubbleable_metadata);
+      $replacements += \Drupal::token()->generate('url', $url_tokens, ['url' => $node->toUrl()], $options, $bubbleable_metadata);
     }
   }
   return $replacements;

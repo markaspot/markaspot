@@ -74,7 +74,7 @@ function markaspot_service_provider_cron() {
         ->notice('Found @count service requests with assigned providers ready for cron notification.',
           ['@count' => $count]);
 
-      // TODO: Implement event dispatching or queue worker for ECA integration.
+      // @todo Implement event dispatching or queue worker for ECA integration.
     }
 
     // Set the next execution time.

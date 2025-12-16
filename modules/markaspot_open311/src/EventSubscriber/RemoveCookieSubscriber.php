@@ -45,7 +45,7 @@ class RemoveCookieSubscriber implements EventSubscriberInterface {
     // Preserve session cookies for authenticated users (e.g., passwordless auth)
     if ($queryContainsApiKey || $headerContainsApiKey || $formContainsApiKey) {
       // Check session UID directly instead of currentUser() to avoid timing issues
-      // currentUser()->isAnonymous() may not be reliable at this point in the request cycle
+      // currentUser()->isAnonymous() may not be reliable at this point in the request cycle.
       $session = $request->getSession();
       $uid = $session->get('uid');
 
@@ -57,7 +57,6 @@ class RemoveCookieSubscriber implements EventSubscriberInterface {
       }
     }
   }
-
 
   /**
    * {@inheritdoc}

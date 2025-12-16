@@ -5,6 +5,10 @@
  * Install, update and uninstall functions for markaspot_feedback module.
  */
 
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\Core\Config\FileStorage;
+
 /**
  * Implements hook_install().
  */
@@ -43,7 +47,7 @@ function markaspot_feedback_update_9001() {
   $config_path = $module_path . '/config/install';
 
   // Import English mail config.
-  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $source = new FileStorage($config_path);
   $config_factory = \Drupal::configFactory();
 
   if ($data = $source->read('markaspot_feedback.mail')) {
@@ -56,7 +60,7 @@ function markaspot_feedback_update_9001() {
   // Import German language overrides if locale module is enabled.
   if (\Drupal::moduleHandler()->moduleExists('locale')) {
     $lang_path = $config_path . '/language/de';
-    $lang_source = new \Drupal\Core\Config\FileStorage($lang_path);
+    $lang_source = new FileStorage($lang_path);
 
     if ($lang_data = $lang_source->read('markaspot_feedback.mail')) {
       \Drupal::languageManager()
@@ -85,7 +89,7 @@ function markaspot_feedback_update_9002() {
  */
 function _markaspot_feedback_create_feedback_field() {
   // Check if field storage already exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_feedback');
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_feedback');
   if (!$field_storage) {
     $field_storage_values = [
       'langcode' => 'en',
@@ -116,12 +120,12 @@ function _markaspot_feedback_create_feedback_field() {
       'custom_storage' => FALSE,
     ];
 
-    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    FieldStorageConfig::create($field_storage_values)->save();
     \Drupal::logger('markaspot_feedback')->notice('Created field_feedback field storage on node entity type.');
   }
 
   // Check if field instance already exists.
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_feedback');
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_feedback');
   if (!$field_instance) {
     $field_values = [
       'langcode' => 'en',
@@ -149,13 +153,13 @@ function _markaspot_feedback_create_feedback_field() {
       'field_type' => 'text_long',
     ];
 
-    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    FieldConfig::create($field_values)->save();
     \Drupal::logger('markaspot_feedback')->notice('Created field_feedback field instance on service_request content type.');
   }
 
   // Add field to entity displays if it exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_feedback');
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_feedback');
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_feedback');
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_feedback');
 
   if ($field_storage && $field_instance) {
     /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
@@ -212,7 +216,7 @@ function _markaspot_feedback_create_feedback_field() {
  */
 function _markaspot_feedback_delete_feedback_field() {
   // Delete the field instance first.
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('node', 'service_request', 'field_feedback');
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_feedback');
   if ($field_instance) {
     $field_instance->delete();
     \Drupal::logger('markaspot_feedback')->notice('Deleted field_feedback field instance from service_request content type.');
@@ -221,12 +225,11 @@ function _markaspot_feedback_delete_feedback_field() {
   // Delete the field storage.
   // Note: Field storage should only be deleted if no other bundles use it.
   // Check if any other bundles are using this field before deletion.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('node', 'field_feedback');
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_feedback');
   if ($field_storage) {
     // Check if field is used by other bundles.
     $field_map = \Drupal::service('entity_field.manager')->getFieldMap();
-    $bundles_using_field = isset($field_map['node']['field_feedback']['bundles']) ?
-      $field_map['node']['field_feedback']['bundles'] : [];
+    $bundles_using_field = $field_map['node']['field_feedback']['bundles'] ?? [];
 
     // Only delete if service_request is the only bundle using this field
     // or if no bundles are using it anymore.

@@ -5,7 +5,6 @@
  * Enables modules and site configuration for a markaspot site installation.
  */
 
-use Drupal\contact\Entity\ContactForm;
 use Drupal\Core\Form\FormStateInterface;
 
 /**

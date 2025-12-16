@@ -66,29 +66,29 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
    *   The request event.
    */
   public function onRequest(RequestEvent $event): void {
-    $this->startTime = microtime(true);
-    
+    $this->startTime = microtime(TRUE);
+
     $request = $event->getRequest();
     $path = $request->getPathInfo();
-    
-    // Only handle georeport requests endpoints
+
+    // Only handle georeport requests endpoints.
     if (!str_contains($path, '/georeport/v2/requests')) {
       return;
     }
-    
-    // Only cache GET requests
+
+    // Only cache GET requests.
     if ($request->getMethod() !== 'GET') {
       return;
     }
 
     $query_params = $request->query->all();
-    
-    // Skip caching if debug parameter is present
+
+    // Skip caching if debug parameter is present.
     if (isset($query_params['debug'])) {
       return;
     }
 
-    // Only cache bbox requests
+    // Only cache bbox requests.
     if (!isset($query_params['bbox'])) {
       return;
     }
@@ -98,18 +98,18 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     $cache_by_zoom = $config->get('cache_by_zoom') ?? FALSE;
     $exclude_params = $config->get('exclude_params') ?? [];
 
-    // Build cache key from query parameters
+    // Build cache key from query parameters.
     $cache_key_params = $query_params;
-    
-    // Remove excluded parameters from cache key
+
+    // Remove excluded parameters from cache key.
     foreach ($exclude_params as $param) {
       unset($cache_key_params[$param]);
     }
 
-    // Handle zoom-based caching
+    // Handle zoom-based caching.
     if ($cache_by_zoom && isset($cache_key_params['zoom'])) {
       $zoom_level = (int) $cache_key_params['zoom'];
-      // Group zoom levels for better cache hits
+      // Group zoom levels for better cache hits.
       $cache_key_params['zoom_group'] = $this->getZoomGroup($zoom_level);
       unset($cache_key_params['zoom']);
     }
@@ -117,24 +117,24 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     ksort($cache_key_params);
     $cache_key = 'bbox_request:' . md5(serialize($cache_key_params));
 
-    // Try to get from cache
+    // Try to get from cache.
     $cached = $this->cache->get($cache_key);
-    
+
     if ($cached && $cached->valid) {
       $response = new Response();
       $response->setContent($cached->data['content']);
       $response->headers->replace($cached->data['headers']);
       $response->headers->set('X-Bbox-Cache', 'HIT');
       $response->headers->set('X-Cache-Key', $cache_key);
-      
-      $execution_time = round((microtime(true) - $this->startTime) * 1000, 2);
+
+      $execution_time = round((microtime(TRUE) - $this->startTime) * 1000, 2);
       $response->headers->set('X-API-Execution-Time', $execution_time . 'ms');
-      
-      // Set cache control headers
+
+      // Set cache control headers.
       $response->setMaxAge($cache_time);
       $response->setSharedMaxAge($cache_time);
       $response->headers->set('Cache-Control', 'public, max-age=' . $cache_time);
-      
+
       $event->setResponse($response);
     }
   }
@@ -149,20 +149,20 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     $request = $event->getRequest();
     $response = $event->getResponse();
     $path = $request->getPathInfo();
-    
-    // Only handle georeport requests endpoints
+
+    // Only handle georeport requests endpoints.
     if (!str_contains($path, '/georeport/v2/requests')) {
       return;
     }
-    
-    // Only cache GET requests
+
+    // Only cache GET requests.
     if ($request->getMethod() !== 'GET') {
       return;
     }
 
     $query_params = $request->query->all();
-    
-    // Skip caching if debug parameter is present or no bbox
+
+    // Skip caching if debug parameter is present or no bbox.
     if (isset($query_params['debug']) || !isset($query_params['bbox'])) {
       return;
     }
@@ -172,7 +172,7 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    // Only cache successful responses
+    // Only cache successful responses.
     if ($response->getStatusCode() !== 200) {
       return;
     }
@@ -182,18 +182,18 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     $cache_by_zoom = $config->get('cache_by_zoom') ?? FALSE;
     $exclude_params = $config->get('exclude_params') ?? [];
 
-    // Build cache key from query parameters
+    // Build cache key from query parameters.
     $cache_key_params = $query_params;
-    
-    // Remove excluded parameters from cache key
+
+    // Remove excluded parameters from cache key.
     foreach ($exclude_params as $param) {
       unset($cache_key_params[$param]);
     }
 
-    // Handle zoom-based caching
+    // Handle zoom-based caching.
     if ($cache_by_zoom && isset($cache_key_params['zoom'])) {
       $zoom_level = (int) $cache_key_params['zoom'];
-      // Group zoom levels for better cache hits
+      // Group zoom levels for better cache hits.
       $cache_key_params['zoom_group'] = $this->getZoomGroup($zoom_level);
       unset($cache_key_params['zoom']);
     }
@@ -211,7 +211,7 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
       'node_list:service_request',
     ];
 
-    // Add category-specific cache tags if category parameter exists
+    // Add category-specific cache tags if category parameter exists.
     if (isset($query_params['service_code'])) {
       $cache_tags[] = 'taxonomy_term_list:service_category';
       $cache_tags[] = 'service_code:' . $query_params['service_code'];
@@ -227,12 +227,12 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
     $response->headers->set('X-Bbox-Cache', 'MISS');
     $response->headers->set('X-Cache-Key', $cache_key);
 
-    // Add cache control headers
+    // Add cache control headers.
     $response->setMaxAge($cache_time);
     $response->setSharedMaxAge($cache_time);
     $response->headers->set('Cache-Control', 'public, max-age=' . $cache_time);
 
-    $execution_time = round((microtime(true) - $this->startTime) * 1000, 2);
+    $execution_time = round((microtime(TRUE) - $this->startTime) * 1000, 2);
     $response->headers->set('X-API-Execution-Time', $execution_time . 'ms');
   }
 
@@ -246,15 +246,18 @@ class BboxCacheSubscriber implements EventSubscriberInterface {
    *   The zoom group.
    */
   protected function getZoomGroup(int $zoom): int {
-    // Group zoom levels to reduce cache fragmentation
+    // Group zoom levels to reduce cache fragmentation.
     if ($zoom <= 10) {
-      return 1; // City/region level
+      // City/region level.
+      return 1;
     }
     elseif ($zoom <= 15) {
-      return 2; // District level
+      // District level.
+      return 2;
     }
     else {
-      return 3; // Street level
+      // Street level.
+      return 3;
     }
   }
 

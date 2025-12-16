@@ -5,7 +5,9 @@
  * Install, update and uninstall functions for markaspot_resubmission module.
  */
 
-use Drupal\Core\Database\Database;
+use Drupal\Core\Config\FileStorage;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
 
 /**
  * Implements hook_install().
@@ -84,7 +86,8 @@ function markaspot_resubmission_update_9002() {
 
   // Add default reminder interval (7 days) if not set.
   if (!$config->get('reminder_interval')) {
-    $config->set('reminder_interval', 604800); // 7 days in seconds
+    // 7 days in seconds
+    $config->set('reminder_interval', 604800);
   }
 
   // Add default max reminders (unlimited = 0) if not set.
@@ -129,7 +132,7 @@ function markaspot_resubmission_update_9003() {
       'custom_storage' => FALSE,
     ];
 
-    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    FieldStorageConfig::create($field_storage_values)->save();
     $messages[] = t('Created field storage for field_resubmission_days.');
   }
 
@@ -157,7 +160,7 @@ function markaspot_resubmission_update_9003() {
       'field_type' => 'integer',
     ];
 
-    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    FieldConfig::create($field_values)->save();
     $messages[] = t('Created field instance on service_category taxonomy.');
   }
 
@@ -196,8 +199,8 @@ function markaspot_resubmission_update_9003() {
   $config->save();
 
   // Add field to form and view displays.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
+  $field_instance = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
 
   if ($field_storage && $field_instance) {
     /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
@@ -258,7 +261,7 @@ function markaspot_resubmission_update_9005() {
   $config_path = $module_path . '/config/install';
 
   // Import English mail config.
-  $source = new \Drupal\Core\Config\FileStorage($config_path);
+  $source = new FileStorage($config_path);
   $config_factory = \Drupal::configFactory();
 
   if ($data = $source->read('markaspot_resubmission.mail')) {
@@ -271,7 +274,7 @@ function markaspot_resubmission_update_9005() {
   // Import German language overrides if locale module is enabled.
   if (\Drupal::moduleHandler()->moduleExists('locale')) {
     $lang_path = $config_path . '/language/de';
-    $lang_source = new \Drupal\Core\Config\FileStorage($lang_path);
+    $lang_source = new FileStorage($lang_path);
 
     if ($lang_data = $lang_source->read('markaspot_resubmission.mail')) {
       \Drupal::languageManager()
@@ -292,7 +295,7 @@ function markaspot_resubmission_update_9005() {
  */
 function _markaspot_resubmission_create_resubmission_days_field() {
   // Check if field storage already exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
   if (!$field_storage) {
     $field_storage_values = [
       'langcode' => 'en',
@@ -317,11 +320,11 @@ function _markaspot_resubmission_create_resubmission_days_field() {
       'custom_storage' => FALSE,
     ];
 
-    \Drupal\field\Entity\FieldStorageConfig::create($field_storage_values)->save();
+    FieldStorageConfig::create($field_storage_values)->save();
   }
 
   // Check if field instance already exists.
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
+  $field_instance = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
   if (!$field_instance) {
     $field_values = [
       'langcode' => 'en',
@@ -344,12 +347,12 @@ function _markaspot_resubmission_create_resubmission_days_field() {
       'field_type' => 'integer',
     ];
 
-    \Drupal\field\Entity\FieldConfig::create($field_values)->save();
+    FieldConfig::create($field_values)->save();
   }
 
   // Add field to entity displays if it exists.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
+  $field_instance = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
 
   if ($field_storage && $field_instance) {
     /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
@@ -404,7 +407,7 @@ function _markaspot_resubmission_create_resubmission_days_field() {
  */
 function _markaspot_resubmission_delete_resubmission_days_field() {
   // Delete the field instance first.
-  $field_instance = \Drupal\field\Entity\FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
+  $field_instance = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_resubmission_days');
   if ($field_instance) {
     $field_instance->delete();
     \Drupal::logger('markaspot_resubmission')->notice('Deleted field_resubmission_days field instance from service_category taxonomy.');
@@ -412,7 +415,7 @@ function _markaspot_resubmission_delete_resubmission_days_field() {
 
   // Delete the field storage.
   // Note: Field storage should only be deleted if no other bundles use it.
-  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_resubmission_days');
   if ($field_storage) {
     $field_storage->delete();
     \Drupal::logger('markaspot_resubmission')->notice('Deleted field_resubmission_days field storage from taxonomy_term entity type.');

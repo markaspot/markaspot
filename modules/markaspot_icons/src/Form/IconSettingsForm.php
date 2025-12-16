@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_icons\Form;
 
+use Drupal\Core\Url;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
@@ -117,7 +118,7 @@ class IconSettingsForm extends ConfigFormBase {
     $form['migration']['migrate_link'] = [
       '#type' => 'link',
       '#title' => $this->t('Migrate Icon Data'),
-      '#url' => \Drupal\Core\Url::fromRoute('markaspot_icons.migrate'),
+      '#url' => Url::fromRoute('markaspot_icons.migrate'),
       '#attributes' => [
         'class' => ['button', 'button--primary'],
       ],

@@ -6,7 +6,6 @@
  */
 
 use Drupal\Core\Routing\RouteMatchInterface;
-use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Render\Element;
 
 /**
@@ -30,7 +29,7 @@ function markaspot_status_paragraph_help($route_name, RouteMatchInterface $route
 function markaspot_status_paragraph_page_attachments(array &$attachments) {
   $attachments['#attached']['library'][] = 'markaspot_status_paragraph/status_paragraph';
 
-  // Load status terms and generate class mapping for JavaScript
+  // Load status terms and generate class mapping for JavaScript.
   $status_class_map = markaspot_status_paragraph_get_status_class_map();
   $attachments['#attached']['drupalSettings']['markaspot_status_paragraph']['statusClassMap'] = $status_class_map;
 }
@@ -45,7 +44,7 @@ function markaspot_status_paragraph_get_status_class_map() {
   $class_map = [];
 
   // Query database directly to load all terms with status_hex field
-  // regardless of language to avoid language filtering issues
+  // regardless of language to avoid language filtering issues.
   $connection = \Drupal::database();
 
   $query = $connection->select('taxonomy_term__field_status_hex', 'h');
@@ -61,10 +60,10 @@ function markaspot_status_paragraph_get_status_class_map() {
     $term_name = $result->name;
     $hex_color = $result->field_status_hex_color;
 
-    // Generate CSS class the same way as in preprocess
+    // Generate CSS class the same way as in preprocess.
     $status_class = 'status-' . strtolower(preg_replace('/[^a-z0-9]+/i', '-', $term_name));
 
-    // Store both class and color
+    // Store both class and color.
     $class_map[$term_name] = [
       'class' => $status_class,
       'color' => $hex_color,
@@ -78,7 +77,7 @@ function markaspot_status_paragraph_get_status_class_map() {
  * Implements hook_form_FORM_ID_alter() for the service request edit form.
  */
 function markaspot_status_paragraph_form_node_service_request_edit_form_alter(&$form, &$form_state, $form_id) {
-  // Attach library
+  // Attach library.
   $form['#attached']['library'][] = 'markaspot_status_paragraph/status_paragraph';
 
   // Apply the filter directly to the boilerplate field in the subform
@@ -97,7 +96,7 @@ function markaspot_status_paragraph_form_node_service_request_edit_form_alter(&$
  * Implements hook_form_FORM_ID_alter() for the service request management form.
  */
 function markaspot_status_paragraph_form_node_service_request_management_form_alter(&$form, &$form_state, $form_id) {
-  // Attach library
+  // Attach library.
   $form['#attached']['library'][] = 'markaspot_status_paragraph/status_paragraph';
 
   // Apply the filter directly to the boilerplate field in the subform
@@ -119,23 +118,23 @@ function markaspot_status_paragraph_preprocess_paragraphs_summary(&$variables) {
   /** @var \Drupal\paragraphs\Entity\Paragraph $paragraph */
   $paragraph = $variables['paragraph'] ?? NULL;
 
-  // Return early if paragraph doesn't exist or isn't a status paragraph
+  // Return early if paragraph doesn't exist or isn't a status paragraph.
   if (!$paragraph || $paragraph->bundle() !== 'status') {
     return;
   }
 
-  // Get the status term
+  // Get the status term.
   if ($paragraph->hasField('field_status_term') && !$paragraph->get('field_status_term')->isEmpty()) {
     $status_term = $paragraph->get('field_status_term')->entity;
 
     if ($status_term && $status_term->hasField('field_status_hex') && !$status_term->get('field_status_hex')->isEmpty()) {
       $hex_color = $status_term->get('field_status_hex')->color;
 
-      // Create a safe CSS class from the term name
+      // Create a safe CSS class from the term name.
       $status_name = $status_term->getName();
       $status_class = strtolower(preg_replace('/[^a-z0-9]+/i', '-', $status_name));
 
-      // Add the color and class to variables
+      // Add the color and class to variables.
       $variables['status_color'] = $hex_color;
       $variables['status_class'] = 'status-' . $status_class;
       $variables['status_name'] = $status_name;

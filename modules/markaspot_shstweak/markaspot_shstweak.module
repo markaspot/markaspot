@@ -1,23 +1,38 @@
 <?php
 
 /**
+ * @file
+ */
+
+/**
  * Implements hook_field_widget_single_element__WIDGET_TYPE_form_alter().
  *
- * attach js and html attributes to dynamically add taxonony term description
- * to SHS widget
+ * Attach js and html attributes to dynamically add taxonony term description
+ * to SHS widget.
  *
  * currently only applicable for fields with cardinality of 1
  */
-function markaspot_shstweak_field_widget_single_element_options_shs_form_alter(&$element, \Drupal\Core\Form\FormStateInterface $form_state, $context) {
+
+use Drupal\field\Entity\FieldConfig;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\WidgetInterface;
+use Drupal\shs\Plugin\Field\FieldWidget\OptionsShsWidget;
+use Drupal\Core\Field\EntityReferenceFieldItemList;
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ *
+ */
+function markaspot_shstweak_field_widget_single_element_options_shs_form_alter(&$element, FormStateInterface $form_state, $context) {
   $items = $context['items'];
   $widget = $context['widget'];
-  if ($items instanceof \Drupal\Core\Field\EntityReferenceFieldItemList && $widget instanceof \Drupal\shs\Plugin\Field\FieldWidget\OptionsShsWidget) {
+  if ($items instanceof EntityReferenceFieldItemList && $widget instanceof OptionsShsWidget) {
     if ($items->getFieldDefinition()->getFieldStorageDefinition()->getCardinality() === 1) {
       if ($widget->getThirdPartySetting('markaspot_shstweak', 'add_description')) {
         $element['#attached']['library'][] = 'markaspot_shstweak/shstweak';
         $element['#attributes']['class'][] = 'shs-description-enabled';
         $element['#attributes']['data-shs-last-child'] = (int) $widget->getThirdPartySetting('markaspot_shstweak', 'only_last_child');
-        // This is html placeholder for the taxonomy term description
+        // This is html placeholder for the taxonomy term description.
         $element['#suffix'] = '<div class="taxonomy-description ' . $items->getName() . '"></div>';
       }
     }
@@ -27,15 +42,15 @@ function markaspot_shstweak_field_widget_single_element_options_shs_form_alter(&
 /**
  * Implements hook_field_widget_third_party_settings_form().
  *
- * add third party settings for SHS widget
+ * Add third party settings for SHS widget.
  */
-function markaspot_shstweak_field_widget_third_party_settings_form(\Drupal\Core\Field\WidgetInterface $plugin, \Drupal\Core\Field\FieldDefinitionInterface $field_definition, $form_mode, array $form, \Drupal\Core\Form\FormStateInterface $form_state) {
+function markaspot_shstweak_field_widget_third_party_settings_form(WidgetInterface $plugin, FieldDefinitionInterface $field_definition, $form_mode, array $form, FormStateInterface $form_state) {
   if ($plugin->getPluginId() == 'options_shs' && $field_definition->getFieldStorageDefinition()->getCardinality() === 1) {
     $element = [];
     $element['add_description'] = [
       '#type' => 'checkbox',
       '#title' => t('Add taxonomy term description to SHS widget'),
-      '#default_value' => $plugin->getThirdPartySetting('markaspot_shstweak', 'add_description')
+      '#default_value' => $plugin->getThirdPartySetting('markaspot_shstweak', 'add_description'),
     ];
     $element['only_last_child'] = [
       '#type' => 'checkbox',
@@ -43,11 +58,11 @@ function markaspot_shstweak_field_widget_third_party_settings_form(\Drupal\Core\
       '#default_value' => $plugin->getThirdPartySetting('markaspot_shstweak', 'only_last_child'),
       '#states' => [
         'visible' => [
-          ':input[name="fields['.$field_definition->getName().'][settings_edit_form][third_party_settings][markaspot_shstweak][add_description]"]' => [
+          ':input[name="fields[' . $field_definition->getName() . '][settings_edit_form][third_party_settings][markaspot_shstweak][add_description]"]' => [
             'checked' => TRUE,
-          ]
-        ]
-      ]
+          ],
+        ],
+      ],
     ];
     return $element;
   }
@@ -56,12 +71,12 @@ function markaspot_shstweak_field_widget_third_party_settings_form(\Drupal\Core\
 /**
  * Implements hook_field_widget_settings_summary_alter().
  *
- * add summary for SHS widget third party settings
+ * Add summary for SHS widget third party settings.
  */
 function markaspot_shstweak_field_widget_settings_summary_alter(array &$summary, array $context) {
-  if ($context['widget'] instanceof \Drupal\Core\Field\WidgetInterface && $context['widget']->getPluginId() === 'options_shs') {
+  if ($context['widget'] instanceof WidgetInterface && $context['widget']->getPluginId() === 'options_shs') {
     if ($context['widget']->getThirdPartySetting('markaspot_shstweak', 'add_description')) {
-      if ($context['field_definition'] instanceof \Drupal\field\Entity\FieldConfig && $context['field_definition']->getFieldStorageDefinition()->getCardinality() !== 1) {
+      if ($context['field_definition'] instanceof FieldConfig && $context['field_definition']->getFieldStorageDefinition()->getCardinality() !== 1) {
         $summary[] = t('Taxonomy term description settings not applicable.');
       }
       else {
@@ -73,5 +88,3 @@ function markaspot_shstweak_field_widget_settings_summary_alter(array &$summary,
     }
   }
 }
-
-

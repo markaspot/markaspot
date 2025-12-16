@@ -71,13 +71,13 @@ class MarkaspotUiController extends ControllerBase {
    */
   public function settingsList() {
     $links = [];
-    
+
     foreach ($this->moduleHandler->getModuleList() as $module => $info) {
       $ext = $this->moduleExtensionList->getExtensionInfo($module);
       if (empty($ext['path']) || strpos($ext['path'], 'profiles/contrib/markaspot/modules/') !== 0) {
         continue;
       }
-      
+
       foreach ([$module . '.settings', $module . '.settings_form'] as $route_name) {
         try {
           $routes = $this->routeProvider->getRoutesByNames([$route_name]);
@@ -86,17 +86,17 @@ class MarkaspotUiController extends ControllerBase {
             $title = $route->getDefault('_title') ?? $module;
             $links[] = Link::fromTextAndUrl($title, Url::fromRoute($route_name));
           }
-        } 
+        }
         catch (\Exception $e) {
           // Route not found, continue to the next one.
         }
       }
     }
-    
+
     usort($links, function ($a, $b) {
       return strcmp($a->toString(), $b->toString());
     });
-    
+
     return [
       '#theme' => 'item_list',
       '#title' => $this->t('Mark-a-Spot module settings'),
@@ -104,4 +104,5 @@ class MarkaspotUiController extends ControllerBase {
       '#cache' => ['max-age' => 0],
     ];
   }
+
 }

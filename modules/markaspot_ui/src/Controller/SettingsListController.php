@@ -6,7 +6,6 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Extension\ExtensionList;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Routing\RouteProviderInterface;
-use Drupal\Core\Link;
 use Drupal\Core\Url;
 use Drupal\Core\Cache\CacheableMetadata;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -86,19 +85,19 @@ class SettingsListController extends ControllerBase {
       'markaspot_geocoder' => 'markaspot_geocoder.settings',
       'services_api_key_auth' => 'entity.api_key.collection',
     ];
-    
+
     $links = [];
-    
+
     // Collect settings links from all enabled Mark-a-Spot modules.
     foreach ($markaspot_modules as $module => $route_name) {
       if ($this->moduleHandler->moduleExists($module)) {
         $info = $this->extensionList->getExtensionInfo($module);
         if (!empty($info)) {
           try {
-            // Verify route exists
+            // Verify route exists.
             $this->routeProvider->getRouteByName($route_name);
-            
-            // Create link
+
+            // Create link.
             $links[] = [
               '#type' => 'link',
               '#title' => $this->t($info['name']),
@@ -115,23 +114,23 @@ class SettingsListController extends ControllerBase {
         }
       }
     }
-    
-    // Add custom modules from the web/modules/custom directory
+
+    // Add custom modules from the web/modules/custom directory.
     $custom_modules = [
       'markaspot_vision' => 'markaspot_vision.settings',
       'markaspot_geocoder' => 'markaspot_geocoder.settings',
     ];
-    
+
     foreach ($custom_modules as $module => $route_name) {
-      // Only add if not already added and module exists
+      // Only add if not already added and module exists.
       if (!isset($markaspot_modules[$module]) && $this->moduleHandler->moduleExists($module)) {
         $info = $this->extensionList->getExtensionInfo($module);
         if (!empty($info)) {
           try {
-            // Verify route exists
+            // Verify route exists.
             $this->routeProvider->getRouteByName($route_name);
-            
-            // Create link
+
+            // Create link.
             $links[] = [
               '#type' => 'link',
               '#title' => $this->t($info['name']),
@@ -148,12 +147,12 @@ class SettingsListController extends ControllerBase {
         }
       }
     }
-    
-    // Sort links alphabetically by title
-    usort($links, function($a, $b) {
+
+    // Sort links alphabetically by title.
+    usort($links, function ($a, $b) {
       return strcasecmp($a['#title'], $b['#title']);
     });
-    
+
     $build = [
       '#theme' => 'item_list',
       '#title' => $this->t('Mark-a-Spot module settings'),
@@ -161,13 +160,15 @@ class SettingsListController extends ControllerBase {
       '#attributes' => ['class' => ['admin-list']],
       '#wrapper_attributes' => ['class' => ['container-inline']],
     ];
-    
-    // Make the render array cacheable but invalidate on module changes
+
+    // Make the render array cacheable but invalidate on module changes.
     $cache_metadata = new CacheableMetadata();
     $cache_metadata->setCacheTags(['markaspot_ui', 'module_list']);
-    $cache_metadata->setCacheMaxAge(86400); // 24 hours
+    // 24 hours
+    $cache_metadata->setCacheMaxAge(86400);
     $cache_metadata->applyTo($build);
-    
+
     return $build;
   }
+
 }

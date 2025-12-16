@@ -58,7 +58,7 @@ function service_request_update_11001() {
   if ($config && $config->get('id') === 'node.service_request.body') {
     $settings = $config->get('settings') ?: [];
 
-    // Set allowed_formats to allow common text formats
+    // Set allowed_formats to allow common text formats.
     $settings['allowed_formats'] = [
       'plain_text' => 'plain_text',
       'basic_html' => 'basic_html',

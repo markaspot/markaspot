@@ -5,8 +5,6 @@
  * Contains cgn_request_id.module.
  */
 
-use Drupal\Core\Database\Database;
-
 /**
  * Implements hook_install().
  */
@@ -44,7 +42,7 @@ function markaspot_request_id_install() {
       'offset' => [
         'type' => 'int',
         'not null' => FALSE,
-        'description' => "Offset"
+        'description' => "Offset",
       ],
     ],
     'primary key' => ['id'],
@@ -54,7 +52,7 @@ function markaspot_request_id_install() {
   $connection = \Drupal::database();
   $connection->schema()->createTable('markaspot_request_id', $schema);
 
-  // Query for the last service_request to retrieve last service request
+  // Query for the last service_request to retrieve last service request.
   $query = \Drupal::entityQuery('node')
     ->condition('type', 'service_request')
     ->accessCheck(FALSE)
@@ -88,7 +86,8 @@ function markaspot_request_id_install() {
         ->execute();
       \Drupal::logger('markaspot_request_id')
         ->notice("Last Request ID: " . $last_request_id . " saved as initial value to new table.");
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       return FALSE;
     }
   }
@@ -102,6 +101,6 @@ function markaspot_request_id_update_9600() {
   $schema->addField('markaspot_request_id', 'offset', [
     'type' => 'int',
     'not null' => FALSE,
-    'description' => "Offset"
+    'description' => "Offset",
   ]);
 }

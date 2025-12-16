@@ -22,11 +22,11 @@ function markaspot_icons_field_widget_info_alter(array &$info) {
  */
 function markaspot_icons_field_widget_form_alter(&$element, FormStateInterface $form_state, $context) {
   $field_definition = $context['items']->getFieldDefinition();
-  
+
   // Handle Iconify widget on fa_icon_class fields.
-  if ($field_definition->getType() === 'fa_icon_class' && 
+  if ($field_definition->getType() === 'fa_icon_class' &&
       $context['widget']->getPluginId() === 'iconify_field_icon_picker') {
-    
+
     // Convert fa_icon_class field to work with Iconify widget.
     // The Iconify widget expects 'value' in the structure.
     if (isset($element['value'])) {
@@ -44,10 +44,10 @@ function markaspot_icons_field_widget_form_alter(&$element, FormStateInterface $
  */
 function markaspot_icons_field_widget_complete_form_alter(&$field_widget_complete_form, FormStateInterface $form_state, $context) {
   $field_definition = $context['items']->getFieldDefinition();
-  
-  if ($field_definition->getType() === 'fa_icon_class' && 
+
+  if ($field_definition->getType() === 'fa_icon_class' &&
       $context['widget']->getPluginId() === 'iconify_field_icon_picker') {
-    
+
     // Add custom validation to convert Iconify format back to FontAwesome format.
     $field_widget_complete_form['#element_validate'][] = 'markaspot_icons_iconify_to_fa_validate';
   }
@@ -58,10 +58,10 @@ function markaspot_icons_field_widget_complete_form_alter(&$field_widget_complet
  */
 function markaspot_icons_iconify_to_fa_validate($element, FormStateInterface $form_state, $complete_form) {
   $values = $form_state->getValue($element['#parents']);
-  
+
   if (!empty($values[0]['value'])) {
     $iconify_value = $values[0]['value'];
-    
+
     // Convert Iconify format back to FontAwesome format for storage.
     if (strpos($iconify_value, 'i-') === 0) {
       $fa_value = markaspot_icons_convert_iconify_to_fa($iconify_value);
@@ -94,7 +94,7 @@ function markaspot_icons_convert_fa_to_iconify($fa_icon) {
     'fa-heart-o' => 'i-heroicons-heart',
     'fa-heart' => 'i-heroicons-heart',
   ];
-  
+
   return $mapping[$fa_icon] ?? 'i-heroicons-exclamation-circle';
 }
 
@@ -116,8 +116,9 @@ function markaspot_icons_convert_iconify_to_fa($iconify_icon) {
     'i-heroicons-building-office' => 'fa-bank',
     'i-heroicons-home' => 'fa-home',
     'i-heroicons-heart' => 'fa-heart',
-    'i-heroicons-exclamation-circle' => 'fa-heart-o', // Default fallback
+  // Default fallback.
+    'i-heroicons-exclamation-circle' => 'fa-heart-o',
   ];
-  
+
   return $reverse_mapping[$iconify_icon] ?? 'fa-heart-o';
 }

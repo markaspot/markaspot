@@ -109,7 +109,7 @@ class StatsController extends ControllerBase {
 
     return new JsonResponse($output);
   }
-  
+
   /**
    * Gets hierarchical statistics by service request category.
    *
@@ -123,22 +123,22 @@ class StatsController extends ControllerBase {
       $hierarchy_query->fields('tp', ['entity_id', 'parent_target_id']);
       $hierarchy_query->condition('tp.bundle', 'service_category');
       $hierarchy_results = $hierarchy_query->execute()->fetchAll();
-      
+
       // Build a hierarchy map of parent->children.
       $children_map = [];
       $parent_map = [];
-      
+
       foreach ($hierarchy_results as $term_relation) {
         $parent_id = $term_relation->parent_target_id;
         $child_id = $term_relation->entity_id;
-        
+
         if (!isset($children_map[$parent_id])) {
           $children_map[$parent_id] = [];
         }
         $children_map[$parent_id][] = $child_id;
         $parent_map[$child_id] = $parent_id;
       }
-      
+
       // Get all terms with their data.
       $terms_query = $this->database->select('taxonomy_term_field_data', 't');
       $terms_query->fields('t', ['tid', 'name']);
@@ -146,7 +146,7 @@ class StatsController extends ControllerBase {
       $terms_query->leftJoin('taxonomy_term__field_category_hex', 'h', 't.tid = h.entity_id AND h.deleted = 0');
       $terms_query->condition('t.vid', 'service_category');
       $terms_results = $terms_query->execute()->fetchAllAssoc('tid');
-      
+
       // Get all terms with their counts.
       $counts_query = $this->database->select('taxonomy_term_field_data', 't');
       $counts_query->fields('t', ['tid']);
@@ -156,7 +156,7 @@ class StatsController extends ControllerBase {
       $counts_query->condition('t.vid', 'service_category');
       $counts_query->groupBy('t.tid');
       $counts_results = $counts_query->execute()->fetchAllAssoc('tid');
-      
+
       // Find root categories (terms without parents or with parent 0)
       $root_categories = [];
       foreach ($terms_results as $tid => $term) {
@@ -164,15 +164,15 @@ class StatsController extends ControllerBase {
           $root_categories[] = $tid;
         }
       }
-      
+
       // Build the hierarchical output.
       $output = [];
-      
+
       foreach ($root_categories as $root_tid) {
         if (isset($terms_results[$root_tid])) {
           $term = $terms_results[$root_tid];
           $count = isset($counts_results[$root_tid]) ? $counts_results[$root_tid]->count : 0;
-          
+
           $category = [
             'tid' => $term->tid,
             'category' => $term->name,
@@ -180,17 +180,17 @@ class StatsController extends ControllerBase {
             'color' => $term->color,
             'children' => $this->getChildrenForCategory($term->tid, $children_map, $terms_results, $counts_results),
           ];
-          
+
           $output[] = $category;
         }
       }
-      
+
       return new JsonResponse($output);
     }
     catch (\Exception $e) {
       // Log the error.
       $this->getLogger('markaspot_stats')->error('Error retrieving hierarchical category statistics: @error', ['@error' => $e->getMessage()]);
-      
+
       // Return an error response.
       return new JsonResponse(['error' => 'An error occurred while retrieving statistics'], 500);
     }
@@ -213,32 +213,32 @@ class StatsController extends ControllerBase {
    */
   protected function getChildrenForCategory($parent_tid, $children_map, $terms_results, $counts_results) {
     $children = [];
-    
+
     if (!isset($children_map[$parent_tid])) {
       return $children;
     }
-    
+
     foreach ($children_map[$parent_tid] as $child_tid) {
       if (isset($terms_results[$child_tid])) {
         $term = $terms_results[$child_tid];
         $count = isset($counts_results[$child_tid]) ? $counts_results[$child_tid]->count : 0;
-        
+
         $child = [
           'tid' => $term->tid,
           'category' => $term->name,
           'count' => $count,
           'color' => $term->color,
         ];
-        
+
         // Add children if any exist.
         if (isset($children_map[$child_tid])) {
           $child['children'] = $this->getChildrenForCategory($child_tid, $children_map, $terms_results, $counts_results);
         }
-        
+
         $children[] = $child;
       }
     }
-    
+
     return $children;
   }
 

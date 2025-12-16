@@ -50,81 +50,83 @@ class IconMigrationService {
    */
   protected $iconMappings = [
     'heroicons' => [
-      // Waste/Trash
+      // Waste/Trash.
       'fa-trash' => 'i-heroicons-trash',
       'fa-trash-o' => 'i-heroicons-trash',
-      
-      // Transportation/Infrastructure
-      'fa-road' => 'i-heroicons-minus',  // No direct equivalent, use generic
+
+      // Transportation/Infrastructure.
+  // No direct equivalent, use generic.
+      'fa-road' => 'i-heroicons-minus',
       'fa-car' => 'i-heroicons-truck',
-      
-      // Nature/Environment
-      'fa-tree' => 'i-heroicons-beaker',  // No direct tree, use nature-related
+
+      // Nature/Environment.
+  // No direct tree, use nature-related.
+      'fa-tree' => 'i-heroicons-beaker',
       'fa-tint' => 'i-heroicons-beaker',
-      
-      // Communication
+
+      // Communication.
       'fa-comment' => 'i-heroicons-chat-bubble-left',
       'fa-comment-o' => 'i-heroicons-chat-bubble-left',
-      
-      // Status indicators
+
+      // Status indicators.
       'fa-check' => 'i-heroicons-check',
       'fa-check-circle' => 'i-heroicons-check-circle',
       'fa-play-circle' => 'i-heroicons-play-circle',
       'fa-hand-stop-o' => 'i-heroicons-hand-raised',
       'fa-stack-overflow' => 'i-heroicons-archive-box',
       'fa-calendar-times-o' => 'i-heroicons-calendar-x-mark',
-      
-      // Buildings/Places
+
+      // Buildings/Places.
       'fa-bank' => 'i-heroicons-building-office',
       'fa-building' => 'i-heroicons-building-office',
       'fa-home' => 'i-heroicons-home',
       'fa-hospital-o' => 'i-heroicons-building-office-2',
-      
-      // Utilities
+
+      // Utilities.
       'fa-heart-o' => 'i-heroicons-heart',
       'fa-heart' => 'i-heroicons-heart',
       'fa-star' => 'i-heroicons-star',
       'fa-star-o' => 'i-heroicons-star',
-      
-      // Default fallback
+
+      // Default fallback.
       'default' => 'i-heroicons-exclamation-circle',
     ],
     'lucide' => [
-      // Waste/Trash
+      // Waste/Trash.
       'fa-trash' => 'i-lucide-trash-2',
       'fa-trash-o' => 'i-lucide-trash',
-      
-      // Transportation/Infrastructure
+
+      // Transportation/Infrastructure.
       'fa-road' => 'i-lucide-construction',
       'fa-car' => 'i-lucide-car',
-      
-      // Nature/Environment
+
+      // Nature/Environment.
       'fa-tree' => 'i-lucide-tree-pine',
       'fa-tint' => 'i-lucide-droplets',
-      
-      // Communication
+
+      // Communication.
       'fa-comment' => 'i-lucide-message-circle',
       'fa-comment-o' => 'i-lucide-message-circle',
-      
-      // Status indicators
+
+      // Status indicators.
       'fa-check' => 'i-lucide-check',
       'fa-check-circle' => 'i-lucide-check-circle',
       'fa-play-circle' => 'i-lucide-play-circle',
       'fa-hand-stop-o' => 'i-lucide-hand',
       'fa-stack-overflow' => 'i-lucide-archive',
       'fa-calendar-times-o' => 'i-lucide-calendar-x',
-      
-      // Buildings/Places
+
+      // Buildings/Places.
       'fa-bank' => 'i-lucide-building-2',
       'fa-building' => 'i-lucide-building',
       'fa-home' => 'i-lucide-home',
       'fa-hospital-o' => 'i-lucide-building-2',
-      
-      // Default fallback
+
+      // Default fallback.
       'default' => 'i-lucide-alert-circle',
     ],
     'fa6-solid' => [
-      // Direct FontAwesome 6 mapping
+      // Direct FontAwesome 6 mapping.
       'fa-trash' => 'i-fa6-solid-trash-can',
       'fa-trash-o' => 'i-fa6-solid-trash-can',
       'fa-road' => 'i-fa6-solid-road',
@@ -162,8 +164,8 @@ class IconMigrationService {
     if ($direction === 'fa_to_iconify') {
       return $this->iconMappings[$target_collection] ?? [];
     }
-    
-    // For iconify_to_fa, reverse the mapping
+
+    // For iconify_to_fa, reverse the mapping.
     $mappings = $this->iconMappings[$target_collection] ?? [];
     return array_flip($mappings);
   }
@@ -190,7 +192,7 @@ class IconMigrationService {
    */
   public static function batchProcess($entity_type, $direction, $target_collection, $dry_run, &$context) {
     $service = \Drupal::service('markaspot_icons.migration');
-    
+
     if (!isset($context['sandbox']['progress'])) {
       $context['sandbox']['progress'] = 0;
       $context['sandbox']['max'] = $service->getEntityCount($entity_type);
@@ -200,7 +202,7 @@ class IconMigrationService {
     }
 
     $entities = $service->getEntitiesForMigration($entity_type, $context['sandbox']['progress'], 50);
-    
+
     foreach ($entities as $entity) {
       $service->migrateEntityIcons($entity, $direction, $target_collection, $dry_run);
       $context['sandbox']['progress']++;
@@ -209,7 +211,8 @@ class IconMigrationService {
 
     if ($context['sandbox']['progress'] < $context['sandbox']['max']) {
       $context['finished'] = $context['sandbox']['progress'] / $context['sandbox']['max'];
-    } else {
+    }
+    else {
       $context['finished'] = 1;
     }
 
@@ -224,18 +227,20 @@ class IconMigrationService {
    */
   public static function batchFinished($success, $results, $operations) {
     $messenger = \Drupal::messenger();
-    
+
     if ($success) {
       if ($results['dry_run']) {
         $messenger->addMessage(t('Dry run completed. Processed @count entities.', [
           '@count' => $results['processed'],
         ]));
-      } else {
+      }
+      else {
         $messenger->addMessage(t('Migration completed successfully. Updated @count entities.', [
           '@count' => $results['processed'],
         ]));
       }
-    } else {
+    }
+    else {
       $messenger->addError(t('Migration finished with errors.'));
     }
   }
@@ -245,15 +250,16 @@ class IconMigrationService {
    */
   protected function getEntityCount($entity_type) {
     $storage = $this->entityTypeManager->getStorage($entity_type);
-    
+
     if ($entity_type === 'taxonomy_term') {
       $query = $storage->getQuery()
         ->condition('vid', ['service_category', 'service_status'], 'IN')
         ->accessCheck(FALSE);
-    } else {
+    }
+    else {
       $query = $storage->getQuery()->accessCheck(FALSE);
     }
-    
+
     return $query->count()->execute();
   }
 
@@ -262,18 +268,19 @@ class IconMigrationService {
    */
   protected function getEntitiesForMigration($entity_type, $offset, $limit) {
     $storage = $this->entityTypeManager->getStorage($entity_type);
-    
+
     if ($entity_type === 'taxonomy_term') {
       $query = $storage->getQuery()
         ->condition('vid', ['service_category', 'service_status'], 'IN')
         ->range($offset, $limit)
         ->accessCheck(FALSE);
-    } else {
+    }
+    else {
       $query = $storage->getQuery()
         ->range($offset, $limit)
         ->accessCheck(FALSE);
     }
-    
+
     $ids = $query->execute();
     return $storage->loadMultiple($ids);
   }
@@ -296,13 +303,13 @@ class IconMigrationService {
       }
 
       $new_value = $this->convertIcon($current_value, $direction, $target_collection);
-      
+
       if ($new_value !== $current_value) {
         if (!$dry_run) {
           $entity->set($field_name, $new_value);
           $updated = TRUE;
         }
-        
+
         $this->loggerFactory->get('markaspot_icons')->info('Icon migration: @old → @new (Entity: @id)', [
           '@old' => $current_value,
           '@new' => $new_value,
@@ -323,8 +330,9 @@ class IconMigrationService {
     if ($direction === 'fa_to_iconify') {
       $mappings = $this->iconMappings[$target_collection] ?? [];
       return $mappings[$icon] ?? $mappings['default'] ?? $icon;
-    } elseif ($direction === 'iconify_to_fa') {
-      // Reverse conversion: find FA icon that maps to this iconify icon
+    }
+    elseif ($direction === 'iconify_to_fa') {
+      // Reverse conversion: find FA icon that maps to this iconify icon.
       $mappings = $this->iconMappings[$target_collection] ?? [];
       $reversed = array_flip($mappings);
       return $reversed[$icon] ?? $icon;

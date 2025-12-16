@@ -67,7 +67,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Allow cross-origin requests to Mark-a-Spot API endpoints from the frontend domain.'),
     ];
 
-    // Map Configuration
+    // Map Configuration.
     $form['markaspot_nuxt']['map'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Map Configuration'),
@@ -106,7 +106,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Attribution text for the main map style (e.g., © Mapbox © OpenStreetMap contributors)'),
     ];
 
-    // Fallback configuration
+    // Fallback configuration.
     $form['markaspot_nuxt']['map']['fallback'] = [
       '#type' => 'details',
       '#title' => $this->t('Fallback Style Configuration'),
@@ -143,7 +143,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Attribution text for the fallback style'),
     ];
 
-    // Map position
+    // Map position.
     $form['markaspot_nuxt']['map']['position'] = [
       '#type' => 'details',
       '#title' => $this->t('Default Map Position'),

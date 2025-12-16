@@ -179,17 +179,17 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       '#group' => 'settings',
     ];
 
-    // Get all available fields for service requests
+    // Get all available fields for service requests.
     $fields = \Drupal::service('entity_field.manager')
       ->getFieldDefinitions('node', 'service_request');
 
     $options = [];
     foreach ($fields as $field_name => $field_definition) {
-      // Exclude core technical fields
+      // Exclude core technical fields.
       if (!in_array($field_name, [
         'nid', 'uuid', 'vid', 'type', 'revision_timestamp',
         'revision_uid', 'revision_log', 'uid', 'default_langcode',
-        'revision_default', 'revision_translation_affected', 'langcode'
+        'revision_default', 'revision_translation_affected', 'langcode',
       ])) {
         $options[$field_name] = $field_definition->getLabel() . ' (' . $field_name . ')';
       }
@@ -302,27 +302,27 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
 
     $this->config('markaspot_open311.settings')
-      // Content Types
+      // Content Types.
       ->set('bundle', $values['bundle'])
       ->set('tax_category', $values['tax_category'])
       ->set('tax_status', $values['tax_status'])
-      // Status Configuration
+      // Status Configuration.
       ->set('status_open_start', $values['status_open_start'])
       ->set('status_open', $values['status_open'])
       ->set('status_closed', $values['status_closed'])
-      // Status Notes Configuration
+      // Status Notes Configuration.
       ->set('status_note_auto_create', $values['status_note_auto_create'])
       ->set('status_note_created', $values['status_note_created'])
       ->set('status_note_changed', $values['status_note_changed'])
-      // Field Access
+      // Field Access.
       ->set('field_access.public_fields', $values['public_fields'])
       ->set('field_access.user_fields', $values['user_fields'])
       ->set('field_access.manager_fields', $values['manager_fields'])
-      // General Settings
+      // General Settings.
       ->set('node_options_status', $values['node_options_status'])
       ->set('nid_limit', $values['nid_limit'])
       ->set('revisions', $values['revisions'])
-      // Group Integration
+      // Group Integration.
       ->set('group_filter_enabled', $values['group_filter_enabled'])
       ->set('group_filter_type', $values['group_filter_type'])
       ->save();
@@ -353,4 +353,5 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
 
     return $options;
   }
+
 }

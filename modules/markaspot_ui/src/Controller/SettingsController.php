@@ -48,7 +48,7 @@ class SettingsController extends ControllerBase {
   public function __construct(
     ModuleHandlerInterface $module_handler,
     ModuleExtensionList $module_list,
-    RouteProviderInterface $route_provider
+    RouteProviderInterface $route_provider,
   ) {
     $this->moduleHandler = $module_handler;
     $this->moduleList = $module_list;
@@ -74,15 +74,15 @@ class SettingsController extends ControllerBase {
    */
   public function overview() {
     $items = [];
-    
+
     // Get all installed modules.
     $modules = $this->moduleHandler->getModuleList();
-    
+
     // Additional modules that might have settings but don't follow markaspot_ prefix.
     $additional_modules = [
       'services_api_key_auth' => 'entity.api_key.collection',
     ];
-    
+
     // Check each markaspot_ module for settings pages.
     foreach ($modules as $module_name => $module) {
       // Only process markaspot_ modules.
@@ -90,14 +90,14 @@ class SettingsController extends ControllerBase {
         $this->addModuleSettingsItem($items, $module_name);
       }
     }
-    
+
     // Add additional related modules.
     foreach ($additional_modules as $module_name => $route_name) {
       if ($this->moduleHandler->moduleExists($module_name)) {
         try {
           // Check if the route exists.
           $this->routeProvider->getRouteByName($route_name);
-          
+
           $info = $this->moduleList->getExtensionInfo($module_name);
           if (!empty($info)) {
             $items[] = [
@@ -134,7 +134,7 @@ class SettingsController extends ControllerBase {
     }
 
     // Sort items alphabetically by title.
-    usort($items, function($a, $b) {
+    usort($items, function ($a, $b) {
       return strcasecmp($a['content']['title']['#title'], $b['content']['title']['#title']);
     });
 
@@ -165,7 +165,8 @@ class SettingsController extends ControllerBase {
     $build['#cache'] = [
       'tags' => ['module_list', 'markaspot_ui'],
       'contexts' => ['user.permissions'],
-      'max-age' => 3600, // Cache for 1 hour
+    // Cache for 1 hour.
+      'max-age' => 3600,
     ];
 
     return $build;
@@ -188,12 +189,12 @@ class SettingsController extends ControllerBase {
       $module_name . '.admin_settings',
       $module_name . '.config',
     ];
-    
+
     $info = $this->moduleList->getExtensionInfo($module_name);
     if (empty($info)) {
       return;
     }
-    
+
     // Try to find a valid settings route.
     $route_name = NULL;
     foreach ($route_patterns as $pattern) {
@@ -210,7 +211,7 @@ class SettingsController extends ControllerBase {
         // Route not found, try next pattern.
       }
     }
-    
+
     // If we found a valid route, add the item.
     if ($route_name) {
       $items[] = [
@@ -240,4 +241,5 @@ class SettingsController extends ControllerBase {
       ];
     }
   }
+
 }
