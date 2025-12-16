@@ -751,6 +751,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         return (int) $slug;
       }
 
+      // Validate slug format (alphanumeric, hyphens, underscores, max 64 chars).
+      if (!preg_match('/^[a-z0-9_-]{1,64}$/i', $slug)) {
+        return NULL;
+      }
+
       // Lookup by slug.
       $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
         'type' => 'jur',
@@ -768,6 +773,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   /**
    * Gets node IDs that belong to a specific group.
    *
+   * Uses direct database query for performance - avoids loading full entities.
+   *
    * @param int $group_id
    *   The group ID.
    *
@@ -779,24 +786,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       return [];
     }
 
-    $relationship_storage = $this->entityTypeManager->getStorage('group_relationship');
-    $relationship_ids = $relationship_storage->getQuery()
-      ->accessCheck(FALSE)
+    // Direct database query for entity_id only - much faster than loading entities.
+    $connection = \Drupal::database();
+    $node_ids = $connection->select('group_relationship_field_data', 'gr')
+      ->fields('gr', ['entity_id'])
       ->condition('gid', $group_id)
       ->condition('plugin_id', 'group_node:service_request')
-      ->execute();
+      ->execute()
+      ->fetchCol();
 
-    if (empty($relationship_ids)) {
-      return [];
-    }
-
-    $relationships = $relationship_storage->loadMultiple($relationship_ids);
-    $node_ids = [];
-    foreach ($relationships as $relationship) {
-      $node_ids[] = $relationship->getEntityId();
-    }
-
-    return array_unique($node_ids);
+    return array_map('intval', $node_ids);
   }
 
   /**

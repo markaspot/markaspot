@@ -3,6 +3,8 @@
 namespace Drupal\markaspot_nuxt\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\StreamWrapper\PublicStream;
+use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -12,18 +14,23 @@ use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 
 class MarkASpotSettingsController extends ControllerBase {
-  protected $entityTypeManager;
-  protected $configFactory;
+  protected StreamWrapperManagerInterface $streamWrapperManager;
 
-  public function __construct(EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory) {
+  public function __construct(
+    EntityTypeManagerInterface $entity_type_manager,
+    ConfigFactoryInterface $config_factory,
+    StreamWrapperManagerInterface $stream_wrapper_manager
+  ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
+    $this->streamWrapperManager = $stream_wrapper_manager;
   }
 
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('entity_type.manager'),
-      $container->get('config.factory')
+      $container->get('config.factory'),
+      $container->get('stream_wrapper_manager')
     );
   }
 
@@ -70,8 +77,8 @@ class MarkASpotSettingsController extends ControllerBase {
       if (is_numeric($jurisdiction_param)) {
         $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_param);
       }
-      // Try slug lookup.
-      if (!$group) {
+      // Try slug lookup (validate format first).
+      if (!$group && preg_match('/^[a-z0-9_-]{1,64}$/i', $jurisdiction_param)) {
         $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
           'type' => 'jur',
           'field_slug' => $jurisdiction_param,
@@ -81,7 +88,7 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Default to first jurisdiction group if none specified or found.
-    if (!$group) {
+    if ($group === NULL) {
       $groups = $this->entityTypeManager->getStorage('group')->loadByProperties(['type' => 'jur']);
       $group = reset($groups);
     }
@@ -113,18 +120,16 @@ class MarkASpotSettingsController extends ControllerBase {
     // Add file URLs from group's file fields if available.
     // Return relative paths - frontend will proxy through /api/images/ or /api/fonts/.
     if ($group) {
-      /** @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $stream_wrapper_manager */
-      $stream_wrapper_manager = \Drupal::service('stream_wrapper_manager');
-
       // Helper to convert file URI to relative path.
-      $getRelativePath = function ($file) use ($stream_wrapper_manager) {
+      $getRelativePath = function ($file) {
         $uri = $file->getFileUri();
         // Get the stream wrapper (e.g., public://)
-        $scheme = $stream_wrapper_manager->getScheme($uri);
+        $scheme = $this->streamWrapperManager->getScheme($uri);
         if ($scheme === 'public') {
           // public://fonts/file.woff2 -> /sites/default/files/fonts/file.woff2
-          $target = $stream_wrapper_manager->getTarget($uri);
-          return '/sites/default/files/' . $target;
+          $target = $this->streamWrapperManager->getTarget($uri);
+          $publicPath = PublicStream::basePath();
+          return '/' . $publicPath . '/' . $target;
         }
         // Fallback: extract path from URI
         return '/' . str_replace('://', '/', $uri);
