@@ -13,19 +13,41 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 
+/**
+ * Controller for Mark-a-Spot settings API.
+ */
 class MarkASpotSettingsController extends ControllerBase {
+
+  /**
+   * The stream wrapper manager service.
+   *
+   * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
+   */
   protected StreamWrapperManagerInterface $streamWrapperManager;
 
+  /**
+   * Constructs a MarkASpotSettingsController object.
+   *
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
+   * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $stream_wrapper_manager
+   *   The stream wrapper manager.
+   */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
     ConfigFactoryInterface $config_factory,
-    StreamWrapperManagerInterface $stream_wrapper_manager
+    StreamWrapperManagerInterface $stream_wrapper_manager,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
     $this->streamWrapperManager = $stream_wrapper_manager;
   }
 
+  /**
+   * {@inheritdoc}
+   */
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('entity_type.manager'),
@@ -34,6 +56,19 @@ class MarkASpotSettingsController extends ControllerBase {
     );
   }
 
+  /**
+   * Returns Mark-a-Spot configuration settings as JSON.
+   *
+   * Loads base settings from markaspot_nuxt.settings config and merges
+   * jurisdiction-specific configuration from group entities. Supports
+   * jurisdiction lookup by numeric ID or URL slug.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request, may contain 'jurisdiction' query parameter.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   The configuration settings in JSON format.
+   */
   public function getMarkASpotSettings(Request $request) {
     // Load the 'markaspot_nuxt.settings' configuration.
     $nuxt_config = $this->configFactory->get('markaspot_nuxt.settings');
@@ -42,26 +77,26 @@ class MarkASpotSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'Configuration not found'], 404);
     }
 
-    // Build settings array from markaspot_nuxt.settings
+    // Build settings array from markaspot_nuxt.settings.
     $settings = [
-      // Frontend configuration
+      // Frontend configuration.
       'frontend' => [
         'base_url' => $nuxt_config->get('frontend_base_url'),
         'enabled' => $nuxt_config->get('frontend_enabled'),
         'cors_enabled' => $nuxt_config->get('api_cors_enabled'),
       ],
-      // Map configuration - Mapbox/MapLibre
+      // Map configuration - Mapbox/MapLibre.
       'mapbox_token' => $nuxt_config->get('mapbox_token'),
       'mapbox_style' => $nuxt_config->get('mapbox_style'),
       'mapbox_style_dark' => $nuxt_config->get('mapbox_style_dark'),
       'osm_custom_attribution' => $nuxt_config->get('osm_custom_attribution'),
       'osm_custom_tile_url' => $nuxt_config->get('osm_custom_tile_url'),
-      // Fallback style configuration
+      // Fallback style configuration.
       'fallback_style' => $nuxt_config->get('fallback_style'),
       'fallback_style_dark' => $nuxt_config->get('fallback_style_dark'),
       'fallback_api_key' => $nuxt_config->get('fallback_api_key'),
       'fallback_attribution' => $nuxt_config->get('fallback_attribution'),
-      // Map position
+      // Map position.
       'zoom_initial' => $nuxt_config->get('zoom_initial') ?: 13,
       'center_lat' => $nuxt_config->get('center_lat'),
       'center_lng' => $nuxt_config->get('center_lng'),
@@ -126,12 +161,12 @@ class MarkASpotSettingsController extends ControllerBase {
         // Get the stream wrapper (e.g., public://)
         $scheme = $this->streamWrapperManager->getScheme($uri);
         if ($scheme === 'public') {
-          // public://fonts/file.woff2 -> /sites/default/files/fonts/file.woff2
+          // public://fonts/file.woff2 -> /sites/default/files/fonts/file.woff2.
           $target = $this->streamWrapperManager->getTarget($uri);
           $publicPath = PublicStream::basePath();
           return '/' . $publicPath . '/' . $target;
         }
-        // Fallback: extract path from URI
+        // Fallback: extract path from URI.
         return '/' . str_replace('://', '/', $uri);
       };
 
@@ -198,7 +233,7 @@ class MarkASpotSettingsController extends ControllerBase {
     // Add boundary GeoJSON from group's field_boundary if available.
     if ($group && $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty()) {
       $boundary_json = $group->get('field_boundary')->value;
-      // Strip HTML tags as safety measure
+      // Strip HTML tags as safety measure.
       $boundary_json = strip_tags($boundary_json);
       $boundary_data = json_decode($boundary_json, TRUE);
       if (is_array($boundary_data)) {
@@ -260,21 +295,21 @@ class MarkASpotSettingsController extends ControllerBase {
           'label' => $field_config->getLabel(),
           'description' => $field_config->getDescription(),
           'required' => $field_config->isRequired(),
-          'cardinality' => $field_storage ? $field_storage->getCardinality() : null,
+          'cardinality' => $field_storage ? $field_storage->getCardinality() : NULL,
           'field_type' => $field_config->getType(),
           'default_value' => $field_config->getDefaultValueLiteral(),
           'settings' => $field_config->getSettings(),
-          'widget' => $component['type'] ?? null,
+          'widget' => $component['type'] ?? NULL,
           'widget_settings' => $component['settings'] ?? [],
           'display_settings' => $form_display->getComponent($field_name) ?? [],
           'validation' => $this->getFieldValidation($field_config),
         ];
 
-        // For list fields, include allowed_values from field storage
+        // For list fields, include allowed_values from field storage.
         if ($field_storage && in_array($field_config->getType(), ['list_integer', 'list_float', 'list_string'])) {
           $storage_settings = $field_storage->getSettings();
           if (!empty($storage_settings['allowed_values'])) {
-            // Allowed values are already in [value => label] format
+            // Allowed values are already in [value => label] format.
             $field_data['settings']['allowed_values'] = $storage_settings['allowed_values'];
           }
         }
@@ -300,7 +335,7 @@ class MarkASpotSettingsController extends ControllerBase {
           'type' => $group_config['format_type'] ?? 'fieldset',
           'weight' => $group_config['weight'] ?? 0,
           'region' => $group_config['region'] ?? 'content',
-          'parent' => $group_config['parent_name'] ?? null,
+          'parent' => $group_config['parent_name'] ?? NULL,
           'children' => $group_config['children'] ?? [],
           'settings' => $group_config['format_settings'] ?? [],
         ];
@@ -364,7 +399,7 @@ class MarkASpotSettingsController extends ControllerBase {
         if ($media_type) {
           // Fetch field storage for the media entity to retrieve cardinality.
           $field_storage = FieldStorageConfig::loadByName('media', $media_bundle);
-          $cardinality = $field_storage ? $field_storage->getCardinality() : null;
+          $cardinality = $field_storage ? $field_storage->getCardinality() : NULL;
 
           // Collect detailed information about the media type.
           $media_details[] = [
@@ -425,4 +460,5 @@ class MarkASpotSettingsController extends ControllerBase {
       'options' => $options,
     ]);
   }
+
 }

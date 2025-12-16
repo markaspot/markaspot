@@ -1961,8 +1961,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @param \Drupal\Core\Entity\ContentEntityInterface|null $node
    *   Optional node entity to look up media by delta position.
    *
-   * @return void
-   *
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If there is an error saving the media entity.
    */
