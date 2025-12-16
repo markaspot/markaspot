@@ -5,6 +5,8 @@ namespace Drupal\markaspot_nuxt\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
+use Drupal\Core\Cache\CacheableJsonResponse;
+use Drupal\Core\Cache\CacheableMetadata;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -63,18 +65,32 @@ class MarkASpotSettingsController extends ControllerBase {
    * jurisdiction-specific configuration from group entities. Supports
    * jurisdiction lookup by numeric ID or URL slug.
    *
+   * Cached with appropriate cache tags - automatically invalidates when:
+   * - markaspot_nuxt.settings config is changed
+   * - Jurisdiction group entities are created, updated, or deleted
+   * - Logo or font files are updated
+   *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request, may contain 'jurisdiction' query parameter.
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The configuration settings in JSON format.
    */
   public function getMarkASpotSettings(Request $request) {
+    // Build cache metadata.
+    $cache_metadata = new CacheableMetadata();
+    // Set max-age for HTTP caching (1 hour).
+    $cache_metadata->setCacheMaxAge(3600);
+
     // Load the 'markaspot_nuxt.settings' configuration.
     $nuxt_config = $this->configFactory->get('markaspot_nuxt.settings');
+    // Add config cache tag.
+    $cache_metadata->addCacheTags(['config:markaspot_nuxt.settings']);
 
     if (!$nuxt_config || $nuxt_config->isNew()) {
-      return new JsonResponse(['error' => 'Configuration not found'], 404);
+      $response = new CacheableJsonResponse(['error' => 'Configuration not found'], 404);
+      $response->addCacheableDependency($cache_metadata);
+      return $response;
     }
 
     // Build settings array from markaspot_nuxt.settings.
@@ -107,6 +123,9 @@ class MarkASpotSettingsController extends ControllerBase {
     $jurisdiction_param = $request->query->get('jurisdiction');
     $group = NULL;
 
+    // Add list cache tag for when groups are added/removed.
+    $cache_metadata->addCacheTags(['group_list:jur']);
+
     if ($jurisdiction_param) {
       // Try numeric ID first.
       if (is_numeric($jurisdiction_param)) {
@@ -122,10 +141,23 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    // Default to first jurisdiction group if none specified or found.
+    // Default to first jurisdiction group (by ID) if none specified or found.
     if ($group === NULL) {
-      $groups = $this->entityTypeManager->getStorage('group')->loadByProperties(['type' => 'jur']);
-      $group = reset($groups);
+      $group_ids = $this->entityTypeManager->getStorage('group')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', 'jur')
+        ->sort('id', 'ASC')
+        ->range(0, 1)
+        ->execute();
+      if (!empty($group_ids)) {
+        $group = $this->entityTypeManager->getStorage('group')->load(reset($group_ids));
+      }
+    }
+
+    // Add cache dependency on the loaded group entity.
+    if ($group) {
+      $cache_metadata->addCacheableDependency($group);
     }
 
     if ($group && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
@@ -176,6 +208,8 @@ class MarkASpotSettingsController extends ControllerBase {
         $file = $group->get('field_logo_light')->entity;
         if ($file) {
           $logos['light'] = $getRelativePath($file);
+          // Add cache dependency on file entity.
+          $cache_metadata->addCacheableDependency($file);
         }
       }
 
@@ -183,6 +217,8 @@ class MarkASpotSettingsController extends ControllerBase {
         $file = $group->get('field_logo_dark')->entity;
         if ($file) {
           $logos['dark'] = $getRelativePath($file);
+          // Add cache dependency on file entity.
+          $cache_metadata->addCacheableDependency($file);
         }
       }
 
@@ -211,12 +247,16 @@ class MarkASpotSettingsController extends ControllerBase {
         $file = $group->get('field_font_heading')->entity;
         if ($file) {
           $fonts['headingUrl'] = $getRelativePath($file);
+          // Add cache dependency on file entity.
+          $cache_metadata->addCacheableDependency($file);
         }
       }
       if ($group->hasField('field_font_body') && !$group->get('field_font_body')->isEmpty()) {
         $file = $group->get('field_font_body')->entity;
         if ($file) {
           $fonts['bodyUrl'] = $getRelativePath($file);
+          // Add cache dependency on file entity.
+          $cache_metadata->addCacheableDependency($file);
         }
       }
       if (!empty($fonts)) {
@@ -253,12 +293,19 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    // Return the configuration as a JSON response.
-    return new JsonResponse($settings);
+    // Return the configuration as a cacheable JSON response.
+    $response = new CacheableJsonResponse($settings);
+    $response->addCacheableDependency($cache_metadata);
+    return $response;
   }
 
   /**
    * Returns form display settings, including field settings and media reference info.
+   *
+   * Cached with appropriate cache tags - automatically invalidates when:
+   * - Entity form display configuration changes
+   * - Field configurations are updated
+   * - Field storage configurations are updated
    *
    * @param string $entity_type
    *   The entity type (e.g., node, user).
@@ -267,10 +314,15 @@ class MarkASpotSettingsController extends ControllerBase {
    * @param string $form_mode
    *   The form mode (e.g., default, teaser).
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The form display settings in JSON format.
    */
   public function getFormModeSettings($entity_type, $bundle, $form_mode) {
+    // Build cache metadata.
+    $cache_metadata = new CacheableMetadata();
+    // Set max-age for HTTP caching (1 hour).
+    $cache_metadata->setCacheMaxAge(3600);
+
     // Load the form display for the given entity type, bundle, and form mode.
     $form_display = $this->entityTypeManager
       ->getStorage('entity_form_display')
@@ -278,8 +330,15 @@ class MarkASpotSettingsController extends ControllerBase {
 
     // Check if the form display exists.
     if (!$form_display) {
-      return new JsonResponse(['error' => 'Form mode not found'], 404);
+      // Add cache tag for when this form display might be created.
+      $cache_metadata->addCacheTags(["config:core.entity_form_display.{$entity_type}.{$bundle}.{$form_mode}"]);
+      $response = new CacheableJsonResponse(['error' => 'Form mode not found'], 404);
+      $response->addCacheableDependency($cache_metadata);
+      return $response;
     }
+
+    // Add cache dependency on the form display entity.
+    $cache_metadata->addCacheableDependency($form_display);
 
     // Prepare an array to store field settings and other related data.
     $fields = [];
@@ -289,6 +348,14 @@ class MarkASpotSettingsController extends ControllerBase {
       // Load the field config and field storage for additional details.
       $field_config = FieldConfig::loadByName($entity_type, $bundle, $field_name);
       $field_storage = FieldStorageConfig::loadByName($entity_type, $field_name);
+
+      // Add cache dependencies on field config entities.
+      if ($field_config) {
+        $cache_metadata->addCacheableDependency($field_config);
+      }
+      if ($field_storage) {
+        $cache_metadata->addCacheableDependency($field_storage);
+      }
 
       if ($field_config) {
         $field_data = [
@@ -342,14 +409,16 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    // Return the form display settings with fields and groups as a JSON response.
-    return new JsonResponse([
+    // Return the form display settings with fields and groups as a cacheable JSON response.
+    $response = new CacheableJsonResponse([
       'entity_type' => $entity_type,
       'bundle' => $bundle,
       'form_mode' => $form_mode,
       'fields' => $fields,
       'field_groups' => $field_groups,
     ]);
+    $response->addCacheableDependency($cache_metadata);
+    return $response;
   }
 
   /**
@@ -423,21 +492,36 @@ class MarkASpotSettingsController extends ControllerBase {
    * This is useful for conditional fields that aren't in the form display
    * but need their options loaded dynamically.
    *
+   * Cached with field storage config cache tags - automatically invalidates
+   * when the field storage configuration is updated.
+   *
    * @param string $entity_type
    *   The entity type (e.g., node, user).
    * @param string $field_name
    *   The field name (e.g., field_party, field_oktoberfest).
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The field options in JSON format.
    */
   public function getFieldOptions($entity_type, $field_name) {
+    // Build cache metadata.
+    $cache_metadata = new CacheableMetadata();
+    // Set max-age for HTTP caching (1 hour).
+    $cache_metadata->setCacheMaxAge(3600);
+
     // Load the field storage to get allowed_values.
     $field_storage = FieldStorageConfig::loadByName($entity_type, $field_name);
 
     if (!$field_storage) {
-      return new JsonResponse(['error' => 'Field not found'], 404);
+      // Add cache tag for when this field storage might be created.
+      $cache_metadata->addCacheTags(["config:field.storage.{$entity_type}.{$field_name}"]);
+      $response = new CacheableJsonResponse(['error' => 'Field not found'], 404);
+      $response->addCacheableDependency($cache_metadata);
+      return $response;
     }
+
+    // Add cache dependency on the field storage entity.
+    $cache_metadata->addCacheableDependency($field_storage);
 
     $field_type = $field_storage->getType();
     $settings = $field_storage->getSettings();
@@ -454,29 +538,48 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    return new JsonResponse([
+    $response = new CacheableJsonResponse([
       'field_name' => $field_name,
       'field_type' => $field_type,
       'options' => $options,
     ]);
+    $response->addCacheableDependency($cache_metadata);
+    return $response;
   }
 
   /**
-   * Returns a list of all jurisdiction groups for routing.
+   * Returns available jurisdictions for URL routing.
    *
    * Used by the frontend to determine available jurisdictions and enable
    * slug-based URL routing when multiple jurisdictions exist.
    *
-   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   * Cached with group entity cache tags - automatically invalidates when any
+   * jurisdiction group is created, updated, or deleted.
+   *
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   List of jurisdictions with id, name, slug, and isDefault flag.
    */
   public function getJurisdictions() {
-    $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
-      'type' => 'jur',
-    ]);
+    // Use EntityQuery with explicit sorting to ensure consistent ordering.
+    // The first jurisdiction (lowest ID) is treated as default.
+    $group_ids = $this->entityTypeManager->getStorage('group')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'jur')
+      ->sort('id', 'ASC')
+      ->execute();
+
+    $groups = $this->entityTypeManager->getStorage('group')->loadMultiple($group_ids);
 
     $jurisdictions = [];
     $first = TRUE;
+
+    // Build cache metadata with tags from all loaded groups.
+    $cache_metadata = new CacheableMetadata();
+    // List cache tag for when groups are added/removed.
+    $cache_metadata->addCacheTags(['group_list:jur']);
+    // Set max-age for HTTP caching (1 hour).
+    $cache_metadata->setCacheMaxAge(3600);
 
     foreach ($groups as $group) {
       $slug = NULL;
@@ -491,13 +594,21 @@ class MarkASpotSettingsController extends ControllerBase {
         'isDefault' => $first,
       ];
       $first = FALSE;
+
+      // Add cache tag for each individual group entity.
+      $cache_metadata->addCacheableDependency($group);
     }
 
-    return new JsonResponse([
+    $response = new CacheableJsonResponse([
       'jurisdictions' => $jurisdictions,
       'count' => count($jurisdictions),
       'hasMultiple' => count($jurisdictions) > 1,
     ]);
+
+    // Attach cache metadata to response.
+    $response->addCacheableDependency($cache_metadata);
+
+    return $response;
   }
 
 }
