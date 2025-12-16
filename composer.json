@@ -71,7 +71,8 @@
         "drupal/field_formatter_class": "^1.0",
         "drupal/iconify_field": "^1.2",
         "drupal/inline_entity_form": "^3",
-        "drupal/shs": "^3"
+        "drupal/shs": "^3",
+        "drupal/codemirror_editor": "^2"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,

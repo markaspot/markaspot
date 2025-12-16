@@ -221,11 +221,12 @@
     "languages": {
       "type": "object",
       "title": "Language Settings",
+      "description": "Select which bundled languages to enable. Labels come from i18n.",
       "properties": {
         "available": {
           "type": "array",
           "title": "Available Languages",
-          "description": "Language codes available for this jurisdiction",
+          "description": "Language codes to enable for this jurisdiction",
           "items": {
             "type": "string",
             "enum": ["de", "de-ls", "en", "fr", "es", "it", "pt", "nl", "tr", "ar", "uk", "pl"]
@@ -238,28 +239,6 @@
           "title": "Default Language",
           "enum": ["de", "de-ls", "en", "fr", "es", "it", "pt", "nl", "tr", "ar", "uk", "pl"],
           "default": "de"
-        },
-        "locales": {
-          "type": "array",
-          "title": "Language Labels",
-          "description": "Custom display names for languages (optional)",
-          "items": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string",
-                "title": "Code",
-                "enum": ["de", "de-ls", "en", "fr", "es", "it", "pt", "nl", "tr", "ar", "uk", "pl"]
-              },
-              "name": {
-                "type": "string",
-                "title": "Display Name",
-                "description": "Custom label shown in language selector",
-                "examples": ["Deutsch", "Einfache Sprache", "English"]
-              }
-            },
-            "required": ["code", "name"]
-          }
         }
       }
     },

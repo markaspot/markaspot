@@ -179,20 +179,18 @@
   "languages": {
     "ui:options": {
       "title": "Languages",
+      "description": "Labels come from i18n (de-ls = Einfache Sprache)",
       "weight": 60
     },
     "properties": {
       "available": {
         "ui:options": {
-          "description": "Available languages (de-ls = Easy Language)"
+          "description": "Select which bundled languages to enable"
         }
       },
       "default": {
-        "ui:options": {}
-      },
-      "locales": {
         "ui:options": {
-          "description": "Optional custom display names for languages"
+          "description": "Default language for new visitors"
         }
       }
     }

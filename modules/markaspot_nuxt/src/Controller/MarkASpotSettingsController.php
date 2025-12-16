@@ -122,6 +122,8 @@ class MarkASpotSettingsController extends ControllerBase {
     // Add boundary GeoJSON from group's field_boundary if available.
     if ($group && $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty()) {
       $boundary_json = $group->get('field_boundary')->value;
+      // Strip HTML tags (in case field uses text_long with WYSIWYG)
+      $boundary_json = strip_tags($boundary_json);
       $boundary_data = json_decode($boundary_json, TRUE);
       if (is_array($boundary_data)) {
         // Ensure boundary is a FeatureCollection (wrap single Feature if needed)
