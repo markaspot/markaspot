@@ -81,6 +81,11 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata = new CacheableMetadata();
     // Set max-age for HTTP caching (1 hour).
     $cache_metadata->setCacheMaxAge(3600);
+    // Add cache contexts for query params that affect the response.
+    $cache_metadata->addCacheContexts([
+      'url.query_args:exclude',
+      'url.query_args:jurisdiction',
+    ]);
 
     // Load the 'markaspot_nuxt.settings' configuration.
     $nuxt_config = $this->configFactory->get('markaspot_nuxt.settings');
@@ -271,7 +276,10 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Add boundary GeoJSON from group's field_boundary if available.
-    if ($group && $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty()) {
+    // Skip if 'exclude=boundary' query param is set (for faster initial page load).
+    $exclude = $request->query->get('exclude');
+    $excludeBoundary = $exclude === 'boundary' || (is_array($exclude) && in_array('boundary', $exclude));
+    if (!$excludeBoundary && $group && $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty()) {
       $boundary_json = $group->get('field_boundary')->value;
       // Strip HTML tags as safety measure.
       $boundary_json = strip_tags($boundary_json);
