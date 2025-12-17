@@ -134,24 +134,30 @@ class MarkASpotSettingsController extends ControllerBase {
     if ($jurisdiction_param) {
       // Try numeric ID first.
       if (is_numeric($jurisdiction_param)) {
-        $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_param);
+        $loaded_group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_param);
+        // Only use group if it's published.
+        if ($loaded_group && $loaded_group->isPublished()) {
+          $group = $loaded_group;
+        }
       }
       // Try slug lookup (validate format first).
       if (!$group && preg_match('/^[a-z0-9_-]{1,64}$/i', $jurisdiction_param)) {
         $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
           'type' => 'jur',
           'field_slug' => $jurisdiction_param,
+          'status' => 1,
         ]);
         $group = reset($groups) ?: NULL;
       }
     }
 
-    // Default to first jurisdiction group (by ID) if none specified or found.
+    // Default to first published jurisdiction group (by ID) if none specified or found.
     if ($group === NULL) {
       $group_ids = $this->entityTypeManager->getStorage('group')
         ->getQuery()
         ->accessCheck(FALSE)
         ->condition('type', 'jur')
+        ->condition('status', 1)
         ->sort('id', 'ASC')
         ->range(0, 1)
         ->execute();
@@ -569,11 +575,13 @@ class MarkASpotSettingsController extends ControllerBase {
    */
   public function getJurisdictions() {
     // Use EntityQuery with explicit sorting to ensure consistent ordering.
-    // The first jurisdiction (lowest ID) is treated as default.
+    // The first published jurisdiction (lowest ID) is treated as default.
+    // Only published jurisdictions are returned.
     $group_ids = $this->entityTypeManager->getStorage('group')
       ->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'jur')
+      ->condition('status', 1)
       ->sort('id', 'ASC')
       ->execute();
 
