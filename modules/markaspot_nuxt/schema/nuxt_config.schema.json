@@ -93,6 +93,26 @@
               "examples": ["Inter", "Roboto", "Open Sans", "Source Sans Pro"]
             }
           }
+        },
+        "ui": {
+          "type": "object",
+          "title": "UI Theme Settings",
+          "description": "Theme-level UI customizations",
+          "properties": {
+            "leftSidebar": {
+              "type": "object",
+              "title": "Left Sidebar",
+              "properties": {
+                "width": {
+                  "type": "string",
+                  "title": "Width",
+                  "description": "Sidebar width on desktop",
+                  "pattern": "^\\d+px$",
+                  "default": "420px"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -148,6 +168,165 @@
           "title": "Form-First Mobile",
           "description": "Show form before map on mobile devices",
           "default": true
+        },
+        "emergency": {
+          "type": "object",
+          "title": "Emergency Mode",
+          "description": "Emergency mode redirects to lite version",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable Emergency Mode",
+              "description": "When true, app checks backend status and may redirect to /lite",
+              "default": false
+            }
+          }
+        },
+        "funFacts": {
+          "type": "object",
+          "title": "Fun Facts",
+          "description": "Display fun facts on success page",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable Fun Facts",
+              "default": false
+            }
+          }
+        },
+        "search": {
+          "type": "object",
+          "title": "Search Configuration",
+          "description": "Search feature settings",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable Search",
+              "default": true
+            },
+            "mode": {
+              "type": "string",
+              "title": "Search Mode",
+              "enum": ["fuzzy", "exact"],
+              "default": "fuzzy"
+            },
+            "minLength": {
+              "type": "integer",
+              "title": "Minimum Query Length",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 2
+            },
+            "threshold": {
+              "type": "number",
+              "title": "Fuzzy Match Threshold",
+              "description": "0 = exact match, 1 = match anything",
+              "minimum": 0,
+              "maximum": 1,
+              "default": 0.3
+            },
+            "fields": {
+              "type": "array",
+              "title": "Searchable Fields",
+              "items": {
+                "type": "string"
+              },
+              "default": ["title", "description", "address"]
+            }
+          }
+        },
+        "boundaries": {
+          "type": "object",
+          "title": "Boundary Settings",
+          "description": "Geographic boundary configuration",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable Boundaries",
+              "default": true
+            },
+            "file": {
+              "type": "string",
+              "title": "Boundary File",
+              "description": "GeoJSON filename for boundary validation"
+            },
+            "strictValidation": {
+              "type": "boolean",
+              "title": "Strict Validation",
+              "description": "Reject reports outside boundary",
+              "default": true
+            },
+            "showBoundaryOnMap": {
+              "type": "boolean",
+              "title": "Show Boundary on Map",
+              "default": true
+            }
+          }
+        },
+        "privacyNotice": {
+          "type": "object",
+          "title": "Privacy Notice",
+          "description": "Privacy notice configuration for forms",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable Privacy Notice",
+              "default": true
+            },
+            "modal": {
+              "type": "boolean",
+              "title": "Use Modal",
+              "description": "Show privacy text in modal instead of external link",
+              "default": true
+            },
+            "nodeId": {
+              "type": "integer",
+              "title": "Privacy Page Node ID",
+              "description": "Drupal node ID containing privacy text"
+            }
+          }
+        },
+        "analytics": {
+          "type": "object",
+          "title": "Analytics",
+          "description": "Analytics and tracking configuration",
+          "properties": {
+            "matomo": {
+              "type": "object",
+              "title": "Matomo Analytics",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "title": "Enable Matomo",
+                  "default": false
+                },
+                "mode": {
+                  "type": "string",
+                  "title": "Tracking Mode",
+                  "enum": ["tracking", "tag-manager"],
+                  "default": "tracking"
+                },
+                "siteId": {
+                  "type": "string",
+                  "title": "Site ID"
+                },
+                "trackerUrl": {
+                  "type": "string",
+                  "title": "Tracker URL",
+                  "format": "uri"
+                },
+                "containerId": {
+                  "type": "string",
+                  "title": "Container ID (for Tag Manager)"
+                },
+                "containerUrl": {
+                  "type": "string",
+                  "title": "Container URL",
+                  "format": "uri"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -274,35 +453,215 @@
           "description": "Load markers when map first loads",
           "default": true
         },
-        "deferredMap": {
+        "enableBoundsFiltering": {
           "type": "boolean",
-          "title": "Deferred Map Loading",
-          "description": "Defer map loading on mobile for performance",
+          "title": "Enable Bounds Filtering",
+          "description": "Update markers when map bounds change",
           "default": true
+        },
+        "deferredMap": {
+          "oneOf": [
+            {
+              "type": "boolean",
+              "title": "Simple Enable/Disable",
+              "description": "Boolean for backward compatibility"
+            },
+            {
+              "type": "object",
+              "title": "Deferred Map Configuration",
+              "description": "Full configuration for deferred map loading",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "title": "Enable Deferred Loading",
+                  "description": "Defer map loading on mobile for performance",
+                  "default": true
+                },
+                "preloadData": {
+                  "type": "boolean",
+                  "title": "Preload Data",
+                  "description": "Preload list data using city-wide bbox from boundary",
+                  "default": true
+                },
+                "limit": {
+                  "type": "integer",
+                  "title": "Preload Limit",
+                  "description": "Maximum items to preload",
+                  "minimum": 10,
+                  "maximum": 500,
+                  "default": 100
+                }
+              }
+            }
+          ],
+          "default": true
+        },
+        "layerVisibility": {
+          "type": "object",
+          "title": "Layer Visibility",
+          "description": "Configure layer visibility based on zoom levels",
+          "properties": {
+            "heatmap": {
+              "type": "object",
+              "properties": {
+                "minZoom": {
+                  "type": "integer",
+                  "default": 0
+                },
+                "maxZoom": {
+                  "type": "integer",
+                  "default": 11
+                },
+                "fadeOut": {
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            },
+            "clusters": {
+              "type": "object",
+              "properties": {
+                "minZoom": {
+                  "type": "integer",
+                  "default": 10
+                },
+                "maxZoom": {
+                  "type": "integer",
+                  "default": 12
+                }
+              }
+            },
+            "markers": {
+              "type": "object",
+              "properties": {
+                "minZoom": {
+                  "type": "integer",
+                  "default": 12
+                }
+              }
+            }
+          }
         },
         "controls": {
           "type": "object",
           "title": "Map Controls",
           "properties": {
             "zoom": {
-              "type": "boolean",
-              "title": "Zoom Controls",
+              "oneOf": [
+                {"type": "boolean"},
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {"type": "boolean", "default": true},
+                    "position": {"type": "string", "default": "centerRight"},
+                    "positionMobile": {"type": "string", "default": "topLeft"},
+                    "weight": {"type": "integer", "default": 40}
+                  }
+                }
+              ],
+              "default": true
+            },
+            "tilt": {
+              "oneOf": [
+                {"type": "boolean"},
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {"type": "boolean", "default": false},
+                    "position": {"type": "string", "default": "centerRight"},
+                    "positionMobile": {"type": "string", "default": "topLeft"},
+                    "weight": {"type": "integer", "default": 20},
+                    "options": {
+                      "type": "object",
+                      "properties": {
+                        "angles": {
+                          "type": "array",
+                          "items": {"type": "integer"},
+                          "default": [0, 30, 60]
+                        },
+                        "defaultAngle": {"type": "integer", "default": 0},
+                        "expandable": {"type": "boolean", "default": true}
+                      }
+                    }
+                  }
+                }
+              ],
+              "default": false
+            },
+            "theme": {
+              "oneOf": [
+                {"type": "boolean"},
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {"type": "boolean", "default": true},
+                    "position": {"type": "string", "default": "centerRight"},
+                    "positionMobile": {"type": "string", "default": "topLeft"},
+                    "weight": {"type": "integer", "default": 30}
+                  }
+                }
+              ],
               "default": true
             },
             "geolocation": {
-              "type": "boolean",
-              "title": "Geolocation Button",
-              "default": true
-            },
-            "theme": {
-              "type": "boolean",
-              "title": "Theme Toggle",
-              "default": true
+              "oneOf": [
+                {"type": "boolean"},
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {"type": "boolean", "default": false},
+                    "position": {"type": "string", "default": "centerRight"},
+                    "positionMobile": {"type": "string", "default": "topLeft"},
+                    "weight": {"type": "integer", "default": 10}
+                  }
+                }
+              ],
+              "default": false
             },
             "heatmap": {
-              "type": "boolean",
-              "title": "Heatmap Toggle",
+              "oneOf": [
+                {"type": "boolean"},
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {"type": "boolean", "default": false},
+                    "initialState": {"type": "boolean", "title": "Initial Visibility", "default": true},
+                    "position": {"type": "string", "default": "centerRight"},
+                    "positionMobile": {"type": "string", "default": "topLeft"},
+                    "weight": {"type": "integer", "default": 60}
+                  }
+                }
+              ],
               "default": false
+            },
+            "reports": {
+              "oneOf": [
+                {"type": "boolean"},
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {"type": "boolean", "default": true},
+                    "position": {"type": "string", "default": "topRight"},
+                    "weight": {"type": "integer", "default": 1}
+                  }
+                }
+              ],
+              "default": true
+            },
+            "attribution": {
+              "oneOf": [
+                {"type": "boolean"},
+                {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {"type": "boolean", "default": true},
+                    "position": {"type": "string", "default": "bottomRight"},
+                    "positionMobile": {"type": "string", "default": "topLeft"},
+                    "weight": {"type": "integer", "default": 10}
+                  }
+                }
+              ],
+              "default": true
             }
           }
         }
@@ -351,20 +710,86 @@
       "type": "object",
       "title": "Filter Settings",
       "properties": {
-        "status": {
-          "type": "boolean",
-          "title": "Status Filters",
-          "default": true
+        "enabled": {
+          "type": "object",
+          "title": "Enabled Filters",
+          "description": "Which filter types are enabled",
+          "properties": {
+            "status": {
+              "type": "boolean",
+              "title": "Status Filters",
+              "default": true
+            },
+            "category": {
+              "type": "boolean",
+              "title": "Category Filters",
+              "default": true
+            },
+            "time": {
+              "type": "boolean",
+              "title": "Time Filters",
+              "default": true
+            },
+            "custom": {
+              "type": "boolean",
+              "title": "Custom Filters",
+              "default": false
+            }
+          }
         },
-        "category": {
-          "type": "boolean",
-          "title": "Category Filters",
-          "default": true
+        "groups": {
+          "type": "object",
+          "title": "Filter Groups",
+          "description": "Group filters into primary (always visible) and secondary (collapsible)",
+          "properties": {
+            "primary": {
+              "type": "array",
+              "title": "Primary Filters",
+              "description": "Always visible filters",
+              "items": {"type": "string"},
+              "default": ["status:*"]
+            },
+            "secondary": {
+              "type": "array",
+              "title": "Secondary Filters",
+              "description": "Collapsible filters",
+              "items": {"type": "string"},
+              "default": ["category:*", "time:*"]
+            }
+          }
         },
-        "time": {
-          "type": "boolean",
-          "title": "Time Filters",
-          "default": true
+        "behavior": {
+          "type": "object",
+          "title": "Filter Behavior",
+          "properties": {
+            "multiSelect": {
+              "type": "boolean",
+              "title": "Multi-Select",
+              "default": true
+            },
+            "collapsible": {
+              "type": "boolean",
+              "title": "Collapsible",
+              "default": true
+            },
+            "persistent": {
+              "type": "boolean",
+              "title": "Persistent",
+              "description": "Remember filter state in localStorage",
+              "default": true
+            },
+            "showClearAll": {
+              "type": "boolean",
+              "title": "Show Clear All",
+              "default": true
+            }
+          }
+        },
+        "order": {
+          "type": "array",
+          "title": "Filter Order",
+          "items": {"type": "string"},
+          "default": ["status", "category", "time"]
         }
       }
     },
@@ -415,10 +840,31 @@
       }
     },
     "i18n": {
-      "type": "string",
-      "title": "Translation Overrides",
-      "description": "Override specific translation keys as JSON object. Example: {\"de\": {\"form.submit\": \"Meldung absenden\"}}"
+      "oneOf": [
+        {
+          "type": "string",
+          "title": "Translation Overrides (JSON String)",
+          "description": "Override specific translation keys as JSON string"
+        },
+        {
+          "type": "object",
+          "title": "Translation Overrides",
+          "description": "Override specific translation keys. Example: {\"de\": {\"form.submit\": \"Meldung absenden\"}}",
+          "properties": {
+            "overrides": {
+              "type": "object",
+              "title": "Translation Overrides",
+              "description": "Locale-keyed translation overrides",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {"type": "string"}
+              }
+            }
+          },
+          "additionalProperties": true
+        }
+      ]
     }
   },
-  "additionalProperties": false
+  "additionalProperties": true
 }

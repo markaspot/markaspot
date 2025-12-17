@@ -1,0 +1,41 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.user.user.field_all_groups_member
+  module:
+    - user
+id: user.user.default
+targetEntityType: user
+bundle: user
+mode: default
+content:
+  account:
+    weight: 0
+    region: content
+    settings: {}
+    third_party_settings: {}
+  field_all_groups_member:
+    type: boolean_checkbox
+    weight: 5
+    region: content
+    settings:
+      display_label: true
+    third_party_settings: {}
+  langcode:
+    type: language_select
+    weight: 1
+    region: content
+    settings:
+      include_locked: false
+    third_party_settings: {}
+  language:
+    weight: 2
+    region: content
+    settings: {}
+    third_party_settings: {}
+hidden:
+  contact: true
+  groups: true
+  path: true
+  timezone: true

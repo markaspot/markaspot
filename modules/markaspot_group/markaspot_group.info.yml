@@ -1,5 +1,5 @@
 name: Mark-a-Spot Group
-description: Adds grouped content feature
+description: 'Adds group-based access control for service requests with auto-membership functionality.'
 package: Mark-a-Spot
 type: module
 core_version_requirement: ^10 || ^11
@@ -8,3 +8,4 @@ dependencies:
   - service_request
   - drupal:group
   - gnode
+  - drupal:user

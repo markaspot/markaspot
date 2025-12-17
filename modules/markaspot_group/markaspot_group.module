@@ -4,5 +4,183 @@
  * @file
  * Mark-a-Spot Group module.
  *
- * Provides group-based access control for service requests using the Group module.
+ * Provides group-based access control for service requests using the Group
+ * module. Includes auto-membership functionality for users with the
+ * "All Groups Member" field enabled.
  */
+
+declare(strict_types=1);
+
+use Drupal\group\Entity\Group;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\user\UserInterface;
+
+/**
+ * Implements hook_user_insert().
+ *
+ * When a new user is created with the "All Groups Member" field enabled,
+ * automatically add them to all existing groups with the admin role.
+ */
+function markaspot_group_user_insert(UserInterface $account): void {
+  _markaspot_group_handle_user_membership($account);
+}
+
+/**
+ * Implements hook_user_update().
+ *
+ * When an existing user is updated with the "All Groups Member" field enabled,
+ * automatically add them to all groups they are not yet a member of.
+ */
+function markaspot_group_user_update(UserInterface $account): void {
+  // Check if the field exists before accessing it.
+  if (!$account->hasField('field_all_groups_member')) {
+    return;
+  }
+
+  // Check if the field value changed from FALSE to TRUE.
+  $original = $account->original ?? NULL;
+  $original_value = $original?->hasField('field_all_groups_member')
+    ? (bool) $original->get('field_all_groups_member')->value
+    : FALSE;
+  $new_value = (bool) $account->get('field_all_groups_member')->value;
+
+  // Only process if the field was just enabled.
+  if ($new_value && !$original_value) {
+    _markaspot_group_handle_user_membership($account);
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for group entities.
+ *
+ * When a new group is created, automatically add all users with
+ * the "All Groups Member" field enabled as members with the admin role.
+ */
+function markaspot_group_group_insert(GroupInterface $group): void {
+  _markaspot_group_add_all_groups_members_to_group($group);
+}
+
+/**
+ * Helper function to add a user to all groups if they have the field enabled.
+ *
+ * Applies different rules based on group type:
+ * - JUR (Jurisdiction): Only user 1 (uid=1) is automatically added.
+ * - ORG (Organisation): All users with field_all_groups_member are added.
+ *
+ * @param \Drupal\user\UserInterface $account
+ *   The user account to process.
+ */
+function _markaspot_group_handle_user_membership(UserInterface $account): void {
+  // Check if user has the "All Groups Member" field enabled.
+  if (!$account->hasField('field_all_groups_member')) {
+    return;
+  }
+
+  $is_all_groups_member = (bool) $account->get('field_all_groups_member')->value;
+  if (!$is_all_groups_member) {
+    return;
+  }
+
+  // Load all groups and add the user as a member with admin role.
+  $groups = Group::loadMultiple();
+  foreach ($groups as $group) {
+    // Check if user is allowed to be added to this group type.
+    if (_markaspot_group_user_allowed_for_group($account, $group)) {
+      _markaspot_group_add_member_to_group($group, $account);
+    }
+  }
+}
+
+/**
+ * Helper function to add all "All Groups Member" users to a new group.
+ *
+ * Applies different rules based on group type:
+ * - JUR (Jurisdiction): Only user 1 (uid=1) is automatically added.
+ * - ORG (Organisation): All users with field_all_groups_member are added.
+ *
+ * @param \Drupal\group\Entity\GroupInterface $group
+ *   The group to add members to.
+ */
+function _markaspot_group_add_all_groups_members_to_group(GroupInterface $group): void {
+  /** @var \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager */
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Load all users with the "All Groups Member" field enabled.
+  $user_storage = $entity_type_manager->getStorage('user');
+  $query = $user_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('field_all_groups_member', TRUE)
+    ->condition('status', 1);
+
+  $uids = $query->execute();
+  if (empty($uids)) {
+    return;
+  }
+
+  /** @var \Drupal\user\UserInterface[] $users */
+  $users = $user_storage->loadMultiple($uids);
+  foreach ($users as $user) {
+    // Check if user is allowed to be added to this group type.
+    if (_markaspot_group_user_allowed_for_group($user, $group)) {
+      _markaspot_group_add_member_to_group($group, $user);
+    }
+  }
+}
+
+/**
+ * Checks if a user is allowed to be auto-added to a group based on type.
+ *
+ * Rules:
+ * - JUR (Jurisdiction): Only user 1 (uid=1) is allowed.
+ * - ORG (Organisation): All users with field_all_groups_member are allowed.
+ * - Other group types: All users with field_all_groups_member are allowed.
+ *
+ * @param \Drupal\user\UserInterface $account
+ *   The user account to check.
+ * @param \Drupal\group\Entity\GroupInterface $group
+ *   The group to check against.
+ *
+ * @return bool
+ *   TRUE if the user is allowed to be added, FALSE otherwise.
+ */
+function _markaspot_group_user_allowed_for_group(UserInterface $account, GroupInterface $group): bool {
+  $group_type_id = $group->bundle();
+
+  // JUR groups: Only user 1 (uid=1) is allowed to be auto-added.
+  if ($group_type_id === 'jur') {
+    return (int) $account->id() === 1;
+  }
+
+  // ORG groups and other types: All users with field_all_groups_member allowed.
+  return TRUE;
+}
+
+/**
+ * Helper function to add a user to a group as member.
+ *
+ * In Group 3.x, admin permissions are handled via 'insider' scope roles
+ * which automatically apply to all group members. Therefore we simply
+ * add the user as a member without specifying a role.
+ *
+ * @param \Drupal\group\Entity\GroupInterface $group
+ *   The group to add the member to.
+ * @param \Drupal\user\UserInterface $account
+ *   The user account to add.
+ */
+function _markaspot_group_add_member_to_group(GroupInterface $group, UserInterface $account): void {
+  // Skip if user is already a member.
+  if ($group->getMember($account)) {
+    return;
+  }
+
+  // Add user as member. Admin permissions come from insider scope roles.
+  $group->addMember($account);
+
+  \Drupal::logger('markaspot_group')->notice(
+    'Added user @user to group @group as member.',
+    [
+      '@user' => $account->getDisplayName(),
+      '@group' => $group->label(),
+    ]
+  );
+}

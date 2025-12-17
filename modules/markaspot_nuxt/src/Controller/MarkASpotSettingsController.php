@@ -187,7 +187,22 @@ class MarkASpotSettingsController extends ControllerBase {
 
         // Merge jurisdiction config into settings.
         // These override/extend the base settings.
-        foreach (['client', 'theme', 'features', 'languages', 'ui', 'media', 'i18n'] as $key) {
+        // Keys must match the nuxt_config.schema.json properties.
+        $config_keys = [
+          'client',
+          'theme',
+          'features',
+          'languages',
+          'ui',
+          'media',
+          'map',
+          'navigation',
+          'filters',
+          'forms',
+          'privacy',
+          'i18n',
+        ];
+        foreach ($config_keys as $key) {
           if (!empty($jurisdiction_config[$key])) {
             $settings[$key] = $jurisdiction_config[$key];
           }
