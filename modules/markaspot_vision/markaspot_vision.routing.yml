@@ -1,0 +1,17 @@
+markaspot_vision.settings:
+  path: '/admin/config/services/markaspot-snap'
+  defaults:
+    _form: '\Drupal\markaspot_vision\Form\MarkaspotVisionSettingsForm'
+    _title: 'Markaspot Vision Settings'
+  requirements:
+    _permission: 'administer site configuration'
+
+markaspot_vision.image_processing:
+  path: '/markaspot_vision/getAIresults'
+  defaults:
+    _controller: '\Drupal\markaspot_vision\Controller\ImageProcessingController::getAIResults'
+    _title: 'Get AI Results'
+  methods: [POST]
+  requirements:
+    _permission: 'access content'
+    _csrf_token: 'TRUE'

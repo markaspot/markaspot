@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.field_ai_metadata
+    - media.type.request_image
+id: media.request_image.field_ai_metadata
+field_name: field_ai_metadata
+entity_type: media
+bundle: request_image
+label: 'AI Metadata'
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string_long

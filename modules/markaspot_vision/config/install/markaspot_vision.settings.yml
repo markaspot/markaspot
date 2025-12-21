@@ -1,0 +1,28 @@
+multiple_uploads: 1
+auth_type: 'bearer'
+api_key: ''
+api_url: 'https://api.openai.com/v1/chat/completions'
+ai_model: 'gpt-4o'
+system_prompt: ''
+image_prompt: |
+  Analyze the provided image(s) for a citizen reporting platform.
+
+  ## Tasks:
+  1. **Scene Analysis**: Describe visible objects, infrastructure issues, or problems.
+  2. **Categorization**: Select ONE category from: {categories}. Return the numeric tid only.
+
+  ## Response Format (valid JSON only, no markdown):
+  {
+    "category": <tid_number>,
+    "description_de": "<description_max_500_chars>",
+    "alt_text": ["<accessibility_text_per_image_max_125_chars>"],
+    "hazard_flag": false,
+    "hazard_issues": [],
+    "privacy_flag": false,
+    "privacy_issues": []
+  }
+
+  ## Rules:
+  - Return valid JSON without code blocks or markdown formatting.
+  - description_de: Detailed description in German, citizen perspective.
+  - alt_text: One entry per image, accessibility-friendly.

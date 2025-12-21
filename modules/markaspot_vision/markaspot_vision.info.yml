@@ -1,0 +1,8 @@
+name: 'Mark-a-Spot Vision'
+type: module
+description: 'AI-powered image analysis for automatic categorization, hazard detection, and privacy screening using GPT-4 Vision.'
+package: Mark-a-Spot
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:media
+  - drupal:field

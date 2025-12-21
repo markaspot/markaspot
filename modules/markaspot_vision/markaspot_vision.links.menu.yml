@@ -1,0 +1,6 @@
+markaspot_vision.settings:
+  title: 'Markaspot Vision Settings'
+  description: 'Configure Markaspot Vision settings'
+  parent: system.admin_config_services
+  route_name: markaspot_vision.settings
+  weight: 10
