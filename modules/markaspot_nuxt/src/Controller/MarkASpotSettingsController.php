@@ -121,6 +121,9 @@ class MarkASpotSettingsController extends ControllerBase {
       'zoom_initial' => $nuxt_config->get('zoom_initial') ?: 13,
       'center_lat' => $nuxt_config->get('center_lat'),
       'center_lng' => $nuxt_config->get('center_lng'),
+      // Geocoding configuration (applies to Mapbox, Photon, Nominatim).
+      'geocoding_country' => $nuxt_config->get('geocoding_country') ?: '',
+      'geocoding_region' => $nuxt_config->get('geocoding_region') ?: '',
     ];
 
     // Load jurisdiction-specific configuration from group entity.

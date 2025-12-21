@@ -175,6 +175,32 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Longitude for map center (e.g., 6.8528)'),
     ];
 
+    // Geocoding Configuration.
+    $form['markaspot_nuxt']['geocoding'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Geocoding Configuration'),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+      '#description' => $this->t('Configure geocoding settings for address search. These settings apply to all geocoding providers (Mapbox, Nominatim, Photon). By default, no country restriction is applied for worldwide compatibility.'),
+      '#weight' => 3,
+    ];
+
+    $form['markaspot_nuxt']['geocoding']['geocoding_country'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Geocoding Country Code'),
+      '#default_value' => $config->get('geocoding_country') ?: '',
+      '#maxlength' => 2,
+      '#size' => 5,
+      '#description' => $this->t('ISO 3166-1 alpha-2 country code (e.g., de, us, fr, gb). Limits address search results to the specified country. <strong>Leave empty for worldwide search (default).</strong> Common codes: de=Germany, us=USA, fr=France, gb=UK, nl=Netherlands.'),
+    ];
+
+    $form['markaspot_nuxt']['geocoding']['geocoding_region'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Geocoding Region (optional)'),
+      '#default_value' => $config->get('geocoding_region') ?: '',
+      '#description' => $this->t('Optional region name to bias geocoding results towards a specific area (e.g., nordrhein-westfalen, bavaria, california). Works best with Mapbox. Leave empty for country-wide or worldwide search.'),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -199,6 +225,8 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       ->set('zoom_initial', $values['zoom_initial'])
       ->set('center_lat', $values['center_lat'])
       ->set('center_lng', $values['center_lng'])
+      ->set('geocoding_country', strtolower(trim($values['geocoding_country'] ?? '')))
+      ->set('geocoding_region', trim($values['geocoding_region'] ?? ''))
       ->save();
 
     parent::submitForm($form, $form_state);
