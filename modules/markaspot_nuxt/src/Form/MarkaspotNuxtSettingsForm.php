@@ -23,6 +23,16 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_nuxt.settings');
 
+    // Pro Features toggle - controls visibility of pro-only
+    // features in jurisdiction config forms.
+    $form['pro_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Pro Features'),
+      '#default_value' => $config->get('pro_enabled') ?: FALSE,
+      '#description' => $this->t('When enabled, pro-only features (Dashboard, AI Analysis, Feedback, Offline) will be visible in jurisdiction configuration forms. Disable this for open source deployments to hide pro feature toggles.'),
+      '#weight' => -100,
+    ];
+
     $form['markaspot_nuxt'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Nuxt Frontend Settings'),
@@ -211,6 +221,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
 
     $this->config('markaspot_nuxt.settings')
+      ->set('pro_enabled', $values['pro_enabled'])
       ->set('frontend_base_url', $values['frontend_base_url'])
       ->set('frontend_enabled', $values['frontend_enabled'])
       ->set('api_cors_enabled', $values['api_cors_enabled'])

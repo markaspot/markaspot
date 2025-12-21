@@ -1,3 +1,4 @@
+pro_enabled: false
 frontend_base_url: ''
 frontend_enabled: false
 api_cors_enabled: false

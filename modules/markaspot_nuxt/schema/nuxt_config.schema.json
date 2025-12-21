@@ -163,6 +163,12 @@
           "description": "Allow feedback on service provider responses",
           "default": true
         },
+        "offline": {
+          "type": "boolean",
+          "title": "Offline Mode",
+          "description": "Enable offline support with service worker caching",
+          "default": false
+        },
         "formFirst": {
           "type": "boolean",
           "title": "Form-First Mobile",
