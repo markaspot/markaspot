@@ -16,6 +16,7 @@ process:
   body/format:
     plugin: default_value
     default_value: full_html
+  field_page_icon: field_page_icon
 destination:
   plugin: 'entity:node'
   default_bundle: page
