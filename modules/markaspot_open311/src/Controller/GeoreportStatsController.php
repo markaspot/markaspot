@@ -105,7 +105,7 @@ class GeoreportStatsController extends ControllerBase {
         LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
         LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
         LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
-        WHERE t.vid = 'service_status'
+        WHERE t.vid = 'service_status' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
         ORDER BY t.weight ASC
       ", $node_ids);
@@ -121,7 +121,7 @@ class GeoreportStatsController extends ControllerBase {
           t.weight
         FROM {taxonomy_term_field_data} t
         LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
-        WHERE t.vid = 'service_status'
+        WHERE t.vid = 'service_status' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
         ORDER BY t.weight ASC
       ");
@@ -139,7 +139,7 @@ class GeoreportStatsController extends ControllerBase {
         LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
         LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
         LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request'
-        WHERE t.vid = 'service_status'
+        WHERE t.vid = 'service_status' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
         ORDER BY t.weight ASC
       ");
@@ -272,7 +272,7 @@ class GeoreportStatsController extends ControllerBase {
         LEFT JOIN {taxonomy_term__field_category_icon} i ON t.tid = i.entity_id AND i.deleted = 0
         INNER JOIN {node__field_category} fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
         INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
-        WHERE t.vid = 'service_category'
+        WHERE t.vid = 'service_category' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_category_hex_color, i.field_category_icon_value
         ORDER BY count DESC
         LIMIT $limit
@@ -300,7 +300,7 @@ class GeoreportStatsController extends ControllerBase {
         LEFT JOIN {taxonomy_term__field_category_icon} i ON t.tid = i.entity_id AND i.deleted = 0
         INNER JOIN {node__field_category} fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
         INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request'
-        WHERE t.vid = 'service_category'
+        WHERE t.vid = 'service_category' AND t.default_langcode = 1
         GROUP BY t.tid, t.name, h.field_category_hex_color, i.field_category_icon_value
         ORDER BY count DESC
         LIMIT $limit
