@@ -123,6 +123,158 @@ function markaspot_update_9702() {
 }
 
 /**
+ * Configure group type settings for legacy sites.
+ *
+ * Detects if the site uses legacy group type naming ('organisation' instead
+ * of 'org', 'jurisdiction' instead of 'jur') and configures the settings
+ * accordingly. This allows legacy sites to continue using their existing
+ * group types without migration.
+ *
+ * Also creates a default jurisdiction group if none exists, populating it
+ * with values from existing site configuration.
+ */
+function markaspot_update_11801() {
+  // Check if Group module is installed.
+  $module_handler = \Drupal::moduleHandler();
+  if (!$module_handler->moduleExists('group')) {
+    return t('Group module not installed. Skipping group type configuration.');
+  }
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $group_type_storage = $entity_type_manager->getStorage('group_type');
+  $group_storage = $entity_type_manager->getStorage('group');
+  $config = \Drupal::configFactory()->getEditable('markaspot_open311.settings');
+  $changes = [];
+
+  // Detect legacy organisation naming.
+  $has_organisation = $group_type_storage->load('organisation') !== NULL;
+  $has_org = $group_type_storage->load('org') !== NULL;
+
+  if ($has_organisation && !$has_org) {
+    $config->set('group_filter_type', 'organisation');
+    $changes[] = 'group_filter_type = organisation';
+  }
+
+  // Detect legacy jurisdiction naming.
+  $has_jurisdiction = $group_type_storage->load('jurisdiction') !== NULL;
+  $has_jur = $group_type_storage->load('jur') !== NULL;
+
+  if ($has_jurisdiction && !$has_jur) {
+    $config->set('jurisdiction_group_type', 'jurisdiction');
+    $changes[] = 'jurisdiction_group_type = jurisdiction';
+  }
+
+  // Determine active jurisdiction group type.
+  $jur_type = NULL;
+  if ($has_jur) {
+    $jur_type = 'jur';
+  }
+  elseif ($has_jurisdiction) {
+    $jur_type = 'jurisdiction';
+  }
+
+  // Create default jurisdiction group if none exists.
+  if ($jur_type) {
+    $existing_groups = $group_storage->loadByProperties(['type' => $jur_type]);
+
+    if (empty($existing_groups)) {
+      $default_group = _markaspot_create_default_jurisdiction($jur_type, $group_storage);
+      if ($default_group) {
+        $changes[] = t('Created default jurisdiction group: @name', [
+          '@name' => $default_group->label(),
+        ]);
+      }
+    }
+  }
+
+  if (!empty($changes)) {
+    $config->save();
+    return implode("\n", $changes);
+  }
+
+  return t('No legacy group type naming detected. Using default settings.');
+}
+
+/**
+ * Creates a default jurisdiction group from existing site configuration.
+ *
+ * @param string $group_type
+ *   The jurisdiction group type ID ('jur' or 'jurisdiction').
+ * @param \Drupal\Core\Entity\EntityStorageInterface $group_storage
+ *   The group entity storage.
+ *
+ * @return \Drupal\group\Entity\GroupInterface|null
+ *   The created group entity, or NULL on failure.
+ */
+function _markaspot_create_default_jurisdiction($group_type, $group_storage) {
+  $config_factory = \Drupal::configFactory();
+
+  // Get site name for the group label.
+  $site_config = $config_factory->get('system.site');
+  $site_name = $site_config->get('name') ?: 'Default Jurisdiction';
+
+  // Generate slug from site name.
+  $slug = \Drupal::service('transliteration')->transliterate($site_name);
+  $slug = preg_replace('/[^a-z0-9]+/i', '-', strtolower($slug));
+  $slug = trim($slug, '-');
+  $slug = substr($slug, 0, 64);
+
+  // Build nuxt_config from existing markaspot_nuxt.settings.
+  $nuxt_config = $config_factory->get('markaspot_nuxt.settings');
+  $nuxt_json = [];
+
+  if ($nuxt_config && !$nuxt_config->isNew()) {
+    // Map center.
+    $center_lat = $nuxt_config->get('center_lat');
+    $center_lng = $nuxt_config->get('center_lng');
+    $zoom = $nuxt_config->get('zoom_initial');
+
+    if ($center_lat && $center_lng) {
+      $nuxt_json['map'] = [
+        'center' => [$center_lng, $center_lat],
+        'zoom' => $zoom ?: 13,
+      ];
+    }
+
+    // Client info from site config.
+    $nuxt_json['client'] = [
+      'name' => $site_name,
+      'shortName' => substr($site_name, 0, 20),
+    ];
+  }
+
+  // Create the group entity.
+  $group_data = [
+    'type' => $group_type,
+    'label' => $site_name,
+    'status' => 1,
+  ];
+
+  $group = $group_storage->create($group_data);
+
+  // Set field_slug if available.
+  if ($group->hasField('field_slug')) {
+    $group->set('field_slug', $slug);
+  }
+
+  // Set field_nuxt_config if available.
+  if ($group->hasField('field_nuxt_config') && !empty($nuxt_json)) {
+    $group->set('field_nuxt_config', json_encode($nuxt_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+  }
+
+  try {
+    $group->save();
+    return $group;
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot')->error('Failed to create default jurisdiction: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+    return NULL;
+  }
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {

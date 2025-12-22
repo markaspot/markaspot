@@ -709,7 +709,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Apply jurisdiction filter (gid or jurisdiction slug).
-    // This filters by a specific group, typically a 'jur' type for multi-tenant setups.
+    // This filters by a specific group (jurisdiction type) for multi-tenant setups.
     $jurisdiction_gid = $this->resolveJurisdictionId($parameters);
     if ($jurisdiction_gid) {
       $node_ids = $this->getNodeIdsInGroup($jurisdiction_gid);
@@ -756,9 +756,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         return NULL;
       }
 
+      // Load jurisdiction group type from config (supports legacy 'jurisdiction' naming).
+      $config = $this->configFactory->get('markaspot_open311.settings');
+      $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
+
       // Lookup by slug.
       $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
-        'type' => 'jur',
+        'type' => $jur_type,
         'field_slug' => $slug,
       ]);
       $group = reset($groups);

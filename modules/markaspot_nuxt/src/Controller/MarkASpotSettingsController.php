@@ -92,6 +92,11 @@ class MarkASpotSettingsController extends ControllerBase {
     // Add config cache tag.
     $cache_metadata->addCacheTags(['config:markaspot_nuxt.settings']);
 
+    // Load group type settings from markaspot_open311 (supports legacy naming).
+    $open311_config = $this->configFactory->get('markaspot_open311.settings');
+    $cache_metadata->addCacheTags(['config:markaspot_open311.settings']);
+    $jur_type = $open311_config->get('jurisdiction_group_type') ?? 'jur';
+
     if (!$nuxt_config || $nuxt_config->isNew()) {
       $response = new CacheableJsonResponse(['error' => 'Configuration not found'], 404);
       $response->addCacheableDependency($cache_metadata);
@@ -132,7 +137,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $group = NULL;
 
     // Add list cache tag for when groups are added/removed.
-    $cache_metadata->addCacheTags(['group_list:jur']);
+    $cache_metadata->addCacheTags(['group_list:' . $jur_type]);
 
     if ($jurisdiction_param) {
       // Try numeric ID first.
@@ -146,7 +151,7 @@ class MarkASpotSettingsController extends ControllerBase {
       // Try slug lookup (validate format first).
       if (!$group && preg_match('/^[a-z0-9_-]{1,64}$/i', $jurisdiction_param)) {
         $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
-          'type' => 'jur',
+          'type' => $jur_type,
           'field_slug' => $jurisdiction_param,
           'status' => 1,
         ]);
@@ -159,7 +164,7 @@ class MarkASpotSettingsController extends ControllerBase {
       $group_ids = $this->entityTypeManager->getStorage('group')
         ->getQuery()
         ->accessCheck(FALSE)
-        ->condition('type', 'jur')
+        ->condition('type', $jur_type)
         ->condition('status', 1)
         ->sort('id', 'ASC')
         ->range(0, 1)
@@ -592,13 +597,17 @@ class MarkASpotSettingsController extends ControllerBase {
    *   List of jurisdictions with id, name, slug, and isDefault flag.
    */
   public function getJurisdictions() {
+    // Load group type setting from markaspot_open311 (supports legacy naming).
+    $open311_config = $this->configFactory->get('markaspot_open311.settings');
+    $jur_type = $open311_config->get('jurisdiction_group_type') ?? 'jur';
+
     // Use EntityQuery with explicit sorting to ensure consistent ordering.
     // The first published jurisdiction (lowest ID) is treated as default.
     // Only published jurisdictions are returned.
     $group_ids = $this->entityTypeManager->getStorage('group')
       ->getQuery()
       ->accessCheck(FALSE)
-      ->condition('type', 'jur')
+      ->condition('type', $jur_type)
       ->condition('status', 1)
       ->sort('id', 'ASC')
       ->execute();
@@ -611,7 +620,8 @@ class MarkASpotSettingsController extends ControllerBase {
     // Build cache metadata with tags from all loaded groups.
     $cache_metadata = new CacheableMetadata();
     // List cache tag for when groups are added/removed.
-    $cache_metadata->addCacheTags(['group_list:jur']);
+    $cache_metadata->addCacheTags(['group_list:' . $jur_type]);
+    $cache_metadata->addCacheTags(['config:markaspot_open311.settings']);
     // Set max-age for HTTP caching (1 hour).
     $cache_metadata->setCacheMaxAge(3600);
 
