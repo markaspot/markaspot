@@ -13,6 +13,8 @@ declare(strict_types=1);
 
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\node\NodeInterface;
 use Drupal\user\UserInterface;
 
 /**
@@ -183,4 +185,327 @@ function _markaspot_group_add_member_to_group(GroupInterface $group, UserInterfa
       '@group' => $group->label(),
     ]
   );
+}
+
+/**
+ * Implements hook_node_presave().
+ *
+ * Syncs field_organisation to group relationship when a service_request
+ * node is saved. This ensures that when the organisation field is changed,
+ * the corresponding group relationship is created/updated/deleted.
+ */
+function markaspot_group_node_presave(NodeInterface $node): void {
+  // Only process service_request nodes.
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  // Check if field_organisation exists on this node.
+  if (!$node->hasField('field_organisation')) {
+    return;
+  }
+
+  // Check if we're already syncing from relationship to field.
+  // This prevents infinite loops.
+  if (_markaspot_group_is_syncing()) {
+    return;
+  }
+
+  // Get the new organisation group ID from the field.
+  $new_group_id = NULL;
+  if (!$node->get('field_organisation')->isEmpty()) {
+    $new_group_id = $node->get('field_organisation')->target_id;
+  }
+
+  // For new nodes, we can't sync yet - need to wait until after save.
+  // The relationship will be created in hook_node_insert.
+  if ($node->isNew()) {
+    // Store the group ID for later processing in hook_node_insert.
+    $node->_markaspot_group_pending_sync = $new_group_id;
+    return;
+  }
+
+  // For existing nodes, check the original value.
+  $original_group_id = NULL;
+  if (isset($node->original) && $node->original->hasField('field_organisation') && !$node->original->get('field_organisation')->isEmpty()) {
+    $original_group_id = $node->original->get('field_organisation')->target_id;
+  }
+
+  // If nothing changed, skip sync.
+  if ($new_group_id === $original_group_id) {
+    return;
+  }
+
+  // Schedule sync for hook_node_update (we need the node to exist first).
+  $node->_markaspot_group_sync_needed = TRUE;
+  $node->_markaspot_group_new_group_id = $new_group_id;
+  $node->_markaspot_group_original_group_id = $original_group_id;
+}
+
+/**
+ * Implements hook_node_insert().
+ *
+ * Creates group relationship when a new service_request node is created
+ * with field_organisation set.
+ */
+function markaspot_group_node_insert(NodeInterface $node): void {
+  // Only process service_request nodes.
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  // Check if we have a pending sync from presave.
+  if (!isset($node->_markaspot_group_pending_sync)) {
+    return;
+  }
+
+  $group_id = $node->_markaspot_group_pending_sync;
+
+  // If no group was set, nothing to do.
+  if (empty($group_id)) {
+    return;
+  }
+
+  // Check if we're already syncing.
+  if (_markaspot_group_is_syncing()) {
+    return;
+  }
+
+  // Create the group relationship.
+  _markaspot_group_sync_field_to_relationship($node, $group_id, NULL);
+}
+
+/**
+ * Implements hook_node_update().
+ *
+ * Updates group relationship when field_organisation changes on a
+ * service_request node.
+ */
+function markaspot_group_node_update(NodeInterface $node): void {
+  // Only process service_request nodes.
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  // Check if sync was flagged in presave.
+  if (empty($node->_markaspot_group_sync_needed)) {
+    return;
+  }
+
+  // Check if we're already syncing.
+  if (_markaspot_group_is_syncing()) {
+    return;
+  }
+
+  $new_group_id = $node->_markaspot_group_new_group_id ?? NULL;
+  $original_group_id = $node->_markaspot_group_original_group_id ?? NULL;
+
+  // Perform the sync.
+  _markaspot_group_sync_field_to_relationship($node, $new_group_id, $original_group_id);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for group_relationship entities.
+ *
+ * Syncs group relationship to field_organisation when a service_request
+ * is added to an org group.
+ */
+function markaspot_group_group_relationship_insert(GroupRelationshipInterface $relationship): void {
+  _markaspot_group_sync_relationship_to_field($relationship, 'insert');
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_delete() for group_relationship entities.
+ *
+ * Clears field_organisation when a service_request is removed from an org group.
+ */
+function markaspot_group_group_relationship_delete(GroupRelationshipInterface $relationship): void {
+  _markaspot_group_sync_relationship_to_field($relationship, 'delete');
+}
+
+/**
+ * Syncs field_organisation to group relationship.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service_request node.
+ * @param int|null $new_group_id
+ *   The new group ID to add the relationship to, or NULL to remove.
+ * @param int|null $original_group_id
+ *   The original group ID to remove the relationship from, or NULL.
+ */
+function _markaspot_group_sync_field_to_relationship(NodeInterface $node, ?int $new_group_id, ?int $original_group_id): void {
+  // Set syncing flag to prevent loops.
+  _markaspot_group_set_syncing(TRUE);
+
+  try {
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $relationship_storage = $entity_type_manager->getStorage('group_relationship');
+    $group_type = _markaspot_group_get_org_group_type();
+    $plugin_id = 'group_node:service_request';
+
+    // Remove existing relationship if group changed or was cleared.
+    if ($original_group_id !== NULL) {
+      // Find and delete the old relationship.
+      $old_relationships = $relationship_storage->loadByProperties([
+        'entity_id' => $node->id(),
+        'gid' => $original_group_id,
+        'plugin_id' => $plugin_id,
+      ]);
+
+      foreach ($old_relationships as $relationship) {
+        $relationship->delete();
+      }
+    }
+
+    // Create new relationship if a group was set.
+    if ($new_group_id !== NULL) {
+      // Load the target group.
+      $group = $entity_type_manager->getStorage('group')->load($new_group_id);
+
+      if ($group && $group->bundle() === $group_type) {
+        // Check if relationship already exists.
+        $existing = $relationship_storage->loadByProperties([
+          'entity_id' => $node->id(),
+          'gid' => $new_group_id,
+          'plugin_id' => $plugin_id,
+        ]);
+
+        if (empty($existing)) {
+          // Create the relationship.
+          $group->addRelationship($node, $plugin_id);
+
+          \Drupal::logger('markaspot_group')->notice(
+            'Created group relationship for node @nid in group @group (synced from field_organisation).',
+            [
+              '@nid' => $node->id(),
+              '@group' => $group->label(),
+            ]
+          );
+        }
+      }
+    }
+  }
+  finally {
+    // Always reset syncing flag.
+    _markaspot_group_set_syncing(FALSE);
+  }
+}
+
+/**
+ * Syncs group relationship changes back to field_organisation.
+ *
+ * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
+ *   The group relationship entity.
+ * @param string $operation
+ *   The operation: 'insert' or 'delete'.
+ */
+function _markaspot_group_sync_relationship_to_field(GroupRelationshipInterface $relationship, string $operation): void {
+  // Only process service_request node relationships.
+  if ($relationship->getPluginId() !== 'group_node:service_request') {
+    return;
+  }
+
+  // Get the group type and check if it's an org type.
+  $group = $relationship->getGroup();
+  if (!$group) {
+    return;
+  }
+
+  $group_type = _markaspot_group_get_org_group_type();
+  if ($group->bundle() !== $group_type) {
+    return;
+  }
+
+  // Check if we're already syncing.
+  if (_markaspot_group_is_syncing()) {
+    return;
+  }
+
+  // Get the node.
+  $entity = $relationship->getEntity();
+  if (!$entity || !($entity instanceof NodeInterface)) {
+    return;
+  }
+
+  // Check if node has the field.
+  if (!$entity->hasField('field_organisation')) {
+    return;
+  }
+
+  // Set syncing flag.
+  _markaspot_group_set_syncing(TRUE);
+
+  try {
+    $current_value = $entity->get('field_organisation')->isEmpty() ? NULL : $entity->get('field_organisation')->target_id;
+    $group_id = (int) $group->id();
+
+    if ($operation === 'insert') {
+      // Set the field to the new group.
+      if ($current_value !== $group_id) {
+        $entity->set('field_organisation', $group_id);
+        $entity->save();
+
+        \Drupal::logger('markaspot_group')->notice(
+          'Updated field_organisation on node @nid to group @group (synced from relationship).',
+          [
+            '@nid' => $entity->id(),
+            '@group' => $group->label(),
+          ]
+        );
+      }
+    }
+    elseif ($operation === 'delete') {
+      // Clear the field only if it points to this group.
+      if ($current_value === $group_id) {
+        $entity->set('field_organisation', NULL);
+        $entity->save();
+
+        \Drupal::logger('markaspot_group')->notice(
+          'Cleared field_organisation on node @nid (synced from relationship deletion).',
+          [
+            '@nid' => $entity->id(),
+          ]
+        );
+      }
+    }
+  }
+  finally {
+    _markaspot_group_set_syncing(FALSE);
+  }
+}
+
+/**
+ * Gets the configured org group type.
+ *
+ * Supports both 'org' (default) and legacy 'organisation' group type names.
+ *
+ * @return string
+ *   The group type machine name.
+ */
+function _markaspot_group_get_org_group_type(): string {
+  $config = \Drupal::config('markaspot_open311.settings');
+  return $config->get('group_filter_type') ?? 'org';
+}
+
+/**
+ * Checks if we're currently in a sync operation.
+ *
+ * Uses a static variable to prevent infinite loops during bidirectional sync.
+ *
+ * @return bool
+ *   TRUE if currently syncing, FALSE otherwise.
+ */
+function _markaspot_group_is_syncing(): bool {
+  return drupal_static(__FUNCTION__, FALSE);
+}
+
+/**
+ * Sets the sync flag.
+ *
+ * @param bool $syncing
+ *   Whether syncing is in progress.
+ */
+function _markaspot_group_set_syncing(bool $syncing): void {
+  $static = &drupal_static('_markaspot_group_is_syncing', FALSE);
+  $static = $syncing;
 }
