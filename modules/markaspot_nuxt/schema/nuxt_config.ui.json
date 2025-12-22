@@ -78,11 +78,6 @@
       "weight": 30
     },
     "properties": {
-      "voting": {
-        "ui:options": {
-          "description": "Allow citizens to vote on reports"
-        }
-      },
       "statistics": {
         "ui:options": {
           "description": "Show statistics tab in the sidebar"

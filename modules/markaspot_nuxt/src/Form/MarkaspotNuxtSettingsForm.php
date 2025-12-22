@@ -170,19 +170,19 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
     ];
 
     $form['markaspot_nuxt']['map']['position']['center_lat'] = [
-      '#type' => 'number',
+      '#type' => 'textfield',
       '#title' => $this->t('Center Latitude'),
       '#default_value' => $config->get('center_lat'),
-      '#step' => 0.000001,
-      '#description' => $this->t('Latitude for map center (e.g., 51.4556)'),
+      '#size' => 15,
+      '#description' => $this->t('Latitude for map center in decimal format (e.g., 51.4556)'),
     ];
 
     $form['markaspot_nuxt']['map']['position']['center_lng'] = [
-      '#type' => 'number',
+      '#type' => 'textfield',
       '#title' => $this->t('Center Longitude'),
       '#default_value' => $config->get('center_lng'),
-      '#step' => 0.000001,
-      '#description' => $this->t('Longitude for map center (e.g., 6.8528)'),
+      '#size' => 15,
+      '#description' => $this->t('Longitude for map center in decimal format (e.g., 6.8528)'),
     ];
 
     // Geocoding Configuration.

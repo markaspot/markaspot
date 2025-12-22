@@ -121,12 +121,6 @@
       "title": "Feature Toggles",
       "description": "Enable or disable features for this jurisdiction",
       "properties": {
-        "voting": {
-          "type": "boolean",
-          "title": "Voting",
-          "description": "Allow citizens to vote on reports",
-          "default": false
-        },
         "statistics": {
           "type": "boolean",
           "title": "Statistics Tab",
@@ -173,7 +167,7 @@
           "type": "boolean",
           "title": "Form-First Mobile",
           "description": "Show form before map on mobile devices",
-          "default": true
+          "default": false
         },
         "emergency": {
           "type": "object",
