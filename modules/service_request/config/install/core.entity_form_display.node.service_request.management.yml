@@ -123,7 +123,7 @@ content:
     third_party_settings: {  }
     region: content
   field_organisation:
-    type: options_buttons
+    type: options_select
     weight: 16
     region: content
     settings: {  }

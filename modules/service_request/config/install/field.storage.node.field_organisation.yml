@@ -6,17 +6,17 @@ dependencies:
       - service_request
   module:
     - field_permissions
+    - group
     - node
-    - taxonomy
 third_party_settings:
   field_permissions:
-    permission_type: custom
+    permission_type: public
 id: node.field_organisation
 field_name: field_organisation
 entity_type: node
 type: entity_reference
 settings:
-  target_type: taxonomy_term
+  target_type: group
 module: core
 locked: false
 cardinality: 1
