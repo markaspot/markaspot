@@ -72,53 +72,125 @@ function markaspot_icons_iconify_to_fa_validate($element, FormStateInterface $fo
 }
 
 /**
- * Convert FontAwesome icon to Iconify format.
+ * Convert FontAwesome icon to Iconify format (Lucide collection).
  */
 function markaspot_icons_convert_fa_to_iconify($fa_icon) {
   $mapping = [
-    'fa-trash' => 'i-heroicons-trash',
-    'fa-road' => 'i-heroicons-minus',
-    'fa-tree' => 'i-heroicons-beaker',
-    'fa-tint' => 'i-heroicons-beaker',
-    'fa-comment' => 'i-heroicons-chat-bubble-left',
-    'fa-comment-o' => 'i-heroicons-chat-bubble-left',
-    'fa-check' => 'i-heroicons-check',
-    'fa-check-circle' => 'i-heroicons-check-circle',
-    'fa-play-circle' => 'i-heroicons-play-circle',
-    'fa-hand-stop-o' => 'i-heroicons-hand-raised',
-    'fa-stack-overflow' => 'i-heroicons-archive-box',
-    'fa-calendar-times-o' => 'i-heroicons-calendar-x-mark',
-    'fa-bank' => 'i-heroicons-building-office',
-    'fa-building' => 'i-heroicons-building-office',
-    'fa-home' => 'i-heroicons-home',
-    'fa-heart-o' => 'i-heroicons-heart',
-    'fa-heart' => 'i-heroicons-heart',
+    // People/Users.
+    'fa-male' => 'i-lucide-user',
+    'fa-user' => 'i-lucide-user',
+    'fa-users' => 'i-lucide-users',
+
+    // Objects/Tools.
+    'fa-lightbulb-o' => 'i-lucide-lightbulb',
+    'fa-lightbulb' => 'i-lucide-lightbulb',
+    'fa-glass' => 'i-lucide-wine',
+    'fa-paint-brush' => 'i-lucide-paintbrush',
+    'fa-circle-o' => 'i-lucide-circle',
+    'fa-circle' => 'i-lucide-circle-dot',
+
+    // Nature/Environment.
+    'fa-tree' => 'i-lucide-tree-pine',
+    'fa-leaf' => 'i-lucide-leaf',
+    'fa-tint' => 'i-lucide-droplets',
+    'fa-soccer-ball-o' => 'i-lucide-circle-dot',
+
+    // Waste/Trash.
+    'fa-trash' => 'i-lucide-trash',
+    'fa-trash-o' => 'i-lucide-trash-2',
+
+    // Transportation/Infrastructure.
+    'fa-road' => 'i-lucide-construction',
+    'fa-car' => 'i-lucide-car',
+    'fa-bicycle' => 'i-lucide-bike',
+
+    // Time.
+    'fa-clock-o' => 'i-lucide-clock',
+    'fa-clock' => 'i-lucide-clock',
+    'fa-calendar-times-o' => 'i-lucide-calendar-x',
+
+    // Communication.
+    'fa-comment' => 'i-lucide-message-circle',
+    'fa-comment-o' => 'i-lucide-message-circle',
+
+    // Status indicators.
+    'fa-check' => 'i-lucide-check',
+    'fa-check-circle' => 'i-lucide-check-circle',
+    'fa-play-circle' => 'i-lucide-play-circle',
+    'fa-hand-stop-o' => 'i-lucide-hand',
+    'fa-stack-overflow' => 'i-lucide-archive',
+
+    // Buildings/Places.
+    'fa-bank' => 'i-lucide-building-2',
+    'fa-building' => 'i-lucide-building',
+    'fa-home' => 'i-lucide-home',
+
+    // Miscellaneous.
+    'fa-heart-o' => 'i-lucide-heart',
+    'fa-heart' => 'i-lucide-heart',
   ];
 
-  return $mapping[$fa_icon] ?? 'i-heroicons-exclamation-circle';
+  return $mapping[$fa_icon] ?? 'i-lucide-alert-circle';
 }
 
 /**
- * Convert Iconify icon back to FontAwesome format.
+ * Convert Iconify (Lucide) icon back to FontAwesome format.
+ *
+ * Note: This is primarily for backwards compatibility. New installations
+ * should use Lucide icons directly without conversion.
  */
 function markaspot_icons_convert_iconify_to_fa($iconify_icon) {
   $reverse_mapping = [
-    'i-heroicons-trash' => 'fa-trash',
-    'i-heroicons-minus' => 'fa-road',
-    'i-heroicons-beaker' => 'fa-tree',
-    'i-heroicons-chat-bubble-left' => 'fa-comment',
-    'i-heroicons-check' => 'fa-check',
-    'i-heroicons-check-circle' => 'fa-check-circle',
-    'i-heroicons-play-circle' => 'fa-play-circle',
-    'i-heroicons-hand-raised' => 'fa-hand-stop-o',
-    'i-heroicons-archive-box' => 'fa-stack-overflow',
-    'i-heroicons-calendar-x-mark' => 'fa-calendar-times-o',
-    'i-heroicons-building-office' => 'fa-bank',
-    'i-heroicons-home' => 'fa-home',
-    'i-heroicons-heart' => 'fa-heart',
-  // Default fallback.
-    'i-heroicons-exclamation-circle' => 'fa-heart-o',
+    // People/Users.
+    'i-lucide-user' => 'fa-male',
+    'i-lucide-users' => 'fa-users',
+
+    // Objects/Tools.
+    'i-lucide-lightbulb' => 'fa-lightbulb-o',
+    'i-lucide-wine' => 'fa-glass',
+    'i-lucide-paintbrush' => 'fa-paint-brush',
+    'i-lucide-circle' => 'fa-circle-o',
+    'i-lucide-circle-dot' => 'fa-circle',
+
+    // Nature/Environment.
+    'i-lucide-tree-pine' => 'fa-tree',
+    'i-lucide-leaf' => 'fa-leaf',
+    'i-lucide-droplets' => 'fa-tint',
+
+    // Waste/Trash.
+    'i-lucide-trash' => 'fa-trash',
+    'i-lucide-trash-2' => 'fa-trash-o',
+
+    // Transportation/Infrastructure.
+    'i-lucide-construction' => 'fa-road',
+    'i-lucide-car' => 'fa-car',
+    'i-lucide-bike' => 'fa-bicycle',
+
+    // Time.
+    'i-lucide-clock' => 'fa-clock-o',
+    'i-lucide-calendar-x' => 'fa-calendar-times-o',
+
+    // Communication.
+    'i-lucide-message-circle' => 'fa-comment',
+
+    // Status indicators.
+    'i-lucide-check' => 'fa-check',
+    'i-lucide-check-circle' => 'fa-check-circle',
+    'i-lucide-play-circle' => 'fa-play-circle',
+    'i-lucide-hand' => 'fa-hand-stop-o',
+    'i-lucide-archive' => 'fa-stack-overflow',
+
+    // Buildings/Places.
+    'i-lucide-building-2' => 'fa-bank',
+    'i-lucide-building' => 'fa-building',
+    'i-lucide-home' => 'fa-home',
+
+    // Miscellaneous.
+    'i-lucide-heart' => 'fa-heart',
+
+    // Default fallback.
+    'i-lucide-alert-circle' => 'fa-exclamation-circle',
   ];
 
-  return $reverse_mapping[$iconify_icon] ?? 'fa-heart-o';
+  return $reverse_mapping[$iconify_icon] ?? 'fa-question-circle';
 }

@@ -1,0 +1,226 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the markaspot_icons module.
+ */
+
+use Drupal\Core\Database\Database;
+
+/**
+ * Migrate FontAwesome icons to Lucide icons in taxonomy terms.
+ *
+ * This update hook converts all FontAwesome icon values stored in
+ * field_category_icon and field_status_icon to their Lucide equivalents.
+ * The update is idempotent and safe to run multiple times.
+ */
+function markaspot_icons_update_10001(): string {
+  $database = Database::getConnection();
+  $logger = \Drupal::logger('markaspot_icons');
+
+  // Comprehensive FontAwesome to Lucide mapping.
+  // Covers common Mark-a-Spot category and status icons.
+  $icon_mapping = [
+    // People/Users.
+    'fa-male' => 'i-lucide-user',
+    'fa-user' => 'i-lucide-user',
+    'fa-users' => 'i-lucide-users',
+
+    // Objects/Tools.
+    'fa-lightbulb-o' => 'i-lucide-lightbulb',
+    'fa-lightbulb' => 'i-lucide-lightbulb',
+    'fa-glass' => 'i-lucide-wine',
+    'fa-paint-brush' => 'i-lucide-paintbrush',
+    'fa-circle-o' => 'i-lucide-circle',
+    'fa-circle' => 'i-lucide-circle-dot',
+    'fa-wrench' => 'i-lucide-wrench',
+    'fa-cog' => 'i-lucide-settings',
+    'fa-map-marker' => 'i-lucide-map-pin',
+
+    // Nature/Environment.
+    'fa-tree' => 'i-lucide-tree-pine',
+    'fa-leaf' => 'i-lucide-leaf',
+    'fa-tint' => 'i-lucide-droplets',
+    'fa-envira' => 'i-lucide-flower-2',
+    'fa-soccer-ball-o' => 'i-lucide-circle-dot',
+    'fa-cloud' => 'i-lucide-cloud',
+
+    // Weather.
+    'fa-cloud-rain' => 'i-lucide-cloud-rain-wind',
+    'fa-sun-o' => 'i-lucide-sun',
+    'fa-snowflake-o' => 'i-lucide-snowflake',
+
+    // Waste/Trash.
+    'fa-trash' => 'i-lucide-trash',
+    'fa-trash-o' => 'i-lucide-trash-2',
+    'fa-recycle' => 'i-lucide-recycle',
+
+    // Transportation/Infrastructure.
+    'fa-road' => 'i-lucide-construction',
+    'fa-car' => 'i-lucide-car',
+    'fa-bicycle' => 'i-lucide-bike',
+    'fa-parking' => 'i-lucide-parking-circle',
+    'fa-bus' => 'i-lucide-bus',
+
+    // Time.
+    'fa-clock-o' => 'i-lucide-clock',
+    'fa-clock' => 'i-lucide-clock',
+    'fa-calendar' => 'i-lucide-calendar',
+    'fa-calendar-times-o' => 'i-lucide-calendar-x',
+
+    // Communication.
+    'fa-comment' => 'i-lucide-message-circle',
+    'fa-comment-o' => 'i-lucide-message-circle',
+    'fa-comments' => 'i-lucide-messages-square',
+    'fa-envelope' => 'i-lucide-mail',
+    'fa-phone' => 'i-lucide-phone',
+
+    // Status indicators.
+    'fa-check' => 'i-lucide-check',
+    'fa-check-circle' => 'i-lucide-check-circle',
+    'fa-check-circle-o' => 'i-lucide-check-circle',
+    'fa-play-circle' => 'i-lucide-play-circle',
+    'fa-play-circle-o' => 'i-lucide-play-circle',
+    'fa-hand-stop-o' => 'i-lucide-hand',
+    'fa-hand-paper-o' => 'i-lucide-hand',
+    'fa-stack-overflow' => 'i-lucide-archive',
+    'fa-archive' => 'i-lucide-archive',
+    'fa-times' => 'i-lucide-x',
+    'fa-times-circle' => 'i-lucide-x-circle',
+    'fa-exclamation' => 'i-lucide-alert-triangle',
+    'fa-exclamation-circle' => 'i-lucide-alert-circle',
+    'fa-exclamation-triangle' => 'i-lucide-alert-triangle',
+    'fa-warning' => 'i-lucide-alert-triangle',
+    'fa-info' => 'i-lucide-info',
+    'fa-info-circle' => 'i-lucide-info',
+    'fa-question' => 'i-lucide-help-circle',
+    'fa-question-circle' => 'i-lucide-help-circle',
+
+    // Buildings/Places.
+    'fa-bank' => 'i-lucide-building-2',
+    'fa-building' => 'i-lucide-building',
+    'fa-building-o' => 'i-lucide-building',
+    'fa-home' => 'i-lucide-home',
+    'fa-hospital-o' => 'i-lucide-building-2',
+    'fa-university' => 'i-lucide-landmark',
+
+    // Miscellaneous.
+    'fa-heart' => 'i-lucide-heart',
+    'fa-heart-o' => 'i-lucide-heart',
+    'fa-star' => 'i-lucide-star',
+    'fa-star-o' => 'i-lucide-star',
+    'fa-flag' => 'i-lucide-flag',
+    'fa-flag-o' => 'i-lucide-flag',
+    'fa-bolt' => 'i-lucide-zap',
+    'fa-fire' => 'i-lucide-flame',
+    'fa-camera' => 'i-lucide-camera',
+    'fa-image' => 'i-lucide-image',
+    'fa-file' => 'i-lucide-file',
+    'fa-folder' => 'i-lucide-folder',
+    'fa-search' => 'i-lucide-search',
+    'fa-eye' => 'i-lucide-eye',
+    'fa-eye-slash' => 'i-lucide-eye-off',
+    'fa-lock' => 'i-lucide-lock',
+    'fa-unlock' => 'i-lucide-unlock',
+    'fa-key' => 'i-lucide-key',
+    'fa-bell' => 'i-lucide-bell',
+    'fa-bell-o' => 'i-lucide-bell',
+  ];
+
+  // Tables and columns to update.
+  $tables = [
+    'taxonomy_term__field_category_icon' => 'field_category_icon_value',
+    'taxonomy_term__field_status_icon' => 'field_status_icon_value',
+    // Also check revision tables if they exist.
+    'taxonomy_term_revision__field_category_icon' => 'field_category_icon_value',
+    'taxonomy_term_revision__field_status_icon' => 'field_status_icon_value',
+  ];
+
+  $total_updated = 0;
+  $migration_log = [];
+
+  foreach ($tables as $table => $column) {
+    // Check if table exists.
+    if (!$database->schema()->tableExists($table)) {
+      $logger->info('Table @table does not exist, skipping.', ['@table' => $table]);
+      continue;
+    }
+
+    // Get current FA icons in this table.
+    $query = $database->select($table, 't')
+      ->fields('t', ['entity_id', $column])
+      ->condition($column, 'fa-%', 'LIKE')
+      ->execute();
+
+    $rows = $query->fetchAll();
+
+    if (empty($rows)) {
+      $logger->info('No FontAwesome icons found in @table.', ['@table' => $table]);
+      continue;
+    }
+
+    foreach ($rows as $row) {
+      $old_value = $row->{$column};
+
+      // Check if we have a mapping for this icon.
+      if (isset($icon_mapping[$old_value])) {
+        $new_value = $icon_mapping[$old_value];
+
+        // Update the database.
+        $database->update($table)
+          ->fields([$column => $new_value])
+          ->condition('entity_id', $row->entity_id)
+          ->condition($column, $old_value)
+          ->execute();
+
+        $migration_log[] = [
+          'table' => $table,
+          'entity_id' => $row->entity_id,
+          'old' => $old_value,
+          'new' => $new_value,
+        ];
+
+        $total_updated++;
+
+        $logger->info('Migrated icon: @old -> @new (Entity: @id, Table: @table)', [
+          '@old' => $old_value,
+          '@new' => $new_value,
+          '@id' => $row->entity_id,
+          '@table' => $table,
+        ]);
+      }
+      else {
+        // Log unmapped icons for review.
+        $logger->warning('No mapping found for FontAwesome icon: @icon (Entity: @id, Table: @table)', [
+          '@icon' => $old_value,
+          '@id' => $row->entity_id,
+          '@table' => $table,
+        ]);
+      }
+    }
+  }
+
+  // Clear entity and render caches to ensure new icons are displayed.
+  \Drupal::service('entity_type.manager')->getStorage('taxonomy_term')->resetCache();
+  if (\Drupal::hasService('cache.render')) {
+    \Drupal::service('cache.render')->invalidateAll();
+  }
+
+  if ($total_updated > 0) {
+    return t('Successfully migrated @count FontAwesome icons to Lucide icons. Check the logs for details.', [
+      '@count' => $total_updated,
+    ]);
+  }
+
+  return t('No FontAwesome icons found to migrate. The database may already be using Lucide icons.');
+}
+
+/**
+ * Update the IconMigrationService mappings to use Lucide as default.
+ *
+ * This is a no-op update hook that documents the switch to Lucide icons
+ * as the default icon collection for Mark-a-Spot.
+ */
+function markaspot_icons_update_10002(): string {
+  return t('Lucide icons are now the default icon collection for Mark-a-Spot.');
+}
