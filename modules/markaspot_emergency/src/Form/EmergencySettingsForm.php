@@ -146,7 +146,7 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Allowed URLs (one per line)'),
       '#default_value' => implode("\n", $default_allowed),
-      '#description' => $this->t('Paths that will NOT be redirected during emergency or maintenance force-redirect (e.g., "/", "/sos", "/api/system/status"). One per line; must start with "/".'),
+      '#description' => $this->t('Paths that will NOT be redirected during emergency or maintenance force-redirect (e.g., "/", "/sos", "/api/emergency-mode/status"). One per line; must start with "/".'),
       '#rows' => 4,
     ];
 

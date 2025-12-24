@@ -11,7 +11,7 @@ Admin-controlled system mode switching for emergencies and maintenance.
   - Restore queue: shows how many categories will be restored when deactivating
 
 ## API
-- GET `/api/system/status` (public)
+- GET `/api/emergency-mode/status` (public)
   - Returns:
     - `emergency_mode` boolean, `status`, `mode_type`, `lite_ui`
     - `available_categories`: published categories for the current mode
@@ -26,5 +26,5 @@ Admin-controlled system mode switching for emergencies and maintenance.
 - `emergency:deactivate --restore-categories=1` — Deactivate and restore categories
 
 ## Frontend Integration (Optional)
-- Middleware can read `/api/system/status` to redirect or show a banner.
+- Middleware can read `/api/emergency-mode/status` to redirect or show a banner.
 - `details.maintenance` fields support a non-destructive maintenance mode UX.
