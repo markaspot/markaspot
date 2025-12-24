@@ -1114,6 +1114,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $request['service_code'] = $this->getTaxonomyTermField($categoryId, 'field_service_code');
     }
 
+    // Add organisation (department) if available.
+    if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+      $organisationEntity = $node->get('field_organisation')->entity;
+      if ($organisationEntity) {
+        $request['organisation'] = [
+          'id' => (string) $organisationEntity->id(),
+          'uuid' => $organisationEntity->uuid(),
+          'label' => $organisationEntity->label(),
+          'name' => $organisationEntity->label(),
+        ];
+      }
+    }
+
     // Add media_url if available (standard optional field per GeoReport v2 spec)
     $mediaUrls = $this->getMediaUrls($node);
     if (!empty($mediaUrls)) {

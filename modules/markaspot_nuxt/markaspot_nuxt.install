@@ -147,3 +147,4 @@ function markaspot_nuxt_update_9002() {
 
   return t('markaspot_nuxt.settings already exists.');
 }
+

@@ -655,4 +655,81 @@ class MarkASpotSettingsController extends ControllerBase {
     return $response;
   }
 
+  /**
+   * Returns available organisations for the dashboard.
+   *
+   * Used by the frontend dashboard to populate organisation dropdowns
+   * for filtering and assignment purposes.
+   *
+   * Supports both 'org' (new) and 'organisation' (legacy) group types.
+   * The type can be configured via markaspot_open311.settings.organisation_group_type.
+   *
+   * Cached with group entity cache tags - automatically invalidates when any
+   * organisation group is created, updated, or deleted.
+   *
+   * @return \Drupal\Core\Cache\CacheableJsonResponse
+   *   List of organisations with id (uuid), numericId, and label.
+   */
+  public function getOrganisations(): CacheableJsonResponse {
+    // Load organisation group type from config (supports legacy naming).
+    // Defaults to 'org', falls back to 'organisation' if no groups found.
+    $open311_config = $this->configFactory->get('markaspot_open311.settings');
+    $org_type = $open311_config->get('organisation_group_type') ?? 'org';
+
+    // Use EntityQuery with explicit sorting to ensure consistent ordering.
+    // Only published organisations are returned.
+    $group_ids = $this->entityTypeManager->getStorage('group')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $org_type)
+      ->condition('status', 1)
+      ->sort('label', 'ASC')
+      ->execute();
+
+    // Fallback to 'organisation' type if no groups found with configured type.
+    if (empty($group_ids) && $org_type === 'org') {
+      $org_type = 'organisation';
+      $group_ids = $this->entityTypeManager->getStorage('group')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $org_type)
+        ->condition('status', 1)
+        ->sort('label', 'ASC')
+        ->execute();
+    }
+
+    $groups = $this->entityTypeManager->getStorage('group')->loadMultiple($group_ids);
+
+    $organisations = [];
+
+    // Build cache metadata with tags from all loaded groups.
+    $cache_metadata = new CacheableMetadata();
+    // List cache tag for when groups are added/removed.
+    $cache_metadata->addCacheTags(['group_list:org', 'group_list:organisation']);
+    $cache_metadata->addCacheTags(['config:markaspot_open311.settings']);
+    // Set max-age for HTTP caching (1 hour).
+    $cache_metadata->setCacheMaxAge(3600);
+
+    foreach ($groups as $group) {
+      $organisations[] = [
+        'id' => $group->uuid(),
+        'numericId' => (int) $group->id(),
+        'label' => $group->label(),
+      ];
+
+      // Add cache tag for each individual group entity.
+      $cache_metadata->addCacheableDependency($group);
+    }
+
+    $response = new CacheableJsonResponse([
+      'organisations' => $organisations,
+      'count' => count($organisations),
+    ]);
+
+    // Attach cache metadata to response.
+    $response->addCacheableDependency($cache_metadata);
+
+    return $response;
+  }
+
 }
