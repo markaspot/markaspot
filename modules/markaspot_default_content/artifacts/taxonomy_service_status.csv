@@ -1,5 +1,5 @@
 "vid","tid","langcode","name","description__value","description__format","weight","parent","uuid","field_status_hex","field_status_hex_opacity","field_status_icon"
 "service_status","6","en","Archived",null,null,"3","0","daf4a00b-696f-49a2-9c7c-9085a73633c4","#808080","1","i-lucide-archive"
 "service_status","5","en","Closed",null,null,"2","0","022ef1ee-5042-40f6-a088-624d58e6813c","#008000","1","i-lucide-check"
-"service_status","4","en","Open",null,null,"1","0","21fbdf64-58f6-4ac5-8742-24207d8f716a","#FFA500","1","i-lucide-play-circle"
+"service_status","4","en","Open",null,null,"1","0","21fbdf64-58f6-4ac5-8742-24207d8f716a","#FFA500","1","i-heroicons-cog-6-tooth"
 "service_status","3","en","New",null,null,"0","0","7701108b-cc71-435f-93b1-353bd21f0f72","#8B0000","1","i-lucide-hand"
