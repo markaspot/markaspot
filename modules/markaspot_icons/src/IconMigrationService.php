@@ -99,10 +99,15 @@ class IconMigrationService {
       // Transportation/Infrastructure.
       'fa-road' => 'i-lucide-construction',
       'fa-car' => 'i-lucide-car',
+      'fa-bicycle' => 'i-lucide-bike',
+      'fa-parking' => 'i-lucide-parking-circle',
 
       // Nature/Environment.
       'fa-tree' => 'i-lucide-tree-pine',
+      'fa-leaf' => 'i-lucide-leaf',
       'fa-tint' => 'i-lucide-droplets',
+      'fa-envira' => 'i-lucide-flower-2',
+      'fa-soccer-ball-o' => 'i-lucide-circle-dot',
 
       // Communication.
       'fa-comment' => 'i-lucide-message-circle',
@@ -115,12 +120,27 @@ class IconMigrationService {
       'fa-hand-stop-o' => 'i-lucide-hand',
       'fa-stack-overflow' => 'i-lucide-archive',
       'fa-calendar-times-o' => 'i-lucide-calendar-x',
+      'fa-clock-o' => 'i-lucide-clock',
 
       // Buildings/Places.
       'fa-bank' => 'i-lucide-building-2',
       'fa-building' => 'i-lucide-building',
       'fa-home' => 'i-lucide-home',
       'fa-hospital-o' => 'i-lucide-building-2',
+
+      // People/Users.
+      'fa-male' => 'i-lucide-user',
+      'fa-user' => 'i-lucide-user',
+      'fa-users' => 'i-lucide-users',
+
+      // Objects/Tools.
+      'fa-lightbulb-o' => 'i-lucide-lightbulb',
+      'fa-glass' => 'i-lucide-wine',
+      'fa-paint-brush' => 'i-lucide-paintbrush',
+      'fa-circle-o' => 'i-lucide-circle',
+      'fa-wrench' => 'i-lucide-wrench',
+      'fa-cog' => 'i-lucide-settings',
+      'fa-map-marker' => 'i-lucide-map-pin',
 
       // Default fallback.
       'default' => 'i-lucide-alert-circle',
