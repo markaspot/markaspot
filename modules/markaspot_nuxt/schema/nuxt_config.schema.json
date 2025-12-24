@@ -459,6 +459,60 @@
           "description": "Update markers when map bounds change",
           "default": true
         },
+        "markers": {
+          "type": "object",
+          "title": "Marker Appearance",
+          "description": "Configure individual marker styling",
+          "properties": {
+            "iconSize": {
+              "type": "integer",
+              "title": "Icon Size",
+              "description": "Size of icons inside markers (px)",
+              "minimum": 12,
+              "maximum": 48,
+              "default": 24
+            },
+            "strokeWidth": {
+              "type": "integer",
+              "title": "Border Width",
+              "description": "Border width for individual markers (px)",
+              "minimum": 0,
+              "maximum": 10,
+              "default": 2
+            },
+            "radius": {
+              "type": "integer",
+              "title": "Circle Radius",
+              "description": "Radius of marker circles (px)",
+              "minimum": 8,
+              "maximum": 40,
+              "default": 15
+            }
+          }
+        },
+        "clusters": {
+          "type": "object",
+          "title": "Cluster Appearance",
+          "description": "Configure cluster circle styling",
+          "properties": {
+            "strokeWidth": {
+              "type": "integer",
+              "title": "Border Width",
+              "description": "Border width for cluster circles (px)",
+              "minimum": 0,
+              "maximum": 20,
+              "default": 4
+            },
+            "strokeOpacity": {
+              "type": "number",
+              "title": "Border Opacity",
+              "description": "Border opacity (0-1)",
+              "minimum": 0,
+              "maximum": 1,
+              "default": 0.6
+            }
+          }
+        },
         "deferredMap": {
           "oneOf": [
             {

@@ -223,6 +223,47 @@
       "deferredMap": {
         "ui:options": {}
       },
+      "markers": {
+        "ui:options": {
+          "title": "Marker Appearance",
+          "description": "Style individual map markers"
+        },
+        "properties": {
+          "iconSize": {
+            "ui:options": {
+              "description": "Icon size in pixels (12-48)"
+            }
+          },
+          "strokeWidth": {
+            "ui:options": {
+              "description": "Border width in pixels (0-10)"
+            }
+          },
+          "radius": {
+            "ui:options": {
+              "description": "Circle radius in pixels (8-40)"
+            }
+          }
+        }
+      },
+      "clusters": {
+        "ui:options": {
+          "title": "Cluster Appearance",
+          "description": "Style cluster circles"
+        },
+        "properties": {
+          "strokeWidth": {
+            "ui:options": {
+              "description": "Border width in pixels (0-20)"
+            }
+          },
+          "strokeOpacity": {
+            "ui:options": {
+              "description": "Border opacity (0-1)"
+            }
+          }
+        }
+      },
       "controls": {
         "ui:options": {
           "title": "Map Controls"
