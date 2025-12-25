@@ -11,6 +11,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslationInterface;
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Flood\FloodInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\rest\Plugin\ResourceBase;
@@ -22,6 +23,7 @@ use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
+use Drupal\markaspot_open311\Service\SearchApiQueryService;
 
 /**
  * Provides a resource to get view modes by entity and bundle.
@@ -91,6 +93,45 @@ class GeoreportRequestIndexResource extends ResourceBase {
   protected $languageManager;
 
   /**
+   * The Search API query service.
+   *
+   * @var \Drupal\markaspot_open311\Service\SearchApiQueryService
+   */
+  protected $searchApiQueryService;
+
+  /**
+   * The flood service for rate limiting.
+   *
+   * @var \Drupal\Core\Flood\FloodInterface
+   */
+  protected $flood;
+
+  /**
+   * Rate limit: max requests per window for regular users.
+   */
+  protected const RATE_LIMIT_THRESHOLD = 60;
+
+  /**
+   * Rate limit window in seconds (1 minute).
+   */
+  protected const RATE_LIMIT_WINDOW = 60;
+
+  /**
+   * Roles exempt from rate limiting.
+   *
+   * Staff roles that need unrestricted API access for moderation.
+   * Note: api_user is NOT exempt - we check session UID instead to
+   * distinguish frontend app users from external API consumers.
+   */
+  protected const RATE_LIMIT_EXEMPT_ROLES = [
+    'administrator',
+    'moderator',
+    'editorial_board',
+    'api_editor',
+    'api_municipality',
+  ];
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -119,6 +160,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   The processor service.
    * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
    *   The language manager service.
+   * @param \Drupal\markaspot_open311\Service\SearchApiQueryService $search_api_query_service
+   *   The Search API query service.
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   The flood service for rate limiting.
    */
   public function __construct(
     array $configuration,
@@ -134,6 +179,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
     EntityTypeManagerInterface $entity_type_manager,
     GeoreportProcessorService $georeport_processor,
     LanguageManagerInterface $language_manager,
+    SearchApiQueryService $search_api_query_service,
+    FloodInterface $flood,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -143,6 +190,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $this->entityTypeManager = $entity_type_manager;
     $this->georeportProcessor = $georeport_processor;
     $this->languageManager = $language_manager;
+    $this->searchApiQueryService = $search_api_query_service;
+    $this->flood = $flood;
   }
 
   /**
@@ -162,7 +211,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $container->get('request_stack'),
       $container->get('entity_type.manager'),
       $container->get('markaspot_open311.processor'),
-      $container->get('language_manager')
+      $container->get('language_manager'),
+      $container->get('markaspot_open311.search_api_query'),
+      $container->get('flood')
     );
   }
 
@@ -268,18 +319,27 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function get() {
+    // Apply rate limiting to protect against DoS attacks.
+    // Moderation, editorial, and admin users are exempt.
+    $this->checkRateLimit('georeport_api_get');
+
     $request_time = $this->time->getRequestTime();
 
     // Get all query parameters first.
     $allParameters = $this->requestStack->getCurrentRequest()->query->all();
 
     // Preserve important API parameters before filtering.
+    // UrlHelper::filterQueryParameters excludes 'q' by default (Drupal search),
+    // but we need it for our Search API integration.
     $preservedParams = [];
     if (isset($allParameters['extensions'])) {
       $preservedParams['extensions'] = $allParameters['extensions'];
     }
     if (isset($allParameters['langcode'])) {
       $preservedParams['langcode'] = $allParameters['langcode'];
+    }
+    if (isset($allParameters['q'])) {
+      $preservedParams['q'] = $allParameters['q'];
     }
 
     // Filter standard Drupal parameters (q, page, _format)
@@ -425,24 +485,63 @@ class GeoreportRequestIndexResource extends ResourceBase {
         ->condition('field_geolocation.lng', $bbox[2], '<');
     }
 
-    // Handle search query (more expensive operation)
-    if (isset($parameters['q'])) {
-      $group = $query->orConditionGroup()
-        ->condition('request_id', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('title', '%' . $parameters['q'] . '%', 'LIKE');
+    // Handle search query using Search API for full-text search.
+    // Falls back to basic LIKE search if Search API is not available.
+    if (isset($parameters['q']) && strlen(trim($parameters['q'])) >= 2) {
+      $searchQuery = trim($parameters['q']);
+      $searchNids = [];
 
-      // Text search on body is expensive, only do if really needed.
-      if (strlen($parameters['q']) > 3) {
-        $group->condition('body', '%' . $parameters['q'] . '%', 'LIKE');
+      // Try Search API first for better full-text search.
+      if ($this->searchApiQueryService->isAvailable()) {
+        $searchOptions = [
+          'limit' => $limit ?? 100,
+          'offset' => $offset ?? 0,
+          'langcode' => $parameters['langcode'] ?? NULL,
+        ];
+
+        $searchNids = $this->searchApiQueryService->search(
+          $searchQuery,
+          $this->currentUser,
+          $searchOptions
+        );
+
+        // If Search API returned results, restrict entity query to those nids.
+        if (!empty($searchNids)) {
+          $query->condition('nid', $searchNids, 'IN');
+        }
+        else {
+          // Search API found no results - return empty.
+          // Only fall back to LIKE search if Search API explicitly failed.
+          $this->logger->debug('Search API returned no results for query: @query', [
+            '@query' => $searchQuery,
+          ]);
+          // Return empty results when Search API finds nothing.
+          return [];
+        }
       }
+      else {
+        // Fall back to basic LIKE search if Search API is not available.
+        $this->logger->notice('Search API not available, using LIKE fallback for query: @query', [
+          '@query' => $searchQuery,
+        ]);
 
-      // Search address field columns (publicly visible fields)
-      $group->condition('field_address.address_line1', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('field_address.address_line2', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('field_address.locality', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('field_address.postal_code', '%' . $parameters['q'] . '%', 'LIKE');
+        $group = $query->orConditionGroup()
+          ->condition('request_id', '%' . $searchQuery . '%', 'LIKE')
+          ->condition('title', '%' . $searchQuery . '%', 'LIKE');
 
-      $query->condition($group);
+        // Text search on body is expensive, only do if query > 3 chars.
+        if (strlen($searchQuery) > 3) {
+          $group->condition('body', '%' . $searchQuery . '%', 'LIKE');
+        }
+
+        // Search address field columns (publicly visible fields).
+        $group->condition('field_address.address_line1', '%' . $searchQuery . '%', 'LIKE')
+          ->condition('field_address.address_line2', '%' . $searchQuery . '%', 'LIKE')
+          ->condition('field_address.locality', '%' . $searchQuery . '%', 'LIKE')
+          ->condition('field_address.postal_code', '%' . $searchQuery . '%', 'LIKE');
+
+        $query->condition($group);
+      }
     }
 
     // Handle status filtering.
@@ -491,6 +590,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function post($request_data) {
+    // Apply stricter rate limiting for POST requests (creates new content).
+    // Moderation, editorial, and admin users are exempt.
+    $this->checkRateLimit('georeport_api_post');
+
     try {
       // Return result to handler for formatting and response.
       return $this->createNode($request_data);
@@ -700,6 +803,78 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     return NULL;
+  }
+
+  /**
+   * Checks if the current user is exempt from rate limiting.
+   *
+   * Exemptions:
+   * 1. Staff roles (admin, moderator, editorial_board, api_editor, api_municipality)
+   * 2. Authenticated frontend users with valid session (uid > 0)
+   *
+   * This allows distinguishing between:
+   * - Nuxt frontend users (session-based) → exempt
+   * - External API consumers (api_key only, no session) → rate limited
+   *
+   * @return bool
+   *   TRUE if the user is exempt from rate limiting, FALSE otherwise.
+   */
+  protected function isExemptFromRateLimit(): bool {
+    // Check if user has any exempt staff role.
+    $userRoles = $this->currentUser->getRoles();
+    foreach (self::RATE_LIMIT_EXEMPT_ROLES as $exemptRole) {
+      if (in_array($exemptRole, $userRoles, TRUE)) {
+        return TRUE;
+      }
+    }
+
+    // Check for valid session (frontend app users).
+    // Session UID > 0 means authenticated via passwordless login.
+    $request = $this->requestStack->getCurrentRequest();
+    if ($request->hasSession()) {
+      $session = $request->getSession();
+      $uid = $session->get('uid');
+      if (!empty($uid) && $uid > 0) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Checks flood control and throws exception if rate limit exceeded.
+   *
+   * @param string $name
+   *   The flood event name (e.g., 'georeport_api_get', 'georeport_api_search').
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Throws 429 Too Many Requests if rate limit exceeded.
+   */
+  protected function checkRateLimit(string $name): void {
+    // Skip rate limiting for exempt users (staff roles).
+    if ($this->isExemptFromRateLimit()) {
+      return;
+    }
+
+    // Get client identifier (IP for anonymous, user ID for authenticated).
+    $identifier = $this->currentUser->isAnonymous()
+      ? $this->requestStack->getCurrentRequest()->getClientIp()
+      : (string) $this->currentUser->id();
+
+    // Check if rate limit exceeded.
+    if (!$this->flood->isAllowed($name, self::RATE_LIMIT_THRESHOLD, self::RATE_LIMIT_WINDOW, $identifier)) {
+      $this->logger->warning('Rate limit exceeded for @name by @identifier', [
+        '@name' => $name,
+        '@identifier' => $identifier,
+      ]);
+      $exception = new GeoreportException('Too many requests. Please slow down.', 429);
+      $exception->setHeaders(['Retry-After' => (string) self::RATE_LIMIT_WINDOW]);
+      throw $exception;
+    }
+
+    // Register this request.
+    $this->flood->register($name, self::RATE_LIMIT_WINDOW, $identifier);
   }
 
 }

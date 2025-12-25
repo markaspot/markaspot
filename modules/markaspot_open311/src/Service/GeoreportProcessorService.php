@@ -188,13 +188,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   If there is an error in the request data.
    */
   public function prepareNodeProperties(array $requestData, string $operation): array {
+    // Service requests default to language-neutral (UND) as citizen-submitted
+    // content should not be associated with a specific language.
+    // Note: This value may be overridden by hook_node_presave() in
+    // service_request.module based on the content type language settings.
+    // Taxonomy terms (categories, statuses) are translated separately.
     $values = [
       'type' => 'service_request',
+      'langcode' => 'und',
       'changed' => $this->time->getCurrentTime(),
-    ];
-
-    $values = [
-      'type' => 'service_request',
       'field_first_name' => $this->getSafeValue($requestData, 'first_name'),
       'field_last_name' => $this->getSafeValue($requestData, 'last_name'),
       'field_phone' => $this->getSafeValue($requestData, 'phone'),

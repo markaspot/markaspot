@@ -17,6 +17,14 @@ services:
     class: Drupal\markaspot_open311\Service\GeoreportProcessorService
     arguments: ['@config.factory', '@current_user', '@datetime.time', '@request_stack', '@entity_type.manager', '@file_url_generator', '@module_handler', '@entity_field.manager', '@stream_wrapper_manager', '@token']
 
+  markaspot_open311.search_api_query:
+    class: Drupal\markaspot_open311\Service\SearchApiQueryService
+    arguments: ['@entity_type.manager', '@module_handler', '@config.factory', '@logger.channel.markaspot_open311']
+
+  logger.channel.markaspot_open311:
+    parent: logger.channel_base
+    arguments: ['markaspot_open311']
+
   markaspot_open311.georeport_event.subscriber:
     class: Drupal\markaspot_open311\EventSubscriber\GeoreportEventSubscriber
     arguments: [ '@serializer', '@path.current']

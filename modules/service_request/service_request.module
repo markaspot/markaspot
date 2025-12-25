@@ -18,6 +18,29 @@ function service_request_node_presave(EntityInterface $node) {
     return;
   }
 
+  // Enforce the configured default language for new service requests.
+  // This respects the Drupal content type language settings:
+  // Structure > Content types > Service Request > Language settings
+  // Recommended: "Not specified" (und) for language-neutral citizen content.
+  // This overrides any langcode provided by API clients (JSON:API, GeoReport).
+  if ($node->isNew()) {
+    $language_settings = \Drupal::config('language.content_settings.node.service_request');
+    $default_langcode = $language_settings->get('default_langcode');
+
+    if ($default_langcode === 'und') {
+      $node->set('langcode', 'und');
+    }
+    elseif ($default_langcode === 'site_default') {
+      $site_default = \Drupal::languageManager()->getDefaultLanguage()->getId();
+      $node->set('langcode', $site_default);
+    }
+    elseif ($default_langcode && $default_langcode !== 'current_interface') {
+      // Explicit language code (e.g., 'de', 'en').
+      $node->set('langcode', $default_langcode);
+    }
+    // 'current_interface' is left as-is (Drupal default behavior).
+  }
+
   $config = \Drupal::configFactory()->get('markaspot_open311.settings');
   $auto_create = $config->get('status_note_auto_create') ?? TRUE;
 
