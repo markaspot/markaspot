@@ -724,6 +724,21 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
     }
 
+    // Apply organisation group filter (group_id parameter).
+    // This filters by a specific organisation group for department/agency filtering.
+    // Unlike jurisdiction filter, this uses organisation groups (type 'org').
+    $org_group_id = $this->resolveOrganisationGroupId($parameters);
+    if ($org_group_id) {
+      $node_ids = $this->getNodeIdsInGroup($org_group_id);
+      if (!empty($node_ids)) {
+        $query->condition('nid', $node_ids, 'IN');
+      }
+      else {
+        // No nodes in this organisation group - return empty results.
+        $query->condition('nid', [0], 'IN');
+      }
+    }
+
     return $query;
   }
 
@@ -771,6 +786,46 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       if ($group) {
         return (int) $group->id();
       }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Resolves organisation group_id parameter to a group ID.
+   *
+   * Supports numeric group ID via 'group_id' parameter.
+   * This is used to filter service requests by a specific organisation/department.
+   *
+   * @param array $parameters
+   *   Query parameters.
+   *
+   * @return int|null
+   *   The organisation group ID or NULL if not specified.
+   *   Returns -1 if the group_id was specified but the group doesn't exist.
+   */
+  protected function resolveOrganisationGroupId(array $parameters): ?int {
+    // Check for group_id parameter.
+    if (!empty($parameters['group_id']) && is_numeric($parameters['group_id'])) {
+      $group_id = (int) $parameters['group_id'];
+
+      // Validate that this group exists.
+      $group = $this->entityTypeManager->getStorage('group')->load($group_id);
+      if ($group) {
+        // Security: Verify user has membership in the requested group.
+        // This prevents unauthorized access to other groups' requests.
+        $member = $group->getMember($this->currentUser);
+        if ($member) {
+          return $group_id;
+        }
+
+        // User is not a member of this group - deny access by returning -1.
+        return -1;
+      }
+
+      // Group doesn't exist - return -1 to signal that filtering was requested
+      // but the group is invalid. This will result in an empty result set.
+      return -1;
     }
 
     return NULL;
