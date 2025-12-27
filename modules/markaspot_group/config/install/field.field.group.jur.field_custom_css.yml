@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_custom_css
+    - group.type.jur
+id: group.jur.field_custom_css
+field_name: field_custom_css
+entity_type: group
+bundle: jur
+label: 'Custom CSS'
+description: 'Custom CSS for this jurisdiction (color definitions, font styling, etc.)'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

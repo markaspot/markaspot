@@ -275,6 +275,214 @@ function _markaspot_create_default_jurisdiction($group_type, $group_storage) {
 }
 
 /**
+ * Install markaspot_group module and create jur group field infrastructure.
+ *
+ * Sites upgrading from 7.x need the markaspot_group module installed and
+ * the jur group type with all required fields for the Nuxt frontend.
+ */
+function markaspot_update_11802() {
+  $module_handler = \Drupal::moduleHandler();
+  $messages = [];
+
+  // Step 1: Install markaspot_group module if not present.
+  if (!$module_handler->moduleExists('markaspot_group')) {
+    try {
+      \Drupal::service('module_installer')->install(['markaspot_group']);
+      $messages[] = t('Installed markaspot_group module with jur/org group types.');
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot')->error('Failed to install markaspot_group: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      return t('Failed to install markaspot_group module: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+  else {
+    $messages[] = t('markaspot_group module already installed.');
+  }
+
+  // Step 2: Create missing field storages not included in module's config.
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $field_storage_config = $entity_type_manager->getStorage('field_storage_config');
+
+  $missing_storages = [
+    'field_slug' => [
+      'field_name' => 'field_slug',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 64],
+    ],
+    'field_logo_dark' => [
+      'field_name' => 'field_logo_dark',
+      'entity_type' => 'group',
+      'type' => 'image',
+      'cardinality' => 1,
+      'settings' => [
+        'uri_scheme' => 'public',
+        'default_image' => [
+          'uuid' => NULL,
+          'alt' => '',
+          'title' => '',
+          'width' => NULL,
+          'height' => NULL,
+        ],
+        'target_type' => 'file',
+        'display_field' => FALSE,
+        'display_default' => FALSE,
+      ],
+    ],
+    'field_logo_light' => [
+      'field_name' => 'field_logo_light',
+      'entity_type' => 'group',
+      'type' => 'image',
+      'cardinality' => 1,
+      'settings' => [
+        'uri_scheme' => 'public',
+        'default_image' => [
+          'uuid' => NULL,
+          'alt' => '',
+          'title' => '',
+          'width' => NULL,
+          'height' => NULL,
+        ],
+        'target_type' => 'file',
+        'display_field' => FALSE,
+        'display_default' => FALSE,
+      ],
+    ],
+    'field_font_body' => [
+      'field_name' => 'field_font_body',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 255],
+    ],
+    'field_font_heading' => [
+      'field_name' => 'field_font_heading',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 255],
+    ],
+    'field_custom_css' => [
+      'field_name' => 'field_custom_css',
+      'entity_type' => 'group',
+      'type' => 'text_long',
+      'cardinality' => 1,
+      'module' => 'text',
+    ],
+  ];
+
+  foreach ($missing_storages as $field_name => $definition) {
+    $existing = $field_storage_config->load('group.' . $field_name);
+    if (!$existing) {
+      try {
+        $field_storage_config->create($definition)->save();
+        $messages[] = t('Created field storage: @field', ['@field' => $field_name]);
+      }
+      catch (\Exception $e) {
+        \Drupal::logger('markaspot')->warning('Could not create field storage @field: @message', [
+          '@field' => $field_name,
+          '@message' => $e->getMessage(),
+        ]);
+      }
+    }
+  }
+
+  // Step 3: Create field instances on jur group type.
+  $field_config = $entity_type_manager->getStorage('field_config');
+  $group_type_storage = $entity_type_manager->getStorage('group_type');
+
+  // Determine jur group type (could be 'jur' or 'jurisdiction').
+  $jur_type = NULL;
+  if ($group_type_storage->load('jur')) {
+    $jur_type = 'jur';
+  }
+  elseif ($group_type_storage->load('jurisdiction')) {
+    $jur_type = 'jurisdiction';
+  }
+
+  if ($jur_type) {
+    $field_instances = [
+      'field_slug' => [
+        'field_name' => 'field_slug',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'URL Slug',
+        'description' => 'Short identifier for URLs (e.g., "bonn", "koeln")',
+        'required' => FALSE,
+      ],
+      'field_logo_dark' => [
+        'field_name' => 'field_logo_dark',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Logo (Dark Mode)',
+        'required' => FALSE,
+      ],
+      'field_logo_light' => [
+        'field_name' => 'field_logo_light',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Logo (Light Mode)',
+        'required' => FALSE,
+      ],
+      'field_font_body' => [
+        'field_name' => 'field_font_body',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Body Font',
+        'description' => 'Font family for body text',
+        'required' => FALSE,
+      ],
+      'field_font_heading' => [
+        'field_name' => 'field_font_heading',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Heading Font',
+        'description' => 'Font family for headings',
+        'required' => FALSE,
+      ],
+      'field_custom_css' => [
+        'field_name' => 'field_custom_css',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Custom CSS',
+        'description' => 'Custom CSS for this jurisdiction',
+        'required' => FALSE,
+      ],
+    ];
+
+    foreach ($field_instances as $field_name => $definition) {
+      $existing = $field_config->load('group.' . $jur_type . '.' . $field_name);
+      if (!$existing) {
+        // Check if field storage exists.
+        $storage = $field_storage_config->load('group.' . $field_name);
+        if ($storage) {
+          try {
+            $field_config->create($definition)->save();
+            $messages[] = t('Created field instance: @field on @type', [
+              '@field' => $field_name,
+              '@type' => $jur_type,
+            ]);
+          }
+          catch (\Exception $e) {
+            \Drupal::logger('markaspot')->warning('Could not create field @field: @message', [
+              '@field' => $field_name,
+              '@message' => $e->getMessage(),
+            ]);
+          }
+        }
+      }
+    }
+  }
+
+  return empty($messages) ? t('Jur group infrastructure already complete.') : implode("\n", $messages);
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {
