@@ -5,7 +5,7 @@ type: module
 core_version_requirement: ^10 || ^11
 
 dependencies:
-  - service_request
   - drupal:group
   - gnode
   - drupal:user
+  - drupal:node
