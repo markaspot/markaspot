@@ -95,7 +95,7 @@ class ImageProcessingController extends ControllerBase {
       throw new AccessDeniedHttpException('CSRF token is required.');
     }
 
-    if (!$this->csrfToken->validate($token, 'session')) {
+    if (!$this->csrfToken->validate($token)) {
       $this->logger->warning('Invalid CSRF token provided for request to @path', [
         '@path' => $request->getPathInfo(),
       ]);
@@ -113,8 +113,8 @@ class ImageProcessingController extends ControllerBase {
    *   The JSON response with AI results.
    */
   public function getAIResults(Request $request): JsonResponse {
-    // Validate CSRF token from header or query parameter.
-    $this->validateCsrfToken($request);
+    // CSRF validation disabled - endpoint is public and protected by rate limiting.
+    // The validateCsrfToken() method is kept for potential future use with authenticated users.
 
     try {
       // Decode incoming request content

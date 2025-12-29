@@ -14,4 +14,3 @@ markaspot_vision.image_processing:
   methods: [POST]
   requirements:
     _permission: 'access content'
-    _csrf_token: 'FALSE'
