@@ -7,6 +7,7 @@ services:
       - '@entity_type.manager'
       - '@file_system'
       - '@logger.factory'
+      - '@language_manager'
   markaspot_vision.image_processing_controller:
     class: Drupal\markaspot_vision\Controller\ImageProcessingController
     arguments:

@@ -16,14 +16,14 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
-  protected function getEditableConfigNames() {
+  protected function getEditableConfigNames(): array {
     return ['markaspot_vision.settings'];
   }
 
   /**
    * {@inheritdoc}
    */
-  public function getFormId() {
+  public function getFormId(): string {
     return 'markaspot_vision_settings_form';
   }
 
@@ -107,7 +107,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Image Processing Prompt'),
       '#default_value' => $config->get('image_prompt') ?? 'Describe what you see in this image.',
-      '#description' => $this->t('Use <code>{categories}</code> as a placeholder for the list of categories.'),
+      '#description' => $this->t('Use <code>{categories}</code> as a placeholder for the list of categories. Use <code>{language}</code> for the current site language (e.g., German, French, English).'),
       '#required' => TRUE,
       '#rows' => 10,
     ];

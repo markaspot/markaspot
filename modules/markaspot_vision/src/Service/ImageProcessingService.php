@@ -6,7 +6,9 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\taxonomy\TermInterface;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 
@@ -54,6 +56,13 @@ class ImageProcessingService {
   protected LoggerInterface $logger;
 
   /**
+   * The language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected LanguageManagerInterface $languageManager;
+
+  /**
    * Constructs a new ImageProcessingService.
    *
    * @param \GuzzleHttp\ClientInterface $http_client
@@ -66,6 +75,8 @@ class ImageProcessingService {
    *   The file system service.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger factory.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   *   The language manager.
    */
   public function __construct(
     ClientInterface $http_client,
@@ -73,12 +84,14 @@ class ImageProcessingService {
     EntityTypeManagerInterface $entity_type_manager,
     FileSystemInterface $file_system,
     LoggerChannelFactoryInterface $logger_factory,
+    LanguageManagerInterface $language_manager,
   ) {
     $this->httpClient = $http_client;
     $this->configFactory = $config_factory;
     $this->entityTypeManager = $entity_type_manager;
     $this->fileSystem = $file_system;
     $this->logger = $logger_factory->get('markaspot_vision');
+    $this->languageManager = $language_manager;
   }
 
   /**
@@ -86,11 +99,14 @@ class ImageProcessingService {
    *
    * @param array $file_uris
    *   Array of file URIs to process.
+   * @param string|null $langcode
+   *   Optional language code for the response (e.g., 'de', 'fr', 'en').
+   *   If not provided, falls back to the site's current language.
    *
    * @return array|null
    *   The AI processing result or NULL on failure.
    */
-  public function processImages(array $file_uris): ?array {
+  public function processImages(array $file_uris, ?string $langcode = NULL): ?array {
     $config = $this->configFactory->get('markaspot_vision.settings');
     $prompt_template = $config->get('image_prompt');
 
@@ -109,11 +125,22 @@ class ImageProcessingService {
       $category_json = json_encode($categories, JSON_UNESCAPED_UNICODE);
       $category_json = str_replace(["\n", "\r"], '', $category_json);
 
-      // Enhance the prompt to emphasize collective analysis.
+      // Use provided language or fall back to site's current language.
+      if (empty($langcode)) {
+        $langcode = $this->languageManager->getCurrentLanguage()->getId();
+      }
+      $language_name = $this->getLanguageName($langcode);
+
+      // Enhance the prompt to emphasize collective analysis and language.
       $image_count = count($file_uris);
       $collective_prefix = "The following set of {$image_count} images shows a single situation or issue. " .
-        "Please analyze them together as one complete scene. Consider how the images relate to and complement each other. ";
-      $prompt = $collective_prefix . str_replace('{categories}', $category_json, $prompt_template);
+        "Please analyze them together as one complete scene. Consider how the images relate to and complement each other. " .
+        "IMPORTANT: Write the description in {$language_name}. ";
+      $prompt = $collective_prefix . str_replace(
+        ['{categories}', '{language}'],
+        [$category_json, $language_name],
+        $prompt_template
+      );
 
       // Build messages array.
       $messages = [];
@@ -307,7 +334,7 @@ class ImageProcessingService {
             'type' => 'object',
             'properties' => [
               'category' => ['type' => 'integer'],
-              'description_de' => ['type' => 'string'],
+              'description' => ['type' => 'string'],
               'alt_text' => [
                 'type' => 'array',
                 'items' => ['type' => 'string'],
@@ -325,7 +352,7 @@ class ImageProcessingService {
             ],
             'required' => [
               'category',
-              'description_de',
+              'description',
               'alt_text',
               'hazard_flag',
               'hazard_issues',
@@ -447,7 +474,7 @@ class ImageProcessingService {
    * @return string
    *   The full category path.
    */
-  private function buildCategoryPath(mixed $term, array $term_lookup): string {
+  private function buildCategoryPath(TermInterface $term, array $term_lookup): string {
     $path_parts = [];
     $current_term = $term;
 
@@ -459,6 +486,42 @@ class ImageProcessingService {
     }
 
     return implode(' > ', $path_parts);
+  }
+
+  /**
+   * Gets a human-readable language name from a langcode.
+   *
+   * @param string $langcode
+   *   The language code (e.g., 'de', 'en', 'fr').
+   *
+   * @return string
+   *   The language name in English for AI prompts.
+   */
+  private function getLanguageName(string $langcode): string {
+    $languages = [
+      'de' => 'German',
+      'en' => 'English',
+      'fr' => 'French',
+      'nl' => 'Dutch',
+      'es' => 'Spanish',
+      'it' => 'Italian',
+      'pt' => 'Portuguese',
+      'pl' => 'Polish',
+      'cs' => 'Czech',
+      'da' => 'Danish',
+      'sv' => 'Swedish',
+      'fi' => 'Finnish',
+      'no' => 'Norwegian',
+      'ru' => 'Russian',
+      'uk' => 'Ukrainian',
+      'ar' => 'Arabic',
+      'ja' => 'Japanese',
+      'zh-hans' => 'Simplified Chinese',
+      'zh-hant' => 'Traditional Chinese',
+      'ko' => 'Korean',
+    ];
+
+    return $languages[$langcode] ?? 'English';
   }
 
 }

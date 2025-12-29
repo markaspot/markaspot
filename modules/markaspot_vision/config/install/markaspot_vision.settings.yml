@@ -14,7 +14,7 @@ image_prompt: |
   ## Response Format (valid JSON only, no markdown):
   {
     "category": <tid_number>,
-    "description_de": "<description_max_500_chars>",
+    "description": "<description_max_500_chars>",
     "alt_text": ["<accessibility_text_per_image_max_125_chars>"],
     "hazard_flag": false,
     "hazard_issues": [],
@@ -24,5 +24,5 @@ image_prompt: |
 
   ## Rules:
   - Return valid JSON without code blocks or markdown formatting.
-  - description_de: Detailed description in German, citizen perspective.
-  - alt_text: One entry per image, accessibility-friendly.
+  - description: Detailed description in {language}, citizen perspective.
+  - alt_text: One entry per image in {language}, accessibility-friendly.

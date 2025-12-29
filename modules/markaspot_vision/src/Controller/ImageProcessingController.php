@@ -124,11 +124,11 @@ class ImageProcessingController extends ControllerBase {
       }
 
       // Fetch media entities by UUIDs
+      $media_storage = $this->entityTypeManager()->getStorage('media');
       $media_entities = [];
       foreach ($data['media_ids'] as $uuid) {
-        $media_storage = $this->entityTypeManager()->getStorage('media');
         $media = $media_storage->loadByProperties(['uuid' => $uuid]);
-        $media = reset($media); // Get the first entity matching the UUID
+        $media = reset($media);
         if ($media) {
           $media_entities[$media->id()] = $media;
         }
@@ -152,8 +152,12 @@ class ImageProcessingController extends ControllerBase {
       if (empty($file_uris)) {
         throw new \Exception('No valid file URIs found for the media entities.');
       }
+
+      // Get user's language preference from request (frontend sends this).
+      $langcode = $data['language'] ?? NULL;
+
       // Process images with ImageProcessingService
-      $ai_result = $this->imageProcessingService->processImages($file_uris);
+      $ai_result = $this->imageProcessingService->processImages($file_uris, $langcode);
       if (!$ai_result) {
         throw new \Exception('Failed to process images using the AI service.');
       }
@@ -192,13 +196,6 @@ class ImageProcessingController extends ControllerBase {
               ]);
             }
           }
-
-          $this->logger->notice('Decoded result: @result', [
-            '@result' => print_r($decoded_result, TRUE),
-          ]);
-          $this->logger->notice('Privacy issues: @issues', [
-            '@issues' => print_r($privacy_issues, TRUE),
-          ]);
 
           $media->save();
           $this->logger->notice('AI results successfully saved for media entity @id.', [
