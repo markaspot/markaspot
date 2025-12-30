@@ -514,41 +514,31 @@
           }
         },
         "deferredMap": {
-          "oneOf": [
-            {
+          "type": "object",
+          "title": "Deferred Map Loading",
+          "description": "Defer map loading on mobile for performance",
+          "properties": {
+            "enabled": {
               "type": "boolean",
-              "title": "Simple Enable/Disable",
-              "description": "Boolean for backward compatibility"
+              "title": "Enable Deferred Loading",
+              "description": "Defer map loading on mobile for performance",
+              "default": true
             },
-            {
-              "type": "object",
-              "title": "Deferred Map Configuration",
-              "description": "Full configuration for deferred map loading",
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "title": "Enable Deferred Loading",
-                  "description": "Defer map loading on mobile for performance",
-                  "default": true
-                },
-                "preloadData": {
-                  "type": "boolean",
-                  "title": "Preload Data",
-                  "description": "Preload list data using city-wide bbox from boundary",
-                  "default": true
-                },
-                "limit": {
-                  "type": "integer",
-                  "title": "Preload Limit",
-                  "description": "Maximum items to preload",
-                  "minimum": 10,
-                  "maximum": 500,
-                  "default": 100
-                }
-              }
+            "preloadData": {
+              "type": "boolean",
+              "title": "Preload Data",
+              "description": "Preload list data using city-wide bbox from boundary",
+              "default": true
+            },
+            "limit": {
+              "type": "integer",
+              "title": "Preload Limit",
+              "description": "Maximum items to preload",
+              "minimum": 10,
+              "maximum": 500,
+              "default": 100
             }
-          ],
-          "default": true
+          }
         },
         "layerVisibility": {
           "type": "object",
@@ -601,121 +591,88 @@
           "title": "Map Controls",
           "properties": {
             "zoom": {
-              "oneOf": [
-                {"type": "boolean"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {"type": "boolean", "default": true},
-                    "position": {"type": "string", "default": "centerRight"},
-                    "positionMobile": {"type": "string", "default": "topLeft"},
-                    "weight": {"type": "integer", "default": 40}
-                  }
-                }
-              ],
-              "default": true
+              "type": "object",
+              "title": "Zoom Control",
+              "properties": {
+                "enabled": {"type": "boolean", "title": "Enabled", "default": true},
+                "position": {"type": "string", "title": "Position (Desktop)", "default": "centerRight"},
+                "positionMobile": {"type": "string", "title": "Position (Mobile)", "default": "topLeft"},
+                "weight": {"type": "integer", "title": "Sort Weight", "default": 40}
+              }
             },
             "tilt": {
-              "oneOf": [
-                {"type": "boolean"},
-                {
+              "type": "object",
+              "title": "Tilt Control (3D)",
+              "properties": {
+                "enabled": {"type": "boolean", "title": "Enabled", "default": false},
+                "position": {"type": "string", "title": "Position (Desktop)", "default": "centerRight"},
+                "positionMobile": {"type": "string", "title": "Position (Mobile)", "default": "topLeft"},
+                "weight": {"type": "integer", "title": "Sort Weight", "default": 20},
+                "options": {
                   "type": "object",
+                  "title": "Tilt Options",
                   "properties": {
-                    "enabled": {"type": "boolean", "default": false},
-                    "position": {"type": "string", "default": "centerRight"},
-                    "positionMobile": {"type": "string", "default": "topLeft"},
-                    "weight": {"type": "integer", "default": 20},
-                    "options": {
-                      "type": "object",
-                      "properties": {
-                        "angles": {
-                          "type": "array",
-                          "items": {"type": "integer"},
-                          "default": [0, 30, 60]
-                        },
-                        "defaultAngle": {"type": "integer", "default": 0},
-                        "expandable": {"type": "boolean", "default": true}
-                      }
-                    }
+                    "angles": {
+                      "type": "array",
+                      "title": "Available Angles",
+                      "items": {"type": "integer"},
+                      "default": [0, 30, 60]
+                    },
+                    "defaultAngle": {"type": "integer", "title": "Default Angle", "default": 0},
+                    "expandable": {"type": "boolean", "title": "Expandable", "default": true}
                   }
                 }
-              ],
-              "default": false
+              }
             },
             "theme": {
-              "oneOf": [
-                {"type": "boolean"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {"type": "boolean", "default": true},
-                    "position": {"type": "string", "default": "centerRight"},
-                    "positionMobile": {"type": "string", "default": "topLeft"},
-                    "weight": {"type": "integer", "default": 30}
-                  }
-                }
-              ],
-              "default": true
+              "type": "object",
+              "title": "Theme Toggle",
+              "properties": {
+                "enabled": {"type": "boolean", "title": "Enabled", "default": true},
+                "position": {"type": "string", "title": "Position (Desktop)", "default": "centerRight"},
+                "positionMobile": {"type": "string", "title": "Position (Mobile)", "default": "topLeft"},
+                "weight": {"type": "integer", "title": "Sort Weight", "default": 30}
+              }
             },
             "geolocation": {
-              "oneOf": [
-                {"type": "boolean"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {"type": "boolean", "default": false},
-                    "position": {"type": "string", "default": "centerRight"},
-                    "positionMobile": {"type": "string", "default": "topLeft"},
-                    "weight": {"type": "integer", "default": 10}
-                  }
-                }
-              ],
-              "default": false
+              "type": "object",
+              "title": "Geolocation Control",
+              "properties": {
+                "enabled": {"type": "boolean", "title": "Enabled", "default": false},
+                "position": {"type": "string", "title": "Position (Desktop)", "default": "centerRight"},
+                "positionMobile": {"type": "string", "title": "Position (Mobile)", "default": "topLeft"},
+                "weight": {"type": "integer", "title": "Sort Weight", "default": 10}
+              }
             },
             "heatmap": {
-              "oneOf": [
-                {"type": "boolean"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {"type": "boolean", "default": false},
-                    "initialState": {"type": "boolean", "title": "Initial Visibility", "default": true},
-                    "position": {"type": "string", "default": "centerRight"},
-                    "positionMobile": {"type": "string", "default": "topLeft"},
-                    "weight": {"type": "integer", "default": 60}
-                  }
-                }
-              ],
-              "default": false
+              "type": "object",
+              "title": "Heatmap Toggle",
+              "properties": {
+                "enabled": {"type": "boolean", "title": "Enabled", "default": false},
+                "initialState": {"type": "boolean", "title": "Initially Visible", "default": true},
+                "position": {"type": "string", "title": "Position (Desktop)", "default": "centerRight"},
+                "positionMobile": {"type": "string", "title": "Position (Mobile)", "default": "topLeft"},
+                "weight": {"type": "integer", "title": "Sort Weight", "default": 60}
+              }
             },
             "reports": {
-              "oneOf": [
-                {"type": "boolean"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {"type": "boolean", "default": true},
-                    "position": {"type": "string", "default": "topRight"},
-                    "weight": {"type": "integer", "default": 1}
-                  }
-                }
-              ],
-              "default": true
+              "type": "object",
+              "title": "Reports Button",
+              "properties": {
+                "enabled": {"type": "boolean", "title": "Enabled", "default": true},
+                "position": {"type": "string", "title": "Position", "default": "topRight"},
+                "weight": {"type": "integer", "title": "Sort Weight", "default": 1}
+              }
             },
             "attribution": {
-              "oneOf": [
-                {"type": "boolean"},
-                {
-                  "type": "object",
-                  "properties": {
-                    "enabled": {"type": "boolean", "default": true},
-                    "position": {"type": "string", "default": "bottomRight"},
-                    "positionMobile": {"type": "string", "default": "topLeft"},
-                    "weight": {"type": "integer", "default": 10}
-                  }
-                }
-              ],
-              "default": true
+              "type": "object",
+              "title": "Attribution Control",
+              "properties": {
+                "enabled": {"type": "boolean", "title": "Enabled", "default": true},
+                "position": {"type": "string", "title": "Position (Desktop)", "default": "bottomRight"},
+                "positionMobile": {"type": "string", "title": "Position (Mobile)", "default": "topLeft"},
+                "weight": {"type": "integer", "title": "Sort Weight", "default": 10}
+              }
             }
           }
         }
@@ -894,30 +851,22 @@
       }
     },
     "i18n": {
-      "oneOf": [
-        {
-          "type": "string",
-          "title": "Translation Overrides (JSON String)",
-          "description": "Override specific translation keys as JSON string"
-        },
-        {
+      "type": "object",
+      "title": "Translation Overrides",
+      "description": "Override specific translation keys per locale",
+      "properties": {
+        "overrides": {
           "type": "object",
-          "title": "Translation Overrides",
-          "description": "Override specific translation keys. Example: {\"de\": {\"form.submit\": \"Meldung absenden\"}}",
-          "properties": {
-            "overrides": {
-              "type": "object",
-              "title": "Translation Overrides",
-              "description": "Locale-keyed translation overrides",
-              "additionalProperties": {
-                "type": "object",
-                "additionalProperties": {"type": "string"}
-              }
-            }
-          },
-          "additionalProperties": true
+          "title": "Overrides by Locale",
+          "description": "Example: {\"de\": {\"form.submit\": \"Meldung absenden\"}}",
+          "properties": {},
+          "additionalProperties": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {"type": "string"}
+          }
         }
-      ]
+      }
     }
   },
   "additionalProperties": true
