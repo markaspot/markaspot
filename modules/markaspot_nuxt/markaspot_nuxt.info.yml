@@ -3,5 +3,6 @@ type: module
 description: 'Exposes Mark-a-Spot configuration and data to Nuxt frontend via JSON API endpoints with independent map configuration'
 package: Mark-a-Spot
 core_version_requirement: ^10 || ^11
-dependencies:
-  - json_form_widget:json_form_widget
+
+# Note: json_form_widget is a soft dependency installed via update hook.
+# Removing hard dependency allows updates from older versions.

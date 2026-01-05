@@ -123,6 +123,105 @@ function markaspot_update_9702() {
 }
 
 /**
+ * Repair entity definitions that may be missing after database imports.
+ *
+ * This update fixes a common issue when importing production databases to
+ * development environments. The entity.definitions.installed key_value entries
+ * may be incomplete, causing subsequent module installations to fail with
+ * errors like "Table information not available for the 'field_*' field".
+ *
+ * This must run before any update that installs modules depending on
+ * entity field definitions (like markaspot_group which depends on gnode).
+ */
+function markaspot_update_11799() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $kv = \Drupal::keyValue('entity.definitions.installed');
+  $field_manager = \Drupal::service('entity_field.manager');
+
+  // Entity types with SQL storage that need field_storage_definitions.
+  $content_entity_types = [
+    'block_content', 'comment', 'file', 'media', 'node',
+    'paragraph', 'path_alias', 'shortcut', 'taxonomy_term', 'user',
+    'group', 'group_relationship',
+  ];
+
+  $fixed = [];
+  foreach ($content_entity_types as $entity_type_id) {
+    try {
+      $def = $entity_type_manager->getDefinition($entity_type_id, FALSE);
+      if (!$def) {
+        continue;
+      }
+
+      // Store entity type definition if missing.
+      $stored_type = $kv->get($entity_type_id . '.entity_type');
+      if (!$stored_type) {
+        $kv->set($entity_type_id . '.entity_type', $def);
+        $fixed[] = $entity_type_id . '.entity_type';
+      }
+
+      // Store field storage definitions if missing.
+      $stored_fields = $kv->get($entity_type_id . '.field_storage_definitions');
+      if (!$stored_fields) {
+        $field_defs = $field_manager->getFieldStorageDefinitions($entity_type_id);
+        if (!empty($field_defs)) {
+          $kv->set($entity_type_id . '.field_storage_definitions', $field_defs);
+          $fixed[] = $entity_type_id . '.field_storage_definitions';
+        }
+      }
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot')->warning('Could not repair entity definitions for @type: @message', [
+        '@type' => $entity_type_id,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  if (!empty($fixed)) {
+    return t('Repaired missing entity definitions: @items', [
+      '@items' => implode(', ', $fixed),
+    ]);
+  }
+
+  return t('All entity definitions were already in place.');
+}
+
+/**
+ * Install json_form_widget module for markaspot_nuxt.
+ *
+ * This update must run before 11801 to ensure the json_form_widget module
+ * is available. Sites upgrading from 11.7.x may not have it installed yet,
+ * as it was previously a hard dependency of markaspot_nuxt.
+ */
+function markaspot_update_11800() {
+  $module_handler = \Drupal::moduleHandler();
+
+  // Check if markaspot_nuxt is enabled (indicating this is an upgrade).
+  if (!$module_handler->moduleExists('markaspot_nuxt')) {
+    return t('markaspot_nuxt module not installed. Skipping json_form_widget installation.');
+  }
+
+  // Install json_form_widget if not already present.
+  if (!$module_handler->moduleExists('json_form_widget')) {
+    try {
+      \Drupal::service('module_installer')->install(['json_form_widget']);
+      return t('Successfully installed json_form_widget module required by markaspot_nuxt.');
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot')->error('Failed to install json_form_widget: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      return t('Failed to install json_form_widget: @message. Please install it manually: drush en json_form_widget', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  return t('json_form_widget module already installed.');
+}
+
+/**
  * Configure group type settings for legacy sites.
  *
  * Detects if the site uses legacy group type naming ('organisation' instead

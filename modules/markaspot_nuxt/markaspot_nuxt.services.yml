@@ -6,20 +6,6 @@ services:
     class: Drupal\markaspot_nuxt\Service\FrontendUrlService
     arguments: ['@config.factory']
 
-  # Boolean helper for JSON form widget
-  markaspot_nuxt.boolean_helper:
-    class: Drupal\markaspot_nuxt\BooleanHelper
-
-  # Override json_form.router to add boolean support
-  json_form.router:
-    class: Drupal\markaspot_nuxt\ExtendedFieldTypeRouter
-    arguments:
-      - '@json_form.string_helper'
-      - '@json_form.object_helper'
-      - '@json_form.array_helper'
-      - '@json_form.integer_helper'
-      - '@markaspot_nuxt.boolean_helper'
-
-  # Override json_form.value_handler to add boolean support
-  json_form.value_handler:
-    class: Drupal\markaspot_nuxt\ExtendedValueHandler
+  # Note: Boolean helper and json_form.* service overrides are registered
+  # dynamically via MarkaspotNuxtServiceProvider when json_form_widget is active.
+  # This allows updates from versions where json_form_widget was not installed.
