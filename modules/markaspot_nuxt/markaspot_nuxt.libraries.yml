@@ -1,0 +1,10 @@
+color_picker:
+  version: 1.x
+  css:
+    theme:
+      css/color-picker.css: {}
+  js:
+    js/color-picker.js: {}
+  dependencies:
+    - core/drupal
+    - core/once

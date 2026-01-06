@@ -42,35 +42,23 @@
       "properties": {
         "primary": {
           "type": "string",
+          "format": "color",
           "title": "Primary Color",
-          "description": "Main brand color (buttons, links, accents)",
-          "enum": [
-            "slate", "gray", "zinc", "neutral", "stone",
-            "red", "orange", "amber", "yellow", "lime",
-            "green", "emerald", "teal", "cyan", "sky",
-            "blue", "indigo", "violet", "purple", "fuchsia",
-            "pink", "rose"
-          ],
+          "description": "Main brand color (buttons, links, accents). Use a Tailwind color name (blue, cyan, etc.) or a custom HEX value (#rrggbb).",
           "default": "blue"
         },
         "secondary": {
           "type": "string",
+          "format": "color",
           "title": "Secondary Color",
-          "description": "Accent color for secondary actions",
-          "enum": [
-            "slate", "gray", "zinc", "neutral", "stone",
-            "red", "orange", "amber", "yellow", "lime",
-            "green", "emerald", "teal", "cyan", "sky",
-            "blue", "indigo", "violet", "purple", "fuchsia",
-            "pink", "rose"
-          ],
+          "description": "Accent color for secondary actions. Use a Tailwind color name (blue, cyan, etc.) or a custom HEX value (#rrggbb).",
           "default": "violet"
         },
         "neutral": {
           "type": "string",
+          "format": "color-neutral",
           "title": "Neutral Color",
-          "description": "Background and text colors",
-          "enum": ["slate", "gray", "zinc", "neutral", "stone"],
+          "description": "Background and text colors. Use a neutral preset (slate, gray, zinc, neutral, stone) or a custom HEX value.",
           "default": "slate"
         },
         "fonts": {

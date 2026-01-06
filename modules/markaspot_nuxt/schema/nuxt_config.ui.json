@@ -36,12 +36,14 @@
     "properties": {
       "primary": {
         "ui:options": {
-          "description": "Primary color for buttons, links and accents"
+          "widget": "color",
+          "description": "Primary color for buttons, links and accents. Enter a Tailwind name (blue, cyan) or HEX value (#rrggbb)."
         }
       },
       "secondary": {
         "ui:options": {
-          "description": "Secondary color for less important actions"
+          "widget": "color",
+          "description": "Secondary color for less important actions. Enter a Tailwind name (blue, cyan) or HEX value (#rrggbb)."
         }
       },
       "neutral": {

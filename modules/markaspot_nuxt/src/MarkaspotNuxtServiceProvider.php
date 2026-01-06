@@ -25,11 +25,16 @@ class MarkaspotNuxtServiceProvider extends ServiceProviderBase {
       // Register boolean helper using fully qualified class name.
       $container->register('markaspot_nuxt.boolean_helper', 'Drupal\markaspot_nuxt\BooleanHelper');
 
-      // Override json_form.router to add boolean support.
+      // Register extended string helper with color format support.
+      $string_helper_definition = $container->getDefinition('json_form.string_helper');
+      $container->register('markaspot_nuxt.string_helper', 'Drupal\markaspot_nuxt\ExtendedStringHelper')
+        ->setArguments($string_helper_definition->getArguments());
+
+      // Override json_form.router to add boolean and color support.
       $definition = $container->getDefinition('json_form.router');
       $definition->setClass('Drupal\markaspot_nuxt\ExtendedFieldTypeRouter');
       $definition->setArguments([
-        new Reference('json_form.string_helper'),
+        new Reference('markaspot_nuxt.string_helper'),
         new Reference('json_form.object_helper'),
         new Reference('json_form.array_helper'),
         new Reference('json_form.integer_helper'),
