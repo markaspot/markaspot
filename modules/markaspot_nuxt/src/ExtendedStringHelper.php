@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_nuxt;
 
-use Drupal\Core\Form\FormStateInterface;
+use Drupal\Component\Utility\Xss;
 use Drupal\json_form_widget\StringHelper;
 
 /**
@@ -136,7 +136,7 @@ class ExtendedStringHelper extends StringHelper {
       $element['description'] = [
         '#type' => 'container',
         '#attributes' => ['class' => ['description']],
-        '#markup' => '<small>' . $property->description . '</small>',
+        '#markup' => '<small>' . Xss::filterAdmin((string) $property->description) . '</small>',
       ];
     }
 
@@ -218,27 +218,6 @@ class ExtendedStringHelper extends StringHelper {
 
     // Default blue.
     return '#3b82f6';
-  }
-
-  /**
-   * Validate and combine color element values.
-   */
-  public function validateColorElement(array &$element, FormStateInterface $form_state, array &$complete_form): void {
-    $values = $form_state->getValue($element['#parents']);
-
-    if (!is_array($values)) {
-      return;
-    }
-
-    $tailwind = $values['tailwind'] ?? '';
-    $custom = $values['custom'] ?? '#3b82f6';
-
-    // Use Tailwind name if selected, otherwise use custom hex.
-    $final_value = !empty($tailwind) ? $tailwind : $custom;
-
-    // Replace the nested array with the final string value.
-    // This is critical for json_form_widget to serialize correctly.
-    $form_state->setValueForElement($element, $final_value);
   }
 
 }
