@@ -212,9 +212,10 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   }
 
   // Get the new organisation group ID from the field.
+  // Cast to int as JSON:API may pass string values.
   $new_group_id = NULL;
   if (!$node->get('field_organisation')->isEmpty()) {
-    $new_group_id = $node->get('field_organisation')->target_id;
+    $new_group_id = (int) $node->get('field_organisation')->target_id;
   }
 
   // For new nodes, we can't sync yet - need to wait until after save.
@@ -226,9 +227,10 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   }
 
   // For existing nodes, check the original value.
+  // Cast to int as JSON:API may pass string values.
   $original_group_id = NULL;
   if (isset($node->original) && $node->original->hasField('field_organisation') && !$node->original->get('field_organisation')->isEmpty()) {
-    $original_group_id = $node->original->get('field_organisation')->target_id;
+    $original_group_id = (int) $node->original->get('field_organisation')->target_id;
   }
 
   // If nothing changed, skip sync.
