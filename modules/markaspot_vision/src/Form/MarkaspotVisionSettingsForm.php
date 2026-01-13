@@ -16,14 +16,14 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
-  protected function getEditableConfigNames(): array {
+  protected function getEditableConfigNames() {
     return ['markaspot_vision.settings'];
   }
 
   /**
    * {@inheritdoc}
    */
-  public function getFormId(): string {
+  public function getFormId() {
     return 'markaspot_vision_settings_form';
   }
 
@@ -63,17 +63,66 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Select the authentication method required by your AI provider.'),
     ];
 
-    $form['service']['api_key'] = [
-      '#type' => 'textarea',
-      '#title' => $this->t('API Key'),
-      '#default_value' => $config->get('api_key'),
-      '#description' => $this->t('Your API key for the vision service. Leave empty for providers that do not require authentication.'),
-      '#states' => [
-        'invisible' => [
-          ':input[name="auth_type"]' => ['value' => 'none'],
+    // Check if API key is provided via environment variable.
+    $env_key = getenv('OPENAI_API_KEY');
+    $existing_config_key = $config->get('api_key');
+
+    if (!empty($env_key)) {
+      // Environment variable is set - show info and disable config field.
+      $form['service']['api_key_status'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="messages messages--status">' .
+          $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
+          '</div>',
+        '#weight' => -1,
+        '#states' => [
+          'invisible' => [
+            ':input[name="auth_type"]' => ['value' => 'none'],
+          ],
         ],
-      ],
-    ];
+      ];
+      $form['service']['api_key'] = [
+        '#type' => 'textfield',
+        '#title' => $this->t('API Key'),
+        '#description' => $this->t('Using environment variable OPENAI_API_KEY. To change, update your server environment.'),
+        '#default_value' => '••••••••' . substr($env_key, -4),
+        '#disabled' => TRUE,
+        '#states' => [
+          'invisible' => [
+            ':input[name="auth_type"]' => ['value' => 'none'],
+          ],
+        ],
+      ];
+    }
+    else {
+      // No env var - allow config entry with security warning.
+      $form['service']['api_key'] = [
+        '#type' => 'textarea',
+        '#title' => $this->t('API Key'),
+        '#default_value' => $existing_config_key,
+        '#description' => $this->t('Your API key for the vision service. <strong>Recommended:</strong> Set OPENAI_API_KEY environment variable instead for better security.'),
+        '#states' => [
+          'invisible' => [
+            ':input[name="auth_type"]' => ['value' => 'none'],
+          ],
+        ],
+      ];
+
+      if (!empty($existing_config_key)) {
+        $form['service']['api_key_status'] = [
+          '#type' => 'item',
+          '#markup' => '<div class="messages messages--warning">' .
+            $this->t('API key stored in config database. Consider using environment variable for better security.') .
+            '</div>',
+          '#weight' => -1,
+          '#states' => [
+            'invisible' => [
+              ':input[name="auth_type"]' => ['value' => 'none'],
+            ],
+          ],
+        ];
+      }
+    }
 
     $form['service']['api_url'] = [
       '#type' => 'url',
@@ -107,7 +156,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Image Processing Prompt'),
       '#default_value' => $config->get('image_prompt') ?? 'Describe what you see in this image.',
-      '#description' => $this->t('Use <code>{categories}</code> as a placeholder for the list of categories. Use <code>{language}</code> for the current site language (e.g., German, French, English).'),
+      '#description' => $this->t('Use <code>{categories}</code> as a placeholder for the list of categories.'),
       '#required' => TRUE,
       '#rows' => 10,
     ];

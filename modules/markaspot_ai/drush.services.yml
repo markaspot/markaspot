@@ -1,0 +1,12 @@
+services:
+  markaspot_ai.commands:
+    class: Drupal\markaspot_ai\Drush\Commands\MarkaspotAiCommands
+    arguments:
+      - '@entity_type.manager'
+      - '@queue'
+      - '@plugin.manager.queue_worker'
+      - '@markaspot_ai.embedding'
+      - '@markaspot_ai.sentiment'
+      - '@database'
+    tags:
+      - { name: drush.command }

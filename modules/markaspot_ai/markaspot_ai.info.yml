@@ -1,0 +1,11 @@
+name: 'Mark-a-Spot AI'
+type: module
+description: 'AI infrastructure for Mark-a-Spot: embeddings, duplicate detection, routing suggestions'
+core_version_requirement: ^10.3 || ^11
+package: 'Mark-a-Spot'
+dependencies:
+  - drupal:node
+  - drupal:field
+  - drupal:options
+  - markaspot_open311:markaspot_open311
+configure: markaspot_ai.settings

@@ -1,0 +1,16 @@
+administer markaspot ai:
+  title: 'Administer Mark-a-Spot AI'
+  description: 'Configure AI service settings, API keys, and processing options.'
+  restrict access: true
+
+access ai insights:
+  title: 'Access AI Insights'
+  description: 'View AI analysis results such as embeddings and similarity scores.'
+
+review ai duplicates:
+  title: 'Review AI Duplicates'
+  description: 'Review and manage duplicate detection matches.'
+
+view ai sentiment:
+  title: 'View AI Sentiment'
+  description: 'View sentiment analysis results for service requests.'

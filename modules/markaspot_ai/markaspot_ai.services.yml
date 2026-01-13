@@ -1,0 +1,48 @@
+services:
+  markaspot_ai.client:
+    class: Drupal\markaspot_ai\Service\AiClientService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@logger.factory'
+      - '@markaspot_ai.token_tracking'
+
+  markaspot_ai.embedding:
+    class: Drupal\markaspot_ai\Service\EmbeddingService
+    arguments:
+      - '@markaspot_ai.client'
+      - '@database'
+      - '@entity_type.manager'
+      - '@logger.factory'
+
+  markaspot_ai.duplicate_detection:
+    class: Drupal\markaspot_ai\Service\DuplicateDetectionService
+    arguments:
+      - '@markaspot_ai.embedding'
+      - '@database'
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@logger.factory'
+
+  markaspot_ai.token_tracking:
+    class: Drupal\markaspot_ai\Service\TokenTrackingService
+    arguments:
+      - '@database'
+      - '@config.factory'
+      - '@logger.factory'
+
+  markaspot_ai.sentiment:
+    class: Drupal\markaspot_ai\Service\SentimentService
+    arguments:
+      - '@markaspot_ai.client'
+      - '@database'
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@logger.factory'
+      - '@markaspot_ai.token_tracking'
+      - '@datetime.time'
+      - '@module_handler'
+
+  logger.channel.markaspot_ai:
+    parent: logger.channel_base
+    arguments: ['markaspot_ai']

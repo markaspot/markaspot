@@ -1,0 +1,293 @@
+<?php
+
+/**
+ * @file
+ * Main module file for Mark-a-Spot AI.
+ *
+ * Provides AI infrastructure for Mark-a-Spot including embeddings,
+ * duplicate detection, and routing suggestions.
+ */
+
+declare(strict_types=1);
+
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_node_insert().
+ *
+ * Queues new service request nodes for embedding generation.
+ */
+function markaspot_ai_node_insert(NodeInterface $node): void {
+  // Only process service_request nodes.
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  // Only queue published nodes.
+  if (!$node->isPublished()) {
+    return;
+  }
+
+  // Check if AI module is properly configured.
+  $config = \Drupal::config('markaspot_ai.settings');
+  $api_key = $config->get('providers.openai.api_key');
+
+  if (empty($api_key)) {
+    \Drupal::logger('markaspot_ai')->debug('Skipping embedding queue for node @nid - API key not configured.', [
+      '@nid' => $node->id(),
+    ]);
+    return;
+  }
+
+  // Queue for embedding generation.
+  $queue = \Drupal::queue('markaspot_ai_embedding');
+  $queue->createItem([
+    'nid' => (int) $node->id(),
+    'is_new' => TRUE,
+  ]);
+
+  \Drupal::logger('markaspot_ai')->debug('Queued new service request @nid for embedding generation.', [
+    '@nid' => $node->id(),
+  ]);
+}
+
+/**
+ * Implements hook_node_update().
+ *
+ * Re-queues service request nodes for embedding generation when content changes.
+ */
+function markaspot_ai_node_update(NodeInterface $node): void {
+  // Only process service_request nodes.
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  // Only queue published nodes.
+  if (!$node->isPublished()) {
+    return;
+  }
+
+  // Check if AI module is properly configured.
+  $config = \Drupal::config('markaspot_ai.settings');
+  $api_key = $config->get('providers.openai.api_key');
+
+  if (empty($api_key)) {
+    return;
+  }
+
+  // Check if relevant content has changed.
+  $original = $node->original ?? NULL;
+
+  if ($original) {
+    $changed = FALSE;
+
+    // Check title change.
+    if ($node->getTitle() !== $original->getTitle()) {
+      $changed = TRUE;
+    }
+
+    // Check body change.
+    if (!$changed && $node->hasField('body')) {
+      $new_body = $node->get('body')->value ?? '';
+      $old_body = $original->get('body')->value ?? '';
+      if ($new_body !== $old_body) {
+        $changed = TRUE;
+      }
+    }
+
+    // Check address change.
+    if (!$changed && $node->hasField('field_address')) {
+      $new_address = $node->get('field_address')->value ?? '';
+      $old_address = $original->get('field_address')->value ?? '';
+      if ($new_address !== $old_address) {
+        $changed = TRUE;
+      }
+    }
+
+    // Check category change.
+    if (!$changed && $node->hasField('field_category')) {
+      $new_category = $node->get('field_category')->target_id ?? NULL;
+      $old_category = $original->get('field_category')->target_id ?? NULL;
+      if ($new_category !== $old_category) {
+        $changed = TRUE;
+      }
+    }
+
+    if (!$changed) {
+      // No relevant changes, skip re-embedding.
+      return;
+    }
+  }
+
+  // Queue for embedding regeneration.
+  // The queue worker will check the hash and skip if content hasn't changed.
+  $queue = \Drupal::queue('markaspot_ai_embedding');
+  $queue->createItem([
+    'nid' => (int) $node->id(),
+    'is_new' => FALSE,
+  ]);
+
+  \Drupal::logger('markaspot_ai')->debug('Queued updated service request @nid for embedding regeneration.', [
+    '@nid' => $node->id(),
+  ]);
+}
+
+/**
+ * Implements hook_node_delete().
+ *
+ * Cleans up embeddings and duplicate matches when a node is deleted.
+ */
+function markaspot_ai_node_delete(NodeInterface $node): void {
+  // Only process service_request nodes.
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  $nid = (int) $node->id();
+
+  try {
+    // Delete embeddings.
+    /** @var \Drupal\markaspot_ai\Service\EmbeddingService $embedding_service */
+    $embedding_service = \Drupal::service('markaspot_ai.embedding');
+    $deleted_embeddings = $embedding_service->deleteEmbedding($nid);
+
+    // Delete duplicate matches.
+    /** @var \Drupal\markaspot_ai\Service\DuplicateDetectionService $duplicate_service */
+    $duplicate_service = \Drupal::service('markaspot_ai.duplicate_detection');
+    $deleted_matches = $duplicate_service->deleteMatchesForNode($nid);
+
+    if ($deleted_embeddings > 0 || $deleted_matches > 0) {
+      \Drupal::logger('markaspot_ai')->info('Cleaned up AI data for deleted node @nid: @embeddings embeddings, @matches duplicate matches.', [
+        '@nid' => $nid,
+        '@embeddings' => $deleted_embeddings,
+        '@matches' => $deleted_matches,
+      ]);
+    }
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot_ai')->error('Failed to clean up AI data for deleted node @nid: @message', [
+      '@nid' => $nid,
+      '@message' => $e->getMessage(),
+    ]);
+  }
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Performs periodic AI maintenance tasks:
+ * - Backfills embeddings for nodes that don't have them.
+ * - Cleans up old token usage records.
+ */
+function markaspot_ai_cron(): void {
+  $config = \Drupal::config('markaspot_ai.settings');
+  $api_key = $config->get('providers.openai.api_key');
+
+  // Skip if not configured.
+  if (empty($api_key)) {
+    return;
+  }
+
+  // Get the last cron run time.
+  $last_run = \Drupal::state()->get('markaspot_ai.last_cron', 0);
+  $current_time = \Drupal::time()->getRequestTime();
+
+  // Only run maintenance tasks once per hour.
+  if (($current_time - $last_run) < 3600) {
+    return;
+  }
+
+  \Drupal::state()->set('markaspot_ai.last_cron', $current_time);
+
+  // Backfill: Find nodes without embeddings and queue them.
+  _markaspot_ai_backfill_embeddings();
+
+  // Cleanup: Remove old token usage records.
+  _markaspot_ai_cleanup_token_usage();
+}
+
+/**
+ * Backfills embeddings for service requests that don't have them.
+ */
+function _markaspot_ai_backfill_embeddings(): void {
+  try {
+    /** @var \Drupal\markaspot_ai\Service\EmbeddingService $embedding_service */
+    $embedding_service = \Drupal::service('markaspot_ai.embedding');
+
+    // Find nodes without embeddings (limit to 50 per cron run).
+    $missing = $embedding_service->findMissingEmbeddings(50, 'node', 'service_request', 'content');
+
+    if (empty($missing)) {
+      return;
+    }
+
+    $queue = \Drupal::queue('markaspot_ai_embedding');
+
+    foreach ($missing as $nid) {
+      $queue->createItem([
+        'nid' => $nid,
+        'is_new' => FALSE,
+        'backfill' => TRUE,
+      ]);
+    }
+
+    \Drupal::logger('markaspot_ai')->info('Queued @count service requests for embedding backfill.', [
+      '@count' => count($missing),
+    ]);
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot_ai')->error('Embedding backfill failed: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+  }
+}
+
+/**
+ * Cleans up old token usage records beyond retention period.
+ */
+function _markaspot_ai_cleanup_token_usage(): void {
+  try {
+    /** @var \Drupal\markaspot_ai\Service\TokenTrackingService $tracking_service */
+    $tracking_service = \Drupal::service('markaspot_ai.token_tracking');
+
+    // Keep 90 days of usage data by default.
+    $deleted = $tracking_service->cleanupOldRecords(90);
+
+    if ($deleted > 0) {
+      \Drupal::logger('markaspot_ai')->info('Cleaned up @count old token usage records.', [
+        '@count' => $deleted,
+      ]);
+    }
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot_ai')->error('Token usage cleanup failed: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+  }
+}
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_ai_help(string $route_name): ?string {
+  switch ($route_name) {
+    case 'help.page.markaspot_ai':
+      $output = '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Mark-a-Spot AI module provides AI-powered features for the Mark-a-Spot platform:') . '</p>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('<strong>Embeddings:</strong> Generates vector embeddings for service requests to enable semantic search and similarity matching.') . '</li>';
+      $output .= '<li>' . t('<strong>Duplicate Detection:</strong> Automatically identifies potential duplicate service requests based on content similarity and geographic proximity.') . '</li>';
+      $output .= '<li>' . t('<strong>Token Tracking:</strong> Monitors API usage and enforces daily limits to control costs.') . '</li>';
+      $output .= '</ul>';
+      $output .= '<h3>' . t('Configuration') . '</h3>';
+      $output .= '<p>' . t('Configure the module at <a href=":url">Administration > Configuration > Web services > Mark-a-Spot AI</a>.', [
+        ':url' => '/admin/config/services/markaspot-ai',
+      ]) . '</p>';
+      return $output;
+
+    case 'markaspot_ai.settings':
+      return '<p>' . t('Configure AI provider credentials, duplicate detection parameters, and token tracking settings.') . '</p>';
+  }
+
+  return NULL;
+}
