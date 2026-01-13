@@ -5,6 +5,9 @@
  * Install file for service_request.
  */
 
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+
 /**
  * Implements hook_install().
  *
@@ -71,4 +74,72 @@ function service_request_update_11001() {
   }
 
   return t('Body field configuration not found or already updated.');
+}
+
+/**
+ * Install hazard_level field on service_request nodes.
+ *
+ * This field stores the aggregated hazard level from AI image analysis.
+ * Uses list_integer type with allowed values: 0=None, 1=Low, 2=Medium,
+ * 3=High, 4=Critical.
+ *
+ * Requires field_permissions module for custom access control.
+ */
+function service_request_update_11002(&$sandbox) {
+  $messages = [];
+
+  // Check if field_permissions module is available.
+  $module_handler = \Drupal::moduleHandler();
+  $has_field_permissions = $module_handler->moduleExists('field_permissions');
+
+  // Field Storage: field_hazard_level (list_integer).
+  if (!FieldStorageConfig::loadByName('node', 'field_hazard_level')) {
+    $storage_config = [
+      'field_name' => 'field_hazard_level',
+      'entity_type' => 'node',
+      'type' => 'list_integer',
+      'settings' => [
+        'allowed_values' => [
+          0 => 'None',
+          1 => 'Low',
+          2 => 'Medium',
+          3 => 'High',
+          4 => 'Critical',
+        ],
+        'allowed_values_function' => '',
+      ],
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ];
+
+    // Add field_permissions if module is available.
+    if ($has_field_permissions) {
+      $storage_config['third_party_settings'] = [
+        'field_permissions' => [
+          'permission_type' => 'custom',
+        ],
+      ];
+    }
+
+    FieldStorageConfig::create($storage_config)->save();
+    $messages[] = 'Created field storage: node.field_hazard_level';
+  }
+
+  // Field Instance: node.service_request.field_hazard_level.
+  if (!FieldConfig::loadByName('node', 'service_request', 'field_hazard_level')) {
+    FieldConfig::create([
+      'field_name' => 'field_hazard_level',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Hazard Level',
+      'description' => 'AI-detected hazard severity level based on image analysis.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [['value' => 0]],
+      'settings' => [],
+    ])->save();
+    $messages[] = 'Created field instance: node.service_request.field_hazard_level';
+  }
+
+  return empty($messages) ? 'Hazard level field already exists.' : implode("\n", $messages);
 }

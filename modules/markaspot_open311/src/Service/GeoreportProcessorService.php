@@ -1771,6 +1771,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $extendedAttributes['media_alt_text'] = $mediaAltTexts;
     }
 
+    // Add hazard level from AI vision analysis.
+    if ($node->hasField('field_hazard_level') && !$node->get('field_hazard_level')->isEmpty()) {
+      $extendedAttributes['hazard_level'] = (int) $node->get('field_hazard_level')->value;
+    }
+    else {
+      $extendedAttributes['hazard_level'] = 0;
+    }
+
     // Add published status for nodes
     // This flag allows frontend to show an unpublished indicator icon.
     $extendedAttributes['published'] = $node->isPublished();

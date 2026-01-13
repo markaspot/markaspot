@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_hazard_level
+    - node.type.service_request
+  module:
+    - options
+id: node.service_request.field_hazard_level
+field_name: field_hazard_level
+entity_type: node
+bundle: service_request
+label: Hazard Level
+description: 'AI-detected hazard severity level based on image analysis.'
+required: false
+translatable: false
+default_value:
+  - value: 0
+default_value_callback: ''
+settings: {  }
+field_type: list_integer
