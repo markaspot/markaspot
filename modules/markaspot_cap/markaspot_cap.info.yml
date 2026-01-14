@@ -1,0 +1,7 @@
+name: 'Mark-a-Spot CAP Export'
+type: module
+description: 'CAP 1.2 (Common Alerting Protocol) export for emergency citizen reports'
+package: 'Mark-a-Spot'
+core_version_requirement: ^10 || ^11
+dependencies:
+  - markaspot_emergency:markaspot_emergency

@@ -1,0 +1,17 @@
+markaspot_cap.alerts.index:
+  path: '/api/cap/v1/alerts'
+  defaults:
+    _controller: '\Drupal\markaspot_cap\Controller\CapAlertController::index'
+    _title: 'CAP Alert Feed'
+  requirements:
+    _access: 'TRUE'
+  methods: [GET, HEAD]
+
+markaspot_cap.alerts.show:
+  path: '/api/cap/v1/alerts/{id}'
+  defaults:
+    _controller: '\Drupal\markaspot_cap\Controller\CapAlertController::show'
+    _title: 'CAP Alert'
+  requirements:
+    _access: 'TRUE'
+  methods: [GET, HEAD]

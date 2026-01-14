@@ -191,11 +191,11 @@ class EmergencyModeController extends ControllerBase {
   /**
    * Activate emergency mode.
    */
-  public function activate(Request $request) {
-    $data = json_decode($request->getContent(), TRUE) ?? [];
+  public function activate(?Request $request = NULL) {
+    $data = $request ? json_decode($request->getContent(), TRUE) ?? [] : [];
 
-    // Check permissions.
-    if (!$this->currentUser->hasPermission('administer emergency mode')) {
+    // Check permissions (only if called via HTTP request, CLI is trusted).
+    if ($request && !$this->currentUser->hasPermission('administer emergency mode')) {
       return new JsonResponse(['error' => 'Access denied'], 403);
     }
 

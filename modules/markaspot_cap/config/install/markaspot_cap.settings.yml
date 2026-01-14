@@ -1,0 +1,31 @@
+# CAP 1.2 Export Settings
+
+# Node bundle to export as CAP alerts
+bundle: 'service_request'
+
+# Sender identification
+sender:
+  domain: 'example.gov'
+  name: 'City Emergency Services'
+
+# Default CAP values
+defaults:
+  category: 'Infra'
+  urgency: 'Unknown'
+  certainty: 'Observed'
+  scope: 'Public'
+  msg_type: 'Alert'
+
+# Priority to Severity mapping (CAP standard)
+severity_mapping:
+  0: 'Extreme'
+  1: 'Severe'
+  2: 'Moderate'
+  3: 'Minor'
+  default: 'Unknown'
+
+# Status mapping (Open311 → CAP)
+status_mapping:
+  open: 'Actual'
+  in_progress: 'Actual'
+  closed: 'Cancel'
