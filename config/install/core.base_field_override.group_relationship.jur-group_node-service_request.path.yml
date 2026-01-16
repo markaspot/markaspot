@@ -1,0 +1,20 @@
+uuid: e0da6e81-2e49-4153-852e-79c29b1d0b61
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.relationship_type.jur-group_node-service_request
+  module:
+    - path
+id: group_relationship.jur-group_node-service_request.path
+field_name: path
+entity_type: group_relationship
+bundle: jur-group_node-service_request
+label: 'URL alias'
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: path

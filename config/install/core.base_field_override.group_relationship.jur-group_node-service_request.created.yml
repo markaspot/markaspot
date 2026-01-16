@@ -1,0 +1,18 @@
+uuid: f0f8ff9b-96ef-48e3-99ed-b2917b909182
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.relationship_type.jur-group_node-service_request
+id: group_relationship.jur-group_node-service_request.created
+field_name: created
+entity_type: group_relationship
+bundle: jur-group_node-service_request
+label: 'Created on'
+description: 'The time that the group relationship was created.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: created

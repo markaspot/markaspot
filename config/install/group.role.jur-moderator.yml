@@ -1,0 +1,20 @@
+uuid: 25ea1380-ab0b-4ecc-b8b9-f577110f6b38
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+    - user.role.moderator
+id: jur-moderator
+label: Moderator
+weight: 1
+admin: false
+scope: outsider
+global_role: moderator
+group_type: jur
+permissions:
+  - 'view group'
+  - 'view group_node:service_request entity'
+  - 'view group_node:service_request relationship'
+  - 'view own unpublished group_node:service_request entity'
+  - 'view unpublished group_node:service_request entity'

@@ -1,0 +1,15 @@
+uuid: f58f4fd3-dda5-41b0-b2b7-5404b4a69d01
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+id: jur-member
+label: Member
+weight: 0
+admin: false
+scope: individual
+global_role: null
+group_type: jur
+permissions:
+  - 'view group'
