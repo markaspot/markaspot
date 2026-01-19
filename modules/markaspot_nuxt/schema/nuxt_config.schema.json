@@ -663,6 +663,64 @@
               }
             }
           }
+        },
+        "wmsLayers": {
+          "type": "array",
+          "title": "WMS Overlay Layers",
+          "description": "Configure WMS layers to display on the map (e.g., bike paths, trees, landmarks)",
+          "items": {
+            "type": "object",
+            "required": ["id", "title", "layerName"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "title": "Layer ID",
+                "description": "Unique identifier for the layer",
+                "pattern": "^[a-z0-9-]+$"
+              },
+              "title": {
+                "type": "string",
+                "title": "Display Title",
+                "description": "Human-readable title shown in layer toggle"
+              },
+              "layerName": {
+                "type": "string",
+                "title": "WMS Layer Name",
+                "description": "The WMS layer name from the GeoServer"
+              },
+              "enabled": {
+                "type": "boolean",
+                "title": "Enabled by Default",
+                "description": "Show this layer when the map loads",
+                "default": false
+              },
+              "opacity": {
+                "type": "number",
+                "title": "Opacity",
+                "description": "Layer opacity (0-1)",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.7
+              },
+              "minZoom": {
+                "type": "integer",
+                "title": "Minimum Zoom",
+                "description": "Minimum zoom level to show layer",
+                "minimum": 0,
+                "maximum": 22,
+                "default": 10
+              },
+              "maxZoom": {
+                "type": "integer",
+                "title": "Maximum Zoom",
+                "description": "Maximum zoom level to show layer",
+                "minimum": 0,
+                "maximum": 22,
+                "default": 20
+              }
+            }
+          },
+          "default": []
         }
       }
     },

@@ -1,0 +1,24 @@
+uuid: 85b830d7-150a-491a-ab23-84ee017cb82c
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_service_provider_feedback
+    - filter.format.basic_html
+    - node.type.service_request
+  module:
+    - text
+id: node.service_request.field_service_provider_feedback
+field_name: field_service_provider_feedback
+entity_type: node
+bundle: service_request
+label: "Service Provider's Feedback"
+description: 'Please add your feedback as Service Provider'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats:
+    - basic_html
+field_type: text_long

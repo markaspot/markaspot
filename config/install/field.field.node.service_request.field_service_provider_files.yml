@@ -1,0 +1,27 @@
+uuid: a31c0a93-ce4a-44b1-a417-c4da21334656
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_service_provider_files
+    - node.type.service_request
+  module:
+    - file
+id: node.service_request.field_service_provider_files
+field_name: field_service_provider_files
+entity_type: node
+bundle: service_request
+label: service_provider_files
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:file'
+  handler_settings: {  }
+  file_directory: '[date:custom:Y]-[date:custom:m]'
+  file_extensions: 'txt pdf jpg jpeg png svg'
+  max_filesize: ''
+  description_field: true
+field_type: file
