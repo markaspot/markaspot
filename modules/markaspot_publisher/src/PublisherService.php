@@ -97,10 +97,10 @@ class PublisherService implements PublisherServiceInterface {
         ->save();
     }
     
-    // Get a limited number of categories per run
-    $categories = !empty($days) ? array_slice(array_keys($days), 0, 3, true) : [];
+    // Process all categories in each run to avoid missing nodes due to rotation.
+    $categories = !empty($days) ? array_keys($days) : [];
     $nids = [];
-    
+
     \Drupal::logger('markaspot_publisher')->notice('Processing @count categories in this run', ['@count' => count($categories)]);
     
     foreach ($categories as $category_tid) {
@@ -142,19 +142,6 @@ class PublisherService implements PublisherServiceInterface {
           '@cat' => $category_tid
         ]);
       }
-    }
-    
-    // Rotate the processed categories to the end of the list
-    if (!empty($categories) && !empty($days)) {
-      foreach ($categories as $category_tid) {
-        if (isset($days[$category_tid])) {
-          $value = $days[$category_tid];
-          unset($days[$category_tid]);
-          $days[$category_tid] = $value;
-        }
-      }
-      $config_factory = \Drupal::configFactory()->getEditable('markaspot_publisher.settings');
-      $config_factory->set('days', $days)->save();
     }
     
     // Return a limited number of nodes
