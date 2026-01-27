@@ -209,6 +209,7 @@ class MarkASpotSettingsController extends ControllerBase {
           'forms',
           'privacy',
           'i18n',
+          'groupTypes',
         ];
         foreach ($config_keys as $key) {
           if (!empty($jurisdiction_config[$key])) {
@@ -216,6 +217,26 @@ class MarkASpotSettingsController extends ControllerBase {
           }
         }
       }
+    }
+
+    // Add groupTypes if not set from jurisdiction config.
+    // Auto-detect from markaspot_open311 config (supports legacy 'organisation' naming).
+    if (empty($settings['groupTypes'])) {
+      $org_type = $open311_config->get('organisation_group_type') ?? 'org';
+
+      // Check if org type exists, fallback to 'organisation'.
+      $org_type_exists = $this->entityTypeManager->getStorage('group_type')->load($org_type);
+      if (!$org_type_exists && $org_type === 'org') {
+        $legacy_type = $this->entityTypeManager->getStorage('group_type')->load('organisation');
+        if ($legacy_type) {
+          $org_type = 'organisation';
+        }
+      }
+
+      $settings['groupTypes'] = [
+        'organisation' => $org_type,
+        'jurisdiction' => $jur_type,
+      ];
     }
 
     // Add file URLs from group's file fields if available.
