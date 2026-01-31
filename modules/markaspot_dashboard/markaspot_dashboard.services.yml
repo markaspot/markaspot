@@ -1,0 +1,12 @@
+services:
+  markaspot_dashboard.metrics_calculator:
+    class: Drupal\markaspot_dashboard\Service\MetricsCalculatorService
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@logger.factory'
+
+  logger.channel.markaspot_dashboard:
+    parent: logger.channel_base
+    arguments: ['markaspot_dashboard']

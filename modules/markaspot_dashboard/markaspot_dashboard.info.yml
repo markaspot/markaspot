@@ -1,0 +1,9 @@
+name: 'Mark-a-Spot Dashboard'
+type: module
+description: 'Provides dashboard KPI endpoints for Mark-a-Spot including forwarding rate, FCR, and processing time metrics.'
+package: 'Mark-a-Spot'
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:node
+  - entity_reference_revisions:entity_reference_revisions
+  - paragraphs:paragraphs

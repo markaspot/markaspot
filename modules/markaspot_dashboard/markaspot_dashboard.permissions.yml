@@ -1,0 +1,9 @@
+access dashboard kpis:
+  title: 'Access Dashboard KPIs'
+  description: 'View dashboard key performance indicators including forwarding rate, FCR, and processing time.'
+  restrict access: true
+
+administer dashboard:
+  title: 'Administer Dashboard'
+  description: 'Configure dashboard settings and access administrative functions.'
+  restrict access: true

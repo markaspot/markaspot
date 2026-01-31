@@ -181,7 +181,8 @@ function markaspot_ai_node_delete(NodeInterface $node): void {
  */
 function markaspot_ai_cron(): void {
   $config = \Drupal::config('markaspot_ai.settings');
-  $api_key = $config->get('providers.openai.api_key');
+  // Check both config and environment variable for API key.
+  $api_key = $config->get('providers.openai.api_key') ?: getenv('OPENAI_API_KEY');
 
   // Skip if not configured.
   if (empty($api_key)) {
