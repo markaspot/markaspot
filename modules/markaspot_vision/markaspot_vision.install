@@ -1,0 +1,84 @@
+<?php
+
+/**
+ * @file
+ * Install, update, and uninstall functions for the markaspot_vision module.
+ */
+
+use Drupal\Core\Config\FileStorage;
+
+/**
+ * Install hazard level and category fields for media entities.
+ *
+ * These fields store AI-detected hazard data:
+ * - field_ai_hazard_level: CAP severity (0=None to 4=Extreme)
+ * - field_ai_hazard_category: Type (electrical, structural, environmental, etc.)
+ */
+function markaspot_vision_update_11801(): string {
+  $config_factory = \Drupal::configFactory();
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Path to optional config in the module.
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_vision');
+  $config_path = $module_path . '/config/optional';
+  $source = new FileStorage($config_path);
+
+  // Define the configs to import in order (storage first, then field).
+  $configs = [
+    'field.storage.media.field_ai_hazard_level',
+    'field.storage.media.field_ai_hazard_category',
+    'field.field.media.request_image.field_ai_hazard_level',
+    'field.field.media.request_image.field_ai_hazard_category',
+  ];
+
+  $imported = [];
+  $skipped = [];
+
+  foreach ($configs as $config_name) {
+    // Skip if config already exists.
+    if ($config_factory->get($config_name)->get('id')) {
+      $skipped[] = $config_name;
+      continue;
+    }
+
+    // Read from file.
+    $config_data = $source->read($config_name);
+    if (empty($config_data)) {
+      \Drupal::logger('markaspot_vision')->warning('Config file not found: @name', ['@name' => $config_name]);
+      continue;
+    }
+
+    // Determine entity type based on config name prefix.
+    if (str_starts_with($config_name, 'field.storage.')) {
+      $entity_type = 'field_storage_config';
+    }
+    elseif (str_starts_with($config_name, 'field.field.')) {
+      $entity_type = 'field_config';
+    }
+    else {
+      continue;
+    }
+
+    // Create the config entity.
+    try {
+      $entity_type_manager->getStorage($entity_type)->create($config_data)->save();
+      $imported[] = $config_name;
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_vision')->error('Failed to import @name: @error', [
+        '@name' => $config_name,
+        '@error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  $message = [];
+  if (!empty($imported)) {
+    $message[] = 'Imported: ' . implode(', ', $imported);
+  }
+  if (!empty($skipped)) {
+    $message[] = 'Skipped (already exists): ' . implode(', ', $skipped);
+  }
+
+  return implode('. ', $message) ?: 'No changes made.';
+}

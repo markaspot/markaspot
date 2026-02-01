@@ -1173,28 +1173,30 @@ class MetricsCalculatorService {
       }
     }
 
-    // Get hazard category breakdown.
-    $category_query = $this->database->query("
-      SELECT
-        m.field_ai_hazard_category_value as category,
-        COUNT(DISTINCT n.nid) as count
-      FROM {node_field_data} n
-      INNER JOIN {node__field_request_media} frm ON n.nid = frm.entity_id AND frm.deleted = 0
-      INNER JOIN {media__field_ai_hazard_category} m ON frm.field_request_media_target_id = m.entity_id AND m.deleted = 0
-      WHERE n.nid IN ($placeholders)
-        AND n.type = 'service_request'
-        AND m.field_ai_hazard_category_value IS NOT NULL
-        AND m.field_ai_hazard_category_value != ''
-      GROUP BY m.field_ai_hazard_category_value
-      ORDER BY count DESC
-    ", $node_ids);
-
+    // Get hazard category breakdown (optional - requires markaspot_vision module).
     $by_category = [];
-    foreach ($category_query->fetchAll() as $row) {
-      $by_category[] = [
-        'category' => $row->category,
-        'count' => (int) $row->count,
-      ];
+    if ($this->database->schema()->tableExists('media__field_ai_hazard_category')) {
+      $category_query = $this->database->query("
+        SELECT
+          m.field_ai_hazard_category_value as category,
+          COUNT(DISTINCT n.nid) as count
+        FROM {node_field_data} n
+        INNER JOIN {node__field_request_media} frm ON n.nid = frm.entity_id AND frm.deleted = 0
+        INNER JOIN {media__field_ai_hazard_category} m ON frm.field_request_media_target_id = m.entity_id AND m.deleted = 0
+        WHERE n.nid IN ($placeholders)
+          AND n.type = 'service_request'
+          AND m.field_ai_hazard_category_value IS NOT NULL
+          AND m.field_ai_hazard_category_value != ''
+        GROUP BY m.field_ai_hazard_category_value
+        ORDER BY count DESC
+      ", $node_ids);
+
+      foreach ($category_query->fetchAll() as $row) {
+        $by_category[] = [
+          'category' => $row->category,
+          'count' => (int) $row->count,
+        ];
+      }
     }
 
     return [
