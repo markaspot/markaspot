@@ -410,17 +410,44 @@ class GeoreportRequestIndexResource extends ResourceBase {
         }
       }
 
-      // Handle sorting - supports JSON:API style sort parameter.
-      // Examples: sort=created, sort=-created, sort=status, sort=-updated
-      // The '-' prefix indicates descending order.
-      // For backward compatibility: sort=DESC or sort=ASC defaults to 'created' field.
+      // -----------------------------------------------------------------------
+      // SORTING (Mark-a-Spot Extension)
+      // -----------------------------------------------------------------------
+      // Note: The Open311 GeoReport v2 standard does not define a sort
+      // parameter. This is a Mark-a-Spot extension for enhanced usability.
+      //
+      // RECOMMENDED: JSON:API style (use this for new implementations)
+      //   sort=field      Ascending order
+      //   sort=-field     Descending order (prefix with minus)
+      //
+      // Available sort fields:
+      //   - created       Request creation date (default)
+      //   - updated       Last modification date
+      //   - status        Status field
+      //   - service_code  Category/service type
+      //   - request_id    String-based request ID (e.g., "47-2026")
+      //   - nid           Numeric node ID (for proper numeric sorting)
+      //
+      // Examples:
+      //   sort=-created   Newest first (default behavior)
+      //   sort=created    Oldest first
+      //   sort=-nid       Highest ID first (numeric)
+      //   sort=nid        Lowest ID first (numeric)
+      //
+      // DEPRECATED (kept for backward compatibility):
+      //   sort=DESC       Equivalent to sort=-created
+      //   sort=ASC        Equivalent to sort=created
+      //   These legacy values will continue to work but new clients should
+      //   use the JSON:API style format above.
+      // -----------------------------------------------------------------------
       $sortField = 'created';
       $sortDirection = 'ASC';
 
       if (isset($parameters['sort'])) {
         $sortParam = $parameters['sort'];
 
-        // Backward compatibility: handle legacy sort=DESC or sort=ASC.
+        // DEPRECATED: Legacy sort=DESC or sort=ASC (backward compatibility).
+        // Maps to 'created' field only. Use JSON:API style for other fields.
         if (strcasecmp($sortParam, 'DESC') === 0) {
           $sortDirection = 'DESC';
         }
@@ -428,7 +455,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
           $sortDirection = 'ASC';
         }
         else {
-          // JSON:API style: check for '-' prefix for descending order.
+          // JSON:API style: '-' prefix indicates descending order.
           if (str_starts_with($sortParam, '-')) {
             $sortDirection = 'DESC';
             $sortParam = substr($sortParam, 1);
@@ -437,13 +464,15 @@ class GeoreportRequestIndexResource extends ResourceBase {
             $sortDirection = 'ASC';
           }
 
-          // Map sort field names to Drupal entity fields.
+          // Map API sort field names to Drupal entity fields.
+          // Note: 'nid' provides numeric sorting vs 'request_id' string sorting.
           $fieldMapping = [
             'created' => 'created',
             'updated' => 'changed',
             'status' => 'field_status',
             'service_code' => 'field_category',
             'request_id' => 'request_id',
+            'nid' => 'nid',
           ];
 
           if (isset($fieldMapping[$sortParam])) {

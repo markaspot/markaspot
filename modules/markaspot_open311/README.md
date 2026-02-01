@@ -103,6 +103,9 @@ Configure group permissions at: `/admin/group/types/manage/[type]/permissions`
 
 ## Sorting
 
+> **Note:** The Open311 GeoReport v2 standard does not define a sort parameter.
+> This is a Mark-a-Spot extension for enhanced usability.
+
 The `sort` parameter supports JSON:API style sorting with a `-` prefix for descending order.
 
 ### Supported Sort Fields
@@ -117,8 +120,19 @@ The `sort` parameter supports JSON:API style sorting with a `-` prefix for desce
 | `-status` | `field_status` | Status taxonomy term (descending) |
 | `service_code` | `field_category` | Category taxonomy term (ascending) |
 | `-service_code` | `field_category` | Category taxonomy term (descending) |
-| `request_id` | `request_id` | Request ID (ascending) |
-| `-request_id` | `request_id` | Request ID (descending) |
+| `nid` | `nid` | Numeric node ID (ascending) |
+| `-nid` | `nid` | Numeric node ID (descending) |
+| `request_id` | `request_id` | Request ID string (ascending) |
+| `-request_id` | `request_id` | Request ID string (descending) |
+
+### nid vs request_id
+
+Use `nid` for proper numeric sorting of request IDs:
+
+- `request_id` is a string (e.g., "47-2026") and sorts alphabetically: 1, 10, 11, 2, 3...
+- `nid` is a numeric integer and sorts correctly: 1, 2, 3, 10, 11...
+
+**Recommendation:** Use `sort=-nid` or `sort=nid` when sorting by ID.
 
 ### Examples
 
@@ -126,16 +140,19 @@ The `sort` parameter supports JSON:API style sorting with a `-` prefix for desce
 GET /georeport/v2/requests.json?sort=-created     # Newest first (default)
 GET /georeport/v2/requests.json?sort=created      # Oldest first
 GET /georeport/v2/requests.json?sort=-updated     # Recently updated first
-GET /georeport/v2/requests.json?sort=request_id   # By request ID ascending
+GET /georeport/v2/requests.json?sort=-nid         # Highest ID first (numeric)
+GET /georeport/v2/requests.json?sort=nid          # Lowest ID first (numeric)
 ```
 
-### Backward Compatibility
+### Backward Compatibility (Deprecated)
 
-The legacy `sort=DESC` and `sort=ASC` values are still supported and default to sorting by `created` date:
+The legacy `sort=DESC` and `sort=ASC` values are still supported for backward
+compatibility and default to sorting by `created` date. New implementations
+should use the JSON:API style format above.
 
 ```
-GET /georeport/v2/requests.json?sort=DESC  # Same as sort=-created
-GET /georeport/v2/requests.json?sort=ASC   # Same as sort=created
+GET /georeport/v2/requests.json?sort=DESC  # Deprecated, same as sort=-created
+GET /georeport/v2/requests.json?sort=ASC   # Deprecated, same as sort=created
 ```
 
 ## Mark-a-Spot Extensions
