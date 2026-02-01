@@ -1762,7 +1762,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
           continue;
         }
 
-        $statusTermId = $noteEntity->field_status_term->getValue()[0]['target_id'] ?? $initialStatusId;
+        $statusTermId = ($noteEntity->hasField('field_status_term') && !$noteEntity->get('field_status_term')->isEmpty())
+          ? $noteEntity->get('field_status_term')->getValue()[0]['target_id']
+          : $initialStatusId;
 
         // Get the term from our preloaded collection.
         $statusTerm = $terms[$statusTermId] ?? NULL;
