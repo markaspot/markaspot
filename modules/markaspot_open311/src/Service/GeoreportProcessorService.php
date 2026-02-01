@@ -1802,12 +1802,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Add hazard category from media entities (CAP standard codes).
+    // Uses the first media entity with a hazard category. This is intentional:
+    // the primary/first image typically represents the main issue reported.
     $hazardCategory = NULL;
     if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
       foreach ($node->get('field_request_media')->referencedEntities() as $media) {
         if ($media->hasField('field_ai_hazard_category') && !$media->get('field_ai_hazard_category')->isEmpty()) {
           $hazardCategory = $media->get('field_ai_hazard_category')->value;
-          break; // Use first non-empty category found.
+          break;
         }
       }
     }

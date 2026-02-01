@@ -495,9 +495,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     if (!empty($parameters)) {
       $fields = array_filter(
         $parameters,
-        function ($key) {
-          return(strpos($key, 'field_') !== FALSE);
-        },
+        fn($key) => str_contains($key, 'field_'),
         ARRAY_FILTER_USE_KEY
       );
       foreach ($fields as $field => $value) {
