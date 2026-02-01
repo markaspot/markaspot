@@ -1326,6 +1326,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   /**
    * Formats an address field value as a string.
    *
+   * Builds address string from components, handling empty values gracefully.
+   * Format: "{address_line1} {address_line2}, {postal_code} {locality}"
+   *
    * @param \Drupal\Core\Field\FieldItemListInterface $address
    *   The address field value.
    *
@@ -1333,8 +1336,27 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The formatted address string.
    */
   public function formatAddress(FieldItemListInterface $address): string {
-    $addressString = $address->postal_code . ' ' . $address->locality . ', ' . $address->address_line1 . ' ' . $address->address_line2;
-    return trim($addressString);
+    $parts = [];
+
+    // Street address (address_line1 + address_line2).
+    $streetParts = array_filter([
+      $address->address_line1,
+      $address->address_line2,
+    ]);
+    if (!empty($streetParts)) {
+      $parts[] = implode(' ', $streetParts);
+    }
+
+    // City with postal code.
+    $cityParts = array_filter([
+      $address->postal_code,
+      $address->locality,
+    ]);
+    if (!empty($cityParts)) {
+      $parts[] = implode(' ', $cityParts);
+    }
+
+    return implode(', ', $parts);
   }
 
   /**
@@ -1778,6 +1800,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     else {
       $extendedAttributes['hazard_level'] = 0;
     }
+
+    // Add hazard category from media entities (CAP standard codes).
+    $hazardCategory = NULL;
+    if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
+      foreach ($node->get('field_request_media')->referencedEntities() as $media) {
+        if ($media->hasField('field_ai_hazard_category') && !$media->get('field_ai_hazard_category')->isEmpty()) {
+          $hazardCategory = $media->get('field_ai_hazard_category')->value;
+          break; // Use first non-empty category found.
+        }
+      }
+    }
+    $extendedAttributes['hazard_category'] = $hazardCategory;
 
     // Add published status for nodes
     // This flag allows frontend to show an unpublished indicator icon.
