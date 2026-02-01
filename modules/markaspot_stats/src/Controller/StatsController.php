@@ -3,9 +3,11 @@
 namespace Drupal\markaspot_stats\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
-use Symfony\Component\HttpFoundation\JsonResponse;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
 
 /**
  * Class StatsController.
@@ -22,13 +24,23 @@ class StatsController extends ControllerBase {
   protected $database;
 
   /**
+   * The language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected $languageManager;
+
+  /**
    * Constructs a StatsController object.
    *
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   *   The language manager.
    */
-  public function __construct(Connection $database) {
+  public function __construct(Connection $database, LanguageManagerInterface $language_manager) {
     $this->database = $database;
+    $this->languageManager = $language_manager;
   }
 
   /**
@@ -36,7 +48,8 @@ class StatsController extends ControllerBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('database')
+      $container->get('database'),
+      $container->get('language_manager')
     );
   }
 
@@ -47,9 +60,11 @@ class StatsController extends ControllerBase {
    *   The JSON response.
    */
   public function getStatusStats() {
+    $langcode = $this->languageManager->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)->getId();
+
     $query = $this->database->query("
-      SELECT 
-        t.name AS status, 
+      SELECT
+        t.name AS status,
         COUNT(DISTINCT n.nid) AS count,
         h.field_status_hex_color AS color
       FROM taxonomy_term_field_data t
@@ -57,9 +72,10 @@ class StatsController extends ControllerBase {
       LEFT JOIN node__field_status fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
       LEFT JOIN node_field_data n ON fs.entity_id = n.nid AND n.type = 'service_request'
       WHERE t.vid = 'service_status'
+        AND t.langcode = :langcode
       GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
       ORDER BY t.weight ASC
-    ");
+    ", [':langcode' => $langcode]);
 
     $results = $query->fetchAll();
     $output = [];
@@ -82,9 +98,11 @@ class StatsController extends ControllerBase {
    *   The JSON response.
    */
   public function getCategoryStats() {
+    $langcode = $this->languageManager->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)->getId();
+
     $query = $this->database->query("
-      SELECT 
-        t.name AS category, 
+      SELECT
+        t.name AS category,
         COUNT(DISTINCT n.nid) AS count,
         h.field_category_hex_color AS color
       FROM taxonomy_term_field_data t
@@ -92,9 +110,10 @@ class StatsController extends ControllerBase {
       LEFT JOIN node__field_category fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
       LEFT JOIN node_field_data n ON fc.entity_id = n.nid AND n.type = 'service_request'
       WHERE t.vid = 'service_category'
+        AND t.langcode = :langcode
       GROUP BY t.tid, t.name, h.field_category_hex_color, t.weight
       ORDER BY t.weight ASC
-    ");
+    ", [':langcode' => $langcode]);
 
     $results = $query->fetchAll();
     $output = [];
@@ -118,6 +137,8 @@ class StatsController extends ControllerBase {
    */
   public function getHierarchicalCategoryStats() {
     try {
+      $langcode = $this->languageManager->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)->getId();
+
       // Get all term relationships to build our hierarchy map.
       $hierarchy_query = $this->database->select('taxonomy_term__parent', 'tp');
       $hierarchy_query->fields('tp', ['entity_id', 'parent_target_id']);
@@ -139,21 +160,23 @@ class StatsController extends ControllerBase {
         $parent_map[$child_id] = $parent_id;
       }
 
-      // Get all terms with their data.
+      // Get all terms with their data (filtered by current language).
       $terms_query = $this->database->select('taxonomy_term_field_data', 't');
       $terms_query->fields('t', ['tid', 'name']);
       $terms_query->addField('h', 'field_category_hex_color', 'color');
       $terms_query->leftJoin('taxonomy_term__field_category_hex', 'h', 't.tid = h.entity_id AND h.deleted = 0');
       $terms_query->condition('t.vid', 'service_category');
+      $terms_query->condition('t.langcode', $langcode);
       $terms_results = $terms_query->execute()->fetchAllAssoc('tid');
 
-      // Get all terms with their counts.
+      // Get all terms with their counts (filtered by current language).
       $counts_query = $this->database->select('taxonomy_term_field_data', 't');
       $counts_query->fields('t', ['tid']);
       $counts_query->addExpression('COUNT(DISTINCT n.nid)', 'count');
       $counts_query->leftJoin('node__field_category', 'fc', 't.tid = fc.field_category_target_id AND fc.deleted = 0');
       $counts_query->leftJoin('node_field_data', 'n', 'fc.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
       $counts_query->condition('t.vid', 'service_category');
+      $counts_query->condition('t.langcode', $langcode);
       $counts_query->groupBy('t.tid');
       $counts_results = $counts_query->execute()->fetchAllAssoc('tid');
 
