@@ -12,7 +12,7 @@ use Drupal\Core\Config\FileStorage;
  *
  * These fields store AI-detected hazard data:
  * - field_ai_hazard_level: CAP severity (0=None to 4=Extreme)
- * - field_ai_hazard_category: Type (electrical, structural, environmental, etc.)
+ * - field_ai_hazard_category: CAP standard codes (Infra, Transport, Safety, Env, Fire, Health, Geo, Met, Other)
  */
 function markaspot_vision_update_11801(): string {
   $config_factory = \Drupal::configFactory();

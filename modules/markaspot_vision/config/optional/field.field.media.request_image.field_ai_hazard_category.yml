@@ -11,7 +11,7 @@ field_name: field_ai_hazard_category
 entity_type: media
 bundle: request_image
 label: AI Hazard Category
-description: 'AI-detected hazard category (electrical, structural, environmental, traffic, fire, health, other)'
+description: 'AI-detected hazard category using CAP standard codes (Infra, Transport, Safety, Env, Fire, Health, Geo, Met, Other)'
 required: false
 translatable: false
 default_value: {  }
