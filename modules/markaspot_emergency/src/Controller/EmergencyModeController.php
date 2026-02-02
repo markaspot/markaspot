@@ -134,7 +134,7 @@ class EmergencyModeController extends ControllerBase {
       usort($available_categories, fn($a, $b) => $a['weight'] <=> $b['weight'] ?: strcmp($a['name'], $b['name']));
     }
 
-    // Generate banner data based on configuration and current mode
+    // Generate banner data based on configuration and current mode.
     $banner = $this->getBannerData($config, $active);
 
     $payload = [
@@ -191,11 +191,11 @@ class EmergencyModeController extends ControllerBase {
   /**
    * Activate emergency mode.
    */
-  public function activate(Request $request) {
-    $data = json_decode($request->getContent(), TRUE) ?? [];
+  public function activate(?Request $request = NULL) {
+    $data = $request ? json_decode($request->getContent(), TRUE) ?? [] : [];
 
-    // Check permissions.
-    if (!$this->currentUser->hasPermission('administer emergency mode')) {
+    // Check permissions (only if called via HTTP request, CLI is trusted).
+    if ($request && !$this->currentUser->hasPermission('administer emergency mode')) {
       return new JsonResponse(['error' => 'Access denied'], 403);
     }
 
@@ -271,7 +271,7 @@ class EmergencyModeController extends ControllerBase {
   /**
    * Deactivate emergency mode.
    */
-  public function deactivate(Request $request = NULL) {
+  public function deactivate(?Request $request = NULL) {
     $data = $request ? json_decode($request->getContent(), TRUE) ?? [] : [];
 
     // Check permissions (only if called via HTTP request).
@@ -380,14 +380,19 @@ class EmergencyModeController extends ControllerBase {
     }
   }
 
-  /** Publish selected categories (ensure published). */
+  /**
+   * Publish selected categories (ensure published). */
   protected function publishSelectedCategories(array $tids): void {
     $tids = array_values(array_filter(array_map('intval', $tids)));
-    if (!$tids) return;
+    if (!$tids) {
+      return;
+    }
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $terms = $storage->loadMultiple($tids);
     foreach ($terms as $term) {
-      if ($term->get('vid')->value !== 'service_category') continue;
+      if ($term->get('vid')->value !== 'service_category') {
+        continue;
+      }
       if (!$term->isPublished()) {
         $term->set('status', 1);
         $term->save();
@@ -395,7 +400,8 @@ class EmergencyModeController extends ControllerBase {
     }
   }
 
-  /** Unpublish all published categories except the provided TIDs. */
+  /**
+   * Unpublish all published categories except the provided TIDs. */
   protected function unpublishNonSelectedCategories(array $keep_tids): void {
     $keep = array_values(array_unique(array_filter(array_map('intval', $keep_tids))));
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
@@ -437,7 +443,8 @@ class EmergencyModeController extends ControllerBase {
     return array_values($query->execute());
   }
 
-  /** Get IDs of all currently published categories. */
+  /**
+   * Get IDs of all currently published categories. */
   protected function getAllPublishedTermIds(): array {
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $query = $storage->getQuery()
@@ -536,36 +543,36 @@ class EmergencyModeController extends ControllerBase {
   protected function getBannerData($config, $emergency_active) {
     $banner_config = $config->get('banner') ?: [];
 
-    // Check if banner is enabled
-    if (!($banner_config['enabled'] ?? false)) {
-      return null;
+    // Check if banner is enabled.
+    if (!($banner_config['enabled'] ?? FALSE)) {
+      return NULL;
     }
 
     $message = trim($banner_config['message'] ?? '');
     if (empty($message)) {
-      return null;
+      return NULL;
     }
 
-    // Check display conditions
+    // Check display conditions.
     $conditions = $banner_config['display_conditions'] ?? [];
     $mode_type = (string) $config->get('emergency_mode.mode_type');
     $maintenance_mode = $mode_type === 'maintenance';
 
-    $should_display = false;
+    $should_display = FALSE;
 
-    // Always visible
-    if ($conditions['always_visible'] ?? false) {
-      $should_display = true;
+    // Always visible.
+    if ($conditions['always_visible'] ?? FALSE) {
+      $should_display = TRUE;
     }
-    // Emergency mode only
-    elseif (($conditions['emergency_mode_only'] ?? false) && $emergency_active) {
-      $should_display = true;
+    // Emergency mode only.
+    elseif (($conditions['emergency_mode_only'] ?? FALSE) && $emergency_active) {
+      $should_display = TRUE;
     }
-    // Maintenance mode
-    elseif (($conditions['maintenance_mode'] ?? true) && $maintenance_mode) {
-      $should_display = true;
+    // Maintenance mode.
+    elseif (($conditions['maintenance_mode'] ?? TRUE) && $maintenance_mode) {
+      $should_display = TRUE;
 
-      // Use maintenance banner text if CAP banner message is empty
+      // Use maintenance banner text if CAP banner message is empty.
       $maintenance_text = trim($config->get('maintenance.banner_text') ?? '');
       if (empty($message) && !empty($maintenance_text)) {
         $message = $maintenance_text;
@@ -573,26 +580,29 @@ class EmergencyModeController extends ControllerBase {
     }
     // Emergency mode (non-maintenance)
     elseif ($emergency_active && !$maintenance_mode) {
-      $should_display = true;
+      $should_display = TRUE;
     }
 
     if (!$should_display) {
-      return null;
+      return NULL;
     }
 
-    // Determine appropriate level based on mode if not explicitly set
+    // Determine appropriate level based on mode if not explicitly set.
     $level = $banner_config['level'] ?? 'info';
     if ($emergency_active && $level === 'info') {
       switch ($mode_type) {
         case 'disaster':
           $level = 'extreme';
           break;
+
         case 'crisis':
           $level = 'severe';
           break;
+
         case 'maintenance':
           $level = 'warning';
           break;
+
         default:
           $level = 'moderate';
           break;
@@ -614,7 +624,7 @@ class EmergencyModeController extends ControllerBase {
   public function sosRedirect() {
     $config = $this->configFactory->get('markaspot_emergency.settings');
 
-    // If emergency mode is active, show emergency UI
+    // If emergency mode is active, show emergency UI.
     if ($config->get('emergency_mode.status') === 'active') {
       return [
         '#markup' => '<div class="emergency-sos-active">
@@ -628,7 +638,7 @@ class EmergencyModeController extends ControllerBase {
       ];
     }
 
-    // If not active, redirect to normal homepage
+    // If not active, redirect to normal homepage.
     return $this->redirect('<front>');
   }
 

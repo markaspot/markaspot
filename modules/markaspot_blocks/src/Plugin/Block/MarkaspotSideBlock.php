@@ -20,7 +20,7 @@ class MarkaspotSideBlock extends BlockBase {
    * {@inheritdoc}
    */
   public function build() {
-    // Generate proper URLs using Drupal's URL system
+    // Generate proper URLs using Drupal's URL system.
     $home_link = Link::fromTextAndUrl(
       '<span class="fa fa-home"></span><span class="add">Add service request</span>',
       Url::fromUserInput('/')

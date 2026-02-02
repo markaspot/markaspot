@@ -33,6 +33,97 @@ function markaspot_service_provider_help($route_name, RouteMatchInterface $route
 }
 
 /**
+ * Implements hook_ENTITY_TYPE_presave() for node entities.
+ *
+ * Automatically formats moderator notes added to field_service_provider_notes.
+ * When a moderator/admin adds a note via the Drupal UI, this hook ensures
+ * the note follows the standard format: message first, then metadata footer.
+ */
+function markaspot_service_provider_node_presave(\Drupal\node\NodeInterface $node) {
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  if (!$node->hasField('field_service_provider_notes')) {
+    return;
+  }
+
+  // Only process if user is logged in (not API/anonymous).
+  $current_user = \Drupal::currentUser();
+  if ($current_user->isAnonymous()) {
+    return;
+  }
+
+  // Check if this is a moderator/admin (has edit permission).
+  if (!$current_user->hasPermission('edit any service_request content')) {
+    return;
+  }
+
+  // Skip if this is an API request (check for specific header or context).
+  $request = \Drupal::request();
+  $content_type = $request->headers->get('Content-Type', '');
+  if (strpos($content_type, 'application/json') !== false) {
+    // API request - let the controller handle formatting.
+    return;
+  }
+
+  // Get current and original notes.
+  $current_notes = $node->get('field_service_provider_notes')->getValue();
+  $original_notes = [];
+
+  if (!$node->isNew() && $node->original) {
+    $original_notes = $node->original->get('field_service_provider_notes')->getValue();
+  }
+
+  // Find new notes (compare counts - new notes are appended).
+  $original_count = count($original_notes);
+  $current_count = count($current_notes);
+
+  if ($current_count <= $original_count) {
+    // No new notes added.
+    return;
+  }
+
+  // Process each new note.
+  $date_formatter = \Drupal::service('date.formatter');
+  $username = $current_user->getDisplayName();
+  $timestamp = $date_formatter->format(\Drupal::time()->getRequestTime(), 'custom', 'd.m.Y - H:i', 'Europe/Berlin');
+
+  for ($i = $original_count; $i < $current_count; $i++) {
+    $note_value = $current_notes[$i]['value'] ?? '';
+
+    // Skip if empty or already has metadata footer.
+    if (empty($note_value) || strpos($note_value, '---') !== false) {
+      continue;
+    }
+
+    // Strip HTML tags for plain text processing, then re-add.
+    $plain_text = strip_tags($note_value);
+    $plain_text = trim($plain_text);
+
+    if (empty($plain_text)) {
+      continue;
+    }
+
+    // Build formatted note with source marker and metadata footer.
+    $metadata_footer = "\n\n---\n" .
+      t('Rückmeldung von: @username', ['@username' => $username]) . "\n" .
+      t('Datum: @timestamp', ['@timestamp' => $timestamp]);
+
+    // Add source marker for language-agnostic parsing.
+    $formatted_note = '<!-- source:moderator -->' . $plain_text . $metadata_footer;
+    $formatted_note_html = nl2br($formatted_note, false);
+
+    // Update the note.
+    $current_notes[$i]['value'] = $formatted_note_html;
+    $current_notes[$i]['format'] = 'basic_html';
+  }
+
+  // Save updated notes back to the field.
+  $node->set('field_service_provider_notes', $current_notes);
+}
+
+/**
  * Implements hook_cron().
  */
 function markaspot_service_provider_cron() {
@@ -74,7 +165,7 @@ function markaspot_service_provider_cron() {
         ->notice('Found @count service requests with assigned providers ready for cron notification.',
           ['@count' => $count]);
 
-      // TODO: Implement event dispatching or queue worker for ECA integration.
+      // @todo Implement event dispatching or queue worker for ECA integration.
     }
 
     // Set the next execution time.

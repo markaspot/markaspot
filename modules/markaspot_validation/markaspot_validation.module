@@ -14,13 +14,17 @@ function markaspot_validation_entity_bundle_field_info_alter(&$fields, EntityTyp
   if ($entity_type->id() == 'node') {
     switch ($bundle) {
       case 'service_request':
-        $latlon = $fields['field_geolocation'];
-        $latlon->addConstraint('ValidLatLon');
-        $latlon->addConstraint('DefaultLocation');
-        $latlon->addConstraint('DoublePost');
+        if (isset($fields['field_geolocation'])) {
+          $latlon = $fields['field_geolocation'];
+          $latlon->addConstraint('ValidLatLon');
+          $latlon->addConstraint('DefaultLocation');
+          $latlon->addConstraint('DoublePost');
+        }
 
-        $email = $fields['field_e_mail'];
-        $email->addConstraint('MultipleReports');
+        if (isset($fields['field_e_mail'])) {
+          $email = $fields['field_e_mail'];
+          $email->addConstraint('MultipleReports');
+        }
         break;
     }
   }

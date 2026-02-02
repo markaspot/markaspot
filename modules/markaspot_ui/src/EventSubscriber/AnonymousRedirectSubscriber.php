@@ -115,12 +115,14 @@ class AnonymousRedirectSubscriber implements EventSubscriberInterface {
     // Drupal is only used for API access and admin, so we block all UI paths.
     $redirect_patterns = [
       '/admin',
-      '/node',      // All node paths (listing, view, edit, add, etc.)
+    // All node paths (listing, view, edit, add, etc.)
+      '/node',
       '/user/register',
       '/comment',
       '/group',
       '/media',
-      '/taxonomy',  // Taxonomy management
+    // Taxonomy management.
+      '/taxonomy',
     ];
 
     // Check if path matches any redirect pattern.

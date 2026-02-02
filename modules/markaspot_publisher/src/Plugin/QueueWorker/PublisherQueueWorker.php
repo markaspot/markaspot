@@ -73,7 +73,7 @@ class PublisherQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
    *   e.g. ['nid' => 123].
    */
   public function processItem($data) {
-    $nid = isset($data['nid']) ? $data['nid'] : NULL;
+    $nid = $data['nid'] ?? NULL;
     if (!$nid) {
       $this->logger->warning('Queue item is missing a node ID.');
       return;
@@ -91,27 +91,27 @@ class PublisherQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
     try {
       // Load configuration.
       $config = \Drupal::configFactory()->getEditable('markaspot_publisher.settings');
-      
-      // Check if the node is already published
+
+      // Check if the node is already published.
       if ($node->isPublished()) {
         $this->logger->notice('Node ID @nid is already published. Skipping.', [
-          '@nid' => $nid
+          '@nid' => $nid,
         ]);
         return;
       }
-      
-      // Check if the node is still eligible for publishing based on its field_status
+
+      // Check if the node is still eligible for publishing based on its field_status.
       $current_status = $node->get('field_status')->target_id;
       $publishable_statuses = $config->get('status_publishable');
       if (!isset($publishable_statuses[$current_status])) {
         $this->logger->notice('Node ID @nid is no longer in a publishable status (current: @current). Skipping.', [
           '@nid' => $nid,
-          '@current' => $current_status
+          '@current' => $current_status,
         ]);
         return;
       }
 
-      // Publish the node without changing field_status
+      // Publish the node without changing field_status.
       $node->setPublished();
       $node->save();
       $this->logger->notice('Node ID @nid published successfully.', ['@nid' => $nid]);
@@ -119,8 +119,9 @@ class PublisherQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
     catch (\Exception $e) {
       $this->logger->critical('Queue processing failed for node @nid: @error', [
         '@nid' => $nid,
-        '@error' => $e->getMessage() . "\n" . $e->getTraceAsString()
+        '@error' => $e->getMessage() . "\n" . $e->getTraceAsString(),
       ]);
     }
   }
+
 }

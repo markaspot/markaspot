@@ -1,0 +1,29 @@
+uuid: a2bb2dea-c355-4843-8a8b-c380575d5799
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_sublocality
+    - node.type.service_request
+    - taxonomy.vocabulary.sublocality
+id: node.service_request.field_sublocality
+field_name: field_sublocality
+entity_type: node
+bundle: service_request
+label: Stadtteil
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      sublocality: sublocality
+    sort:
+      field: name
+      direction: asc
+    auto_create: false
+    auto_create_bundle: ''
+field_type: entity_reference

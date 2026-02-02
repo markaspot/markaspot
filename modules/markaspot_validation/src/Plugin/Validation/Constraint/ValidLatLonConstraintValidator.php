@@ -20,7 +20,7 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
     }
     if (!isset($validLatLng)) {
       $this->context->addViolation($constraint->noValidViewboxMessage);
-    };
+    }
   }
 
   /**
@@ -39,7 +39,7 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
     $config = \Drupal::configFactory()->getEditable('markaspot_validation.settings');
     $wkt = $config->get('wkt');
     if ($wkt !== '') {
-      $coordinates = self::parse_wkt($wkt);
+      $coordinates = self::parseWkt($wkt);
       $polygon = new Polygon($coordinates);
       return $polygon->contain($lng, $lat);
     }
@@ -57,14 +57,16 @@ class ValidLatLonConstraintValidator extends ConstraintValidator {
    * @return array
    *   An array of coordinates.
    */
-  private static function parse_wkt($wkt) {
-    $polygon = substr($wkt, 9, -2); // remove "POLYGON ((" at start and "))" at end
-    $points = explode(',', $polygon); // split into points
-    $coords = array_map(function($point) {
-      return array_map('floatval', explode(' ', trim($point))); // split each point into lat and lon
+  private static function parseWkt($wkt) {
+    // Remove "POLYGON ((" at start and "))" at end.
+    $polygon = substr($wkt, 9, -2);
+    // Split into points.
+    $points = explode(',', $polygon);
+    $coords = array_map(function ($point) {
+      // Split each point into lat and lon.
+      return array_map('floatval', explode(' ', trim($point)));
     }, $points);
     return $coords;
   }
-
 
 }

@@ -1,0 +1,6 @@
+markaspot_ai.settings:
+  title: 'Mark-a-Spot AI Settings'
+  description: 'Configure AI service settings for embeddings, duplicate detection, and routing'
+  parent: system.admin_config_services
+  route_name: markaspot_ai.settings
+  weight: 15

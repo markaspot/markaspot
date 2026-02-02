@@ -1,7 +1,14 @@
 <?php
 
-function markaspot_map_page_attachments(array &$page)
-{
+/**
+ * @file
+ * Contains map-related hooks for Mark-a-Spot.
+ */
+
+/**
+ * Implements hook_page_attachments().
+ */
+function markaspot_map_page_attachments(array &$page) {
   $attached = \Drupal::configFactory()
     ->getEditable('markaspot_map.settings')->get();
 
@@ -13,7 +20,8 @@ function markaspot_map_page_attachments(array &$page)
 
     if ($attached['map_type'] == '0' && $attached['maplibre'] == '1') {
       $page['#attached']['library'][] = 'markaspot_map/maplibre';
-    } elseif ($attached['map_type'] == '0' && $attached['maplibre'] == '0') {
+    }
+    elseif ($attached['map_type'] == '0' && $attached['maplibre'] == '0') {
       $page['#attached']['library'][] = 'markaspot_map/maplibre';
     }
   }

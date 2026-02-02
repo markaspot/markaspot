@@ -23,6 +23,16 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_nuxt.settings');
 
+    // Pro Features toggle - controls visibility of pro-only
+    // features in jurisdiction config forms.
+    $form['pro_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Pro Features'),
+      '#default_value' => $config->get('pro_enabled') ?: FALSE,
+      '#description' => $this->t('When enabled, pro-only features (Dashboard, AI Analysis, Feedback, Offline) will be visible in jurisdiction configuration forms. Disable this for open source deployments to hide pro feature toggles.'),
+      '#weight' => -100,
+    ];
+
     $form['markaspot_nuxt'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Nuxt Frontend Settings'),
@@ -67,7 +77,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Allow cross-origin requests to Mark-a-Spot API endpoints from the frontend domain.'),
     ];
 
-    // Map Configuration
+    // Map Configuration.
     $form['markaspot_nuxt']['map'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Map Configuration'),
@@ -106,7 +116,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Attribution text for the main map style (e.g., © Mapbox © OpenStreetMap contributors)'),
     ];
 
-    // Fallback configuration
+    // Fallback configuration.
     $form['markaspot_nuxt']['map']['fallback'] = [
       '#type' => 'details',
       '#title' => $this->t('Fallback Style Configuration'),
@@ -143,7 +153,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Attribution text for the fallback style'),
     ];
 
-    // Map position
+    // Map position.
     $form['markaspot_nuxt']['map']['position'] = [
       '#type' => 'details',
       '#title' => $this->t('Default Map Position'),
@@ -160,19 +170,45 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
     ];
 
     $form['markaspot_nuxt']['map']['position']['center_lat'] = [
-      '#type' => 'number',
+      '#type' => 'textfield',
       '#title' => $this->t('Center Latitude'),
       '#default_value' => $config->get('center_lat'),
-      '#step' => 0.000001,
-      '#description' => $this->t('Latitude for map center (e.g., 51.4556)'),
+      '#size' => 15,
+      '#description' => $this->t('Latitude for map center in decimal format (e.g., 51.4556)'),
     ];
 
     $form['markaspot_nuxt']['map']['position']['center_lng'] = [
-      '#type' => 'number',
+      '#type' => 'textfield',
       '#title' => $this->t('Center Longitude'),
       '#default_value' => $config->get('center_lng'),
-      '#step' => 0.000001,
-      '#description' => $this->t('Longitude for map center (e.g., 6.8528)'),
+      '#size' => 15,
+      '#description' => $this->t('Longitude for map center in decimal format (e.g., 6.8528)'),
+    ];
+
+    // Geocoding Configuration.
+    $form['markaspot_nuxt']['geocoding'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Geocoding Configuration'),
+      '#collapsible' => TRUE,
+      '#collapsed' => FALSE,
+      '#description' => $this->t('Configure geocoding settings for address search. These settings apply to all geocoding providers (Mapbox, Nominatim, Photon). By default, no country restriction is applied for worldwide compatibility.'),
+      '#weight' => 3,
+    ];
+
+    $form['markaspot_nuxt']['geocoding']['geocoding_country'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Geocoding Country Code'),
+      '#default_value' => $config->get('geocoding_country') ?: '',
+      '#maxlength' => 2,
+      '#size' => 5,
+      '#description' => $this->t('ISO 3166-1 alpha-2 country code (e.g., de, us, fr, gb). Limits address search results to the specified country. <strong>Leave empty for worldwide search (default).</strong> Common codes: de=Germany, us=USA, fr=France, gb=UK, nl=Netherlands.'),
+    ];
+
+    $form['markaspot_nuxt']['geocoding']['geocoding_region'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Geocoding Region (optional)'),
+      '#default_value' => $config->get('geocoding_region') ?: '',
+      '#description' => $this->t('Optional region name to bias geocoding results towards a specific area (e.g., nordrhein-westfalen, bavaria, california). Works best with Mapbox. Leave empty for country-wide or worldwide search.'),
     ];
 
     return parent::buildForm($form, $form_state);
@@ -185,6 +221,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
 
     $this->config('markaspot_nuxt.settings')
+      ->set('pro_enabled', $values['pro_enabled'])
       ->set('frontend_base_url', $values['frontend_base_url'])
       ->set('frontend_enabled', $values['frontend_enabled'])
       ->set('api_cors_enabled', $values['api_cors_enabled'])
@@ -199,6 +236,8 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       ->set('zoom_initial', $values['zoom_initial'])
       ->set('center_lat', $values['center_lat'])
       ->set('center_lng', $values['center_lng'])
+      ->set('geocoding_country', strtolower(trim($values['geocoding_country'] ?? '')))
+      ->set('geocoding_region', trim($values['geocoding_region'] ?? ''))
       ->save();
 
     parent::submitForm($form, $form_state);

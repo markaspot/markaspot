@@ -3,3 +3,5 @@ type: module
 description: Imports initial content
 package: Markaspot
 core_version_requirement: ^10 || ^11
+dependencies:
+  - fa_icon_class:fa_icon_class

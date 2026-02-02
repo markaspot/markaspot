@@ -1,0 +1,11 @@
+langcode: en
+status: true
+dependencies: {  }
+id: org
+label: Organisation
+description: 'Use this group type for non-hierarchical access authorisation of content.'
+new_revision: true
+creator_membership: true
+creator_wizard: true
+creator_roles:
+  - org-admin

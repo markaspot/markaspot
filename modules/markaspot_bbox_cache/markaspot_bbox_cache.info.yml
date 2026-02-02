@@ -1,0 +1,8 @@
+name: 'Mark-a-Spot Bbox Cache'
+type: module
+description: 'Caches Open311 API bbox requests to improve performance for high-traffic scenarios.'
+package: Mark-a-Spot
+core_version_requirement: ^10 || ^11
+configure: markaspot_bbox_cache.settings
+dependencies:
+  - markaspot_open311

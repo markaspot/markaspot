@@ -173,21 +173,21 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
 
   /**
    * Get field definitions with labels.
-   * 
+   *
    * @return array
    *   Array of field labels keyed by field machine names.
    */
   public function getFields() {
     $definitions = $this->entityFieldManager->getFieldDefinitions('node', 'service_request');
     $options = [];
-    
+
     foreach ($definitions as $field_name => $definition) {
-      // Only include fields that would typically store personal data
+      // Only include fields that would typically store personal data.
       if (strpos($field_name, 'field_') === 0) {
         $options[$field_name] = $definition->getLabel() . ' (' . $field_name . ')';
       }
     }
-    
+
     return $options;
   }
 

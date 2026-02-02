@@ -1,0 +1,18 @@
+services:
+  markaspot_vision.image_processing:
+    class: Drupal\markaspot_vision\Service\ImageProcessingService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@file_system'
+      - '@logger.factory'
+      - '@language_manager'
+  markaspot_vision.image_processing_controller:
+    class: Drupal\markaspot_vision\Controller\ImageProcessingController
+    arguments:
+      - '@markaspot_vision.image_processing'
+      - '@logger.factory'
+      - '@csrf_token'
+    tags:
+      - { name: controller.service_arguments }

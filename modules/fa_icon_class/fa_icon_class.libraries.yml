@@ -1,12 +1,10 @@
 iconpicker:
   js:
-    /libraries/furcan--iconpicker/dist/iconpicker-1.5.0.js: {}
     fa_icon_class.js: {}
   css:
     component:
-      /libraries/furcan--iconpicker/dist/iconpicker-1.5.0.css: {}
-      /libraries/furcan--iconpicker/dist/fontawesome-5.11.2/css/all.min.css: {}
       fa_icon_class.css: {}
   dependencies:
     - core/drupal
+    - core/jquery
     - core/once

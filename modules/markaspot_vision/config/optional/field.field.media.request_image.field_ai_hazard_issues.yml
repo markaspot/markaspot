@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.field_ai_hazard_issues
+    - media.type.request_image
+id: media.request_image.field_ai_hazard_issues
+field_name: field_ai_hazard_issues
+entity_type: media
+bundle: request_image
+label: 'Hazard Issues'
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string_long

@@ -58,7 +58,7 @@ allowed_urls:
   - '/'
   - '/sos'
   - '/emergency'
-  - '/api/system/status'
+  - '/api/emergency-mode/status'
 
 maintenance:
   unpublish_non_selected: false

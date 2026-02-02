@@ -1,0 +1,100 @@
+markaspot_dashboard.kpis:
+  path: '/api/dashboard/kpis'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DashboardController::getKpis'
+    _title: 'Dashboard KPIs'
+  methods: [GET]
+  requirements:
+    _permission: 'access dashboard kpis'
+  options:
+    _format: 'json'
+
+markaspot_dashboard.time_series_volume:
+  path: '/api/dashboard/time-series/volume'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DashboardController::getTimeSeriesVolume'
+    _title: 'Time Series Volume'
+  methods: [GET]
+  requirements:
+    _permission: 'access dashboard kpis'
+  options:
+    _format: 'json'
+
+markaspot_dashboard.time_series_processing:
+  path: '/api/dashboard/time-series/processing'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DashboardController::getTimeSeriesProcessing'
+    _title: 'Time Series Processing'
+  methods: [GET]
+  requirements:
+    _permission: 'access dashboard kpis'
+  options:
+    _format: 'json'
+
+markaspot_dashboard.forwarding_details:
+  path: '/api/dashboard/forwarding-details'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DashboardController::getForwardingDetails'
+    _title: 'Forwarding Details'
+  methods: [GET]
+  requirements:
+    _permission: 'access dashboard kpis'
+  options:
+    _format: 'json'
+
+markaspot_dashboard.hazard_statistics:
+  path: '/api/dashboard/hazards'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DashboardController::getHazardStatistics'
+    _title: 'Hazard Statistics'
+  methods: [GET]
+  requirements:
+    _permission: 'access dashboard kpis'
+  options:
+    _format: 'json'
+
+# AI Duplicate Detection Routes
+markaspot_dashboard.duplicates:
+  path: '/ai/duplicates/{nid}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DuplicateController::getDuplicates'
+  requirements:
+    _permission: 'access mark-a-spot api'
+    nid: \d+
+  methods: [GET]
+
+markaspot_dashboard.duplicates_pending:
+  path: '/ai/duplicates/pending'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DuplicateController::getPendingDuplicates'
+  requirements:
+    _permission: 'access mark-a-spot api'
+  methods: [GET]
+
+markaspot_dashboard.duplicates_review:
+  path: '/ai/duplicates/{match_id}/review'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DuplicateController::reviewMatch'
+  requirements:
+    _permission: 'access mark-a-spot api'
+    match_id: \d+
+  methods: [POST]
+
+# Status Notes API (Staff/Dashboard feature)
+markaspot_dashboard.status_note_create:
+  path: '/api/dashboard/status-notes'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\StatusNoteController::add'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _permission: 'access content'
+
+markaspot_dashboard.status_note_delete:
+  path: '/api/dashboard/status-notes/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\StatusNoteController::delete'
+    _format: 'json'
+  methods: [DELETE]
+  requirements:
+    _permission: 'access content'

@@ -11,7 +11,9 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslationInterface;
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Flood\FloodInterface;
 use Drupal\paragraphs\Entity\Paragraph;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -21,6 +23,7 @@ use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
+use Drupal\markaspot_open311\Service\SearchApiQueryService;
 
 /**
  * Provides a resource to get view modes by entity and bundle.
@@ -83,6 +86,52 @@ class GeoreportRequestIndexResource extends ResourceBase {
   protected $georeportProcessor;
 
   /**
+   * The language manager service.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected $languageManager;
+
+  /**
+   * The Search API query service.
+   *
+   * @var \Drupal\markaspot_open311\Service\SearchApiQueryService
+   */
+  protected $searchApiQueryService;
+
+  /**
+   * The flood service for rate limiting.
+   *
+   * @var \Drupal\Core\Flood\FloodInterface
+   */
+  protected $flood;
+
+  /**
+   * Rate limit: max requests per window for regular users.
+   */
+  protected const RATE_LIMIT_THRESHOLD = 60;
+
+  /**
+   * Rate limit window in seconds (1 minute).
+   */
+  protected const RATE_LIMIT_WINDOW = 60;
+
+  /**
+   * Roles exempt from rate limiting.
+   *
+   * Staff roles that need unrestricted API access for moderation.
+   * Note: api_user is NOT exempt - we check session UID instead to
+   * distinguish frontend app users from external API consumers.
+   */
+  protected const RATE_LIMIT_EXEMPT_ROLES = [
+    'administrator',
+    'moderator',
+    'editorial_board',
+    'api_editor',
+    'api_municipality',
+  ];
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -109,6 +158,12 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   The entity type manager.
    * @param \Drupal\markaspot_open311\Service\GeoreportProcessorService $georeport_processor
    *   The processor service.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   *   The language manager service.
+   * @param \Drupal\markaspot_open311\Service\SearchApiQueryService $search_api_query_service
+   *   The Search API query service.
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   The flood service for rate limiting.
    */
   public function __construct(
     array $configuration,
@@ -123,6 +178,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
     RequestStack $request_stack,
     EntityTypeManagerInterface $entity_type_manager,
     GeoreportProcessorService $georeport_processor,
+    LanguageManagerInterface $language_manager,
+    SearchApiQueryService $search_api_query_service,
+    FloodInterface $flood,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -131,7 +189,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $this->requestStack = $request_stack;
     $this->entityTypeManager = $entity_type_manager;
     $this->georeportProcessor = $georeport_processor;
-
+    $this->languageManager = $language_manager;
+    $this->searchApiQueryService = $search_api_query_service;
+    $this->flood = $flood;
   }
 
   /**
@@ -150,7 +210,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $container->get('datetime.time'),
       $container->get('request_stack'),
       $container->get('entity_type.manager'),
-      $container->get('markaspot_open311.processor')
+      $container->get('markaspot_open311.processor'),
+      $container->get('language_manager'),
+      $container->get('markaspot_open311.search_api_query'),
+      $container->get('flood')
     );
   }
 
@@ -256,15 +319,27 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function get() {
+    // Apply rate limiting to protect against DoS attacks.
+    // Moderation, editorial, and admin users are exempt.
+    $this->checkRateLimit('georeport_api_get');
+
     $request_time = $this->time->getRequestTime();
 
     // Get all query parameters first.
     $allParameters = $this->requestStack->getCurrentRequest()->query->all();
 
     // Preserve important API parameters before filtering.
+    // UrlHelper::filterQueryParameters excludes 'q' by default (Drupal search),
+    // but we need it for our Search API integration.
     $preservedParams = [];
     if (isset($allParameters['extensions'])) {
       $preservedParams['extensions'] = $allParameters['extensions'];
+    }
+    if (isset($allParameters['langcode'])) {
+      $preservedParams['langcode'] = $allParameters['langcode'];
+    }
+    if (isset($allParameters['q'])) {
+      $preservedParams['q'] = $allParameters['q'];
     }
 
     // Filter standard Drupal parameters (q, page, _format)
@@ -272,6 +347,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
     // Restore preserved API parameters.
     $parameters = array_merge($parameters, $preservedParams);
+
+    // Resolve language code from Accept-Language header or query param.
+    $parameters['langcode'] = $this->resolveLanguageCode($parameters);
 
     // Start with the secure base query from the processor service.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
@@ -332,14 +410,84 @@ class GeoreportRequestIndexResource extends ResourceBase {
         }
       }
 
-      // Handle sorting - add indexes to these fields in your DB.
-      $sort = (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) ? 'DESC' : 'ASC';
+      // -----------------------------------------------------------------------
+      // SORTING (Mark-a-Spot Extension)
+      // -----------------------------------------------------------------------
+      // Note: The Open311 GeoReport v2 standard does not define a sort
+      // parameter. This is a Mark-a-Spot extension for enhanced usability.
+      //
+      // RECOMMENDED: JSON:API style (use this for new implementations)
+      //   sort=field      Ascending order
+      //   sort=-field     Descending order (prefix with minus)
+      //
+      // Available sort fields:
+      //   - created       Request creation date (default)
+      //   - updated       Last modification date
+      //   - status        Status field
+      //   - service_code  Category/service type
+      //   - request_id    String-based request ID (e.g., "47-2026")
+      //   - nid           Numeric node ID (for proper numeric sorting)
+      //
+      // Examples:
+      //   sort=-created   Newest first (default behavior)
+      //   sort=created    Oldest first
+      //   sort=-nid       Highest ID first (numeric)
+      //   sort=nid        Lowest ID first (numeric)
+      //
+      // DEPRECATED (kept for backward compatibility):
+      //   sort=DESC       Equivalent to sort=-created
+      //   sort=ASC        Equivalent to sort=created
+      //   These legacy values will continue to work but new clients should
+      //   use the JSON:API style format above.
+      // -----------------------------------------------------------------------
+      $sortField = 'created';
+      $sortDirection = 'ASC';
+
+      if (isset($parameters['sort'])) {
+        $sortParam = $parameters['sort'];
+
+        // DEPRECATED: Legacy sort=DESC or sort=ASC (backward compatibility).
+        // Maps to 'created' field only. Use JSON:API style for other fields.
+        if (strcasecmp($sortParam, 'DESC') === 0) {
+          $sortDirection = 'DESC';
+        }
+        elseif (strcasecmp($sortParam, 'ASC') === 0) {
+          $sortDirection = 'ASC';
+        }
+        else {
+          // JSON:API style: '-' prefix indicates descending order.
+          if (str_starts_with($sortParam, '-')) {
+            $sortDirection = 'DESC';
+            $sortParam = substr($sortParam, 1);
+          }
+          else {
+            $sortDirection = 'ASC';
+          }
+
+          // Map API sort field names to Drupal entity fields.
+          // Note: 'nid' provides numeric sorting vs 'request_id' string sorting.
+          $fieldMapping = [
+            'created' => 'created',
+            'updated' => 'changed',
+            'status' => 'field_status',
+            'service_code' => 'field_category',
+            'request_id' => 'request_id',
+            'nid' => 'nid',
+          ];
+
+          if (isset($fieldMapping[$sortParam])) {
+            $sortField = $fieldMapping[$sortParam];
+          }
+        }
+      }
+
+      // Apply the updated filter if present (overrides sort for this use case).
       if (isset($parameters['updated'])) {
         $query->condition('changed', strtotime($parameters['updated']), '>=')
           ->sort('changed', 'DESC');
       }
       else {
-        $query->sort('created', $sort);
+        $query->sort($sortField, $sortDirection);
       }
     }
 
@@ -347,9 +495,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     if (!empty($parameters)) {
       $fields = array_filter(
         $parameters,
-        function ($key) {
-          return(strpos($key, 'field_') !== FALSE);
-        },
+        fn($key) => str_contains($key, 'field_'),
         ARRAY_FILTER_USE_KEY
       );
       foreach ($fields as $field => $value) {
@@ -366,24 +512,63 @@ class GeoreportRequestIndexResource extends ResourceBase {
         ->condition('field_geolocation.lng', $bbox[2], '<');
     }
 
-    // Handle search query (more expensive operation)
-    if (isset($parameters['q'])) {
-      $group = $query->orConditionGroup()
-        ->condition('request_id', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('title', '%' . $parameters['q'] . '%', 'LIKE');
+    // Handle search query using Search API for full-text search.
+    // Falls back to basic LIKE search if Search API is not available.
+    if (isset($parameters['q']) && strlen(trim($parameters['q'])) >= 2) {
+      $searchQuery = trim($parameters['q']);
+      $searchNids = [];
 
-      // Text search on body is expensive, only do if really needed.
-      if (strlen($parameters['q']) > 3) {
-        $group->condition('body', '%' . $parameters['q'] . '%', 'LIKE');
+      // Try Search API first for better full-text search.
+      if ($this->searchApiQueryService->isAvailable()) {
+        $searchOptions = [
+          'limit' => $limit ?? 100,
+          'offset' => $offset ?? 0,
+          'langcode' => $parameters['langcode'] ?? NULL,
+        ];
+
+        $searchNids = $this->searchApiQueryService->search(
+          $searchQuery,
+          $this->currentUser,
+          $searchOptions
+        );
+
+        // If Search API returned results, restrict entity query to those nids.
+        if (!empty($searchNids)) {
+          $query->condition('nid', $searchNids, 'IN');
+        }
+        else {
+          // Search API found no results - return empty.
+          // Only fall back to LIKE search if Search API explicitly failed.
+          $this->logger->debug('Search API returned no results for query: @query', [
+            '@query' => $searchQuery,
+          ]);
+          // Return empty results when Search API finds nothing.
+          return [];
+        }
       }
+      else {
+        // Fall back to basic LIKE search if Search API is not available.
+        $this->logger->notice('Search API not available, using LIKE fallback for query: @query', [
+          '@query' => $searchQuery,
+        ]);
 
-      // Search address field columns (publicly visible fields)
-      $group->condition('field_address.address_line1', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('field_address.address_line2', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('field_address.locality', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('field_address.postal_code', '%' . $parameters['q'] . '%', 'LIKE');
+        $group = $query->orConditionGroup()
+          ->condition('request_id', '%' . $searchQuery . '%', 'LIKE')
+          ->condition('title', '%' . $searchQuery . '%', 'LIKE');
 
-      $query->condition($group);
+        // Text search on body is expensive, only do if query > 3 chars.
+        if (strlen($searchQuery) > 3) {
+          $group->condition('body', '%' . $searchQuery . '%', 'LIKE');
+        }
+
+        // Search address field columns (publicly visible fields).
+        $group->condition('field_address.address_line1', '%' . $searchQuery . '%', 'LIKE')
+          ->condition('field_address.address_line2', '%' . $searchQuery . '%', 'LIKE')
+          ->condition('field_address.locality', '%' . $searchQuery . '%', 'LIKE')
+          ->condition('field_address.postal_code', '%' . $searchQuery . '%', 'LIKE');
+
+        $query->condition($group);
+      }
     }
 
     // Handle status filtering.
@@ -432,6 +617,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function post($request_data) {
+    // Apply stricter rate limiting for POST requests (creates new content).
+    // Moderation, editorial, and admin users are exempt.
+    $this->checkRateLimit('georeport_api_post');
+
     try {
       // Return result to handler for formatting and response.
       return $this->createNode($request_data);
@@ -539,6 +728,180 @@ class GeoreportRequestIndexResource extends ResourceBase {
     else {
       return TRUE;
     }
+  }
+
+  /**
+   * Resolves the language code from request parameters and headers.
+   *
+   * Priority order:
+   * 1. Query parameter 'langcode' (for backwards compatibility and explicit override)
+   * 2. Accept-Language HTTP header
+   * 3. Site default language.
+   *
+   * @param array $parameters
+   *   The query parameters from the request.
+   *
+   * @return string
+   *   The resolved language code.
+   */
+  protected function resolveLanguageCode(array $parameters): string {
+    $languages = $this->languageManager->getLanguages();
+    $defaultLangcode = $this->languageManager->getDefaultLanguage()->getId();
+
+    // Priority 1: Explicit query parameter (backwards compatibility).
+    if (!empty($parameters['langcode'])) {
+      $langcode = $parameters['langcode'];
+      if (isset($languages[$langcode])) {
+        return $langcode;
+      }
+      // Invalid langcode in query param - fall through to header.
+    }
+
+    // Priority 2: Accept-Language header.
+    $request = $this->requestStack->getCurrentRequest();
+    $acceptLanguage = $request->headers->get('Accept-Language');
+
+    if ($acceptLanguage) {
+      // Parse Accept-Language header to extract language codes.
+      // Format: "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7".
+      $langcode = $this->parseAcceptLanguageHeader($acceptLanguage, $languages);
+      if ($langcode) {
+        return $langcode;
+      }
+    }
+
+    // Priority 3: Site default language.
+    return $defaultLangcode;
+  }
+
+  /**
+   * Parses the Accept-Language header and returns the best matching language.
+   *
+   * @param string $acceptLanguage
+   *   The Accept-Language header value.
+   * @param array $availableLanguages
+   *   Array of available language objects keyed by language code.
+   *
+   * @return string|null
+   *   The best matching language code or null if no match found.
+   */
+  protected function parseAcceptLanguageHeader(string $acceptLanguage, array $availableLanguages): ?string {
+    // Parse header into language-quality pairs.
+    $languageRanges = [];
+    $parts = explode(',', $acceptLanguage);
+
+    foreach ($parts as $part) {
+      $part = trim($part);
+      if (empty($part)) {
+        continue;
+      }
+
+      // Split on semicolon to separate language from quality factor.
+      $segments = explode(';', $part);
+      $lang = trim($segments[0]);
+      $quality = 1.0;
+
+      // Check for quality factor (q=0.x).
+      if (isset($segments[1])) {
+        $qPart = trim($segments[1]);
+        if (preg_match('/^q=([0-9.]+)$/i', $qPart, $matches)) {
+          $quality = (float) $matches[1];
+        }
+      }
+
+      $languageRanges[$lang] = $quality;
+    }
+
+    // Sort by quality factor (highest first).
+    arsort($languageRanges);
+
+    // Find best match.
+    foreach ($languageRanges as $lang => $quality) {
+      // Try exact match first (e.g., "de" or "en").
+      if (isset($availableLanguages[$lang])) {
+        return $lang;
+      }
+
+      // Try base language from regional variant (e.g., "de" from "de-DE").
+      $baseLang = strtok($lang, '-');
+      if ($baseLang && isset($availableLanguages[$baseLang])) {
+        return $baseLang;
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Checks if the current user is exempt from rate limiting.
+   *
+   * Exemptions:
+   * 1. Staff roles (admin, moderator, editorial_board, api_editor, api_municipality)
+   * 2. Authenticated frontend users with valid session (uid > 0)
+   *
+   * This allows distinguishing between:
+   * - Nuxt frontend users (session-based) → exempt
+   * - External API consumers (api_key only, no session) → rate limited
+   *
+   * @return bool
+   *   TRUE if the user is exempt from rate limiting, FALSE otherwise.
+   */
+  protected function isExemptFromRateLimit(): bool {
+    // Check if user has any exempt staff role.
+    $userRoles = $this->currentUser->getRoles();
+    foreach (self::RATE_LIMIT_EXEMPT_ROLES as $exemptRole) {
+      if (in_array($exemptRole, $userRoles, TRUE)) {
+        return TRUE;
+      }
+    }
+
+    // Check for valid session (frontend app users).
+    // Session UID > 0 means authenticated via passwordless login.
+    $request = $this->requestStack->getCurrentRequest();
+    if ($request->hasSession()) {
+      $session = $request->getSession();
+      $uid = $session->get('uid');
+      if (!empty($uid) && $uid > 0) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Checks flood control and throws exception if rate limit exceeded.
+   *
+   * @param string $name
+   *   The flood event name (e.g., 'georeport_api_get', 'georeport_api_search').
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Throws 429 Too Many Requests if rate limit exceeded.
+   */
+  protected function checkRateLimit(string $name): void {
+    // Skip rate limiting for exempt users (staff roles).
+    if ($this->isExemptFromRateLimit()) {
+      return;
+    }
+
+    // Get client identifier (IP for anonymous, user ID for authenticated).
+    $identifier = $this->currentUser->isAnonymous()
+      ? $this->requestStack->getCurrentRequest()->getClientIp()
+      : (string) $this->currentUser->id();
+
+    // Check if rate limit exceeded.
+    if (!$this->flood->isAllowed($name, self::RATE_LIMIT_THRESHOLD, self::RATE_LIMIT_WINDOW, $identifier)) {
+      $this->logger->warning('Rate limit exceeded for @name by @identifier', [
+        '@name' => $name,
+        '@identifier' => $identifier,
+      ]);
+      $exception = new GeoreportException('Too many requests. Please slow down.', 429);
+      $exception->setHeaders(['Retry-After' => (string) self::RATE_LIMIT_WINDOW]);
+      throw $exception;
+    }
+
+    // Register this request.
+    $this->flood->register($name, self::RATE_LIMIT_WINDOW, $identifier);
   }
 
 }

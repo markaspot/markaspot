@@ -6,11 +6,14 @@ use Drupal\Core\Controller\ControllerBase;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Datetime\DateFormatterInterface;
+use Drupal\Core\Mail\MailManagerInterface;
+use Drupal\markaspot_service_provider\Event\ServiceProviderResponseEvent;
 
 /**
  * Controller for service provider response requests.
@@ -54,6 +57,20 @@ class ServiceProviderController extends ControllerBase
     protected $dateFormatter;
 
     /**
+     * The event dispatcher.
+     *
+     * @var \Symfony\Component\EventDispatcher\EventDispatcherInterface
+     */
+    protected $eventDispatcher;
+
+    /**
+     * The mail manager.
+     *
+     * @var \Drupal\Core\Mail\MailManagerInterface
+     */
+    protected $mailManager;
+
+    /**
      * Constructs a ServiceProviderController object.
      *
      * @param \Drupal\Core\Entity\EntityTypeManagerInterface    $entity_type_manager
@@ -66,6 +83,10 @@ class ServiceProviderController extends ControllerBase
      *   The config factory.
      * @param \Drupal\Core\Datetime\DateFormatterInterface      $date_formatter
      *   The date formatter service.
+     * @param \Symfony\Component\EventDispatcher\EventDispatcherInterface $event_dispatcher
+     *   The event dispatcher.
+     * @param \Drupal\Core\Mail\MailManagerInterface $mail_manager
+     *   The mail manager.
      */
     public function __construct(
         EntityTypeManagerInterface $entity_type_manager,
@@ -73,12 +94,16 @@ class ServiceProviderController extends ControllerBase
         StateInterface $state,
         ConfigFactoryInterface $config_factory,
         DateFormatterInterface $date_formatter,
+        EventDispatcherInterface $event_dispatcher,
+        MailManagerInterface $mail_manager,
     ) {
         $this->entityTypeManager = $entity_type_manager;
         $this->loggerFactory = $logger_factory;
         $this->state = $state;
         $this->configFactory = $config_factory;
         $this->dateFormatter = $date_formatter;
+        $this->eventDispatcher = $event_dispatcher;
+        $this->mailManager = $mail_manager;
     }
 
     /**
@@ -91,7 +116,9 @@ class ServiceProviderController extends ControllerBase
             $container->get('logger.factory'),
             $container->get('state'),
             $container->get('config.factory'),
-            $container->get('date.formatter')
+            $container->get('date.formatter'),
+            $container->get('event_dispatcher'),
+            $container->get('plugin.manager.mail')
         );
     }
 
@@ -147,7 +174,21 @@ class ServiceProviderController extends ControllerBase
                 if ($node->hasField('field_reassign_sp') && !$node->get('field_reassign_sp')->isEmpty()) {
                     $reassignment_allowed = $node->get('field_reassign_sp')->value;
                 }
-                if (!$reassignment_allowed) {
+
+                // Check if last note is from service provider.
+                // If last note is from moderator, allow submission even without reassignment flag.
+                $last_note_from_sp = false;
+                $last_completion = end($existing_completions);
+                if (!empty($last_completion['value'])) {
+                    $last_note_text = $last_completion['value'];
+                    if (strpos($last_note_text, '<!-- source:sp -->') !== false) {
+                        $last_note_from_sp = true;
+                    } elseif (strpos($last_note_text, '<!-- source:moderator -->') !== false) {
+                        $last_note_from_sp = false;
+                    }
+                }
+
+                if (!$reassignment_allowed && $last_note_from_sp) {
                     $logger->warning(
                         'Service provider @email attempted completion without reassignment flag for node @nid', [
                         '@email' => $email_verification,
@@ -214,6 +255,10 @@ class ServiceProviderController extends ControllerBase
             // Save the node.
             $node->save();
 
+            // Dispatch event for ECA to handle notifications.
+            $event = new ServiceProviderResponseEvent($node, $email_verification ?? '', $data['completion_notes'] ?? '');
+            $this->eventDispatcher->dispatch($event, ServiceProviderResponseEvent::EVENT_NAME);
+
             $logger->notice(
                 'Updated service provider response for node @nid (UUID: @uuid)', [
                 '@nid' => $node->id(),
@@ -244,13 +289,17 @@ class ServiceProviderController extends ControllerBase
     /**
      * Gets service request data by UUID.
      *
-     * @param string $uuid
+     * Returns basic info requiring authentication via POST /auth endpoint.
+     *
+     * @param string                                    $uuid
      *   The UUID of the service request.
+     * @param \Symfony\Component\HttpFoundation\Request $request
+     *   The request object.
      *
      * @return \Symfony\Component\HttpFoundation\JsonResponse
      *   A JSON response with service request data.
      */
-    public function getServiceRequest($uuid): JsonResponse
+    public function getServiceRequest($uuid, Request $request): JsonResponse
     {
         $logger = $this->loggerFactory->get('markaspot_service_provider');
 
@@ -271,47 +320,16 @@ class ServiceProviderController extends ControllerBase
                 return new JsonResponse(['message' => $this->t('Not a service request')], 400);
             }
 
-            // Build response data.
-            $response_data = [
-            'nid' => $node->id(),
-            'uuid' => $node->uuid(),
-            'title' => $node->getTitle(),
-            'created' => $node->getCreatedTime(),
-            'changed' => $node->getChangedTime(),
-            'status' => $node->hasField('field_status') ? $node->get('field_status')->target_id : null,
-            ];
-
-            // Add service provider email information.
-            $service_provider_emails = $this->getServiceProviderEmails($node);
-            if (!empty($service_provider_emails)) {
-                $response_data['service_provider_emails'] = $service_provider_emails;
-                $response_data['service_provider_emails_count'] = count($service_provider_emails);
-            }
-
-            // Add completion notes if they exist.
-            if ($node->hasField('field_service_provider_notes')) {
-                $notes = $node->get('field_service_provider_notes')->getValue();
-                $response_data['completions'] = array_map(
-                    function ($note) {
-                        return $note['value'];
-                    }, $notes
-                );
-                $response_data['completion_count'] = count($notes);
-            }
-
-            // Check reassignment status.
-            if ($node->hasField('field_reassign_sp')) {
-                $response_data['reassignment_allowed'] = (bool) $node->get('field_reassign_sp')->value;
-            }
-
-            $logger->notice(
-                'Retrieved service request data for node @nid (UUID: @uuid)', [
-                '@nid' => $node->id(),
-                '@uuid' => $uuid,
-                ]
+            // GET endpoint no longer accepts email in query string for security.
+            // Return 401 requiring authentication via POST /auth endpoint.
+            return new JsonResponse(
+                [
+                'message' => $this->t('Authentication required'),
+                'error_code' => 'AUTH_REQUIRED',
+                'uuid' => $uuid,
+                'title' => $node->getTitle(),
+                ], 401
             );
-
-            return new JsonResponse($response_data);
         }
         catch (\Exception $e) {
             $logger->error(
@@ -323,6 +341,325 @@ class ServiceProviderController extends ControllerBase
 
             return new JsonResponse(['message' => $this->t('Error retrieving service request')], 500);
         }
+    }
+
+    /**
+     * Authenticates service provider and returns full service request data.
+     *
+     * Uses POST with email in request body for better security (not in URL/logs).
+     *
+     * @param string                                    $uuid
+     *   The UUID of the service request.
+     * @param \Symfony\Component\HttpFoundation\Request $request
+     *   The request object containing email in JSON body.
+     *
+     * @return \Symfony\Component\HttpFoundation\JsonResponse
+     *   A JSON response with full service request data on success.
+     */
+    public function authenticateServiceProvider($uuid, Request $request): JsonResponse
+    {
+        $logger = $this->loggerFactory->get('markaspot_service_provider');
+
+        try {
+            // Get the JSON data from the request body.
+            $content = $request->getContent();
+            $data = json_decode($content, true);
+
+            // Get email from request body.
+            $email = $data['email'] ?? null;
+
+            if (empty($email)) {
+                return new JsonResponse(
+                    [
+                    'message' => $this->t('Email is required'),
+                    'error_code' => 'EMAIL_REQUIRED',
+                    ], 400
+                );
+            }
+
+            // Load the node by UUID.
+            $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['uuid' => $uuid]);
+
+            if (empty($nodes)) {
+                $logger->warning('No node found with UUID: @uuid', ['@uuid' => $uuid]);
+                return new JsonResponse(['message' => $this->t('Service request not found')], 404);
+            }
+
+            $node = reset($nodes);
+
+            // Check if the node is a service request.
+            if ($node->getType() != 'service_request') {
+                $logger->warning('Node with UUID @uuid is not a service request', ['@uuid' => $uuid]);
+                return new JsonResponse(['message' => $this->t('Not a service request')], 400);
+            }
+
+            // Validate email against service provider.
+            $validation_result = $this->validateServiceProviderEmail($node, $email);
+
+            if ($validation_result !== true) {
+                $logger->warning(
+                    'Service provider email validation failed on node @nid', [
+                    '@nid' => $node->id(),
+                    ]
+                );
+                return new JsonResponse(
+                    [
+                    'message' => $this->t('Email not authorized'),
+                    'error_code' => 'EMAIL_NOT_AUTHORIZED',
+                    ], 401
+                );
+            }
+
+            // Email validated. Build full response with all node data.
+            $response_data = $this->buildFullNodeResponse($node);
+
+            $logger->notice(
+                'Authenticated service provider retrieved full data for node @nid (UUID: @uuid)', [
+                '@nid' => $node->id(),
+                '@uuid' => $uuid,
+                ]
+            );
+
+            return new JsonResponse($response_data);
+        }
+        catch (\Exception $e) {
+            $logger->error(
+                'Error authenticating service provider for UUID @uuid: @error', [
+                '@uuid' => $uuid,
+                '@error' => $e->getMessage(),
+                ]
+            );
+
+            return new JsonResponse(['message' => $this->t('Error processing authentication')], 500);
+        }
+    }
+
+    /**
+     * Builds the full node response with all fields for authenticated requests.
+     *
+     * @param \Drupal\node\NodeInterface $node
+     *   The service request node.
+     *
+     * @return array
+     *   Full response data array.
+     */
+    protected function buildFullNodeResponse($node): array
+    {
+        // Get status term.
+        $status_term = null;
+        $status_id = null;
+        if ($node->hasField('field_status') && !$node->get('field_status')->isEmpty()) {
+            $status_id = $node->get('field_status')->target_id;
+            $status_term = $node->get('field_status')->entity;
+        }
+
+        // Get category term.
+        $category_term = null;
+        $category_id = null;
+        if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+            $category_id = $node->get('field_category')->target_id;
+            $category_term = $node->get('field_category')->entity;
+        }
+
+        // Get service provider term.
+        $sp_term = null;
+        if ($node->hasField('field_service_provider') && !$node->get('field_service_provider')->isEmpty()) {
+            $sp_term = $node->get('field_service_provider')->entity;
+        }
+
+        // Build response.
+        $response_data = [
+            // Core node data.
+            'nid' => $node->id(),
+            'uuid' => $node->uuid(),
+            'title' => $node->getTitle(),
+            'created' => $node->getCreatedTime(),
+            'changed' => $node->getChangedTime(),
+            'authenticated' => true,
+
+            // Request ID.
+            'request_id' => $node->hasField('field_request_id') ? $node->get('field_request_id')->value : null,
+
+            // Status with term name.
+            'status' => [
+                'id' => $status_id,
+                'name' => $status_term?->getName(),
+            ],
+
+            // Category with term name.
+            'category' => [
+                'id' => $category_id,
+                'name' => $category_term?->getName(),
+            ],
+
+            // Address.
+            'address' => $node->hasField('field_address') ? $node->get('field_address')->getValue()[0] ?? null : null,
+
+            // Geolocation.
+            'geolocation' => $this->getGeolocation($node),
+
+            // Description.
+            'description' => $node->hasField('field_description') ? $node->get('field_description')->value : null,
+
+            // Photos/Media.
+            'photos' => $this->getMediaUrls($node),
+
+            // Service provider info.
+            'service_provider' => [
+                'id' => $sp_term?->id(),
+                'name' => $sp_term?->getName(),
+            ],
+
+            // Completion data.
+            'completions' => $this->getCompletionNotes($node),
+            'completion_count' => 0,
+            'reassignment_allowed' => (bool) ($node->hasField('field_reassign_sp') ? $node->get('field_reassign_sp')->value : false),
+        ];
+
+        // Set completion count.
+        $response_data['completion_count'] = count($response_data['completions']);
+
+        // Check if last note is from service provider using structured data.
+        $last_note_from_sp = false;
+        if (!empty($response_data['completions'])) {
+            $last_note = end($response_data['completions']);
+            $last_note_from_sp = ($last_note['source'] ?? '') === 'service_provider';
+        }
+        $response_data['last_note_from_sp'] = $last_note_from_sp;
+
+        return $response_data;
+    }
+
+    /**
+     * Gets geolocation data from the node.
+     *
+     * @param \Drupal\node\NodeInterface $node
+     *   The service request node.
+     *
+     * @return array|null
+     *   Geolocation array with lat/lng or null.
+     */
+    protected function getGeolocation($node): ?array
+    {
+        if (!$node->hasField('field_geolocation') || $node->get('field_geolocation')->isEmpty()) {
+            return null;
+        }
+
+        $geo = $node->get('field_geolocation')->first();
+        if (!$geo) {
+            return null;
+        }
+
+        return [
+            'lat' => $geo->get('lat')->getValue(),
+            'lng' => $geo->get('lng')->getValue(),
+        ];
+    }
+
+    /**
+     * Gets media URLs from the node.
+     *
+     * @param \Drupal\node\NodeInterface $node
+     *   The service request node.
+     *
+     * @return array
+     *   Array of photo data with url and alt.
+     */
+    protected function getMediaUrls($node): array
+    {
+        $photos = [];
+
+        if (!$node->hasField('field_request_media') || $node->get('field_request_media')->isEmpty()) {
+            return $photos;
+        }
+
+        foreach ($node->get('field_request_media') as $item) {
+            $media = $item->entity;
+            if (!$media) {
+                continue;
+            }
+
+            // Check for image field on media entity.
+            if ($media->hasField('field_media_image') && !$media->get('field_media_image')->isEmpty()) {
+                $file = $media->get('field_media_image')->entity;
+                if ($file) {
+                    // Use relative URL to avoid internal hostname issues with proxied requests.
+                    $photos[] = [
+                        'url' => \Drupal::service('file_url_generator')
+                            ->generateString($file->getFileUri()),
+                        'alt' => $media->get('field_media_image')->alt ?? '',
+                    ];
+                }
+            }
+        }
+
+        return $photos;
+    }
+
+    /**
+     * Gets completion notes from the node as structured data.
+     *
+     * @param \Drupal\node\NodeInterface $node
+     *   The service request node.
+     *
+     * @return array
+     *   Array of structured completion note objects with keys:
+     *   - text: The message content (before metadata)
+     *   - source: 'service_provider' or 'moderator'
+     *   - author: The author name or email
+     *   - date: The timestamp string
+     *   - raw: The original HTML for rendering
+     */
+    protected function getCompletionNotes($node): array
+    {
+        if (!$node->hasField('field_service_provider_notes') || $node->get('field_service_provider_notes')->isEmpty()) {
+            return [];
+        }
+
+        $notes = $node->get('field_service_provider_notes')->getValue();
+        return array_map(
+            function ($note) {
+                return $this->parseCompletionNote($note['value']);
+            }, $notes
+        );
+    }
+
+    /**
+     * Parses a completion note into structured data.
+     *
+     * @param string $raw_note
+     *   The raw HTML note content.
+     *
+     * @return array
+     *   Structured note data.
+     */
+    protected function parseCompletionNote(string $raw_note): array
+    {
+        $result = [
+            'text' => '',
+            'source' => 'unknown',
+            'author' => '',
+            'date' => '',
+            'raw' => $raw_note,
+        ];
+
+        // Split by --- separator (handles both HTML and plain text formats).
+        $parts = preg_split('/(<br\s*\/?>\s*)*---(<br\s*\/?>)?|\n---\n?/', $raw_note, 2);
+
+        if (!empty($parts[0])) {
+            // Clean up the text part (remove leading/trailing br tags).
+            $text = preg_replace('/^(<br\s*\/?>|\s)+|(<br\s*\/?>|\s)+$/i', '', $parts[0]);
+            $result['text'] = trim(strip_tags($text));
+        }
+
+        // Determine source from marker.
+        if (strpos($raw_note, '<!-- source:sp -->') !== false) {
+            $result['source'] = 'service_provider';
+        } elseif (strpos($raw_note, '<!-- source:moderator -->') !== false) {
+            $result['source'] = 'moderator';
+        }
+
+        return $result;
     }
 
     /**
@@ -488,7 +825,8 @@ class ServiceProviderController extends ControllerBase
         $this->t('Abgeschlossen am: @timestamp', ['@timestamp' => $timestamp]) . "\n" .
         $this->t('Dienstleister: @name', ['@name' => $service_provider_name ?: $this->t('Unbekannt')]);
 
-        $completion_entry = $completion_notes . $metadata_footer;
+        // Add source marker for language-agnostic parsing.
+        $completion_entry = '<!-- source:sp -->' . $completion_notes . $metadata_footer;
 
         // Convert line breaks to <br> tags for proper display in WYSIWYG and frontend.
         // nl2br() converts \n to <br>\n.

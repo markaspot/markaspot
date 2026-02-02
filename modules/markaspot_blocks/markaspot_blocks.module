@@ -1,1 +1,6 @@
 <?php
+
+/**
+ * @file
+ * Contains block-related hooks for Mark-a-Spot.
+ */

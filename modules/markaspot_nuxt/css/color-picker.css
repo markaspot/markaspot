@@ -1,0 +1,45 @@
+/**
+ * @file
+ * Styles for the color picker widget.
+ */
+
+.color-picker-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.color-picker-container > .form-item {
+  margin-bottom: 0;
+}
+
+.color-picker-container .color-tailwind-select {
+  min-width: 150px;
+}
+
+.color-picker-container .color-custom-picker {
+  width: 60px;
+  height: 38px;
+  padding: 2px;
+  cursor: pointer;
+}
+
+.color-picker-container .description {
+  flex-basis: 100%;
+  margin-top: -0.5rem;
+  color: var(--gin-color-text-light, #666);
+}
+
+.color-picker-container .description small {
+  font-size: 0.85em;
+}
+
+/* Color preview in select options - future enhancement */
+.color-picker-container select option[data-color] {
+  padding-left: 24px;
+  background-repeat: no-repeat;
+  background-position: 4px center;
+  background-size: 14px 14px;
+}

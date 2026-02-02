@@ -45,7 +45,7 @@ class GeolocationMapboxWidget extends WidgetBase {
       'streetNumberFormat' => 0,
       'dragging' => TRUE,
       'zoomControl' => FALSE,
-      'tab' => TRUE
+      'tab' => TRUE,
     ] + parent::defaultSettings();
   }
 

@@ -1,0 +1,23 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+    - user.role.moderator
+id: org-insider
+label: Moderator
+weight: 2
+admin: false
+scope: insider
+global_role: moderator
+group_type: org
+permissions:
+  - 'access group_node overview'
+  - 'create group_node:service_request entity'
+  - 'update any group_node:service_request entity'
+  - 'update own group_node:service_request entity'
+  - 'view group'
+  - 'view group_node:service_request entity'
+  - 'view group_node:service_request relationship'
+  - 'view own unpublished group_node:service_request entity'
+  - 'view unpublished group_node:service_request entity'

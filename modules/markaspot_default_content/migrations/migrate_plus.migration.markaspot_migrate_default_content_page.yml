@@ -5,14 +5,19 @@ source:
   plugin: csv
   path: /artifacts/page.csv
   header_row_count: 1
-  ids: [title]
+  ids: [uuid]
 process:
+  uuid: uuid
+  langcode:
+    plugin: default_value
+    default_value: en
   title: title
   body/value: body
   body/format:
     plugin: default_value
     default_value: full_html
+  field_page_icon: field_page_icon
 destination:
   plugin: 'entity:node'
   default_bundle: page
-migration_dependencies: {} # Add this line
+migration_dependencies: {}

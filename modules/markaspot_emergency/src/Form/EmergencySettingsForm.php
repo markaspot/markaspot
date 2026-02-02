@@ -118,7 +118,8 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('auto_deactivate.duration'),
       '#description' => $this->t('Number of hours after which emergency mode will be automatically deactivated.'),
       '#min' => 1,
-      '#max' => 168, // 1 week
+    // 1 week
+      '#max' => 168,
       '#states' => [
         'visible' => [
           // Match the nested element name to ensure the state works.
@@ -145,7 +146,7 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#type' => 'textarea',
       '#title' => $this->t('Allowed URLs (one per line)'),
       '#default_value' => implode("\n", $default_allowed),
-      '#description' => $this->t('Paths that will NOT be redirected during emergency or maintenance force-redirect (e.g., "/", "/sos", "/api/system/status"). One per line; must start with "/".'),
+      '#description' => $this->t('Paths that will NOT be redirected during emergency or maintenance force-redirect (e.g., "/", "/sos", "/api/emergency-mode/status"). One per line; must start with "/".'),
       '#rows' => 4,
     ];
 
@@ -192,7 +193,7 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#description' => $this->t('Optional message shown by the frontend while maintenance mode is active.'),
     ];
 
-    // CAP Banner Configuration
+    // CAP Banner Configuration.
     $form['banner'] = [
       '#type' => 'details',
       '#title' => $this->t('CAP Alert Banner System'),
@@ -340,13 +341,17 @@ class EmergencySettingsForm extends ConfigFormBase {
       ->set('auto_deactivate.enabled', $form_state->getValue('enabled'))
       ->set('auto_deactivate.duration', $form_state->getValue('duration'))
       // Normalize allowed URLs from textarea (one per line, ensure leading slash, unique, non-empty)
-      ->set('allowed_urls', (function($raw) {
+      ->set('allowed_urls', (function ($raw) {
         $lines = preg_split('/\r\n|\r|\n/', (string) $raw);
         $clean = [];
         foreach ($lines as $line) {
           $v = trim($line);
-          if ($v === '') { continue; }
-          if ($v[0] !== '/') { $v = '/' . $v; }
+          if ($v === '') {
+            continue;
+          }
+          if ($v[0] !== '/') {
+            $v = '/' . $v;
+          }
           $clean[] = $v;
         }
         return array_values(array_unique($clean));
@@ -357,7 +362,7 @@ class EmergencySettingsForm extends ConfigFormBase {
       ->set('maintenance.show_only_categories', array_values(array_filter(array_map(function ($item) {
         return isset($item['target_id']) ? (int) $item['target_id'] : NULL;
       }, (array) $form_state->getValue('maintenance_show_only_categories')))))
-      // CAP Banner configuration
+      // CAP Banner configuration.
       ->set('banner.enabled', (bool) $form_state->getValue('banner_enabled'))
       ->set('banner.message', (string) $form_state->getValue('banner_message'))
       ->set('banner.level', (string) $form_state->getValue('banner_level'))
@@ -388,9 +393,11 @@ class EmergencySettingsForm extends ConfigFormBase {
       $controller->activate($request);
 
       $this->messenger()->addStatus($this->t('Emergency mode has been activated.'));
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       $this->messenger()->addError($this->t('Error activating emergency mode: @error', ['@error' => $e->getMessage()]));
-    } catch (\Error $e) {
+    }
+    catch (\Error $e) {
       $this->messenger()->addError($this->t('Error activating emergency mode: @error', ['@error' => $e->getMessage()]));
     }
   }
@@ -409,9 +416,11 @@ class EmergencySettingsForm extends ConfigFormBase {
       $controller->deactivate($request);
 
       $this->messenger()->addStatus($this->t('Emergency mode has been deactivated.'));
-    } catch (\Exception $e) {
+    }
+    catch (\Exception $e) {
       $this->messenger()->addError($this->t('Error deactivating emergency mode: @error', ['@error' => $e->getMessage()]));
-    } catch (\Error $e) {
+    }
+    catch (\Error $e) {
       $this->messenger()->addError($this->t('Error deactivating emergency mode: @error', ['@error' => $e->getMessage()]));
     }
   }

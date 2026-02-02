@@ -1,0 +1,39 @@
+multiple_uploads: 1
+auth_type: 'bearer'
+api_key: ''
+api_url: 'https://api.openai.com/v1/chat/completions'
+ai_model: 'gpt-4o'
+system_prompt: ''
+image_prompt: |
+  Analyze the provided image(s) for a citizen reporting platform.
+
+  ## Tasks:
+  1. **Scene Analysis**: Describe visible objects, infrastructure issues, or problems.
+  2. **Categorization**: Select ONE category from: {categories}. Return the numeric tid only.
+  3. **Hazard Assessment**: Evaluate safety risks using CAP (Common Alerting Protocol) standards.
+
+  ## Response Format (valid JSON only, no markdown):
+  {
+    "category": <tid_number>,
+    "description": "<description_max_500_chars>",
+    "alt_text": ["<accessibility_text_per_image_max_125_chars>"],
+    "hazard_flag": <true_if_hazard_detected>,
+    "hazard_level": <0-4_CAP_severity>,
+    "hazard_category": "<CAP_category_code_or_null>",
+    "hazard_issues": ["<specific_hazard_descriptions>"],
+    "privacy_flag": <true_if_privacy_concern>,
+    "privacy_issues": ["<privacy_concern_descriptions>"]
+  }
+
+  ## CAP Hazard Levels:
+  0=Unknown, 1=Minor, 2=Moderate, 3=Severe, 4=Extreme
+
+  ## CAP Hazard Categories:
+  Infra (utilities, roads), Transport (traffic), Safety (trip hazards, public safety),
+  Env (pollution), Fire, Health, Geo (landslide), Met (flooding), Other
+
+  ## Rules:
+  - Return valid JSON without code blocks or markdown formatting.
+  - description: Detailed description in {language}, citizen perspective.
+  - alt_text: One entry per image in {language}, accessibility-friendly.
+  - hazard_category: Use CAP code or null if no hazard.

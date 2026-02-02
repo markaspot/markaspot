@@ -77,7 +77,7 @@ class GeoreportDiscoveryResource extends ResourceBase {
     LoggerInterface $logger,
     ConfigFactoryInterface $config,
     AccountProxyInterface $current_user,
-    GeoreportProcessorService $georeport_processor
+    GeoreportProcessorService $georeport_processor,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->config = $config->getEditable('markaspot_open311.settings');

@@ -1,0 +1,13 @@
+services:
+  cache.markaspot_bbox_cache:
+    class: Drupal\Core\Cache\CacheBackendInterface
+    tags:
+      - { name: cache.bin }
+    factory: cache_factory:get
+    arguments: [markaspot_bbox_cache]
+
+  markaspot_bbox_cache.event_subscriber:
+    class: Drupal\markaspot_bbox_cache\EventSubscriber\BboxCacheSubscriber
+    arguments: ['@cache.markaspot_bbox_cache', '@config.factory']
+    tags:
+      - { name: event_subscriber }

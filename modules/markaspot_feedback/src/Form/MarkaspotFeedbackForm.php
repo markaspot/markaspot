@@ -8,7 +8,7 @@ use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 
 /**
- *
+ * Form for submitting feedback on service requests.
  */
 class MarkaspotFeedbackForm extends FormBase {
 
@@ -22,7 +22,13 @@ class MarkaspotFeedbackForm extends FormBase {
   }
 
   /**
+   * Checks if a service request with the given UUID exists.
    *
+   * @param string $uuid
+   *   The UUID to validate.
+   *
+   * @return \Drupal\node\NodeInterface|false
+   *   The node entity if found, FALSE otherwise.
    */
   public function isValid($uuid) {
     $nodes = \Drupal::entityTypeManager()->getStorage('node')->loadByProperties(['uuid' => $uuid]);

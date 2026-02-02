@@ -13,7 +13,6 @@ use Drupal\field\Entity\FieldConfig;
  */
 function markaspot_emergency_install() {
   // Fields are created automatically from config/install.
-
   // Ensure any previous runtime state is cleared.
   \Drupal::state()->delete('markaspot_emergency.original_published_tids');
 
@@ -35,7 +34,8 @@ function markaspot_emergency_install() {
         $term = $storage->create([
           'vid' => 'service_category',
           'name' => $preset['name'],
-          'status' => 0, // Unpublished by default.
+        // Unpublished by default.
+          'status' => 0,
           'field_emergency_category' => TRUE,
           'weight' => $preset['weight'] ?? 0,
         ]);

@@ -1,0 +1,139 @@
+markaspot_open311.settings:
+  type: config_object
+  label: 'Mark-a-Spot Open311 Settings'
+  mapping:
+    # Content Type Settings
+    bundle:
+      type: string
+      label: 'Content type for service requests'
+    tax_category:
+      type: string
+      label: 'Taxonomy vocabulary for categories'
+    tax_status:
+      type: string
+      label: 'Taxonomy vocabulary for status'
+
+    # Status Configuration
+    status_open:
+      type: sequence
+      label: 'Open status term IDs'
+      sequence:
+        type: string
+    status_closed:
+      type: sequence
+      label: 'Closed status term IDs'
+      sequence:
+        type: string
+    status_open_start:
+      type: string
+      label: 'Initial open status term ID'
+
+    # Status Notes Configuration
+    status_note_auto_create:
+      type: boolean
+      label: 'Auto-create status notes'
+    status_note_created:
+      type: string
+      label: 'Status note on creation'
+    status_note_changed:
+      type: string
+      label: 'Status note on status change'
+
+    # Field Access Configuration
+    field_access:
+      type: mapping
+      label: 'Field access settings'
+      mapping:
+        public_fields:
+          type: sequence
+          label: 'Publicly visible fields'
+          sequence:
+            type: string
+        user_fields:
+          type: sequence
+          label: 'User visible fields'
+          sequence:
+            type: string
+        manager_fields:
+          type: sequence
+          label: 'Manager visible fields'
+          sequence:
+            type: string
+
+    # General Settings
+    node_options_status:
+      type: string
+      label: 'Default node publish status'
+    nid_limit:
+      type: string
+      label: 'Node ID limit'
+    nid-limit:
+      type: string
+      label: 'Node ID limit (legacy key)'
+    revisions:
+      type: boolean
+      label: 'Enable revisions'
+
+    # Discovery/API Metadata
+    changeset:
+      type: string
+      label: 'API changeset timestamp'
+    key_service:
+      type: string
+      label: 'API key service URL'
+    type:
+      type: string
+      label: 'API type (production/test)'
+    contact:
+      type: string
+      label: 'API contact information'
+    link_domain:
+      type: string
+      label: 'Link domain override'
+      nullable: true
+
+    # Discovery Endpoint Configuration
+    discovery:
+      type: mapping
+      label: 'Open311 discovery settings'
+      mapping:
+        changeset:
+          type: string
+          label: 'Discovery changeset'
+        contact:
+          type: string
+          label: 'Discovery contact'
+        key_service:
+          type: string
+          label: 'Discovery key service'
+        endpoints:
+          type: sequence
+          label: 'API endpoints'
+          sequence:
+            type: mapping
+            mapping:
+              changeset:
+                type: string
+                label: 'Endpoint changeset'
+              specification:
+                type: string
+                label: 'Specification URL'
+              type:
+                type: string
+                label: 'Endpoint type'
+              formats:
+                type: sequence
+                label: 'Supported formats'
+                sequence:
+                  type: string
+
+    # Group Integration Settings
+    group_filter_enabled:
+      type: boolean
+      label: 'Enable group-based filtering'
+    group_filter_type:
+      type: string
+      label: 'Organisation group type machine name'
+    jurisdiction_group_type:
+      type: string
+      label: 'Jurisdiction group type machine name'

@@ -5,9 +5,6 @@
  * Install, update and uninstall functions for the markaspot installation profile.
  */
 
-use Drupal\user\Entity\User;
-use Drupal\user\RoleInterface;
-use Drupal\shortcut\Entity\Shortcut;
 use Drupal\node\Entity\Node;
 
 /**
@@ -20,35 +17,35 @@ function markaspot_update_8001() {
 /**
  * Update the stats view.
  */
-function markaspot_update_8002( ){
+function markaspot_update_8002() {
   \Drupal::configFactory()->getEditable('views.view.stats')->delete();
   \Drupal::service('module_installer')->install(['markaspot_trend']);
 }
 
 /**
- * Enable Mark-a-Spot Front module
+ * Enable Mark-a-Spot Front module.
  */
-function markaspot_update_8003( ){
+function markaspot_update_8003() {
   \Drupal::service('module_installer')->install(['markaspot_front']);
 }
 
 /**
- * Enable Mark-a-Spot Request ID module
+ * Enable Mark-a-Spot Request ID module.
  */
-function markaspot_update_8004( ){
+function markaspot_update_8004() {
   \Drupal::service('module_installer')->install(['markaspot_request_id']);
   markaspot_update_ids();
 }
 
 /**
- * Move Service Request IDs
+ * Move Service Request IDs.
  */
-function markaspot_update_ids(){
+function markaspot_update_ids() {
 
   $nids = \Drupal::entityQuery('node')
     ->accessCheck(FALSE)
-    ->condition('type','service_request')->execute();
-  $nodes =  \Drupal\node\Entity\Node::loadMultiple($nids);
+    ->condition('type', 'service_request')->execute();
+  $nodes = Node::loadMultiple($nids);
 
   foreach ($nodes as $node) {
     $node->set('request_id', $node->uuid());
@@ -58,9 +55,9 @@ function markaspot_update_ids(){
 }
 
 /**
- * Disable Shariff module
+ * Disable Shariff module.
  */
-function markaspot_update_9600( ){
+function markaspot_update_9600() {
   \Drupal::service("module_installer")->uninstall(["shariff"]);
 }
 
@@ -103,12 +100,543 @@ function markaspot_update_9700() {
 function markaspot_update_9701() {
   $module_handler = \Drupal::moduleHandler();
 
-  // Check if markaspot_map is installed
+  // Check if markaspot_map is installed.
   if ($module_handler->moduleExists('markaspot_map')) {
     return t('The markaspot_map module is now optional. It is only needed if you use Drupal theme-based map blocks. For headless setups using markaspot_nuxt, all map configuration is now stored independently in markaspot_nuxt.settings. You can uninstall markaspot_map if you only use the Nuxt frontend: drush pm:uninstall markaspot_map');
   }
 
   return t('Mark-a-Spot Map module was not installed.');
+}
+
+/**
+ * Uninstall deprecated markaspot_privacy module.
+ */
+function markaspot_update_9702() {
+  $module_handler = \Drupal::moduleHandler();
+
+  if ($module_handler->moduleExists('markaspot_privacy')) {
+    \Drupal::service('module_installer')->uninstall(['markaspot_privacy']);
+    return t('The markaspot_privacy module has been uninstalled. Privacy features are now handled by the Nuxt frontend.');
+  }
+
+  return t('The markaspot_privacy module was not installed.');
+}
+
+/**
+ * Repair entity definitions that may be missing after database imports.
+ *
+ * This update fixes a common issue when importing production databases to
+ * development environments. The entity.definitions.installed key_value entries
+ * may be incomplete, causing subsequent module installations to fail with
+ * errors like "Table information not available for the 'field_*' field".
+ *
+ * This must run before any update that installs modules depending on
+ * entity field definitions (like markaspot_group which depends on gnode).
+ */
+function markaspot_update_11799() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $kv = \Drupal::keyValue('entity.definitions.installed');
+  $field_manager = \Drupal::service('entity_field.manager');
+
+  // Entity types with SQL storage that need field_storage_definitions.
+  $content_entity_types = [
+    'block_content', 'comment', 'file', 'media', 'node',
+    'paragraph', 'path_alias', 'shortcut', 'taxonomy_term', 'user',
+    'group', 'group_relationship',
+  ];
+
+  $fixed = [];
+  foreach ($content_entity_types as $entity_type_id) {
+    try {
+      $def = $entity_type_manager->getDefinition($entity_type_id, FALSE);
+      if (!$def) {
+        continue;
+      }
+
+      // Store entity type definition if missing.
+      $stored_type = $kv->get($entity_type_id . '.entity_type');
+      if (!$stored_type) {
+        $kv->set($entity_type_id . '.entity_type', $def);
+        $fixed[] = $entity_type_id . '.entity_type';
+      }
+
+      // Store field storage definitions if missing.
+      $stored_fields = $kv->get($entity_type_id . '.field_storage_definitions');
+      if (!$stored_fields) {
+        $field_defs = $field_manager->getFieldStorageDefinitions($entity_type_id);
+        if (!empty($field_defs)) {
+          $kv->set($entity_type_id . '.field_storage_definitions', $field_defs);
+          $fixed[] = $entity_type_id . '.field_storage_definitions';
+        }
+      }
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot')->warning('Could not repair entity definitions for @type: @message', [
+        '@type' => $entity_type_id,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  if (!empty($fixed)) {
+    return t('Repaired missing entity definitions: @items', [
+      '@items' => implode(', ', $fixed),
+    ]);
+  }
+
+  return t('All entity definitions were already in place.');
+}
+
+/**
+ * Install json_form_widget module for markaspot_nuxt.
+ *
+ * This update must run before 11801 to ensure the json_form_widget module
+ * is available. Sites upgrading from 11.7.x may not have it installed yet,
+ * as it was previously a hard dependency of markaspot_nuxt.
+ */
+function markaspot_update_11800() {
+  $module_handler = \Drupal::moduleHandler();
+
+  // Check if markaspot_nuxt is enabled (indicating this is an upgrade).
+  if (!$module_handler->moduleExists('markaspot_nuxt')) {
+    return t('markaspot_nuxt module not installed. Skipping json_form_widget installation.');
+  }
+
+  // Install json_form_widget if not already present.
+  if (!$module_handler->moduleExists('json_form_widget')) {
+    try {
+      \Drupal::service('module_installer')->install(['json_form_widget']);
+      return t('Successfully installed json_form_widget module required by markaspot_nuxt.');
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot')->error('Failed to install json_form_widget: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      return t('Failed to install json_form_widget: @message. Please install it manually: drush en json_form_widget', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  return t('json_form_widget module already installed.');
+}
+
+/**
+ * Configure group type settings for legacy sites.
+ *
+ * Detects if the site uses legacy group type naming ('organisation' instead
+ * of 'org', 'jurisdiction' instead of 'jur') and configures the settings
+ * accordingly. This allows legacy sites to continue using their existing
+ * group types without migration.
+ *
+ * Also creates a default jurisdiction group if none exists, populating it
+ * with values from existing site configuration.
+ */
+function markaspot_update_11801() {
+  // Check if Group module is installed.
+  $module_handler = \Drupal::moduleHandler();
+  if (!$module_handler->moduleExists('group')) {
+    return t('Group module not installed. Skipping group type configuration.');
+  }
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $group_type_storage = $entity_type_manager->getStorage('group_type');
+  $group_storage = $entity_type_manager->getStorage('group');
+  $config = \Drupal::configFactory()->getEditable('markaspot_open311.settings');
+  $changes = [];
+
+  // Detect legacy organisation naming.
+  $has_organisation = $group_type_storage->load('organisation') !== NULL;
+  $has_org = $group_type_storage->load('org') !== NULL;
+
+  if ($has_organisation && !$has_org) {
+    $config->set('group_filter_type', 'organisation');
+    $changes[] = 'group_filter_type = organisation';
+  }
+
+  // Detect legacy jurisdiction naming.
+  $has_jurisdiction = $group_type_storage->load('jurisdiction') !== NULL;
+  $has_jur = $group_type_storage->load('jur') !== NULL;
+
+  if ($has_jurisdiction && !$has_jur) {
+    $config->set('jurisdiction_group_type', 'jurisdiction');
+    $changes[] = 'jurisdiction_group_type = jurisdiction';
+  }
+
+  // Determine active jurisdiction group type.
+  $jur_type = NULL;
+  if ($has_jur) {
+    $jur_type = 'jur';
+  }
+  elseif ($has_jurisdiction) {
+    $jur_type = 'jurisdiction';
+  }
+
+  // Create default jurisdiction group if none exists.
+  if ($jur_type) {
+    $existing_groups = $group_storage->loadByProperties(['type' => $jur_type]);
+
+    if (empty($existing_groups)) {
+      $default_group = _markaspot_create_default_jurisdiction($jur_type, $group_storage);
+      if ($default_group) {
+        $changes[] = t('Created default jurisdiction group: @name', [
+          '@name' => $default_group->label(),
+        ]);
+      }
+    }
+  }
+
+  if (!empty($changes)) {
+    $config->save();
+    return implode("\n", $changes);
+  }
+
+  return t('No legacy group type naming detected. Using default settings.');
+}
+
+/**
+ * Creates a default jurisdiction group from existing site configuration.
+ *
+ * @param string $group_type
+ *   The jurisdiction group type ID ('jur' or 'jurisdiction').
+ * @param \Drupal\Core\Entity\EntityStorageInterface $group_storage
+ *   The group entity storage.
+ *
+ * @return \Drupal\group\Entity\GroupInterface|null
+ *   The created group entity, or NULL on failure.
+ */
+function _markaspot_create_default_jurisdiction($group_type, $group_storage) {
+  $config_factory = \Drupal::configFactory();
+
+  // Get site name for the group label.
+  $site_config = $config_factory->get('system.site');
+  $site_name = $site_config->get('name') ?: 'Default Jurisdiction';
+
+  // Generate slug from site name.
+  $slug = \Drupal::service('transliteration')->transliterate($site_name);
+  $slug = preg_replace('/[^a-z0-9]+/i', '-', strtolower($slug));
+  $slug = trim($slug, '-');
+  $slug = substr($slug, 0, 64);
+
+  // Build nuxt_config from existing markaspot_nuxt.settings.
+  $nuxt_config = $config_factory->get('markaspot_nuxt.settings');
+  $nuxt_json = [];
+
+  if ($nuxt_config && !$nuxt_config->isNew()) {
+    // Map center.
+    $center_lat = $nuxt_config->get('center_lat');
+    $center_lng = $nuxt_config->get('center_lng');
+    $zoom = $nuxt_config->get('zoom_initial');
+
+    if ($center_lat && $center_lng) {
+      $nuxt_json['map'] = [
+        'center' => [$center_lng, $center_lat],
+        'zoom' => $zoom ?: 13,
+      ];
+    }
+
+    // Client info from site config.
+    $nuxt_json['client'] = [
+      'name' => $site_name,
+      'shortName' => substr($site_name, 0, 20),
+    ];
+  }
+
+  // Create the group entity.
+  $group_data = [
+    'type' => $group_type,
+    'label' => $site_name,
+    'status' => 1,
+  ];
+
+  $group = $group_storage->create($group_data);
+
+  // Set field_slug if available.
+  if ($group->hasField('field_slug')) {
+    $group->set('field_slug', $slug);
+  }
+
+  // Set field_nuxt_config if available.
+  if ($group->hasField('field_nuxt_config') && !empty($nuxt_json)) {
+    $group->set('field_nuxt_config', json_encode($nuxt_json, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+  }
+
+  try {
+    $group->save();
+    return $group;
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot')->error('Failed to create default jurisdiction: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+    return NULL;
+  }
+}
+
+/**
+ * Install markaspot_group module and create jur group field infrastructure.
+ *
+ * Sites upgrading from 7.x need the markaspot_group module installed and
+ * the jur group type with all required fields for the Nuxt frontend.
+ */
+function markaspot_update_11802() {
+  $module_handler = \Drupal::moduleHandler();
+  $messages = [];
+
+  // Step 1: Install markaspot_group module if not present.
+  if (!$module_handler->moduleExists('markaspot_group')) {
+    try {
+      \Drupal::service('module_installer')->install(['markaspot_group']);
+      $messages[] = t('Installed markaspot_group module with jur/org group types.');
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot')->error('Failed to install markaspot_group: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      return t('Failed to install markaspot_group module: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+  else {
+    $messages[] = t('markaspot_group module already installed.');
+  }
+
+  // Step 2: Create missing field storages not included in module's config.
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $field_storage_config = $entity_type_manager->getStorage('field_storage_config');
+
+  $missing_storages = [
+    'field_slug' => [
+      'field_name' => 'field_slug',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 64],
+    ],
+    'field_logo_dark' => [
+      'field_name' => 'field_logo_dark',
+      'entity_type' => 'group',
+      'type' => 'image',
+      'cardinality' => 1,
+      'settings' => [
+        'uri_scheme' => 'public',
+        'default_image' => [
+          'uuid' => NULL,
+          'alt' => '',
+          'title' => '',
+          'width' => NULL,
+          'height' => NULL,
+        ],
+        'target_type' => 'file',
+        'display_field' => FALSE,
+        'display_default' => FALSE,
+      ],
+    ],
+    'field_logo_light' => [
+      'field_name' => 'field_logo_light',
+      'entity_type' => 'group',
+      'type' => 'image',
+      'cardinality' => 1,
+      'settings' => [
+        'uri_scheme' => 'public',
+        'default_image' => [
+          'uuid' => NULL,
+          'alt' => '',
+          'title' => '',
+          'width' => NULL,
+          'height' => NULL,
+        ],
+        'target_type' => 'file',
+        'display_field' => FALSE,
+        'display_default' => FALSE,
+      ],
+    ],
+    'field_font_body' => [
+      'field_name' => 'field_font_body',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 255],
+    ],
+    'field_font_heading' => [
+      'field_name' => 'field_font_heading',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 255],
+    ],
+    'field_custom_css' => [
+      'field_name' => 'field_custom_css',
+      'entity_type' => 'group',
+      'type' => 'text_long',
+      'cardinality' => 1,
+      'module' => 'text',
+    ],
+  ];
+
+  foreach ($missing_storages as $field_name => $definition) {
+    $existing = $field_storage_config->load('group.' . $field_name);
+    if (!$existing) {
+      try {
+        $field_storage_config->create($definition)->save();
+        $messages[] = t('Created field storage: @field', ['@field' => $field_name]);
+      }
+      catch (\Exception $e) {
+        \Drupal::logger('markaspot')->warning('Could not create field storage @field: @message', [
+          '@field' => $field_name,
+          '@message' => $e->getMessage(),
+        ]);
+      }
+    }
+  }
+
+  // Step 3: Create field instances on jur group type.
+  $field_config = $entity_type_manager->getStorage('field_config');
+  $group_type_storage = $entity_type_manager->getStorage('group_type');
+
+  // Determine jur group type (could be 'jur' or 'jurisdiction').
+  $jur_type = NULL;
+  if ($group_type_storage->load('jur')) {
+    $jur_type = 'jur';
+  }
+  elseif ($group_type_storage->load('jurisdiction')) {
+    $jur_type = 'jurisdiction';
+  }
+
+  if ($jur_type) {
+    $field_instances = [
+      'field_slug' => [
+        'field_name' => 'field_slug',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'URL Slug',
+        'description' => 'Short identifier for URLs (e.g., "bonn", "koeln")',
+        'required' => FALSE,
+      ],
+      'field_logo_dark' => [
+        'field_name' => 'field_logo_dark',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Logo (Dark Mode)',
+        'required' => FALSE,
+      ],
+      'field_logo_light' => [
+        'field_name' => 'field_logo_light',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Logo (Light Mode)',
+        'required' => FALSE,
+      ],
+      'field_font_body' => [
+        'field_name' => 'field_font_body',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Body Font',
+        'description' => 'Font family for body text',
+        'required' => FALSE,
+      ],
+      'field_font_heading' => [
+        'field_name' => 'field_font_heading',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Heading Font',
+        'description' => 'Font family for headings',
+        'required' => FALSE,
+      ],
+      'field_custom_css' => [
+        'field_name' => 'field_custom_css',
+        'entity_type' => 'group',
+        'bundle' => $jur_type,
+        'label' => 'Custom CSS',
+        'description' => 'Custom CSS for this jurisdiction',
+        'required' => FALSE,
+      ],
+    ];
+
+    foreach ($field_instances as $field_name => $definition) {
+      $existing = $field_config->load('group.' . $jur_type . '.' . $field_name);
+      if (!$existing) {
+        // Check if field storage exists.
+        $storage = $field_storage_config->load('group.' . $field_name);
+        if ($storage) {
+          try {
+            $field_config->create($definition)->save();
+            $messages[] = t('Created field instance: @field on @type', [
+              '@field' => $field_name,
+              '@type' => $jur_type,
+            ]);
+          }
+          catch (\Exception $e) {
+            \Drupal::logger('markaspot')->warning('Could not create field @field: @message', [
+              '@field' => $field_name,
+              '@message' => $e->getMessage(),
+            ]);
+          }
+        }
+      }
+    }
+  }
+
+  return empty($messages) ? t('Jur group infrastructure already complete.') : implode("\n", $messages);
+}
+
+/**
+ * Create field_all_groups_member on user entity for Group 3 upgrade.
+ *
+ * This field allows marking users as automatic members of all groups.
+ * Required after upgrading from Group 2.x to 3.x.
+ */
+function markaspot_update_11803() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Check if field storage already exists.
+  $field_storage = $entity_type_manager
+    ->getStorage('field_storage_config')
+    ->load('user.field_all_groups_member');
+
+  if (!$field_storage) {
+    // Create field storage.
+    $field_storage = $entity_type_manager
+      ->getStorage('field_storage_config')
+      ->create([
+        'field_name' => 'field_all_groups_member',
+        'entity_type' => 'user',
+        'type' => 'boolean',
+        'cardinality' => 1,
+        'translatable' => TRUE,
+        'settings' => [],
+      ]);
+    $field_storage->save();
+    \Drupal::messenger()->addStatus(t('Created field_all_groups_member storage on user entity.'));
+  }
+
+  // Check if field instance exists.
+  $field_config = $entity_type_manager
+    ->getStorage('field_config')
+    ->load('user.user.field_all_groups_member');
+
+  if (!$field_config) {
+    // Create field instance.
+    $field_config = $entity_type_manager
+      ->getStorage('field_config')
+      ->create([
+        'field_storage' => $field_storage,
+        'bundle' => 'user',
+        'label' => 'All Groups Member',
+        'description' => 'When enabled, this user will automatically become a member of all existing and future groups with admin role.',
+        'required' => FALSE,
+        'default_value' => [['value' => 0]],
+        'settings' => [
+          'on_label' => t('Yes'),
+          'off_label' => t('No'),
+        ],
+      ]);
+    $field_config->save();
+    \Drupal::messenger()->addStatus(t('Created field_all_groups_member field on user bundle.'));
+  }
+
+  return t('field_all_groups_member field ensured on user entity.');
 }
 
 /**
@@ -121,7 +649,7 @@ function markaspot_requirements($phase) {
     $info = \Drupal::service('extension.list.profile')->get('markaspot');
     $requirements['markaspot_profile'] = [
       'title' => t('Mark-a-Spot'),
-      'value' => isset($info->info['version']) ? $info->info['version'] : t('Unknown'),
+      'value' => $info->info['version'] ?? t('Unknown'),
       'severity' => REQUIREMENT_INFO,
     ];
   }

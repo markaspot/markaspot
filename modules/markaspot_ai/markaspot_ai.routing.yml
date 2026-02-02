@@ -1,0 +1,169 @@
+markaspot_ai.settings:
+  path: '/admin/config/services/markaspot-ai'
+  defaults:
+    _form: '\Drupal\markaspot_ai\Form\MarkaspotAiSettingsForm'
+    _title: 'Mark-a-Spot AI Settings'
+  requirements:
+    _permission: 'administer markaspot ai'
+
+markaspot_ai.duplicates:
+  path: '/api/ai/duplicates/{node}'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\DuplicateController::getDuplicates'
+    _title: 'Get Duplicate Matches'
+  methods: [GET]
+  requirements:
+    _permission: 'access ai insights'
+    node: \d+
+  options:
+    _format: 'json'
+    parameters:
+      node:
+        type: entity:node
+
+markaspot_ai.duplicate_review:
+  path: '/api/ai/duplicates/{match}/review'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\DuplicateController::reviewMatch'
+    _title: 'Review Duplicate Match'
+  methods: [POST]
+  requirements:
+    _permission: 'review ai duplicates'
+    match: \d+
+  options:
+    _format: 'json'
+
+markaspot_ai.duplicate_scan:
+  path: '/api/ai/duplicates/{node}/scan'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\DuplicateController::scanNode'
+    _title: 'Scan Node for Duplicates'
+  methods: [POST]
+  requirements:
+    _permission: 'review ai duplicates'
+    node: \d+
+  options:
+    _format: 'json'
+    parameters:
+      node:
+        type: entity:node
+
+markaspot_ai.pending_matches:
+  path: '/api/ai/duplicates/pending'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\DuplicateController::getPendingMatches'
+    _title: 'Pending Duplicate Matches'
+  methods: [GET]
+  requirements:
+    _permission: 'review ai duplicates'
+  options:
+    _format: 'json'
+
+markaspot_ai.usage:
+  path: '/api/ai/usage'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\UsageController::getUsage'
+    _title: 'AI Usage Statistics'
+  methods: [GET]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'
+
+markaspot_ai.usage_summary:
+  path: '/api/ai/usage/summary'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\UsageController::getSummary'
+    _title: 'AI Usage Summary'
+  methods: [GET]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'
+
+# Sentiment Analysis Routes
+markaspot_ai.sentiment:
+  path: '/api/ai/sentiment/{node}'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\SentimentController::getSentiment'
+    _title: 'Get Sentiment Analysis'
+  methods: [GET]
+  requirements:
+    _permission: 'view ai sentiment'
+    node: \d+
+  options:
+    _format: 'json'
+    parameters:
+      node:
+        type: entity:node
+
+markaspot_ai.sentiment_analyze:
+  path: '/api/ai/sentiment/{node}/analyze'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\SentimentController::analyzeNode'
+    _title: 'Analyze Node Sentiment'
+  methods: [POST]
+  requirements:
+    _permission: 'administer markaspot ai'
+    node: \d+
+  options:
+    _format: 'json'
+    parameters:
+      node:
+        type: entity:node
+
+markaspot_ai.sentiment_stats:
+  path: '/api/ai/sentiment/stats'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\SentimentController::getStatistics'
+    _title: 'Sentiment Statistics'
+  methods: [GET]
+  requirements:
+    _permission: 'view ai sentiment'
+  options:
+    _format: 'json'
+
+markaspot_ai.sentiment_frustrated:
+  path: '/api/ai/sentiment/frustrated'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\SentimentController::getFrustrated'
+    _title: 'Frustrated Reports'
+  methods: [GET]
+  requirements:
+    _permission: 'view ai sentiment'
+  options:
+    _format: 'json'
+
+# Processing Control Routes (Dashboard)
+markaspot_ai.processing_status:
+  path: '/api/ai/processing/status'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\ProcessingController::getStatus'
+    _title: 'AI Processing Status'
+  methods: [GET]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'
+
+markaspot_ai.processing_queue:
+  path: '/api/ai/processing/queue'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\ProcessingController::queueMissing'
+    _title: 'Queue Missing Items'
+  methods: [POST]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'
+
+markaspot_ai.processing_run:
+  path: '/api/ai/processing/run'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\ProcessingController::processQueue'
+    _title: 'Process AI Queue'
+  methods: [POST]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'

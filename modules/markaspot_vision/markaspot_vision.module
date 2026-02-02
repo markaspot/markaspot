@@ -1,0 +1,44 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_vision.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_vision_help(string $route_name, RouteMatchInterface $route_match): string {
+  switch ($route_name) {
+    case 'help.page.markaspot_vision':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('AI-powered image analysis for automatic categorization, hazard detection, and privacy screening using GPT-4 Vision.') . '</p>';
+      return $output;
+
+    default:
+      return '';
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ *
+ * Automatically unpublishes media entities flagged with privacy issues.
+ */
+function markaspot_vision_node_insert(NodeInterface $node): void {
+  if ($node->bundle() === 'service_request') {
+    $media_field = $node->get('field_request_media');
+    if (!$media_field->isEmpty()) {
+      foreach ($media_field->referencedEntities() as $media) {
+        if (!empty($media->get('field_ai_privacy_flag')->value)) {
+          $media->setUnpublished();
+          $media->save();
+        }
+      }
+    }
+  }
+}

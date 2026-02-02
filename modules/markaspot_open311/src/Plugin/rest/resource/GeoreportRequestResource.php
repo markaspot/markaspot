@@ -114,8 +114,8 @@ class GeoreportRequestResource extends ResourceBase {
    */
   public function __construct(
     array $configuration,
-                               $plugin_id,
-                               $plugin_definition,
+    $plugin_id,
+    $plugin_definition,
     array $serializer_formats,
     LoggerInterface $logger,
     AccountProxyInterface $current_user,
@@ -124,7 +124,7 @@ class GeoreportRequestResource extends ResourceBase {
     TimeInterface $time,
     RequestStack $request_stack,
     EntityTypeManagerInterface $entity_type_manager,
-    GeoreportProcessorService $georeport_processor
+    GeoreportProcessorService $georeport_processor,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -246,19 +246,19 @@ class GeoreportRequestResource extends ResourceBase {
   public function get(string $id) {
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
 
-    // Start with the secure base query
+    // Start with the secure base query.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
 
-    // Add bundle condition
+    // Add bundle condition.
     $bundle = $this->config->get('bundle') ?? 'service_request';
     $query->condition('type', $bundle);
 
-    // Handle the main request ID
+    // Handle the main request ID.
     if ($id != "") {
       $query->condition('request_id', $this->getRequestId($id));
     }
 
-    // Handle additional ID parameter if present
+    // Handle additional ID parameter if present.
     if (isset($parameters['id'])) {
       $query->condition('request_id', $parameters['id']);
     }
@@ -311,7 +311,8 @@ class GeoreportRequestResource extends ResourceBase {
       throw new NotFoundHttpException('Service request not found.');
     }
 
-    $node = reset($nodes); // Assuming single matching node for the request ID.
+    // Assuming single matching node for the request ID.
+    $node = reset($nodes);
 
     if (!$node instanceof ContentEntityInterface) {
       throw new \Exception('Loaded entity is not a content entity.');
@@ -346,10 +347,10 @@ class GeoreportRequestResource extends ResourceBase {
    *   An associative array of field values to update.
    */
   protected function processUpdateFields(ContentEntityInterface $node, array $values): void {
-    // Handle media updates first
+    // Handle media updates first.
     if (isset($values['_media_updates'])) {
       $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates'], $node);
-      // Don't process this as a field
+      // Don't process this as a field.
       unset($values['_media_updates']);
     }
 
@@ -432,7 +433,7 @@ class GeoreportRequestResource extends ResourceBase {
    * @param array $values
    *   An associative array of field values to update.
    *
-   * @return $service_request for later response
+   * @return bool
    *   TRUE if the node was successfully validated and updated, FALSE otherwise.
    */
   protected function validateAndUpdateNode(ContentEntityInterface $node, array $values): bool {
@@ -446,14 +447,15 @@ class GeoreportRequestResource extends ResourceBase {
         '%request_id' => $node->request_id->value,
       ]);
       return TRUE;
-    } else {
+    }
+    else {
       $this->logger->error('Updated entity %type with ID %request_id.', [
         '%type' => $node->getEntityTypeId(),
         '%request_id' => $node->request_id->value,
-      ]);      return FALSE;
+      ]);
+      return FALSE;
     }
   }
-
 
   /**
    * Return the service_request_id.
@@ -504,7 +506,7 @@ class GeoreportRequestResource extends ResourceBase {
         ]);
       }
 
-      // Convert errors to a string for the response
+      // Convert errors to a string for the response.
       $detailedMessage = json_encode($errors);
       throw new GeoreportException($detailedMessage, 400);
 

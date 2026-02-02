@@ -6,8 +6,11 @@
  * based on Zebralog DSGVO for Drupal 7
  */
 
+use Drupal\Core\Entity\EntityFormInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
 use Drupal\Core\Routing\RouteMatchInterface;
-use \Drupal\Core\Render\Element;
+use Drupal\Core\Render\Element;
 
 /**
  * Implements hook_help().
@@ -47,7 +50,7 @@ function _add_terms_of_use(array &$form) {
       '#required' => TRUE,
       '#title' => t('GDPR'),
       '#description' => t('By checking this box, you agree to our terms and that you have read our <a class="use-ajax" data-dialog-type="modal" href="@privacy_url">Data Use Policy</a>, including our <a class="use-ajax" data-dialog-type="modal" href="@privacy_url">Cookie Use</a>.', [
-        '@privacy_url' => \Drupal\Core\Url::fromUserInput('/privacy-policy-terms-service')->toString(),
+        '@privacy_url' => Url::fromUserInput('/privacy-policy-terms-service')->toString(),
       ]),
       '#weight' => $weight + 1,
     ];
@@ -58,16 +61,16 @@ function _add_terms_of_use(array &$form) {
 /**
  * Implements hook_form_alter().
  */
-function markaspot_privacy_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
-  if ($form_state->getFormObject() instanceof \Drupal\Core\Entity\EntityFormInterface){
+function markaspot_privacy_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if ($form_state->getFormObject() instanceof EntityFormInterface) {
     $entity_type = $form_state->getFormObject()->getEntity()->getEntityTypeId();
     // Add terms of use checkbox in forms for new nodes.
     if ($entity_type == 'node' || $entity_type == 'comment') {
       $config = \Drupal::configFactory()
-      ->getEditable('markaspot_privacy.settings')->get();
+        ->getEditable('markaspot_privacy.settings')->get();
 
       // Add a "terms of use" checkbox in node forms, if a new node will be created.
-      if ((isset($config['field_save']) && $config['field_save'] === 0 )) {
+      if ((isset($config['field_save']) && $config['field_save'] === 0)) {
         _add_terms_of_use($form);
         unset($form['field_gdpr']);
       }
@@ -75,7 +78,10 @@ function markaspot_privacy_form_alter(&$form, \Drupal\Core\Form\FormStateInterfa
   }
 }
 
-function markaspot_privacy_get_weight($form){
+/**
+ *
+ */
+function markaspot_privacy_get_weight($form) {
   $elements = Element::getVisibleChildren($form);
   $weight = 0;
   foreach ($elements as $el) {

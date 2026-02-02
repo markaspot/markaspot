@@ -1,0 +1,72 @@
+markaspot_ai.settings:
+  type: config_object
+  label: 'Mark-a-Spot AI settings'
+  mapping:
+    default_provider:
+      type: string
+      label: 'Default AI Provider'
+    providers:
+      type: mapping
+      label: 'AI Providers'
+      mapping:
+        openai:
+          type: mapping
+          label: 'OpenAI Configuration'
+          mapping:
+            api_key:
+              type: string
+              label: 'API Key'
+            api_url:
+              type: uri
+              label: 'API URL'
+            chat_model:
+              type: string
+              label: 'Chat Model'
+            embedding_model:
+              type: string
+              label: 'Embedding Model'
+            auth_type:
+              type: string
+              label: 'Authentication Type'
+    duplicate_detection:
+      type: mapping
+      label: 'Duplicate Detection Settings'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Enable Duplicate Detection'
+        similarity_threshold:
+          type: float
+          label: 'Similarity Threshold'
+        radius_meters:
+          type: integer
+          label: 'Search Radius (meters)'
+        time_window_days:
+          type: integer
+          label: 'Time Window (days)'
+        auto_flag:
+          type: boolean
+          label: 'Auto-flag Duplicates'
+    token_tracking:
+      type: mapping
+      label: 'Token Tracking Settings'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Enable Token Tracking'
+        daily_limit:
+          type: integer
+          label: 'Daily Token Limit'
+        alert_threshold:
+          type: float
+          label: 'Alert Threshold'
+    sentiment_analysis:
+      type: mapping
+      label: 'Sentiment Analysis Settings'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Enable Sentiment Analysis'
+        model:
+          type: string
+          label: 'Model for Sentiment Analysis'

@@ -5,3 +5,17 @@ fa_icon_class.description:
     _controller: '\Drupal\fa_icon_class\Controller\FaIconController::description'
   requirements:
     _permission: 'access content'
+
+# API endpoint to render an icon as SVG
+fa_icon_class.api.render:
+  path: '/api/iconify_field/render/{icon}'
+  defaults:
+    _controller: '\Drupal\fa_icon_class\Controller\FaIconController::renderIcon'
+  methods:
+    - GET
+  requirements:
+    _access: 'TRUE'
+  options:
+    parameters:
+      icon:
+        type: 'string'

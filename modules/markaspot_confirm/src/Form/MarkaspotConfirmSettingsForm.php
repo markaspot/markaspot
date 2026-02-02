@@ -34,7 +34,7 @@ class MarkaspotConfirmSettingsForm extends ConfigFormBase {
       '#group' => 'settings',
     ];
 
-    // Email Template Settings
+    // Email Template Settings.
     $form['markaspot_confirm']['email'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Email Template Settings'),
@@ -59,7 +59,7 @@ class MarkaspotConfirmSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
-    // API Settings
+    // API Settings.
     $form['markaspot_confirm']['api'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('API Settings'),
@@ -92,16 +92,16 @@ class MarkaspotConfirmSettingsForm extends ConfigFormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
 
-    // Extract values from fieldsets following markaspot_feedback pattern
+    // Extract values from fieldsets following markaspot_feedback pattern.
     $email = $values['email'] ?? [];
     $api = $values['api'] ?? [];
 
     $this->config('markaspot_confirm.settings')
-      // Email settings
+      // Email settings.
       ->set('email.subject', $email['subject'] ?? $values['subject'])
       ->set('email.body', $email['body'] ?? $values['body'])
 
-      // API settings
+      // API settings.
       ->set('api.success_message', $api['success_message'] ?? $values['success_message'])
       ->set('api.not_found_message', $api['not_found_message'] ?? $values['not_found_message'])
       ->save();

@@ -1,0 +1,21 @@
+uuid: 29139974-bd69-4e21-bae7-79731be740c9
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+  module:
+    - group
+id: org-admin
+label: Administrator
+weight: -100
+admin: true
+scope: individual
+global_role: null
+group_type: org
+permissions:
+  - 'administer group'
+  - 'edit group'
+  - 'view group'
+  - 'delete group'
+  - 'leave group'

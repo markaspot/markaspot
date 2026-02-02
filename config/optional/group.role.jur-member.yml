@@ -1,0 +1,17 @@
+uuid: 3d4acab0-0c43-461a-9f6e-7141d86660dc
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+  module:
+    - group
+id: jur-member
+label: Member
+weight: 0
+admin: false
+scope: individual
+global_role: null
+group_type: jur
+permissions:
+  - 'view group'

@@ -108,7 +108,7 @@ class IconMigrationForm extends FormBase {
       ],
     ];
 
-    // Preview the mapping
+    // Preview the mapping.
     $form['preview'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Icon Mapping Preview'),

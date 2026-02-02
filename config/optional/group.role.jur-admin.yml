@@ -1,0 +1,21 @@
+uuid: a0394bec-ac0d-434a-82c2-4a4f55cbdedc
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+  module:
+    - group
+id: jur-admin
+label: Administrator
+weight: -100
+admin: true
+scope: individual
+global_role: null
+group_type: jur
+permissions:
+  - 'administer group'
+  - 'edit group'
+  - 'view group'
+  - 'delete group'
+  - 'leave group'

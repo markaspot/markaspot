@@ -25,3 +25,7 @@ discovery:
         - text/xml
         - application/json
 nid-limit: ''
+# Group Integration Settings
+group_filter_enabled: false
+group_filter_type: 'org'
+jurisdiction_group_type: 'jur'

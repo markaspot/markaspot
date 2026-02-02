@@ -1,10 +1,15 @@
 <?php
+
 namespace Drupal\markaspot_language;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\field\Entity\FieldConfig;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
+/**
+ * Service for managing taxonomy translation settings.
+ */
 class MarkaspotLanguageTaxonomy {
   /**
    * The config factory.
@@ -47,7 +52,7 @@ class MarkaspotLanguageTaxonomy {
         ->set('language_alterable', TRUE)
         ->save();
 
-      // Enable translation for name and description fields
+      // Enable translation for name and description fields.
       $fieldConfig = ['name', 'description'];
       foreach ($fieldConfig as $fieldName) {
         $fieldConfig = $this->configFactory->getEditable('core.base_field_override.taxonomy_term.' . $vocabulary_id . '.' . $fieldName);
@@ -56,6 +61,32 @@ class MarkaspotLanguageTaxonomy {
         }
       }
     }
+  }
+
+  /**
+   * Enable translation for the body field on specific node bundles.
+   *
+   * @param string[] $bundles
+   *   Node bundles to update.
+   * @param string $fieldName
+   *   Field machine name to update.
+   *
+   * @return int
+   *   The number of field configs updated.
+   */
+  public function enableTranslationForNodeBodyFields(array $bundles = ['page', 'boilerplate'], $fieldName = 'body') {
+    $updated = 0;
+
+    foreach ($bundles as $bundle) {
+      $field = FieldConfig::loadByName('node', $bundle, $fieldName);
+      if ($field && !$field->isTranslatable()) {
+        $field->setTranslatable(TRUE);
+        $field->save();
+        $updated++;
+      }
+    }
+
+    return $updated;
   }
 
   /**
@@ -74,5 +105,5 @@ class MarkaspotLanguageTaxonomy {
         ->save();
     }
   }
-}
 
+}

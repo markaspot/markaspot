@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_ui\Form;
 
+use Drupal\Core\Url;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 
@@ -115,7 +116,7 @@ class MarkaspotUiSettingsForm extends ConfigFormBase {
 
       // Validate it's an internal path.
       try {
-        $url = \Drupal\Core\Url::fromUserInput($path);
+        $url = Url::fromUserInput($path);
         if ($url->isExternal()) {
           $form_state->setErrorByName('login_redirect_path', $this->t('Redirect path must be an internal path starting with /.'));
         }

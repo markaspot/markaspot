@@ -1,0 +1,21 @@
+uuid: 11adad09-8df7-49bc-a5d6-4a6f08fe4c7f
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_status_internal
+    - node.type.service_request
+  module:
+    - options
+id: node.service_request.field_status_internal
+field_name: field_status_internal
+entity_type: node
+bundle: service_request
+label: 'Internal Status'
+description: 'Status of internal processing of the request.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: list_string

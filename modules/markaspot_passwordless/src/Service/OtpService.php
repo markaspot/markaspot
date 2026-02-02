@@ -95,7 +95,7 @@ class OtpService {
     LoggerInterface $logger,
     ConfigFactoryInterface $config_factory,
     EntityTypeManagerInterface $entity_type_manager,
-    LanguageManagerInterface $language_manager
+    LanguageManagerInterface $language_manager,
   ) {
     $this->database = $database;
     $this->mailManager = $mail_manager;
@@ -142,7 +142,8 @@ class OtpService {
 
     // Invalidate any existing codes for this email.
     $this->database->update('markaspot_passwordless_codes')
-      ->fields(['verified' => 2]) // Mark as invalidated
+    // Mark as invalidated.
+      ->fields(['verified' => 2])
       ->condition('email', $email)
       ->condition('verified', 0)
       ->execute();
@@ -311,7 +312,8 @@ class OtpService {
       // Auto-create user if they don't exist.
       try {
         $user = User::create([
-          'name' => $email, // Use email as username
+        // Use email as username.
+          'name' => $email,
           'mail' => $email,
           'status' => 1,
           'roles' => ['authenticated'],
@@ -353,7 +355,8 @@ class OtpService {
     $params = [
       'code' => $code,
       'email' => $email,
-      'expires_in' => $code_lifetime / 60, // Convert to minutes
+    // Convert to minutes.
+      'expires_in' => $code_lifetime / 60,
     ];
 
     try {

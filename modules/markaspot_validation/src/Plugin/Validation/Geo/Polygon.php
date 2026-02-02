@@ -30,7 +30,7 @@ class Polygon {
    * @param array|null $points
    *   The polygon points.
    */
-  public function __construct(array $points = NULL) {
+  public function __construct(?array $points = NULL) {
     if ($points) {
       $this->setPoints($points);
     }

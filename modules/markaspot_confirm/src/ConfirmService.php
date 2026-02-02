@@ -6,9 +6,8 @@ use Drupal\Core\Entity\EntityTypeManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 
-
 /**
- * Class ArchiveService.
+ * Service for handling service request confirmations.
  */
 class ConfirmService implements ConfirmServiceInterface {
 
@@ -43,7 +42,13 @@ class ConfirmService implements ConfirmServiceInterface {
   }
 
   /**
+   * Loads service request nodes by UUID.
+   *
+   * @param string $uuid
+   *   The UUID of the service request.
+   *
    * @return \Drupal\Core\Entity\EntityInterface[]
+   *   An array of loaded node entities.
    */
   public function load($uuid) {
     $storage = $this->entityTypeManager->getStorage('node');
@@ -52,7 +57,7 @@ class ConfirmService implements ConfirmServiceInterface {
       ->condition('uuid', $uuid);
     $query->accessCheck(FALSE);
 
-    $nids  = $query->execute();
+    $nids = $query->execute();
     return $storage->loadMultiple($nids);
   }
 
@@ -61,13 +66,13 @@ class ConfirmService implements ConfirmServiceInterface {
    *
    * @param string $uuid
    *   The UUID of the service request.
+   *
    * @return string
    *   The confirmation URL.
    */
   public function generateConfirmationUrl($uuid) {
-    // Use the central frontend URL service
+    // Use the central frontend URL service.
     return $this->frontendUrlService->generateConfirmationUrl($uuid);
   }
-
 
 }

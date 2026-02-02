@@ -1,5 +1,15 @@
 <?php
 
-  function markaspot_media_form_editor_image_dialog_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
-    $form['attributes']['alt']['#required'] = FALSE;
-  }
+/**
+ * @file
+ * Contains media-related hooks for Mark-a-Spot.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ * Implements hook_form_FORM_ID_alter() for editor_image_dialog.
+ */
+function markaspot_media_form_editor_image_dialog_alter(&$form, FormStateInterface $form_state, $form_id) {
+  $form['attributes']['alt']['#required'] = FALSE;
+}

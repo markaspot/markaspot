@@ -1,0 +1,15 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+    - user.role.anonymous
+id: jur-anonymous
+label: Anonymous
+weight: -102
+admin: false
+scope: outsider
+global_role: anonymous
+group_type: jur
+permissions:
+  - 'view group_node:service_request entity'

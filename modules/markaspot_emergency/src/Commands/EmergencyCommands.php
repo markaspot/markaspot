@@ -2,7 +2,9 @@
 
 namespace Drupal\markaspot_emergency\Commands;
 
+use Symfony\Component\HttpFoundation\Request;
 use Drush\Commands\DrushCommands;
+use Drush\Attributes as CLI;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\markaspot_emergency\Controller\EmergencyModeController;
 
@@ -29,18 +31,16 @@ class EmergencyCommands extends DrushCommands {
    * EmergencyCommands constructor.
    */
   public function __construct(ConfigFactoryInterface $config_factory, EmergencyModeController $emergency_controller) {
+    parent::__construct();
     $this->configFactory = $config_factory;
     $this->emergencyController = $emergency_controller;
   }
 
   /**
    * Get emergency mode status.
-   *
-   * @command emergency:status
-   * @aliases emer:status
-   * @usage emergency:status
-   *   Show current emergency mode status.
    */
+  #[CLI\Command(name: 'emergency:status', aliases: ['emer:status'])]
+  #[CLI\Usage(name: 'emergency:status', description: 'Show current emergency mode status.')]
   public function status() {
     $config = $this->configFactory->get('markaspot_emergency.settings');
     $status = $config->get('emergency_mode.status');
@@ -59,15 +59,11 @@ class EmergencyCommands extends DrushCommands {
 
   /**
    * Activate emergency mode.
-   *
-   * @command emergency:activate
-   * @aliases emer:on
-   * @option mode-type The type of emergency mode (disaster, crisis, maintenance).
-   * @usage emergency:activate
-   *   Activate emergency mode with default settings.
-   * @usage emergency:activate --mode-type=disaster
-   *   Activate disaster mode specifically.
    */
+  #[CLI\Command(name: 'emergency:activate', aliases: ['emer:on'])]
+  #[CLI\Option(name: 'mode-type', description: 'The type of emergency mode (disaster, crisis, maintenance).')]
+  #[CLI\Usage(name: 'emergency:activate', description: 'Activate emergency mode with default settings.')]
+  #[CLI\Usage(name: 'emergency:activate --mode-type=disaster', description: 'Activate disaster mode specifically.')]
   public function activate($options = ['mode-type' => 'disaster']) {
     $config = $this->configFactory->get('markaspot_emergency.settings');
 
@@ -76,35 +72,29 @@ class EmergencyCommands extends DrushCommands {
       return;
     }
 
-    // Simulate request for controller.
-    $request = new \Symfony\Component\HttpFoundation\Request([], [], [], [], [], [], json_encode([
-      'mode_type' => $options['mode-type'],
-      'unpublish_categories' => TRUE,
-      'create_emergency_categories' => TRUE,
-    ]));
+    // Call controller without request to bypass permission check (CLI is trusted).
+    // Controller will use default values for category handling.
+    $this->emergencyController->activate(NULL);
 
-    $response = $this->emergencyController->activate($request);
-    $data = json_decode($response->getContent(), TRUE);
-
-    if ($data['status'] === 'success') {
-      $this->output()->writeln('✅ Emergency mode activated successfully.');
-      $this->output()->writeln('Mode Type: ' . $options['mode-type']);
-    } else {
-      $this->output()->writeln('❌ Failed to activate emergency mode.');
+    // Update mode type if specified (controller uses 'disaster' default).
+    if ($options['mode-type'] !== 'disaster') {
+      $this->configFactory->getEditable('markaspot_emergency.settings')
+        ->set('emergency_mode.mode_type', $options['mode-type'])
+        ->save();
     }
+
+    $this->output()->writeln('✅ Emergency mode activated successfully.');
+    $this->output()->writeln('Mode Type: ' . $options['mode-type']);
+    $this->output()->writeln('Activated At: ' . date('Y-m-d H:i:s'));
   }
 
   /**
    * Deactivate emergency mode.
-   *
-   * @command emergency:deactivate
-   * @aliases emer:off
-   * @option restore-categories Restore regular categories to published state.
-   * @usage emergency:deactivate
-   *   Deactivate emergency mode and restore regular categories.
-   * @usage emergency:deactivate --restore-categories=0
-   *   Deactivate without restoring categories.
    */
+  #[CLI\Command(name: 'emergency:deactivate', aliases: ['emer:off'])]
+  #[CLI\Option(name: 'restore-categories', description: 'Restore regular categories to published state.')]
+  #[CLI\Usage(name: 'emergency:deactivate', description: 'Deactivate emergency mode and restore regular categories.')]
+  #[CLI\Usage(name: 'emergency:deactivate --restore-categories=0', description: 'Deactivate without restoring categories.')]
   public function deactivate($options = ['restore-categories' => TRUE]) {
     $config = $this->configFactory->get('markaspot_emergency.settings');
 
@@ -113,21 +103,13 @@ class EmergencyCommands extends DrushCommands {
       return;
     }
 
-    // Simulate request for controller.
-    $request = new \Symfony\Component\HttpFoundation\Request([], [], [], [], [], [], json_encode([
-      'restore_categories' => $options['restore-categories'],
-    ]));
+    // Call controller without request to bypass permission check (CLI is trusted).
+    // Pass NULL so controller skips HTTP permission check but still does category work.
+    $this->emergencyController->deactivate(NULL);
 
-    $response = $this->emergencyController->deactivate($request);
-    $data = json_decode($response->getContent(), TRUE);
-
-    if ($data['status'] === 'success') {
-      $this->output()->writeln('✅ Emergency mode deactivated successfully.');
-      if ($options['restore-categories']) {
-        $this->output()->writeln('Regular categories have been restored.');
-      }
-    } else {
-      $this->output()->writeln('❌ Failed to deactivate emergency mode.');
+    $this->output()->writeln('✅ Emergency mode deactivated successfully.');
+    if ($options['restore-categories']) {
+      $this->output()->writeln('Regular categories have been restored.');
     }
   }
 

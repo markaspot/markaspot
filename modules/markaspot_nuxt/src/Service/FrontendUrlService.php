@@ -44,7 +44,7 @@ class FrontendUrlService {
       }
     }
 
-    // Fallback to environment variable for backward compatibility
+    // Fallback to environment variable for backward compatibility.
     $frontend_base_url_env = getenv('FRONTEND_BASE_URL');
     if ($frontend_base_url_env) {
       return rtrim($frontend_base_url_env, '/');
@@ -73,13 +73,13 @@ class FrontendUrlService {
       return $frontend_base_url . '/' . ltrim($path, '/');
     }
 
-    // Fallback to Drupal route if provided
+    // Fallback to Drupal route if provided.
     if ($fallback_route) {
       $url = Url::fromRoute($fallback_route, $route_parameters);
       return $url->setAbsolute()->toString();
     }
 
-    // Final fallback to current site base URL + path
+    // Final fallback to current site base URL + path.
     global $base_url;
     return rtrim($base_url, '/') . '/' . ltrim($path, '/');
   }

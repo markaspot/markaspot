@@ -1,0 +1,16 @@
+markaspot_bbox_cache.settings:
+  type: config_object
+  label: 'Mark-a-Spot Bbox Cache settings'
+  mapping:
+    cache_time:
+      type: integer
+      label: 'Cache time in seconds'
+    cache_by_zoom:
+      type: boolean
+      label: 'Cache by zoom level groups'
+    exclude_params:
+      type: sequence
+      label: 'Parameters to exclude from cache key'
+      sequence:
+        type: string
+        label: 'Parameter name'

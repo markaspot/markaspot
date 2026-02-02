@@ -1,0 +1,14 @@
+uuid: 25052f43-78ef-4872-b66e-2fb553df1e38
+langcode: en
+status: true
+dependencies:
+  module:
+    - group
+id: org
+label: Organisation
+description: "Organisation or department responsible for handling service requests within a jurisdiction."
+new_revision: true
+creator_membership: true
+creator_wizard: true
+creator_roles:
+  - org-admin

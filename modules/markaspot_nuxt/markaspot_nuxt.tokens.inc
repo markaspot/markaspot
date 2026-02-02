@@ -1,5 +1,10 @@
 <?php
 
+/**
+ * @file
+ * Token hooks for Mark-a-Spot Nuxt module.
+ */
+
 use Drupal\Core\Render\BubbleableMetadata;
 
 /**

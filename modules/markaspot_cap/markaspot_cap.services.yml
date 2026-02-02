@@ -1,0 +1,21 @@
+services:
+  markaspot_cap.encoder:
+    class: Drupal\markaspot_cap\Encoder\CapEncoder
+
+  markaspot_cap.serializer.encoder.cap:
+    class: Drupal\markaspot_cap\Encoder\CapEncoder
+    tags:
+      - { name: encoder, format: cap }
+
+  markaspot_cap.processor:
+    class: Drupal\markaspot_cap\Service\CapProcessorService
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+
+  markaspot_cap.format_subscriber:
+    class: Drupal\markaspot_cap\EventSubscriber\CapFormatSubscriber
+    arguments:
+      - '@config.factory'
+    tags:
+      - { name: event_subscriber }

@@ -5,6 +5,7 @@
  * Contains markaspot_archive.module.
  */
 
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
@@ -70,9 +71,6 @@ function markaspot_archive_cron() {
   \Drupal::logger('markaspot_archive')->notice('Enqueued @count nodes for archiving.', ['@count' => $count]);
 }
 
-
-
-
 /**
  * Anonymize configured fields on a service_request node.
  *
@@ -84,7 +82,7 @@ function markaspot_archive_cron() {
  * @return \Drupal\Core\Entity\EntityInterface
  *   The modified node.
  */
-function markaspot_archive_anonymize(\Drupal\Core\Entity\EntityInterface $archivable, array $anonymize_fields) {
+function markaspot_archive_anonymize(EntityInterface $archivable, array $anonymize_fields) {
   foreach ($anonymize_fields as $field_name) {
     if (!$archivable->hasField($field_name)) {
       continue;
@@ -100,9 +98,11 @@ function markaspot_archive_anonymize(\Drupal\Core\Entity\EntityInterface $archiv
       case 'email':
         $anon_value = $random . '@anonymized.off';
         break;
+
       case 'telephone':
         $anon_value = '+49-0123459995555';
         break;
+
       default:
         $anon_value = $random;
     }

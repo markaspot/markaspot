@@ -36,6 +36,7 @@ dependencies:
   - filter
   - geolocation
   - geolocation_nominatim
+  - group
   - help
   - history
   - image
@@ -59,12 +60,14 @@ dependencies:
   - user
   - views
   - markaspot_open311
+  - markaspot_bbox_cache
   - markaspot_nuxt
   - markaspot_media
   - markaspot_token
   - markaspot_request_id
   - markaspot_validation
   - markaspot_icons
+  - markaspot_group
   - service_request
 
 themes:

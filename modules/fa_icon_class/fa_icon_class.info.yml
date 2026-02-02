@@ -1,7 +1,8 @@
-name: FontAwesome Icon Class
+name: Icon Class
 type: module
-description: Adds a fontawesome icon class formatter and widget.
+description: Adds an icon class field with visual picker using Iconify collections.
 package: Field types
 core_version_requirement: ^10 || ^11
 dependencies:
-  - node
+  - drupal:node
+  - iconify_field:iconify_field

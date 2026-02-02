@@ -61,7 +61,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#group' => 'settings',
     ];
 
-    // General Settings
+    // General Settings.
     $form['markaspot_feedback']['general'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('General Settings'),
@@ -75,7 +75,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('enable'),
       '#description' => $this->t('Master switch for all feedback functionality. When disabled, the entire feedback system is turned off, including both automated (cron) and manual processing.'),
     ];
-    
+
     $form['markaspot_feedback']['general']['cron_enable'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable Automated Processing via Cron'),
@@ -95,7 +95,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
     ];
 
-    // Common Settings
+    // Common Settings.
     $form['markaspot_feedback']['common'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Common Settings'),
@@ -140,7 +140,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       ],
     ];
 
-    // Citizen Feedback Settings
+    // Citizen Feedback Settings.
     $form['markaspot_feedback']['citizen'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Citizen Feedback Settings'),
@@ -193,22 +193,22 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
 
-    // Extract values from fieldsets
+    // Extract values from fieldsets.
     $general = $values['general'] ?? [];
     $common = $values['common'] ?? [];
     $citizen = $values['citizen'] ?? [];
 
     $this->config('markaspot_feedback.settings')
-      // General settings
+      // General settings.
       ->set('enable', $general['enable'] ?? $values['enable'])
       ->set('cron_enable', $general['cron_enable'] ?? $values['cron_enable'])
       ->set('tax_status', $general['tax_status'] ?? $values['tax_status'])
 
-      // Common settings
+      // Common settings.
       ->set('days', $common['days'] ?? $values['days'])
       ->set('interval', $common['interval'] ?? $values['interval'])
 
-      // Citizen feedback settings
+      // Citizen feedback settings.
       ->set('status_feedback_enabled', $citizen['status_feedback_enabled'] ?? $values['status_feedback_enabled'])
       ->set('mailtext', $citizen['mailtext'] ?? $values['mailtext'])
       ->set('set_progress_tid', $citizen['set_progress_tid'] ?? $values['set_progress_tid'])

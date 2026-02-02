@@ -10,106 +10,146 @@
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 
-
 /**
  * Implements hook_node_presave().
  */
 function service_request_node_presave(EntityInterface $node) {
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  // Enforce the configured default language for new service requests.
+  // This respects the Drupal content type language settings:
+  // Structure > Content types > Service Request > Language settings
+  // Recommended: "Not specified" (und) for language-neutral citizen content.
+  // This overrides any langcode provided by API clients (JSON:API, GeoReport).
+  if ($node->isNew()) {
+    $language_settings = \Drupal::config('language.content_settings.node.service_request');
+    $default_langcode = $language_settings->get('default_langcode');
+
+    if ($default_langcode === 'und') {
+      $node->set('langcode', 'und');
+    }
+    elseif ($default_langcode === 'site_default') {
+      $site_default = \Drupal::languageManager()->getDefaultLanguage()->getId();
+      $node->set('langcode', $site_default);
+    }
+    elseif ($default_langcode && $default_langcode !== 'current_interface') {
+      // Explicit language code (e.g., 'de', 'en').
+      $node->set('langcode', $default_langcode);
+    }
+    // 'current_interface' is left as-is (Drupal default behavior).
+  }
+
+  $config = \Drupal::configFactory()->get('markaspot_open311.settings');
+  $auto_create = $config->get('status_note_auto_create') ?? TRUE;
 
   // Service Request Creation.
-  if ($node->bundle() == 'service_request' && !$node->id()) {
-    // Get some relevant config.
-    $config = \Drupal::configFactory()
-      ->getEditable('markaspot_open311.settings');
-    // Add an intitial paragraph on post
-    // Status when inserting.
-
-    $status_open_start = $config->get('status_open_start');
-
-    // Get the node's language (which should be the site default for new nodes)
-    $node_langcode = $node->language()->getId();
-    
-    // Get the translation in the node's language
-    $status_note_initial = t('The service request has been created.', [], ['langcode' => $node_langcode]);
-
-    $paragraph = Paragraph::create([
-      'type' => 'status',
-      'field_status_note' => array(
-        "value" => $status_note_initial,
-        'format' => 'plain_text',
-      ),
-      'field_status_term' => array(
-        "target_id" => $status_open_start,
-      ),
-    ]);
-    $paragraph->save();
-
-    $node->field_status_notes = array(
-      array(
-        'target_id' => $paragraph->id(),
-        'target_revision_id' => $paragraph->getRevisionId(),
-      ),
-    );
-    $node->field_status = array(
-      array(
-        'target_id' =>  $status_open_start,
-      ),
-    );
+  if (!$node->id()) {
+    _service_request_handle_creation($node, $config, $auto_create);
   }
-  // Service Request Update
-  elseif ($node->bundle() == 'service_request' && $node->id()) {
-    // Get the new status from the field_status field.
-    $newStatus = $node->field_status->target_id;
-    
-    // Get the original node to check if status has changed.
-    $original = $node->original;
-    $originalStatus = $original ? $original->field_status->target_id : null;
-    
-    // Only process if status has actually changed.
-    if ($newStatus && $originalStatus && $newStatus != $originalStatus) {
-      // Check if there are existing status notes.
-      $hasStatusNotes = false;
-      $lastParagraphStatus = null;
-      
-      if (!$node->field_status_notes->isEmpty()) {
-        $hasStatusNotes = true;
-        // Get the last paragraph to check its status.
-        $lastParagraph = $node->field_status_notes->last()->entity;
-        if ($lastParagraph && $lastParagraph->hasField('field_status_term')) {
-          $lastParagraphStatus = $lastParagraph->field_status_term->target_id;
-        }
+  // Service Request Update.
+  else {
+    _service_request_handle_update($node, $config, $auto_create);
+  }
+}
+
+/**
+ * Handles status note creation for new service requests.
+ */
+function _service_request_handle_creation(EntityInterface $node, $config, bool $auto_create): void {
+  $status_open_start = $config->get('status_open_start');
+
+  // Always set initial status if not already set.
+  if ($node->field_status->isEmpty()) {
+    $node->field_status = [
+      ['target_id' => $status_open_start],
+    ];
+  }
+
+  // Skip status note creation if disabled or already added by frontend/API.
+  if (!$auto_create || !$node->field_status_notes->isEmpty()) {
+    return;
+  }
+
+  $paragraph = Paragraph::create([
+    'type' => 'status',
+    'field_status_note' => [
+      'value' => t('The service request has been created.', [], [
+        'langcode' => $node->language()->getId(),
+      ]),
+      'format' => 'plain_text',
+    ],
+    'field_status_term' => [
+      'target_id' => $status_open_start,
+    ],
+  ]);
+  $paragraph->save();
+
+  $node->field_status_notes = [
+    [
+      'target_id' => $paragraph->id(),
+      'target_revision_id' => $paragraph->getRevisionId(),
+    ],
+  ];
+}
+
+/**
+ * Handles status note creation for updated service requests.
+ */
+function _service_request_handle_update(EntityInterface $node, $config, bool $auto_create): void {
+  if (!$auto_create) {
+    return;
+  }
+
+  $newStatus = $node->field_status->target_id;
+  $original = $node->original;
+  $originalStatus = $original ? $original->field_status->target_id : NULL;
+
+  // Only process if status has actually changed.
+  if (!$newStatus || !$originalStatus || $newStatus === $originalStatus) {
+    return;
+  }
+
+  // Check if frontend/API already added a status note for this change.
+  if (!$node->field_status_notes->isEmpty()) {
+    $lastParagraph = $node->field_status_notes->last()->entity;
+    if ($lastParagraph && $lastParagraph->hasField('field_status_term')) {
+      $lastParagraphStatus = $lastParagraph->field_status_term->target_id;
+
+      // Skip if last paragraph already has the new status.
+      if ($lastParagraphStatus == $newStatus) {
+        return;
       }
-      
-      // Create a new status note paragraph if:
-      // 1. There are no status notes yet, OR
-      // 2. The new status is different from the last paragraph's status
-      if (!$hasStatusNotes || $newStatus != $lastParagraphStatus) {
-        // Create a new paragraph for this status change.
-        // Get the node's language for translation
-        $node_langcode = $node->language()->getId();
-        $status_note_text = t('Status changed.', [], ['langcode' => $node_langcode]);
-        
-        $paragraph = Paragraph::create([
-          'type' => 'status',
-          'field_status_note' => [
-            'value' => $status_note_text,
-            'format' => 'plain_text',
-          ],
-          'field_status_term' => [
-            'target_id' => $newStatus,
-          ],
-        ]);
-        $paragraph->save();
-        
-        // Add the new paragraph to the status notes field.
-        $node->field_status_notes->appendItem([
-          'target_id' => $paragraph->id(),
-          'target_revision_id' => $paragraph->getRevisionId(),
-        ]);
+
+      // Skip if paragraph was just created (within 5 seconds).
+      // This prevents duplicates when frontend sends status note with update.
+      $isRecentlyCreated = $lastParagraph->isNew() ||
+        (time() - $lastParagraph->getCreatedTime() < 5);
+      if ($isRecentlyCreated) {
+        return;
       }
     }
   }
 
+  $paragraph = Paragraph::create([
+    'type' => 'status',
+    'field_status_note' => [
+      'value' => t('Status changed.', [], [
+        'langcode' => $node->language()->getId(),
+      ]),
+      'format' => 'plain_text',
+    ],
+    'field_status_term' => [
+      'target_id' => $newStatus,
+    ],
+  ]);
+  $paragraph->save();
+
+  $node->field_status_notes->appendItem([
+    'target_id' => $paragraph->id(),
+    'target_revision_id' => $paragraph->getRevisionId(),
+  ]);
 }
 
 /**
@@ -117,7 +157,7 @@ function service_request_node_presave(EntityInterface $node) {
  */
 function service_request_form_alter(&$form, &$form_state, $form_id) {
   // $status_widget = $form['field_status_notes']['widget'];
-  // todo:
+  // @todo
   // Disable paragraph subform if subform hooks are stable:
   // https://www.drupal.org/project/paragraphs/issues/2868155
   $form['#attached']['library'][] = 'service_request/paragraphs';

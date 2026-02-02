@@ -1,0 +1,6 @@
+markaspot_bbox_cache.settings:
+  title: 'Bbox Cache'
+  description: 'Configure bbox cache settings for Mark-a-Spot Open311 API.'
+  route_name: markaspot_bbox_cache.settings
+  parent: markaspot_open311.config
+  weight: 20

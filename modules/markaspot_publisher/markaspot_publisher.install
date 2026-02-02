@@ -1,4 +1,5 @@
 <?php
+
 /**
  * @file
  * Install, update and uninstall functions for the Mark‑a‑Spot Publisher module.
@@ -23,7 +24,7 @@ function markaspot_publisher_update_9001() {
       'type' => 'integer',
       'settings' => [
         'min' => 1,
-        'max' => null,
+        'max' => NULL,
         'prefix' => '',
         'suffix' => '',
       ],
@@ -50,14 +51,14 @@ function markaspot_publisher_update_9001() {
       'required' => FALSE,
       'translatable' => FALSE,
       'settings' => [],
-      'default_value' => [[ 'value' => $default_days ]],
+      'default_value' => [['value' => $default_days]],
       'default_value_callback' => '',
     ]);
     $instance->save();
   }
   else {
     // Update existing field to set default value.
-    $instance->set('default_value', [[ 'value' => $default_days ]]);
+    $instance->set('default_value', [['value' => $default_days]]);
     $instance->save();
   }
 

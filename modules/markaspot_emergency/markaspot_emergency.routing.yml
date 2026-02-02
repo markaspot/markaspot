@@ -7,7 +7,7 @@ markaspot_emergency.settings:
     _permission: 'administer emergency mode'
 
 markaspot_emergency.status:
-  path: '/api/system/status'
+  path: '/api/emergency-mode/status'
   defaults:
     _controller: '\Drupal\markaspot_emergency\Controller\EmergencyModeController::getStatus'
   requirements:

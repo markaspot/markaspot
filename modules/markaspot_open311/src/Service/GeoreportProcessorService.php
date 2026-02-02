@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311\Service;
 
+use Drupal\group\Entity\GroupMembership;
 use Drupal\media\MediaInterface;
 use Drupal\Core\File\Exception\InvalidStreamWrapperException;
 use Drupal\Core\File\Exception\FileException;
@@ -24,7 +25,6 @@ use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\paragraphs\Entity\Paragraph;
-use Drupal\group\Entity\GroupMembership;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -188,13 +188,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   If there is an error in the request data.
    */
   public function prepareNodeProperties(array $requestData, string $operation): array {
+    // Service requests default to language-neutral (UND) as citizen-submitted
+    // content should not be associated with a specific language.
+    // Note: This value may be overridden by hook_node_presave() in
+    // service_request.module based on the content type language settings.
+    // Taxonomy terms (categories, statuses) are translated separately.
     $values = [
       'type' => 'service_request',
+      'langcode' => 'und',
       'changed' => $this->time->getCurrentTime(),
-    ];
-
-    $values = [
-      'type' => 'service_request',
       'field_first_name' => $this->getSafeValue($requestData, 'first_name'),
       'field_last_name' => $this->getSafeValue($requestData, 'last_name'),
       'field_phone' => $this->getSafeValue($requestData, 'phone'),
@@ -675,25 +677,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     if ($user->hasPermission('bypass node access') || $user->id() == 1) {
       $query->accessCheck(FALSE);
     }
-    // When group filtering is active, we handle access via group membership.
-    // Disable Drupal's access check to avoid conflicts with Group module grants.
+    // When group filtering is active, let Group module handle access control.
+    // Group module's EntityQueryAlter adds conditions for grouped content,
+    // including author access to own unpublished content.
     elseif ($use_group_filter) {
-      // Filter to published nodes + user's own unpublished nodes.
-      $orGroup = $query->orConditionGroup()
-        ->condition('status', 1)
-        ->condition('uid', $user->id());
-      $query->condition($orGroup);
-      // Disable access check - group membership IS the access control.
-      $query->accessCheck(FALSE);
+      $query->accessCheck(TRUE);
     }
-    // Authenticated users can see all published nodes + their own unpublished nodes.
-    // Access check is disabled to show ALL requests (editability is controlled separately).
+    // Authenticated users: let Group module handle access control.
+    // Group module's EntityQueryAlter applies outsider/insider permissions,
+    // including 'view unpublished group_node:service_request entity' for
+    // moderators with the org-moderator outsider role.
     elseif (!$user->isAnonymous()) {
-      $orGroup = $query->orConditionGroup()
-        ->condition('status', 1)
-        ->condition('uid', $user->id());
-      $query->condition($orGroup);
-      $query->accessCheck(FALSE);
+      $query->accessCheck(TRUE);
     }
     // Anonymous users can only see published nodes.
     else {
@@ -704,7 +699,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Apply group membership filter.
     if ($use_group_filter) {
       $config = $this->configFactory->get('markaspot_open311.settings');
-      $group_type = $config->get('group_filter_type') ?? 'organisation';
+      $group_type = $config->get('group_filter_type') ?? 'org';
       $node_ids = $this->getNodeIdsInUserGroups($user, $group_type);
       if (!empty($node_ids)) {
         $query->condition('nid', $node_ids, 'IN');
@@ -715,7 +710,153 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
     }
 
+    // Apply jurisdiction filter (gid or jurisdiction slug).
+    // This filters by a specific group (jurisdiction type) for multi-tenant setups.
+    $jurisdiction_gid = $this->resolveJurisdictionId($parameters);
+    if ($jurisdiction_gid) {
+      $node_ids = $this->getNodeIdsInGroup($jurisdiction_gid);
+      if (!empty($node_ids)) {
+        $query->condition('nid', $node_ids, 'IN');
+      }
+      else {
+        // No nodes in this jurisdiction - return empty results.
+        $query->condition('nid', [0], 'IN');
+      }
+    }
+
+    // Apply organisation group filter (group_id parameter).
+    // This filters by a specific organisation group for department/agency filtering.
+    // Unlike jurisdiction filter, this uses organisation groups (type 'org').
+    $org_group_id = $this->resolveOrganisationGroupId($parameters);
+    if ($org_group_id) {
+      $node_ids = $this->getNodeIdsInGroup($org_group_id);
+      if (!empty($node_ids)) {
+        $query->condition('nid', $node_ids, 'IN');
+      }
+      else {
+        // No nodes in this organisation group - return empty results.
+        $query->condition('nid', [0], 'IN');
+      }
+    }
+
     return $query;
+  }
+
+  /**
+   * Resolves jurisdiction parameter to a group ID.
+   *
+   * Supports both numeric group ID ('gid') and URL slug ('jurisdiction').
+   *
+   * @param array $parameters
+   *   Query parameters.
+   *
+   * @return int|null
+   *   The group ID or NULL if not specified/found.
+   */
+  protected function resolveJurisdictionId(array $parameters): ?int {
+    // Check for direct group ID.
+    if (!empty($parameters['gid']) && is_numeric($parameters['gid'])) {
+      return (int) $parameters['gid'];
+    }
+
+    // Check for jurisdiction slug.
+    if (!empty($parameters['jurisdiction'])) {
+      $slug = $parameters['jurisdiction'];
+
+      // If numeric, treat as group ID.
+      if (is_numeric($slug)) {
+        return (int) $slug;
+      }
+
+      // Validate slug format (alphanumeric, hyphens, underscores, max 64 chars).
+      if (!preg_match('/^[a-z0-9_-]{1,64}$/i', $slug)) {
+        return NULL;
+      }
+
+      // Load jurisdiction group type from config (supports legacy 'jurisdiction' naming).
+      $config = $this->configFactory->get('markaspot_open311.settings');
+      $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
+
+      // Lookup by slug.
+      $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
+        'type' => $jur_type,
+        'field_slug' => $slug,
+      ]);
+      $group = reset($groups);
+      if ($group) {
+        return (int) $group->id();
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Resolves organisation group_id parameter to a group ID.
+   *
+   * Supports numeric group ID via 'group_id' parameter.
+   * This is used to filter service requests by a specific organisation/department.
+   *
+   * @param array $parameters
+   *   Query parameters.
+   *
+   * @return int|null
+   *   The organisation group ID or NULL if not specified.
+   *   Returns -1 if the group_id was specified but the group doesn't exist.
+   */
+  protected function resolveOrganisationGroupId(array $parameters): ?int {
+    // Check for group_id parameter.
+    if (!empty($parameters['group_id']) && is_numeric($parameters['group_id'])) {
+      $group_id = (int) $parameters['group_id'];
+
+      // Validate that this group exists.
+      $group = $this->entityTypeManager->getStorage('group')->load($group_id);
+      if ($group) {
+        // Security: Verify user has membership in the requested group.
+        // This prevents unauthorized access to other groups' requests.
+        $member = $group->getMember($this->currentUser);
+        if ($member) {
+          return $group_id;
+        }
+
+        // User is not a member of this group - deny access by returning -1.
+        return -1;
+      }
+
+      // Group doesn't exist - return -1 to signal that filtering was requested
+      // but the group is invalid. This will result in an empty result set.
+      return -1;
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Gets node IDs that belong to a specific group.
+   *
+   * Uses direct database query for performance - avoids loading full entities.
+   *
+   * @param int $group_id
+   *   The group ID.
+   *
+   * @return array
+   *   Array of node IDs belonging to the group.
+   */
+  protected function getNodeIdsInGroup(int $group_id): array {
+    if (!$this->moduleHandler->moduleExists('group')) {
+      return [];
+    }
+
+    // Direct database query for entity_id only - much faster than loading entities.
+    $connection = \Drupal::database();
+    $node_ids = $connection->select('group_relationship_field_data', 'gr')
+      ->fields('gr', ['entity_id'])
+      ->condition('gid', $group_id)
+      ->condition('plugin_id', 'group_node:service_request')
+      ->execute()
+      ->fetchCol();
+
+    return array_map('intval', $node_ids);
   }
 
   /**
@@ -724,12 +865,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @param \Drupal\Core\Session\AccountInterface $user
    *   The user account.
    * @param string $group_type
-   *   The group type machine name to filter by (e.g., 'organisation').
+   *   The group type machine name to filter by (e.g., 'org').
    *
    * @return array
    *   Array of node IDs belonging to user's groups of the specified type.
    */
-  protected function getNodeIdsInUserGroups($user, string $group_type = 'organisation'): array {
+  protected function getNodeIdsInUserGroups($user, string $group_type = 'org'): array {
     // Check if Group module is available.
     if (!$this->moduleHandler->moduleExists('group')) {
       return [];
@@ -830,6 +971,23 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   TRUE if user can edit via group membership.
    */
   protected function checkGroupEditPermission(object $node, $user): bool {
+    return $this->checkGroupPermission($node, $user, 'update');
+  }
+
+  /**
+   * Checks if user has a specific permission via Group module membership.
+   *
+   * @param object $node
+   *   The node object.
+   * @param \Drupal\Core\Session\AccountProxyInterface $user
+   *   The user to check.
+   * @param string $operation
+   *   The operation to check: 'view', 'update', or 'delete'.
+   *
+   * @return bool
+   *   TRUE if user has the permission via group membership.
+   */
+  protected function checkGroupPermission(object $node, $user, string $operation): bool {
     try {
       // Get the groups this node belongs to.
       $relationship_storage = $this->entityTypeManager->getStorage('group_relationship');
@@ -858,15 +1016,22 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $group_id = $relationship->getGroupId();
         if (in_array($group_id, $user_group_ids)) {
           // User is in this group - check their role permissions.
-          // For members (insider scope), they can edit any node in the group.
-          // For now, we assume group members can edit group content.
-          // A more complete check would verify specific group permissions.
           foreach ($memberships as $membership) {
             if ($membership->getGroupId() == $group_id) {
-              // Check if member has 'update any' permission.
               $group = $membership->getGroup();
-              if ($group && $group->hasPermission('update any group_node:service_request entity', $user)) {
-                return TRUE;
+              if ($group) {
+                // Check for 'any' permission first.
+                $any_permission = "{$operation} any group_node:service_request entity";
+                if ($group->hasPermission($any_permission, $user)) {
+                  return TRUE;
+                }
+                // Check for 'own' permission if user owns the node.
+                if ($node->getOwnerId() == $user->id()) {
+                  $own_permission = "{$operation} own group_node:service_request entity";
+                  if ($group->hasPermission($own_permission, $user)) {
+                    return TRUE;
+                  }
+                }
               }
             }
           }
@@ -879,6 +1044,34 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Gets all permissions (view, update, delete) for a node.
+   *
+   * @param object $node
+   *   The node object.
+   * @param \Drupal\Core\Session\AccountProxyInterface $user
+   *   The user to check.
+   *
+   * @return array
+   *   Array with 'view', 'update', 'delete' boolean values.
+   */
+  protected function getNodePermissions(object $node, $user): array {
+    // Use Drupal's entity access API which is the authoritative source for
+    // permission checks. This API automatically:
+    // - Calls hook_node_access() implementations
+    // - Checks node_access grants
+    // - Respects Group module's entity-level restrictions when enabled
+    // - Falls back to standard node permissions when Group module is disabled
+    //
+    // This approach ensures consistency between what the API reports and
+    // what users can actually do, avoiding permission mismatches.
+    return [
+      'view' => $node->access('view', $user),
+      'update' => $node->access('update', $user),
+      'delete' => $node->access('delete', $user),
+    ];
   }
 
   /**
@@ -899,13 +1092,20 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * Maps a node object to a service request definition.
    */
   public function mapNodeToServiceRequest(object $node, string $extendedRole, array $parameters): array {
+    // Get translated node if translation exists for requested language.
+    $langcode = $parameters['langcode'] ?? 'en';
+    if ($node->hasTranslation($langcode)) {
+      $node = $node->getTranslation($langcode);
+    }
+
     // Get core field values efficiently.
     $categoryId = !$node->get('field_category')->isEmpty() ? $node->get('field_category')->target_id : NULL;
     $statusId = !$node->get('field_status')->isEmpty() ? $node->get('field_status')->target_id : NULL;
 
     // Use a static cache for this node's details to avoid recalculation on repeated calls.
+    // Include langcode in cache key to properly cache translated content.
     static $serviceRequestCache = [];
-    $cacheKey = $node->id() . '_' . $extendedRole . '_' . md5(serialize($parameters));
+    $cacheKey = $node->id() . '_' . $langcode . '_' . $extendedRole . '_' . md5(serialize($parameters));
 
     if (isset($serviceRequestCache[$cacheKey])) {
       return $serviceRequestCache[$cacheKey];
@@ -967,8 +1167,21 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Add service details if available.
     if ($categoryId) {
-      $request['service_name'] = $this->getTaxonomyTermField($categoryId, 'name');
+      $request['service_name'] = $this->getTranslatedTaxonomyTermField($categoryId, 'name', $langcode);
       $request['service_code'] = $this->getTaxonomyTermField($categoryId, 'field_service_code');
+    }
+
+    // Add organisation (department) if available.
+    if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+      $organisationEntity = $node->get('field_organisation')->entity;
+      if ($organisationEntity) {
+        $request['organisation'] = [
+          'id' => (string) $organisationEntity->id(),
+          'uuid' => $organisationEntity->uuid(),
+          'label' => $organisationEntity->label(),
+          'name' => $organisationEntity->label(),
+        ];
+      }
     }
 
     // Add media_url if available (standard optional field per GeoReport v2 spec)
@@ -1012,10 +1225,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
       $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $parameters['langcode'] ?? 'en');
 
-      // Add editability flag - checks if current user can update this node.
-      // We avoid using $node->access('update') as it triggers Group module's
+      // Add permissions - checks what operations the current user can perform.
+      // We avoid using $node->access() as it triggers Group module's
       // buggy node access handler. Instead, we check manually.
-      $request['extended_attributes']['markaspot']['editable'] = $this->checkNodeEditability($node, $this->currentUser);
+      $permissions = $this->getNodePermissions($node, $this->currentUser);
+      $request['extended_attributes']['markaspot']['permissions'] = $permissions;
+      // Keep backward compatibility with 'editable' flag.
+      $request['extended_attributes']['markaspot']['editable'] = $permissions['update'];
 
       // Add media details with published status.
       $mediaDetails = $this->getMediaDetails($node);
@@ -1110,6 +1326,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   /**
    * Formats an address field value as a string.
    *
+   * Builds address string from components, handling empty values gracefully.
+   * Format: "{address_line1} {address_line2}, {postal_code} {locality}"
+   *
    * @param \Drupal\Core\Field\FieldItemListInterface $address
    *   The address field value.
    *
@@ -1117,8 +1336,27 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The formatted address string.
    */
   public function formatAddress(FieldItemListInterface $address): string {
-    $addressString = $address->postal_code . ' ' . $address->locality . ', ' . $address->address_line1 . ' ' . $address->address_line2;
-    return trim($addressString);
+    $parts = [];
+
+    // Street address (address_line1 + address_line2).
+    $streetParts = array_filter([
+      $address->address_line1,
+      $address->address_line2,
+    ]);
+    if (!empty($streetParts)) {
+      $parts[] = implode(' ', $streetParts);
+    }
+
+    // City with postal code.
+    $cityParts = array_filter([
+      $address->postal_code,
+      $address->locality,
+    ]);
+    if (!empty($cityParts)) {
+      $parts[] = implode(' ', $cityParts);
+    }
+
+    return implode(', ', $parts);
   }
 
   /**
@@ -1152,6 +1390,64 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     $term = $termCache[$tid];
+
+    // Check if the term exists and if the specified field exists on the term.
+    if ($term !== NULL && $term->hasField($fieldName)) {
+      // Special case for name field which doesn't have a value property.
+      if ($fieldName === 'name') {
+        return $term->getName();
+      }
+
+      // Safely return the field value, ensuring null is returned if the field is not set.
+      return $term->get($fieldName)->value ?? NULL;
+    }
+
+    // Return null if the term doesn't exist, the field doesn't exist, or $tid is invalid.
+    return NULL;
+  }
+
+  /**
+   * Retrieves a translated field value from a taxonomy term.
+   *
+   * @param int|null $tid
+   *   The taxonomy term ID.
+   * @param string $fieldName
+   *   The field name.
+   * @param string $langcode
+   *   The language code for translation.
+   *
+   * @return mixed
+   *   The translated field value, or null if the field or term is not found.
+   */
+  public function getTranslatedTaxonomyTermField(?int $tid, string $fieldName, string $langcode): mixed {
+    // Early return if $tid is null or not positive.
+    if (is_null($tid) || $tid <= 0) {
+      return NULL;
+    }
+
+    // Use static cache keyed by tid and langcode.
+    static $translatedTermCache = [];
+    $cacheKey = $tid . '_' . $langcode;
+
+    // If translated term is not in cache, load it.
+    if (!isset($translatedTermCache[$cacheKey])) {
+      $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($tid);
+
+      if ($term && $term->hasTranslation($langcode)) {
+        $translatedTermCache[$cacheKey] = $term->getTranslation($langcode);
+      }
+      else {
+        // Fall back to original term if translation not available.
+        $translatedTermCache[$cacheKey] = $term;
+      }
+
+      // Limit cache size to avoid memory issues.
+      if (count($translatedTermCache) > 200) {
+        array_shift($translatedTermCache);
+      }
+    }
+
+    $term = $translatedTermCache[$cacheKey];
 
     // Check if the term exists and if the specified field exists on the term.
     if ($term !== NULL && $term->hasField($fieldName)) {
@@ -1466,7 +1762,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
           continue;
         }
 
-        $statusTermId = $noteEntity->field_status_term->getValue()[0]['target_id'] ?? $initialStatusId;
+        $statusTermId = ($noteEntity->hasField('field_status_term') && !$noteEntity->get('field_status_term')->isEmpty())
+          ? $noteEntity->get('field_status_term')->getValue()[0]['target_id']
+          : $initialStatusId;
 
         // Get the term from our preloaded collection.
         $statusTerm = $terms[$statusTermId] ?? NULL;
@@ -1496,6 +1794,28 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     if (!empty($mediaAltTexts)) {
       $extendedAttributes['media_alt_text'] = $mediaAltTexts;
     }
+
+    // Add hazard level from AI vision analysis.
+    if ($node->hasField('field_hazard_level') && !$node->get('field_hazard_level')->isEmpty()) {
+      $extendedAttributes['hazard_level'] = (int) $node->get('field_hazard_level')->value;
+    }
+    else {
+      $extendedAttributes['hazard_level'] = 0;
+    }
+
+    // Add hazard category from media entities (CAP standard codes).
+    // Uses the first media entity with a hazard category. This is intentional:
+    // the primary/first image typically represents the main issue reported.
+    $hazardCategory = NULL;
+    if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
+      foreach ($node->get('field_request_media')->referencedEntities() as $media) {
+        if ($media->hasField('field_ai_hazard_category') && !$media->get('field_ai_hazard_category')->isEmpty()) {
+          $hazardCategory = $media->get('field_ai_hazard_category')->value;
+          break;
+        }
+      }
+    }
+    $extendedAttributes['hazard_category'] = $hazardCategory;
 
     // Add published status for nodes
     // This flag allows frontend to show an unpublished indicator icon.
@@ -1760,8 +2080,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   Can also use 'delta' instead of 'mid' to reference media by position.
    * @param \Drupal\Core\Entity\ContentEntityInterface|null $node
    *   Optional node entity to look up media by delta position.
-   *
-   * @return void
    *
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If there is an error saving the media entity.

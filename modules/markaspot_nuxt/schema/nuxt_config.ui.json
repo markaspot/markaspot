@@ -1,0 +1,387 @@
+{
+  "client": {
+    "ui:options": {
+      "title": "Branding",
+      "description": "Application identity and branding",
+      "weight": 10
+    },
+    "properties": {
+      "name": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "e.g. Issue Reporter Bonn"
+        }
+      },
+      "shortName": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "e.g. Bonn"
+        }
+      },
+      "domain": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "e.g. reporter.bonn.gov"
+        }
+      }
+    }
+  },
+
+  "theme": {
+    "ui:options": {
+      "title": "Theme",
+      "description": "Colors and typography",
+      "weight": 20
+    },
+    "properties": {
+      "primary": {
+        "ui:options": {
+          "widget": "color",
+          "description": "Primary color for buttons, links and accents. Enter a Tailwind name (blue, cyan) or HEX value (#rrggbb)."
+        }
+      },
+      "secondary": {
+        "ui:options": {
+          "widget": "color",
+          "description": "Secondary color for less important actions. Enter a Tailwind name (blue, cyan) or HEX value (#rrggbb)."
+        }
+      },
+      "neutral": {
+        "ui:options": {
+          "description": "Background and text colors"
+        }
+      },
+      "fonts": {
+        "ui:options": {
+          "title": "Typography"
+        },
+        "properties": {
+          "heading": {
+            "ui:options": {
+              "widget": "textfield",
+              "placeholder": "e.g. Inter, Roboto"
+            }
+          },
+          "body": {
+            "ui:options": {
+              "widget": "textfield",
+              "placeholder": "e.g. Inter, Open Sans"
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "features": {
+    "ui:options": {
+      "title": "Features",
+      "description": "Enable or disable features for this jurisdiction",
+      "weight": 30
+    },
+    "properties": {
+      "statistics": {
+        "ui:options": {
+          "description": "Show statistics tab in the sidebar"
+        }
+      },
+      "photoReporting": {
+        "ui:options": {
+          "description": "Enable photo-first reporting flow"
+        }
+      },
+      "dashboard": {
+        "ui:options": {
+          "description": "Admin dashboard for staff members"
+        }
+      },
+      "passwordless": {
+        "ui:options": {
+          "description": "Email-based login (requires Drupal module)"
+        }
+      },
+      "aiAnalysis": {
+        "ui:options": {
+          "description": "AI-powered image analysis"
+        }
+      },
+      "feedback": {
+        "ui:options": {
+          "description": "Allow feedback on responses"
+        }
+      },
+      "formFirst": {
+        "ui:options": {
+          "description": "Show form before map on mobile devices"
+        }
+      }
+    }
+  },
+
+  "ui": {
+    "ui:options": {
+      "title": "Layout",
+      "description": "UI customizations",
+      "weight": 40
+    },
+    "properties": {
+      "headerHeight": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "120px"
+        }
+      },
+      "logoHeight": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "100px"
+        }
+      },
+      "sidebar": {
+        "ui:options": {
+          "title": "Sidebar (Desktop)"
+        },
+        "properties": {
+          "width": {
+            "ui:options": {
+              "widget": "textfield",
+              "placeholder": "420px"
+            }
+          },
+          "enabled": {
+            "ui:options": {}
+          }
+        }
+      },
+      "bottomSheet": {
+        "ui:options": {
+          "title": "Bottom Sheet (Mobile)"
+        },
+        "properties": {
+          "position": {
+            "ui:options": {}
+          },
+          "minimumHeight": {
+            "ui:options": {}
+          },
+          "showHandle": {
+            "ui:options": {}
+          }
+        }
+      }
+    }
+  },
+
+  "media": {
+    "ui:options": {
+      "title": "Media",
+      "description": "Photo upload settings",
+      "weight": 50
+    },
+    "properties": {
+      "maxFiles": {
+        "ui:options": {
+          "description": "Maximum number of photos per report"
+        }
+      },
+      "maxFileSize": {
+        "ui:options": {
+          "description": "Maximum file size in MB"
+        }
+      }
+    }
+  },
+
+  "languages": {
+    "ui:options": {
+      "title": "Languages",
+      "description": "Labels come from i18n (de-ls = Einfache Sprache)",
+      "weight": 60
+    },
+    "properties": {
+      "available": {
+        "ui:options": {
+          "description": "Select which bundled languages to enable"
+        }
+      },
+      "default": {
+        "ui:options": {
+          "description": "Default language for new visitors"
+        }
+      }
+    }
+  },
+
+  "map": {
+    "ui:options": {
+      "title": "Map",
+      "description": "Map behavior and controls",
+      "weight": 70
+    },
+    "properties": {
+      "loadMarkersOnInit": {
+        "ui:options": {}
+      },
+      "deferredMap": {
+        "ui:options": {}
+      },
+      "markers": {
+        "ui:options": {
+          "title": "Marker Appearance",
+          "description": "Style individual map markers"
+        },
+        "properties": {
+          "iconSize": {
+            "ui:options": {
+              "description": "Icon size in pixels (12-48)"
+            }
+          },
+          "strokeWidth": {
+            "ui:options": {
+              "description": "Border width in pixels (0-10)"
+            }
+          },
+          "radius": {
+            "ui:options": {
+              "description": "Circle radius in pixels (8-40)"
+            }
+          }
+        }
+      },
+      "clusters": {
+        "ui:options": {
+          "title": "Cluster Appearance",
+          "description": "Style cluster circles"
+        },
+        "properties": {
+          "strokeWidth": {
+            "ui:options": {
+              "description": "Border width in pixels (0-20)"
+            }
+          },
+          "strokeOpacity": {
+            "ui:options": {
+              "description": "Border opacity (0-1)"
+            }
+          }
+        }
+      },
+      "controls": {
+        "ui:options": {
+          "title": "Map Controls"
+        },
+        "properties": {
+          "zoom": {
+            "ui:options": {}
+          },
+          "geolocation": {
+            "ui:options": {}
+          },
+          "theme": {
+            "ui:options": {}
+          },
+          "heatmap": {
+            "ui:options": {}
+          }
+        }
+      }
+    }
+  },
+
+  "navigation": {
+    "ui:options": {
+      "title": "Navigation",
+      "weight": 80
+    },
+    "properties": {
+      "activeTab": {
+        "ui:options": {}
+      },
+      "tabs": {
+        "ui:options": {
+          "title": "Tab Visibility"
+        },
+        "properties": {
+          "info": {
+            "ui:options": {}
+          },
+          "list": {
+            "ui:options": {}
+          },
+          "following": {
+            "ui:options": {}
+          },
+          "stats": {
+            "ui:options": {}
+          }
+        }
+      }
+    }
+  },
+
+  "filters": {
+    "ui:options": {
+      "title": "Filters",
+      "weight": 90
+    },
+    "properties": {
+      "status": {
+        "ui:options": {}
+      },
+      "category": {
+        "ui:options": {}
+      },
+      "time": {
+        "ui:options": {}
+      }
+    }
+  },
+
+  "forms": {
+    "ui:options": {
+      "title": "Form Settings",
+      "weight": 100
+    },
+    "properties": {
+      "autoTriggerGeolocation": {
+        "ui:options": {}
+      },
+      "allowParentCategorySelection": {
+        "ui:options": {}
+      },
+      "pickOnMapButton": {
+        "ui:options": {}
+      }
+    }
+  },
+
+  "privacy": {
+    "ui:options": {
+      "title": "Privacy",
+      "weight": 110
+    },
+    "properties": {
+      "enabled": {
+        "ui:options": {}
+      },
+      "modal": {
+        "ui:options": {}
+      },
+      "nodeId": {
+        "ui:options": {
+          "placeholder": "Node ID of the privacy page"
+        }
+      }
+    }
+  },
+
+  "i18n": {
+    "ui:options": {
+      "title": "Translation Overrides",
+      "description": "Override individual translation keys",
+      "weight": 120,
+      "widget": "textarea",
+      "rows": 10
+    }
+  }
+}

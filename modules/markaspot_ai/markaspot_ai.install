@@ -1,0 +1,465 @@
+<?php
+
+/**
+ * @file
+ * Install, update, and uninstall functions for the Mark-a-Spot AI module.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Implements hook_schema().
+ */
+function markaspot_ai_schema(): array {
+  $schema = [];
+
+  // Table for storing vector embeddings.
+  $schema['markaspot_ai_embeddings'] = [
+    'description' => 'Stores vector embeddings for content similarity search.',
+    'fields' => [
+      'id' => [
+        'description' => 'Primary key.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'entity_type' => [
+        'description' => 'The entity type (e.g., node, taxonomy_term).',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'node',
+      ],
+      'entity_id' => [
+        'description' => 'The entity ID.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'embedding_type' => [
+        'description' => 'Type of embedding: content, title, address, etc.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'content',
+      ],
+      'embedding' => [
+        'description' => 'JSON-serialized vector embedding.',
+        'type' => 'blob',
+        'size' => 'big',
+        'not null' => TRUE,
+      ],
+      'model' => [
+        'description' => 'The AI model used to generate the embedding.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'dimensions' => [
+        'description' => 'Number of dimensions in the embedding vector.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'text_hash' => [
+        'description' => 'SHA-256 hash of source text for change detection.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'default' => '',
+      ],
+      'created' => [
+        'description' => 'Unix timestamp when the embedding was created.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'entity' => ['entity_type', 'entity_id'],
+      'type' => ['embedding_type'],
+      'hash' => ['text_hash'],
+      'entity_type_idx' => ['entity_type', 'entity_id', 'embedding_type'],
+    ],
+    'unique keys' => [
+      'entity_embedding' => ['entity_type', 'entity_id', 'embedding_type'],
+    ],
+  ];
+
+  // Table for storing duplicate match results.
+  $schema['markaspot_ai_duplicate_matches'] = [
+    'description' => 'Stores detected duplicate/similar service requests.',
+    'fields' => [
+      'id' => [
+        'description' => 'Primary key.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'source_nid' => [
+        'description' => 'Node ID of the source service request.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'match_nid' => [
+        'description' => 'Node ID of the matching service request.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'similarity_score' => [
+        'description' => 'Cosine similarity score between embeddings (0-1).',
+        'type' => 'float',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'distance_meters' => [
+        'description' => 'Geographic distance between requests in meters.',
+        'type' => 'float',
+        'not null' => FALSE,
+      ],
+      'status' => [
+        'description' => 'Match status: pending, confirmed, rejected.',
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => 'pending',
+      ],
+      'reviewed_by' => [
+        'description' => 'User ID who reviewed the match.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+      ],
+      'reviewed_at' => [
+        'description' => 'Unix timestamp when the match was reviewed.',
+        'type' => 'int',
+        'not null' => FALSE,
+      ],
+      'created' => [
+        'description' => 'Unix timestamp when the match was detected.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'pair' => ['source_nid', 'match_nid'],
+    ],
+    'indexes' => [
+      'source' => ['source_nid'],
+      'match' => ['match_nid'],
+      'status' => ['status'],
+      'status_created' => ['status', 'created'],
+      'reviewed_by' => ['reviewed_by'],
+    ],
+    'foreign keys' => [
+      'source_node' => [
+        'table' => 'node',
+        'columns' => ['source_nid' => 'nid'],
+      ],
+      'match_node' => [
+        'table' => 'node',
+        'columns' => ['match_nid' => 'nid'],
+      ],
+      'reviewer' => [
+        'table' => 'users',
+        'columns' => ['reviewed_by' => 'uid'],
+      ],
+    ],
+  ];
+
+  // Table for tracking API token usage.
+  $schema['markaspot_ai_token_usage'] = [
+    'description' => 'Tracks AI API token usage for cost monitoring.',
+    'fields' => [
+      'id' => [
+        'description' => 'Primary key.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'provider' => [
+        'description' => 'AI provider name (openai, azure, anthropic, etc.).',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+      ],
+      'model' => [
+        'description' => 'The model name used (gpt-4o, text-embedding-3-large, etc.).',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ],
+      'operation' => [
+        'description' => 'Operation type: chat, embed, vision.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+      ],
+      'input_tokens' => [
+        'description' => 'Number of input/prompt tokens used.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'output_tokens' => [
+        'description' => 'Number of output/completion tokens used.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'entity_type' => [
+        'description' => 'Optional entity type the usage relates to.',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => FALSE,
+      ],
+      'entity_id' => [
+        'description' => 'Optional entity ID the usage relates to.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+      ],
+      'created' => [
+        'description' => 'Unix timestamp when the usage was recorded.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'provider_date' => ['provider', 'created'],
+      'model' => ['model'],
+      'operation' => ['operation'],
+      'created' => ['created'],
+      'entity' => ['entity_type', 'entity_id'],
+    ],
+  ];
+
+  // Table for storing sentiment analysis results.
+  $schema['markaspot_ai_sentiment'] = [
+    'description' => 'Stores sentiment analysis results for service requests.',
+    'fields' => [
+      'id' => [
+        'description' => 'Primary key.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'entity_type' => [
+        'description' => 'The entity type (e.g., node).',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'node',
+      ],
+      'entity_id' => [
+        'description' => 'The entity ID.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'sentiment' => [
+        'description' => 'Sentiment category: frustrated, neutral, positive.',
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => TRUE,
+        'default' => 'neutral',
+      ],
+      'score' => [
+        'description' => 'Sentiment score from -1.0 (frustrated) to 1.0 (positive).',
+        'type' => 'float',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'confidence' => [
+        'description' => 'Confidence level from 0 to 1.',
+        'type' => 'float',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'reasoning' => [
+        'description' => 'Brief explanation of the sentiment classification.',
+        'type' => 'text',
+        'size' => 'normal',
+        'not null' => FALSE,
+      ],
+      'analyzed_at' => [
+        'description' => 'Unix timestamp when the sentiment was analyzed.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'entity' => ['entity_type', 'entity_id'],
+    ],
+    'indexes' => [
+      'sentiment' => ['sentiment'],
+      'score' => ['score'],
+      'analyzed_at' => ['analyzed_at'],
+      'entity_type_idx' => ['entity_type'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
+ * Add sentiment analysis table.
+ */
+function markaspot_ai_update_10001(): void {
+  $schema = \Drupal::database()->schema();
+
+  if (!$schema->tableExists('markaspot_ai_sentiment')) {
+    $table_schema = [
+      'description' => 'Stores sentiment analysis results for service requests.',
+      'fields' => [
+        'id' => [
+          'description' => 'Primary key.',
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'entity_type' => [
+          'description' => 'The entity type (e.g., node).',
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => TRUE,
+          'default' => 'node',
+        ],
+        'entity_id' => [
+          'description' => 'The entity ID.',
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'sentiment' => [
+          'description' => 'Sentiment category: frustrated, neutral, positive.',
+          'type' => 'varchar',
+          'length' => 16,
+          'not null' => TRUE,
+          'default' => 'neutral',
+        ],
+        'score' => [
+          'description' => 'Sentiment score from -1.0 (frustrated) to 1.0 (positive).',
+          'type' => 'float',
+          'not null' => TRUE,
+          'default' => 0,
+        ],
+        'confidence' => [
+          'description' => 'Confidence level from 0 to 1.',
+          'type' => 'float',
+          'not null' => TRUE,
+          'default' => 0,
+        ],
+        'reasoning' => [
+          'description' => 'Brief explanation of the sentiment classification.',
+          'type' => 'text',
+          'size' => 'normal',
+          'not null' => FALSE,
+        ],
+        'analyzed_at' => [
+          'description' => 'Unix timestamp when the sentiment was analyzed.',
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+        ],
+      ],
+      'primary key' => ['id'],
+      'unique keys' => [
+        'entity' => ['entity_type', 'entity_id'],
+      ],
+      'indexes' => [
+        'sentiment' => ['sentiment'],
+        'score' => ['score'],
+        'analyzed_at' => ['analyzed_at'],
+        'entity_type_idx' => ['entity_type'],
+      ],
+    ];
+
+    $schema->createTable('markaspot_ai_sentiment', $table_schema);
+  }
+}
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_ai_install(): void {
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot AI module has been installed. Please configure the AI provider settings at /admin/config/services/markaspot-ai.'));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_ai_uninstall(): void {
+  // Delete module configuration.
+  \Drupal::configFactory()->getEditable('markaspot_ai.settings')->delete();
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot AI module has been uninstalled. All embeddings and usage data have been removed.'));
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_ai_requirements(string $phase): array {
+  $requirements = [];
+
+  if ($phase === 'runtime') {
+    $config = \Drupal::config('markaspot_ai.settings');
+    $default_provider = $config->get('default_provider') ?? 'openai';
+    $api_key = $config->get("providers.{$default_provider}.api_key") ?? '';
+
+    $requirements['markaspot_ai_config'] = [
+      'title' => t('Mark-a-Spot AI Configuration'),
+      'severity' => REQUIREMENT_INFO,
+    ];
+
+    if (empty($api_key)) {
+      $requirements['markaspot_ai_config']['value'] = t('Not configured');
+      $requirements['markaspot_ai_config']['description'] = t('The AI provider API key is not configured. Please visit the <a href=":url">AI settings page</a> to configure.', [
+        ':url' => '/admin/config/services/markaspot-ai',
+      ]);
+      $requirements['markaspot_ai_config']['severity'] = REQUIREMENT_WARNING;
+    }
+    else {
+      $requirements['markaspot_ai_config']['value'] = t('Configured (@provider)', [
+        '@provider' => $default_provider,
+      ]);
+    }
+
+    // Check token tracking status.
+    if ($config->get('token_tracking.enabled')) {
+      /** @var \Drupal\markaspot_ai\Service\TokenTrackingService $tracking */
+      $tracking = \Drupal::service('markaspot_ai.token_tracking');
+      $daily_usage = $tracking->getDailyUsage();
+      $daily_limit = (int) $config->get('token_tracking.daily_limit');
+
+      $requirements['markaspot_ai_usage'] = [
+        'title' => t('Mark-a-Spot AI Token Usage'),
+        'value' => t('@used / @limit tokens today', [
+          '@used' => number_format($daily_usage['total_tokens']),
+          '@limit' => $daily_limit > 0 ? number_format($daily_limit) : t('unlimited'),
+        ]),
+        'severity' => REQUIREMENT_INFO,
+      ];
+
+      if ($daily_limit > 0 && $daily_usage['total_tokens'] >= $daily_limit * 0.9) {
+        $requirements['markaspot_ai_usage']['severity'] = REQUIREMENT_WARNING;
+        $requirements['markaspot_ai_usage']['description'] = t('Daily token limit is nearly reached.');
+      }
+    }
+  }
+
+  return $requirements;
+}

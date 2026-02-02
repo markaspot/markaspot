@@ -82,7 +82,7 @@ class MarkaspotMapSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Mapbox Style Url (e.g. mapbox://styles/mapbox/streets-v8) here'),
     ];
 
-    // Fallback tile service configuration
+    // Fallback tile service configuration.
     $form['markaspot_map']['fallback_style'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Fallback Style Url / MapLibre JSON Url'),

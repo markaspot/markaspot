@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311\EventSubscriber;
 
+use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\Core\Path\CurrentPathStack;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -66,7 +67,7 @@ class GeoreportEventSubscriber implements EventSubscriberInterface {
     if (strstr($current_path, 'georeport')) {
       $exceptionCode = method_exists($exception, 'getStatusCode') ? $exception->getStatusCode() : $exception->getCode();
 
-      if ($exceptionCode == 400 && $exception instanceof \Drupal\markaspot_open311\Exception\GeoreportException && is_countable($exception->getViolations())) {
+      if ($exceptionCode == 400 && $exception instanceof GeoreportException && is_countable($exception->getViolations())) {
         $errors = [];
         $violations = $exception->getViolations();
 
@@ -78,15 +79,19 @@ class GeoreportEventSubscriber implements EventSubscriberInterface {
             case 'field_category':
               $error['code'] = '103 - service_code';
               break;
+
             case 'field_category.0.target_id':
               $error['code'] = '104 - service_code not valid';
               break;
+
             case 'field_status.0.target_id':
               $error['code'] = '105 - Status not valid';
               break;
+
             case 'field_organisation.0.target_id':
               $error['code'] = '106 - Organisation not valid';
               break;
+
             default:
               $error['code'] = $geoReportErrorCode ?? '400 - Bad Request';
           }
@@ -94,7 +99,8 @@ class GeoreportEventSubscriber implements EventSubscriberInterface {
           $error['description'] = strip_tags($violation->getMessage());
           $errors[] = $error;
         }
-      } else {
+      }
+      else {
         $errors['error']['code'] = $exceptionCode;
         $errors['error']['description'] = $exception->getMessage();
       }
@@ -113,4 +119,5 @@ class GeoreportEventSubscriber implements EventSubscriberInterface {
       $event->setResponse($response);
     }
   }
+
 }

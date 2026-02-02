@@ -130,6 +130,46 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    // Status Notes Configuration.
+    $form['markaspot_open311']['status_notes'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Status Notes Configuration'),
+      '#description' => $this->t('Configure automatic status note creation.'),
+      '#collapsible' => TRUE,
+      '#group' => 'settings',
+    ];
+
+    $form['markaspot_open311']['status_notes']['status_note_auto_create'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Auto-create status notes on status change'),
+      '#default_value' => $config->get('status_note_auto_create') ?? TRUE,
+      '#description' => $this->t('When enabled, automatically creates a status note when the status changes. Disable if the frontend handles status notes.'),
+    ];
+
+    $form['markaspot_open311']['status_notes']['status_note_created'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Initial Status Note Text'),
+      '#default_value' => $config->get('status_note_created') ?? 'The service request has been created.',
+      '#description' => $this->t('Default text for the initial status note when a new request is created. Leave empty to skip.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="status_note_auto_create"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
+    $form['markaspot_open311']['status_notes']['status_note_changed'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Status Changed Note Text'),
+      '#default_value' => $config->get('status_note_changed') ?? 'Status changed.',
+      '#description' => $this->t('Default text for status notes when status changes. Leave empty to skip auto-creation on status change.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="status_note_auto_create"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     // Field Access Configuration.
     $form['markaspot_open311']['field_access'] = [
       '#type' => 'fieldset',
@@ -139,17 +179,17 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       '#group' => 'settings',
     ];
 
-    // Get all available fields for service requests
+    // Get all available fields for service requests.
     $fields = \Drupal::service('entity_field.manager')
       ->getFieldDefinitions('node', 'service_request');
 
     $options = [];
     foreach ($fields as $field_name => $field_definition) {
-      // Exclude core technical fields
+      // Exclude core technical fields.
       if (!in_array($field_name, [
         'nid', 'uuid', 'vid', 'type', 'revision_timestamp',
         'revision_uid', 'revision_log', 'uid', 'default_langcode',
-        'revision_default', 'revision_translation_affected', 'langcode'
+        'revision_default', 'revision_translation_affected', 'langcode',
       ])) {
         $options[$field_name] = $field_definition->getLabel() . ' (' . $field_name . ')';
       }
@@ -220,7 +260,7 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
     $form['markaspot_open311']['group_integration'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('Group Integration'),
-      '#description' => $this->t('Configure integration with the Group module for organisation-based filtering.'),
+      '#description' => $this->t('Configure integration with the Group module for group-based filtering.'),
       '#collapsible' => TRUE,
       '#group' => 'settings',
     ];
@@ -242,14 +282,21 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
 
     $form['markaspot_open311']['group_integration']['group_filter_type'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Group Type for Filtering'),
-      '#default_value' => $config->get('group_filter_type') ?? 'organisation',
-      '#description' => $this->t('The group type machine name to use for filtering (e.g., "organisation"). Users will only see requests assigned to groups of this type that they are members of.'),
+      '#title' => $this->t('Organisation Group Type'),
+      '#default_value' => $config->get('group_filter_type') ?? 'org',
+      '#description' => $this->t('The group type machine name for organisations (e.g., "org" for new sites, "organisation" for legacy sites). Users will only see requests assigned to groups of this type that they are members of.'),
       '#states' => [
         'visible' => [
           ':input[name="group_filter_enabled"]' => ['checked' => TRUE],
         ],
       ],
+    ];
+
+    $form['markaspot_open311']['group_integration']['jurisdiction_group_type'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Jurisdiction Group Type'),
+      '#default_value' => $config->get('jurisdiction_group_type') ?? 'jur',
+      '#description' => $this->t('The group type machine name for jurisdictions (e.g., "jur" for new sites, "jurisdiction" for legacy sites). Used for multi-tenant configurations and jurisdiction-based filtering.'),
     ];
 
     return parent::buildForm($form, $form_state);
@@ -262,25 +309,30 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
     $values = $form_state->getValues();
 
     $this->config('markaspot_open311.settings')
-      // Content Types
+      // Content Types.
       ->set('bundle', $values['bundle'])
       ->set('tax_category', $values['tax_category'])
       ->set('tax_status', $values['tax_status'])
-      // Status Configuration
+      // Status Configuration.
       ->set('status_open_start', $values['status_open_start'])
       ->set('status_open', $values['status_open'])
       ->set('status_closed', $values['status_closed'])
-      // Field Access
+      // Status Notes Configuration.
+      ->set('status_note_auto_create', $values['status_note_auto_create'])
+      ->set('status_note_created', $values['status_note_created'])
+      ->set('status_note_changed', $values['status_note_changed'])
+      // Field Access.
       ->set('field_access.public_fields', $values['public_fields'])
       ->set('field_access.user_fields', $values['user_fields'])
       ->set('field_access.manager_fields', $values['manager_fields'])
-      // General Settings
+      // General Settings.
       ->set('node_options_status', $values['node_options_status'])
       ->set('nid_limit', $values['nid_limit'])
       ->set('revisions', $values['revisions'])
-      // Group Integration
+      // Group Integration.
       ->set('group_filter_enabled', $values['group_filter_enabled'])
       ->set('group_filter_type', $values['group_filter_type'])
+      ->set('jurisdiction_group_type', $values['jurisdiction_group_type'])
       ->save();
 
     parent::submitForm($form, $form_state);
@@ -309,4 +361,5 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
 
     return $options;
   }
+
 }

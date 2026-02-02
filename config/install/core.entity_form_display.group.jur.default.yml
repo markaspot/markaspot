@@ -1,0 +1,106 @@
+uuid: 83ba1cbe-1309-47d7-8410-911021b2273d
+langcode: it
+status: true
+dependencies:
+  config:
+    - field.field.group.jur.field_boundary
+    - field.field.group.jur.field_custom_css
+    - field.field.group.jur.field_font_body
+    - field.field.group.jur.field_font_heading
+    - field.field.group.jur.field_logo_dark
+    - field.field.group.jur.field_logo_light
+    - field.field.group.jur.field_nuxt_config
+    - field.field.group.jur.field_slug
+    - group.type.jur
+  module:
+    - file
+    - markaspot_nuxt
+    - path
+    - text
+id: group.jur.default
+targetEntityType: group
+bundle: jur
+mode: default
+content:
+  field_boundary:
+    type: text_textarea
+    weight: 7
+    region: content
+    settings:
+      rows: 5
+      placeholder: 'GeoJSON FeatureCollection'
+    third_party_settings: {  }
+  field_custom_css:
+    type: text_textarea
+    weight: 5
+    region: content
+    settings:
+      rows: 5
+      placeholder: ''
+    third_party_settings: {  }
+  field_font_body:
+    type: file_generic
+    weight: 11
+    region: content
+    settings:
+      progress_indicator: throbber
+    third_party_settings: {  }
+  field_font_heading:
+    type: file_generic
+    weight: 10
+    region: content
+    settings:
+      progress_indicator: throbber
+    third_party_settings: {  }
+  field_logo_dark:
+    type: file_generic
+    weight: 4
+    region: content
+    settings:
+      progress_indicator: throbber
+    third_party_settings: {  }
+  field_logo_light:
+    type: file_generic
+    weight: 3
+    region: content
+    settings:
+      progress_indicator: throbber
+    third_party_settings: {  }
+  field_nuxt_config:
+    type: nuxt_config_json_form
+    weight: 6
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  field_slug:
+    type: string_textfield
+    weight: 1
+    region: content
+    settings:
+      size: 60
+      placeholder: stadt-osnabrueck
+    third_party_settings: {  }
+  label:
+    type: string_textfield
+    weight: 0
+    region: content
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  langcode:
+    type: language_select
+    weight: 1
+    region: content
+    settings:
+      include_locked: true
+    third_party_settings: {  }
+  path:
+    type: path
+    weight: 2
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+hidden:
+  status: true
+  uid: true

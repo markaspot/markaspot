@@ -117,7 +117,7 @@ class MarkaspotPublisherSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('default_days'),
       '#description' => $this->t('Global default number of days before publishing for categories without override.'),
     ];
-    
+
     // Time threshold to determine intentional unpublishing.
     $form['markaspot_publisher']['manual_unpublish_threshold'] = [
       '#type' => 'number',

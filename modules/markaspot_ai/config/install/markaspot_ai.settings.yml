@@ -1,0 +1,21 @@
+default_provider: openai
+providers:
+  openai:
+    api_key: ''
+    api_url: 'https://api.openai.com/v1'
+    chat_model: 'gpt-4o'
+    embedding_model: 'text-embedding-3-large'
+    auth_type: 'bearer'
+duplicate_detection:
+  enabled: true
+  similarity_threshold: 0.85
+  radius_meters: 500
+  time_window_days: 30
+  auto_flag: false
+token_tracking:
+  enabled: true
+  daily_limit: 100000
+  alert_threshold: 0.9
+sentiment_analysis:
+  enabled: true
+  model: 'gpt-4o-mini'

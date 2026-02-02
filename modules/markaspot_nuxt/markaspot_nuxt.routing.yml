@@ -33,3 +33,19 @@ markaspot_nuxt.field_options:
     _title: 'Field Options'
   requirements:
     _permission: 'access content'
+
+markaspot_nuxt.jurisdictions:
+  path: '/api/jurisdictions'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getJurisdictions'
+    _format: 'json'
+  requirements:
+    _permission: 'access content'
+
+markaspot_nuxt.organisations:
+  path: '/api/organisations'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getOrganisations'
+    _format: 'json'
+  requirements:
+    _permission: 'access content'

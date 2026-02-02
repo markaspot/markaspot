@@ -5,3 +5,25 @@ markaspot_open311.settings:
     _title: 'Open 311'
   requirements:
     _permission: 'administer site configuration'
+
+markaspot_open311.georeport_stats:
+  path: '/georeport/v2/stats.json'
+  defaults:
+    _controller: '\Drupal\markaspot_open311\Controller\GeoreportStatsController::getStatusStats'
+    _title: 'GeoReport Stats'
+    _format: 'json'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: FALSE
+
+markaspot_open311.georeport_category_stats:
+  path: '/georeport/v2/stats/categories.json'
+  defaults:
+    _controller: '\Drupal\markaspot_open311\Controller\GeoreportStatsController::getCategoryStats'
+    _title: 'GeoReport Category Stats'
+    _format: 'json'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: FALSE

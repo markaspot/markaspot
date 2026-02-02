@@ -1,0 +1,14 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+id: jur-member
+label: Member
+weight: 0
+admin: false
+scope: individual
+global_role: null
+group_type: jur
+permissions:
+  - 'view group'

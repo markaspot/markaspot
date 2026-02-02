@@ -1,4 +1,5 @@
 <?php
+
 /**
  * @file
  * Install, update and uninstall functions for the Mark‑a‑Spot Archive module.
@@ -6,7 +7,6 @@
 
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\field\Entity\FieldConfig;
-use Drupal\Core\Field\FieldStorageDefinitionInterface;
 
 /**
  * Adds an integer field 'field_archive_days' to the 'service_category' vocabulary.
@@ -24,7 +24,7 @@ function markaspot_archive_update_9001() {
       'type' => 'integer',
       'settings' => [
         'min' => 1,
-        'max' => null,
+        'max' => NULL,
         'prefix' => '',
         'suffix' => '',
       ],
@@ -51,14 +51,14 @@ function markaspot_archive_update_9001() {
       'required' => FALSE,
       'translatable' => FALSE,
       'settings' => [],
-      'default_value' => [[ 'value' => $default_days ]],
+      'default_value' => [['value' => $default_days]],
       'default_value_callback' => '',
     ]);
     $instance->save();
   }
   else {
     // Update existing field to set default value.
-    $instance->set('default_value', [[ 'value' => $default_days ]]);
+    $instance->set('default_value', [['value' => $default_days]]);
     $instance->save();
   }
 
@@ -87,6 +87,7 @@ function markaspot_archive_update_9001() {
 
   return TRUE;
 }
+
 /**
  * Add cron_always_run setting with default FALSE to existing config.
  */

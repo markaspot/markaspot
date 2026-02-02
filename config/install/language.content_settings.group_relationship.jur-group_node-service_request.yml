@@ -1,0 +1,18 @@
+uuid: d13c0444-0d49-434a-858c-a89348ae8e95
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.relationship_type.jur-group_node-service_request
+  module:
+    - content_translation
+third_party_settings:
+  content_translation:
+    enabled: false
+    bundle_settings:
+      untranslatable_fields_hide: '0'
+id: group_relationship.jur-group_node-service_request
+target_entity_type_id: group_relationship
+target_bundle: jur-group_node-service_request
+default_langcode: site_default
+language_alterable: false

@@ -1,0 +1,20 @@
+uuid: 2a743143-72ec-4877-bde2-957cca2f0a48
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.relationship_type.jur-group_node-service_request
+id: group_relationship.jur-group_node-service_request.uid
+field_name: uid
+entity_type: group_relationship
+bundle: jur-group_node-service_request
+label: 'Group relationship creator'
+description: 'The username of the group relationship creator.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: 'Drupal\group\Entity\GroupRelationship::getDefaultEntityOwner'
+settings:
+  handler: default
+  handler_settings: {  }
+field_type: entity_reference

@@ -60,7 +60,7 @@ class ResubmissionReminderSubscriber implements EventSubscriberInterface {
     MailManagerInterface $mail_manager,
     LanguageManagerInterface $language_manager,
     LoggerChannelInterface $logger,
-    Token $token
+    Token $token,
   ) {
     $this->mailManager = $mail_manager;
     $this->languageManager = $language_manager;

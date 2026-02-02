@@ -5,3 +5,7 @@ services:
   markaspot_nuxt.frontend_url:
     class: Drupal\markaspot_nuxt\Service\FrontendUrlService
     arguments: ['@config.factory']
+
+  # Note: Boolean helper and json_form.* service overrides are registered
+  # dynamically via MarkaspotNuxtServiceProvider when json_form_widget is active.
+  # This allows updates from versions where json_form_widget was not installed.

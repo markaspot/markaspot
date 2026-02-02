@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+    - user.role.authenticated
+id: org-member
+label: Member
+weight: -9
+admin: false
+scope: insider
+global_role: authenticated
+group_type: org
+permissions:
+  - 'create group_node:service_request entity'
+  - 'view group'
+  - 'view group_node:service_request entity'
+  - 'view unpublished group_node:service_request entity'

@@ -12,7 +12,7 @@ use Drupal\field\Entity\FieldStorageConfig;
  * Implements hook_install().
  */
 function markaspot_shstweak_install() {
-  // Add the disable_form field during module installation
+  // Add the disable_form field during module installation.
   _markaspot_shstweak_add_disable_form_field();
 }
 
@@ -21,7 +21,7 @@ function markaspot_shstweak_install() {
  */
 function _markaspot_shstweak_add_disable_form_field() {
   $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_disable_form');
-  
+
   // Create field storage if it doesn't exist.
   if (!$field_storage) {
     $field_storage = FieldStorageConfig::create([
@@ -37,10 +37,10 @@ function _markaspot_shstweak_add_disable_form_field() {
     ]);
     $field_storage->save();
   }
-  
+
   // Check if the field is already added to the service_category vocabulary.
   $field = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_disable_form');
-  
+
   // Create field instance if it doesn't exist.
   if (!$field) {
     $field = FieldConfig::create([
@@ -53,13 +53,13 @@ function _markaspot_shstweak_add_disable_form_field() {
       'settings' => [],
     ]);
     $field->save();
-    
+
     // Update field form display.
     // Get the form display for the service_category entity type.
     $form_display = \Drupal::entityTypeManager()
       ->getStorage('entity_form_display')
       ->load('taxonomy_term.service_category.default');
-      
+
     if ($form_display) {
       // Make field visible on the form.
       $form_display->setComponent('field_disable_form', [
@@ -70,12 +70,12 @@ function _markaspot_shstweak_add_disable_form_field() {
         ],
       ])->save();
     }
-    
+
     // Update entity view display.
     $view_display = \Drupal::entityTypeManager()
       ->getStorage('entity_view_display')
       ->load('taxonomy_term.service_category.default');
-      
+
     if ($view_display) {
       // Make field visible on the entity view.
       $view_display->setComponent('field_disable_form', [
@@ -87,10 +87,10 @@ function _markaspot_shstweak_add_disable_form_field() {
         ],
       ])->save();
     }
-    
+
     return t('Added "Disable form" field to service category taxonomy terms.');
   }
-  
+
   return t('The "Disable form" field already exists for service category taxonomy terms.');
 }
 

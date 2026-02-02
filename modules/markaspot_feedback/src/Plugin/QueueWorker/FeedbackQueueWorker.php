@@ -73,7 +73,7 @@ class FeedbackQueueWorker extends QueueWorkerBase implements ContainerFactoryPlu
    *   e.g. ['nid' => 123].
    */
   public function processItem($data) {
-    $nid = isset($data['nid']) ? $data['nid'] : NULL;
+    $nid = $data['nid'] ?? NULL;
     if (!$nid) {
       $this->logger->warning('Queue item is missing a node ID.');
       return;
@@ -91,64 +91,66 @@ class FeedbackQueueWorker extends QueueWorkerBase implements ContainerFactoryPlu
     try {
       // Load configuration.
       $config = \Drupal::configFactory()->getEditable('markaspot_feedback.settings');
-      
-      // Check if the node is in the proper status for feedback
+
+      // Check if the node is in the proper status for feedback.
       $feedback_eligible_statuses = $config->get('feedback_eligible_statuses') ?: $config->get('status_feedback_enabled');
       $current_status = $node->get('field_status')->target_id;
-      
+
       if (!isset($feedback_eligible_statuses[$current_status])) {
         $this->logger->notice('Node ID @nid is not in a status eligible for feedback (current: @current). Skipping.', [
           '@nid' => $nid,
-          '@current' => $current_status
+          '@current' => $current_status,
         ]);
         return;
       }
-      
-      // Check if feedback has already been requested for this node
+
+      // Check if feedback has already been requested for this node.
       $processed_nids = \Drupal::state()->get('markaspot_feedback.processed_nids', []);
       if (in_array($nid, $processed_nids)) {
         $this->logger->notice('Feedback has already been requested for node ID @nid. Skipping.', [
-          '@nid' => $nid
+          '@nid' => $nid,
         ]);
         return;
       }
-      
-      // Check if the node has a valid email address to send feedback to
+
+      // Check if the node has a valid email address to send feedback to.
       $hasEmail = FALSE;
-      
-      // Check if the node has a field_e_mail field and it's not empty
+
+      // Check if the node has a field_e_mail field and it's not empty.
       if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
         $hasEmail = TRUE;
       }
-      // Fallback to the node author's email as a last resort
+      // Fallback to the node author's email as a last resort.
       else {
         $user = $node->getOwner();
         if ($user && $user->getEmail()) {
           $hasEmail = TRUE;
         }
       }
-      
+
       if (!$hasEmail) {
         $this->logger->warning('Node ID @nid has no email address (field_e_mail or author). Cannot send feedback request.', [
-          '@nid' => $nid
+          '@nid' => $nid,
         ]);
         return;
       }
-      
-      // Process this node for feedback
+
+      // Process this node for feedback.
       $result = $this->feedbackService->processFeedbackForNode($node);
-      
+
       if ($result) {
         $this->logger->notice('Node ID @nid processed for feedback successfully.', ['@nid' => $nid]);
-      } else {
+      }
+      else {
         $this->logger->warning('Failed to process feedback for node ID @nid.', ['@nid' => $nid]);
       }
     }
     catch (\Exception $e) {
       $this->logger->critical('Queue processing failed for node @nid: @error', [
         '@nid' => $nid,
-        '@error' => $e->getMessage() . "\n" . $e->getTraceAsString()
+        '@error' => $e->getMessage() . "\n" . $e->getTraceAsString(),
       ]);
     }
   }
+
 }

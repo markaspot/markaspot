@@ -7,8 +7,11 @@ source:
   header_row_count: 1
   ids: [uuid]
 process:
-  title: title
+  info: title
   uuid: uuid
+  langcode:
+    plugin: default_value
+    default_value: en
   body/value: body
   body/format:
     plugin: default_value
