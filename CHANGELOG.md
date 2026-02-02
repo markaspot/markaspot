@@ -1,6 +1,77 @@
 
 # Changelog
 
+## [11.8.0] - 2026-02-02
+
+### Breaking Changes
+- **Group 3.x Upgrade**: Requires Group module 3.x (migration from Group 2.x)
+- **Drupal 11.2+ Required**: Updated minimum Drupal core version
+
+### Added
+- **markaspot_cap**: CAP 1.2 (Common Alerting Protocol) export module for emergency alerts (EU EECC Article 110 compliant, MoWaS/NINA/EU-Alert integration)
+- **markaspot_dashboard**: New dashboard module with StatusNoteController for admin interfaces
+- **markaspot_ai**: AI-powered features module for image analysis and content processing
+- **Group 3 Support**: field_all_groups_member for automatic group membership, bidirectional sync between field_organisation and group relationships
+- **Jurisdiction Multi-Tenant**: Complete jurisdiction (jur) group type config, slug routing, boundary/CSS fields, locales with custom labels
+- **GeoReport Sorting**: nid sort field for numeric ID sorting (JSON:API style with - prefix)
+- **Search API Integration**: Full-text search for Open311 with rate limiting
+- **Vision Enhancements**: hazard_level field, language-aware AI descriptions, CAP standard codes for hazard categories
+- **Stats API**: New endpoints with group module integration, content language filtering
+- **Service Provider**: ECA event for SP response notifications
+- **Nuxt Config**: groupTypes for JSON:API relationships, marker/cluster appearance config, geocoding country/region settings, custom color picker with Tailwind presets, pro_enabled setting
+- **API Endpoints**: All jurisdictions endpoint, jurisdiction slug routing with group filtering
+- **Accept-Language Header**: Support in GeoReport API for i18n
+- **BBox Caching**: New module for geographic query optimization
+
+### Changed
+- **Group Module**: Updated to Group 3.x API (GroupRelationship), configurable group type names for legacy sites
+- **Icon Migration**: From FontAwesome to Lucide icons (status and category icons)
+- **Emergency Endpoint**: Renamed from /api/system/status to /api/emergency-mode/status
+- **Service Request**: field_organisation changed to group reference
+- **Nuxt Dependencies**: json_form_widget is now a soft dependency
+- **Validation**: Duplicate hint mode for headless frontends
+
+### Fixed
+- **Security**: XSS vulnerability in markaspot_nuxt, group membership check, CSRF validation for public AI endpoint
+- **Open311**: Prevent null reference when status_term missing, leading comma in address formatting, duplicate taxonomy terms in multilingual stats
+- **Publisher**: Process all categories in each cron run
+- **Group**: Cast target_id to int for JSON:API compatibility, skip unpublished jurisdiction groups in settings API
+- **Nuxt**: Backend caching, jurisdiction ordering, logo URLs from group entity, boundary/CSS field migration to string_long
+- **Installation**: Config dependencies for multisite, administrator role in profile config
+- **Validation**: isset checks for field constraints
+- **Icons**: Set default to Lucide
+- **Logout**: Proper session handling
+
+### Refactored
+- **StatusNoteController**: Moved from markaspot_nuxt to markaspot_dashboard
+- **Vision**: CAP standard codes for hazard categories
+- **Group Access**: Replace PBF with Group module access control
+- **Service Request**: Clean up status note handling
+- **Default Content**: Group migrations and module refactor
+
+### Removed
+- **markaspot_privacy**: Uninstalled (functionality moved elsewhere)
+- **Voting Feature**: Removed as standalone feature
+- **npm-asset/leaflet.heat**: Removed unused dependency
+
+## [11.7.2] - 2025-01-27
+
+### Added
+- **API Meta Parameter**: Group filter and meta parameter for API responses with total/offset/limit
+
+### Fixed
+- **Publisher**: Process all categories in each cron run
+- **Validation**: Enable duplicate hint mode for headless frontends
+
+## [11.7.1] - 2025-01-25
+
+### Added
+- **API Meta Property**: Total, offset and limit information in responses
+
+### Fixed
+- **MapBox Removal**: Use MapLibre for Nominatim widget
+- **Body Field**: Allow text formats for body field in Drupal 11
+
 ## [11.7.0] - 2025-01-23
 
 ### Added
