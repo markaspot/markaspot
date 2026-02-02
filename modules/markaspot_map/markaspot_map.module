@@ -1,21 +1,20 @@
 <?php
 
-function markaspot_map_page_attachments(array &$page) {
+function markaspot_map_page_attachments(array &$page)
+{
   $attached = \Drupal::configFactory()
     ->getEditable('markaspot_map.settings')->get();
 
   $page['#attached']['drupalSettings']['mas'] = $attached;
-  $page['#attached']['drupalSettings']['mas'] = $attached;
 
-  $path =\Drupal::service('path.current')->getPath();
-  if ($path !== '/report' && !strstr($path, 'admin')  && !strstr($path, 'node/add') && !strstr($path, 'edit')) {
+  $path = \Drupal::service('path.current')->getPath();
+  if ($path !== '/report' && !strstr($path, 'admin') && !strstr($path, 'node/add') && !strstr($path, 'edit')) {
     $page['#attached']['library'][] = 'markaspot_map/map';
 
     if ($attached['map_type'] == '0' && $attached['maplibre'] == '1') {
       $page['#attached']['library'][] = 'markaspot_map/maplibre';
     } elseif ($attached['map_type'] == '0' && $attached['maplibre'] == '0') {
-      $page['#attached']['library'][] = 'markaspot_map/mapbox';
+      $page['#attached']['library'][] = 'markaspot_map/maplibre';
     }
-
   }
 }

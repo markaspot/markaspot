@@ -1,0 +1,161 @@
+/**
+ * @file
+ * Styling for Mark-a-Spot toolbar.
+ */
+
+/* Toolbar tab icon */
+.toolbar-bar .toolbar-icon-markaspot-ui:before {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  background: transparent url(../images/logo-small-invert.svg) 50% 50% no-repeat !important;
+  background-size: 1.5em !important;
+}
+
+.toolbar-bar .toolbar-icon-markaspot-ui:active:before,
+.toolbar-bar .toolbar-icon-markaspot-ui.is-active:before {
+  background-image: url(../images/logo-small-invert.svg) !important;
+  background-size: 1.5em !important;
+  opacity: 1;
+}
+
+/* Settings overview style for toolbar */
+.markaspot-settings-overview {
+  margin: 1em 0;
+}
+
+.markaspot-settings-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+  margin-top: 1em;
+}
+
+.markaspot-setting-item {
+  display: flex;
+  padding: 0.75em;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  width: 100%;
+  max-width: 300px;
+}
+
+.markaspot-setting-item:hover {
+  background-color: #e9e9e9;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.markaspot-icon {
+  flex: 0 0 2em;
+  height: 2em;
+  margin-right: 0.75em;
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.markaspot-setting-title {
+  font-weight: bold;
+  font-size: 1.1em;
+  color: #0074bd;
+  text-decoration: none;
+  margin-bottom: 0.25em;
+  display: block;
+}
+
+.markaspot-setting-description {
+  font-size: 0.9em;
+  color: #666;
+  line-height: 1.4;
+}
+
+/* Module specific styling */
+.markaspot-toolbar-item {
+  padding-left: 1.5em !important;
+  background-position: 0.5em center;
+  background-repeat: no-repeat;
+  background-size: 1em;
+}
+
+/* Mobile responsiveness */
+@media screen and (max-width: 767px) {
+  .markaspot-settings-list {
+    flex-direction: column;
+  }
+
+  .markaspot-setting-item {
+    max-width: 100%;
+  }
+}
+
+/* Override Gin's hiding of toolbar tabs - show user menu and markaspot at all breakpoints */
+@media (min-width: 61em) {
+  /* Match Gin's specificity exactly and override */
+  body.gin--vertical-toolbar .toolbar .toolbar-bar .toolbar-tab.user-menu,
+  body.gin--vertical-toolbar .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui,
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui {
+    display: block !important;
+  }
+
+  /* Show the toolbar items but hide text, show only icons */
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-icon,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-icon,
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-item,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-item {
+    display: block !important;
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 0 !important;
+    text-indent: -9999px !important;
+  }
+
+  /* Ensure the ::before icons are visible and centered */
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-icon::before,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-icon::before {
+    font-size: 1rem !important;
+    text-indent: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: 2rem !important;
+  }
+}
+
+/* At wider viewports, restore text alongside icons (matching Gin's Devel menu behavior) */
+@media (min-width: 80em) {
+  /* Reset icon-only styles to allow text */
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-icon,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-icon,
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-item,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-item {
+    width: auto !important;
+    height: auto !important;
+    font-size: inherit !important;
+    text-indent: 0 !important;
+    padding-left: 2.5em !important;
+    position: relative !important;
+  }
+
+  /* Position icons to the left of text, matching Gin's secondary toolbar style */
+  body .toolbar .toolbar-bar .toolbar-tab.user-menu .toolbar-icon::before,
+  body .toolbar .toolbar-bar .toolbar-tab.toolbar-id--toolbar-icon-markaspot-ui .toolbar-icon::before {
+    width: var(--gin-icon-size-toolbar-secondary) !important;
+    height: var(--gin-icon-size-toolbar-secondary) !important;
+    position: absolute !important;
+    inset-block-start: 50% !important;
+    inset-inline-start: 12px !important;
+    left: 12px !important;
+    transform: translateY(-50%) !important;
+  }
+}
+
+/* Hide "Back to site" breadcrumb link - not relevant for our use case */
+.gin-breadcrumb__item a[data-gin-toolbar-escape-admin] {
+  display: none !important;
+}
+
+/* Also hide the entire breadcrumb item if it only contains the back to site link */
+.gin-breadcrumb__item:has(a[data-gin-toolbar-escape-admin]:only-child) {
+  display: none !important;
+}

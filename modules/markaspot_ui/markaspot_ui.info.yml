@@ -1,8 +1,8 @@
-name: Markaspot UI module
+name: 'Mark-a-Spot UI'
 type: module
-description: 'UI and Menubar for the Mark-a-Spot Distro'
-package: Mark-a-Spot
-
-core_version_requirement: ^8 || ^9 || ^10
+description: 'Provides a toolbar integration and central management interface for Mark-a-Spot modules.'
+core_version_requirement: ^10 || ^11
+package: 'Mark-a-Spot'
 dependencies:
-  - toolbar
+  - drupal:toolbar
+  - drupal:system

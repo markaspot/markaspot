@@ -43,6 +43,9 @@ class GeolocationMapboxWidget extends WidgetBase {
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,
+      'dragging' => TRUE,
+      'zoomControl' => FALSE,
+      'tab' => TRUE
     ] + parent::defaultSettings();
   }
 
@@ -120,7 +123,7 @@ class GeolocationMapboxWidget extends WidgetBase {
       '#description' => $this->t('Enter the layer ID like "layer:layer"'),
     ];
     $elements['customAttribution'] = [
-      '#type' => 'textfield',
+      '#type' => 'textarea',
       '#title' => $this->t('Add a custom attribution'),
       '#default_value' => $this->getSetting('customAttribution'),
       '#description' => $this->t('Check your Tile Service Provider for policy'),
@@ -156,6 +159,24 @@ class GeolocationMapboxWidget extends WidgetBase {
       '#title' => $this->t('Address formatting (street search)'),
       '#description' => $this->t('Check to use street name + building number format'),
       '#default_value' => $this->getSetting('streetNumberFormat'),
+    ];
+    $elements['dragging'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Dragging'),
+      '#description' => $this->t('Enable dragging of the map'),
+      '#default_value' => $this->getSetting('dragging'),
+    ];
+    $elements['zoomControl'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Zoom Control'),
+      '#description' => $this->t('Enable zoom control on the map'),
+      '#default_value' => $this->getSetting('zoomControl'),
+    ];
+    $elements['tab'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Tab'),
+      '#description' => $this->t('Enable tab on the map'),
+      '#default_value' => $this->getSetting('tab'),
     ];
     return $elements;
   }
@@ -247,6 +268,9 @@ class GeolocationMapboxWidget extends WidgetBase {
               'autoLocate' => $this->getSetting('autoLocate'),
               'fullscreenControl' => $this->getSetting('fullscreenControl'),
               'streetNumberFormat' => $this->getSetting('streetNumberFormat'),
+              'dragging' => $this->getSetting('dragging'),
+              'zoomControl' => $this->getSetting('zoomControl'),
+              'tab' => $this->getSetting('tab'),
             ],
           ],
         ],

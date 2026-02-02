@@ -1,0 +1,26 @@
+services:
+  logger.channel.markaspot_ui:
+    parent: logger.channel_base
+    arguments: ['markaspot_ui']
+
+  markaspot_ui.toolbar_builder:
+    class: Drupal\markaspot_ui\ToolbarBuilder
+    arguments: ['@module_handler', '@extension.list.module', '@router.route_provider']
+
+  markaspot_ui.node_form_access_subscriber:
+    class: Drupal\markaspot_ui\EventSubscriber\NodeFormAccessSubscriber
+    arguments: ['@current_user', '@current_route_match']
+    tags:
+      - { name: event_subscriber }
+
+  markaspot_ui.anonymous_redirect_subscriber:
+    class: Drupal\markaspot_ui\EventSubscriber\AnonymousRedirectSubscriber
+    arguments: ['@current_user', '@logger.channel.markaspot_ui', '@config.factory']
+    tags:
+      - { name: event_subscriber }
+
+  markaspot_ui.login_redirect_subscriber:
+    class: Drupal\markaspot_ui\EventSubscriber\LoginRedirectSubscriber
+    arguments: ['@config.factory', '@current_user', '@request_stack']
+    tags:
+      - { name: event_subscriber }

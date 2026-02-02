@@ -72,14 +72,24 @@ function padZero(str, len = 2) {
       const elements = once("markaspot_map", mapSelector);
 
       elements.forEach(() => {
-        Drupal.Markaspot.maps[0] = L.map("map", {
-          fullscreenControl: true,
-          scrollWheelZoom: !L.Browser.mobile,
-          minZoom: 12,
-          maxZoom: 18,
-          dragging: true,
-          zoom: masSettings.zoom_initial
-        });
+        if (drupalSettings.path.isFront) {
+          Drupal.Markaspot.maps[0] = L.map("map", {
+            scrollWheelZoom: false,
+            dragging: false,
+            zoomControl: false,
+            zoom: masSettings.zoom_initial,
+            maxZoom: masSettings.zoom_initial,
+            minZoom: masSettings.zoom_initial
+          });
+        } else {
+          Drupal.Markaspot.maps[0] = L.map("map", {
+            fullscreenControl: true,
+            scrollWheelZoom: !L.Browser.mobile,
+            maxZoom: 18,
+            dragging: true,
+            zoom: masSettings.zoom_initial
+          });
+        }
         let tileLayer;
         const map = Drupal.Markaspot.maps[0];
         let gl;

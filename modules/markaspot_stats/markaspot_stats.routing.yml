@@ -1,0 +1,54 @@
+markaspot_stats.status:
+  path: '/stats/status'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\StatsController::getStatusStats'
+    _title: 'Service Request Status Statistics'
+    _format: 'json'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+markaspot_stats.api_status:
+  path: '/api/stats/status'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\StatsController::getStatusStats'
+    _title: 'Service Request Status Statistics'
+    _format: 'json'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+markaspot_stats.categories:
+  path: '/stats/categories'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\StatsController::getCategoryStats'
+    _title: 'Service Request Category Statistics'
+    _format: 'json'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+markaspot_stats.api_categories:
+  path: '/api/stats/categories'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\StatsController::getCategoryStats'
+    _title: 'Service Request Category Statistics'
+    _format: 'json'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+markaspot_stats.categories_hierarchical:
+  path: '/stats/categories/hierarchical'
+  defaults:
+    _controller: '\Drupal\markaspot_stats\Controller\StatsController::getHierarchicalCategoryStats'
+    _title: 'Hierarchical Service Request Category Statistics'
+    _format: 'json'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE

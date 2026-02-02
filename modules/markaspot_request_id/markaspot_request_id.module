@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Contains cgn_request_id.module..
+ * Contains markaspot_request_id.module.
  */
 
 use Drupal\Core\Entity\EntityInterface;
@@ -19,8 +19,8 @@ use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
  */
 function markaspot_request_id_help($route_name, RouteMatchInterface $route_match) {
   switch ($route_name) {
-    // Main module help for the cgn_request_id module.
-    case 'help.page.cgn_request_id':
+    // Main module help for the markaspot_request_id module.
+    case 'help.page.markaspot_request_id':
       $output = '';
       $output .= '<h3>' . t('About') . '</h3>';
       $output .= '<p>' . t('Adds a custom request id') . '</p>';
@@ -79,11 +79,11 @@ function markaspot_request_id_form_alter(&$form, FormStateInterface $form_state)
 function markaspot_request_id_node_presave(EntityInterface $node) {
   if ($node->bundle() == 'service_request') {
     if ($node->request_id->value == NULL) {
-      // $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
       $request_id = markaspot_request_id_create_request_id();
       $node->request_id->value = $request_id;
       $title = markaspot_request_id_create_title($node, $request_id);
-      markaspot_request_id_update_table($node, $title, $request_id);
+      // Note: Entity API will sync title and request_id to node_field_data during save.
+      // No direct database update needed - $node->id() is NULL during presave for new nodes.
     }  else {
       $request_id = $node->request_id->value;
       $title = markaspot_request_id_create_title($node, $request_id);
@@ -91,21 +91,6 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
     $node->title = $title;
 
   }
-}
-
-/**
- * @param $node
- * @param $title
- * @param $request_id
- */
-function markaspot_request_id_update_table($node, $title, $request_id) {
-  \Drupal::database()->update('node_field_data')
-    ->fields([
-      'title' => $title,
-      'request_id' => $request_id,
-    ])
-    ->condition('nid', $node->id(), '=')
-    ->execute();
 }
 
 
@@ -130,7 +115,6 @@ function markaspot_request_id_create_request_id() {
         'timestamp' => $timestamp,
       ])
       ->execute();
-    // Write request id as string to row. todo: make request id periodically, or custom pattern
 
     // Update with the rollover feature
     if ($config->get('rollover')) {
@@ -249,21 +233,24 @@ function markaspot_request_id_update_timestamp($connection, $id, $timestamp) {
  */
 function markaspot_request_id_create_title($node, $request_id) {
   $language = \Drupal::languageManager()->getCurrentLanguage()->getId();
-  $tid = $node->field_category->target_id;
-  // Instead of contributed module auto entity_title:
-  // Get the service name by ID and update the title field.
-  $service_name = "";
-  if (isset($tid)) {
-    $taxonomy_term = \Drupal::entityTypeManager()
-      ->getStorage('taxonomy_term')
-      ->load($tid);
-    //$service_name = \Drupal::service('entity.repository')->getTranslationFromContext($taxonomy_term);
-    if ($taxonomy_term !== NULL) {
-      $service_name = \Drupal::service('entity.repository')
-        ->getTranslationFromContext($taxonomy_term, $language);
+  $service_name_text = "";
+
+  // Check if category field exists and has a value.
+  if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+    $tid = $node->field_category->target_id;
+    if (isset($tid)) {
+      $taxonomy_term = \Drupal::entityTypeManager()
+        ->getStorage('taxonomy_term')
+        ->load($tid);
+      if ($taxonomy_term !== NULL) {
+        $service_name = \Drupal::service('entity.repository')
+          ->getTranslationFromContext($taxonomy_term, $language);
+        $service_name_text = $service_name->name->value ?? '';
+      }
     }
   }
-  return '#' . $request_id . ' ' . $service_name->name->value;
+
+  return '#' . $request_id . ' ' . $service_name_text;
 
 }
 

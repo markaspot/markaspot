@@ -173,7 +173,7 @@ class GeoreportRequestResource extends ResourceBase {
         case 'POST':
           foreach ($this->serializerFormats as $format_name) {
             $format_route = clone $route;
-            $format_route->setRequirement('_access_rest_csrf', 'FALSE');
+            $format_route->setRequirement('_csrf_request_header_token', 'FALSE');
             // Restrict the incoming HTTP Content-type header to the known
             // serialization formats.
             $format_route->addRequirements(
@@ -244,23 +244,24 @@ class GeoreportRequestResource extends ResourceBase {
    * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
    */
   public function get(string $id) {
-
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
-    // Filtering the configured content type.
-    $bundle = $this->config->get('bundle');
-    $bundle = (isset($bundle)) ? $bundle : 'service_request';
-    $query = $this->entityTypeManager->getStorage('node')->getQuery()
-      ->condition('type', $bundle);
+
+    // Start with the secure base query
+    $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
+
+    // Add bundle condition
+    $bundle = $this->config->get('bundle') ?? 'service_request';
+    $query->condition('type', $bundle);
+
+    // Handle the main request ID
     if ($id != "") {
       $query->condition('request_id', $this->getRequestId($id));
     }
 
-    // Checking for service_code and map the code with taxonomy terms:
+    // Handle additional ID parameter if present
     if (isset($parameters['id'])) {
-      // Get the service of the current node:
       $query->condition('request_id', $parameters['id']);
     }
-    $query->accessCheck(FALSE);
 
     return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
   }
@@ -274,7 +275,6 @@ class GeoreportRequestResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function post($id, $request_data) {
-
     try {
       if (!$this->currentUser->hasPermission('access open311 advanced properties')) {
         throw new AccessDeniedHttpException();
@@ -290,99 +290,170 @@ class GeoreportRequestResource extends ResourceBase {
   }
 
   /**
-   * Update Drupal Node.
+   * Updates a node of type service_request.
    *
    * @param string $id
-   *   Node ID (nid) of that node.
+   *   The Node ID (nid) of the node to update.
    * @param array $request_data
-   *   The request data array.
+   *   An associative array containing the update data.
    *
    * @return array
-   *   The service request array with id.
+   *   An array with the updated node's service request ID.
    *
    * @throws \Exception
+   *   Throws exception if the node cannot be found or if there are validation errors.
    */
   public function updateNode(string $id, array $request_data): array {
     $request_id = $this->getRequestId($id);
+    $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['request_id' => $request_id]);
 
-    $nodes = $this->entityTypeManager->getStorage('node')
-      ->loadByProperties(['request_id' => $request_id]);
-
-    foreach ($nodes as $node) {
-      if ($node instanceof ContentEntityInterface) {
-        $request_data['service_request_id'] = $request_id;
-        $values = $this->georeportProcessor->requestMapNode($request_data, 'update');
-      }
-    }
     if (empty($nodes)) {
-      throw new NotFoundHttpException('Service-Request not found');
+      throw new NotFoundHttpException('Service request not found.');
     }
-    $revisionLogMessage = isset($values['revision_log_message']) ?? '';
-    unset($values['revision_log_message']);
 
-    foreach (array_keys($values) as $field_name) {
-      // Status notes need special care as they are paragraphs.
-      $field_type = $node->get($field_name)->getFieldDefinition()->getType();
-      if ($field_name == 'type') {
-        $node->set($field_name, $values[$field_name]);
+    $node = reset($nodes); // Assuming single matching node for the request ID.
+
+    if (!$node instanceof ContentEntityInterface) {
+      throw new \Exception('Loaded entity is not a content entity.');
+    }
+
+    // Prepare node properties for update.
+    $request_data['service_request_id'] = $request_id;
+    $values = $this->georeportProcessor->prepareNodeProperties($request_data, 'update');
+
+    // Process the update fields.
+    $this->processUpdateFields($node, $values);
+
+    // Validation and saving logic.
+    if ($this->validateAndUpdateNode($node, $values)) {
+      $this->logger->notice('Updated entity %type with ID %request_id.', [
+        '%type' => $node->getEntityTypeId(),
+        '%request_id' => $request_id,
+      ]);
+
+      return ['service_requests' => ['request' => ['service_request_id' => $request_id]]];
+    }
+
+    throw new \Exception('Node validation failed.');
+  }
+
+  /**
+   * Processes the fields for updating the node.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $node
+   *   The node entity to update.
+   * @param array $values
+   *   An associative array of field values to update.
+   */
+  protected function processUpdateFields(ContentEntityInterface $node, array $values): void {
+    // Handle media updates first
+    if (isset($values['_media_updates'])) {
+      $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates'], $node);
+      // Don't process this as a field
+      unset($values['_media_updates']);
+    }
+
+    foreach ($values as $field_name => $value) {
+      // Skip special handling fields; they are processed separately.
+      if (in_array($field_name, ['field_status_notes', 'revision_log_message', 'type'])) {
+        continue;
       }
 
-      elseif ($field_type == 'entity_reference' && $field_name != 'field_request_media') {
-        $node->set($field_name, ['target_id' => $values[$field_name]]);
+      // Skip if field doesn't exist on the node.
+      if (!$node->hasField($field_name)) {
+        continue;
       }
-      elseif ($field_name == 'field_status_notes') {
-        // Replace status only if new status is set.
-        $status = $values['field_status'] ?? $node->get('field_status')
-          ->getValue();
-        $paragraphData = [$status, $values['field_status_notes']];
-        $paragraph = $this->georeportProcessor->createParagraph($paragraphData);
 
-        $current = $node->get('field_status_notes')->getValue();
-        $current[] = [
-          'target_id' => $paragraph->id(),
-          'target_revision_id' => $paragraph->getRevisionId(),
-        ];
-        $node->set('field_status_notes', $current);
+      $fieldType = $node->get($field_name)->getFieldDefinition()->getType();
+
+      // For entity references, except for 'field_request_media'.
+      if ($fieldType == 'entity_reference' && $field_name != 'field_request_media') {
+        $node->set($field_name, ['target_id' => $value]);
       }
-      elseif ($field_name == 'revision_log_message') {
-        // Create a revision if set in open311 config.
-        if ($this->config->get('revisions')) {
-          $node->setNewRevision(TRUE);
-          // Set data for the revision.
-          $node->setRevisionLogMessage($revisionLogMessage);
-          // $node->setRevisionUserId();
-          $node->setRevisionCreationTime($this->time->getRequestTime());
+      // For formatted text fields (text_long, text_with_summary), set with format.
+      elseif (in_array($fieldType, ['text_long', 'text_with_summary'])) {
+        // Check if value already has format structure.
+        if (is_array($value) && isset($value['value'])) {
+          $node->set($field_name, $value);
+        }
+        else {
+          // Wrap plain string with user's default format.
+          $node->set($field_name, ['value' => $value, 'format' => filter_default_format()]);
         }
       }
       else {
-        // Set fields the usual way.
-        $node->set($field_name, $values[$field_name]);
+        $node->set($field_name, $value);
       }
     }
-    // Validate the node only if the user does not have the 'bypass mas validation' permission
-    $validation = TRUE;
-    if (!$this->currentUser->hasPermission('bypass mas validation')) {
-      $validation = $this->validate($node);
+
+    $this->specialFieldHandling($node, $values);
+  }
+
+  /**
+   * Handles special field logic including status notes, revisions, and other exceptions.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $node
+   *   The node entity to update.
+   * @param array $values
+   *   An associative array of field values to update.
+   */
+  protected function specialFieldHandling(ContentEntityInterface $node, array $values): void {
+    // Handling of field_status_notes.
+    if (isset($values['field_status_notes'])) {
+      // Use target_id for entity reference field, not value.
+      $status = $values['field_status'] ?? $node->get('field_status')->target_id;
+      $paragraphData = [$status, $values['field_status_notes']];
+      $paragraph = $this->georeportProcessor->createStatusNoteParagraph($paragraphData);
+
+      $current = $node->get('field_status_notes')->getValue();
+      $current[] = [
+        'target_id' => $paragraph->id(),
+        'target_revision_id' => $paragraph->getRevisionId(),
+      ];
+      $node->set('field_status_notes', $current);
     }
 
-    $service_request = [];
+    // Handling of revision creation.
+    if (isset($values['revision_log_message'])) {
+      $node->setNewRevision(TRUE);
+      $node->setRevisionLogMessage($values['revision_log_message']);
+      $node->setRevisionCreationTime($this->time->getRequestTime());
 
-    if ($validation === TRUE) {
+      // Optionally, you can set the revision user ID if needed.
+      // $node->setRevisionUserId($this->currentUser->id());
+    }
+  }
+
+  /**
+   * Validates and updates the node.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $node
+   *   The node entity to update.
+   * @param array $values
+   *   An associative array of field values to update.
+   *
+   * @return $service_request for later response
+   *   TRUE if the node was successfully validated and updated, FALSE otherwise.
+   */
+  protected function validateAndUpdateNode(ContentEntityInterface $node, array $values): bool {
+    // Implement validation logic. This is a placeholder for actual validation logic.
+    $isValid = $this->validate($node);
+
+    if ($isValid) {
       $node->save();
       $this->logger->notice('Updated entity %type with ID %request_id.', [
         '%type' => $node->getEntityTypeId(),
         '%request_id' => $node->request_id->value,
       ]);
-      // Save the node and prepare response;.
-      $request_id = $node->request_id->value;
-
-      if (isset($node)) {
-        $service_request['service_requests']['request']['service_request_id'] = $request_id;
-      }
+      return TRUE;
+    } else {
+      $this->logger->error('Updated entity %type with ID %request_id.', [
+        '%type' => $node->getEntityTypeId(),
+        '%request_id' => $node->request_id->value,
+      ]);      return FALSE;
     }
-    return $service_request;
-
   }
+
 
   /**
    * Return the service_request_id.
@@ -411,17 +482,32 @@ class GeoreportRequestResource extends ResourceBase {
   protected function validate(object $node) {
     $violations = $node->validate();
     if (count($violations) > 0) {
-      $messages = [];
+      $errors = [];
       foreach ($violations as $violation) {
-        $messages[substr($violation->getPropertyPath(), 6)] = $violation->getMessage();
+        $fullPath = $violation->getPropertyPath();
+        $message = $violation->getMessage();
+        $messageText = is_object($message) ? (string) $message : ($message ?? '');
+
+        // Get the invalid value for debugging.
+        $invalidValue = $violation->getInvalidValue();
+        $valueInfo = is_scalar($invalidValue) ? $invalidValue : gettype($invalidValue);
+
+        $errors[$fullPath] = [
+          'message' => $messageText,
+          'value' => $valueInfo,
+        ];
+
+        $this->logger->error('Node validation error - Path: @fullpath, Message: @message, Value: @value', [
+          '@fullpath' => $fullPath,
+          '@message' => $messageText,
+          '@value' => is_scalar($invalidValue) ? $invalidValue : json_encode($invalidValue),
+        ]);
       }
 
-      // Throw new BadRequestHttpException($message);
-      $exception = new GeoreportException();
-      $exception->setViolations($violations);
-      $exception->setCode(400);
-      throw $exception;
-      // Return $messages;.
+      // Convert errors to a string for the response
+      $detailedMessage = json_encode($errors);
+      throw new GeoreportException($detailedMessage, 400);
+
     }
     else {
       return TRUE;

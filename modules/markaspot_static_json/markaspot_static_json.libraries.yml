@@ -1,9 +1,0 @@
-# Geolocation core library.
-static_json:
-  version: 8.x-1.x
-  dependencies:
-    - core/jquery
-    - core/drupal
-    - core/drupalSettings
-  js:
-    js/static_json.js: {}

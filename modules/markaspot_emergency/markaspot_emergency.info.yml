@@ -1,0 +1,13 @@
+name: 'Mark-a-Spot Emergency'
+type: module
+description: 'Emergency mode for rapid disaster response with batch category management and lite UI activation.'
+core_version_requirement: ^10 || ^11
+package: 'Mark-a-Spot'
+dependencies:
+  - drupal:field
+  - drupal:taxonomy
+  - drupal:rest
+  - drupal:serialization
+  - drupal:user
+  - markaspot:markaspot_open311
+configure: markaspot_emergency.settings

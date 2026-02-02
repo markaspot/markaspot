@@ -8,8 +8,10 @@ source:
   ids: [title]
 process:
   title: title
-  body__value: description__value
-  body__format: full_html
+  body/value: body
+  body/format:
+    plugin: default_value
+    default_value: full_html
 destination:
   plugin: 'entity:node'
   default_bundle: page

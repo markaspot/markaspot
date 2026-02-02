@@ -2,7 +2,7 @@ name: Service Request Content Type
 description: Open311 Service Requests content type.
 package: Mark-a-Spot
 type: module
-core_version_requirement: ^8 || ^9 || ^10
+core_version_requirement: ^10 || ^11
 
 dependencies:
   - node
@@ -11,6 +11,8 @@ dependencies:
   - address
   - color_field
   - field_permissions
+  - field_formatter_class
+  - field_group
   - image
   - image_effects
   - file
@@ -18,6 +20,8 @@ dependencies:
   - paragraphs
   - entity_reference_revisions
   - fa_icon_class
+  - geolocation
+  - geolocation_nominatim
 
 config_devel:
   - core.view_display.node.service_request.default

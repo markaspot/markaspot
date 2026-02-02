@@ -1,0 +1,4 @@
+services:
+  markaspot_icons.migration:
+    class: Drupal\markaspot_icons\IconMigrationService
+    arguments: ['@database', '@entity_type.manager', '@logger.factory', '@messenger']

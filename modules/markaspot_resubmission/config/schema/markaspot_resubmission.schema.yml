@@ -1,0 +1,48 @@
+# Schema for the configuration files of the Mark-a-Spot Resubmission module.
+
+markaspot_resubmission.settings:
+  type: config_object
+  label: 'Mark-a-Spot Resubmission settings'
+  mapping:
+    tax_status:
+      type: string
+      label: 'Status Vocabulary'
+    status_resubmissive:
+      type: sequence
+      label: 'Resubmissive status terms'
+      sequence:
+        type: string
+        label: 'Term ID'
+    default_resubmission_days:
+      type: integer
+      label: 'Default days for resubmission'
+    mailtext:
+      type: text
+      label: 'Email template for resubmission notifications'
+    interval:
+      type: integer
+      label: 'Cron interval in seconds'
+    reminder_interval:
+      type: integer
+      label: 'Reminder interval in seconds'
+    max_reminders:
+      type: integer
+      label: 'Maximum number of reminders (0 for unlimited)'
+
+markaspot_resubmission.mail:
+  type: config_object
+  label: 'Mark-a-Spot Resubmission mail templates'
+  mapping:
+    langcode:
+      type: string
+      label: 'Language code'
+    resubmit_request:
+      type: mapping
+      label: 'Resubmission reminder email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'

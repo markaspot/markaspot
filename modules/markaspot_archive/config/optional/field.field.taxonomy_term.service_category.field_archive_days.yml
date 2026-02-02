@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_archive_days
+  module:
+    - markaspot_archive
+  taxonomy_term:
+    - service_category
+id: taxonomy_term.service_category.field_archive_days
+field_name: field_archive_days
+entity_type: taxonomy_term
+bundle: service_category
+label: 'Archive period (days)'
+description: 'Override the default archive period for this category. Leave empty to use global default.'
+required: false
+translatable: false
+default_value:
+  - value: 30
+default_value_callback: ''
+settings: {  }
+field_type: integer

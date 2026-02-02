@@ -75,7 +75,7 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
     $form['markaspot_archive']['common']['tax_status'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Bundle'),
-      '#default_value' => 'service_status',
+      '#default_value' => $config->get('tax_status'),
       '#description' => $this->t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
     ];
 
@@ -118,28 +118,35 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('anonymize_fields'),
       '#title' => $this->t('Please choose the fields that will get overwritten on archiving.'),
     ];
-
-    $catOptions = $this->getTaxonomyTermOptions('service_category');
-    $form['markaspot_archive']['days'] = [
-      '#tree' => TRUE,
-      '#type' => 'details',
-      '#title' => $this->t('Archive period settings per category'),
-      '#description' => $this->t('You can change the period in which archivable content is sent to the archiving status.'),
-    // Controls the HTML5 'open' attribute. Defaults to FALSE.
-      '#open' => TRUE,
+    // Cron control: enable/interval.
+    $form['markaspot_archive']['cron_enable'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable cron-based archiving'),
+      '#description' => $this->t('Run the archiving enqueue on cron at the configured interval.'),
+      '#default_value' => $config->get('cron_enable'),
+    ];
+    $form['markaspot_archive']['cron_always_run'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Always run on every cron'),
+      '#description' => $this->t('If checked, archiving will run on every cron invocation, ignoring the interval.'),
+      '#default_value' => $config->get('cron_always_run'),
+    ];
+    $form['markaspot_archive']['cron_interval'] = [
+      '#type' => 'number',
+      '#min' => 0,
+      '#title' => $this->t('Cron interval (seconds)'),
+      '#description' => $this->t('Number of seconds to wait before next archiving run. Set to 0 to run on every cron.'),
+      '#default_value' => $config->get('cron_interval'),
     ];
 
-    foreach ($catOptions as $tid => $category_name) {
-      $form['markaspot_archive']['days'][$tid] = [
-        '#type' => 'number',
-        '#min' => 1,
-        '#max' => 1000,
-        '#step' => 1,
-        '#title' => $this->t('Days for <i>@category_name</i>', ['@category_name' => $category_name]),
-        '#default_value' => $config->get('days.' . $tid),
-        '#description' => $this->t('How many days to reach back for archiving?'),
-      ];
-    }
+    // Global default archive period (days) for categories without override.
+    $form['markaspot_archive']['default_days'] = [
+      '#type' => 'number',
+      '#min' => 1,
+      '#title' => $this->t('Default archive period (days)'),
+      '#default_value' => $config->get('default_days'),
+      '#description' => $this->t('Global default number of days before archiving for categories without override.'),
+    ];
     return parent::buildForm($form, $form_state);
   }
 
@@ -155,18 +162,33 @@ class MarkaspotArchiveSettingsForm extends ConfigFormBase {
       ->set('unpublish', $values['unpublish'])
       ->set('anonymize', $values['anonymize'])
       ->set('anonymize_fields', $values['anonymize_fields'])
-      ->set('days', $values['days'])
+      ->set('cron_enable', $values['cron_enable'])
+      ->set('cron_always_run', $values['cron_always_run'])
+      ->set('cron_interval', $values['cron_interval'])
+      ->set('default_days', $values['default_days'])
       ->save();
 
     parent::submitForm($form, $form_state);
   }
 
   /**
-   * Get field definitions.
+   * Get field definitions with labels.
+   * 
+   * @return array
+   *   Array of field labels keyed by field machine names.
    */
   public function getFields() {
     $definitions = $this->entityFieldManager->getFieldDefinitions('node', 'service_request');
-    return array_keys($definitions);
+    $options = [];
+    
+    foreach ($definitions as $field_name => $definition) {
+      // Only include fields that would typically store personal data
+      if (strpos($field_name, 'field_') === 0) {
+        $options[$field_name] = $definition->getLabel() . ' (' . $field_name . ')';
+      }
+    }
+    
+    return $options;
   }
 
   /**

@@ -122,7 +122,7 @@ class GeoreportDiscoveryResource extends ResourceBase {
             $format_route = clone $route;
 
             $format_route->setPath($create_path . '.' . $format);
-            $format_route->setRequirement('_access_rest_csrf', 'FALSE');
+            $format_route->setRequirement('_csrf_request_header_token', 'FALSE');
 
             // Restrict the incoming HTTP Content-type header to the known
             // serialization formats.

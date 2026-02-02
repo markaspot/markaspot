@@ -46,7 +46,9 @@ function _add_terms_of_use(array &$form) {
       '#type' => 'checkbox',
       '#required' => TRUE,
       '#title' => t('GDPR'),
-      '#description' => t('By checking this box, you agree to our terms and that you have read our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Data Use Policy</a>, including our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Cookie Use</a>.'),
+      '#description' => t('By checking this box, you agree to our terms and that you have read our <a class="use-ajax" data-dialog-type="modal" href="@privacy_url">Data Use Policy</a>, including our <a class="use-ajax" data-dialog-type="modal" href="@privacy_url">Cookie Use</a>.', [
+        '@privacy_url' => \Drupal\Core\Url::fromUserInput('/privacy-policy-terms-service')->toString(),
+      ]),
       '#weight' => $weight + 1,
     ];
 

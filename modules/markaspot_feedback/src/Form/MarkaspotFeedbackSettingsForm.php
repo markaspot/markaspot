@@ -18,7 +18,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
   /**
    * The Entity Type manager variable.
    *
-   * @var Drupal\Core\Entity\EntityTypeManager
+   * @var \Drupal\Core\Entity\EntityTypeManager
    */
   protected $entityTypeManager;
 
@@ -57,92 +57,72 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
       '#type' => 'fieldset',
       '#title' => $this->t('Feedback Settings'),
       '#collapsible' => TRUE,
-      '#description' => $this->t('This setting allow you to choose between several feedback settings.'),
+      '#description' => $this->t('These settings allow you to configure citizen feedback functionality.'),
       '#group' => 'settings',
     ];
 
-    $form['markaspot_feedback']['enable'] = [
-      '#type' => 'checkbox',
-      '#title' => $this->t('Feedback loops Enabled'),
-      '#default_value' => $config->get('enable'),
-      '#description' => $this->t('Enable feedback cron runs'),
+    // General Settings
+    $form['markaspot_feedback']['general'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('General Settings'),
+      '#collapsible' => FALSE,
+      '#weight' => 0,
     ];
 
-    $form['markaspot_feedback']['common']['tax_status'] = [
+    $form['markaspot_feedback']['general']['enable'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Feedback Module'),
+      '#default_value' => $config->get('enable'),
+      '#description' => $this->t('Master switch for all feedback functionality. When disabled, the entire feedback system is turned off, including both automated (cron) and manual processing.'),
+    ];
+    
+    $form['markaspot_feedback']['general']['cron_enable'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Automated Processing via Cron'),
+      '#default_value' => $config->get('cron_enable'),
+      '#description' => $this->t('When disabled, emails will need to be handled via ECA or manually'),
+      '#states' => [
+        'visible' => [
+          ':input[name="markaspot_feedback[general][enable]"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
+    $form['markaspot_feedback']['general']['tax_status'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('Bundle'),
+      '#title' => $this->t('Status Vocabulary'),
       '#default_value' => $config->get('tax_status') ?: 'service_status',
       '#description' => $this->t('Match the request status to a Drupal vocabulary (machine_name) of your choice.'),
     ];
 
-    $form['markaspot_feedback']['status_resubmissive'] = [
-      '#type' => 'select',
-      '#multiple' => TRUE,
-      '#options' => self::getTaxonomyTermOptions(
-        $this->config('markaspot_feedback.settings')->get('tax_status')),
-      '#default_value' => $config->get('status_resubmissive'),
-      '#title' => $this->t('Please choose the status for resubmissable reports.'),
+    // Common Settings
+    $form['markaspot_feedback']['common'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Common Settings'),
+      '#collapsible' => FALSE,
+      '#weight' => 1,
     ];
 
-    $form['markaspot_feedback']['days'] = [
-      '#tree' => TRUE,
-      '#title' => $this->t('Feedback period settings'),
-      '#description' => $this->t('You can change the period in which content is notified for being submissive.'),
-      '#open' => TRUE,
-      '#type' => 'number',
-      '#step' => '1',
-      '#default_value' =>  $config->get('days'),
-      '#required' => TRUE,
-      '#weight' => '0',
-    ];
-
-    $form['markaspot_feedback']['mailtext'] = [
-      '#type' => 'textarea',
-      '#token_types' => ['site'],
-      '#title' => $this->t('Mailtext'),
-      '#default_value' => $config->get('mailtext') ?: 'Hello [current-user:name]!',
-    ];
-
-    $form['markaspot_feedback']['set_status_note'] = [
-      '#type' => 'textarea',
-      '#token_types' => ['site'],
-      '#title' => $this->t('Status Note to be set.'),
-      '#default_value' => $config->get('set_status_note') ?: '',
-    ];
-
-    $form['markaspot_feedback']['set_progress_tid'] = [
-      '#type' => 'select',
-      '#multiple' => TRUE,
-      '#options' => self::getTaxonomyTermOptions(
-        $this->config('markaspot_feedback.settings')->get('tax_status')),
-      '#default_value' => $config->get('set_progress_tid'),
-      '#title' => $this->t('Please choose the status to be set when the re-opening option is chosen by citizens'),
-    ];
-
-    $form['markaspot_feedback']['set_archive_tid'] = [
-      '#type' => 'select',
-      '#multiple' => TRUE,
-      '#options' => self::getTaxonomyTermOptions(
-        $this->config('markaspot_feedback.settings')->get('tax_status')),
-      '#default_value' => $config->get('set_archive_tid'),
-      '#title' => $this->t('Please choose the status to be set as archive'),
-    ];
-
-    $form['markaspot_feedback']['days'] = [
+    $form['markaspot_feedback']['common']['days'] = [
       '#type' => 'number',
       '#min' => 1,
       '#max' => 1000,
       '#step' => 1,
-      '#title' => $this->t('Period in days'),
+      '#title' => $this->t('Waiting period in days'),
       '#default_value' => $config->get('days'),
-      '#description' => $this->t('Enter here after how many days an e-mail should be sent.')
-
+      '#description' => $this->t('Specify after how many days since a service request was completed that a feedback email should be sent. This helps ensure citizens have had time to verify the resolution.'),
+      '#required' => TRUE,
+      '#states' => [
+        'visible' => [
+          ':input[name="markaspot_feedback[general][cron_enable]"]' => ['checked' => TRUE],
+        ],
+      ],
     ];
 
-    $form['markaspot_feedback']['interval'] = [
+    $form['markaspot_feedback']['common']['interval'] = [
       '#type' => 'select',
       '#title' => $this->t('Cron interval'),
-      '#description' => $this->t('Time after which the check will we executed'),
+      '#description' => $this->t('Time after which the check will be executed'),
       '#default_value' => $config->get('interval'),
       '#options' => [
         60 => $this->t('1 minute'),
@@ -153,6 +133,55 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
         432000 => $this->t('5 days'),
         604800 => $this->t('1 week'),
       ],
+      '#states' => [
+        'visible' => [
+          ':input[name="markaspot_feedback[general][cron_enable]"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
+    // Citizen Feedback Settings
+    $form['markaspot_feedback']['citizen'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Citizen Feedback Settings'),
+      '#collapsible' => FALSE,
+      '#weight' => 2,
+    ];
+
+    $form['markaspot_feedback']['citizen']['status_feedback_enabled'] = [
+      '#type' => 'select',
+      '#multiple' => TRUE,
+      '#options' => self::getTaxonomyTermOptions(
+        $this->config('markaspot_feedback.settings')->get('tax_status')),
+      '#default_value' => $config->get('status_feedback_enabled'),
+      '#title' => $this->t('Feedback eligible statuses'),
+      '#description' => $this->t('Choose which status values make a service request eligible for automated citizen feedback collection via cron.'),
+    ];
+
+    $form['markaspot_feedback']['citizen']['mailtext'] = [
+      '#type' => 'textarea',
+      '#token_types' => ['site'],
+      '#title' => $this->t('Email template for citizen feedback requests'),
+      '#default_value' => $config->get('mailtext') ?: 'Hello [current-user:name]!',
+      '#description' => $this->t('Email template sent to citizens requesting feedback. Tokens are supported.'),
+    ];
+
+    $form['markaspot_feedback']['citizen']['set_progress_tid'] = [
+      '#type' => 'select',
+      '#multiple' => TRUE,
+      '#options' => self::getTaxonomyTermOptions(
+        $this->config('markaspot_feedback.settings')->get('tax_status')),
+      '#default_value' => $config->get('set_progress_tid'),
+      '#title' => $this->t('Status to set when citizen requests status update'),
+      '#description' => $this->t('This status will be applied to the service request when the citizen selects the status update option in the feedback form (typically to reopen).'),
+    ];
+
+    $form['markaspot_feedback']['citizen']['set_status_note'] = [
+      '#type' => 'textarea',
+      '#token_types' => ['site'],
+      '#title' => $this->t('Citizen status note template'),
+      '#default_value' => $config->get('set_status_note') ?: '',
+      '#description' => $this->t('Status note template added when citizen feedback changes status. Tokens are supported.'),
     ];
 
     return parent::buildForm($form, $form_state);
@@ -163,16 +192,27 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
+
+    // Extract values from fieldsets
+    $general = $values['general'] ?? [];
+    $common = $values['common'] ?? [];
+    $citizen = $values['citizen'] ?? [];
+
     $this->config('markaspot_feedback.settings')
-      ->set('enable', $values['enable'])
-      ->set('tax_status', $values['tax_status'])
-      ->set('status_resubmissive', $values['status_resubmissive'])
-      ->set('set_progress_tid', $values['set_progress_tid'])
-      ->set('set_archive_tid', $values['set_archive_tid'])
-      ->set('set_status_note', $values['set_status_note'])
-      ->set('days', $values['days'])
-      ->set('mailtext', $values['mailtext'])
-      ->set('interval', $values['interval'])
+      // General settings
+      ->set('enable', $general['enable'] ?? $values['enable'])
+      ->set('cron_enable', $general['cron_enable'] ?? $values['cron_enable'])
+      ->set('tax_status', $general['tax_status'] ?? $values['tax_status'])
+
+      // Common settings
+      ->set('days', $common['days'] ?? $values['days'])
+      ->set('interval', $common['interval'] ?? $values['interval'])
+
+      // Citizen feedback settings
+      ->set('status_feedback_enabled', $citizen['status_feedback_enabled'] ?? $values['status_feedback_enabled'])
+      ->set('mailtext', $citizen['mailtext'] ?? $values['mailtext'])
+      ->set('set_progress_tid', $citizen['set_progress_tid'] ?? $values['set_progress_tid'])
+      ->set('set_status_note', $citizen['set_status_note'] ?? $values['set_status_note'])
       ->save();
 
     parent::submitForm($form, $form_state);
@@ -190,7 +230,7 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
   /**
    * Helper function to get taxonomy term options for select widget.
    *
-   * @parameter string $machine_name
+   * @param string $machine_name
    *   Taxonomy machine name.
    *
    * @return array
@@ -199,10 +239,8 @@ class MarkaspotFeedbackSettingsForm extends ConfigFormBase {
   public function getTaxonomyTermOptions($machine_name) {
     $options = [];
 
-    // $vid = taxonomy_vocabulary_machine_name_load($machine_name)->vid;
-    $vid = $machine_name;
     $options_source = $this->entityTypeManager->getStorage('taxonomy_term')
-      ->loadTree($vid);
+      ->loadTree($machine_name);
 
     foreach ($options_source as $item) {
       $key = $item->tid;

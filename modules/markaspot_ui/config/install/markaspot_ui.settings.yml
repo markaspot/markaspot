@@ -1,0 +1,4 @@
+# Default configuration for Mark-a-Spot UI module.
+# Enabled by default for headless setups (Nuxt/React/Vue frontends).
+# Set to FALSE if using traditional Drupal themes.
+headless_mode_protection: true

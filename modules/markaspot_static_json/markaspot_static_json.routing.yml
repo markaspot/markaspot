@@ -1,7 +1,0 @@
-markaspot_static_json.settings:
-  path: '/admin/structure/markaspot/static_json/settings'
-  defaults:
-    _form: '\Drupal\markaspot_static_json\Form\MarkaspotStaticJsonSettingsForm'
-    _title: 'Static JSON Settings'
-  requirements:
-    _permission: 'administer site configuration'

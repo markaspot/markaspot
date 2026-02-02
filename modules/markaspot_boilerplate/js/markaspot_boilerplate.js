@@ -5,8 +5,10 @@
       const boilerplateElements = once('markaspot_boilerplate', context.querySelectorAll('select[name*=boilerplate]'));
       boilerplateElements.forEach(el => {
         el.addEventListener('change', function() {
-          const url = '/markaspot_boilerplate/load/' + this.value;
-          let $textarea = $(this).closest('.paragraphs-subform').find('textarea');
+          // Use proper base url for AJAX calls
+          const baseUrl = drupalSettings.path.baseUrl || '/';
+          const url = baseUrl + 'markaspot_boilerplate/load/' + this.value;
+          let $textarea = $(this).closest('.paragraphs-subform, fieldset').find('textarea');
           if ($textarea.length > 0) {
             let instanceId = String($textarea.data('ckeditor5-id'));
             let editor;

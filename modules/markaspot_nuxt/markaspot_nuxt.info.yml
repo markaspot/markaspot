@@ -1,0 +1,5 @@
+name: 'Markaspot Nuxt'
+type: module
+description: 'Exposes Mark-a-Spot configuration and data to Nuxt frontend via JSON API endpoints with independent map configuration'
+package: Mark-a-Spot
+core_version_requirement: ^10 || ^11

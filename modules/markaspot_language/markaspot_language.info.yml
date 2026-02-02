@@ -2,4 +2,4 @@ name: markaspot_language
 type: module
 description: translate content entities
 package: Mark-a-Spot
-core_version_requirement: ^9 || ^10
+core_version_requirement: ^9 || ^10 || ^11

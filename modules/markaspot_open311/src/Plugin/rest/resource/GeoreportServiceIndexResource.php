@@ -6,7 +6,7 @@ use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\rest\Plugin\ResourceBase;
-use Drupal\rest\ResourceResponse;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -59,6 +59,13 @@ class GeoreportServiceIndexResource extends ResourceBase {
   protected $requestStack;
 
   /**
+   * The language manager service.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected $languageManager;
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -73,6 +80,8 @@ class GeoreportServiceIndexResource extends ResourceBase {
    *   A logger instance.
    * @param \Drupal\Core\Session\AccountProxyInterface $current_user
    *   A current user instance.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   * The language manager service.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config
    *   The config object.
    * @param \Drupal\markaspot_open311\Service\GeoreportProcessorService $georeport_processor
@@ -85,6 +94,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
     array $serializer_formats,
     LoggerInterface $logger,
     AccountProxyInterface $current_user,
+    LanguageManagerInterface $language_manager,
     ConfigFactoryInterface $config,
     GeoreportProcessorService $georeport_processor,
     RequestStack $request_stack
@@ -93,6 +103,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
     $this->config = $config->getEditable('markaspot_open311.settings');
     $this->currentUser = $current_user;
     $this->georeportProcessor = $georeport_processor;
+    $this->languageManager = $language_manager;
     $this->requestStack = $request_stack;
 
   }
@@ -108,6 +119,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
       $container->getParameter('serializer.formats'),
       $container->get('logger.factory')->get('markaspot_open311'),
       $container->get('current_user'),
+      $container->get('language_manager'),
       $container->get('config.factory'),
       $container->get('markaspot_open311.processor'),
       $container->get('request_stack')
@@ -203,12 +215,21 @@ class GeoreportServiceIndexResource extends ResourceBase {
    */
   public function get() {
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
-    $langcode = $parameters['langcode'];
+
+    // Get the language code from the query parameters, default to 'en' if not provided
+    $langcode = $parameters['langcode'] ?? 'en';
+
+    // Validate the language code
+    $languages = $this->languageManager->getLanguages();
+    if (!isset($languages[$langcode])) {
+      throw new HttpException(400, "Invalid language code provided");
+    }
+
     $services = $this->georeportProcessor->getTaxonomyTree('service_category', $langcode);
+
     if (!empty($services)) {
       return $services;
-    }
-    else {
+    } else {
       throw new HttpException(404, "Service code not found");
     }
   }

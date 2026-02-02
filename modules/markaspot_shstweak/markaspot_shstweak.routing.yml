@@ -10,4 +10,19 @@ markaspot_shstweak.taxonomy_desc:
   options:
     parameters:
       term:
-        type: entity:taxonomy_term
+        type: string
+
+markaspot_shstweak.api_taxonomy_desc:
+  path: 'api/markaspotshstweak/{term}/{last_child}'
+  defaults:
+    _controller: 'Drupal\markaspot_shstweak\Controller\SHSTweakController::taxonomyDescription'
+    _title: 'Taxonomy Description API'
+    last_child: 0
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+    parameters:
+      term:
+        type: string

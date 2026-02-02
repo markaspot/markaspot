@@ -1,0 +1,30 @@
+uuid: 12345678-9abc-def0-1234-56789abcdef0
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_jurisdiction
+    - group.type.jurisdiction
+    - node.type.service_request
+  module:
+    - group
+id: node.service_request.field_jurisdiction
+field_name: field_jurisdiction
+entity_type: node
+bundle: service_request
+label: Jurisdiction
+description: 'The jurisdiction (municipality/village/city) where this service request was submitted.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:group'
+  handler_settings:
+    target_bundles:
+      jurisdiction: jurisdiction
+    sort:
+      field: _none
+    auto_create: false
+    auto_create_bundle: ''
+field_type: entity_reference

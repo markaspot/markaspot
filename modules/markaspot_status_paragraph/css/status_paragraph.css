@@ -1,0 +1,151 @@
+/**
+ * @file
+ * Styling for status paragraph fields.
+ */
+
+/* ==========================================================================
+   Status workflow paragraph styling (Gin design standards)
+   ========================================================================== */
+
+/* Status fieldset container */
+.field--name-field-status-notes {
+  margin-block-end: var(--gin-spacing-l);
+}
+
+/* Table rows for status entries - ensure consistent spacing */
+#field-status-notes-values tbody tr {
+  margin-block-end: var(--gin-spacing-m);
+}
+
+#field-status-notes-values tbody td {
+  padding: 0;
+}
+
+/* Drag handle cell - keep default alignment */
+#field-status-notes-values .field-multiple-drag {
+  padding: 0 !important;
+}
+
+/* Container for each status paragraph item */
+.field--name-field-status-notes .paragraph--type--status {
+  margin: 0;
+  padding: 0;
+}
+
+/* paragraph-top container - consistent layout */
+.field--name-field-status-notes .paragraph-top {
+  display: flex;
+  align-items: center;
+  gap: var(--gin-spacing-m);
+  padding: var(--gin-spacing-m);
+  background: var(--gin-bg-layer);
+  border-radius: var(--gin-border-m);
+  line-height: var(--gin-line-height);
+}
+
+/* paragraph-type label */
+.field--name-field-status-notes .paragraph-type {
+  flex-shrink: 0;
+}
+
+.field--name-field-status-notes .paragraph-type-label {
+  font-size: var(--gin-font-size-s);
+  color: var(--gin-color-text-light);
+  font-weight: var(--gin-font-weight-normal);
+  line-height: var(--gin-line-height);
+}
+
+/* paragraph-summary container */
+.field--name-field-status-notes .paragraph-summary {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+}
+
+/* paragraphs-collapsed-description */
+.field--name-field-status-notes .paragraphs-collapsed-description {
+  margin: 0;
+  padding: 0;
+  line-height: var(--gin-line-height);
+}
+
+.field--name-field-status-notes .paragraphs-content-wrapper {
+  display: inline;
+  line-height: var(--gin-line-height);
+  font-size: var(--gin-font-size);
+}
+
+/* Summary content styling */
+.field--name-field-status-notes .summary-content {
+  line-height: inherit;
+}
+
+/* paragraphs-actions container */
+.field--name-field-status-notes .paragraphs-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--gin-spacing-xs);
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* Status paragraph edit mode */
+.field--name-field-status-notes .paragraphs-content {
+  padding: var(--gin-spacing-m);
+  background: var(--gin-bg-layer);
+  border: 1px solid var(--gin-border-color);
+  border-radius: var(--gin-border-m);
+}
+
+/* Ensure consistent spacing for status form fields */
+.paragraph--type--status .fieldset__wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gin-spacing-m);
+}
+
+.paragraph--type--status .form-item {
+  margin-block-end: 0;
+}
+
+/* Status term and boilerplate field spacing */
+.paragraph--type--status .field--name-field-status-term,
+.paragraph--type--status .field--name-field-boilerplate {
+  margin-block-end: var(--gin-spacing-s);
+}
+
+/* Status note textarea styling */
+.paragraph--type--status .field--name-field-status-note textarea {
+  min-height: 120px;
+  font-family: var(--gin-font);
+  font-size: var(--gin-font-size);
+  line-height: var(--gin-line-height);
+}
+
+/* Paragraph action buttons consistent styling */
+.field--name-field-status-notes .paragraphs-icon-button,
+.field--name-field-status-notes button,
+.field--name-field-status-notes .button {
+  font-size: var(--gin-font-size-s);
+  line-height: var(--gin-line-height-s);
+}
+
+/* Remove extra padding from paragraph items */
+.field--name-field-status-notes .paragraphs-subform {
+  padding: 0;
+}
+
+/* Drag handle - hide completely for status notes */
+.field--name-field-status-notes .field-multiple-drag {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Status term colors (from taxonomy)
+   ========================================================================== */
+
+/* Colors are now applied via inline styles from JavaScript using taxonomy term data.
+   CSS classes are still added for potential styling hooks. */
+.field--name-field-status-notes .paragraphs-description .summary-content[class*="status-"] {
+  font-weight: 700;
+}

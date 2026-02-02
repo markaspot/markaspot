@@ -1,8 +1,13 @@
 services:
   markaspot_feedback.feedback:
     class: Drupal\markaspot_feedback\FeedbackService
-    arguments: ['@entity_type.manager', '@config.factory',
-                '@logger.channel.markaspot_feedback', '@messenger']
-  logger.channel.markaspot_feedback:
-    parent: logger.channel_base
-    arguments: [ 'markaspot_feedback' ]
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@database'
+      - '@queue'
+      - '@logger.factory'
+      - '@state'
+      - '@plugin.manager.mail'
+      - '@language_manager'
+      - '@token'

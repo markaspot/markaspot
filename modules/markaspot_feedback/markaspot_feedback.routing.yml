@@ -12,3 +12,21 @@ markaspot_feedback.form:
     _form: '\Drupal\markaspot_feedback\Form\MarkaspotFeedbackForm'
   requirements:
     _permission: 'access content'
+
+markaspot_feedback.rest:
+  path: '/api/feedback/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_feedback\Controller\FeedbackController::updateFeedback'
+    _title: 'Feedback REST API'
+  methods: [POST, PATCH]
+  requirements:
+    _access: 'TRUE'
+
+markaspot_feedback.get:
+  path: '/api/feedback/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_feedback\Controller\FeedbackController::getServiceRequest'
+    _title: 'Get Service Request by UUID'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'

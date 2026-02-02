@@ -1,0 +1,4 @@
+access markaspot statistics:
+  title: 'Access Mark-a-Spot statistics'
+  description: 'Allow users to view Mark-a-Spot statistics.'
+  restrict access: TRUE

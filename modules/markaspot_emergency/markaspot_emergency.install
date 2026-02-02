@@ -1,0 +1,212 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the Mark-a-Spot Emergency module.
+ */
+
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_emergency_install() {
+  // Fields are created automatically from config/install.
+
+  // Ensure any previous runtime state is cleared.
+  \Drupal::state()->delete('markaspot_emergency.original_published_tids');
+
+  // Create emergency categories (unpublished by default).
+  $config = \Drupal::config('markaspot_emergency.settings');
+  $presets = $config->get('categories.emergency_presets');
+  $storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+
+  if (!empty($presets)) {
+    $created_count = 0;
+    foreach ($presets as $preset) {
+      // Check if emergency category already exists.
+      $existing = $storage->loadByProperties([
+        'vid' => 'service_category',
+        'name' => $preset['name'],
+      ]);
+
+      if (empty($existing)) {
+        $term = $storage->create([
+          'vid' => 'service_category',
+          'name' => $preset['name'],
+          'status' => 0, // Unpublished by default.
+          'field_emergency_category' => TRUE,
+          'weight' => $preset['weight'] ?? 0,
+        ]);
+
+        // Add icon and color if those fields exist.
+        if ($term->hasField('field_icon')) {
+          $term->set('field_icon', $preset['icon']);
+        }
+        if ($term->hasField('field_color')) {
+          $term->set('field_color', $preset['color']);
+        }
+
+        $term->save();
+        $created_count++;
+      }
+    }
+
+    if ($created_count > 0) {
+      \Drupal::messenger()->addMessage(t('Created @count emergency categories (unpublished).', [
+        '@count' => $created_count,
+      ]));
+    }
+  }
+
+  \Drupal::messenger()->addMessage(t('Mark-a-Spot Emergency module installed successfully.'));
+  \Drupal::messenger()->addMessage(t('Emergency categories can now be configured at /admin/config/markaspot/emergency'));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_emergency_uninstall() {
+  $storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+
+  // Before cleanup, try to restore regular categories from State API snapshot.
+  $state = \Drupal::state();
+  $snapshot_key = 'markaspot_emergency.original_published_tids';
+  $snapshot = $state->get($snapshot_key, []);
+  if (!empty($snapshot)) {
+    $terms = $storage->loadMultiple($snapshot);
+    foreach ($terms as $term) {
+      if ($term) {
+        $term->set('status', 1);
+        $term->save();
+      }
+    }
+    \Drupal::messenger()->addMessage(t('Restored @count regular categories to published status from emergency snapshot.', [
+      '@count' => count($terms),
+    ]));
+    $state->delete($snapshot_key);
+  }
+
+  // Delete all emergency categories.
+  $emergency_terms = $storage->loadByProperties([
+    'vid' => 'service_category',
+    'field_emergency_category' => TRUE,
+  ]);
+
+  if (!empty($emergency_terms)) {
+    $storage->delete($emergency_terms);
+    \Drupal::messenger()->addMessage(t('Deleted @count emergency categories.', [
+      '@count' => count($emergency_terms),
+    ]));
+  }
+
+  // Restore any regular categories that were unpublished by emergency mode.
+  $query = $storage->getQuery()
+    ->condition('vid', 'service_category')
+    ->exists('field_emergency_original_status')
+    ->condition('field_emergency_original_status', TRUE)
+    ->condition('status', 0)
+    ->accessCheck(FALSE);
+
+  $tids = $query->execute();
+  if (!empty($tids)) {
+    $terms = $storage->loadMultiple($tids);
+    foreach ($terms as $term) {
+      $term->set('status', 1);
+      $term->save();
+    }
+    \Drupal::messenger()->addMessage(t('Restored @count regular categories to published status.', [
+      '@count' => count($terms),
+    ]));
+  }
+
+  // Remove field data.
+  $fields = [
+    'taxonomy_term.service_category.field_emergency_category',
+    'taxonomy_term.service_category.field_emergency_original_status',
+  ];
+
+  foreach ($fields as $field_id) {
+    $field = FieldConfig::load($field_id);
+    if ($field) {
+      $field->delete();
+    }
+  }
+
+  // Remove field storage.
+  $field_storages = [
+    'taxonomy_term.field_emergency_category',
+    'taxonomy_term.field_emergency_original_status',
+  ];
+
+  foreach ($field_storages as $storage_id) {
+    $field_storage = FieldStorageConfig::load($storage_id);
+    if ($field_storage) {
+      $field_storage->delete();
+    }
+  }
+
+  // Purge field data on the next cron run.
+  field_purge_batch(1000);
+
+  // Clear cache.
+  drupal_flush_all_caches();
+
+  // Clear any stored runtime state.
+  \Drupal::state()->delete('markaspot_emergency.original_published_tids');
+
+  \Drupal::messenger()->addMessage(t('Mark-a-Spot Emergency module uninstalled successfully.'));
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_emergency_requirements($phase) {
+  $requirements = [];
+
+  if ($phase === 'runtime') {
+    $config = \Drupal::config('markaspot_emergency.settings');
+    $emergency_status = $config->get('emergency_mode.status');
+
+    if ($emergency_status === 'active') {
+      $activated_at = $config->get('emergency_mode.activated_at');
+      $activated_by_uid = $config->get('emergency_mode.activated_by');
+      $user_storage = \Drupal::entityTypeManager()->getStorage('user');
+      $activated_by = $user_storage->load($activated_by_uid);
+
+      $requirements['markaspot_emergency_status'] = [
+        'title' => t('Emergency Mode'),
+        'value' => t('ACTIVE'),
+        'severity' => REQUIREMENT_WARNING,
+        'description' => t('Emergency mode is currently active. Activated @time by @user. Manage at /admin/config/markaspot/emergency', [
+          '@time' => $activated_at ? \Drupal::service('date.formatter')->format($activated_at) : t('Unknown'),
+          '@user' => $activated_by ? $activated_by->getDisplayName() : t('Unknown'),
+        ]),
+      ];
+
+      // Check for auto-deactivation.
+      $auto_deactivate = $config->get('auto_deactivate.enabled');
+      $duration = $config->get('auto_deactivate.duration');
+
+      if ($auto_deactivate && $activated_at && $duration) {
+        $deactivate_time = $activated_at + ($duration * 3600);
+        if ($deactivate_time > time()) {
+          $requirements['markaspot_emergency_status']['description'] .= t(' Auto-deactivation scheduled for @time.', [
+            '@time' => \Drupal::service('date.formatter')->format($deactivate_time),
+          ]);
+        }
+      }
+    }
+    else {
+      $requirements['markaspot_emergency_status'] = [
+        'title' => t('Emergency Mode'),
+        'value' => t('Inactive'),
+        'severity' => REQUIREMENT_OK,
+        'description' => t('Emergency mode is not active. Configure at /admin/config/markaspot/emergency'),
+      ];
+    }
+  }
+
+  return $requirements;
+}

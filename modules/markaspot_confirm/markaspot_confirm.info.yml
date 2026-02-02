@@ -1,0 +1,6 @@
+name: 'Mark-a-Spot Confirm'
+type: module
+description: 'Provides a route for confirming data approval'
+package: 'Mark-a-Spot'
+core_version_requirement: ^8 || ^9 || ^10 || ^11
+configure: markaspot_confirm.settings

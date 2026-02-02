@@ -1,0 +1,7 @@
+services:
+  markaspot_nuxt.voting_api_controller:
+    class: Drupal\markaspot_nuxt\Controller\VotingApiController
+    arguments: ['@entity_type.manager']
+  markaspot_nuxt.frontend_url:
+    class: Drupal\markaspot_nuxt\Service\FrontendUrlService
+    arguments: ['@config.factory']

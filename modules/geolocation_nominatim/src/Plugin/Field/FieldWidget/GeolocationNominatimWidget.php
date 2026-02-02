@@ -268,7 +268,6 @@ class GeolocationNominatimWidget extends WidgetBase {
     $element['#attached'] = [
       'library' => [
         'geolocation_nominatim/leaflet',
-        'geolocation_nominatim/mapbox',
         'geolocation_nominatim/maplibre',
         'geolocation_nominatim/leaflet-locatecontrol',
         'geolocation_nominatim/leaflet-geosearch',

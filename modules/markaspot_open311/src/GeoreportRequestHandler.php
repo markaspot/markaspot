@@ -69,74 +69,85 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
    *   The response object.
    */
   public function handle(RouteMatchInterface $route_match, Request $request, RestResourceConfigInterface $_rest_resource_config) {
-
-    // $request = RequestSanitizer::sanitize($request, [], TRUE);
-    // $plugin = $route_match->getRouteObject()->getDefault('_plugin');
+    // Start timing for performance measurement
+    $startTime = microtime(true);
+    
     $method = strtolower($request->getMethod());
     $resource = $_rest_resource_config->getResourcePlugin();
 
+    // Process request content for POST/PUT methods
     $received = $request->getContent();
-    // var_dump($received);
+    $request_all = [];
+
     if (!empty($received)) {
-      $format = $request->getContentType();
+      $format = $request->getContentTypeFormat();
+      $method_settings = $_rest_resource_config->get('configuration')[$request->getMethod()] ?? [];
 
-      // Only allow serialization formats that are explicitly configured. If no
-      // formats are configured allow all and hope that the serializer knows the
-      // format. If the serializer cannot handle it an exception will be thrown
-      // that bubbles up to the client.
-      // $config = $this->config;.
-      $method_settings = $_rest_resource_config->get('configuration')[$request->getMethod()];
+      // Validate supported formats
+      if (!empty($method_settings['supported_formats']) && !in_array($format, $method_settings['supported_formats'])) {
+        throw new UnsupportedMediaTypeHttpException();
+      }
 
-      $request_all = $request->request->all();
-
-      if (empty($method_settings['supported_formats']) || in_array($format, $method_settings['supported_formats'])) {
+      // Deserialize JSON content if present
+      if ($format === 'json' && !empty($received)) {
         try {
-
+          $request_all = $this->serializer->decode($received, $format);
         }
         catch (UnexpectedValueException $e) {
-          $error['error'] = $e->getMessage();
-          $content = $this->serializer->serialize($error, $format);
-          return new Response($content, 400, ['Content-Type' => $request->getMimeType($format)]);
+          // Fall back to form parameters
+          $request_all = $request->request->all();
         }
       }
       else {
-        throw new UnsupportedMediaTypeHttpException();
+        // For non-JSON formats (form, xml), use request parameters
+        $request_all = $request->request->all();
       }
     }
+
+    // Get query parameters and merge with request body for complete data
     $query_params = $request->query->all();
-    $request_data = $request_all ?? $query_params;
-    // Determine the request parameters that should be passed to the resource
-    // plugin.
+    $request_data = $request_all ?: $query_params;
+
+    // Process route parameters
     $route_parameters = $route_match->getParameters();
     $parameters = [];
-    // Filter out all internal parameters starting with "_".
     foreach ($route_parameters as $key => $parameter) {
       if ($key[0] !== '_') {
         $parameters[] = $parameter;
       }
     }
-    // $id_suffix = isset($parameter) ? explode('&', $parameter) : NULL;
-    // Invoke the operation on the resource plugin.
-    // All REST routes are restricted to exactly one format, so instead of
-    // parsing it out of the Accept headers again, we can simply retrieve the
-    // format requirement. If there is no format associated, just pick JSON.
-    // $route_match->getRouteObject()->getRequirement('_format') ?: 'json';.
-    $current_path = $this->currentPath->getPath();
 
+    // Determine format from URL extension
+    $current_path = $this->currentPath->getPath();
     if (strstr($current_path, 'georeport')) {
       $format = pathinfo($current_path, PATHINFO_EXTENSION);
     }
 
+    // Call the resource method
     $result = call_user_func_array([
       $resource, $method,
     ], array_merge($parameters, [$request_data, $request]));
-    // var_dump($this->serializer);.
-    $result = $this->serializer->serialize($result, $format);
 
+    // Add cache headers for GET requests to improve client-side caching
     $response = new Response();
+    if ($method === 'get' && !isset($query_params['debug'])) {
+      // Cache for 3 minutes
+      $response->setMaxAge(180);
+      $response->setSharedMaxAge(180);
+      $response->headers->set('X-Cache-Policy', 'public, max-age=180');
+    }
 
+    // Serialize response
+    $serializedResult = $this->serializer->serialize($result, $format);
+    
+    // Set the appropriate Content-Type header
     $response->headers->set('Content-Type', $request->getMimeType($format));
-    $response->setContent($result);
+    $response->setContent($serializedResult);
+    
+    // Add performance timing header for monitoring
+    $executionTime = round((microtime(true) - $startTime) * 1000, 2);
+    $response->headers->set('X-API-Execution-Time', $executionTime . 'ms');
+    
     return $response;
   }
 

@@ -122,7 +122,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     TimeInterface $time,
     RequestStack $request_stack,
     EntityTypeManagerInterface $entity_type_manager,
-    GeoreportProcessorService $georeport_processor
+    GeoreportProcessorService $georeport_processor,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -175,7 +175,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
             $format_route = clone $route;
 
             $format_route->setPath($create_path . '.' . $format);
-            $format_route->setRequirement('_access_rest_csrf', 'FALSE');
+            $format_route->setRequirement('_csrf_request_header_token', 'FALSE');
 
             // Restrict the incoming HTTP Content-type header to the known
             // serialization formats.
@@ -239,145 +239,186 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *
    * Returns a list of bundles for specified entity.
    *
+   * The 'q' search parameter respects field-level permissions using the
+   * field_permissions module. Only fields the current user has 'view' access
+   * to will be included in the search query. This prevents:
+   * - Anonymous users from searching personal data fields (email, phone, names)
+   * - Authenticated users from searching admin-only fields (internal notes)
+   * - Unauthorized access to sensitive information through search results
+   *
+   * Search behavior:
+   * - Base fields (title, body, request_id): Available to all users
+   * - Public fields (field_address): Available to all users
+   * - Custom permission fields: Only searched if user has 'view [field_name]' permission
+   * - Private fields: Only searched by admins or entity owners
+   *
    * @throws \Symfony\Component\HttpKernel\Exception\HttpException
    *   Throws exception expected.
    */
   public function get() {
-
-    /*
-     * todo: Check if permission check is needed
-
-    $permission = 'access GET georeport resource';
-    if(!$this->currentUser->hasPermission($permission)) {
-    throw new AccessDeniedHttpException
-    ("Unauthorized can't proceed with create_request.");
-    }
-     */
     $request_time = $this->time->getRequestTime();
 
-    $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
+    // Get all query parameters first.
+    $allParameters = $this->requestStack->getCurrentRequest()->query->all();
 
-    // Filtering the configured content type.
-    $bundle = $this->config->get('bundle');
-    $bundle = (isset($bundle)) ? $bundle : 'service_request';
-    $query = $this->entityTypeManager->getStorage('node')->getQuery()
-      ->condition('changed', $request_time, '<')
+    // Preserve important API parameters before filtering.
+    $preservedParams = [];
+    if (isset($allParameters['extensions'])) {
+      $preservedParams['extensions'] = $allParameters['extensions'];
+    }
+
+    // Filter standard Drupal parameters (q, page, _format)
+    $parameters = UrlHelper::filterQueryParameters($allParameters);
+
+    // Restore preserved API parameters.
+    $parameters = array_merge($parameters, $preservedParams);
+
+    // Start with the secure base query from the processor service.
+    $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
+
+    // Apply common filters.
+    $bundle = $this->config->get('bundle') ?? 'service_request';
+    $query->condition('changed', $request_time, '<')
       ->condition('type', $bundle);
 
-    if (in_array('administrator', $this->currentUser->getRoles()) || $this->currentUser->hasPermission('access open311 advanced properties')) {
-      $query->condition('status', [0, 1], 'IN');
-    }
-    else {
-      $query->condition('status', 1);
+    // Optimize query for common cases - direct ID lookup is fastest.
+    if (isset($parameters['id'])) {
+      $query->condition('request_id', $parameters['id']);
+      return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
     }
 
-    // Checking for a limit parameter:
-    // Handle limit parameters for user one and other users.
-    $limit = (isset($parameters['limit']) && $parameters['limit'] <= 200) ? $parameters['limit'] : 100;
+    // Direct NID lookup is also fast.
     if (isset($parameters['nids'])) {
       $nids = explode(',', $parameters['nids']);
       $query->condition('nid', $nids, 'IN');
-      $limit = NULL;
-    }
-
-    if (isset($limit)) {
-      $query->pager($limit);
-    }
-
-    // Process params to Drupal.
-    if (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) {
-      $sort = 'DESC';
     }
     else {
-      $sort = 'ASC';
+      // Handle pagination parameters.
+      $limit = isset($parameters['limit']) ? (int) $parameters['limit'] : 100;
+      $offset = 0;
+
+      // Support both 'page' (1-based) and 'offset' (0-based) parameters.
+      if (isset($parameters['page']) && $parameters['page'] > 0) {
+        $page = (int) $parameters['page'];
+        $offset = ($page - 1) * $limit;
+      }
+      elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
+        $offset = (int) $parameters['offset'];
+      }
+
+      // Performance protection: require explicit limits for queries without date filters.
+      if (!isset($parameters['start_date']) && !isset($parameters['updated'])) {
+        $limit = min($limit, 100);
+      }
+      else {
+        // Apply limit for date-filtered queries (can be larger since they're more specific)
+        $limit = min($limit, 500);
+      }
+
+      $query->range($offset, $limit);
+
+      // Handle explicit date range filters only.
+      if (isset($parameters['start_date']) && $parameters['start_date'] != '') {
+        $start_timestamp = strtotime($parameters['start_date']);
+        if ($start_timestamp !== FALSE) {
+          $query->condition('created', $start_timestamp, '>=');
+        }
+      }
+
+      if (isset($parameters['end_date']) && $parameters['end_date'] != '') {
+        $end_timestamp = strtotime($parameters['end_date']);
+        if ($end_timestamp !== FALSE) {
+          $query->condition('created', $end_timestamp, '<=');
+        }
+      }
+
+      // Handle sorting - add indexes to these fields in your DB.
+      $sort = (isset($parameters['sort']) && strcasecmp($parameters['sort'], 'DESC') == 0) ? 'DESC' : 'ASC';
+      if (isset($parameters['updated'])) {
+        $query->condition('changed', strtotime($parameters['updated']), '>=')
+          ->sort('changed', 'DESC');
+      }
+      else {
+        $query->sort('created', $sort);
+      }
     }
 
-    if (isset($parameters['updated'])) {
-      // $seconds = strtotime($parameters['updated']);
-      $query->condition('changed', $request_time - ($request_time - strtotime($parameters['updated'])), '>=');
-      $query->sort('changed', 'DESC');
-    }
-    else {
-      $query->sort('created', $sort);
-    }
-
-    // Checking for service_code and map the code with taxonomy terms:
-    if (isset($parameters['id'])) {
-      // Get the service of the current node:
-      $query->condition('request_id', $parameters['id']);
-    }
-
-    // Check for field_* arguments.
-    $fields = array_filter(
-      $parameters,
-      function ($key) {
-        return(strpos($key, 'field_') !== FALSE);
-      },
-      ARRAY_FILTER_USE_KEY
-    );
-    if (isset($fields)) {
+    // Handle custom field filters - move these after main filters.
+    if (!empty($parameters)) {
+      $fields = array_filter(
+        $parameters,
+        function ($key) {
+          return(strpos($key, 'field_') !== FALSE);
+        },
+        ARRAY_FILTER_USE_KEY
+      );
       foreach ($fields as $field => $value) {
         $query->condition($field, $value, '=');
       }
     }
+
+    // Handle bounding box.
     if (isset($parameters['bbox'])) {
       $bbox = explode(',', $parameters['bbox']);
-      $minLon = $bbox[0];
-      $minLat = $bbox[1];
-      $maxLon = $bbox[2];
-      $maxLat = $bbox[3];
-
-      $query->condition('field_geolocation.lat', $minLat, '>')
-        ->condition('field_geolocation.lat', $maxLat, '<')
-        ->condition('field_geolocation.lng', $minLon, '>')
-        ->condition('field_geolocation.lng', $maxLon, '<');
+      $query->condition('field_geolocation.lat', $bbox[1], '>')
+        ->condition('field_geolocation.lat', $bbox[3], '<')
+        ->condition('field_geolocation.lng', $bbox[0], '>')
+        ->condition('field_geolocation.lng', $bbox[2], '<');
     }
 
-    // Checking for service_code and map the code with taxonomy terms:
+    // Handle search query (more expensive operation)
     if (isset($parameters['q'])) {
-      // Get the service of the current node:
       $group = $query->orConditionGroup()
         ->condition('request_id', '%' . $parameters['q'] . '%', 'LIKE')
-        ->condition('body', '%' . $parameters['q'] . '%', 'LIKE')
         ->condition('title', '%' . $parameters['q'] . '%', 'LIKE');
+
+      // Text search on body is expensive, only do if really needed.
+      if (strlen($parameters['q']) > 3) {
+        $group->condition('body', '%' . $parameters['q'] . '%', 'LIKE');
+      }
+
+      // Search address field columns (publicly visible fields)
+      $group->condition('field_address.address_line1', '%' . $parameters['q'] . '%', 'LIKE')
+        ->condition('field_address.address_line2', '%' . $parameters['q'] . '%', 'LIKE')
+        ->condition('field_address.locality', '%' . $parameters['q'] . '%', 'LIKE')
+        ->condition('field_address.postal_code', '%' . $parameters['q'] . '%', 'LIKE');
 
       $query->condition($group);
     }
 
-    if (!isset($parameters['nids']) && (!isset($parameters['updated']))) {
-      // start_date param or max 90days.
-      $start_timestamp = (isset($parameters['start_date']) && $parameters['start_date'] != '') ? strtotime($parameters['start_date']) : strtotime("- 90days");
-      $query->condition('created', $start_timestamp, '>=');
-
-      // End_date param or create a timestamp now:
-      $end_timestamp = (isset($parameters['end_date']) && $parameters['end_date'] != '') ? strtotime($parameters['end_date']) : time();
-      $query->condition('created', $end_timestamp, '<=');
-    }
-    $query->accessCheck(FALSE);
-
-    // Checking for status-parameter and map the code with taxonomy terms:
+    // Handle status filtering.
     if (isset($parameters['status'])) {
-      // Get the service of the current node:
-      $tids = $this->georeportProcessor->statusMapTax($parameters['status']);
-      $or = $query->orConditionGroup();
-      foreach ($tids as $tid) {
-        $or->condition('field_status', $tid);
+      $tids = $this->georeportProcessor->mapStatusToTaxonomyIds($parameters['status']);
+      if (!empty($tids)) {
+        $query->condition('field_status', $tids, 'IN');
       }
-      $query->condition($or);
-    }
-    // Checking for service_code and map the code with taxonomy terms:
-    if (isset($parameters['service_code'])) {
-      // Get the service of the current node:
-      $service_codes = explode(',', $parameters['service_code']);
-      $or = $query->orConditionGroup();
-      foreach ($service_codes as $service_code) {
-        $tid = $this->georeportProcessor->serviceMapTax($service_code);
-        $or->condition('field_category', $tid);
-      }
-      $query->condition($or);
     }
 
-    $debug_query = $query->__toString();
+    // Handle service code filtering.
+    if (isset($parameters['service_code'])) {
+      $service_codes = explode(',', $parameters['service_code']);
+      if (count($service_codes) == 1) {
+        // Single service code lookup is simpler.
+        $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_codes[0]);
+        $query->condition('field_category', $tid);
+      }
+      else {
+        // Multiple codes need OR condition.
+        $categoryTids = [];
+        foreach ($service_codes as $service_code) {
+          try {
+            $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_code);
+            $categoryTids[] = $tid;
+          }
+          catch (\Exception $e) {
+            // Skip invalid service codes.
+          }
+        }
+        if (!empty($categoryTids)) {
+          $query->condition('field_category', $categoryTids, 'IN');
+        }
+      }
+    }
 
     return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
   }
@@ -398,7 +439,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
     catch (EntityStorageException $e) {
       throw new HttpException(500, 'Internal Server Error', $e);
     }
-
   }
 
   /**
@@ -411,10 +451,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   If node has not been saved.
    */
   public function createNode(array $request_data) {
-
-    $values = $this->georeportProcessor->requestMapNode($request_data, 'create');
-    $node = $this->entityTypeManager->getStorage('node')
-      ->create($values);
+    $values = $this->georeportProcessor->prepareNodeProperties($request_data, 'create');
+    $node = $this->entityTypeManager->getStorage('node')->create($values);
 
     // Make sure it's a content entity.
     if ($node instanceof ContentEntityInterface) {
@@ -467,7 +505,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
           $service_request['service_requests']['request']['service_request_id'] = $request_id;
         }
         return $service_request;
-
       }
     }
   }
@@ -486,16 +523,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
     if (count($violations) > 0) {
       $messages = [];
       foreach ($violations as $violation) {
-        $messages[substr($violation->getPropertyPath(), 6)] = $violation->getMessage();
+        $dotPosition = strpos($violation->getPropertyPath(), '.');
+
+        $propertyPath = $dotPosition !== FALSE ? substr($violation->getPropertyPath(), $dotPosition + 1) : $violation->getPropertyPath();
+        $messages[$propertyPath] = $violation->getMessage();
         $this->logger->error('Node validation error: @message', ['@message' => $violation->getMessage()]);
+
       }
 
-      // Throw new BadRequestHttpException($message);
-      $exception = new GeoreportException();
-      $exception->setViolations($violations);
-      $exception->setCode(400);
-      throw $exception;
-      // Return $messages;.
+      // Convert messages to a string or format that you want to show in the response.
+      $detailedMessage = json_encode($messages);
+      throw new GeoreportException($detailedMessage, 400);
+
     }
     else {
       return TRUE;

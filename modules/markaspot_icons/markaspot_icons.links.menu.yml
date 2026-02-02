@@ -1,0 +1,6 @@
+markaspot_icons.settings:
+  title: 'Icon Settings'
+  description: 'Configure Mark-a-Spot icon field settings'
+  parent: system.admin_config_markaspot
+  route_name: markaspot_icons.settings
+  weight: 10

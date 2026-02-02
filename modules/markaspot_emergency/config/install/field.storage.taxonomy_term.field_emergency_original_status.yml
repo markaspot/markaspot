@@ -1,0 +1,20 @@
+uuid: null
+langcode: en
+status: true
+dependencies:
+  module:
+    - taxonomy
+id: taxonomy_term.field_emergency_original_status
+field_name: field_emergency_original_status
+entity_type: taxonomy_term
+type: boolean
+settings:
+  on_label: 'Yes'
+  off_label: 'No'
+module: core
+locked: false
+cardinality: 1
+translatable: true
+indexes: {}
+persist_with_no_fields: false
+custom_storage: false

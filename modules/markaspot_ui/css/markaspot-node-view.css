@@ -1,0 +1,126 @@
+/**
+ * @file
+ * Styling for service request node view display.
+ * Improves spacing and readability for the canonical node view.
+ */
+
+/* Main node content wrapper - add comfortable padding */
+.node--type-service-request.node--view-mode-full .node__content {
+  padding: 1.5rem;
+}
+
+/* Field spacing - consistent gaps between fields */
+.node--type-service-request.node--view-mode-full .field {
+  margin-bottom: 1.5rem;
+}
+
+/* Field labels - better visual hierarchy */
+.node--type-service-request.node--view-mode-full .field__label {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+/* Field items - comfortable spacing */
+.node--type-service-request.node--view-mode-full .field__item {
+  padding: 0.5rem 0;
+}
+
+/* Status notes section - extra spacing */
+.node--type-service-request.node--view-mode-full .field--name-field-status-notes {
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+
+/* Individual status paragraphs */
+.node--type-service-request.node--view-mode-full .paragraph--type--status {
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-left: 3px solid #0074bd;
+  margin-bottom: 1rem;
+  border-radius: 4px;
+}
+
+/* Status note text */
+.node--type-service-request.node--view-mode-full .field--name-field-status-note {
+  margin-bottom: 0.75rem;
+}
+
+/* Address field - better formatting */
+.node--type-service-request.node--view-mode-full .field--name-field-address .field__item {
+  padding: 0.75rem;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  line-height: 1.6;
+}
+
+/* Media items - grid layout with spacing */
+.node--type-service-request.node--view-mode-full .field--name-field-request-media .field__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.node--type-service-request.node--view-mode-full .field--name-field-request-media .field__item {
+  padding: 0;
+}
+
+/* Body text - comfortable reading */
+.node--type-service-request.node--view-mode-full .field--name-body {
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  line-height: 1.6;
+}
+
+/* Category field - highlight */
+.node--type-service-request.node--view-mode-full .field--name-field-category {
+  font-size: 1.1rem;
+  padding: 0.75rem;
+  background-color: #e7f3ff;
+  border-radius: 4px;
+  border-left: 3px solid #0074bd;
+}
+
+/* Current status field - highlight */
+.node--type-service-request.node--view-mode-full .field--name-field-status {
+  padding: 0.75rem;
+  background-color: #e8f5e9;
+  border-radius: 4px;
+  border-left: 3px solid #4caf50;
+}
+
+/* Dark mode overrides */
+.gin--dark-mode .node--type-service-request.node--view-mode-full .field__label {
+  color: #d2d3d3;
+}
+
+.gin--dark-mode .node--type-service-request.node--view-mode-full .paragraph--type--status,
+.gin--dark-mode .node--type-service-request.node--view-mode-full .field--name-body,
+.gin--dark-mode .node--type-service-request.node--view-mode-full .field--name-field-address .field__item {
+  background-color: #3b3b3f;
+  border-color: #559bca;
+}
+
+.gin--dark-mode .node--type-service-request.node--view-mode-full .field--name-field-category {
+  background-color: #2c3e50;
+  border-color: #559bca;
+}
+
+.gin--dark-mode .node--type-service-request.node--view-mode-full .field--name-field-status {
+  background-color: #1b5e20;
+  border-color: #66bb6a;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 767px) {
+  .node--type-service-request.node--view-mode-full .node__content {
+    padding: 1rem;
+  }
+
+  .node--type-service-request.node--view-mode-full .field--name-field-request-media .field__items {
+    grid-template-columns: 1fr;
+  }
+}

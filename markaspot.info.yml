@@ -1,8 +1,9 @@
 name: Mark-a-Spot
-description: 'Install with commonly used features pre-configured.'
+description: 'Mark-a-Spot Installation Profile'
 type: profile
-core_version_requirement: ^8 || ^9 || ^10
-distibution:
+core_version_requirement: ^10 || ^11
+version: '7.x-dev'
+distribution:
   name: Mark-a-Spot
   install:
     finish_url: admin/content
@@ -26,6 +27,7 @@ dependencies:
   - editor
   - entity_reference_revisions
   - fa_icon_class
+  - iconify_field
   - field_formatter_class
   - field_group
   - field_ui
@@ -33,6 +35,7 @@ dependencies:
   - file
   - filter
   - geolocation
+  - geolocation_nominatim
   - help
   - history
   - image
@@ -53,21 +56,17 @@ dependencies:
   - system
   - taxonomy
   - text
-  - toolbar
   - user
   - views
-  - views_infinite_scroll
-  - views_ui
   - markaspot_open311
-  - markaspot_map
+  - markaspot_nuxt
   - markaspot_media
   - markaspot_token
-  - markaspot_ui
   - markaspot_request_id
   - markaspot_validation
+  - markaspot_icons
   - service_request
 
 themes:
-  - mas_olivero
   - gin
 

@@ -1,0 +1,4 @@
+administer mark-a-spot icons:
+  title: 'Administer Mark-a-Spot Icons'
+  description: 'Configure icon field settings and perform migrations'
+  restrict access: TRUE

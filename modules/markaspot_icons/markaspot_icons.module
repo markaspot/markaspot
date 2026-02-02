@@ -1,0 +1,123 @@
+<?php
+
+/**
+ * @file
+ * Mark-a-Spot Icons module hooks and functions.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ * Implements hook_field_widget_info_alter().
+ */
+function markaspot_icons_field_widget_info_alter(array &$info) {
+  // Allow Iconify widget to work with fa_icon_class field type.
+  if (isset($info['iconify_field_icon_picker'])) {
+    $info['iconify_field_icon_picker']['field_types'][] = 'fa_icon_class';
+  }
+}
+
+/**
+ * Implements hook_field_widget_form_alter().
+ */
+function markaspot_icons_field_widget_form_alter(&$element, FormStateInterface $form_state, $context) {
+  $field_definition = $context['items']->getFieldDefinition();
+  
+  // Handle Iconify widget on fa_icon_class fields.
+  if ($field_definition->getType() === 'fa_icon_class' && 
+      $context['widget']->getPluginId() === 'iconify_field_icon_picker') {
+    
+    // Convert fa_icon_class field to work with Iconify widget.
+    // The Iconify widget expects 'value' in the structure.
+    if (isset($element['value'])) {
+      // Convert FontAwesome format to Iconify format for display.
+      $current_value = $element['value']['#default_value'] ?? '';
+      if (!empty($current_value) && strpos($current_value, 'fa-') === 0) {
+        $element['value']['#default_value'] = markaspot_icons_convert_fa_to_iconify($current_value);
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_field_widget_complete_form_alter().
+ */
+function markaspot_icons_field_widget_complete_form_alter(&$field_widget_complete_form, FormStateInterface $form_state, $context) {
+  $field_definition = $context['items']->getFieldDefinition();
+  
+  if ($field_definition->getType() === 'fa_icon_class' && 
+      $context['widget']->getPluginId() === 'iconify_field_icon_picker') {
+    
+    // Add custom validation to convert Iconify format back to FontAwesome format.
+    $field_widget_complete_form['#element_validate'][] = 'markaspot_icons_iconify_to_fa_validate';
+  }
+}
+
+/**
+ * Custom validation to convert Iconify format to FontAwesome format.
+ */
+function markaspot_icons_iconify_to_fa_validate($element, FormStateInterface $form_state, $complete_form) {
+  $values = $form_state->getValue($element['#parents']);
+  
+  if (!empty($values[0]['value'])) {
+    $iconify_value = $values[0]['value'];
+    
+    // Convert Iconify format back to FontAwesome format for storage.
+    if (strpos($iconify_value, 'i-') === 0) {
+      $fa_value = markaspot_icons_convert_iconify_to_fa($iconify_value);
+      $values[0]['value'] = $fa_value;
+      $form_state->setValue($element['#parents'], $values);
+    }
+  }
+}
+
+/**
+ * Convert FontAwesome icon to Iconify format.
+ */
+function markaspot_icons_convert_fa_to_iconify($fa_icon) {
+  $mapping = [
+    'fa-trash' => 'i-heroicons-trash',
+    'fa-road' => 'i-heroicons-minus',
+    'fa-tree' => 'i-heroicons-beaker',
+    'fa-tint' => 'i-heroicons-beaker',
+    'fa-comment' => 'i-heroicons-chat-bubble-left',
+    'fa-comment-o' => 'i-heroicons-chat-bubble-left',
+    'fa-check' => 'i-heroicons-check',
+    'fa-check-circle' => 'i-heroicons-check-circle',
+    'fa-play-circle' => 'i-heroicons-play-circle',
+    'fa-hand-stop-o' => 'i-heroicons-hand-raised',
+    'fa-stack-overflow' => 'i-heroicons-archive-box',
+    'fa-calendar-times-o' => 'i-heroicons-calendar-x-mark',
+    'fa-bank' => 'i-heroicons-building-office',
+    'fa-building' => 'i-heroicons-building-office',
+    'fa-home' => 'i-heroicons-home',
+    'fa-heart-o' => 'i-heroicons-heart',
+    'fa-heart' => 'i-heroicons-heart',
+  ];
+  
+  return $mapping[$fa_icon] ?? 'i-heroicons-exclamation-circle';
+}
+
+/**
+ * Convert Iconify icon back to FontAwesome format.
+ */
+function markaspot_icons_convert_iconify_to_fa($iconify_icon) {
+  $reverse_mapping = [
+    'i-heroicons-trash' => 'fa-trash',
+    'i-heroicons-minus' => 'fa-road',
+    'i-heroicons-beaker' => 'fa-tree',
+    'i-heroicons-chat-bubble-left' => 'fa-comment',
+    'i-heroicons-check' => 'fa-check',
+    'i-heroicons-check-circle' => 'fa-check-circle',
+    'i-heroicons-play-circle' => 'fa-play-circle',
+    'i-heroicons-hand-raised' => 'fa-hand-stop-o',
+    'i-heroicons-archive-box' => 'fa-stack-overflow',
+    'i-heroicons-calendar-x-mark' => 'fa-calendar-times-o',
+    'i-heroicons-building-office' => 'fa-bank',
+    'i-heroicons-home' => 'fa-home',
+    'i-heroicons-heart' => 'fa-heart',
+    'i-heroicons-exclamation-circle' => 'fa-heart-o', // Default fallback
+  ];
+  
+  return $reverse_mapping[$iconify_icon] ?? 'fa-heart-o';
+}

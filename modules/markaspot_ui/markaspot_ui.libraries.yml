@@ -1,5 +1,25 @@
-markaspot_ui.icons:
+toolbar:
   version: VERSION
   css:
     theme:
-      css/markaspot_ui.icons.css: {}
+      css/markaspot-toolbar.css: { weight: 100 }
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+    - gin/gin
+
+settings:
+  version: VERSION
+  css:
+    theme:
+      css/markaspot-settings.css: {}
+  dependencies:
+    - core/drupal
+
+node_view:
+  version: VERSION
+  css:
+    theme:
+      css/markaspot-node-view.css: {}
+  dependencies:
+    - core/drupal

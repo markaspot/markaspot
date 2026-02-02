@@ -1,0 +1,75 @@
+<?php
+
+/**
+ * @file
+ * Mark-a-Spot Emergency module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_emergency_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.markaspot_emergency':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Mark-a-Spot Emergency module provides emergency mode functionality for rapid disaster response. It allows administrators to quickly switch the system into emergency mode, which unpublishes regular categories and activates emergency-specific categories optimized for crisis situations.') . '</p>';
+      $output .= '<h3>' . t('Features') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('Instant emergency mode activation') . '</li>';
+      $output .= '<li>' . t('Batch category management (unpublish regular, publish emergency)') . '</li>';
+      $output .= '<li>' . t('Pre-configured emergency category templates') . '</li>';
+      $output .= '<li>' . t('Lite UI mode for low-bandwidth situations') . '</li>';
+      $output .= '<li>' . t('API endpoints for frontend integration') . '</li>';
+      $output .= '<li>' . t('Automatic mode deactivation after set duration') . '</li>';
+      $output .= '</ul>';
+      return $output;
+
+    case 'markaspot_emergency.settings':
+      return '<p>' . t('Configure emergency mode settings including activation triggers, category presets, and auto-deactivation rules.') . '</p>';
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+function markaspot_emergency_theme() {
+  return [
+    'markaspot_emergency_status' => [
+      'variables' => [
+        'status' => NULL,
+        'mode_type' => NULL,
+        'activated_at' => NULL,
+        'activated_by' => NULL,
+        'auto_deactivate_at' => NULL,
+      ],
+    ],
+  ];
+}
+
+/**
+ * Implements hook_cron().
+ */
+function markaspot_emergency_cron() {
+  $config = \Drupal::config('markaspot_emergency.settings');
+
+  // Check for auto-deactivation.
+  if ($config->get('emergency_mode.status') === 'active') {
+    $auto_deactivate = $config->get('auto_deactivate.enabled');
+    $duration = $config->get('auto_deactivate.duration');
+    $activated_at = $config->get('emergency_mode.activated_at');
+
+    if ($auto_deactivate && $activated_at && $duration) {
+      $deactivate_time = $activated_at + ($duration * 3600);
+      if (time() >= $deactivate_time) {
+        // Auto-deactivate emergency mode.
+        \Drupal::service('markaspot_emergency.controller')->deactivate();
+        \Drupal::logger('markaspot_emergency')->notice('Emergency mode auto-deactivated after @hours hours.', [
+          '@hours' => $duration,
+        ]);
+      }
+    }
+  }
+}

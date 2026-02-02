@@ -1,18 +1,6 @@
 /**
  * @file
- * Styling for the user module icons.
+ * Styling for markaspot_ui icons - This file can be removed after confirming markaspot-toolbar.css works properly.
  */
 
-/**
- * Toolbar tab icon.
- */
-.toolbar-bar [data-drupal-link-system-path="admin/content/management"]:before,
-.toolbar-bar .toolbar-icon-markaspot-ui:before {
-    -webkit-mask-image:none!important;
-    background: transparent url(../images/logo.svg) 50% 50% no-repeat !important;
-    background-size: 100%;
-}
-
-img.toolbar-icon-home {
-  padding: 10px;
-}
+/* This is now moved to markaspot-toolbar.css */

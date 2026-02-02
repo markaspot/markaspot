@@ -58,7 +58,7 @@ class MarkaspotRequestIdSettingsForm extends ConfigFormBase {
 
     $form['markaspot_request_id']['delimiter'] = [
       '#type' => 'textfield',
-      '#title' => $this->t('PHP Date Format'),
+      '#title' => $this->t('Delimiter'),
       '#default_value' => $config->get('delimiter') ?? '-',
       '#description' => $this->t('The delimiter between serial id and date pattern like #1-2018'),
     ];

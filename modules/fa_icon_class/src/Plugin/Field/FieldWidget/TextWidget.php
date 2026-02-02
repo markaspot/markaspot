@@ -30,17 +30,14 @@ class TextWidget extends WidgetBase {
       '#default_value' => $value,
       '#attributes' => ['class' => ["icon-widget"]],
       '#size' => 12,
-      '#maxlength' => 20,
+      '#maxlength' => 40,
       '#element_validate' => [
         [$this, 'validate'],
       ],
       '#attached' => [
         // Add bpptstrap and fontAwesome libraries.
         'library' => [
-          'fa_icon_class/fontawesome-iconpicker',
           'fa_icon_class/iconpicker',
-          'fa_icon_class/bootstrap',
-          'fa_icon_class/font-awesome',
         ],
       ],
     ];

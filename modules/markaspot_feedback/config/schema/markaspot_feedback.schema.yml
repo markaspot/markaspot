@@ -1,0 +1,72 @@
+# Schema for the configuration files of the Mark-a-Spot Feedback module.
+
+markaspot_feedback.settings:
+  type: config_object
+  label: 'Mark-a-Spot Feedback settings'
+  mapping:
+    enable:
+      type: boolean
+      label: 'Enable Feedback Module'
+    cron_enable:
+      type: boolean
+      label: 'Enable Automated Processing via Cron'
+    tax_status:
+      type: string
+      label: 'Status Vocabulary'
+    status_resubmissive:
+      type: sequence
+      label: 'Resubmissive status terms'
+      sequence:
+        type: string
+        label: 'Term ID'
+    set_progress_tid:
+      type: sequence
+      label: 'Status to set when citizen requests status update'
+      sequence:
+        type: string
+        label: 'Term ID'
+    set_archive_tid:
+      type: sequence
+      label: 'Archive status terms'
+      sequence:
+        type: string
+        label: 'Term ID'
+    set_status_note:
+      type: text
+      label: 'Citizen status note template'
+    days:
+      type: integer
+      label: 'Waiting period in days'
+    mailtext:
+      type: text
+      label: 'Email template for citizen feedback requests'
+    mail_subject:
+      type: string
+      label: 'Email subject for citizen feedback requests'
+    interval:
+      type: integer
+      label: 'Cron interval'
+    status_feedback_enabled:
+      type: sequence
+      label: 'Feedback eligible statuses'
+      sequence:
+        type: string
+        label: 'Term ID'
+
+markaspot_feedback.mail:
+  type: config_object
+  label: 'Mark-a-Spot Feedback mail templates'
+  mapping:
+    langcode:
+      type: string
+      label: 'Language code'
+    feedback_request:
+      type: mapping
+      label: 'Feedback request email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'

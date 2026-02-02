@@ -9,7 +9,7 @@ field_name: field_gdpr
 entity_type: node
 bundle: service_request
 label: 'General Data Protection Regulation'
-description: 'By checking this box, you agree to our terms and that you have read our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Data Use Policy</a>, including our <a class="use-ajax" data-dialog-type="modal" href="/privacy-policy-terms-service">Cookie Use</a>.'
+description: 'By checking this box, you agree to our terms and that you have read our Data Use Policy, including our Cookie Use.'
 required: false
 translatable: false
 default_value:

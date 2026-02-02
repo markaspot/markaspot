@@ -1,0 +1,21 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_stats.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_stats_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.markaspot_stats':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Provides optimized statistics API for Mark-a-Spot') . '</p>';
+      return $output;
+  }
+}

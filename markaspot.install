@@ -63,3 +63,68 @@ function markaspot_update_ids(){
 function markaspot_update_9600( ){
   \Drupal::service("module_installer")->uninstall(["shariff"]);
 }
+
+/**
+ * Remove obsolete action configurations.
+ */
+function markaspot_update_9700() {
+  // List of obsolete action configurations to delete.
+  $obsolete_actions = [
+    'system.action.comment_delete_action',
+    'system.action.node_delete_action',
+  ];
+
+  $config_factory = \Drupal::configFactory();
+  $count = 0;
+  $deleted = [];
+
+  foreach ($obsolete_actions as $config_name) {
+    if ($config_factory->get($config_name)->get()) {
+      $config_factory->getEditable($config_name)->delete();
+      $deleted[] = $config_name;
+      $count++;
+    }
+  }
+
+  if ($count > 0) {
+    return t('Removed @count obsolete action configurations: @names', [
+      '@count' => $count,
+      '@names' => implode(', ', $deleted),
+    ]);
+  }
+  else {
+    return t('No obsolete action configurations found.');
+  }
+}
+
+/**
+ * Mark-a-Spot Map module is now optional for headless setups.
+ */
+function markaspot_update_9701() {
+  $module_handler = \Drupal::moduleHandler();
+
+  // Check if markaspot_map is installed
+  if ($module_handler->moduleExists('markaspot_map')) {
+    return t('The markaspot_map module is now optional. It is only needed if you use Drupal theme-based map blocks. For headless setups using markaspot_nuxt, all map configuration is now stored independently in markaspot_nuxt.settings. You can uninstall markaspot_map if you only use the Nuxt frontend: drush pm:uninstall markaspot_map');
+  }
+
+  return t('Mark-a-Spot Map module was not installed.');
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_requirements($phase) {
+  $requirements = [];
+
+  if ($phase == 'runtime') {
+    $info = \Drupal::service('extension.list.profile')->get('markaspot');
+    $requirements['markaspot_profile'] = [
+      'title' => t('Mark-a-Spot'),
+      'value' => isset($info->info['version']) ? $info->info['version'] : t('Unknown'),
+      'severity' => REQUIREMENT_INFO,
+    ];
+  }
+
+  return $requirements;
+}

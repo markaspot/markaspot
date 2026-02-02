@@ -1,0 +1,167 @@
+<?php
+
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\file\FileRepositoryInterface;
+use Drupal\file\Entity\File;
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Session\AccountInterface;
+
+/**
+ * Implements hook_entity_presave().
+ */
+function markaspot_nuxt_entity_presave(EntityInterface $entity)
+{
+  // Check if the entity is a file and is temporary.
+  if ($entity->getEntityTypeId() === 'file' && $entity->isTemporary()) {
+    $original_uri = $entity->getFileUri();
+    
+    // Only process files that are in the request media directory
+    // Skip views_data_export and other system temporary files
+    if (strpos($original_uri, 'public://') !== 0 || 
+        strpos($original_uri, 'views_data_export') !== false ||
+        strpos($original_uri, 'batch') !== false) {
+      return;
+    }
+
+    // Load the file repository service.
+    $file_repository = \Drupal::service('file.repository');
+
+    // Use the file repository to load the file by URI.
+    $existing_file = $file_repository->loadByUri($original_uri);
+
+    if ($existing_file) {
+      if ($existing_file->isTemporary()) {
+        // Safety check: Don't delete if file has image derivatives or is in use
+        if (markaspot_nuxt_can_safely_delete_file($existing_file)) {
+          $existing_file->delete();
+          \Drupal::logger('markaspot_nuxt')->notice('Safely deleted existing temporary file: @uri', [
+            '@uri' => $original_uri,
+          ]);
+        } else {
+          // Generate unique filename instead of deleting
+          $directory = dirname($original_uri);
+          $filename = \Drupal::service('file_system')->basename($original_uri);
+          $unique_filename = \Drupal::service('file.repository')->mungeFilename(uniqid() . '_' . $filename);
+          $new_uri = $directory . '/' . $unique_filename;
+          $entity->setFileUri($new_uri);
+          
+          \Drupal::logger('markaspot_nuxt')->notice('Preserved existing file and renamed new file: @old -> @new', [
+            '@old' => $original_uri,
+            '@new' => $new_uri,
+          ]);
+        }
+      } else {
+        // Generate a new unique filename if the existing file is permanent.
+        $directory = dirname($original_uri);
+        $filename = \Drupal::service('file_system')->basename($original_uri);
+        $unique_filename = \Drupal::service('file_system')->basename(uniqid() . '_' . $filename);
+        $new_uri = $directory . '/' . $unique_filename;
+        $entity->setFileUri($new_uri);
+
+        \Drupal::logger('markaspot_nuxt')->notice('Renamed conflicting file URI: @old -> @new', [
+          '@old' => $original_uri,
+          '@new' => $new_uri,
+        ]);
+      }
+    }
+
+    // Mark the file as permanent.
+    $entity->setPermanent();
+  }
+}
+
+
+/**
+ * Implements hook_file_access().
+ */
+function markaspot_nuxt_file_access(File $file, $operation, AccountInterface $account)
+{
+  $uri = $file->getFileUri();
+
+  // Log all access attempts for debugging.
+  \Drupal::logger('markaspot_nuxt')->notice('S3 File access: URI=@uri Op=@op User=@uid', [
+    '@uri' => $uri,
+    '@op' => $operation,
+    '@uid' => $account->id(),
+  ]);
+
+  // Always allow access to files.
+  // This is more permissive - adjust based on your security needs.
+  return AccessResult::allowed()
+    ->addCacheableDependency($file)
+    ->addCacheableDependency($account);
+}
+
+/**
+ * Safely check if a file can be deleted without breaking references.
+ * 
+ * @param \Drupal\file\Entity\File $file
+ *   The file entity to check.
+ * 
+ * @return bool
+ *   TRUE if safe to delete, FALSE otherwise.
+ */
+function markaspot_nuxt_can_safely_delete_file(File $file) {
+  $file_uri = $file->getFileUri();
+  
+  try {
+    // Check 1: File usage tracking
+    $file_usage = \Drupal::service('file.usage');
+    $usage = $file_usage->listUsage($file);
+    if (!empty($usage)) {
+      \Drupal::logger('markaspot_nuxt')->info('File has usage records, preserving: @uri', [
+        '@uri' => $file_uri,
+      ]);
+      return FALSE;
+    }
+    
+    // Check 2: Image style derivatives exist
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $image_styles = $entity_type_manager->getStorage('image_style')->loadMultiple();
+    
+    foreach ($image_styles as $style) {
+      $derivative_uri = $style->buildUri($file_uri);
+      if (file_exists($derivative_uri)) {
+        \Drupal::logger('markaspot_nuxt')->info('File has image derivatives, preserving: @uri (derivative: @derivative)', [
+          '@uri' => $file_uri,
+          '@derivative' => $derivative_uri,
+        ]);
+        return FALSE;
+      }
+    }
+    
+    // Check 3: Referenced by media entities
+    $media_storage = $entity_type_manager->getStorage('media');
+    $media_query = $media_storage->getQuery()
+      ->condition('field_media_image.target_id', $file->id())
+      ->accessCheck(FALSE)
+      ->count();
+    
+    if ($media_query->execute() > 0) {
+      \Drupal::logger('markaspot_nuxt')->info('File referenced by media entities, preserving: @uri', [
+        '@uri' => $file_uri,
+      ]);
+      return FALSE;
+    }
+    
+    // Check 4: Recent file (within grace period)
+    $grace_period = 3600; // 1 hour
+    if ((time() - $file->getCreatedTime()) < $grace_period) {
+      \Drupal::logger('markaspot_nuxt')->info('File is recent (within grace period), preserving: @uri', [
+        '@uri' => $file_uri,
+      ]);
+      return FALSE;
+    }
+    
+    // All checks passed - safe to delete
+    return TRUE;
+    
+  } catch (\Exception $e) {
+    // On any error, err on the side of caution
+    \Drupal::logger('markaspot_nuxt')->error('Error checking file safety, preserving file: @uri - @error', [
+      '@uri' => $file_uri,
+      '@error' => $e->getMessage(),
+    ]);
+    return FALSE;
+  }
+}

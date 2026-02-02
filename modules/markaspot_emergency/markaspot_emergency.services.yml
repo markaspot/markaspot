@@ -1,0 +1,10 @@
+services:
+  markaspot_emergency.controller:
+    class: Drupal\markaspot_emergency\Controller\EmergencyModeController
+    arguments: ['@config.factory', '@entity_type.manager', '@current_user', '@logger.factory']
+
+  markaspot_emergency.commands:
+    class: Drupal\markaspot_emergency\Commands\EmergencyCommands
+    arguments: ['@config.factory', '@markaspot_emergency.controller']
+    tags:
+      - { name: drush.command }

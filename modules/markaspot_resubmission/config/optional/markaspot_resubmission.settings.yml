@@ -1,10 +1,8 @@
 tax_status: service_status
 status_resubmissive:
   5: '5'
-days:
-  3: '1'
-  1: '1'
-  2: '1'
-  4: '1'
+default_resubmission_days: 42
 mailtext: 'Hello [current-user:name]!'
 interval: '172800'
+reminder_interval: 604800
+max_reminders: 0

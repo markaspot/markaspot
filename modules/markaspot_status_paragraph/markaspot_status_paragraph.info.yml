@@ -1,0 +1,7 @@
+name: 'Mark-a-Spot Status Paragraph'
+type: module
+description: 'Provides custom styling and behavior for status paragraph fields.'
+core_version_requirement: ^11
+package: 'Mark-a-Spot'
+dependencies:
+  - paragraphs

@@ -1,0 +1,4 @@
+services:
+  markaspot_publisher.publisher:
+    class: Drupal\markaspot_publisher\PublisherService
+    arguments: ['@entity_type.manager', '@config.factory']

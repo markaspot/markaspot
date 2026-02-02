@@ -1,14 +1,14 @@
 <?php
 
 /**
- * Implements hook_field_widget_WIDGET_TYPE_form_alter().
+ * Implements hook_field_widget_single_element__WIDGET_TYPE_form_alter().
  *
  * attach js and html attributes to dynamically add taxonony term description
  * to SHS widget
  *
  * currently only applicable for fields with cardinality of 1
  */
-function markaspot_shstweak_field_widget_options_shs_form_alter(&$element, \Drupal\Core\Form\FormStateInterface $form_state, $context) {
+function markaspot_shstweak_field_widget_single_element_options_shs_form_alter(&$element, \Drupal\Core\Form\FormStateInterface $form_state, $context) {
   $items = $context['items'];
   $widget = $context['widget'];
   if ($items instanceof \Drupal\Core\Field\EntityReferenceFieldItemList && $widget instanceof \Drupal\shs\Plugin\Field\FieldWidget\OptionsShsWidget) {

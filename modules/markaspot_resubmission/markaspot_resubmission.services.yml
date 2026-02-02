@@ -1,4 +1,15 @@
 services:
+  logger.channel.markaspot_resubmission:
+    parent: logger.channel_base
+    arguments: ['markaspot_resubmission']
+  markaspot_resubmission.reminder_manager:
+    class: Drupal\markaspot_resubmission\ReminderManager
+    arguments: ['@entity_type.manager', '@config.factory', '@logger.channel.markaspot_resubmission', '@datetime.time']
   markaspot_resubmission.resubmission:
     class: Drupal\markaspot_resubmission\ResubmissionService
-    arguments: ['@entity_type.manager', '@config.factory']
+    arguments: ['@entity_type.manager', '@config.factory', '@markaspot_resubmission.reminder_manager']
+  markaspot_resubmission.reminder_subscriber:
+    class: Drupal\markaspot_resubmission\EventSubscriber\ResubmissionReminderSubscriber
+    arguments: ['@plugin.manager.mail', '@language_manager', '@logger.channel.markaspot_resubmission', '@token']
+    tags:
+      - { name: event_subscriber }

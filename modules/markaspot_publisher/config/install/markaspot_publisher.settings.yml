@@ -1,0 +1,9 @@
+tax_status: service_status
+status_publishable:
+  5: 5
+## Toggle automatic publishing on cron and its interval.
+cron_enable: 1
+cron_always_run: 0
+cron_interval: 86400
+default_days: 30
+manual_unpublish_threshold: 6
