@@ -34,24 +34,6 @@ markaspot_nuxt.field_options:
   requirements:
     _permission: 'access content'
 
-markaspot_nuxt.status_note_create:
-  path: '/api/status-notes'
-  defaults:
-    _controller: '\Drupal\markaspot_nuxt\Controller\StatusNoteController::add'
-    _format: 'json'
-  methods: [POST]
-  requirements:
-    _permission: 'access content'
-
-markaspot_nuxt.status_note_delete:
-  path: '/api/status-notes/{uuid}'
-  defaults:
-    _controller: '\Drupal\markaspot_nuxt\Controller\StatusNoteController::delete'
-    _format: 'json'
-  methods: [DELETE]
-  requirements:
-    _permission: 'access content'
-
 markaspot_nuxt.jurisdictions:
   path: '/api/jurisdictions'
   defaults:

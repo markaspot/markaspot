@@ -79,3 +79,22 @@ markaspot_dashboard.duplicates_review:
     _permission: 'access mark-a-spot api'
     match_id: \d+
   methods: [POST]
+
+# Status Notes API (Staff/Dashboard feature)
+markaspot_dashboard.status_note_create:
+  path: '/api/dashboard/status-notes'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\StatusNoteController::add'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _permission: 'access content'
+
+markaspot_dashboard.status_note_delete:
+  path: '/api/dashboard/status-notes/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\StatusNoteController::delete'
+    _format: 'json'
+  methods: [DELETE]
+  requirements:
+    _permission: 'access content'

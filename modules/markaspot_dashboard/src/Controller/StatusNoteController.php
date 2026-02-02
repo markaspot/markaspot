@@ -1,6 +1,6 @@
 <?php
 
-namespace Drupal\markaspot_nuxt\Controller;
+namespace Drupal\markaspot_dashboard\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
