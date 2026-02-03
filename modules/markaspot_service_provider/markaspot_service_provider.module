@@ -5,6 +5,7 @@
  * Contains markaspot_service_provider.module.
  */
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 
 /**
@@ -173,4 +174,161 @@ function markaspot_service_provider_cron() {
       ->set('markaspot_service_provider.next_execution',
         \Drupal::time()->getRequestTime() + $interval);
   }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for service request edit form.
+ */
+function markaspot_service_provider_form_node_service_request_edit_form_alter(array &$form, FormStateInterface $form_state, $form_id): void {
+  _markaspot_service_provider_render_notes_readonly($form, $form_state);
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for service request management form.
+ */
+function markaspot_service_provider_form_node_service_request_management_form_alter(array &$form, FormStateInterface $form_state, $form_id): void {
+  _markaspot_service_provider_render_notes_readonly($form, $form_state);
+}
+
+/**
+ * Renders service provider notes as read-only markup for non-admin users.
+ *
+ * For users without 'administer nodes' permission, this replaces the editable
+ * textarea widget with a read-only display of all notes, and adds a separate
+ * textarea for adding new moderator responses.
+ *
+ * @param array $form
+ *   The form array.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The form state.
+ */
+function _markaspot_service_provider_render_notes_readonly(array &$form, FormStateInterface $form_state): void {
+  $current_user = \Drupal::currentUser();
+
+  // Allow admins to edit directly.
+  if ($current_user->hasPermission('administer nodes')) {
+    return;
+  }
+
+  if (!isset($form['field_service_provider_notes']['widget'])) {
+    return;
+  }
+
+  $form_object = $form_state->getFormObject();
+  $node = $form_object->getEntity();
+
+  if (!$node || !$node->hasField('field_service_provider_notes')) {
+    return;
+  }
+
+  // Get ALL values from the multi-value field.
+  $all_values = $node->get('field_service_provider_notes')->getValue();
+  $widget_title = $form['field_service_provider_notes']['widget']['#title'] ?? t('Service Provider Notes');
+
+  // Build render array for all existing notes.
+  $notes_render = [];
+  if (!empty($all_values)) {
+    foreach ($all_values as $index => $item) {
+      $value = $item['value'] ?? '';
+      $format = $item['format'] ?? 'plain_text';
+      if (!empty($value)) {
+        $notes_render[] = [
+          '#type' => 'container',
+          '#attributes' => [
+            'class' => ['sp-note-item'],
+            'style' => 'margin-bottom: 1em; padding: 0.5em; background: var(--gin-bg-layer2, #f5f5f5); border-radius: 4px;',
+          ],
+          'index' => [
+            '#type' => 'html_tag',
+            '#tag' => 'div',
+            '#value' => t('Entry @num', ['@num' => $index + 1]),
+            '#attributes' => [
+              'class' => ['sp-note-index'],
+              'style' => 'font-size: 0.8em; color: #666; margin-bottom: 0.5em;',
+            ],
+          ],
+          'content' => [
+            '#type' => 'processed_text',
+            '#text' => $value,
+            '#format' => $format,
+          ],
+        ];
+      }
+    }
+  }
+
+  // Replace widget with read-only display.
+  if (!empty($notes_render)) {
+    $form['field_service_provider_notes']['widget'] = [
+      '#type' => 'item',
+      '#title' => $widget_title,
+      '#wrapper_attributes' => ['class' => ['field-service-provider-notes-readonly']],
+      'notes' => $notes_render,
+    ];
+  }
+  else {
+    $form['field_service_provider_notes']['widget'] = [
+      '#type' => 'item',
+      '#title' => $widget_title,
+      '#markup' => '<em>' . t('No notes from service provider.') . '</em>',
+      '#wrapper_attributes' => ['class' => ['field-service-provider-notes-readonly']],
+    ];
+  }
+
+  // Add separate textarea for moderator response.
+  $form['moderator_response_to_sp'] = [
+    '#type' => 'textarea',
+    '#title' => t('Rückmeldung an den Dienstleister'),
+    '#description' => t('Diese Nachricht wird als neuer Eintrag hinzugefügt.'),
+    '#rows' => 4,
+    '#weight' => ($form['field_service_provider_notes']['#weight'] ?? 0) + 0.1,
+    '#group' => 'group_service_provider',
+    '#attributes' => ['class' => ['moderator-response-field']],
+  ];
+
+  // Store ALL original values as JSON for submit handler.
+  $form['field_service_provider_notes_all_values'] = [
+    '#type' => 'hidden',
+    '#value' => json_encode($all_values),
+  ];
+
+  // Add submit handler to merge the response.
+  array_unshift($form['actions']['submit']['#submit'], '_markaspot_service_provider_merge_notes_submit');
+}
+
+/**
+ * Submit handler to merge moderator response into service provider notes.
+ *
+ * @param array $form
+ *   The form array.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The form state.
+ */
+function _markaspot_service_provider_merge_notes_submit(array &$form, FormStateInterface $form_state): void {
+  $response = $form_state->getValue('moderator_response_to_sp') ?? '';
+  $all_values_json = $form_state->getValue('field_service_provider_notes_all_values') ?? '[]';
+  $all_values = json_decode($all_values_json, TRUE) ?: [];
+
+  if (!empty(trim($response))) {
+    $user = \Drupal::currentUser();
+    $timestamp = \Drupal::service('date.formatter')->format(time(), 'custom', 'd.m.Y - H:i', 'Europe/Berlin');
+
+    // Build the formatted note with source marker and metadata footer.
+    $message_html = nl2br(htmlspecialchars($response));
+    $metadata_footer = "<br><br>---<br>" .
+      t('Rückmeldung von: @username', ['@username' => $user->getDisplayName()]) . "<br>" .
+      t('Datum: @timestamp', ['@timestamp' => $timestamp]);
+
+    // Add source marker for language-agnostic parsing.
+    $formatted_note = '<!-- source:moderator -->' . $message_html . $metadata_footer;
+
+    // Add as a NEW entry.
+    $all_values[] = [
+      'value' => $formatted_note,
+      'format' => 'basic_html',
+    ];
+  }
+
+  // Set all values back to the field.
+  $form_state->setValue('field_service_provider_notes', $all_values);
 }
