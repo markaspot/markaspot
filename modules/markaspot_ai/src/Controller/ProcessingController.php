@@ -168,7 +168,7 @@ class ProcessingController extends ControllerBase {
   }
 
   /**
-   * Process the AI queue.
+   * Process the AI queues.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The request object.
@@ -182,54 +182,85 @@ class ProcessingController extends ControllerBase {
     $limit = min(100, max(1, (int) ($content['limit'] ?? 10)));
     $timeLimit = min(300, max(5, (int) ($content['time_limit'] ?? 30)));
 
+    $queues = [
+      'markaspot_ai_embedding',
+      'markaspot_ai_duplicate_scan',
+    ];
+
+    $totalProcessed = 0;
+    $totalErrors = 0;
+    $startTime = time();
+    $details = [];
+
     try {
-      $queue = $this->queueFactory->get('markaspot_ai_embedding');
-      $worker = $this->queueWorkerManager->createInstance('markaspot_ai_embedding');
+      foreach ($queues as $queueName) {
+        $queue = $this->queueFactory->get($queueName);
+        $queueCount = $queue->numberOfItems();
 
-      $processed = 0;
-      $errors = 0;
-      $startTime = time();
-
-      while ($processed < $limit && (time() - $startTime) < $timeLimit) {
-        $item = $queue->claimItem(60);
-
-        if (!$item) {
-          // No more items.
-          break;
+        if ($queueCount === 0) {
+          continue;
         }
 
         try {
-          $worker->processItem($item->data);
-          $queue->deleteItem($item);
-          $processed++;
+          $worker = $this->queueWorkerManager->createInstance($queueName);
         }
         catch (\Exception $e) {
-          $this->getLogger('markaspot_ai')->error('Queue item processing failed: @message', [
-            '@message' => $e->getMessage(),
-          ]);
-          $queue->releaseItem($item);
-          $errors++;
+          continue;
+        }
 
-          // Stop on too many errors.
-          if ($errors >= 3) {
+        $processed = 0;
+        $errors = 0;
+
+        while ($processed < $limit && (time() - $startTime) < $timeLimit) {
+          $item = $queue->claimItem(60);
+
+          if (!$item) {
             break;
           }
+
+          try {
+            $worker->processItem($item->data);
+            $queue->deleteItem($item);
+            $processed++;
+          }
+          catch (\Exception $e) {
+            $this->getLogger('markaspot_ai')->error('Queue item processing failed: @message', [
+              '@message' => $e->getMessage(),
+            ]);
+            $queue->releaseItem($item);
+            $errors++;
+
+            if ($errors >= 3) {
+              break;
+            }
+          }
         }
+
+        $remaining = $queue->numberOfItems();
+        $details[$queueName] = [
+          'processed' => $processed,
+          'errors' => $errors,
+          'remaining' => $remaining,
+        ];
+        $totalProcessed += $processed;
+        $totalErrors += $errors;
       }
 
-      $remaining = $queue->numberOfItems();
-
-      $this->getLogger('markaspot_ai')->notice('Processed @count items via dashboard (@remaining remaining).', [
-        '@count' => $processed,
-        '@remaining' => $remaining,
+      $this->getLogger('markaspot_ai')->notice('Processed @count items via dashboard.', [
+        '@count' => $totalProcessed,
       ]);
+
+      $embeddingRemaining = $this->queueFactory->get('markaspot_ai_embedding')->numberOfItems();
+      $duplicateRemaining = $this->queueFactory->get('markaspot_ai_duplicate_scan')->numberOfItems();
+      $totalRemaining = $embeddingRemaining + $duplicateRemaining;
 
       return new JsonResponse([
         'success' => TRUE,
-        'processed' => $processed,
-        'errors' => $errors,
-        'remaining' => $remaining,
-        'message' => "Processed {$processed} items" . ($remaining > 0 ? ", {$remaining} remaining." : "."),
+        'processed' => $totalProcessed,
+        'errors' => $totalErrors,
+        'remaining' => $totalRemaining,
+        'details' => $details,
+        'message' => "Processed {$totalProcessed} items" . ($totalRemaining > 0 ? ", {$totalRemaining} remaining." : "."),
       ]);
 
     }

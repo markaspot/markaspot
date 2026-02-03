@@ -167,52 +167,78 @@ class MarkaspotAiCommands extends DrushCommands {
   }
 
   /**
-   * Process the AI queue immediately.
+   * Process the AI queues immediately.
    */
   #[CLI\Command(name: 'mas:ai:process', aliases: ['maip'])]
-  #[CLI\Option(name: 'limit', description: 'Maximum items to process (default: 50)')]
+  #[CLI\Option(name: 'limit', description: 'Maximum items to process per queue (default: 50)')]
   #[CLI\Option(name: 'time-limit', description: 'Maximum time in seconds (default: 60)')]
-  #[CLI\Usage(name: 'mas:ai:process', description: 'Process up to 50 queued items')]
-  #[CLI\Usage(name: 'mas:ai:process --limit=200', description: 'Process up to 200 items')]
+  #[CLI\Usage(name: 'mas:ai:process', description: 'Process up to 50 queued items per queue')]
+  #[CLI\Usage(name: 'mas:ai:process --limit=200', description: 'Process up to 200 items per queue')]
   public function processQueue(array $options = ['limit' => 50, 'time-limit' => 60]): void {
     $limit = (int) $options['limit'];
     $timeLimit = (int) $options['time-limit'];
 
-    $queue = $this->queueFactory->get('markaspot_ai_embedding');
-    $worker = $this->queueWorkerManager->createInstance('markaspot_ai_embedding');
+    $queues = [
+      'markaspot_ai_embedding',
+      'markaspot_ai_duplicate_scan',
+    ];
 
-    $processed = 0;
-    $errors = 0;
+    $totalProcessed = 0;
+    $totalErrors = 0;
     $startTime = time();
 
-    $this->logger()->notice("Processing queue (limit: {$limit}, time: {$timeLimit}s)...");
+    foreach ($queues as $queueName) {
+      $queue = $this->queueFactory->get($queueName);
+      $queueCount = $queue->numberOfItems();
 
-    while ($processed < $limit && (time() - $startTime) < $timeLimit) {
-      $item = $queue->claimItem(60);
-
-      if (!$item) {
-        break;
+      if ($queueCount === 0) {
+        continue;
       }
+
+      $this->logger()->notice("Processing {$queueName} ({$queueCount} items)...");
 
       try {
-        $worker->processItem($item->data);
-        $queue->deleteItem($item);
-        $processed++;
+        $worker = $this->queueWorkerManager->createInstance($queueName);
       }
       catch (\Exception $e) {
-        $this->logger()->error("Queue item failed: {$e->getMessage()}");
-        $queue->releaseItem($item);
-        $errors++;
+        $this->logger()->warning("Queue worker not found for {$queueName}, skipping.");
+        continue;
+      }
 
-        if ($errors >= 3) {
-          $this->logger()->warning('Stopping due to multiple errors.');
+      $processed = 0;
+      $errors = 0;
+
+      while ($processed < $limit && (time() - $startTime) < $timeLimit) {
+        $item = $queue->claimItem(60);
+
+        if (!$item) {
           break;
         }
+
+        try {
+          $worker->processItem($item->data);
+          $queue->deleteItem($item);
+          $processed++;
+        }
+        catch (\Exception $e) {
+          $this->logger()->error("Queue item failed: {$e->getMessage()}");
+          $queue->releaseItem($item);
+          $errors++;
+
+          if ($errors >= 3) {
+            $this->logger()->warning("Stopping {$queueName} due to multiple errors.");
+            break;
+          }
+        }
       }
+
+      $remaining = $queue->numberOfItems();
+      $this->logger()->notice("  {$queueName}: {$processed} processed, {$errors} errors, {$remaining} remaining.");
+      $totalProcessed += $processed;
+      $totalErrors += $errors;
     }
 
-    $remaining = $queue->numberOfItems();
-    $this->logger()->success("Processed {$processed} items ({$errors} errors, {$remaining} remaining).");
+    $this->logger()->success("Total: {$totalProcessed} items processed ({$totalErrors} errors).");
   }
 
   /**
