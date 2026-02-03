@@ -39,3 +39,7 @@ services:
     arguments: ['@messenger']
     tags:
       - { name: event_subscriber }
+  markaspot_open311.cache_subscriber:
+    class: Drupal\markaspot_open311\EventSubscriber\GeoreportCacheSubscriber
+    tags:
+      - { name: event_subscriber }
