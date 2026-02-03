@@ -31,3 +31,12 @@ markaspot_service_provider.rest_get:
   methods: [GET]
   requirements:
     _access: 'TRUE'
+
+markaspot_service_provider.rest_auth:
+  path: '/api/service-response/{uuid}/auth'
+  defaults:
+    _controller: '\Drupal\markaspot_service_provider\Controller\ServiceProviderController::authenticateServiceProvider'
+    _title: 'Authenticate Service Provider'
+  methods: [POST]
+  requirements:
+    _access: 'TRUE'
