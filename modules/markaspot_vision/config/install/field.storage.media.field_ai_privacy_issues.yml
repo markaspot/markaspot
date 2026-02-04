@@ -1,0 +1,21 @@
+uuid: 323f4b1d-a0a2-43dd-b580-f1630c1ded79
+langcode: en
+status: true
+dependencies:
+  module:
+    - media
+_core:
+  default_config_hash: utN6vIHbcnAdZ7sYp3D5GSIbf21e6zRxTU2vA_DMaBo
+id: media.field_ai_privacy_issues
+field_name: field_ai_privacy_issues
+entity_type: media
+type: string_long
+settings:
+  case_sensitive: false
+module: core
+locked: false
+cardinality: 1
+translatable: true
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

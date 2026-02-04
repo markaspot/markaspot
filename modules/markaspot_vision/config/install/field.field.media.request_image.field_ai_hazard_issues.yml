@@ -1,0 +1,21 @@
+uuid: 10c88f03-07c5-458a-a5fa-5ce536063a6f
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.field_ai_hazard_issues
+    - media.type.request_image
+_core:
+  default_config_hash: UPVe1aGwMizJuu1TTY93tIgiW23PSD_u3lZ8tGM-GoY
+id: media.request_image.field_ai_hazard_issues
+field_name: field_ai_hazard_issues
+entity_type: media
+bundle: request_image
+label: 'Hazard Issues'
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string_long

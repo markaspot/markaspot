@@ -1,0 +1,21 @@
+uuid: 9a0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d
+langcode: en
+status: true
+dependencies:
+  module:
+    - media
+id: media.field_ai_hazard_category
+field_name: field_ai_hazard_category
+entity_type: media
+type: string
+settings:
+  max_length: 64
+  case_sensitive: false
+  is_ascii: true
+module: core
+locked: false
+cardinality: 1
+translatable: true
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

@@ -1,0 +1,21 @@
+uuid: f058117b-4310-43da-be93-18d20ebe17f6
+langcode: en
+status: true
+dependencies:
+  module:
+    - media
+_core:
+  default_config_hash: YWum8JtAfctEgNbCCffW5D2ioDDUOLab1d7s_gE8jwM
+id: media.field_ai_metadata
+field_name: field_ai_metadata
+entity_type: media
+type: string_long
+settings:
+  case_sensitive: false
+module: core
+locked: false
+cardinality: 1
+translatable: true
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

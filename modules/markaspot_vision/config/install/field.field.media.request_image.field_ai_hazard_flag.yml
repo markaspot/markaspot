@@ -1,0 +1,23 @@
+uuid: 0fb8d2ce-e10d-43d6-bfc3-b7d101920d40
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.field_ai_hazard_flag
+    - media.type.request_image
+_core:
+  default_config_hash: elHQDu4d-KWP4DMG7Ev8CH7_5gPuAypL161QzjJl7M8
+id: media.request_image.field_ai_hazard_flag
+field_name: field_ai_hazard_flag
+entity_type: media
+bundle: request_image
+label: Hazardous
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  on_label: 'On'
+  off_label: 'Off'
+field_type: boolean

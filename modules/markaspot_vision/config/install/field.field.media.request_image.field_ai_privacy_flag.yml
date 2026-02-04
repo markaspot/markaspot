@@ -1,0 +1,23 @@
+uuid: fe79f81f-e8f7-4808-85d1-9511c634be73
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.field_ai_privacy_flag
+    - media.type.request_image
+_core:
+  default_config_hash: k1rwBr2j5fLi5mpmIwNKfEGrx6kr5-ClgBOaKMVnB1s
+id: media.request_image.field_ai_privacy_flag
+field_name: field_ai_privacy_flag
+entity_type: media
+bundle: request_image
+label: 'GDPR Relevant'
+description: ''
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  on_label: 'On'
+  off_label: 'Off'
+field_type: boolean

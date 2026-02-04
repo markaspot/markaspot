@@ -1,0 +1,20 @@
+uuid: 7e8f9a0b-1c2d-3e4f-5a6b-7c8d9e0f1a2b
+langcode: en
+status: true
+dependencies:
+  module:
+    - media
+id: media.field_ai_hazard_level
+field_name: field_ai_hazard_level
+entity_type: media
+type: integer
+settings:
+  unsigned: true
+  size: tiny
+module: core
+locked: false
+cardinality: 1
+translatable: true
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

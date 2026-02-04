@@ -1,0 +1,19 @@
+uuid: 5e6f7a8b-9c0d-e1f2-a3b4-c5d6e7f8a9b0
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.field_ai_hazard_category
+    - media.type.request_image
+id: media.request_image.field_ai_hazard_category
+field_name: field_ai_hazard_category
+entity_type: media
+bundle: request_image
+label: 'AI Hazard Category'
+description: 'AI-detected hazard category (trip_fall, traffic, electrical, structural, environmental, fire, health).'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string
