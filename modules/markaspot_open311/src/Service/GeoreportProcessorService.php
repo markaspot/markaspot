@@ -21,6 +21,7 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_open311\Exception\GeoreportException;
@@ -115,6 +116,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected $token;
 
   /**
+   * The language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected $languageManager;
+
+  /**
    * GeoreportProcessorService constructor.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -137,6 +145,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The stream wrapper manager service.
    * @param \Drupal\Core\Utility\Token $token
    *   The token service.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $languageManager
+   *   The language manager service.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -149,6 +159,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     EntityFieldManagerInterface $entityFieldManager,
     StreamWrapperManagerInterface $streamWrapperManager,
     Token $token,
+    LanguageManagerInterface $languageManager,
   ) {
     $this->configFactory = $configFactory;
     $this->currentUser = $currentUser;
@@ -160,6 +171,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $this->entityFieldManager = $entityFieldManager;
     $this->streamWrapperManager = $streamWrapperManager;
     $this->token = $token;
+    $this->languageManager = $languageManager;
   }
 
   /**
@@ -408,8 +420,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @param string $vocabulary
    *   The machine name of the vocabulary.
-   * @param string $langcode
-   *   The language code for the vocabulary.
+   * @param string|null $langcode
+   *   The language code for the vocabulary. Defaults to site default language.
    * @param int $parent
    *   The ID of the parent taxonomy term (default: 0).
    * @param int|null $maxDepth
@@ -418,7 +430,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return array
    *   An array of service definitions.
    */
-  public function getTaxonomyTree(string $vocabulary = 'tags', string $langcode = 'en', int $parent = 0, ?int $maxDepth = NULL): array {
+  public function getTaxonomyTree(string $vocabulary = 'tags', ?string $langcode = NULL, int $parent = 0, ?int $maxDepth = NULL): array {
+    // Use site default language if no langcode provided.
+    $langcode = $langcode ?? $this->languageManager->getDefaultLanguage()->getId();
+
     $tree = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadByProperties(['vid' => $vocabulary, 'status' => 1]);
 
@@ -1093,7 +1108,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    */
   public function mapNodeToServiceRequest(object $node, string $extendedRole, array $parameters): array {
     // Get translated node if translation exists for requested language.
-    $langcode = $parameters['langcode'] ?? 'en';
+    // Falls back to site default language if no langcode provided.
+    $langcode = $parameters['langcode'] ?? $this->languageManager->getDefaultLanguage()->getId();
     if ($node->hasTranslation($langcode)) {
       $node = $node->getTranslation($langcode);
     }
@@ -1223,7 +1239,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Add extended attributes if extensions parameter is set.
     if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
-      $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $parameters['langcode'] ?? 'en');
+      $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $langcode);
 
       // Add permissions - checks what operations the current user can perform.
       // We avoid using $node->access() as it triggers Group module's
