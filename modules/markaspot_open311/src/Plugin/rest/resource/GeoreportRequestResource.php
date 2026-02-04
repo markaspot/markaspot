@@ -11,6 +11,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslationInterface;
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -85,6 +86,13 @@ class GeoreportRequestResource extends ResourceBase {
   protected $georeportProcessor;
 
   /**
+   * The language manager service.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface
+   */
+  protected $languageManager;
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -111,6 +119,8 @@ class GeoreportRequestResource extends ResourceBase {
    *   The entity type manager.
    * @param \Drupal\markaspot_open311\Service\GeoreportProcessorService $georeport_processor
    *   The processor service.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   *   The language manager.
    */
   public function __construct(
     array $configuration,
@@ -125,6 +135,7 @@ class GeoreportRequestResource extends ResourceBase {
     RequestStack $request_stack,
     EntityTypeManagerInterface $entity_type_manager,
     GeoreportProcessorService $georeport_processor,
+    LanguageManagerInterface $language_manager,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -133,6 +144,7 @@ class GeoreportRequestResource extends ResourceBase {
     $this->requestStack = $request_stack;
     $this->entityTypeManager = $entity_type_manager;
     $this->georeportProcessor = $georeport_processor;
+    $this->languageManager = $language_manager;
   }
 
   /**
@@ -151,7 +163,8 @@ class GeoreportRequestResource extends ResourceBase {
       $container->get('datetime.time'),
       $container->get('request_stack'),
       $container->get('entity_type.manager'),
-      $container->get('markaspot_open311.processor')
+      $container->get('markaspot_open311.processor'),
+      $container->get('language_manager')
     );
   }
 
@@ -245,6 +258,9 @@ class GeoreportRequestResource extends ResourceBase {
    */
   public function get(string $id) {
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
+
+    // Resolve language code from Accept-Language header or query parameter.
+    $parameters['langcode'] = $this->resolveLanguageCode($parameters);
 
     // Start with the secure base query.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
@@ -514,6 +530,108 @@ class GeoreportRequestResource extends ResourceBase {
     else {
       return TRUE;
     }
+  }
+
+  /**
+   * Resolves the language code from request parameters and headers.
+   *
+   * Priority order:
+   * 1. Query parameter 'langcode' (for backwards compatibility and explicit override)
+   * 2. Accept-Language HTTP header
+   * 3. Site default language.
+   *
+   * @param array $parameters
+   *   The query parameters from the request.
+   *
+   * @return string
+   *   The resolved language code.
+   */
+  protected function resolveLanguageCode(array $parameters): string {
+    $languages = $this->languageManager->getLanguages();
+    $defaultLangcode = $this->languageManager->getDefaultLanguage()->getId();
+
+    // Priority 1: Explicit query parameter (backwards compatibility).
+    if (!empty($parameters['langcode'])) {
+      $langcode = $parameters['langcode'];
+      if (isset($languages[$langcode])) {
+        return $langcode;
+      }
+      // Invalid langcode in query param - fall through to header.
+    }
+
+    // Priority 2: Accept-Language header.
+    $request = $this->requestStack->getCurrentRequest();
+    $acceptLanguage = $request->headers->get('Accept-Language');
+
+    if ($acceptLanguage) {
+      // Parse Accept-Language header to extract language codes.
+      // Format: "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7".
+      $langcode = $this->parseAcceptLanguageHeader($acceptLanguage, $languages);
+      if ($langcode) {
+        return $langcode;
+      }
+    }
+
+    // Priority 3: Site default language.
+    return $defaultLangcode;
+  }
+
+  /**
+   * Parses the Accept-Language header and returns the best matching language.
+   *
+   * @param string $acceptLanguage
+   *   The Accept-Language header value.
+   * @param array $availableLanguages
+   *   Array of available language objects keyed by language code.
+   *
+   * @return string|null
+   *   The best matching language code or null if no match found.
+   */
+  protected function parseAcceptLanguageHeader(string $acceptLanguage, array $availableLanguages): ?string {
+    // Parse header into language-quality pairs.
+    $languageRanges = [];
+    $parts = explode(',', $acceptLanguage);
+
+    foreach ($parts as $part) {
+      $part = trim($part);
+      if (empty($part)) {
+        continue;
+      }
+
+      // Split on semicolon to separate language from quality factor.
+      $segments = explode(';', $part);
+      $lang = trim($segments[0]);
+      $quality = 1.0;
+
+      // Check for quality factor (q=0.x).
+      if (isset($segments[1])) {
+        $qPart = trim($segments[1]);
+        if (preg_match('/^q=([0-9.]+)$/i', $qPart, $matches)) {
+          $quality = (float) $matches[1];
+        }
+      }
+
+      $languageRanges[$lang] = $quality;
+    }
+
+    // Sort by quality factor (highest first).
+    arsort($languageRanges);
+
+    // Find best match.
+    foreach ($languageRanges as $lang => $quality) {
+      // Try exact match first (e.g., "de" or "en").
+      if (isset($availableLanguages[$lang])) {
+        return $lang;
+      }
+
+      // Try base language from regional variant (e.g., "de" from "de-DE").
+      $baseLang = strtok($lang, '-');
+      if ($baseLang && isset($availableLanguages[$baseLang])) {
+        return $baseLang;
+      }
+    }
+
+    return NULL;
   }
 
 }
