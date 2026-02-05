@@ -47,23 +47,26 @@ class ProcessingController extends ControllerBase {
    *   JSON response with status information.
    */
   public function getStatus(): JsonResponse {
-    // Count total service requests.
+    // Count total service requests (including unpublished, as AI processes all).
     $total = (int) $this->database->select('node_field_data', 'n')
       ->condition('n.type', 'service_request')
-      ->condition('n.status', 1)
       ->countQuery()
       ->execute()
       ->fetchField();
 
-    // Count embeddings.
-    $embeddings = (int) $this->database->select('markaspot_ai_embeddings', 'e')
-      ->condition('e.entity_type', 'node')
+    // Count embeddings (joined to verify nodes still exist).
+    $embeddingQuery = $this->database->select('markaspot_ai_embeddings', 'e');
+    $embeddingQuery->condition('e.entity_type', 'node');
+    $embeddingQuery->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+    $embeddings = (int) $embeddingQuery
       ->countQuery()
       ->execute()
       ->fetchField();
 
-    // Count sentiment analyzed.
-    $sentiment = (int) $this->database->select('markaspot_ai_sentiment', 's')
+    // Count sentiment analyzed (joined to verify nodes still exist).
+    $sentimentQuery = $this->database->select('markaspot_ai_sentiment', 's');
+    $sentimentQuery->join('node_field_data', 'n', 's.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+    $sentiment = (int) $sentimentQuery
       ->countQuery()
       ->execute()
       ->fetchField();
@@ -71,8 +74,10 @@ class ProcessingController extends ControllerBase {
     // Sentiment breakdown.
     $sentimentCounts = [];
     foreach (['frustrated', 'neutral', 'positive'] as $type) {
-      $sentimentCounts[$type] = (int) $this->database->select('markaspot_ai_sentiment', 's')
-        ->condition('s.sentiment', $type)
+      $breakdownQuery = $this->database->select('markaspot_ai_sentiment', 's');
+      $breakdownQuery->join('node_field_data', 'n', 's.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+      $breakdownQuery->condition('s.sentiment', $type);
+      $sentimentCounts[$type] = (int) $breakdownQuery
         ->countQuery()
         ->execute()
         ->fetchField();
