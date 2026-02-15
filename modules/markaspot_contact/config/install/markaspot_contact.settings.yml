@@ -1,0 +1,4 @@
+contact_form: ''
+flood_limit: 5
+flood_interval: 3600
+gdpr_required: true

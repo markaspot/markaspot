@@ -1,0 +1,14 @@
+{
+  "name": "drupal/markaspot_contact",
+  "type": "drupal-module",
+  "description": "Mark-a-Spot Contact",
+  "keywords": ["Drupal"],
+  "license": "GPL-2.0+",
+  "homepage": "https://www.drupal.org/project/markaspot_contact",
+  "minimum-stability": "dev",
+  "support": {
+    "issues": "https://www.drupal.org/project/issues/markaspot_contact",
+    "source": "http://cgit.drupalcode.org/markaspot_contact"
+  },
+  "require": { }
+}

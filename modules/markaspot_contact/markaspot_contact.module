@@ -1,0 +1,132 @@
+<?php
+
+/**
+ * @file
+ * Contains markaspot_contact.module.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_contact_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.markaspot_contact':
+      $output = '';
+      $output .= '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('The Mark-a-Spot Contact module provides a REST API for contact form submissions.') . '</p>';
+      return $output;
+  }
+}
+
+/**
+ * Implements hook_mail_alter().
+ *
+ * Replaces the default contact module mail with a clean HTML layout.
+ */
+function markaspot_contact_mail_alter(&$message) {
+  // Only alter mails from the contact module (page_mail and page_copy).
+  if ($message['module'] !== 'contact') {
+    return;
+  }
+  if (!in_array($message['key'], ['page_mail', 'page_copy'])) {
+    return;
+  }
+
+  $params = $message['params'] ?? [];
+  $contact_message = $params['contact_message'] ?? NULL;
+  if (!$contact_message) {
+    return;
+  }
+
+  $sender = $params['sender'] ?? NULL;
+  $site_name = \Drupal::config('system.site')->get('name');
+  $name = $contact_message->getSenderName() ?: ($sender ? $sender->getDisplayName() : '');
+  $mail = $contact_message->getSenderMail() ?: '';
+  $subject = $contact_message->getSubject() ?: '';
+  $body_text = $contact_message->getMessage() ?: '';
+
+  // Determine if this is a copy to the sender.
+  $is_copy = ($message['key'] === 'page_copy');
+
+  // Build clean subject.
+  $message['subject'] = "[$site_name] $subject";
+
+  // Build clean HTML body.
+  $message['headers']['Content-Type'] = 'text/html; charset=UTF-8';
+
+  // Remove formatter flag so mail plugins (e.g. phpmailer_smtp) respect our
+  // Content-Type header instead of forcing plain text.
+  unset($message['params']['formatter']);
+
+  // Translatable strings.
+  $label_new_inquiry = t('New contact inquiry');
+  $label_name = t('Name');
+  $label_email = t('Email');
+  $label_message = t('Message');
+  $footer_copy = t('This is a copy of your message to @site.', ['@site' => $site_name]);
+  $footer_original = t('This message was sent via the contact form on @site.', ['@site' => $site_name]);
+  $footer_text = $is_copy ? $footer_copy : $footer_original;
+
+  $primary_color = '#005A9F';
+  $bg_color = '#f5f5f5';
+  $card_bg = '#ffffff';
+  $text_color = '#333333';
+  $muted_color = '#666666';
+  $border_color = '#e0e0e0';
+
+  $html = <<<HTML
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background-color:{$bg_color};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:{$bg_color};padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+
+<!-- Header -->
+<tr><td style="background-color:{$primary_color};padding:24px 32px;border-radius:8px 8px 0 0;">
+<h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:600;">{$site_name}</h1>
+<p style="margin:4px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">{$label_new_inquiry}</p>
+</td></tr>
+
+<!-- Body -->
+<tr><td style="background-color:{$card_bg};padding:32px;border-left:1px solid {$border_color};border-right:1px solid {$border_color};">
+
+<!-- Sender Info -->
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;background-color:{$bg_color};border-radius:6px;padding:16px;">
+<tr>
+<td style="padding:4px 16px;">
+<span style="color:{$muted_color};font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">{$label_name}</span><br>
+<span style="color:{$text_color};font-size:15px;font-weight:500;">{$name}</span>
+</td>
+</tr>
+<tr>
+<td style="padding:4px 16px;">
+<span style="color:{$muted_color};font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">{$label_email}</span><br>
+<a href="mailto:{$mail}" style="color:{$primary_color};font-size:15px;text-decoration:none;">{$mail}</a>
+</td>
+</tr>
+</table>
+
+<!-- Message -->
+<p style="color:{$muted_color};font-size:12px;text-transform:uppercase;letter-spacing:0.5px;margin:0 0 8px;">{$label_message}</p>
+<div style="color:{$text_color};font-size:15px;line-height:1.6;white-space:pre-wrap;">{$body_text}</div>
+
+</td></tr>
+
+<!-- Footer -->
+<tr><td style="background-color:{$card_bg};padding:16px 32px;border-top:1px solid {$border_color};border-left:1px solid {$border_color};border-right:1px solid {$border_color};border-radius:0 0 8px 8px;">
+<p style="margin:0;color:{$muted_color};font-size:12px;text-align:center;">{$footer_text}</p>
+</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>
+HTML;
+
+  $message['body'] = [$html];
+}
