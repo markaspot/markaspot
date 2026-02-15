@@ -248,7 +248,8 @@ function markaspot_group_node_presave(NodeInterface $node): void {
  * Implements hook_node_insert().
  *
  * Creates group relationship when a new service_request node is created
- * with field_organisation set.
+ * with field_organisation set. Also assigns the node to matching
+ * sub-jurisdictions based on geographic boundaries.
  */
 function markaspot_group_node_insert(NodeInterface $node): void {
   // Only process service_request nodes.
@@ -256,25 +257,16 @@ function markaspot_group_node_insert(NodeInterface $node): void {
     return;
   }
 
-  // Check if we have a pending sync from presave.
-  if (!isset($node->_markaspot_group_pending_sync)) {
-    return;
+  // 1. Sync field_organisation to org group relationship (existing logic).
+  if (isset($node->_markaspot_group_pending_sync)) {
+    $group_id = $node->_markaspot_group_pending_sync;
+    if (!empty($group_id) && !_markaspot_group_is_syncing()) {
+      _markaspot_group_sync_field_to_relationship($node, $group_id, NULL);
+    }
   }
 
-  $group_id = $node->_markaspot_group_pending_sync;
-
-  // If no group was set, nothing to do.
-  if (empty($group_id)) {
-    return;
-  }
-
-  // Check if we're already syncing.
-  if (_markaspot_group_is_syncing()) {
-    return;
-  }
-
-  // Create the group relationship.
-  _markaspot_group_sync_field_to_relationship($node, $group_id, NULL);
+  // 2. Auto-assign to sub-jurisdictions based on geographic boundaries.
+  _markaspot_group_assign_sub_jurisdictions($node);
 }
 
 /**
@@ -510,4 +502,212 @@ function _markaspot_group_is_syncing(): bool {
 function _markaspot_group_set_syncing(bool $syncing): void {
   $static = &drupal_static('_markaspot_group_is_syncing', FALSE);
   $static = $syncing;
+}
+
+/**
+ * Assigns a service request to sub-jurisdictions based on boundaries.
+ *
+ * Loads all jurisdiction groups with a field_boundary, checks if the node's
+ * coordinates fall within each boundary polygon, and creates group
+ * relationships for matches. Skips the main jurisdiction (handled by ECA).
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service_request node.
+ */
+function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): void {
+  // Get coordinates from the node.
+  if (!$node->hasField('field_geolocation') || $node->get('field_geolocation')->isEmpty()) {
+    return;
+  }
+
+  $geolocation = $node->get('field_geolocation')->first();
+  $lat = (float) $geolocation->get('lat')->getValue();
+  $lng = (float) $geolocation->get('lng')->getValue();
+
+  if ($lat === 0.0 && $lng === 0.0) {
+    return;
+  }
+
+  // Load all jurisdiction groups with boundaries.
+  $group_storage = \Drupal::entityTypeManager()->getStorage('group');
+  $group_ids = $group_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->exists('field_boundary')
+    ->execute();
+
+  if (empty($group_ids)) {
+    return;
+  }
+
+  $groups = $group_storage->loadMultiple($group_ids);
+  $plugin_id = 'group_node:service_request';
+  $relationship_storage = \Drupal::entityTypeManager()->getStorage('group_relationship');
+
+  foreach ($groups as $group) {
+    if ($group->get('field_boundary')->isEmpty()) {
+      continue;
+    }
+
+    $boundary_json = $group->get('field_boundary')->value;
+    $boundary = json_decode($boundary_json, TRUE);
+    if (!is_array($boundary) || empty($boundary['type'])) {
+      \Drupal::logger('markaspot_group')->warning(
+        'Invalid boundary GeoJSON on jurisdiction group @gid.',
+        ['@gid' => $group->id()]
+      );
+      continue;
+    }
+
+    if (!_markaspot_group_point_in_boundary($lng, $lat, $boundary)) {
+      continue;
+    }
+
+    // Check if relationship already exists.
+    $existing = $relationship_storage->loadByProperties([
+      'entity_id' => $node->id(),
+      'gid' => $group->id(),
+      'plugin_id' => $plugin_id,
+    ]);
+
+    if (!empty($existing)) {
+      continue;
+    }
+
+    // Add node to this jurisdiction.
+    try {
+      $group->addRelationship($node, $plugin_id);
+      \Drupal::logger('markaspot_group')->notice(
+        'Auto-assigned node @nid to sub-jurisdiction "@group" (point in boundary).',
+        [
+          '@nid' => $node->id(),
+          '@group' => $group->label(),
+        ]
+      );
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_group')->error(
+        'Failed to assign node @nid to sub-jurisdiction "@group": @error',
+        [
+          '@nid' => $node->id(),
+          '@group' => $group->label(),
+          '@error' => $e->getMessage(),
+        ]
+      );
+    }
+  }
+}
+
+/**
+ * Checks if a point falls within a GeoJSON boundary.
+ *
+ * Supports FeatureCollection, Feature, Polygon and MultiPolygon geometries.
+ *
+ * @param float $lng
+ *   Longitude of the point.
+ * @param float $lat
+ *   Latitude of the point.
+ * @param array $geojson
+ *   The decoded GeoJSON boundary data.
+ *
+ * @return bool
+ *   TRUE if the point is within the boundary.
+ */
+function _markaspot_group_point_in_boundary(float $lng, float $lat, array $geojson): bool {
+  // Handle FeatureCollection.
+  if (($geojson['type'] ?? '') === 'FeatureCollection') {
+    foreach ($geojson['features'] ?? [] as $feature) {
+      if (_markaspot_group_point_in_boundary($lng, $lat, $feature)) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  // Handle Feature.
+  if (($geojson['type'] ?? '') === 'Feature') {
+    return _markaspot_group_point_in_boundary($lng, $lat, $geojson['geometry'] ?? []);
+  }
+
+  // Handle MultiPolygon.
+  if (($geojson['type'] ?? '') === 'MultiPolygon') {
+    foreach ($geojson['coordinates'] ?? [] as $polygon) {
+      if (_markaspot_group_point_in_polygon_with_holes($lng, $lat, $polygon)) {
+        return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  // Handle Polygon (first ring = exterior, subsequent rings = holes).
+  if (($geojson['type'] ?? '') === 'Polygon') {
+    return _markaspot_group_point_in_polygon_with_holes($lng, $lat, $geojson['coordinates'] ?? []);
+  }
+
+  return FALSE;
+}
+
+/**
+ * Checks if a point is inside a polygon, respecting holes.
+ *
+ * @param float $lng
+ *   Longitude of the point.
+ * @param float $lat
+ *   Latitude of the point.
+ * @param array $rings
+ *   Array of rings: first is exterior, subsequent are holes.
+ *
+ * @return bool
+ *   TRUE if the point is inside the exterior and not in any hole.
+ */
+function _markaspot_group_point_in_polygon_with_holes(float $lng, float $lat, array $rings): bool {
+  if (empty($rings[0])) {
+    return FALSE;
+  }
+
+  // Must be inside the exterior ring.
+  if (!_markaspot_group_point_in_polygon($lng, $lat, $rings[0])) {
+    return FALSE;
+  }
+
+  // Must not be inside any hole.
+  for ($i = 1, $count = count($rings); $i < $count; $i++) {
+    if (_markaspot_group_point_in_polygon($lng, $lat, $rings[$i])) {
+      return FALSE;
+    }
+  }
+
+  return TRUE;
+}
+
+/**
+ * Ray-casting algorithm to check if a point is inside a polygon ring.
+ *
+ * @param float $lng
+ *   Longitude of the point.
+ * @param float $lat
+ *   Latitude of the point.
+ * @param array $ring
+ *   Array of [lng, lat] coordinate pairs forming the polygon ring.
+ *
+ * @return bool
+ *   TRUE if the point is inside the polygon ring.
+ */
+function _markaspot_group_point_in_polygon(float $lng, float $lat, array $ring): bool {
+  $inside = FALSE;
+  $count = count($ring);
+
+  for ($i = 0, $j = $count - 1; $i < $count; $j = $i++) {
+    $xi = $ring[$i][0];
+    $yi = $ring[$i][1];
+    $xj = $ring[$j][0];
+    $yj = $ring[$j][1];
+
+    if (($yi > $lat) !== ($yj > $lat)
+      && ($lng < ($xj - $xi) * ($lat - $yi) / ($yj - $yi) + $xi)) {
+      $inside = !$inside;
+    }
+  }
+
+  return $inside;
 }
