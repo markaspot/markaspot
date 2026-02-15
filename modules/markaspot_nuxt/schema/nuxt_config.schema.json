@@ -337,13 +337,13 @@
         "objectId": {
           "type": "boolean",
           "title": "Object ID Field",
-          "description": "Enable object ID input field on forms",
+          "description": "Enable object ID input field on forms (deprecated: use conditionalFields instead)",
           "default": false
         },
         "party": {
           "type": "boolean",
           "title": "Party Field",
-          "description": "Enable party selection field on forms",
+          "description": "Enable party selection field on forms (deprecated: use conditionalFields instead)",
           "default": false
         },
         "privacyBlur": {
@@ -369,28 +369,28 @@
         "objectIdCategories": {
           "type": "array",
           "title": "Object ID Categories",
-          "description": "Category IDs that show the object ID field",
+          "description": "Category IDs that show the object ID field (deprecated: use conditionalFields instead)",
           "items": { "type": "integer" },
           "default": []
         },
         "competitionCategories": {
           "type": "array",
           "title": "Competition Categories",
-          "description": "Category IDs for competition mode",
+          "description": "Category IDs for competition mode (deprecated: use conditionalFields instead)",
           "items": { "type": "integer" },
           "default": []
         },
         "partyCategories": {
           "type": "array",
           "title": "Party Categories",
-          "description": "Category IDs that show the party selection field",
+          "description": "Category IDs that show the party selection field (deprecated: use conditionalFields instead)",
           "items": { "type": "string" },
           "default": []
         },
         "oktoberfestCategories": {
           "type": "array",
           "title": "Oktoberfest Categories",
-          "description": "Category IDs for Oktoberfest-specific fields",
+          "description": "Category IDs for Oktoberfest-specific fields (deprecated: use conditionalFields instead)",
           "items": { "type": "string" },
           "default": []
         },
@@ -406,6 +406,44 @@
               "default": false
             }
           }
+        },
+        "conditionalFields": {
+          "type": "object",
+          "title": "Conditional Fields",
+          "description": "Fields shown only when specific categories are selected. Keys must be Drupal field machine names on node.service_request.",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "categories": {
+                "type": "array",
+                "title": "Category IDs",
+                "description": "Taxonomy term IDs (drupal_internal__tid) that trigger this field",
+                "items": { "type": "integer" },
+                "minItems": 1
+              },
+              "required": {
+                "type": "boolean",
+                "title": "Required",
+                "description": "Whether the field is required when visible",
+                "default": false
+              },
+              "component": {
+                "type": "string",
+                "title": "Component Override",
+                "description": "Optional Vue component name to use instead of auto-detection"
+              },
+              "label": {
+                "type": "string",
+                "title": "Label Override",
+                "description": "Override the default field label from Drupal"
+              }
+            },
+            "required": ["categories"]
+          },
+          "propertyNames": {
+            "pattern": "^field_[a-z0-9_]+$"
+          },
+          "default": {}
         }
       }
     },

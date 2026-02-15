@@ -157,22 +157,27 @@
       },
       "objectIdCategories": {
         "ui:options": {
-          "description": "Category IDs that show the object ID field"
+          "description": "Deprecated: use conditionalFields"
         }
       },
       "competitionCategories": {
         "ui:options": {
-          "description": "Category IDs for competition mode"
+          "description": "Deprecated: use conditionalFields"
         }
       },
       "partyCategories": {
         "ui:options": {
-          "description": "Category IDs that show the party selection field"
+          "description": "Deprecated: use conditionalFields"
         }
       },
       "oktoberfestCategories": {
         "ui:options": {
-          "description": "Category IDs for Oktoberfest-specific fields"
+          "description": "Deprecated: use conditionalFields"
+        }
+      },
+      "conditionalFields": {
+        "ui:options": {
+          "description": "Category-conditional field visibility. Keys are Drupal field names, values define which categories trigger them."
         }
       }
     }
