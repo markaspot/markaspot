@@ -315,6 +315,97 @@
               }
             }
           }
+        },
+        "classicReporting": {
+          "type": "boolean",
+          "title": "Classic Reporting",
+          "description": "Enable classic (non-photo) reporting form",
+          "default": true
+        },
+        "voting": {
+          "type": "boolean",
+          "title": "Voting",
+          "description": "Enable voting on service requests",
+          "default": false
+        },
+        "following": {
+          "type": "boolean",
+          "title": "Following",
+          "description": "Allow users to follow service requests",
+          "default": true
+        },
+        "objectId": {
+          "type": "boolean",
+          "title": "Object ID Field",
+          "description": "Enable object ID input field on forms",
+          "default": false
+        },
+        "party": {
+          "type": "boolean",
+          "title": "Party Field",
+          "description": "Enable party selection field on forms",
+          "default": false
+        },
+        "privacyBlur": {
+          "type": "boolean",
+          "title": "Privacy Blur",
+          "description": "Blur faces and license plates in uploaded images",
+          "default": false
+        },
+        "photoRequiredCategories": {
+          "type": "array",
+          "title": "Photo Required Categories",
+          "description": "Category IDs that require photo upload",
+          "items": { "type": "integer" },
+          "default": []
+        },
+        "emailRequiredCategories": {
+          "type": "array",
+          "title": "Email Required Categories",
+          "description": "Category IDs that require email address",
+          "items": { "type": "integer" },
+          "default": []
+        },
+        "objectIdCategories": {
+          "type": "array",
+          "title": "Object ID Categories",
+          "description": "Category IDs that show the object ID field",
+          "items": { "type": "integer" },
+          "default": []
+        },
+        "competitionCategories": {
+          "type": "array",
+          "title": "Competition Categories",
+          "description": "Category IDs for competition mode",
+          "items": { "type": "integer" },
+          "default": []
+        },
+        "partyCategories": {
+          "type": "array",
+          "title": "Party Categories",
+          "description": "Category IDs that show the party selection field",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "oktoberfestCategories": {
+          "type": "array",
+          "title": "Oktoberfest Categories",
+          "description": "Category IDs for Oktoberfest-specific fields",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "forms": {
+          "type": "object",
+          "title": "Form Settings (Feature-level)",
+          "description": "Form behavior settings accessible via features.forms",
+          "properties": {
+            "allowParentCategorySelection": {
+              "type": "boolean",
+              "title": "Allow Parent Category Selection",
+              "description": "Let users select parent categories in forms",
+              "default": false
+            }
+          }
         }
       }
     },

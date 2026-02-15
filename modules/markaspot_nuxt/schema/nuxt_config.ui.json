@@ -114,6 +114,66 @@
         "ui:options": {
           "description": "Show form before map on mobile devices"
         }
+      },
+      "classicReporting": {
+        "ui:options": {
+          "description": "Enable classic (non-photo) reporting form"
+        }
+      },
+      "voting": {
+        "ui:options": {
+          "description": "Enable voting on service requests"
+        }
+      },
+      "following": {
+        "ui:options": {
+          "description": "Allow users to follow service requests"
+        }
+      },
+      "objectId": {
+        "ui:options": {
+          "description": "Enable object ID input field on forms"
+        }
+      },
+      "party": {
+        "ui:options": {
+          "description": "Enable party selection field on forms"
+        }
+      },
+      "privacyBlur": {
+        "ui:options": {
+          "description": "Blur faces and license plates in uploaded images"
+        }
+      },
+      "photoRequiredCategories": {
+        "ui:options": {
+          "description": "Category IDs that require photo upload"
+        }
+      },
+      "emailRequiredCategories": {
+        "ui:options": {
+          "description": "Category IDs that require email address"
+        }
+      },
+      "objectIdCategories": {
+        "ui:options": {
+          "description": "Category IDs that show the object ID field"
+        }
+      },
+      "competitionCategories": {
+        "ui:options": {
+          "description": "Category IDs for competition mode"
+        }
+      },
+      "partyCategories": {
+        "ui:options": {
+          "description": "Category IDs that show the party selection field"
+        }
+      },
+      "oktoberfestCategories": {
+        "ui:options": {
+          "description": "Category IDs for Oktoberfest-specific fields"
+        }
       }
     }
   },
