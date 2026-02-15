@@ -25,6 +25,13 @@ discovery:
         - text/xml
         - application/json
 nid-limit: ''
+# Field Access Settings
+field_access:
+  manager_fields:
+    - field_hazard_level
+    - field_sentiment
+    - field_ai_hazard_category
+    - field_organisation
 # Group Integration Settings
 group_filter_enabled: false
 group_filter_type: 'org'

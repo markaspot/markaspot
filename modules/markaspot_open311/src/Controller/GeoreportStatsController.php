@@ -73,6 +73,7 @@ class GeoreportStatsController extends ControllerBase {
   public function getStatusStats(): JsonResponse {
     $request = $this->requestStack->getCurrentRequest();
     $group_filter = $request->query->get('group_filter');
+    $gid = $request->query->get('gid');
 
     // Check if group filtering is requested and user is authenticated.
     $use_group_filter = FALSE;
@@ -85,7 +86,8 @@ class GeoreportStatsController extends ControllerBase {
       if ($group_filter_enabled) {
         $use_group_filter = TRUE;
         $group_type = $config->get('group_filter_type') ?? 'org';
-        $node_ids = $this->getNodeIdsInUserGroups($group_type);
+        $specific_gid = $gid ? (int) $gid : NULL;
+        $node_ids = $this->getNodeIdsInUserGroups($group_type, $specific_gid);
       }
     }
 
@@ -182,11 +184,14 @@ class GeoreportStatsController extends ControllerBase {
    *
    * @param string $group_type
    *   The group type machine name (e.g., 'org', 'jur').
+   * @param int|null $specific_gid
+   *   Optional specific group ID to filter by. When provided, only returns
+   *   node IDs from this group (if the user is a member).
    *
    * @return array<int>
    *   Array of node IDs belonging to the user's groups.
    */
-  protected function getNodeIdsInUserGroups(string $group_type): array {
+  protected function getNodeIdsInUserGroups(string $group_type, ?int $specific_gid = NULL): array {
     if (!$this->moduleHandler()->moduleExists('group')) {
       return [];
     }
@@ -198,7 +203,9 @@ class GeoreportStatsController extends ControllerBase {
     foreach ($memberships as $membership) {
       $group = $membership->getGroup();
       if ($group && $group->bundle() === $group_type) {
-        $group_ids[] = $membership->getGroupId();
+        if ($specific_gid === NULL || (int) $membership->getGroupId() === $specific_gid) {
+          $group_ids[] = $membership->getGroupId();
+        }
       }
     }
 
@@ -240,6 +247,7 @@ class GeoreportStatsController extends ControllerBase {
   public function getCategoryStats(): JsonResponse {
     $request = $this->requestStack->getCurrentRequest();
     $group_filter = $request->query->get('group_filter');
+    $gid = $request->query->get('gid');
     $limit = (int) ($request->query->get('limit') ?? 10);
 
     // Check if group filtering is requested and user is authenticated.
@@ -253,7 +261,8 @@ class GeoreportStatsController extends ControllerBase {
       if ($group_filter_enabled) {
         $use_group_filter = TRUE;
         $group_type = $config->get('group_filter_type') ?? 'org';
-        $node_ids = $this->getNodeIdsInUserGroups($group_type);
+        $specific_gid = $gid ? (int) $gid : NULL;
+        $node_ids = $this->getNodeIdsInUserGroups($group_type, $specific_gid);
       }
     }
 

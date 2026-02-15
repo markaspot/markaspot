@@ -1187,19 +1187,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $request['service_code'] = $this->getTaxonomyTermField($categoryId, 'field_service_code');
     }
 
-    // Add organisation (department) if available.
-    if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
-      $organisationEntity = $node->get('field_organisation')->entity;
-      if ($organisationEntity) {
-        $request['organisation'] = [
-          'id' => (string) $organisationEntity->id(),
-          'uuid' => $organisationEntity->uuid(),
-          'label' => $organisationEntity->label(),
-          'name' => $organisationEntity->label(),
-        ];
-      }
-    }
-
     // Add media_url if available (standard optional field per GeoReport v2 spec)
     $mediaUrls = $this->getMediaUrls($node);
     if (!empty($mediaUrls)) {
@@ -1230,6 +1217,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
       if ($node->hasField('field_last_name') && !$node->get('field_last_name')->isEmpty()) {
         $request['last_name'] = $node->get('field_last_name')->value ?? '';
+      }
+
+      // Add organisation (department) - manager only.
+      if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+        $organisationEntity = $node->get('field_organisation')->entity;
+        if ($organisationEntity) {
+          $request['organisation'] = [
+            'id' => (string) $organisationEntity->id(),
+            'uuid' => $organisationEntity->uuid(),
+            'label' => $organisationEntity->label(),
+            'name' => $organisationEntity->label(),
+          ];
+        }
       }
 
       if ($node->hasField('uid') && !$node->get('uid')->isEmpty() && $node->get('uid')->entity) {
@@ -1811,28 +1811,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $extendedAttributes['media_alt_text'] = $mediaAltTexts;
     }
 
-    // Add hazard level from AI vision analysis.
-    if ($node->hasField('field_hazard_level') && !$node->get('field_hazard_level')->isEmpty()) {
-      $extendedAttributes['hazard_level'] = (int) $node->get('field_hazard_level')->value;
-    }
-    else {
-      $extendedAttributes['hazard_level'] = 0;
-    }
-
-    // Add hazard category from media entities (CAP standard codes).
-    // Uses the first media entity with a hazard category. This is intentional:
-    // the primary/first image typically represents the main issue reported.
-    $hazardCategory = NULL;
-    if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
-      foreach ($node->get('field_request_media')->referencedEntities() as $media) {
-        if ($media->hasField('field_ai_hazard_category') && !$media->get('field_ai_hazard_category')->isEmpty()) {
-          $hazardCategory = $media->get('field_ai_hazard_category')->value;
-          break;
-        }
-      }
-    }
-    $extendedAttributes['hazard_category'] = $hazardCategory;
-
     // Add published status for nodes
     // This flag allows frontend to show an unpublished indicator icon.
     $extendedAttributes['published'] = $node->isPublished();
@@ -1880,6 +1858,17 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
             $value = $field->getValue();
           }
           $fieldValues[$fieldName] = $value;
+        }
+      }
+      // Media-entity fields: field lives on referenced media, not on node.
+      elseif ($fieldName === 'field_ai_hazard_category') {
+        if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
+          foreach ($node->get('field_request_media')->referencedEntities() as $media) {
+            if ($media->hasField('field_ai_hazard_category') && !$media->get('field_ai_hazard_category')->isEmpty()) {
+              $fieldValues[$fieldName] = $media->get('field_ai_hazard_category')->getValue();
+              break;
+            }
+          }
         }
       }
     }
