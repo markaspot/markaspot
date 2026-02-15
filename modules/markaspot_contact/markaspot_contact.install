@@ -1,0 +1,29 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for markaspot_contact module.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_contact_install() {
+  // Grant 'access markaspot contact api' to anonymous and authenticated roles.
+  $roles = ['anonymous', 'authenticated'];
+  foreach ($roles as $role_id) {
+    user_role_grant_permissions($role_id, ['access markaspot contact api']);
+  }
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Contact module installed successfully.'));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_contact_uninstall() {
+  // Clean up configuration.
+  \Drupal::configFactory()->getEditable('markaspot_contact.settings')->delete();
+
+  \Drupal::logger('markaspot_contact')->notice('Module uninstalled. Configuration cleaned up.');
+}

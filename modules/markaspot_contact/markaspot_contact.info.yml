@@ -1,0 +1,7 @@
+name: 'Mark-a-Spot Contact'
+type: module
+description: 'Provides a REST API for contact form submissions using Drupal contact module.'
+core_version_requirement: ^10 || ^11
+package: 'Mark-a-Spot'
+dependencies:
+  - drupal:contact

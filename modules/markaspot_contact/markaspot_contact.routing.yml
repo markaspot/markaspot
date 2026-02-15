@@ -1,0 +1,17 @@
+markaspot_contact.submit:
+  path: '/api/contact/submit'
+  defaults:
+    _controller: '\Drupal\markaspot_contact\Controller\ContactController::submit'
+    _title: 'Contact Form Submit'
+  methods: [POST]
+  requirements:
+    _permission: 'access markaspot contact api'
+
+markaspot_contact.info:
+  path: '/api/contact/info'
+  defaults:
+    _controller: '\Drupal\markaspot_contact\Controller\ContactController::info'
+    _title: 'Contact Form Info'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'

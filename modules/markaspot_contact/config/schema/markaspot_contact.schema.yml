@@ -1,0 +1,18 @@
+# Schema for the configuration files of the Mark-a-Spot Contact module.
+
+markaspot_contact.settings:
+  type: config_object
+  label: 'Mark-a-Spot Contact settings'
+  mapping:
+    contact_form:
+      type: string
+      label: 'Contact form machine name'
+    flood_limit:
+      type: integer
+      label: 'Flood control limit'
+    flood_interval:
+      type: integer
+      label: 'Flood control interval in seconds'
+    gdpr_required:
+      type: boolean
+      label: 'GDPR consent required'

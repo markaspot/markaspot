@@ -1,0 +1,10 @@
+services:
+  markaspot_contact.contact:
+    class: Drupal\markaspot_contact\ContactService
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@flood'
+      - '@current_user'
+      - '@contact.mail_handler'
+      - '@logger.factory'
