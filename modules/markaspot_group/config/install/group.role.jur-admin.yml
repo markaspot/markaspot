@@ -7,7 +7,7 @@ id: jur-admin
 label: Admin
 weight: -99
 admin: true
-scope: insider
+scope: individual
 global_role: administrator
 group_type: jur
 permissions: {  }
