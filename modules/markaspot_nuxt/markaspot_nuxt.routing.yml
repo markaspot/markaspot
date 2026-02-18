@@ -34,6 +34,14 @@ markaspot_nuxt.field_options:
   requirements:
     _permission: 'access content'
 
+markaspot_nuxt.fonts_css:
+  path: '/api/fonts.css'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getFontsCss'
+    _title: 'Custom Fonts CSS'
+  requirements:
+    _access: 'TRUE'
+
 markaspot_nuxt.jurisdictions:
   path: '/api/jurisdictions'
   defaults:

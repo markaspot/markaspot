@@ -9,6 +9,7 @@ use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -751,6 +752,101 @@ class MarkASpotSettingsController extends ControllerBase {
     $response->addCacheableDependency($cache_metadata);
 
     return $response;
+  }
+
+  /**
+   * Returns custom font CSS for a jurisdiction as text/css.
+   *
+   * Combines @font-face declarations (from field_custom_css) with
+   * CSS custom properties (--font-heading, --font-body) derived from
+   * the jurisdiction's font configuration. Designed to be loaded as a
+   * <link rel="stylesheet"> from the Nuxt SSR plugin, which makes it
+   * immune to client-side JS hydration overwriting inline style tags.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request, may contain 'jurisdiction' query parameter.
+   *
+   * @return \Symfony\Component\HttpFoundation\Response
+   *   CSS response with @font-face and custom property declarations.
+   */
+  public function getFontsCss(Request $request): Response {
+    $open311_config = $this->configFactory->get('markaspot_open311.settings');
+    $jur_type = $open311_config->get('jurisdiction_group_type') ?? 'jur';
+    $jurisdiction_param = $request->query->get('jurisdiction');
+    $group = NULL;
+
+    if ($jurisdiction_param && is_numeric($jurisdiction_param)) {
+      $loaded_group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_param);
+      if ($loaded_group && $loaded_group->isPublished()) {
+        $group = $loaded_group;
+      }
+    }
+
+    if ($group === NULL) {
+      $group_ids = $this->entityTypeManager->getStorage('group')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $jur_type)
+        ->condition('status', 1)
+        ->sort('id', 'ASC')
+        ->range(0, 1)
+        ->execute();
+      if (!empty($group_ids)) {
+        $group = $this->entityTypeManager->getStorage('group')->load(reset($group_ids));
+      }
+    }
+
+    $css_parts = [];
+
+    if ($group) {
+      // Read field_nuxt_config JSON for theme.customCss and theme.fonts.
+      $nuxt_config = [];
+      if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+        $nuxt_config = json_decode($group->get('field_nuxt_config')->value ?? '{}', TRUE) ?: [];
+      }
+
+      // 1. @font-face declarations.
+      //    Primary: theme.customCss inside field_nuxt_config (may contain @font-face rules).
+      //    Secondary: field_custom_css standalone field.
+      $custom_css = trim($nuxt_config['theme']['customCss'] ?? '');
+      if (!$custom_css && $group->hasField('field_custom_css') && !$group->get('field_custom_css')->isEmpty()) {
+        $custom_css = trim($group->get('field_custom_css')->value ?? '');
+      }
+      if ($custom_css) {
+        $css_parts[] = $custom_css;
+      }
+
+      // 2. CSS custom properties (--font-heading, --font-body) from theme.fonts.
+      $fonts = $nuxt_config['theme']['fonts'] ?? [];
+      $font_vars = [];
+
+      if (!empty($fonts['heading'])) {
+        // Sanitize: allow only font-name safe characters.
+        $heading = preg_replace('/[^a-zA-Z0-9\s\-\'",]/', '', (string) $fonts['heading']);
+        if ($heading) {
+          $font_vars[] = "  --font-heading: \"{$heading}\", system-ui, sans-serif;";
+        }
+      }
+      if (!empty($fonts['body'])) {
+        $body = preg_replace('/[^a-zA-Z0-9\s\-\'",]/', '', (string) $fonts['body']);
+        if ($body) {
+          $font_vars[] = "  --font-body: \"{$body}\", system-ui, sans-serif;";
+        }
+      }
+
+      if ($font_vars) {
+        $css_parts[] = "html:root {\n" . implode("\n", $font_vars) . "\n}";
+      }
+    }
+
+    $css = implode("\n\n", $css_parts);
+
+    return new Response($css, 200, [
+      'Content-Type' => 'text/css; charset=UTF-8',
+      'Cache-Control' => 'public, max-age=86400',
+      'Access-Control-Allow-Origin' => '*',
+      'Vary' => 'Accept-Encoding',
+    ]);
   }
 
 }
