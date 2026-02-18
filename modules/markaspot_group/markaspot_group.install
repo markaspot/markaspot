@@ -1,0 +1,49 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for markaspot_group module.
+ */
+
+/**
+ * Fix jur-admin and org-admin group role scopes to individual.
+ *
+ * Previously jur-admin had scope=insider (all members became admins) and
+ * org-admin had scope=outsider. Both need scope=individual so the admin role
+ * can be assigned explicitly to specific members.
+ */
+function markaspot_group_update_11800(): void {
+  $fixes = [
+    'group.role.jur-admin' => 'individual',
+    'group.role.org-admin' => 'individual',
+  ];
+
+  foreach ($fixes as $config_name => $scope) {
+    $config = \Drupal::configFactory()->getEditable($config_name);
+    if ($config->isNew()) {
+      continue;
+    }
+    if ($config->get('scope') !== $scope) {
+      $config->set('scope', $scope)->save();
+      \Drupal::logger('markaspot_group')->info('Fixed @role scope to @scope.', [
+        '@role' => $config_name,
+        '@scope' => $scope,
+      ]);
+    }
+  }
+}
+
+/**
+ * Add 'edit group' permission to org-admin role.
+ */
+function markaspot_group_update_11801(): void {
+  $config = \Drupal::configFactory()->getEditable('group.role.org-admin');
+  if ($config->isNew()) {
+    return;
+  }
+  $permissions = $config->get('permissions') ?? [];
+  if (!in_array('edit group', $permissions)) {
+    $permissions[] = 'edit group';
+    $config->set('permissions', $permissions)->save();
+  }
+}
