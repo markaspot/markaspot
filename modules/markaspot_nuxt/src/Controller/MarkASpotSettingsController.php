@@ -211,6 +211,7 @@ class MarkASpotSettingsController extends ControllerBase {
           'privacy',
           'i18n',
           'groupTypes',
+          'systemNotice',
         ];
         foreach ($config_keys as $key) {
           if (!empty($jurisdiction_config[$key])) {
