@@ -448,5 +448,26 @@
       "widget": "textarea",
       "rows": 10
     }
+  },
+
+  "systemNotice": {
+    "ui:options": {
+      "title": "System Notice",
+      "description": "Persistent banner for non-production environments",
+      "weight": 125
+    },
+    "properties": {
+      "message": {
+        "ui:options": {
+          "widget": "textfield",
+          "placeholder": "e.g. Testsystem: Meldungen werden hier nicht bearbeitet."
+        }
+      },
+      "color": {
+        "ui:options": {
+          "description": "Banner color theme"
+        }
+      }
+    }
   }
 }

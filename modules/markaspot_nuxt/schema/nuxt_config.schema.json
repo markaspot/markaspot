@@ -1042,6 +1042,27 @@
           }
         }
       }
+    },
+    "systemNotice": {
+      "type": "object",
+      "title": "System Notice Banner",
+      "description": "Show a persistent banner on non-production environments",
+      "properties": {
+        "message": {
+          "type": "string",
+          "title": "Message",
+          "description": "Banner text shown to users",
+          "maxLength": 200,
+          "examples": ["Testsystem: Meldungen werden hier nicht bearbeitet."]
+        },
+        "color": {
+          "type": "string",
+          "title": "Color",
+          "description": "Banner color theme",
+          "enum": ["primary", "secondary", "success", "info", "warning", "error", "neutral"],
+          "default": "neutral"
+        }
+      }
     }
   },
   "additionalProperties": true
