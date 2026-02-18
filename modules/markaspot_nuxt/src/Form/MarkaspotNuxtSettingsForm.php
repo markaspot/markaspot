@@ -175,6 +175,38 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Longitude for map center (e.g., 6.8528)'),
     ];
 
+    // System Notice Banner.
+    $form['markaspot_nuxt']['system_notice'] = [
+      '#type' => 'details',
+      '#title' => $this->t('System Notice Banner'),
+      '#open' => !empty($config->get('system_notice.message')),
+      '#description' => $this->t('Show a persistent banner on non-production environments.'),
+      '#weight' => 10,
+    ];
+
+    $form['markaspot_nuxt']['system_notice']['system_notice_message'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Message'),
+      '#default_value' => $config->get('system_notice.message') ?: '',
+      '#description' => $this->t('Banner text shown to users. Leave empty to disable.'),
+      '#maxlength' => 200,
+      '#placeholder' => 'e.g. Testsystem: Meldungen werden hier nicht bearbeitet.',
+    ];
+
+    $form['markaspot_nuxt']['system_notice']['system_notice_color'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Color'),
+      '#default_value' => $config->get('system_notice.color') ?: 'neutral',
+      '#options' => [
+        'neutral' => $this->t('Neutral'),
+        'warning' => $this->t('Warning'),
+        'error' => $this->t('Error'),
+        'info' => $this->t('Info'),
+        'success' => $this->t('Success'),
+      ],
+      '#description' => $this->t('Banner color theme.'),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -199,6 +231,10 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       ->set('zoom_initial', $values['zoom_initial'])
       ->set('center_lat', $values['center_lat'])
       ->set('center_lng', $values['center_lng'])
+      ->set('system_notice', !empty($values['system_notice_message']) ? [
+        'message' => $values['system_notice_message'],
+        'color' => $values['system_notice_color'],
+      ] : NULL)
       ->save();
 
     parent::submitForm($form, $form_state);

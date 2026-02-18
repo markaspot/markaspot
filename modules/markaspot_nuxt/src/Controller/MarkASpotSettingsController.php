@@ -59,6 +59,12 @@ class MarkASpotSettingsController extends ControllerBase {
       'center_lng' => $nuxt_config->get('center_lng'),
     ];
 
+    // System notice banner (optional, set via drush config:set).
+    $system_notice = $nuxt_config->get('system_notice');
+    if (!empty($system_notice)) {
+      $settings['systemNotice'] = $system_notice;
+    }
+
     // Return the configuration as a JSON response.
     return new JsonResponse($settings);
   }
