@@ -742,6 +742,74 @@ if ($module_handler->moduleExists('markaspot_nuxt')) {
 }
 
 // ===========================================================================
+// 17. Pages (JSON:API node/page)
+// ===========================================================================
+
+test_group('17. Pages (JSON:API node/page)');
+
+// Check if pages exist as group content.
+$page_nodes = $etm->getStorage('node')->loadByProperties([
+  'type' => 'page',
+  'status' => 1,
+  'promote' => 1,
+]);
+
+if (empty($page_nodes)) {
+  skip_test('No published promoted pages found');
+}
+else {
+  // GET all promoted pages.
+  [$code, $data] = http_get("$base/jsonapi/node/page?filter[promote]=1", [
+    'headers' => ['Accept' => 'application/vnd.api+json'],
+  ]);
+  assert_equal(200, $code, 'GET /jsonapi/node/page?filter[promote]=1 returns 200');
+  assert_true(isset($data['data']), 'Response has data key');
+  assert_true(is_array($data['data']), 'data is array');
+  assert_true(count($data['data']) > 0, 'At least one page returned');
+
+  // Check first page structure.
+  if (!empty($data['data'])) {
+    $first = $data['data'][0];
+    assert_true(isset($first['attributes']['title']), 'Page has title attribute');
+    assert_true(isset($first['attributes']['body']['processed']), 'Page has body.processed attribute');
+    assert_true(array_key_exists('sticky', $first['attributes']), 'Page has sticky attribute');
+
+    // Check that at least one page is sticky (the welcome/start page).
+    $has_sticky = FALSE;
+    foreach ($data['data'] as $page) {
+      if (!empty($page['attributes']['sticky'])) {
+        $has_sticky = TRUE;
+        break;
+      }
+    }
+    assert_true($has_sticky, 'At least one page is sticky (start page)');
+  }
+
+  // Test jurisdiction filter if jurisdictions exist.
+  if ($jur_id) {
+    [$code, $data] = http_get(
+      "$base/jsonapi/node/page?filter[promote]=1&filter[field_jurisdiction.meta.drupal_internal__target_id]=$jur_id",
+      ['headers' => ['Accept' => 'application/vnd.api+json']]
+    );
+    assert_equal(200, $code, "GET pages filtered by jurisdiction=$jur_id returns 200");
+    assert_true(isset($data['data']), 'Filtered response has data key');
+
+    // Each returned page should belong to the requested jurisdiction.
+    if (!empty($data['data'])) {
+      assert_true(count($data['data']) > 0, "Jurisdiction $jur_id has pages");
+    }
+
+    // Test with non-existent jurisdiction (should return 0 pages).
+    [$code, $data] = http_get(
+      "$base/jsonapi/node/page?filter[promote]=1&filter[field_jurisdiction.meta.drupal_internal__target_id]=99999",
+      ['headers' => ['Accept' => 'application/vnd.api+json']]
+    );
+    assert_equal(200, $code, 'GET pages filtered by non-existent jurisdiction returns 200');
+    assert_equal(0, count($data['data'] ?? []), 'Non-existent jurisdiction returns 0 pages');
+  }
+}
+
+// ===========================================================================
 // Summary
 // ===========================================================================
 

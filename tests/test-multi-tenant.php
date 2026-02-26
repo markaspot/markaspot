@@ -1438,6 +1438,82 @@ else {
 }
 
 // ===========================================================================
+// 16. Pages: Jurisdiction Isolation
+// ===========================================================================
+
+test_group('16. Pages: Jurisdiction Isolation');
+
+$http = \Drupal::httpClient();
+$opts = ['http_errors' => FALSE, 'headers' => ['Accept' => 'application/vnd.api+json']];
+
+// Check if pages support jurisdiction (field_jurisdiction exists on page bundle).
+$page_jur_field = $etm->getStorage('field_config')->load('node.page.field_jurisdiction');
+if (!$page_jur_field) {
+  skip_test('field_jurisdiction not configured on page nodes');
+}
+else {
+  // Count pages per jurisdiction.
+  $page_counts = [];
+  $total_promoted = 0;
+
+  foreach ($jurs as $jur_id => $jur) {
+    $r = $http->get(
+      "$base/jsonapi/node/page?filter[promote]=1&filter[field_jurisdiction.meta.drupal_internal__target_id]=$jur_id",
+      $opts
+    );
+    $data = json_decode($r->getBody()->getContents(), TRUE);
+    $count = count($data['data'] ?? []);
+    $page_counts[$jur_id] = $count;
+    $total_promoted += $count;
+
+    assert_equal(200, $r->getStatusCode(), "{$jur['label']}: pages endpoint returns 200");
+  }
+
+  // At least one jurisdiction should have pages.
+  assert_true($total_promoted > 0, "At least one jurisdiction has pages (total: $total_promoted)");
+
+  // Cross-jurisdiction isolation: pages from jur A should not appear under jur B.
+  // We verify this by checking that no page appears in multiple jurisdictions.
+  $page_jur_map = [];
+  foreach ($jurs as $jur_id => $jur) {
+    $r = $http->get(
+      "$base/jsonapi/node/page?filter[promote]=1&filter[field_jurisdiction.meta.drupal_internal__target_id]=$jur_id",
+      $opts
+    );
+    $data = json_decode($r->getBody()->getContents(), TRUE);
+    foreach ($data['data'] ?? [] as $page) {
+      $page_id = $page['id'];
+      if (isset($page_jur_map[$page_id])) {
+        assert_true(FALSE, "Page '$page_id' appears in both {$page_jur_map[$page_id]} and {$jur['label']} (isolation broken)");
+      }
+      else {
+        $page_jur_map[$page_id] = $jur['label'];
+      }
+    }
+  }
+  if (!empty($page_jur_map)) {
+    assert_true(TRUE, "Page isolation verified: " . count($page_jur_map) . " pages each belong to exactly one jurisdiction");
+  }
+
+  // Sticky page per jurisdiction: each jurisdiction with pages should have at most one sticky.
+  foreach ($jurs as $jur_id => $jur) {
+    if ($page_counts[$jur_id] === 0) {
+      continue;
+    }
+    $r = $http->get(
+      "$base/jsonapi/node/page?filter[promote]=1&filter[sticky]=1&filter[field_jurisdiction.meta.drupal_internal__target_id]=$jur_id",
+      $opts
+    );
+    $data = json_decode($r->getBody()->getContents(), TRUE);
+    $sticky_count = count($data['data'] ?? []);
+    assert_true(
+      $sticky_count <= 1,
+      "{$jur['label']}: has $sticky_count sticky pages (expected 0 or 1)"
+    );
+  }
+}
+
+// ===========================================================================
 // Summary
 // ===========================================================================
 

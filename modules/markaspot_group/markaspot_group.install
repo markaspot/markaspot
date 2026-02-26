@@ -487,3 +487,306 @@ function markaspot_group_update_11903(): void {
     }
   }
 }
+
+/**
+ * Add group relationship for pages and field_jurisdiction on page nodes.
+ *
+ * Makes pages jurisdiction-aware so each tenant can have its own welcome
+ * content and info pages. Creates field_jurisdiction on page nodes,
+ * the jur-group_node-page relationship type, and assigns existing promoted
+ * pages to the root jurisdiction.
+ */
+function markaspot_group_update_11904(): void {
+  $etm = \Drupal::entityTypeManager();
+  $config = \Drupal::configFactory()->get('markaspot_open311.settings');
+  $logger = \Drupal::logger('markaspot_group');
+
+  $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
+
+  // 1. Create field storage for node.field_jurisdiction if it does not exist.
+  $storage_id = 'node.field_jurisdiction';
+  $field_storage = $etm->getStorage('field_storage_config')->load($storage_id);
+
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_jurisdiction',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'group',
+      ],
+      'cardinality' => -1,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage node.field_jurisdiction.');
+  }
+  elseif ($field_storage->getCardinality() === 1) {
+    // Upgrade: allow multiple jurisdictions per page.
+    $field_storage->setCardinality(-1);
+    $field_storage->save();
+    $logger->info('Updated node.field_jurisdiction cardinality to unlimited.');
+  }
+
+  // 2. Create field instance on the page bundle.
+  $field_id = 'node.page.field_jurisdiction';
+  $field_config = $etm->getStorage('field_config')->load($field_id);
+
+  if (!$field_config) {
+    $field_config = $etm->getStorage('field_config')->create([
+      'field_storage' => $field_storage,
+      'bundle' => 'page',
+      'label' => 'Jurisdiction',
+      'description' => 'The jurisdiction this page belongs to.',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => [$jur_type => $jur_type],
+          'sort' => ['field' => 'label', 'direction' => 'ASC'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ]);
+    $field_config->save();
+    $logger->info('Created field instance node.page.field_jurisdiction.');
+  }
+
+  // 3. Create group relationship type jur-group_node-page.
+  $relationship_type_id = 'jur-group_node-page';
+  $existing = $etm->getStorage('group_relationship_type')->load($relationship_type_id);
+
+  if (!$existing) {
+    $relationship_type = $etm->getStorage('group_relationship_type')->create([
+      'id' => $relationship_type_id,
+      'group_type' => $jur_type,
+      'content_plugin' => 'group_node:page',
+      'plugin_config' => [
+        'group_cardinality' => 0,
+        'entity_cardinality' => 0,
+        'use_creation_wizard' => FALSE,
+      ],
+    ]);
+    $relationship_type->save();
+    $logger->info('Created group relationship type @id.', ['@id' => $relationship_type_id]);
+  }
+  else {
+    // Upgrade: allow pages in multiple jurisdictions.
+    $plugin_config = $existing->get('plugin_config');
+    if (($plugin_config['entity_cardinality'] ?? 0) === 1) {
+      $plugin_config['entity_cardinality'] = 0;
+      $existing->set('plugin_config', $plugin_config);
+      $existing->save();
+      $logger->info('Updated @id entity_cardinality to unlimited.', ['@id' => $relationship_type_id]);
+    }
+  }
+
+  // 4. Find root jurisdiction and assign promoted pages.
+  $group_storage = $etm->getStorage('group');
+
+  $has_parent_field = $etm->getStorage('field_config')
+    ->load("group.{$jur_type}.field_parent_jurisdiction") !== NULL;
+
+  if ($has_parent_field) {
+    $root_jur_ids = $group_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $jur_type)
+      ->notExists('field_parent_jurisdiction')
+      ->execute();
+  }
+  else {
+    $root_jur_ids = $group_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $jur_type)
+      ->execute();
+  }
+
+  if (empty($root_jur_ids)) {
+    $logger->warning('No root jurisdiction group found. Skipping page assignment.');
+    return;
+  }
+
+  if (count($root_jur_ids) > 1) {
+    $logger->warning(
+      'Multiple root jurisdictions found (@count). Skipping automatic page assignment.',
+      ['@count' => count($root_jur_ids)]
+    );
+    return;
+  }
+
+  $root_jur_id = (int) reset($root_jur_ids);
+  $root_jur = $group_storage->load($root_jur_id);
+
+  // Find promoted page nodes.
+  $page_nids = $etm->getStorage('node')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'page')
+    ->condition('promote', 1)
+    ->sort('nid', 'ASC')
+    ->execute();
+
+  if (empty($page_nids)) {
+    $logger->info('No promoted pages found to assign.');
+    return;
+  }
+
+  $pages = $etm->getStorage('node')->loadMultiple($page_nids);
+  $plugin_id = 'group_node:page';
+  $assigned = 0;
+  $first_page = NULL;
+
+  foreach ($pages as $page) {
+    if ($first_page === NULL) {
+      $first_page = $page;
+    }
+
+    // Set field_jurisdiction on the page node.
+    if ($page->hasField('field_jurisdiction') && $page->get('field_jurisdiction')->isEmpty()) {
+      $page->set('field_jurisdiction', ['target_id' => $root_jur_id]);
+      $page->save();
+    }
+
+    // Create group relationship.
+    try {
+      $root_jur->addRelationship($page, $plugin_id);
+      $assigned++;
+    }
+    catch (\Exception $e) {
+      $logger->error('Failed to add page @nid to jur group: @msg', [
+        '@nid' => $page->id(),
+        '@msg' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  $logger->info('Assigned @count pages to root jurisdiction "@name".', [
+    '@count' => $assigned,
+    '@name' => $root_jur->label(),
+  ]);
+
+  // 5. Set the first page as sticky (welcome/landing page).
+  if ($first_page) {
+    $first_page->set('sticky', 1);
+    $first_page->save();
+    $logger->info('Set page "@title" (nid=@nid) as sticky.', [
+      '@title' => $first_page->label(),
+      '@nid' => $first_page->id(),
+    ]);
+  }
+
+  // 6. Add field_jurisdiction to the page form display.
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('node.page.default');
+
+  if (!$form_display) {
+    $form_display = $etm->getStorage('entity_form_display')->create([
+      'targetEntityType' => 'node',
+      'bundle' => 'page',
+      'mode' => 'default',
+      'status' => TRUE,
+    ]);
+  }
+
+  $form_display->setComponent('field_jurisdiction', [
+    'type' => 'entity_reference_autocomplete',
+    'weight' => 4,
+    'region' => 'content',
+    'settings' => [
+      'match_operator' => 'CONTAINS',
+      'match_limit' => 10,
+      'size' => 60,
+      'placeholder' => '',
+    ],
+  ]);
+  $form_display->save();
+
+  // 7. Update JSON:API resource config for node--page to include
+  // field_jurisdiction.
+  $jsonapi_config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.node--page');
+
+  if (!$jsonapi_config->isNew()) {
+    $resource_fields = $jsonapi_config->get('resourceFields') ?? [];
+    if (!isset($resource_fields['field_jurisdiction'])) {
+      $resource_fields['field_jurisdiction'] = [
+        'disabled' => FALSE,
+        'fieldName' => 'field_jurisdiction',
+        'publicName' => 'field_jurisdiction',
+        'enhancer' => ['id' => ''],
+      ];
+      $jsonapi_config->set('resourceFields', $resource_fields)->save();
+      $logger->info('Added field_jurisdiction to JSON:API node--page resource config.');
+    }
+  }
+  else {
+    $logger->notice('JSON:API resource config for node--page not found. field_jurisdiction will be available via default JSON:API config.');
+  }
+
+  // 8. Add page permissions to jur group roles.
+  // Without these, group access control blocks anonymous page viewing.
+  $role_storage = $etm->getStorage('group_role');
+  $page_permissions = [
+    "{$jur_type}-anonymous" => ['view group_node:page entity'],
+    "{$jur_type}-outsider" => ['view group_node:page entity'],
+    "{$jur_type}-moderator" => [
+      'view group_node:page entity',
+      'view group_node:page relationship',
+    ],
+    "{$jur_type}-member" => [
+      'view group_node:page entity',
+      'view group_node:page relationship',
+      'create group_node:page entity',
+      'update own group_node:page entity',
+    ],
+    "{$jur_type}-editorial" => [
+      'view group_node:page entity',
+      'view group_node:page relationship',
+      'create group_node:page entity',
+      'create group_node:page relationship',
+      'update any group_node:page entity',
+      'update own group_node:page entity',
+      'delete any group_node:page entity',
+    ],
+    "{$jur_type}-tenant_admin" => [
+      'view group_node:page entity',
+      'view group_node:page relationship',
+      'create group_node:page entity',
+      'create group_node:page relationship',
+      'update any group_node:page entity',
+      'update own group_node:page entity',
+      'delete any group_node:page entity',
+    ],
+    "{$jur_type}-admin" => [
+      'view group_node:page entity',
+      'view group_node:page relationship',
+      'create group_node:page entity',
+      'create group_node:page relationship',
+      'update any group_node:page entity',
+      'update own group_node:page entity',
+      'delete any group_node:page entity',
+      'delete own group_node:page entity',
+    ],
+  ];
+
+  foreach ($page_permissions as $role_id => $new_perms) {
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      continue;
+    }
+    $existing = $role->getPermissions();
+    $added = 0;
+    foreach ($new_perms as $perm) {
+      if (!in_array($perm, $existing)) {
+        $existing[] = $perm;
+        $added++;
+      }
+    }
+    if ($added > 0) {
+      $role->set('permissions', $existing);
+      $role->save();
+      $logger->info('Added @count page permissions to @role.', [
+        '@count' => $added,
+        '@role' => $role_id,
+      ]);
+    }
+  }
+}

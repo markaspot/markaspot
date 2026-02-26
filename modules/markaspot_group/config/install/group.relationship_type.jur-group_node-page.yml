@@ -1,0 +1,16 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+    - node.type.page
+  module:
+    - gnode
+    - node
+id: jur-group_node-page
+group_type: jur
+content_plugin: 'group_node:page'
+plugin_config:
+  group_cardinality: 0
+  entity_cardinality: 0
+  use_creation_wizard: false

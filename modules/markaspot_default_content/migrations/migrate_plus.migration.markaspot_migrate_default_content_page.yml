@@ -19,8 +19,15 @@ process:
   promote:
     plugin: default_value
     default_value: 1
+  sticky: sticky
   field_page_icon: field_page_icon
+  field_jurisdiction:
+    plugin: migration_lookup
+    migration: markaspot_migrate_default_content_group_jurisdiction
+    source: jurisdiction_uuid
 destination:
   plugin: 'entity:node'
   default_bundle: page
-migration_dependencies: {}
+migration_dependencies:
+  required:
+    - markaspot_migrate_default_content_group_jurisdiction
