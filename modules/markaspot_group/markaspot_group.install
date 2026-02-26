@@ -645,16 +645,19 @@ function markaspot_group_update_11904(): void {
       $page->save();
     }
 
-    // Create group relationship.
-    try {
-      $root_jur->addRelationship($page, $plugin_id);
-      $assigned++;
-    }
-    catch (\Exception $e) {
-      $logger->error('Failed to add page @nid to jur group: @msg', [
-        '@nid' => $page->id(),
-        '@msg' => $e->getMessage(),
-      ]);
+    // Create group relationship (skip if already exists).
+    $existing = $root_jur->getRelationshipsByEntity($page, $plugin_id);
+    if (empty($existing)) {
+      try {
+        $root_jur->addRelationship($page, $plugin_id);
+        $assigned++;
+      }
+      catch (\Exception $e) {
+        $logger->error('Failed to add page @nid to jur group: @msg', [
+          '@nid' => $page->id(),
+          '@msg' => $e->getMessage(),
+        ]);
+      }
     }
   }
 
@@ -664,7 +667,15 @@ function markaspot_group_update_11904(): void {
   ]);
 
   // 5. Set the first page as sticky (welcome/landing page).
-  if ($first_page) {
+  // Only if no page is already sticky (respect existing admin choices).
+  $existing_sticky = $etm->getStorage('node')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'page')
+    ->condition('sticky', 1)
+    ->range(0, 1)
+    ->execute();
+
+  if (empty($existing_sticky) && $first_page) {
     $first_page->set('sticky', 1);
     $first_page->save();
     $logger->info('Set page "@title" (nid=@nid) as sticky.', [
