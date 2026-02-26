@@ -171,6 +171,16 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
       return;
     }
 
+    // GDPR safety net: skip if AI processing is disabled for this jurisdiction.
+    // This catches nodes queued before the feature flag was disabled, or
+    // items picked up by the cron backfill.
+    if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+      $this->logger->debug('AI disabled for node @nid jurisdiction, skipping embedding.', [
+        '@nid' => $nid,
+      ]);
+      return;
+    }
+
     try {
       // Build text content for embedding.
       $textParts = [];

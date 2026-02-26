@@ -10,6 +10,7 @@
 
 declare(strict_types=1);
 
+use Drupal\group\Entity\Group;
 use Drupal\node\NodeInterface;
 
 /**
@@ -34,6 +35,14 @@ function markaspot_ai_node_insert(NodeInterface $node): void {
 
   if (empty($api_key)) {
     \Drupal::logger('markaspot_ai')->debug('Skipping embedding queue for node @nid - API key not configured.', [
+      '@nid' => $node->id(),
+    ]);
+    return;
+  }
+
+  // GDPR gate: skip if AI processing is disabled for this jurisdiction.
+  if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+    \Drupal::logger('markaspot_ai')->debug('AI processing disabled for node @nid jurisdiction, skipping queue.', [
       '@nid' => $node->id(),
     ]);
     return;
@@ -72,6 +81,11 @@ function markaspot_ai_node_update(NodeInterface $node): void {
   $api_key = $config->get('providers.openai.api_key');
 
   if (empty($api_key)) {
+    return;
+  }
+
+  // GDPR gate: skip if AI processing is disabled for this jurisdiction.
+  if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
     return;
   }
 
@@ -223,8 +237,15 @@ function _markaspot_ai_backfill_embeddings(): void {
     }
 
     $queue = \Drupal::queue('markaspot_ai_embedding');
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
 
     foreach ($missing as $nid) {
+      // GDPR gate: only backfill nodes in AI-enabled jurisdictions.
+      $node = $node_storage->load($nid);
+      if ($node && !_markaspot_ai_is_ai_enabled_for_node($node)) {
+        continue;
+      }
+
       $queue->createItem([
         'nid' => $nid,
         'is_new' => FALSE,
@@ -264,6 +285,75 @@ function _markaspot_ai_cleanup_token_usage(): void {
     \Drupal::logger('markaspot_ai')->error('Token usage cleanup failed: @message', [
       '@message' => $e->getMessage(),
     ]);
+  }
+}
+
+/**
+ * Resolves the jurisdiction group ID for a service request node.
+ *
+ * Follows the path: node -> field_category -> field_jurisdiction -> target_id.
+ * This is the same pattern as GeoreportProcessorService::getJurisdictionIdFromNode().
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service request node.
+ *
+ * @return int|null
+ *   The jurisdiction group ID, or NULL if not resolvable.
+ */
+function _markaspot_ai_get_jurisdiction_id_for_node(NodeInterface $node): ?int {
+  if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+    $categoryTerm = $node->get('field_category')->entity;
+    if ($categoryTerm && $categoryTerm->hasField('field_jurisdiction') && !$categoryTerm->get('field_jurisdiction')->isEmpty()) {
+      return (int) $categoryTerm->get('field_jurisdiction')->target_id;
+    }
+  }
+  return NULL;
+}
+
+/**
+ * Checks if AI processing is enabled for a node's jurisdiction.
+ *
+ * Resolves the node's jurisdiction via field_category -> field_jurisdiction,
+ * then checks the group's field_nuxt_config for features.aiAnalysis.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service request node.
+ *
+ * @return bool
+ *   TRUE if AI processing is allowed (default: TRUE for backwards compat).
+ */
+function _markaspot_ai_is_ai_enabled_for_node(NodeInterface $node): bool {
+  $jurisdictionId = _markaspot_ai_get_jurisdiction_id_for_node($node);
+  if ($jurisdictionId === NULL) {
+    // No jurisdiction assigned, allow AI processing (backwards compat).
+    return TRUE;
+  }
+
+  try {
+    $group = Group::load($jurisdictionId);
+    if (!$group || !$group->hasField('field_nuxt_config')) {
+      return TRUE;
+    }
+
+    $configJson = $group->get('field_nuxt_config')->value;
+    if (empty($configJson)) {
+      return TRUE;
+    }
+
+    $config = json_decode($configJson, TRUE);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+      return TRUE;
+    }
+
+    // Check features.aiAnalysis flag (default: TRUE for backwards compat).
+    return $config['features']['aiAnalysis'] ?? TRUE;
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot_ai')->warning('Failed to check AI flag for jurisdiction @id: @message', [
+      '@id' => $jurisdictionId,
+      '@message' => $e->getMessage(),
+    ]);
+    return TRUE;
   }
 }
 

@@ -237,8 +237,11 @@ class DuplicateController extends ControllerBase {
     // Cap limit to prevent abuse.
     $limit = min($limit, 100);
 
-    $matches = $this->duplicateDetectionService->getPendingMatches($limit, $offset);
-    $counts = $this->duplicateDetectionService->getMatchCounts();
+    // Jurisdiction filter: admins see all, others are scoped.
+    $jurisdictionId = $this->resolveJurisdictionFilter($request);
+
+    $matches = $this->duplicateDetectionService->getPendingMatches($limit, $offset, $jurisdictionId);
+    $counts = $this->duplicateDetectionService->getMatchCounts($jurisdictionId);
 
     return new JsonResponse([
       'matches' => $matches,
@@ -246,6 +249,7 @@ class DuplicateController extends ControllerBase {
       'offset' => $offset,
       'limit' => $limit,
       'total_counts' => $counts,
+      'jurisdiction_id' => $jurisdictionId,
     ]);
   }
 
@@ -264,8 +268,15 @@ class DuplicateController extends ControllerBase {
       throw new BadRequestHttpException('Node must be a service_request.');
     }
 
-    // Perform live scan (not via queue).
-    $duplicates = $this->duplicateDetectionService->findDuplicates($node);
+    // Resolve jurisdiction for scoped scanning.
+    $jurisdictionId = _markaspot_ai_get_jurisdiction_id_for_node($node);
+    $options = [];
+    if ($jurisdictionId !== NULL) {
+      $options['jurisdiction_id'] = $jurisdictionId;
+    }
+
+    // Perform live scan (not via queue), scoped to jurisdiction.
+    $duplicates = $this->duplicateDetectionService->findDuplicates($node, $options);
 
     // Store matches.
     foreach ($duplicates as $match) {
@@ -286,6 +297,32 @@ class DuplicateController extends ControllerBase {
       'matches' => $duplicates,
       'message' => sprintf('Scanned node %d. Found %d potential duplicates.', $node->id(), count($duplicates)),
     ]);
+  }
+
+  /**
+   * Resolves jurisdiction filter from request.
+   *
+   * Admins (uid=1 or 'administer nodes') see all duplicates.
+   * Other users are filtered by the jurisdiction_id query parameter.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   *
+   * @return int|null
+   *   The jurisdiction ID to filter by, or NULL for all (admin).
+   */
+  protected function resolveJurisdictionFilter(Request $request): ?int {
+    $jurisdictionId = $request->query->get('jurisdiction_id');
+
+    // Admins can see all by omitting the parameter, or filter by choice.
+    $currentUser = $this->currentUser();
+    if ((int) $currentUser->id() === 1 || $currentUser->hasPermission('administer nodes')) {
+      return $jurisdictionId !== NULL ? (int) $jurisdictionId : NULL;
+    }
+
+    // Non-admin users: require jurisdiction_id. Without it, return -1
+    // to produce empty results (no group has id -1).
+    return $jurisdictionId !== NULL ? (int) $jurisdictionId : -1;
   }
 
 }

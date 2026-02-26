@@ -162,7 +162,15 @@ class SentimentController extends ControllerBase {
     // Cap days to prevent abuse.
     $days = min(max($days, 1), 365);
 
-    $stats = $this->sentimentService->getStatistics(['days' => $days]);
+    $options = ['days' => $days];
+
+    // Pass jurisdiction filter if provided.
+    $jurisdictionId = $request->query->get('jurisdiction_id');
+    if ($jurisdictionId !== NULL) {
+      $options['jurisdiction_id'] = (int) $jurisdictionId;
+    }
+
+    $stats = $this->sentimentService->getStatistics($options);
 
     // Calculate percentages.
     $total = $stats['total'];

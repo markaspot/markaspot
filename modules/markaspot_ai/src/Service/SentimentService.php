@@ -418,6 +418,16 @@ PROMPT;
     $query = $this->database->select('markaspot_ai_sentiment', 's')
       ->condition('s.analyzed_at', $cutoff, '>=');
 
+    // Jurisdiction filter: scope statistics to a specific jurisdiction.
+    if (!empty($options['jurisdiction_id'])) {
+      $query->innerJoin('group_relationship_field_data', 'gr',
+        "s.entity_id = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
+      $query->innerJoin('groups_field_data', 'grp',
+        'gr.gid = grp.id AND grp.default_langcode = 1');
+      $query->condition('grp.type', 'jur');
+      $query->condition('grp.id', (int) $options['jurisdiction_id']);
+    }
+
     $query->addExpression('sentiment');
     $query->addExpression('COUNT(*)', 'count');
     $query->groupBy('sentiment');

@@ -7,10 +7,10 @@ markaspot_vision.settings:
     _permission: 'administer site configuration'
 
 markaspot_vision.image_processing:
-  path: '/markaspot_vision/getAIresults'
+  path: '/api/vision/analyze'
   defaults:
     _controller: '\Drupal\markaspot_vision\Controller\ImageProcessingController::getAIResults'
-    _title: 'Get AI Results'
+    _title: 'Vision Analysis API'
   methods: [POST]
   requirements:
     _permission: 'access content'
