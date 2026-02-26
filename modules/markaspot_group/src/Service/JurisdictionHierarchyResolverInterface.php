@@ -77,4 +77,20 @@ interface JurisdictionHierarchyResolverInterface {
    */
   public function getNodeIdsInJurisdiction(int $groupId): array;
 
+  /**
+   * Gets allowed service category term IDs for a jurisdiction.
+   *
+   * Returns the term IDs from field_service_categories if the jurisdiction
+   * is a child with explicit category restrictions. Root jurisdictions and
+   * jurisdictions without restrictions return NULL (meaning "show all").
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return int[]|null
+   *   Array of taxonomy term IDs if restricted, or NULL if unrestricted
+   *   (root jurisdiction, missing field, or empty field).
+   */
+  public function getAllowedCategoryIds(int $groupId): ?array;
+
 }

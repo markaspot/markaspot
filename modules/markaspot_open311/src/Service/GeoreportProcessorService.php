@@ -472,7 +472,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $langcode = $langcode ?? $this->languageManager->getDefaultLanguage()->getId();
 
     $properties = ['vid' => $vocabulary, 'status' => 1];
-    if ($jurisdictionId) {
+    // Preserve the original jurisdiction ID before root resolution.
+    // Child jurisdictions may have category restrictions that reference
+    // the child's own ID, not the root's.
+    $originalJurisdictionId = $jurisdictionId;
+    if ($jurisdictionId && $this->hierarchyResolver) {
       // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
       $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
     }
@@ -481,6 +485,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     if (empty($tree)) {
       return [];
+    }
+
+    // Apply category allow-list for child jurisdictions.
+    if ($originalJurisdictionId && $this->hierarchyResolver) {
+      $allowedIds = $this->hierarchyResolver->getAllowedCategoryIds($originalJurisdictionId);
+      if ($allowedIds !== NULL) {
+        $tree = array_filter($tree, fn($term) => in_array((int) $term->id(), $allowedIds, TRUE));
+      }
     }
 
     $services = [];

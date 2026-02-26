@@ -6,6 +6,7 @@ core_version_requirement: ^10 || ^11
 
 dependencies:
   - drupal:group
+  - drupal:taxonomy
   - gnode
   - drupal:user
   - drupal:node

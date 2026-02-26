@@ -11,6 +11,7 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\group\Entity\Group;
@@ -31,13 +32,19 @@ function markaspot_group_mail(string $key, array &$message, array $params): void
 }
 
 /**
- * Implements hook_entity_presave() for taxonomy_term entities.
+ * Implements hook_entity_presave().
  *
- * Redirects child jurisdiction references to their root parent.
+ * Handles presave logic for:
+ * - taxonomy_term: Redirects child jurisdiction references to root parent.
+ * - group (jur bundle): Validates field_service_categories belong to the
+ *   correct root jurisdiction.
  */
 function markaspot_group_entity_presave(EntityInterface $entity): void {
   if ($entity instanceof TermInterface) {
     _markaspot_group_presave_taxonomy_term($entity);
+  }
+  if ($entity instanceof GroupInterface && $entity->bundle() === 'jur') {
+    _markaspot_group_presave_jur_service_categories($entity);
   }
 }
 
@@ -97,6 +104,101 @@ function _markaspot_group_presave_taxonomy_term(TermInterface $entity): void {
       '@root' => $root_id,
     ]
   );
+}
+
+/**
+ * Presave handler for jur groups: validates field_service_categories.
+ *
+ * Ensures that selected service categories belong to the correct root
+ * jurisdiction. Invalid categories (those with field_jurisdiction pointing
+ * to a different root) are silently removed and a warning is logged.
+ *
+ * This prevents data inconsistency where a child jurisdiction references
+ * categories from an unrelated jurisdiction tree.
+ *
+ * @param \Drupal\group\Entity\GroupInterface $group
+ *   The jurisdiction group being saved.
+ */
+function _markaspot_group_presave_jur_service_categories(GroupInterface $group): void {
+  // Only validate if service categories are set.
+  if (!$group->hasField('field_service_categories') || $group->get('field_service_categories')->isEmpty()) {
+    return;
+  }
+
+  // Determine the root jurisdiction ID.
+  $group_id = $group->isNew() ? NULL : (int) $group->id();
+  $root_jurisdiction_id = NULL;
+
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+
+  if ($group_id !== NULL) {
+    $root_jurisdiction_id = $resolver->getRootJurisdictionId($group_id);
+  }
+  elseif ($group->hasField('field_parent_jurisdiction') && !$group->get('field_parent_jurisdiction')->isEmpty()) {
+    // New group with a parent: resolve from the parent.
+    $parent_id = (int) $group->get('field_parent_jurisdiction')->target_id;
+    $root_jurisdiction_id = $resolver->getRootJurisdictionId($parent_id);
+  }
+
+  if ($root_jurisdiction_id === NULL) {
+    return;
+  }
+
+  // Validate each referenced category term.
+  $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $valid_items = [];
+  $removed_tids = [];
+
+  foreach ($group->get('field_service_categories') as $item) {
+    $tid = (int) $item->target_id;
+    $term = $term_storage->load($tid);
+
+    if (!$term) {
+      $removed_tids[] = $tid;
+      continue;
+    }
+
+    // Check that the term belongs to the correct root jurisdiction.
+    if (!$term->hasField('field_jurisdiction') || $term->get('field_jurisdiction')->isEmpty()) {
+      $removed_tids[] = $tid;
+      continue;
+    }
+
+    $term_jurisdiction_id = (int) $term->get('field_jurisdiction')->target_id;
+
+    // The term's jurisdiction should match the root. Use the resolver in case
+    // the term itself points to a child (which would be unusual but possible).
+    $term_root_id = $resolver->getRootJurisdictionId($term_jurisdiction_id);
+
+    if ($term_root_id === $root_jurisdiction_id) {
+      $valid_items[] = ['target_id' => $tid];
+    }
+    else {
+      $removed_tids[] = $tid;
+    }
+  }
+
+  // If invalid categories were found, clean them out and log a warning.
+  if (!empty($removed_tids)) {
+    $group->set('field_service_categories', $valid_items);
+
+    $message = t('Removed @count invalid service categories (not in root jurisdiction @root): @tids.', [
+      '@count' => count($removed_tids),
+      '@root' => $root_jurisdiction_id,
+      '@tids' => implode(', ', $removed_tids),
+    ]);
+
+    \Drupal::logger('markaspot_group')->warning(
+      'Jurisdiction "@group" (id=@gid): @message',
+      [
+        '@group' => $group->label() ?? '(new)',
+        '@gid' => $group_id ?? 'new',
+        '@message' => $message,
+      ]
+    );
+    \Drupal::messenger()->addWarning($message);
+  }
 }
 
 /**
@@ -184,7 +286,7 @@ function _markaspot_group_presave_service_request_status(NodeInterface $node): v
  * user is uid=1 or has the 'administrator' role. The field should only
  * be visible (and editable) for those accounts.
  */
-function markaspot_group_form_user_form_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state): void {
+function markaspot_group_form_user_form_alter(array &$form, FormStateInterface $form_state): void {
   if (!isset($form['field_all_groups_member'])) {
     return;
   }
@@ -437,7 +539,7 @@ function markaspot_group_node_presave(NodeInterface $node): void {
  * 3. Derives organisation from category (jurisdiction-aware)
  * 4. Syncs field_organisation to org group relationship
  * 5. Sends notification email to the assigned organisation
- * 6. Saves node if org was derived
+ * 6. Saves node if org was derived.
  *
  * The sub-jurisdiction assignment runs first so that org derivation can
  * check whether a child jurisdiction has its own org handling the category.

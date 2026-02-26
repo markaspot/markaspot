@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\markaspot_group\Service;
 
 use Drupal\Core\Database\Connection;
@@ -200,6 +202,36 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
       ->fetchCol();
 
     return array_map('intval', $result);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getAllowedCategoryIds(int $groupId): ?array {
+    $group = $this->entityTypeManager->getStorage('group')->load($groupId);
+    if (!$group || $group->bundle() !== 'jur') {
+      return NULL;
+    }
+
+    // Root jurisdictions always show all categories.
+    if (!$group->hasField('field_parent_jurisdiction')
+        || $group->get('field_parent_jurisdiction')->isEmpty()) {
+      return NULL;
+    }
+
+    // Child jurisdiction without category restrictions inherits all from root.
+    if (!$group->hasField('field_service_categories')
+        || $group->get('field_service_categories')->isEmpty()) {
+      return NULL;
+    }
+
+    // Return the explicitly referenced category term IDs.
+    $ids = [];
+    foreach ($group->get('field_service_categories') as $item) {
+      $ids[] = (int) $item->target_id;
+    }
+
+    return $ids;
   }
 
 }

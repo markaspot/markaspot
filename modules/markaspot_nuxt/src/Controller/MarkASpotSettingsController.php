@@ -7,6 +7,7 @@ use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -414,7 +415,9 @@ class MarkASpotSettingsController extends ControllerBase {
     // Load jurisdiction-filtered categories and statuses.
     // $taxonomyJurisdictionId (resolved above) points to the root jurisdiction
     // so child jurisdictions inherit the parent's service catalog.
-    $settings['services'] = $this->loadServices($taxonomyJurisdictionId);
+    // The original $group is passed to loadServices() so child jurisdictions
+    // can further filter categories via field_service_categories.
+    $settings['services'] = $this->loadServices($taxonomyJurisdictionId, $group);
     $settings['statuses'] = $this->loadStatuses($taxonomyJurisdictionId);
 
     // Invalidate when taxonomy terms change (category or status edits).
@@ -431,8 +434,19 @@ class MarkASpotSettingsController extends ControllerBase {
 
   /**
    * Loads service categories, optionally filtered by jurisdiction.
+   *
+   * Categories are loaded from the root jurisdiction's taxonomy terms.
+   * When a child jurisdiction group is provided and has explicit category
+   * restrictions (field_service_categories), the result is filtered to
+   * only include allowed categories plus their parent terms for hierarchy.
+   *
+   * @param int|null $jurisdictionId
+   *   The root jurisdiction ID for taxonomy term filtering, or NULL for all.
+   * @param \Drupal\group\Entity\GroupInterface|null $group
+   *   The original group entity (may be a child jurisdiction). Used to apply
+   *   category allow-list filtering via getAllowedCategoryIds().
    */
-  private function loadServices(?int $jurisdictionId): array {
+  private function loadServices(?int $jurisdictionId, ?GroupInterface $group = NULL): array {
     $langcode = $this->languageManager()->getCurrentLanguage()->getId();
     $properties = ['vid' => 'service_category', 'status' => 1];
     if ($jurisdictionId) {
@@ -440,6 +454,30 @@ class MarkASpotSettingsController extends ControllerBase {
     }
     $terms = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadByProperties($properties);
+
+    // Apply child jurisdiction category allow-list if configured.
+    // Root jurisdictions and children without restrictions return NULL (show all).
+    if ($group) {
+      $allowedIds = $this->hierarchyResolver->getAllowedCategoryIds((int) $group->id());
+      if ($allowedIds !== NULL) {
+        $allowedSet = array_flip($allowedIds);
+        // Collect parent TIDs of allowed terms so hierarchy stays intact.
+        $allowedParentTids = [];
+        foreach ($terms as $tid => $term) {
+          if (isset($allowedSet[$tid])) {
+            $pid = (int) $term->get('parent')->target_id;
+            if ($pid > 0) {
+              $allowedParentTids[$pid] = $pid;
+            }
+          }
+        }
+        // Keep terms that are either directly allowed or serve as parents.
+        $terms = array_filter($terms, function ($term) use ($allowedSet, $allowedParentTids) {
+          $tid = (int) $term->id();
+          return isset($allowedSet[$tid]) || isset($allowedParentTids[$tid]);
+        });
+      }
+    }
 
     // Collect parent TIDs from already-loaded entities (no extra queries).
     $parent_tids = [];
