@@ -44,6 +44,10 @@ class MarkaspotNuxtServiceProvider extends ServiceProviderBase {
       // Override json_form.value_handler to add boolean support.
       $definition = $container->getDefinition('json_form.value_handler');
       $definition->setClass('Drupal\markaspot_nuxt\ExtendedValueHandler');
+
+      // Override json_form.object_helper to add additionalProperties support.
+      $definition = $container->getDefinition('json_form.object_helper');
+      $definition->setClass('Drupal\markaspot_nuxt\ExtendedObjectHelper');
     }
   }
 

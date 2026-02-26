@@ -125,7 +125,7 @@
           "type": "boolean",
           "title": "Dashboard",
           "description": "Enable admin dashboard for staff",
-          "default": false
+          "default": true
         },
         "passwordless": {
           "type": "boolean",
@@ -137,7 +137,7 @@
           "type": "boolean",
           "title": "AI Analysis",
           "description": "Enable AI-powered image analysis",
-          "default": false
+          "default": true
         },
         "feedback": {
           "type": "boolean",
@@ -146,15 +146,83 @@
           "default": true
         },
         "offline": {
-          "type": "boolean",
+          "type": "object",
           "title": "Offline Mode",
-          "description": "Enable offline support with service worker caching",
-          "default": false
+          "description": "Enable offline support with IndexedDB queue",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable Offline Mode",
+              "default": true
+            },
+            "draftRetentionDays": {
+              "type": "integer",
+              "title": "Draft Retention (Days)",
+              "description": "How long to keep offline drafts",
+              "default": 7,
+              "minimum": 1,
+              "maximum": 90
+            },
+            "mediaRetentionHours": {
+              "type": "integer",
+              "title": "Media Retention (Hours)",
+              "description": "How long to keep offline media files",
+              "default": 48,
+              "minimum": 1,
+              "maximum": 720
+            },
+            "maxRetries": {
+              "type": "integer",
+              "title": "Max Retries",
+              "description": "Maximum sync retry attempts",
+              "default": 3,
+              "minimum": 1,
+              "maximum": 10
+            }
+          }
         },
         "formFirst": {
-          "type": "boolean",
+          "type": "object",
           "title": "Form-First Mobile",
           "description": "Show form before map on mobile devices",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable Form-First",
+              "default": false
+            },
+            "mobileLayout": {
+              "type": "string",
+              "title": "Mobile Layout",
+              "description": "Layout style for mobile form view",
+              "enum": ["bottomSheet", "tabs"],
+              "default": "bottomSheet"
+            },
+            "defaultTab": {
+              "type": "string",
+              "title": "Default Tab",
+              "description": "Which tab to show first",
+              "enum": ["photo", "classic"],
+              "default": "photo"
+            }
+          }
+        },
+        "pwaInstallPrompt": {
+          "type": "object",
+          "title": "PWA Install Prompt",
+          "description": "Configure the PWA install prompt behavior",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable PWA Install Prompt",
+              "default": false
+            }
+          }
+        },
+        "contactForm": {
+          "type": "boolean",
+          "title": "Contact Form",
+          "description": "Enable contact form feature",
           "default": false
         },
         "emergency": {
@@ -236,7 +304,8 @@
             "file": {
               "type": "string",
               "title": "Boundary File",
-              "description": "GeoJSON filename for boundary validation"
+              "description": "Deprecated: boundary GeoJSON is now stored in the group field_boundary. This setting is ignored.",
+              "deprecated": true
             },
             "strictValidation": {
               "type": "boolean",
@@ -369,28 +438,32 @@
         "objectIdCategories": {
           "type": "array",
           "title": "Object ID Categories",
-          "description": "Category IDs that show the object ID field (deprecated: use conditionalFields instead)",
+          "description": "Deprecated: use conditionalFields instead. Category IDs that show the object ID field.",
+          "deprecated": true,
           "items": { "type": "integer" },
           "default": []
         },
         "competitionCategories": {
           "type": "array",
           "title": "Competition Categories",
-          "description": "Category IDs for competition mode (deprecated: use conditionalFields instead)",
+          "description": "Deprecated: use conditionalFields instead. Category IDs for competition mode.",
+          "deprecated": true,
           "items": { "type": "integer" },
           "default": []
         },
         "partyCategories": {
           "type": "array",
           "title": "Party Categories",
-          "description": "Category IDs that show the party selection field (deprecated: use conditionalFields instead)",
+          "description": "Deprecated: use conditionalFields instead. Category IDs that show the party selection field.",
+          "deprecated": true,
           "items": { "type": "string" },
           "default": []
         },
         "oktoberfestCategories": {
           "type": "array",
           "title": "Oktoberfest Categories",
-          "description": "Category IDs for Oktoberfest-specific fields (deprecated: use conditionalFields instead)",
+          "description": "Deprecated: use conditionalFields instead. Category IDs for Oktoberfest-specific fields.",
+          "deprecated": true,
           "items": { "type": "string" },
           "default": []
         },
@@ -411,6 +484,7 @@
           "type": "object",
           "title": "Conditional Fields",
           "description": "Fields shown only when specific categories are selected. Keys must be Drupal field machine names on node.service_request.",
+          "properties": {},
           "additionalProperties": {
             "type": "object",
             "properties": {
@@ -444,6 +518,44 @@
             "pattern": "^field_[a-z0-9_]+$"
           },
           "default": {}
+        },
+        "geocoding": {
+          "type": "object",
+          "title": "Geocoding",
+          "description": "Address search provider and location bias settings",
+          "properties": {
+            "providers": {
+              "type": "array",
+              "title": "Providers",
+              "description": "Geocoding providers in priority order",
+              "items": {
+                "type": "string",
+                "enum": ["photon", "mapbox", "nominatim"]
+              },
+              "default": ["photon", "mapbox"],
+              "uniqueItems": true
+            },
+            "default": {
+              "type": "string",
+              "title": "Default Provider",
+              "description": "Primary geocoding provider",
+              "enum": ["photon", "mapbox", "nominatim"],
+              "default": "photon"
+            },
+            "country": {
+              "type": "string",
+              "title": "Country Code",
+              "description": "ISO 3166-1 alpha-2 (e.g. de, nl, us). Limits results to this country.",
+              "maxLength": 2,
+              "pattern": "^[a-z]{2}$"
+            },
+            "region": {
+              "type": "string",
+              "title": "Region",
+              "description": "Region name to bias results (e.g. nordrhein-westfalen, south-holland)",
+              "maxLength": 100
+            }
+          }
         }
       }
     },
@@ -507,6 +619,24 @@
               "type": "boolean",
               "title": "Show Handle",
               "default": true
+            },
+            "dismissible": {
+              "type": "boolean",
+              "title": "Dismissible",
+              "description": "Allow users to dismiss the bottom sheet",
+              "default": false
+            },
+            "autoCollapseOnMapTap": {
+              "type": "boolean",
+              "title": "Auto-Collapse on Map Tap",
+              "description": "Collapse bottom sheet when user taps on the map",
+              "default": true
+            },
+            "autoCollapseOnMapMove": {
+              "type": "boolean",
+              "title": "Auto-Collapse on Map Move",
+              "description": "Collapse bottom sheet when user pans or zooms the map",
+              "default": true
             }
           }
         }
@@ -532,6 +662,13 @@
           "minimum": 1,
           "maximum": 50,
           "default": 20
+        },
+        "allowedTypes": {
+          "type": "array",
+          "title": "Allowed File Types",
+          "description": "MIME types allowed for upload",
+          "items": { "type": "string" },
+          "default": ["image/jpeg", "image/png"]
         }
       }
     },

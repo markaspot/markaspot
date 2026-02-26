@@ -10,7 +10,6 @@ use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\Datetime\DrupalDateTime;
 
 /**
  * Implements hook_help().
@@ -75,18 +74,25 @@ function markaspot_request_id_form_alter(&$form, FormStateInterface $form_state)
 function markaspot_request_id_node_presave(EntityInterface $node) {
   if ($node->bundle() == 'service_request') {
     if ($node->request_id->value == NULL) {
-      $request_id = markaspot_request_id_create_request_id();
-      $node->request_id->value = $request_id;
-      $title = markaspot_request_id_create_title($node, $request_id);
-      // Entity API syncs title and request_id to node_field_data during save.
-      // No direct DB update needed - $node->id() is NULL during presave.
+      try {
+        /** @var \Drupal\markaspot_request_id\Service\RequestIdGeneratorInterface $generator */
+        $generator = \Drupal::service('markaspot_request_id.generator');
+        $jurisdictionId = $generator->resolveJurisdictionFromNode($node);
+        $node->request_id->value = $generator->generateRequestId($jurisdictionId);
+      }
+      catch (\Exception $e) {
+        \Drupal::logger('markaspot_request_id')->error(
+          'Cannot generate request ID: @message. Node save aborted.',
+          ['@message' => $e->getMessage()]
+        );
+        throw new \Drupal\Core\Entity\EntityStorageException(
+          'Report cannot be saved: request ID generation failed.',
+          0,
+          $e
+        );
+      }
     }
-    else {
-      $request_id = $node->request_id->value;
-      $title = markaspot_request_id_create_title($node, $request_id);
-    }
-    $node->title = $title;
-
+    $node->title = markaspot_request_id_create_title($node, $node->request_id->value);
   }
 }
 
@@ -98,8 +104,13 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
  *
  * @throws \Drupal\Component\Plugin\Exception\InvalidPluginDefinitionException
  * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
+ *
+ * @deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0.
+ *   Use \Drupal::service('markaspot_request_id.generator')->generateRequestId()
+ *   instead.
  */
 function markaspot_request_id_create_request_id() {
+  @trigger_error('markaspot_request_id_create_request_id() is deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0. Use the markaspot_request_id.generator service instead.', E_USER_DEPRECATED);
 
   /** @var \Drupal\Core\Database\Connection $connection */
   $connection = \Drupal::service('database');
@@ -218,8 +229,12 @@ function markaspot_request_id_create_request_id() {
  *
  * @return int
  *   The number of rows affected.
+ *
+ * @deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0.
+ *   No replacement needed. The RequestIdGenerator service handles this.
  */
 function markaspot_request_id_update_timestamp($connection, $id, $timestamp) {
+  @trigger_error('markaspot_request_id_update_timestamp() is deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0. Use the markaspot_request_id.generator service instead.', E_USER_DEPRECATED);
   return $connection->update('markaspot_request_id')
     ->fields([
       'request_id' => $id . '-' . date('Y', $timestamp),
@@ -274,8 +289,12 @@ function markaspot_request_id_create_title($node, $request_id) {
  *
  * @return bool
  *   TRUE if the table exists, FALSE otherwise.
+ *
+ * @deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0.
+ *   The RequestIdGenerator service assumes the table exists.
  */
 function markaspot_request_id_check_table($connection) {
+  @trigger_error('markaspot_request_id_check_table() is deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0. The RequestIdGenerator service assumes the table exists.', E_USER_DEPRECATED);
   // Check if table exists, by simply querying it.
   try {
     $table = "markaspot_request_id";

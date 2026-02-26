@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Contains cgn_request_id.module.
+ * Install, update and uninstall functions for markaspot_request_id module.
  */
 
 /**
@@ -17,6 +17,18 @@ function markaspot_request_id_install() {
         'type' => 'serial',
         'not null' => TRUE,
         'description' => 'Primary Key: Unique request_id serial ID.',
+      ],
+      'jurisdiction_id' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Root jurisdiction group ID. 0 = single-tenant.',
+      ],
+      'seq' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Per-jurisdiction sequence number.',
       ],
       'request_id' => [
         'type' => 'varchar',
@@ -42,10 +54,14 @@ function markaspot_request_id_install() {
       'offset' => [
         'type' => 'int',
         'not null' => FALSE,
-        'description' => "Offset",
+        'description' => 'Legacy rollover offset.',
       ],
     ],
     'primary key' => ['id'],
+    'indexes' => [
+      'jurisdiction_seq' => ['jurisdiction_id', 'seq'],
+      'jurisdiction_timestamp' => ['jurisdiction_id', 'timestamp'],
+    ],
   ];
 
   // Create table from schema.
@@ -63,24 +79,28 @@ function markaspot_request_id_install() {
   $last_request_nid = reset($entity_ids);
   $node_storage = \Drupal::entityTypeManager()->getStorage('node');
 
-  // Now load the the last service_request and get the last request_id.
+  // Now load the last service_request and get the last request_id.
   $service_request = $node_storage->load($last_request_nid);
   $last_request_id = '';
   $id = NULL;
+  $seq = 0;
   if ($service_request && isset($service_request->request_id->value)) {
     $last_request_id = $service_request->request_id->value;
     $id_parts = explode('-', $last_request_id);
     if (isset($id_parts[0]) && is_numeric($id_parts[0])) {
       $id = (int) $id_parts[0];
+      $seq = $id;
     }
   }
 
   if ($id !== NULL && $last_request_id !== '') {
     try {
       $connection = \Drupal::database();
-      $setId = $connection->insert('markaspot_request_id')
+      $connection->insert('markaspot_request_id')
         ->fields([
           'id' => $id,
+          'jurisdiction_id' => 0,
+          'seq' => $seq,
           'request_id' => $last_request_id,
         ])
         ->execute();
@@ -103,4 +123,154 @@ function markaspot_request_id_update_9600() {
     'not null' => FALSE,
     'description' => "Offset",
   ]);
+}
+
+/**
+ * Add jurisdiction_id and seq columns for per-jurisdiction ID sequences.
+ *
+ * Migrates from global auto-increment to per-jurisdiction sequence tracking.
+ * Backfills seq from existing request_id strings and optionally resolves
+ * jurisdiction_id from node category terms (multi-tenant dev environments).
+ */
+function markaspot_request_id_update_11800() {
+  $schema = \Drupal::database()->schema();
+  $connection = \Drupal::database();
+
+  // Add jurisdiction_id column.
+  if (!$schema->fieldExists('markaspot_request_id', 'jurisdiction_id')) {
+    $schema->addField('markaspot_request_id', 'jurisdiction_id', [
+      'type' => 'int',
+      'not null' => TRUE,
+      'default' => 0,
+      'description' => 'Root jurisdiction group ID. 0 = single-tenant.',
+    ]);
+  }
+
+  // Add seq column.
+  if (!$schema->fieldExists('markaspot_request_id', 'seq')) {
+    $schema->addField('markaspot_request_id', 'seq', [
+      'type' => 'int',
+      'not null' => TRUE,
+      'default' => 0,
+      'description' => 'Per-jurisdiction sequence number.',
+    ]);
+  }
+
+  // Backfill seq from existing request_id strings.
+  $config = \Drupal::config('markaspot_request_id.settings');
+  $delimiter = $config->get('delimiter') ?? '-';
+
+  $rows = $connection->select('markaspot_request_id', 'r')
+    ->fields('r', ['id', 'request_id'])
+    ->condition('seq', 0)
+    ->execute()
+    ->fetchAll();
+
+  foreach ($rows as $row) {
+    if (empty($row->request_id)) {
+      continue;
+    }
+    $parts = explode($delimiter, $row->request_id);
+    $seq = (isset($parts[0]) && is_numeric($parts[0])) ? (int) $parts[0] : 0;
+    if ($seq > 0) {
+      $connection->update('markaspot_request_id')
+        ->fields(['seq' => $seq])
+        ->condition('id', $row->id)
+        ->execute();
+    }
+  }
+
+  // Backfill jurisdiction_id from nodes if markaspot_group is installed.
+  // Only relevant for multi-tenant dev environments. Production single-tenant
+  // sites keep jurisdiction_id = 0.
+  if (\Drupal::moduleHandler()->moduleExists('markaspot_group')) {
+    try {
+      /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+      $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+
+      $nids = \Drupal::entityQuery('node')
+        ->condition('type', 'service_request')
+        ->accessCheck(FALSE)
+        ->execute();
+
+      $nodeStorage = \Drupal::entityTypeManager()->getStorage('node');
+
+      foreach (array_chunk($nids, 50) as $chunk) {
+        $nodes = $nodeStorage->loadMultiple($chunk);
+        foreach ($nodes as $node) {
+          if (empty($node->request_id->value)) {
+            continue;
+          }
+
+          // Resolve jurisdiction from node's category term.
+          if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+            continue;
+          }
+          $categoryTerm = $node->get('field_category')->entity;
+          if (!$categoryTerm || !$categoryTerm->hasField('field_jurisdiction') || $categoryTerm->get('field_jurisdiction')->isEmpty()) {
+            continue;
+          }
+
+          $jid = (int) $categoryTerm->get('field_jurisdiction')->target_id;
+          try {
+            $rootJid = $resolver->getRootJurisdictionId($jid);
+          }
+          catch (\Exception $e) {
+            $rootJid = $jid;
+          }
+
+          if ($rootJid > 0) {
+            // Only update rows not yet assigned to a jurisdiction.
+            // This prevents cross-tenant corruption when multiple tenants
+            // share the same request_id string (e.g., "1-2026" after rollover).
+            $connection->update('markaspot_request_id')
+              ->fields(['jurisdiction_id' => $rootJid])
+              ->condition('request_id', $node->request_id->value)
+              ->condition('jurisdiction_id', 0)
+              ->execute();
+          }
+        }
+      }
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_request_id')
+        ->warning('Jurisdiction backfill skipped: @message', [
+          '@message' => $e->getMessage(),
+        ]);
+    }
+  }
+
+  // Add composite indexes.
+  $spec = [
+    'fields' => [
+      'jurisdiction_id' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'seq' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'timestamp' => [
+        'type' => 'int',
+        'unsigned' => FALSE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+  ];
+
+  if (!$schema->indexExists('markaspot_request_id', 'jurisdiction_seq')) {
+    $schema->addIndex('markaspot_request_id', 'jurisdiction_seq', [
+      'jurisdiction_id', 'seq',
+    ], $spec);
+  }
+
+  if (!$schema->indexExists('markaspot_request_id', 'jurisdiction_timestamp')) {
+    $schema->addIndex('markaspot_request_id', 'jurisdiction_timestamp', [
+      'jurisdiction_id', 'timestamp',
+    ], $spec);
+  }
 }

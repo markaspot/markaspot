@@ -128,8 +128,46 @@ class GeoreportStatsController extends ControllerBase {
         ORDER BY t.weight ASC
       ");
     }
+    elseif ($gid) {
+      // No group filter but jurisdiction-scoped via gid parameter.
+      $gid_node_ids = $this->getNodeIdsInGroup((int) $gid);
+      if (!empty($gid_node_ids)) {
+        $placeholders = implode(',', array_fill(0, count($gid_node_ids), '?'));
+        $query = $this->database->query("
+          SELECT
+            t.tid,
+            t.name AS status,
+            COUNT(DISTINCT n.nid) AS count,
+            h.field_status_hex_color AS color,
+            t.weight
+          FROM {taxonomy_term_field_data} t
+          LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
+          LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
+          LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
+          WHERE t.vid = 'service_status' AND t.default_langcode = 1
+          GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
+          ORDER BY t.weight ASC
+        ", $gid_node_ids);
+      }
+      else {
+        // No nodes in this group - return zeros.
+        $query = $this->database->query("
+          SELECT
+            t.tid,
+            t.name AS status,
+            0 AS count,
+            h.field_status_hex_color AS color,
+            t.weight
+          FROM {taxonomy_term_field_data} t
+          LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
+          WHERE t.vid = 'service_status' AND t.default_langcode = 1
+          GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
+          ORDER BY t.weight ASC
+        ");
+      }
+    }
     else {
-      // No group filter - count all service requests (published and unpublished).
+      // No group filter, no gid - count all service requests.
       $query = $this->database->query("
         SELECT
           t.tid,
@@ -232,7 +270,45 @@ class GeoreportStatsController extends ControllerBase {
       $node_ids[] = (int) $relationship->get('entity_id')->target_id;
     }
 
-    return array_unique($node_ids);
+    return array_values(array_unique($node_ids));
+  }
+
+  /**
+   * Gets node IDs that belong to a specific group.
+   *
+   * This method queries group relationships to find all service_request nodes
+   * assigned to a specific group, regardless of user membership.
+   *
+   * @param int $gid
+   *   The group ID to query.
+   *
+   * @return array<int>
+   *   Array of node IDs belonging to the group.
+   */
+  protected function getNodeIdsInGroup(int $gid): array {
+    if (!$this->moduleHandler()->moduleExists('group')) {
+      return [];
+    }
+
+    $relationship_storage = $this->entityTypeManager()->getStorage('group_relationship');
+    $relationship_ids = $relationship_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('gid', $gid)
+      ->condition('plugin_id', 'group_node:service_request')
+      ->execute();
+
+    if (empty($relationship_ids)) {
+      return [];
+    }
+
+    $relationships = $relationship_storage->loadMultiple($relationship_ids);
+    $node_ids = [];
+
+    foreach ($relationships as $relationship) {
+      $node_ids[] = (int) $relationship->get('entity_id')->target_id;
+    }
+
+    return array_values(array_unique($node_ids));
   }
 
   /**
@@ -295,8 +371,40 @@ class GeoreportStatsController extends ControllerBase {
         'group_filter' => TRUE,
       ]);
     }
+    elseif ($gid) {
+      // No group filter but jurisdiction-scoped via gid parameter.
+      $gid_node_ids = $this->getNodeIdsInGroup((int) $gid);
+      if (!empty($gid_node_ids)) {
+        $placeholders = implode(',', array_fill(0, count($gid_node_ids), '?'));
+        $query = $this->database->query("
+          SELECT
+            t.tid,
+            t.name AS category,
+            COUNT(DISTINCT n.nid) AS count,
+            h.field_category_hex_color AS color,
+            i.field_category_icon_value AS icon
+          FROM {taxonomy_term_field_data} t
+          LEFT JOIN {taxonomy_term__field_category_hex} h ON t.tid = h.entity_id AND h.deleted = 0
+          LEFT JOIN {taxonomy_term__field_category_icon} i ON t.tid = i.entity_id AND i.deleted = 0
+          INNER JOIN {node__field_category} fc ON t.tid = fc.field_category_target_id AND fc.deleted = 0
+          INNER JOIN {node_field_data} n ON fc.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
+          WHERE t.vid = 'service_category' AND t.default_langcode = 1
+          GROUP BY t.tid, t.name, h.field_category_hex_color, i.field_category_icon_value
+          ORDER BY count DESC
+          LIMIT $limit
+        ", $gid_node_ids);
+      }
+      else {
+        // No nodes in this group - return empty.
+        return new JsonResponse([
+          'stats' => [],
+          'total' => 0,
+          'group_filter' => FALSE,
+        ]);
+      }
+    }
     else {
-      // No group filter - count all service requests.
+      // No group filter, no gid - count all service requests.
       $query = $this->database->query("
         SELECT
           t.tid,
