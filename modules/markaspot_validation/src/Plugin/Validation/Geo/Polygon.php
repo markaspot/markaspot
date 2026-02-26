@@ -3,125 +3,102 @@
 namespace Drupal\markaspot_validation\Plugin\Validation\Geo;
 
 /**
- * Temporarily taken from weiyongsheng/polygon.
+ * Simple polygon containment check using ray-casting.
+ *
+ * Points are [x, y] pairs. For geographic coordinates, this means [lng, lat].
+ * This class handles a single polygon ring without holes. For GeoJSON
+ * boundaries with holes and MultiPolygon support, use GeoJsonBoundary instead.
  */
 class Polygon {
-  /**
-   * Checks if point is within polygon.
-   */
 
   /**
-   * The polygon points.
+   * The polygon ring as [lng, lat] coordinate pairs.
    *
    * @var array
    */
-  protected $points = [];
+  protected array $points = [];
 
   /**
-   * Is point within polygon.
+   * Whether the polygon has valid geometry.
    *
    * @var bool
    */
-  protected $valid;
+  protected bool $valid = FALSE;
 
   /**
-   * Polygon constructor.
+   * Constructs a Polygon.
    *
    * @param array|null $points
-   *   The polygon points.
+   *   Array of [lng, lat] coordinate pairs.
    */
   public function __construct(?array $points = NULL) {
     if ($points) {
       $this->setPoints($points);
     }
-    else {
-      $this->valid = FALSE;
-    }
   }
 
   /**
-   * Set points of polygon.
+   * Sets the polygon ring coordinates.
    *
    * @param array $points
-   *   The polygon points.
+   *   Array of [lng, lat] coordinate pairs. Needs at least 3 points.
    *
    * @return $this
-   *   Return result.
    */
-  public function setPoints(array $points) {
+  public function setPoints(array $points): static {
     $this->valid = FALSE;
-    if (count($points) >= 3) {
-      $this->valid = TRUE;
-      foreach ($points as $point) {
-        if (!$this->checkPoint($point)) {
-          $this->valid = FALSE;
-
-          return $this;
-        }
-      }
-    }
-    else {
+    if (count($points) < 3) {
       return $this;
     }
-    $this->points = $points;
 
+    foreach ($points as $point) {
+      if (!is_array($point) || count($point) !== 2
+        || !is_numeric($point[0]) || !is_numeric($point[1])) {
+        return $this;
+      }
+    }
+
+    $this->points = $points;
+    $this->valid = TRUE;
     return $this;
   }
 
   /**
-   * Contain all points of min rectangle points.
+   * Returns the polygon coordinates.
    *
    * @return array
-   *   return polygon as array.
+   *   The [lng, lat] coordinate pairs.
    */
-  public function rectanglePoints() {
-    $lats = array_column($this->points, 0);
-    $lngs = array_column($this->points, 1);
-    $min_lat = min($lats);
-    $min_lng = min($lngs);
-    $max_lat = max($lats);
-    $max_lng = max($lngs);
-
-    return [
-      [$min_lat, $min_lng],
-      [$min_lat, $max_lng],
-      [$max_lat, $max_lng],
-      [$max_lat, $min_lng],
-    ];
-  }
-
-  /**
-   * Get points of poloygon.
-   *
-   * @return array
-   *   The poloygon.
-   */
-  public function getPoints() {
+  public function getPoints(): array {
     return $this->points;
   }
 
   /**
-   * Return status if valid.
+   * Whether this polygon has valid geometry.
    *
    * @return bool
-   *   valid or not.
+   *   TRUE if the polygon has at least 3 valid coordinate pairs.
    */
-  public function isValid() {
+  public function isValid(): bool {
     return $this->valid;
   }
 
   /**
-   * Check if point is part of polygon.
+   * Checks if a point is inside this polygon ring.
    *
-   * @param float $lat
-   *   The latitude value.
+   * Uses the ray-casting algorithm (even-odd rule). A ray is cast eastward
+   * from the test point; if it crosses an odd number of polygon edges,
+   * the point is inside.
+   *
    * @param float $lng
-   *   The longitude value.
+   *   Longitude of the test point (x-axis).
+   * @param float $lat
+   *   Latitude of the test point (y-axis).
    *
    * @return bool
-   *   Return result.
+   *   TRUE if the point is inside the polygon.
    */
-  public function contain(float $lat, float $lng): bool {
+  public function contain(float $lng, float $lat): bool {
     $count = 0;
     $points = $this->points;
     $points[] = reset($points);
@@ -132,13 +109,13 @@ class Polygon {
       $y1 = $point1[1];
       $x2 = $point2[0];
       $y2 = $point2[1];
-      if ($lat >= min($x1, $x2) && $lat <= max($x1, $x2) && $x1 != $x2) {
-        $tmp = $y1 + ($lat - $x1) / ($x2 - $x1) * ($y2 - $y1);
-        if ($tmp < $lng) {
+
+      if ($lng >= min($x1, $x2) && $lng <= max($x1, $x2) && $x1 != $x2) {
+        $tmp = $y1 + ($lng - $x1) / ($x2 - $x1) * ($y2 - $y1);
+        if ($tmp < $lat) {
           $count++;
         }
-        elseif ($tmp == $lng) {
-          // In line.
+        elseif ($tmp == $lat) {
           return TRUE;
         }
       }
@@ -146,19 +123,6 @@ class Polygon {
     }
 
     return $count % 2 === 1;
-  }
-
-  /**
-   * Check if submitted values are valid coordinates.
-   *
-   * @param array $point
-   *   The point.
-   *
-   * @return bool
-   *   return result.
-   */
-  private function checkPoint(array $point) {
-    return is_array($point) && count($point) == 2 && is_numeric($point[0]) && is_numeric($point[1]);
   }
 
 }

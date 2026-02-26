@@ -86,11 +86,15 @@ class ImageProcessingService {
    *
    * @param array $file_uris
    *   Array of file URIs to process.
+   * @param string|null $langcode
+   *   Optional language code for the response.
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction group ID to filter categories.
    *
    * @return array|null
    *   The AI processing result or NULL on failure.
    */
-  public function processImages(array $file_uris): ?array {
+  public function processImages(array $file_uris, ?string $langcode = NULL, ?int $jurisdictionId = NULL): ?array {
     $config = $this->configFactory->get('markaspot_vision.settings');
     $prompt_template = $config->get('image_prompt');
 
@@ -102,18 +106,38 @@ class ImageProcessingService {
       $image_contents = [];
       foreach ($file_uris as $file_uri) {
         $styled_file_path = $this->getStyledImagePath($file_uri);
-        $image_contents[] = base64_encode(file_get_contents($styled_file_path));
+        $contents = file_get_contents($styled_file_path);
+        if ($contents === false) {
+          $this->logger->warning('Failed to read image file: @path', ['@path' => $styled_file_path]);
+          continue;
+        }
+        $image_contents[] = base64_encode($contents);
       }
 
-      $categories = $this->getAllCategoriesHierarchical();
+      $categories = $this->getAllCategoriesHierarchical($jurisdictionId, $langcode);
       $category_json = json_encode($categories, JSON_UNESCAPED_UNICODE);
       $category_json = str_replace(["\n", "\r"], '', $category_json);
+
+      // Resolve language for the AI response.
+      $language = $this->resolveLanguageName($langcode);
 
       // Enhance the prompt to emphasize collective analysis.
       $image_count = count($file_uris);
       $collective_prefix = "The following set of {$image_count} images shows a single situation or issue. " .
         "Please analyze them together as one complete scene. Consider how the images relate to and complement each other. ";
-      $prompt = $collective_prefix . str_replace('{categories}', $category_json, $prompt_template);
+      $prompt = str_replace(
+        ['{categories}', '{language}'],
+        [$category_json, $language],
+        $prompt_template
+      );
+      $prompt = $collective_prefix . $prompt;
+
+      // Append a language instruction so the AI responds in the user's language.
+      // This works even if the prompt template doesn't contain {language}.
+      if ($langcode && $langcode !== 'en') {
+        $prompt .= "\n\nIMPORTANT: Write the \"description\" and \"hazard_issues\" fields in {$language}. "
+          . "Use the JSON key \"description\" (not \"description_de\" or any locale-suffixed key).";
+      }
 
       // Build messages array.
       $messages = [];
@@ -206,7 +230,7 @@ class ImageProcessingService {
           $attempts++;
           if ($attempts < $max_retries) {
             // Exponential backoff.
-            $wait_time = pow(2, $attempts) * 10;
+            $wait_time = min(20, pow(2, $attempts) * 10);
             $this->logger->warning("Rate limited. Waiting {$wait_time}s before retry (attempt {$attempts}/{$max_retries})");
             sleep($wait_time);
             continue;
@@ -226,7 +250,7 @@ class ImageProcessingService {
         $attempts++;
 
         if ($attempts < $max_retries) {
-          $wait_time = pow(2, $attempts) * 10;
+          $wait_time = min(20, pow(2, $attempts) * 10);
           $this->logger->error('Request failed: ' . $e->getMessage() . ". Retrying in {$wait_time} seconds...");
           sleep($wait_time);
           continue;
@@ -330,7 +354,7 @@ class ImageProcessingService {
             'type' => 'object',
             'properties' => [
               'category' => ['type' => 'integer'],
-              'description_de' => ['type' => 'string'],
+              'description' => ['type' => 'string'],
               'alt_text' => [
                 'type' => 'array',
                 'items' => ['type' => 'string'],
@@ -356,7 +380,7 @@ class ImageProcessingService {
             ],
             'required' => [
               'category',
-              'description_de',
+              'description',
               'alt_text',
               'hazard_flag',
               'hazard_level',
@@ -416,15 +440,36 @@ class ImageProcessingService {
   /**
    * Retrieves all leaf categories with their IDs and full paths.
    *
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction group ID to filter categories.
+   *   Without jurisdiction, loads all categories (single-installation mode).
+   * @param string|null $langcode
+   *   Optional language code. When set, category names are returned in
+   *   this language (if a translation exists), so the AI prompt contains
+   *   localized labels.
+   *
    * @return array
    *   Array of leaf categories with tid, path, and label.
    */
-  private function getAllCategoriesHierarchical(): array {
+  private function getAllCategoriesHierarchical(?int $jurisdictionId = NULL, ?string $langcode = NULL): array {
     try {
       $vid = 'service_category';
-      // Load all taxonomy terms for the vocabulary, including their statuses.
+      $properties = ['vid' => $vid, 'status' => 1];
+      if ($jurisdictionId) {
+        $properties['field_jurisdiction'] = $jurisdictionId;
+      }
+      // Load taxonomy terms for the vocabulary, filtered by jurisdiction.
       $terms = $this->entityTypeManager->getStorage('taxonomy_term')
-        ->loadByProperties(['vid' => $vid, 'status' => 1]);
+        ->loadByProperties($properties);
+
+      // Translate terms if a specific language is requested.
+      if ($langcode) {
+        foreach ($terms as $tid => $term) {
+          if ($term->hasTranslation($langcode)) {
+            $terms[$tid] = $term->getTranslation($langcode);
+          }
+        }
+      }
 
       // Create a lookup array for quick parent-child checks.
       $term_lookup = [];
@@ -491,6 +536,34 @@ class ImageProcessingService {
     }
 
     return implode(' > ', $path_parts);
+  }
+
+  /**
+   * Resolves a langcode to a human-readable language name for AI prompts.
+   *
+   * @param string|null $langcode
+   *   The language code (e.g., 'de', 'fr', 'nl').
+   *
+   * @return string
+   *   The language name in English (e.g., 'German', 'French').
+   */
+  private function resolveLanguageName(?string $langcode): string {
+    $map = [
+      'de' => 'German',
+      'en' => 'English',
+      'fr' => 'French',
+      'es' => 'Spanish',
+      'nl' => 'Dutch',
+      'it' => 'Italian',
+      'pt' => 'Portuguese',
+      'pl' => 'Polish',
+      'da' => 'Danish',
+      'tr' => 'Turkish',
+      'uk' => 'Ukrainian',
+      'ar' => 'Arabic',
+    ];
+
+    return $map[$langcode ?? ''] ?? 'English';
   }
 
 }

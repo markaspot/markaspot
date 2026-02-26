@@ -226,7 +226,10 @@ class GeoreportServiceIndexResource extends ResourceBase {
     // Get language code with priority: query param > Accept-Language header > site default.
     $langcode = $this->resolveLanguageCode($parameters);
 
-    $services = $this->georeportProcessor->getTaxonomyTree('service_category', $langcode);
+    // Optional jurisdiction filter for multi-tenant setups.
+    $jurisdictionId = isset($parameters['jurisdiction_id']) ? (int) $parameters['jurisdiction_id'] : NULL;
+
+    $services = $this->georeportProcessor->getTaxonomyTree('service_category', $langcode, 0, NULL, $jurisdictionId);
 
     if (!empty($services)) {
       return $services;

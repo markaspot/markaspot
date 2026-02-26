@@ -21,6 +21,7 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\markaspot_open311\Service\SearchApiQueryService;
@@ -102,6 +103,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
   protected $searchApiQueryService;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface
+   */
+  protected $hierarchyResolver;
+
+  /**
    * The flood service for rate limiting.
    *
    * @var \Drupal\Core\Flood\FloodInterface
@@ -166,6 +174,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   The Search API query service.
    * @param \Drupal\Core\Flood\FloodInterface $flood
    *   The flood service for rate limiting.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   *   The jurisdiction hierarchy resolver.
    */
   public function __construct(
     array $configuration,
@@ -183,6 +193,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     LanguageManagerInterface $language_manager,
     SearchApiQueryService $search_api_query_service,
     FloodInterface $flood,
+    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -194,6 +205,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $this->languageManager = $language_manager;
     $this->searchApiQueryService = $search_api_query_service;
     $this->flood = $flood;
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -215,7 +227,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $container->get('markaspot_open311.processor'),
       $container->get('language_manager'),
       $container->get('markaspot_open311.search_api_query'),
-      $container->get('flood')
+      $container->get('flood'),
+      $container->get('markaspot_group.hierarchy_resolver')
     );
   }
 
@@ -573,20 +586,49 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
     }
 
-    // Handle status filtering.
+    // Get jurisdiction ID early (needed for both status and service code filtering).
+    $jurisdictionId = isset($parameters['jurisdiction_id']) ? (int) $parameters['jurisdiction_id'] : NULL;
+
+    // Filter requests by jurisdiction.
+    // For child jurisdictions (with a parent), filter by group membership
+    // since they inherit the parent's category terms.
+    // For root jurisdictions, filter by category TIDs (existing behavior).
+    if ($jurisdictionId && !isset($parameters['service_code'])) {
+      $isChild = $this->hierarchyResolver->isChildJurisdiction($jurisdictionId);
+      if ($isChild) {
+        // Child jurisdiction: filter by group membership (nodes in this group).
+        $nodeIds = $this->hierarchyResolver->getNodeIdsInJurisdiction($jurisdictionId);
+        if (!empty($nodeIds)) {
+          $query->condition('nid', $nodeIds, 'IN');
+        }
+        else {
+          $query->condition('nid', [0], 'IN');
+        }
+      }
+      else {
+        // Root jurisdiction: filter by category TIDs.
+        $categoryTids = $this->georeportProcessor->getCategoryTidsForJurisdiction($jurisdictionId);
+        if (!empty($categoryTids)) {
+          $query->condition('field_category', $categoryTids, 'IN');
+        }
+        else {
+          $query->condition('nid', [0], 'IN');
+        }
+      }
+    }
+
+    // Handle status filtering (jurisdiction-aware).
     if (isset($parameters['status'])) {
-      $tids = $this->georeportProcessor->mapStatusToTaxonomyIds($parameters['status']);
+      $tids = $this->georeportProcessor->mapStatusToTaxonomyIds($parameters['status'], $jurisdictionId);
       if (!empty($tids)) {
         $query->condition('field_status', $tids, 'IN');
       }
     }
-
-    // Handle service code filtering.
     if (isset($parameters['service_code'])) {
       $service_codes = explode(',', $parameters['service_code']);
       if (count($service_codes) == 1) {
         // Single service code lookup is simpler.
-        $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_codes[0]);
+        $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_codes[0], $jurisdictionId);
         $query->condition('field_category', $tid);
       }
       else {
@@ -594,7 +636,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
         $categoryTids = [];
         foreach ($service_codes as $service_code) {
           try {
-            $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_code);
+            $tid = $this->georeportProcessor->mapServiceCodeToTaxonomy($service_code, $jurisdictionId);
             $categoryTids[] = $tid;
           }
           catch (\Exception $e) {
@@ -624,6 +666,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $this->checkRateLimit('georeport_api_post');
 
     try {
+      // Validate jurisdiction access for authenticated API users.
+      $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
+      $this->georeportProcessor->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
+
       // Return result to handler for formatting and response.
       return $this->createNode($request_data);
     }
@@ -649,21 +695,25 @@ class GeoreportRequestIndexResource extends ResourceBase {
     if ($node instanceof ContentEntityInterface) {
       $validation = $this->validate($node);
       if ($validation === TRUE) {
-        // Add an initial paragraph on valid post.
-        $status_open = $this->config->get('status_open_start');
-        // @todo put this in config.
+        // Determine initial status (jurisdiction-aware).
+        $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
+        $initialStatusTid = $this->georeportProcessor->getInitialStatusTid($jurisdictionId);
+
         $status_note_initial = $this->t('The service request has been created.');
 
-        $paragraph = Paragraph::create([
+        $paragraph_fields = [
           'type' => 'status',
           'field_status_note' => [
             "value"  => $status_note_initial,
             "format" => "full_html",
           ],
-          'field_status_term' => [
-            "target_id"  => $status_open[0],
-          ],
-        ]);
+        ];
+        if ($initialStatusTid) {
+          $paragraph_fields['field_status_term'] = [
+            "target_id" => $initialStatusTid,
+          ];
+        }
+        $paragraph = Paragraph::create($paragraph_fields);
         $paragraph->save();
 
         $node->field_status_notes = [
@@ -679,7 +729,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
         // Set the referenced term field.
         $node->field_status = [
           [
-            'target_id' => $status_open,
+            'target_id' => $initialStatusTid,
           ],
         ];
 

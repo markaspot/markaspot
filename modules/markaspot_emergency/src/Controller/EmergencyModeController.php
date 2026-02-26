@@ -69,11 +69,15 @@ class EmergencyModeController extends ControllerBase {
   /**
    * Get emergency mode status.
    */
-  public function getStatus() {
+  public function getStatus(?Request $request = NULL) {
     $config = $this->configFactory->get('markaspot_emergency.settings');
 
     $status = (string) $config->get('emergency_mode.status');
     $active = $status === 'active';
+
+    // Get jurisdiction filter from query parameter.
+    $jurisdictionId = $request?->query->get('jurisdiction_id')
+      ? (int) $request->query->get('jurisdiction_id') : NULL;
 
     // Build list of currently available categories for the UI.
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
@@ -81,6 +85,10 @@ class EmergencyModeController extends ControllerBase {
       ->condition('vid', 'service_category')
       ->condition('status', 1)
       ->accessCheck(FALSE);
+
+    if ($jurisdictionId) {
+      $query->condition('field_jurisdiction', $jurisdictionId);
+    }
 
     if ($active) {
       // Emergency mode: only emergency categories.
@@ -174,7 +182,8 @@ class EmergencyModeController extends ControllerBase {
 
     // Admin-only: expose restore queue size to assist operations dashboards.
     if ($this->currentUser->hasPermission('administer emergency mode')) {
-      $snapshot = \Drupal::state()->get('markaspot_emergency.original_published_tids', []);
+      $stateKey = $this->getStateKey($jurisdictionId);
+      $snapshot = \Drupal::state()->get($stateKey, []);
       $payload['details']['restore_queue_count'] = is_array($snapshot) ? count($snapshot) : 0;
     }
 
@@ -199,6 +208,9 @@ class EmergencyModeController extends ControllerBase {
       return new JsonResponse(['error' => 'Access denied'], 403);
     }
 
+    // Get jurisdiction ID for scoping (multi-tenant mode).
+    $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
+
     $config = $this->configFactory->getEditable('markaspot_emergency.settings');
 
     // Update configuration.
@@ -213,6 +225,7 @@ class EmergencyModeController extends ControllerBase {
 
     // Behavior by mode type.
     $mode_type = (string) ($data['mode_type'] ?? $config->get('emergency_mode.mode_type') ?? 'disaster');
+    $stateKey = $this->getStateKey($jurisdictionId);
 
     if ($mode_type === 'maintenance') {
       // Load maintenance settings.
@@ -222,11 +235,10 @@ class EmergencyModeController extends ControllerBase {
       if ($hide_others) {
         // Snapshot all published categories once before unpublishing any.
         $state = \Drupal::state();
-        $key = 'markaspot_emergency.original_published_tids';
-        if (empty($state->get($key))) {
-          $state->set($key, $this->getAllPublishedTermIds());
+        if (empty($state->get($stateKey))) {
+          $state->set($stateKey, $this->getAllPublishedTermIds($jurisdictionId));
         }
-        $this->unpublishNonSelectedCategories($keep_tids);
+        $this->unpublishNonSelectedCategories($keep_tids, $jurisdictionId);
       }
 
       if (!empty($keep_tids)) {
@@ -237,18 +249,17 @@ class EmergencyModeController extends ControllerBase {
       // Emergency/crisis: unpublish regular categories if requested.
       if ($data['unpublish_categories'] ?? $config->get('categories.unpublish_regular')) {
         $state = \Drupal::state();
-        $key = 'markaspot_emergency.original_published_tids';
         // Only capture once if not already set.
-        if (empty($state->get($key))) {
-          $original_tids = $this->getRegularPublishedTermIds();
-          $state->set($key, $original_tids);
+        if (empty($state->get($stateKey))) {
+          $original_tids = $this->getRegularPublishedTermIds($jurisdictionId);
+          $state->set($stateKey, $original_tids);
         }
-        $this->unpublishRegularCategories();
+        $this->unpublishRegularCategories($jurisdictionId);
       }
 
       // Create/publish emergency categories.
       if ($data['create_emergency_categories'] ?? TRUE) {
-        $this->createEmergencyCategories();
+        $this->createEmergencyCategories($jurisdictionId);
       }
     }
 
@@ -279,6 +290,9 @@ class EmergencyModeController extends ControllerBase {
       return new JsonResponse(['error' => 'Access denied'], 403);
     }
 
+    // Get jurisdiction ID for scoping (multi-tenant mode).
+    $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
+
     $config = $this->configFactory->getEditable('markaspot_emergency.settings');
 
     // Update configuration.
@@ -293,9 +307,9 @@ class EmergencyModeController extends ControllerBase {
       // Only unpublish emergency categories when we were in emergency/crisis.
       $last_mode = (string) $config->get('emergency_mode.mode_type');
       if ($last_mode !== 'maintenance') {
-        $this->unpublishEmergencyCategories();
+        $this->unpublishEmergencyCategories($jurisdictionId);
       }
-      $this->restoreRegularCategories();
+      $this->restoreRegularCategories($jurisdictionId);
     }
 
     $this->logger->notice('Emergency mode deactivated by user @user (ID: @uid)', [
@@ -317,9 +331,9 @@ class EmergencyModeController extends ControllerBase {
   /**
    * Unpublish all regular categories (non-emergency).
    */
-  protected function unpublishRegularCategories() {
+  protected function unpublishRegularCategories(?int $jurisdictionId = NULL) {
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $tids = $this->getRegularPublishedTermIds();
+    $tids = $this->getRegularPublishedTermIds($jurisdictionId);
     if (!empty($tids)) {
       $terms = $storage->loadMultiple($tids);
       foreach ($terms as $term) {
@@ -335,10 +349,10 @@ class EmergencyModeController extends ControllerBase {
   /**
    * Restore regular categories to published state from State API.
    */
-  protected function restoreRegularCategories() {
+  protected function restoreRegularCategories(?int $jurisdictionId = NULL) {
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $state = \Drupal::state();
-    $key = 'markaspot_emergency.original_published_tids';
+    $key = $this->getStateKey($jurisdictionId);
     $tids = $state->get($key, []);
     if (!empty($tids)) {
       $terms = $storage->loadMultiple($tids);
@@ -359,13 +373,17 @@ class EmergencyModeController extends ControllerBase {
   /**
    * Unpublish all emergency categories.
    */
-  protected function unpublishEmergencyCategories() {
+  protected function unpublishEmergencyCategories(?int $jurisdictionId = NULL) {
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $query = $storage->getQuery()
       ->condition('vid', 'service_category')
       ->condition('field_emergency_category', TRUE)
       ->condition('status', 1)
       ->accessCheck(FALSE);
+
+    if ($jurisdictionId) {
+      $query->condition('field_jurisdiction', $jurisdictionId);
+    }
 
     $tids = $query->execute();
     if (!empty($tids)) {
@@ -402,13 +420,16 @@ class EmergencyModeController extends ControllerBase {
 
   /**
    * Unpublish all published categories except the provided TIDs. */
-  protected function unpublishNonSelectedCategories(array $keep_tids): void {
+  protected function unpublishNonSelectedCategories(array $keep_tids, ?int $jurisdictionId = NULL): void {
     $keep = array_values(array_unique(array_filter(array_map('intval', $keep_tids))));
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $query = $storage->getQuery()
       ->condition('vid', 'service_category')
       ->condition('status', 1)
       ->accessCheck(FALSE);
+    if ($jurisdictionId) {
+      $query->condition('field_jurisdiction', $jurisdictionId);
+    }
     if ($keep) {
       $query->condition('tid', $keep, 'NOT IN');
     }
@@ -428,12 +449,16 @@ class EmergencyModeController extends ControllerBase {
    *
    * Regular means terms that either do not have the emergency flag or have it set to FALSE.
    */
-  protected function getRegularPublishedTermIds(): array {
+  protected function getRegularPublishedTermIds(?int $jurisdictionId = NULL): array {
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $query = $storage->getQuery()
       ->condition('vid', 'service_category')
       ->condition('status', 1)
       ->accessCheck(FALSE);
+
+    if ($jurisdictionId) {
+      $query->condition('field_jurisdiction', $jurisdictionId);
+    }
 
     $regular = $query->orConditionGroup()
       ->notExists('field_emergency_category')
@@ -445,19 +470,22 @@ class EmergencyModeController extends ControllerBase {
 
   /**
    * Get IDs of all currently published categories. */
-  protected function getAllPublishedTermIds(): array {
+  protected function getAllPublishedTermIds(?int $jurisdictionId = NULL): array {
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $query = $storage->getQuery()
       ->condition('vid', 'service_category')
       ->condition('status', 1)
       ->accessCheck(FALSE);
+    if ($jurisdictionId) {
+      $query->condition('field_jurisdiction', $jurisdictionId);
+    }
     return array_values($query->execute());
   }
 
   /**
    * Create or publish emergency categories from presets.
    */
-  protected function createEmergencyCategories() {
+  protected function createEmergencyCategories(?int $jurisdictionId = NULL) {
     $config = $this->configFactory->get('markaspot_emergency.settings');
     $presets = $config->get('categories.emergency_presets');
 
@@ -471,11 +499,15 @@ class EmergencyModeController extends ControllerBase {
 
     foreach ($presets as $preset) {
       // Check if emergency category already exists.
-      $existing = $storage->loadByProperties([
+      $existProps = [
         'vid' => 'service_category',
         'name' => $preset['name'],
         'field_emergency_category' => TRUE,
-      ]);
+      ];
+      if ($jurisdictionId) {
+        $existProps['field_jurisdiction'] = $jurisdictionId;
+      }
+      $existing = $storage->loadByProperties($existProps);
 
       if (!empty($existing)) {
         // Category exists, just publish it.
@@ -499,13 +531,17 @@ class EmergencyModeController extends ControllerBase {
       }
       else {
         // Create new emergency category.
-        $term = $storage->create([
+        $values = [
           'vid' => 'service_category',
           'name' => $preset['name'],
           'status' => 1,
           'weight' => $preset['weight'],
           'field_emergency_category' => TRUE,
-        ]);
+        ];
+        if ($jurisdictionId) {
+          $values['field_jurisdiction'] = $jurisdictionId;
+        }
+        $term = $storage->create($values);
         // Set optional fields if present on the bundle.
         if ($term->hasField('field_icon') && !empty($preset['icon'])) {
           $term->set('field_icon', $preset['icon']);
@@ -535,6 +571,17 @@ class EmergencyModeController extends ControllerBase {
         '@count' => $published_count,
       ]);
     }
+  }
+
+  /**
+   * Gets the jurisdiction-scoped state key for storing snapshot TIDs.
+   */
+  private function getStateKey(?int $jurisdictionId = NULL): string {
+    $key = 'markaspot_emergency.original_published_tids';
+    if ($jurisdictionId) {
+      $key .= '.' . $jurisdictionId;
+    }
+    return $key;
   }
 
   /**

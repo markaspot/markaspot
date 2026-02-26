@@ -298,6 +298,15 @@ class GeoreportRequestResource extends ResourceBase {
         throw new AccessDeniedHttpException();
       }
 
+      // Validate jurisdiction access: user must be member of the node's jurisdiction.
+      $request_id = $this->getRequestId($id);
+      $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['request_id' => $request_id]);
+      if (!empty($nodes)) {
+        $node = reset($nodes);
+        $jurisdictionId = $this->georeportProcessor->getJurisdictionIdFromNode($node);
+        $this->georeportProcessor->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
+      }
+
       // Return result to handler for formatting and response.
       return $this->updateNode($id, $request_data);
     }

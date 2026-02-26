@@ -2,14 +2,13 @@
 
 namespace Drupal\markaspot_vision\Controller;
 
-use Drupal\Core\Access\CsrfTokenGenerator;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 
 /**
@@ -32,11 +31,11 @@ class ImageProcessingController extends ControllerBase {
   protected LoggerInterface $logger;
 
   /**
-   * The CSRF token generator.
+   * The flood service.
    *
-   * @var \Drupal\Core\Access\CsrfTokenGenerator
+   * @var \Drupal\Core\Flood\FloodInterface
    */
-  protected CsrfTokenGenerator $csrfToken;
+  protected FloodInterface $flood;
 
   /**
    * Constructs a new ImageProcessingController object.
@@ -45,17 +44,17 @@ class ImageProcessingController extends ControllerBase {
    *   The image processing service.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger factory.
-   * @param \Drupal\Core\Access\CsrfTokenGenerator $csrf_token
-   *   The CSRF token generator.
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   The flood service.
    */
   public function __construct(
     ImageProcessingService $image_processing_service,
     LoggerChannelFactoryInterface $logger_factory,
-    CsrfTokenGenerator $csrf_token,
+    FloodInterface $flood,
   ) {
     $this->imageProcessingService = $image_processing_service;
     $this->logger = $logger_factory->get('markaspot_vision');
-    $this->csrfToken = $csrf_token;
+    $this->flood = $flood;
   }
 
   /**
@@ -65,42 +64,8 @@ class ImageProcessingController extends ControllerBase {
     return new static(
       $container->get('markaspot_vision.image_processing'),
       $container->get('logger.factory'),
-      $container->get('csrf_token')
+      $container->get('flood')
     );
-  }
-
-  /**
-   * Validates CSRF token from request (header or query parameter).
-   *
-   * Accepts token from:
-   * - HTTP header: X-CSRF-Token
-   * - Query parameter: token or csrf_token
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The incoming request.
-   *
-   * @throws \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException
-   *   When the CSRF token is invalid or missing.
-   */
-  protected function validateCsrfToken(Request $request): void {
-    // Try to get token from multiple sources (header takes precedence).
-    $token = $request->headers->get('X-CSRF-Token')
-      ?? $request->query->get('token')
-      ?? $request->query->get('csrf_token');
-
-    if (empty($token)) {
-      $this->logger->warning('CSRF token missing from request to @path', [
-        '@path' => $request->getPathInfo(),
-      ]);
-      throw new AccessDeniedHttpException('CSRF token is required.');
-    }
-
-    if (!$this->csrfToken->validate($token)) {
-      $this->logger->warning('Invalid CSRF token provided for request to @path', [
-        '@path' => $request->getPathInfo(),
-      ]);
-      throw new AccessDeniedHttpException('Invalid CSRF token.');
-    }
   }
 
   /**
@@ -113,23 +78,36 @@ class ImageProcessingController extends ControllerBase {
    *   The JSON response with AI results.
    */
   public function getAIResults(Request $request): JsonResponse {
-    // CSRF validation disabled - endpoint is public and protected by rate limiting.
-    // The validateCsrfToken() method is kept for potential future use with authenticated users.
+    // Rate limiting: 10 requests per IP per hour.
+    $ip = $request->getClientIp();
+    if (!$this->flood->isAllowed('markaspot_vision.analyze', 10, 3600, $ip)) {
+      return new JsonResponse([
+        'error' => $this->t('Too many requests. Please try again later.'),
+      ], 429);
+    }
+    $this->flood->register('markaspot_vision.analyze', 3600, $ip);
 
     try {
-      // Decode incoming request content
+      // Decode incoming request content.
       $data = json_decode($request->getContent(), TRUE);
       if (empty($data['media_ids']) || !is_array($data['media_ids'])) {
-        throw new \Exception('Invalid input: "media_ids" is required and should be an array.');
+        return new JsonResponse([
+          'error' => $this->t('Invalid input: "media_ids" is required and should be an array.'),
+        ], 400);
       }
 
-      // Fetch media entities by UUIDs
+      if (count($data['media_ids']) > 5) {
+        return new JsonResponse([
+          'error' => $this->t('Too many media items. Maximum is @max.', ['@max' => 5]),
+        ], 400);
+      }
+
+      // Fetch media entities by UUIDs (single query).
       $media_storage = $this->entityTypeManager()->getStorage('media');
       $media_entities = [];
-      foreach ($data['media_ids'] as $uuid) {
-        $media = $media_storage->loadByProperties(['uuid' => $uuid]);
-        $media = reset($media);
-        if ($media) {
+      $loaded = $media_storage->loadByProperties(['uuid' => $data['media_ids']]);
+      foreach ($loaded as $media) {
+        if ($media->access('view')) {
           $media_entities[$media->id()] = $media;
         }
       }
@@ -156,8 +134,11 @@ class ImageProcessingController extends ControllerBase {
       // Get user's language preference from request (frontend sends this).
       $langcode = $data['language'] ?? NULL;
 
+      // Get jurisdiction ID for filtering categories (multi-tenant mode).
+      $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
+
       // Process images with ImageProcessingService
-      $ai_result = $this->imageProcessingService->processImages($file_uris, $langcode);
+      $ai_result = $this->imageProcessingService->processImages($file_uris, $langcode, $jurisdictionId);
       if (!$ai_result) {
         throw new \Exception('Failed to process images using the AI service.');
       }
@@ -197,7 +178,9 @@ class ImageProcessingController extends ControllerBase {
             }
           }
 
-          $media->save();
+          if ($media->access('update')) {
+            $media->save();
+          }
           $this->logger->notice('AI results successfully saved for media entity @id.', [
             '@id' => $media->id(),
           ]);
@@ -217,7 +200,7 @@ class ImageProcessingController extends ControllerBase {
     }
     catch (\Exception $e) {
       $this->logger->error('Error in getAIResults: @message', ['@message' => $e->getMessage()]);
-      return new JsonResponse(['error' => $e->getMessage()], 500);
+      return new JsonResponse(['error' => $this->t('An error occurred during image analysis.')], 500);
     }
   }
 

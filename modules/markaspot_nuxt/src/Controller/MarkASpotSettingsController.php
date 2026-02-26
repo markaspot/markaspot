@@ -7,7 +7,7 @@ use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
-use Symfony\Component\HttpFoundation\JsonResponse;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -29,6 +29,13 @@ class MarkASpotSettingsController extends ControllerBase {
   protected StreamWrapperManagerInterface $streamWrapperManager;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface
+   */
+  protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Constructs a MarkASpotSettingsController object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -37,15 +44,19 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The config factory.
    * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $stream_wrapper_manager
    *   The stream wrapper manager.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy_resolver
+   *   The jurisdiction hierarchy resolver.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
     ConfigFactoryInterface $config_factory,
     StreamWrapperManagerInterface $stream_wrapper_manager,
+    JurisdictionHierarchyResolverInterface $hierarchy_resolver,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
     $this->streamWrapperManager = $stream_wrapper_manager;
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -55,7 +66,8 @@ class MarkASpotSettingsController extends ControllerBase {
     return new static(
       $container->get('entity_type.manager'),
       $container->get('config.factory'),
-      $container->get('stream_wrapper_manager')
+      $container->get('stream_wrapper_manager'),
+      $container->get('markaspot_group.hierarchy_resolver')
     );
   }
 
@@ -180,6 +192,12 @@ class MarkASpotSettingsController extends ControllerBase {
       $cache_metadata->addCacheableDependency($group);
     }
 
+    // Resolve root jurisdiction ID for taxonomy filtering.
+    // Child jurisdictions inherit the parent's service catalog (categories, statuses).
+    $taxonomyJurisdictionId = $group
+      ? $this->hierarchyResolver->getRootJurisdictionId((int) $group->id())
+      : NULL;
+
     if ($group && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
       $nuxt_json = $group->get('field_nuxt_config')->value;
       $jurisdiction_config = json_decode($nuxt_json, TRUE);
@@ -192,6 +210,7 @@ class MarkASpotSettingsController extends ControllerBase {
           'slug' => $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()
             ? $group->get('field_slug')->value
             : NULL,
+          'taxonomyJurisdictionId' => $taxonomyJurisdictionId,
         ];
 
         // Merge jurisdiction config into settings.
@@ -216,6 +235,44 @@ class MarkASpotSettingsController extends ControllerBase {
         foreach ($config_keys as $key) {
           if (!empty($jurisdiction_config[$key])) {
             $settings[$key] = $jurisdiction_config[$key];
+          }
+        }
+
+        // Sync map center/zoom from jurisdiction config to top-level keys.
+        // The frontend reads center_lat/center_lng/zoom_initial at top level,
+        // but jurisdictions store these inside the nested 'map' object.
+        if (!empty($settings['map'])) {
+          $map = $settings['map'];
+          // Handle array format: map.center = [lat, lng].
+          if (!empty($map['center']) && is_array($map['center'])) {
+            $settings['center_lat'] = $map['center'][0];
+            $settings['center_lng'] = $map['center'][1];
+          }
+          // Handle separate key format: map.centerLat / map.centerLng.
+          if (!empty($map['centerLat'])) {
+            $settings['center_lat'] = $map['centerLat'];
+          }
+          if (!empty($map['centerLng'])) {
+            $settings['center_lng'] = $map['centerLng'];
+          }
+          // Handle zoom overrides (multiple naming conventions).
+          if (!empty($map['zoomInitial'])) {
+            $settings['zoom_initial'] = $map['zoomInitial'];
+          }
+          elseif (!empty($map['zoomLevel'])) {
+            $settings['zoom_initial'] = $map['zoomLevel'];
+          }
+        }
+
+        // Sync geocoding settings from jurisdiction config.
+        // features.geocoding.country/region override global geocoding settings.
+        if (!empty($settings['features']['geocoding'])) {
+          $geo = $settings['features']['geocoding'];
+          if (!empty($geo['country'])) {
+            $settings['geocoding_country'] = $geo['country'];
+          }
+          if (!empty($geo['region'])) {
+            $settings['geocoding_region'] = $geo['region'];
           }
         }
       }
@@ -353,10 +410,112 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
+    // Load jurisdiction-filtered categories and statuses.
+    // $taxonomyJurisdictionId (resolved above) points to the root jurisdiction
+    // so child jurisdictions inherit the parent's service catalog.
+    $settings['services'] = $this->loadServices($taxonomyJurisdictionId);
+    $settings['statuses'] = $this->loadStatuses($taxonomyJurisdictionId);
+
+    // Invalidate when taxonomy terms change (category or status edits).
+    $cache_metadata->addCacheTags([
+      'taxonomy_term_list:service_category',
+      'taxonomy_term_list:service_status',
+    ]);
+
     // Return the configuration as a cacheable JSON response.
     $response = new CacheableJsonResponse($settings);
     $response->addCacheableDependency($cache_metadata);
     return $response;
+  }
+
+  /**
+   * Loads service categories, optionally filtered by jurisdiction.
+   */
+  private function loadServices(?int $jurisdictionId): array {
+    $langcode = $this->languageManager()->getCurrentLanguage()->getId();
+    $properties = ['vid' => 'service_category', 'status' => 1];
+    if ($jurisdictionId) {
+      $properties['field_jurisdiction'] = $jurisdictionId;
+    }
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
+      ->loadByProperties($properties);
+
+    // Collect parent TIDs from already-loaded entities (no extra queries).
+    $parent_tids = [];
+    foreach ($terms as $term) {
+      $pid = (int) $term->get('parent')->target_id;
+      if ($pid > 0) {
+        $parent_tids[$pid] = $pid;
+      }
+    }
+    // Batch-load parent terms in a single query.
+    $parent_terms = !empty($parent_tids)
+      ? $this->entityTypeManager->getStorage('taxonomy_term')->loadMultiple($parent_tids)
+      : [];
+
+    $services = [];
+    foreach ($terms as $term) {
+      // Use translated term if available.
+      if ($term->hasTranslation($langcode)) {
+        $term = $term->getTranslation($langcode);
+      }
+      $service = [
+        'service_code' => $term->get('field_service_code')->value,
+        'service_name' => $term->getName(),
+        'category_hex' => $term->get('field_category_hex')->color ?? NULL,
+        'category_icon' => $term->get('field_category_icon')->value ?? NULL,
+        'tid' => (int) $term->id(),
+        'weight' => (int) $term->getWeight(),
+      ];
+      // Include parent for hierarchy (from pre-loaded batch).
+      $pid = (int) $term->get('parent')->target_id;
+      if ($pid > 0 && isset($parent_terms[$pid])) {
+        $parent = $parent_terms[$pid];
+        if ($parent->hasTranslation($langcode)) {
+          $parent = $parent->getTranslation($langcode);
+        }
+        $service['parent_tid'] = (int) $parent->id();
+        $service['parent_name'] = $parent->getName();
+      }
+      $services[] = $service;
+    }
+
+    // Sort by weight.
+    usort($services, fn($a, $b) => $a['weight'] <=> $b['weight']);
+
+    return $services;
+  }
+
+  /**
+   * Loads service statuses with their Open311 mapping.
+   */
+  private function loadStatuses(?int $jurisdictionId = NULL): array {
+    $langcode = $this->languageManager()->getCurrentLanguage()->getId();
+    $properties = ['vid' => 'service_status', 'status' => 1];
+    if ($jurisdictionId) {
+      $properties['field_jurisdiction'] = $jurisdictionId;
+    }
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
+      ->loadByProperties($properties);
+
+    $statuses = [];
+    foreach ($terms as $term) {
+      if ($term->hasTranslation($langcode)) {
+        $term = $term->getTranslation($langcode);
+      }
+      $statuses[] = [
+        'name' => $term->getName(),
+        'tid' => (int) $term->id(),
+        'status_hex' => $term->get('field_status_hex')->color ?? NULL,
+        'status_icon' => $term->get('field_status_icon')->value ?? NULL,
+        'open311_mapping' => $term->hasField('field_open311_mapping') ? $term->get('field_open311_mapping')->value : NULL,
+        'weight' => (int) $term->getWeight(),
+      ];
+    }
+
+    usort($statuses, fn($a, $b) => $a['weight'] <=> $b['weight']);
+
+    return $statuses;
   }
 
   /**
@@ -365,7 +524,7 @@ class MarkASpotSettingsController extends ControllerBase {
    * Cached with appropriate cache tags - automatically invalidates when:
    * - Entity form display configuration changes
    * - Field configurations are updated
-   * - Field storage configurations are updated
+   * - Field storage configurations are updated.
    *
    * @param string $entity_type
    *   The entity type (e.g., node, user).
@@ -654,11 +813,18 @@ class MarkASpotSettingsController extends ControllerBase {
         $slug = $group->get('field_slug')->value;
       }
 
+      $parentId = NULL;
+      if ($group->hasField('field_parent_jurisdiction')
+          && !$group->get('field_parent_jurisdiction')->isEmpty()) {
+        $parentId = (int) $group->get('field_parent_jurisdiction')->target_id;
+      }
+
       $jurisdictions[] = [
         'id' => (int) $group->id(),
         'name' => $group->label(),
         'slug' => $slug,
         'isDefault' => $first,
+        'parentId' => $parentId,
       ];
       $first = FALSE;
 
@@ -687,51 +853,98 @@ class MarkASpotSettingsController extends ControllerBase {
    * Supports both 'org' (new) and 'organisation' (legacy) group types.
    * The type can be configured via markaspot_open311.settings.organisation_group_type.
    *
+   * When a 'jurisdiction' query parameter is provided (numeric group ID),
+   * only organisations belonging to that jurisdiction are returned.
+   * This filters via field_jurisdiction on the org group entity.
+   *
    * Cached with group entity cache tags - automatically invalidates when any
    * organisation group is created, updated, or deleted.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request, may contain 'jurisdiction' query parameter.
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   List of organisations with id (uuid), numericId, and label.
    */
-  public function getOrganisations(): CacheableJsonResponse {
-    // Load organisation group type from config (supports legacy naming).
-    // Defaults to 'org', falls back to 'organisation' if no groups found.
+  public function getOrganisations(Request $request): CacheableJsonResponse {
+    // Load group type settings from config (supports legacy naming).
     $open311_config = $this->configFactory->get('markaspot_open311.settings');
     $org_type = $open311_config->get('organisation_group_type') ?? 'org';
+    $jur_type = $open311_config->get('jurisdiction_group_type') ?? 'jur';
 
-    // Use EntityQuery with explicit sorting to ensure consistent ordering.
-    // Only published organisations are returned.
-    $group_ids = $this->entityTypeManager->getStorage('group')
+    // Build cache metadata early so it can be attached even on error responses.
+    $cache_metadata = new CacheableMetadata();
+    $cache_metadata->addCacheTags(['group_list:org', 'group_list:organisation']);
+    $cache_metadata->addCacheTags(['config:markaspot_open311.settings']);
+    $cache_metadata->addCacheContexts(['url.query_args:jurisdiction']);
+    $cache_metadata->setCacheMaxAge(3600);
+
+    // Optional jurisdiction filter: only return orgs directly assigned to this jur.
+    // Strict filtering: no hierarchy traversal, only exact match.
+    // Uses ctype_digit() instead of is_numeric() to reject floats, negatives,
+    // and exponential notation. Upper bound prevents PHP_INT_MAX wrapping.
+    $jurisdiction_param = $request->query->get('jurisdiction');
+    $jurisdiction_id = NULL;
+    if ($jurisdiction_param !== NULL && ctype_digit((string) $jurisdiction_param)) {
+      $candidate = (int) $jurisdiction_param;
+      if ($candidate > 0 && $candidate < 2147483648) {
+        $jurisdiction_id = $candidate;
+      }
+    }
+
+    // Validate jurisdiction: must be a published group of the correct jur type.
+    // Prevents cross-tenant enumeration by rejecting unknown or invalid IDs.
+    if ($jurisdiction_id !== NULL) {
+      $jur_group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
+      if (!$jur_group || !$jur_group->isPublished() || $jur_group->bundle() !== $jur_type) {
+        $response = new CacheableJsonResponse([
+          'organisations' => [],
+          'count' => 0,
+        ]);
+        $response->addCacheableDependency($cache_metadata);
+        return $response;
+      }
+      // Add cache dependency on the jurisdiction group itself.
+      $cache_metadata->addCacheableDependency($jur_group);
+    }
+
+    // EntityQuery with accessCheck(FALSE) is intentional here:
+    // Route-level permission ('access content') gates access, and the query
+    // is further scoped by type, status=1, and validated jurisdiction ID.
+    $query = $this->entityTypeManager->getStorage('group')
       ->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', $org_type)
       ->condition('status', 1)
-      ->sort('label', 'ASC')
-      ->execute();
+      ->sort('label', 'ASC');
+
+    if ($jurisdiction_id !== NULL) {
+      $query->condition('field_jurisdiction', $jurisdiction_id);
+    }
+
+    $group_ids = $query->execute();
 
     // Fallback to 'organisation' type if no groups found with configured type.
     if (empty($group_ids) && $org_type === 'org') {
       $org_type = 'organisation';
-      $group_ids = $this->entityTypeManager->getStorage('group')
+      $query = $this->entityTypeManager->getStorage('group')
         ->getQuery()
         ->accessCheck(FALSE)
         ->condition('type', $org_type)
         ->condition('status', 1)
-        ->sort('label', 'ASC')
-        ->execute();
+        ->sort('label', 'ASC');
+
+      // Only filter by jurisdiction if the legacy bundle has the field.
+      if ($jurisdiction_id !== NULL && FieldStorageConfig::loadByName('group', 'field_jurisdiction')) {
+        $query->condition('field_jurisdiction', $jurisdiction_id);
+      }
+
+      $group_ids = $query->execute();
     }
 
     $groups = $this->entityTypeManager->getStorage('group')->loadMultiple($group_ids);
 
     $organisations = [];
-
-    // Build cache metadata with tags from all loaded groups.
-    $cache_metadata = new CacheableMetadata();
-    // List cache tag for when groups are added/removed.
-    $cache_metadata->addCacheTags(['group_list:org', 'group_list:organisation']);
-    $cache_metadata->addCacheTags(['config:markaspot_open311.settings']);
-    // Set max-age for HTTP caching (1 hour).
-    $cache_metadata->setCacheMaxAge(3600);
 
     foreach ($groups as $group) {
       $organisations[] = [
@@ -740,7 +953,6 @@ class MarkASpotSettingsController extends ControllerBase {
         'label' => $group->label(),
       ];
 
-      // Add cache tag for each individual group entity.
       $cache_metadata->addCacheableDependency($group);
     }
 
@@ -749,7 +961,6 @@ class MarkASpotSettingsController extends ControllerBase {
       'count' => count($organisations),
     ]);
 
-    // Attach cache metadata to response.
     $response->addCacheableDependency($cache_metadata);
 
     return $response;

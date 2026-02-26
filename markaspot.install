@@ -5,6 +5,9 @@
  * Install, update and uninstall functions for the markaspot installation profile.
  */
 
+use Drupal\Core\Entity\Entity\EntityFormDisplay;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\node\Entity\Node;
 
 /**
@@ -330,7 +333,7 @@ function _markaspot_create_default_jurisdiction($group_type, $group_storage) {
 
     if ($center_lat && $center_lng) {
       $nuxt_json['map'] = [
-        'center' => [$center_lng, $center_lat],
+        'center' => [$center_lat, $center_lng],
         'zoom' => $zoom ?: 13,
       ];
     }
@@ -387,6 +390,10 @@ function markaspot_update_11802() {
   if (!$module_handler->moduleExists('markaspot_group')) {
     try {
       \Drupal::service('module_installer')->install(['markaspot_group']);
+      // Drupal sets schema to the highest hook (11901) on fresh install,
+      // which means hooks 11900/11901 never run. Reset to 11801 so they
+      // execute during this update run (field_jurisdiction + backfill).
+      \Drupal::keyValue('system.schema')->set('markaspot_group', 11801);
       $messages[] = t('Installed markaspot_group module with jur/org group types.');
     }
     catch (\Exception $e) {
@@ -637,6 +644,418 @@ function markaspot_update_11803() {
   }
 
   return t('field_all_groups_member field ensured on user entity.');
+}
+
+/**
+ * Add taxonomy jurisdiction isolation fields and migrate existing data.
+ *
+ * Creates field_jurisdiction on service_category (entity_reference to group
+ * jur) and field_open311_mapping on service_status (list_string). Assigns
+ * all existing terms to the first available jurisdiction and sets status
+ * mapping values based on current markaspot_open311.settings config.
+ */
+function markaspot_update_11900() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Step 1: Create field_jurisdiction on service_category if missing.
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_jurisdiction');
+  if (!$field_storage) {
+    $field_storage = FieldStorageConfig::create([
+      'field_name' => 'field_jurisdiction',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+      'cardinality' => 1,
+      'translatable' => FALSE,
+    ]);
+    $field_storage->save();
+  }
+
+  $field_config = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_jurisdiction');
+  if (!$field_config) {
+    FieldConfig::create([
+      'field_storage' => $field_storage,
+      'bundle' => 'service_category',
+      'label' => 'Jurisdiction',
+      'description' => 'The jurisdiction this category belongs to.',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => ['jur' => 'jur'],
+          'sort' => ['field' => 'label', 'direction' => 'ASC'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+  }
+
+  // Step 1b: Create field_jurisdiction on service_status if missing.
+  $field_config_status_jur = FieldConfig::loadByName('taxonomy_term', 'service_status', 'field_jurisdiction');
+  if (!$field_config_status_jur) {
+    FieldConfig::create([
+      'field_storage' => $field_storage,
+      'bundle' => 'service_status',
+      'label' => 'Jurisdiction',
+      'description' => 'The jurisdiction this status belongs to.',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => ['jur' => 'jur'],
+          'sort' => ['field' => 'label', 'direction' => 'ASC'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+  }
+
+  // Step 2: Create field_open311_mapping on service_status if missing.
+  $mapping_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_open311_mapping');
+  if (!$mapping_storage) {
+    $mapping_storage = FieldStorageConfig::create([
+      'field_name' => 'field_open311_mapping',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'list_string',
+      'settings' => [
+        'allowed_values' => [
+          'open' => 'Open',
+          'closed' => 'Closed',
+          'initial' => 'Initial (new requests)',
+        ],
+      ],
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'module' => 'options',
+    ]);
+    $mapping_storage->save();
+  }
+
+  $mapping_field = FieldConfig::loadByName('taxonomy_term', 'service_status', 'field_open311_mapping');
+  if (!$mapping_field) {
+    FieldConfig::create([
+      'field_storage' => $mapping_storage,
+      'bundle' => 'service_status',
+      'label' => 'Open311 Status Mapping',
+      'description' => 'Maps this status to the Open311 open/closed value. "Initial" marks the default status for new requests.',
+      'required' => TRUE,
+      'default_value' => [['value' => 'open']],
+      'settings' => [],
+    ])->save();
+  }
+
+  // Step 3: Assign existing service_category terms to first jurisdiction.
+  $groups = $entity_type_manager->getStorage('group')
+    ->loadByProperties(['type' => 'jur']);
+  $default_group = reset($groups);
+
+  if ($default_group) {
+    $default_gid = $default_group->id();
+    $categories = $entity_type_manager->getStorage('taxonomy_term')
+      ->loadByProperties(['vid' => 'service_category']);
+    $cat_count = 0;
+    foreach ($categories as $term) {
+      if ($term->hasField('field_jurisdiction') && $term->get('field_jurisdiction')->isEmpty()) {
+        $term->set('field_jurisdiction', $default_gid);
+        $term->save();
+        $cat_count++;
+      }
+    }
+  }
+
+  // Step 4: Set field_open311_mapping on existing service_status terms.
+  $config = \Drupal::config('markaspot_open311.settings');
+  $status_open = array_values($config->get('status_open') ?: []);
+  $status_closed = array_values($config->get('status_closed') ?: []);
+  $status_start = $config->get('status_open_start');
+
+  $statuses = $entity_type_manager->getStorage('taxonomy_term')
+    ->loadByProperties(['vid' => 'service_status']);
+  $status_count = 0;
+  foreach ($statuses as $term) {
+    if ($term->hasField('field_open311_mapping') && $term->get('field_open311_mapping')->isEmpty()) {
+      $tid = (string) $term->id();
+      if ($tid === (string) $status_start) {
+        $mapping = 'initial';
+      }
+      elseif (in_array($tid, $status_closed)) {
+        $mapping = 'closed';
+      }
+      else {
+        $mapping = 'open';
+      }
+      $term->set('field_open311_mapping', $mapping);
+      $term->save();
+      $status_count++;
+    }
+  }
+
+  // Step 4b: Assign existing service_status terms to first jurisdiction.
+  if ($default_group) {
+    $status_jur_count = 0;
+    foreach ($statuses as $term) {
+      if ($term->hasField('field_jurisdiction') && $term->get('field_jurisdiction')->isEmpty()) {
+        $term->set('field_jurisdiction', $default_gid);
+        $term->save();
+        $status_jur_count++;
+      }
+    }
+  }
+
+  // Step 5: Enable fields in taxonomy form displays.
+  $category_display = EntityFormDisplay::load('taxonomy_term.service_category.default');
+  if ($category_display) {
+    $category_display->setComponent('field_jurisdiction', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 8,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+    $category_display->save();
+  }
+
+  $status_display = EntityFormDisplay::load('taxonomy_term.service_status.default');
+  if ($status_display) {
+    $status_display->setComponent('field_jurisdiction', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 6,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+    $status_display->setComponent('field_open311_mapping', [
+      'type' => 'options_select',
+      'weight' => 7,
+      'region' => 'content',
+      'settings' => [],
+    ]);
+    $status_display->save();
+  }
+
+  $messages = [];
+  $messages[] = t('Created taxonomy jurisdiction isolation fields.');
+  if (isset($cat_count)) {
+    $messages[] = t('Assigned @count categories to jurisdiction "@name".', [
+      '@count' => $cat_count,
+      '@name' => $default_group ? $default_group->label() : 'none',
+    ]);
+  }
+  if (isset($status_jur_count)) {
+    $messages[] = t('Assigned @count statuses to jurisdiction "@name".', [
+      '@count' => $status_jur_count,
+      '@name' => $default_group ? $default_group->label() : 'none',
+    ]);
+  }
+  $messages[] = t('Set Open311 mapping on @count status terms.', ['@count' => $status_count]);
+  $messages[] = t('Updated form displays for taxonomy term editing.');
+
+  return implode(' ', $messages);
+}
+
+/**
+ * Converts field_category_gid from string to entity_reference (ORG groups).
+ *
+ * The field previously stored group IDs as plain text. This update converts it
+ * to a proper entity_reference field targeting ORG groups, enabling the use of
+ * an autocomplete widget in the taxonomy form and proper validation.
+ */
+function markaspot_update_11901() {
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Step 1: Backup existing data before deleting the field.
+  $data = [];
+  $terms = $entity_type_manager->getStorage('taxonomy_term')
+    ->loadByProperties(['vid' => 'service_category']);
+  foreach ($terms as $term) {
+    if ($term->hasField('field_category_gid') && !$term->get('field_category_gid')->isEmpty()) {
+      $data[$term->id()] = (int) $term->get('field_category_gid')->value;
+    }
+  }
+
+  // Log backup data for disaster recovery.
+  if (!empty($data)) {
+    \Drupal::logger('markaspot')->notice(
+      'field_category_gid migration backup (tid => gid): @data',
+      ['@data' => json_encode($data)]
+    );
+    \Drupal::state()->set('markaspot_11901_backup', $data);
+  }
+
+  // Step 2: Delete existing field instance and storage.
+  $field_config = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_category_gid');
+  if ($field_config) {
+    $field_config->delete();
+  }
+
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_category_gid');
+  if ($field_storage) {
+    $field_storage->delete();
+  }
+
+  // Purge deleted field data so table names are freed for reuse.
+  field_purge_batch(100);
+  $entity_type_manager->clearCachedDefinitions();
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+
+  // Step 3: Detect ORG group type (legacy sites may use 'organisation').
+  $group_type_storage = $entity_type_manager->getStorage('group_type');
+  $org_type = 'org';
+  if (!$group_type_storage->load('org') && $group_type_storage->load('organisation')) {
+    $org_type = 'organisation';
+  }
+
+  // Step 4: Create new entity_reference field storage.
+  $new_storage = FieldStorageConfig::create([
+    'field_name' => 'field_category_gid',
+    'entity_type' => 'taxonomy_term',
+    'type' => 'entity_reference',
+    'settings' => ['target_type' => 'group'],
+    'cardinality' => 1,
+    'translatable' => FALSE,
+  ]);
+  $new_storage->save();
+
+  // Step 5: Create field instance on service_category targeting ORG groups.
+  FieldConfig::create([
+    'field_storage' => $new_storage,
+    'bundle' => 'service_category',
+    'label' => 'Category Group ID',
+    'description' => 'The organisation (department) responsible for this category.',
+    'required' => FALSE,
+    'settings' => [
+      'handler' => 'default:group',
+      'handler_settings' => [
+        'target_bundles' => [$org_type => $org_type],
+        'sort' => ['field' => 'label', 'direction' => 'ASC'],
+        'auto_create' => FALSE,
+      ],
+    ],
+  ])->save();
+
+  // Step 6: Restore data as entity references.
+  $entity_type_manager->getStorage('taxonomy_term')->resetCache();
+  $restored = 0;
+  foreach ($data as $tid => $gid) {
+    $group = $entity_type_manager->getStorage('group')->load($gid);
+    if ($group) {
+      $term = $entity_type_manager->getStorage('taxonomy_term')->load($tid);
+      if ($term) {
+        $term->set('field_category_gid', $gid);
+        $term->save();
+        $restored++;
+      }
+    }
+    else {
+      \Drupal::logger('markaspot')->warning(
+        'field_category_gid migration: term @tid referenced non-existent group @gid, data dropped.',
+        ['@tid' => $tid, '@gid' => $gid]
+      );
+    }
+  }
+
+  // Step 7: Update form display to use autocomplete widget.
+  $form_display = EntityFormDisplay::load('taxonomy_term.service_category.default');
+  if ($form_display) {
+    $form_display->setComponent('field_category_gid', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 5,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+    $form_display->save();
+  }
+
+  return t('Converted field_category_gid to entity_reference (@type groups). Migrated @count of @total values.', [
+    '@type' => $org_type,
+    '@count' => $restored,
+    '@total' => count($data),
+  ]);
+}
+
+/**
+ * Add field_parent_jurisdiction to jur group type.
+ *
+ * Enables jurisdiction hierarchy: districts (with parent) vs top-level tenants
+ * (without parent). Only districts are auto-assigned by geographic boundary.
+ */
+function markaspot_update_11902() {
+  // Skip if markaspot_group module is not enabled.
+  if (!\Drupal::moduleHandler()->moduleExists('markaspot_group')) {
+    return t('markaspot_group not enabled, skipping.');
+  }
+
+  // Skip if group type jur doesn't exist.
+  $group_type = \Drupal::entityTypeManager()->getStorage('group_type')->load('jur');
+  if (!$group_type) {
+    return t('Group type jur not found, skipping.');
+  }
+
+  // Create field storage if not exists.
+  $storage = FieldStorageConfig::loadByName('group', 'field_parent_jurisdiction');
+  if (!$storage) {
+    $storage = FieldStorageConfig::create([
+      'field_name' => 'field_parent_jurisdiction',
+      'entity_type' => 'group',
+      'type' => 'entity_reference',
+      'cardinality' => 1,
+      'settings' => ['target_type' => 'group'],
+      'translatable' => FALSE,
+    ]);
+    $storage->save();
+  }
+
+  // Create field instance if not exists.
+  $field = FieldConfig::loadByName('group', 'jur', 'field_parent_jurisdiction');
+  if (!$field) {
+    FieldConfig::create([
+      'field_storage' => $storage,
+      'bundle' => 'jur',
+      'label' => 'Parent Jurisdiction',
+      'description' => 'Set for districts/subdivisions to indicate their parent jurisdiction. Leave empty for top-level jurisdictions (tenants in SaaS mode, or the root city).',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => ['jur' => 'jur'],
+          'sort' => ['field' => '_none'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+  }
+
+  // Add to form display.
+  $form_display = EntityFormDisplay::load('group.jur.default');
+  if ($form_display) {
+    $form_display->setComponent('field_parent_jurisdiction', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 2,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+    $form_display->save();
+  }
+
+  return t('Added field_parent_jurisdiction to jur group type for jurisdiction hierarchy support.');
 }
 
 /**
