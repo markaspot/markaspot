@@ -61,6 +61,9 @@ function _service_request_handle_creation(EntityInterface $node, $config, bool $
   $status_open_start = $config->get('status_open_start');
 
   // Always set initial status if not already set.
+  // Note: markaspot_group_node_presave may have already set a
+  // jurisdiction-specific initial status. Only fall back to config default
+  // when the field is still empty.
   if ($node->field_status->isEmpty()) {
     $node->field_status = [
       ['target_id' => $status_open_start],
@@ -72,6 +75,10 @@ function _service_request_handle_creation(EntityInterface $node, $config, bool $
     return;
   }
 
+  // Use the node's actual status TID for the paragraph (may have been set
+  // by markaspot_group to a jurisdiction-specific value).
+  $actual_status_tid = (int) $node->get('field_status')->target_id;
+
   $paragraph = Paragraph::create([
     'type' => 'status',
     'field_status_note' => [
@@ -81,7 +88,7 @@ function _service_request_handle_creation(EntityInterface $node, $config, bool $
       'format' => 'plain_text',
     ],
     'field_status_term' => [
-      'target_id' => $status_open_start,
+      'target_id' => $actual_status_tid,
     ],
   ]);
   $paragraph->save();

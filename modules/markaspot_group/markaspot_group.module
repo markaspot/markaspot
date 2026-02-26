@@ -33,6 +33,17 @@ function markaspot_group_mail(string $key, array &$message, array $params): void
 /**
  * Implements hook_entity_presave() for taxonomy_term entities.
  *
+ * Redirects child jurisdiction references to their root parent.
+ */
+function markaspot_group_entity_presave(EntityInterface $entity): void {
+  if ($entity instanceof TermInterface) {
+    _markaspot_group_presave_taxonomy_term($entity);
+  }
+}
+
+/**
+ * Presave handler for taxonomy terms: jurisdiction inheritance enforcement.
+ *
  * Enforces taxonomy inheritance rule: child jurisdictions (those with
  * field_parent_jurisdiction set) must not have their own taxonomy terms.
  * If a term's field_jurisdiction points to a child jurisdiction, the reference
@@ -41,13 +52,12 @@ function markaspot_group_mail(string $key, array &$message, array $params): void
  * This prevents mixed taxonomy catalogs in hierarchical deployments
  * (Landkreis model) where all subdivisions share the parent's service catalog.
  *
+ * @param \Drupal\taxonomy\TermInterface $entity
+ *   The taxonomy term being saved.
+ *
  * @see https://markaspot-docs/architecture/multi-jurisdiction.md
  */
-function markaspot_group_entity_presave(EntityInterface $entity): void {
-  if (!($entity instanceof TermInterface)) {
-    return;
-  }
-
+function _markaspot_group_presave_taxonomy_term(TermInterface $entity): void {
   // Only process terms with a field_jurisdiction reference.
   if (!$entity->hasField('field_jurisdiction') || $entity->get('field_jurisdiction')->isEmpty()) {
     return;
@@ -85,6 +95,84 @@ function markaspot_group_entity_presave(EntityInterface $entity): void {
       '@vid' => $entity->bundle(),
       '@child' => $jurisdiction_id,
       '@root' => $root_id,
+    ]
+  );
+}
+
+/**
+ * Presave handler for service requests: jurisdiction-aware initial status.
+ *
+ * When a new service request is created via JSON:API, the field_status default
+ * comes from field configuration (a single global TID). In multi-tenant setups
+ * each jurisdiction has its own "initial" status term. This handler detects
+ * when a new node has the wrong initial status and corrects it based on the
+ * node's category jurisdiction.
+ *
+ * Only fires for NEW nodes. Existing nodes keep their current status.
+ *
+ * Resolution path:
+ *   node -> field_category -> term -> field_jurisdiction -> root jur ID
+ *   -> getInitialStatusTid(root_jur_id) -> correct status TID
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service_request node being saved.
+ */
+function _markaspot_group_presave_service_request_status(NodeInterface $node): void {
+  // Only correct status on new nodes. Existing nodes keep their status.
+  if (!$node->isNew()) {
+    return;
+  }
+
+  // Need a category to determine jurisdiction.
+  if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+    return;
+  }
+
+  // Need a status field to correct.
+  if (!$node->hasField('field_status')) {
+    return;
+  }
+
+  // Load the category term to find its jurisdiction.
+  $category_term = $node->get('field_category')->entity;
+  if (!$category_term || !$category_term->hasField('field_jurisdiction') || $category_term->get('field_jurisdiction')->isEmpty()) {
+    return;
+  }
+
+  $category_jur_id = (int) $category_term->get('field_jurisdiction')->target_id;
+  if ($category_jur_id <= 0) {
+    return;
+  }
+
+  // Get the jurisdiction-correct initial status.
+  /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
+  $processor = \Drupal::service('markaspot_open311.processor');
+  $correct_status_tid = $processor->getInitialStatusTid($category_jur_id);
+
+  if (!$correct_status_tid) {
+    return;
+  }
+
+  // Get the current status TID (may be empty, or the global default).
+  $current_status_tid = $node->get('field_status')->isEmpty()
+    ? NULL
+    : (int) $node->get('field_status')->target_id;
+
+  // If the correct status is already set, nothing to do.
+  if ($current_status_tid === $correct_status_tid) {
+    return;
+  }
+
+  // Set the jurisdiction-correct initial status.
+  $node->set('field_status', ['target_id' => $correct_status_tid]);
+
+  \Drupal::logger('markaspot_group')->notice(
+    'Service request "@title": redirected field_status from TID=@old to TID=@new (jurisdiction @jur).',
+    [
+      '@title' => $node->label() ?? '(new)',
+      '@old' => $current_status_tid ?? 'empty',
+      '@new' => $correct_status_tid,
+      '@jur' => $category_jur_id,
     ]
   );
 }
@@ -280,15 +368,21 @@ function _markaspot_group_add_member_to_group(GroupInterface $group, UserInterfa
 /**
  * Implements hook_node_presave().
  *
- * Syncs field_organisation to group relationship when a service_request
- * node is saved. This ensures that when the organisation field is changed,
- * the corresponding group relationship is created/updated/deleted.
+ * Handles two presave operations for service_request nodes:
+ * 1. Corrects initial status for multi-tenant jurisdictions (new nodes only).
+ * 2. Syncs field_organisation to group relationship.
+ *
+ * This hook runs BEFORE service_request_node_presave (module weight order),
+ * ensuring the status is corrected before the status note paragraph is created.
  */
 function markaspot_group_node_presave(NodeInterface $node): void {
   // Only process service_request nodes.
   if ($node->bundle() !== 'service_request') {
     return;
   }
+
+  // 1. Correct initial status for jurisdiction-aware multi-tenant setups.
+  _markaspot_group_presave_service_request_status($node);
 
   // Check if field_organisation exists on this node.
   if (!$node->hasField('field_organisation')) {

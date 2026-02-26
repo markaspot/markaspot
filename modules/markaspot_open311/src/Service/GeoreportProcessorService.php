@@ -1662,7 +1662,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Fallback to config.
     $startStatus = $this->configFactory->get('markaspot_open311.settings')->get('status_open_start');
-    return $startStatus[0] ?? NULL;
+    return $startStatus ? (int) $startStatus : NULL;
   }
 
   /**
