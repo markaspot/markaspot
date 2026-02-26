@@ -1,0 +1,26 @@
+<?php
+
+/**
+ * @file
+ * Install and update functions for markaspot_stats module.
+ */
+
+/**
+ * Remove legacy stats Views (replaced by StatsController with jurisdiction support).
+ */
+function markaspot_stats_update_11900() {
+  $config_factory = \Drupal::configFactory();
+
+  $views_to_remove = [
+    'views.view.stats',
+    'views.view.stats_requests',
+  ];
+
+  foreach ($views_to_remove as $view_config) {
+    $config = $config_factory->getEditable($view_config);
+    if (!$config->isNew()) {
+      $config->delete();
+      \Drupal::messenger()->addStatus("Deleted legacy View: $view_config");
+    }
+  }
+}
