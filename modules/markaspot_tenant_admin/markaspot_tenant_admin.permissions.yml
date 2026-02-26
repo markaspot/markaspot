@@ -1,0 +1,3 @@
+'administer tenant taxonomy':
+  title: 'Administer tenant taxonomy'
+  description: 'Access the jurisdiction taxonomy management overview at /admin/tenant.'

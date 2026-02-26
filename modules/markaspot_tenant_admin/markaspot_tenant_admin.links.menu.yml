@@ -1,0 +1,6 @@
+markaspot_tenant_admin.overview:
+  title: 'Jurisdiction'
+  description: 'Manage categories and statuses for your jurisdiction.'
+  route_name: markaspot_tenant_admin.overview
+  parent: system.admin
+  weight: 5
