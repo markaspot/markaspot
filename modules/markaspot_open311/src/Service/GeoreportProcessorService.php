@@ -24,6 +24,7 @@ use Drupal\Core\Utility\Token;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\paragraphs\Entity\Paragraph;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -123,6 +124,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected $languageManager;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface
+   */
+  protected $hierarchyResolver;
+
+  /**
    * GeoreportProcessorService constructor.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -147,6 +155,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The token service.
    * @param \Drupal\Core\Language\LanguageManagerInterface $languageManager
    *   The language manager service.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchyResolver
+   *   The jurisdiction hierarchy resolver.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -160,6 +170,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     StreamWrapperManagerInterface $streamWrapperManager,
     Token $token,
     LanguageManagerInterface $languageManager,
+    ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {
     $this->configFactory = $configFactory;
     $this->currentUser = $currentUser;
@@ -172,6 +183,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $this->streamWrapperManager = $streamWrapperManager;
     $this->token = $token;
     $this->languageManager = $languageManager;
+    $this->hierarchyResolver = $hierarchyResolver;
   }
 
   /**
@@ -254,14 +266,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $values['field_address']['address_line2'] = $address['address_line2'];
         $values['field_address']['postal_code'] = $address['postal_code'];
         $values['field_address']['locality'] = $address['locality'];
-        // Maybe we add this later.
-        // $values['field_address']['administrative_area'] = $address['state'];
-        // $values['field_address']['country_code'] = $address['country'];.
+        // Resolve country_code: explicit param > jurisdiction config > site default.
+        $countryCode = $requestData['country_code'] ?? '';
+        if (empty($countryCode)) {
+          $countryCode = $this->resolveJurisdictionCountry($requestData['jurisdiction_id'] ?? NULL);
+        }
+        $values['field_address']['country_code'] = $countryCode;
       }
     }
 
     if (array_key_exists('service_code', $requestData)) {
-      $category_tid = $this->mapServiceCodeToTaxonomy($requestData['service_code']);
+      $jurisdictionId = isset($requestData['jurisdiction_id']) ? (int) $requestData['jurisdiction_id'] : NULL;
+      $category_tid = $this->mapServiceCodeToTaxonomy($requestData['service_code'], $jurisdictionId);
       $values['field_category'] = $category_tid;
       if ($values['field_category'] == NULL && $operation !== 'update') {
         throw new GeoreportException('Service-Code empty or not valid', 400);
@@ -366,6 +382,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @param string $serviceCode
    *   The service code to be mapped.
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction group ID to scope the lookup.
    *
    * @return int|null
    *   The taxonomy term ID, or null if not found.
@@ -373,10 +391,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
    *   If the service code is not found in the taxonomy.
    */
-  public function mapServiceCodeToTaxonomy(string $serviceCode): ?int {
+  public function mapServiceCodeToTaxonomy(string $serviceCode, ?int $jurisdictionId = NULL): ?int {
     $serviceCodes = explode(',', $serviceCode);
     foreach ($serviceCodes as $code) {
-      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties(['field_service_code' => trim($code)]);
+      $properties = ['field_service_code' => trim($code)];
+      if ($jurisdictionId) {
+        // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
+        $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+      }
+      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties($properties);
       $term = reset($terms);
       if (!empty($term)) {
         return $term->id();
@@ -426,16 +449,23 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The ID of the parent taxonomy term (default: 0).
    * @param int|null $maxDepth
    *   The maximum depth for the taxonomy tree (default: null).
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction group ID to filter terms.
    *
    * @return array
    *   An array of service definitions.
    */
-  public function getTaxonomyTree(string $vocabulary = 'tags', ?string $langcode = NULL, int $parent = 0, ?int $maxDepth = NULL): array {
+  public function getTaxonomyTree(string $vocabulary = 'tags', ?string $langcode = NULL, int $parent = 0, ?int $maxDepth = NULL, ?int $jurisdictionId = NULL): array {
     // Use site default language if no langcode provided.
     $langcode = $langcode ?? $this->languageManager->getDefaultLanguage()->getId();
 
+    $properties = ['vid' => $vocabulary, 'status' => 1];
+    if ($jurisdictionId) {
+      // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
+      $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+    }
     $tree = $this->entityTypeManager->getStorage('taxonomy_term')
-      ->loadByProperties(['vid' => $vocabulary, 'status' => 1]);
+      ->loadByProperties($properties);
 
     if (empty($tree)) {
       return [];
@@ -1219,7 +1249,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $request['last_name'] = $node->get('field_last_name')->value ?? '';
       }
 
-      // Add organisation (department) - manager only.
+      // Add organisation (department) and jurisdiction - manager only.
       if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
         $organisationEntity = $node->get('field_organisation')->entity;
         if ($organisationEntity) {
@@ -1228,6 +1258,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
             'uuid' => $organisationEntity->uuid(),
             'label' => $organisationEntity->label(),
             'name' => $organisationEntity->label(),
+          ];
+        }
+      }
+
+      // Resolve jurisdiction from node's direct jur-type group_relationship.
+      // This returns the most specific (child) jurisdiction, not the root.
+      // Falls back to org->field_jurisdiction only if no direct jur relationship exists.
+      if ($this->moduleHandler->moduleExists('group')) {
+        $jurGroup = $this->resolveNodeJurisdiction($node);
+        if ($jurGroup) {
+          $request['jurisdiction'] = [
+            'id' => (string) $jurGroup->id(),
+            'label' => $jurGroup->label(),
           ];
         }
       }
@@ -1270,6 +1313,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         }
       }
     }
+
+    // Allow other modules to alter the request data.
+    $this->moduleHandler->alter('markaspot_open311_request', $request, $node);
 
     // Store in cache for repeated use.
     $serviceRequestCache[$cacheKey] = $request;
@@ -1495,7 +1541,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       return 'open';
     }
 
-    $statusOpen = array_values($this->configFactory->get('markaspot_open311.settings')->get('status_open'));
+    // Use field_open311_mapping on the term if available (jurisdiction-aware).
+    $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($taxonomyId);
+    if ($term && $term->hasField('field_open311_mapping') && !$term->get('field_open311_mapping')->isEmpty()) {
+      $mapping = $term->get('field_open311_mapping')->value;
+      // 'initial' and 'open' both count as Open311 "open".
+      return ($mapping === 'closed') ? 'closed' : 'open';
+    }
+
+    // Fallback to config-based lookup for backward compatibility.
+    $statusOpen = array_values($this->configFactory->get('markaspot_open311.settings')->get('status_open') ?? []);
     return in_array($taxonomyId, $statusOpen) ? 'open' : 'closed';
   }
 
@@ -1508,9 +1563,220 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return array
    *   An array of taxonomy term IDs.
    */
-  public function mapStatusToTaxonomyIds(string $status): array {
+  public function mapStatusToTaxonomyIds(string $status, ?int $jurisdictionId = NULL): array {
+    // Use field_open311_mapping for jurisdiction-aware status lookup.
+    $properties = ['vid' => 'service_status', 'status' => 1];
+    if ($jurisdictionId) {
+      // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
+      $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+    }
+
+    if ($status === 'open') {
+      // Open311 "open" includes both 'initial' and 'open' mapping values.
+      $tids = [];
+      foreach (['initial', 'open'] as $mapping) {
+        $props = $properties + ['field_open311_mapping' => $mapping];
+        $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties($props);
+        foreach ($terms as $term) {
+          $tids[] = (int) $term->id();
+        }
+      }
+      if (!empty($tids)) {
+        return $tids;
+      }
+    }
+    else {
+      $props = $properties + ['field_open311_mapping' => 'closed'];
+      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties($props);
+      $tids = array_map(fn($t) => (int) $t->id(), $terms);
+      if (!empty($tids)) {
+        return array_values($tids);
+      }
+    }
+
+    // Fallback to config-based lookup for backward compatibility.
     $config = $this->configFactory->get('markaspot_open311.settings');
-    return array_values($config->get($status === 'open' ? 'status_open' : 'status_closed'));
+    return array_values($config->get($status === 'open' ? 'status_open' : 'status_closed') ?? []);
+  }
+
+  /**
+   * Gets the initial status term ID for a jurisdiction.
+   *
+   * @param int|null $jurisdictionId
+   *   The jurisdiction group ID, or NULL for config fallback.
+   *
+   * @return int|null
+   *   The taxonomy term ID for the initial status, or NULL if not found.
+   */
+  public function getInitialStatusTid(?int $jurisdictionId = NULL): ?int {
+    $properties = [
+      'vid' => 'service_status',
+      'status' => 1,
+      'field_open311_mapping' => 'initial',
+    ];
+    if ($jurisdictionId) {
+      $properties['field_jurisdiction'] = $jurisdictionId;
+    }
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
+      ->loadByProperties($properties);
+
+    if (!empty($terms)) {
+      $term = reset($terms);
+      return (int) $term->id();
+    }
+
+    // Fallback to config.
+    $startStatus = $this->configFactory->get('markaspot_open311.settings')->get('status_open_start');
+    return $startStatus[0] ?? NULL;
+  }
+
+  /**
+   * Validates that the authenticated user has access to the given jurisdiction.
+   *
+   * Checks that the user (resolved from API key or session) is a member of
+   * the jurisdiction group. Skips the check for admin users, anonymous users
+   * (who have their own permission checks), and when no jurisdiction is given.
+   *
+   * @param int|null $jurisdictionId
+   *   The jurisdiction group ID to check, or NULL to skip validation.
+   * @param \Drupal\Core\Session\AccountInterface|null $account
+   *   The user account to validate. Defaults to current user.
+   *
+   * @throws \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException
+   *   If the user is not a member of the jurisdiction group.
+   */
+  public function validateJurisdictionAccess(?int $jurisdictionId, $account = NULL): void {
+    // Skip if no jurisdiction specified (single-tenant mode).
+    if (!$jurisdictionId) {
+      return;
+    }
+
+    // Skip if Group module is not available.
+    if (!$this->moduleHandler->moduleExists('group')) {
+      return;
+    }
+
+    $account = $account ?? $this->currentUser;
+
+    // Admin users bypass jurisdiction checks.
+    if ($account->hasPermission('bypass node access') || $account->id() == 1) {
+      return;
+    }
+
+    // Anonymous users are handled by standard permission checks.
+    if ($account->isAnonymous()) {
+      return;
+    }
+
+    // Load the jurisdiction group.
+    $group = $this->entityTypeManager->getStorage('group')->load($jurisdictionId);
+    if (!$group) {
+      throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException(
+        'Invalid jurisdiction_id: group not found.'
+      );
+    }
+
+    // Verify it's a jurisdiction group type.
+    if ($group->bundle() !== 'jur') {
+      throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException(
+        'Invalid jurisdiction_id: not a jurisdiction group.'
+      );
+    }
+
+    // Check if user is a member of this jurisdiction group.
+    $membership = $group->getMember($account);
+    if (!$membership) {
+      throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException(
+        'Access denied: user is not a member of this jurisdiction.'
+      );
+    }
+  }
+
+  /**
+   * Gets all category term IDs that belong to a jurisdiction.
+   *
+   * @param int $jurisdictionId
+   *   The jurisdiction group ID.
+   *
+   * @return array
+   *   Array of taxonomy term IDs, or empty array if none found.
+   */
+  public function getCategoryTidsForJurisdiction(int $jurisdictionId): array {
+    // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
+    $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
+      ->loadByProperties([
+        'vid' => 'service_category',
+        'status' => 1,
+        'field_jurisdiction' => $effectiveId,
+      ]);
+
+    return array_map(fn($term) => (int) $term->id(), $terms);
+  }
+
+  /**
+   * Gets the jurisdiction ID from an existing service request node.
+   *
+   * Derives the jurisdiction from the node's category term's field_jurisdiction.
+   *
+   * @param object $node
+   *   The service request node.
+   *
+   * @return int|null
+   *   The jurisdiction group ID, or NULL if not found.
+   */
+  public function getJurisdictionIdFromNode(object $node): ?int {
+    if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+      $categoryTerm = $node->get('field_category')->entity;
+      if ($categoryTerm && $categoryTerm->hasField('field_jurisdiction') && !$categoryTerm->get('field_jurisdiction')->isEmpty()) {
+        return (int) $categoryTerm->get('field_jurisdiction')->target_id;
+      }
+    }
+    return NULL;
+  }
+
+  /**
+   * Resolves the jurisdiction group for a service request node.
+   *
+   * Looks up the node's direct jur-type group_relationship to find the most
+   * specific (child) jurisdiction. Falls back to the organisation entity's
+   * field_jurisdiction if no direct jur relationship exists.
+   *
+   * Uses loadByProperties() which bypasses entity access checks. This method
+   * MUST only be called from contexts that have already verified the caller
+   * has manager-level access (extendedRole === 'manager').
+   *
+   * @param object $node
+   *   The service request node.
+   *
+   * @return \Drupal\group\Entity\GroupInterface|null
+   *   The jurisdiction group entity, or NULL if not found.
+   */
+  protected function resolveNodeJurisdiction(object $node): ?object {
+    // Primary: look for a direct jur-type group_relationship on the node.
+    $relationship_storage = $this->entityTypeManager->getStorage('group_relationship');
+    $relationships = $relationship_storage->loadByProperties([
+      'entity_id' => $node->id(),
+      'plugin_id' => 'group_node:service_request',
+    ]);
+
+    foreach ($relationships as $relationship) {
+      $group = $relationship->getGroup();
+      if ($group && $group->bundle() === 'jur') {
+        return $group;
+      }
+    }
+
+    // Fallback: derive from organisation's field_jurisdiction.
+    if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+      $org = $node->get('field_organisation')->entity;
+      if ($org && $org->hasField('field_jurisdiction') && !$org->get('field_jurisdiction')->isEmpty()) {
+        return $org->get('field_jurisdiction')->entity;
+      }
+    }
+
+    return NULL;
   }
 
   /**
@@ -1768,8 +2034,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $statusNotes = [];
       $logCount = -1;
 
-      // Get default initial status term ID.
-      $initialStatusId = $this->configFactory->get('markaspot_open311.settings')->get('status_open_start')[0] ?? NULL;
+      // Get default initial status term ID (jurisdiction-aware).
+      $jurisdictionId = NULL;
+      if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+        $categoryTerm = $node->get('field_category')->entity;
+        if ($categoryTerm && $categoryTerm->hasField('field_jurisdiction') && !$categoryTerm->get('field_jurisdiction')->isEmpty()) {
+          $jurisdictionId = (int) $categoryTerm->get('field_jurisdiction')->target_id;
+        }
+      }
+      $initialStatusId = $this->getInitialStatusTid($jurisdictionId);
 
       foreach ($node->get('field_status_notes') as $note) {
         $logCount++;
@@ -2199,9 +2472,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Split the address string by commas.
     $parts = preg_split('/,\s*/', $addressString);
 
-    // Extract postal code.
+    // Extract postal code (supports formats: 50667, 1067 PV, 1067PV, SW1A 1AA).
     $extractPostalCode = function ($str) {
-      if (preg_match('/\b(\d{4,7}([A-Z]{1,2})?)\b/i', $str, $matches)) {
+      // Dutch: 1234 AB or 1234AB
+      if (preg_match('/\b(\d{4}\s?[A-Z]{2})\b/i', $str, $matches)) {
+        return $matches[1];
+      }
+      // UK: SW1A 1AA, EC1A 1BB
+      if (preg_match('/\b([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})\b/i', $str, $matches)) {
+        return $matches[1];
+      }
+      // Generic numeric: 4-7 digits, optionally followed by letters
+      if (preg_match('/\b(\d{4,7})\b/', $str, $matches)) {
         return $matches[1];
       }
       return NULL;
@@ -2227,8 +2509,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $result['address_line1'] = $part;
       }
       elseif ($i == 1) {
-        // Second part could be street name or continue address.
-        if (empty($result['address_line2'])) {
+        // Second part: if a postal code was extracted from this part, the
+        // remaining text is the city/locality, not address_line2.
+        if ($postalCode && !empty($part)) {
+          $result['locality'] = $part;
+        }
+        elseif (empty($result['address_line2'])) {
           $result['address_line2'] = $part;
         }
         else {
@@ -2267,6 +2553,34 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return $result;
+  }
+
+  /**
+   * Resolves the country code for an address from the jurisdiction config.
+   *
+   * Looks up client.countryCode in the jurisdiction's field_nuxt_config.
+   * Falls back to the site's default country from system.date config.
+   *
+   * @param int|string|null $jurisdictionId
+   *   The jurisdiction group ID, or NULL.
+   *
+   * @return string
+   *   ISO 3166-1 alpha-2 country code (e.g. "DE", "NL").
+   */
+  private function resolveJurisdictionCountry($jurisdictionId): string {
+    if ($jurisdictionId && is_numeric($jurisdictionId)) {
+      $group = $this->entityTypeManager->getStorage('group')->load((int) $jurisdictionId);
+      if ($group && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+        $config = json_decode($group->get('field_nuxt_config')->value, TRUE);
+        if (is_array($config)) {
+          $code = $config['client']['countryCode'] ?? '';
+          if (!empty($code)) {
+            return strtoupper($code);
+          }
+        }
+      }
+    }
+    return $this->configFactory->get('system.date')->get('country.default') ?: 'DE';
   }
 
 }
