@@ -1,5 +1,5 @@
 uuid: 83ba1cbe-1309-47d7-8410-911021b2273d
-langcode: it
+langcode: en
 status: true
 dependencies:
   config:
@@ -10,6 +10,7 @@ dependencies:
     - field.field.group.jur.field_logo_dark
     - field.field.group.jur.field_logo_light
     - field.field.group.jur.field_nuxt_config
+    - field.field.group.jur.field_parent_jurisdiction
     - field.field.group.jur.field_slug
     - group.type.jur
   module:
@@ -71,6 +72,16 @@ content:
     weight: 6
     region: content
     settings: {  }
+    third_party_settings: {  }
+  field_parent_jurisdiction:
+    type: entity_reference_autocomplete
+    weight: 2
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
     third_party_settings: {  }
   field_slug:
     type: string_textfield
