@@ -1,0 +1,17 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - group
+id: group.field_jurisdiction_e_mail
+field_name: field_jurisdiction_e_mail
+entity_type: group
+type: email
+settings: {}
+module: core
+locked: false
+cardinality: -1
+translatable: false
+indexes: {}
+persist_with_no_fields: false
+custom_storage: false

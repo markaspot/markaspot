@@ -1,0 +1,22 @@
+markaspot_escalation.settings:
+  type: config_object
+  label: 'Mark-a-Spot Escalation settings'
+  mapping:
+    escalation_enabled:
+      type: boolean
+      label: 'Enable escalation workflow'
+    delegation_enabled:
+      type: boolean
+      label: 'Enable delegation workflow'
+    auto_escalation_enabled:
+      type: boolean
+      label: 'Enable automatic time-based escalation'
+    cron_interval:
+      type: integer
+      label: 'Cron interval in seconds'
+    notification_roles:
+      type: sequence
+      label: 'Group roles to notify on escalation'
+      sequence:
+        type: string
+        label: 'Role machine name'

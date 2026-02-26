@@ -1,0 +1,443 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the markaspot_escalation module.
+ */
+
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\paragraphs\Entity\ParagraphsType;
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_escalation_install() {
+  // Create the internal_remark paragraph type.
+  _markaspot_escalation_create_paragraph_type();
+
+  // Create the text field on the internal_remark paragraph.
+  _markaspot_escalation_create_internal_remark_text_field();
+
+  // Create the internal_remark reference field on service_request nodes.
+  _markaspot_escalation_create_internal_remark_field();
+
+  // Add field_escalation to the management form display.
+  _markaspot_escalation_add_escalation_to_management_display();
+
+  // Add field_escalation to the group_administration field_group.
+  _markaspot_escalation_add_escalation_to_field_group();
+
+  // Add escalation fields to service_category term form display.
+  _markaspot_escalation_add_category_fields_to_display();
+
+  // Add jurisdiction fields to jur group form display.
+  _markaspot_escalation_add_jurisdiction_fields_to_display();
+
+  \Drupal::logger('markaspot_escalation')->notice('Mark-a-Spot Escalation module installed successfully.');
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Escalation module installed successfully. All fields and displays have been configured.'));
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_escalation_uninstall() {
+  // Clean up configuration.
+  \Drupal::configFactory()->getEditable('markaspot_escalation.settings')->delete();
+
+  // Clean up state variables.
+  \Drupal::state()->delete('markaspot_escalation.next_execution');
+
+  // Note: We intentionally do NOT delete fields or the paragraph type.
+  // This follows Drupal best practices: fields are content/data and should be
+  // preserved when modules are uninstalled. Site administrators can manually
+  // delete them via the UI if desired.
+  \Drupal::logger('markaspot_escalation')->notice('Module uninstalled. Fields (field_internal_remark, field_internal_remark_text, field_escalation, field_escalation_target, field_escalation_days, field_jurisdiction_e_mail, field_jurisdiction_address) and the internal_remark paragraph type have been preserved.');
+
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Escalation module uninstalled. All fields and the internal_remark paragraph type have been preserved. To remove fields, use the Field UI or drush field:delete commands.'));
+}
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_escalation_requirements($phase) {
+  $requirements = [];
+
+  if ($phase === 'runtime') {
+    $entity_type_manager = \Drupal::entityTypeManager();
+    $field_storage = $entity_type_manager->getStorage('field_storage_config');
+
+    // Check for field_escalation on service_request.
+    $field_escalation = $field_storage->load('node.field_escalation');
+    if (!$field_escalation) {
+      $requirements['markaspot_escalation_field'] = [
+        'title' => t('Escalation Field'),
+        'value' => t('Missing'),
+        'description' => t('The field_escalation field is required on service_request nodes but not installed. Please reinstall the module or manually create the field.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+    else {
+      $requirements['markaspot_escalation_field'] = [
+        'title' => t('Escalation Field'),
+        'value' => t('Configured correctly'),
+        'severity' => REQUIREMENT_OK,
+      ];
+    }
+
+    // Check for field_jurisdiction_e_mail on jur group.
+    $field_jur_email = $field_storage->load('group.field_jurisdiction_e_mail');
+    if (!$field_jur_email) {
+      $requirements['markaspot_escalation_jur_email'] = [
+        'title' => t('Jurisdiction Email Field'),
+        'value' => t('Missing'),
+        'description' => t('The field_jurisdiction_e_mail field is required on jur group entities but not installed. Please reinstall the module or manually create the field.'),
+        'severity' => REQUIREMENT_ERROR,
+      ];
+    }
+    else {
+      $requirements['markaspot_escalation_jur_email'] = [
+        'title' => t('Jurisdiction Email Field'),
+        'value' => t('Configured correctly'),
+        'severity' => REQUIREMENT_OK,
+      ];
+    }
+
+    // Check for field_internal_remark on service_request.
+    $field_internal_remark = $field_storage->load('node.field_internal_remark');
+    if (!$field_internal_remark) {
+      $requirements['markaspot_escalation_internal_remark'] = [
+        'title' => t('Internal Remark Field'),
+        'value' => t('Missing'),
+        'description' => t('The field_internal_remark paragraph reference field is required on service_request nodes but not installed.'),
+        'severity' => REQUIREMENT_WARNING,
+      ];
+    }
+    else {
+      $requirements['markaspot_escalation_internal_remark'] = [
+        'title' => t('Internal Remark Field'),
+        'value' => t('Configured correctly'),
+        'severity' => REQUIREMENT_OK,
+      ];
+    }
+  }
+
+  return $requirements;
+}
+
+/**
+ * Creates the internal_remark paragraph type if it does not exist.
+ */
+function _markaspot_escalation_create_paragraph_type() {
+  if (!ParagraphsType::load('internal_remark')) {
+    ParagraphsType::create([
+      'id' => 'internal_remark',
+      'label' => 'Internal Remark',
+    ])->save();
+    \Drupal::logger('markaspot_escalation')->notice('Created internal_remark paragraph type.');
+  }
+  else {
+    \Drupal::logger('markaspot_escalation')->notice('Paragraph type internal_remark already exists.');
+  }
+}
+
+/**
+ * Creates field_internal_remark_text on the internal_remark paragraph.
+ *
+ * A text_long field with cardinality 1 for the remark content.
+ */
+function _markaspot_escalation_create_internal_remark_text_field() {
+  // Create field storage if it does not exist.
+  $field_storage = FieldStorageConfig::loadByName('paragraph', 'field_internal_remark_text');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'paragraphs',
+          'text',
+        ],
+      ],
+      'id' => 'paragraph.field_internal_remark_text',
+      'field_name' => 'field_internal_remark_text',
+      'entity_type' => 'paragraph',
+      'type' => 'text_long',
+      'settings' => [],
+      'module' => 'text',
+      'locked' => FALSE,
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    FieldStorageConfig::create($field_storage_values)->save();
+    \Drupal::logger('markaspot_escalation')->notice('Created field_internal_remark_text field storage on paragraph entity type.');
+  }
+
+  // Create field instance if it does not exist.
+  $field_instance = FieldConfig::loadByName('paragraph', 'internal_remark', 'field_internal_remark_text');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.paragraph.field_internal_remark_text',
+          'paragraphs.paragraphs_type.internal_remark',
+        ],
+        'module' => [
+          'text',
+        ],
+      ],
+      'id' => 'paragraph.internal_remark.field_internal_remark_text',
+      'field_name' => 'field_internal_remark_text',
+      'entity_type' => 'paragraph',
+      'bundle' => 'internal_remark',
+      'label' => 'Remark Text',
+      'description' => 'The text content of the internal remark.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [],
+      'field_type' => 'text_long',
+    ];
+
+    FieldConfig::create($field_values)->save();
+    \Drupal::logger('markaspot_escalation')->notice('Created field_internal_remark_text field instance on internal_remark paragraph.');
+  }
+}
+
+/**
+ * Creates field_internal_remark on the service_request node type.
+ *
+ * An entity_reference_revisions field referencing internal_remark paragraphs
+ * with unlimited cardinality and field_permissions custom access.
+ */
+function _markaspot_escalation_create_internal_remark_field() {
+  // Create field storage if it does not exist.
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_internal_remark');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'entity_reference_revisions',
+          'field_permissions',
+          'node',
+          'paragraphs',
+        ],
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'custom',
+        ],
+      ],
+      'id' => 'node.field_internal_remark',
+      'field_name' => 'field_internal_remark',
+      'entity_type' => 'node',
+      'type' => 'entity_reference_revisions',
+      'settings' => [
+        'target_type' => 'paragraph',
+      ],
+      'module' => 'entity_reference_revisions',
+      'locked' => FALSE,
+      // Unlimited.
+      'cardinality' => -1,
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    FieldStorageConfig::create($field_storage_values)->save();
+    \Drupal::logger('markaspot_escalation')->notice('Created field_internal_remark field storage on node entity type.');
+  }
+
+  // Create field instance if it does not exist.
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_internal_remark');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.node.field_internal_remark',
+          'node.type.service_request',
+        ],
+        'module' => [
+          'entity_reference_revisions',
+        ],
+      ],
+      'id' => 'node.service_request.field_internal_remark',
+      'field_name' => 'field_internal_remark',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Internal Remark',
+      'description' => 'Internal remarks added during escalation and delegation operations.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [
+        'handler' => 'default:paragraph',
+        'handler_settings' => [
+          'target_bundles' => [
+            'internal_remark' => 'internal_remark',
+          ],
+          'negate' => 0,
+          'target_bundles_drag_drop' => [
+            'internal_remark' => [
+              'enabled' => TRUE,
+              'weight' => 0,
+            ],
+          ],
+        ],
+      ],
+      'field_type' => 'entity_reference_revisions',
+    ];
+
+    FieldConfig::create($field_values)->save();
+    \Drupal::logger('markaspot_escalation')->notice('Created field_internal_remark field instance on service_request content type.');
+  }
+}
+
+/**
+ * Adds field_escalation to the management form display for service_request.
+ */
+function _markaspot_escalation_add_escalation_to_management_display() {
+  /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+  $display_repo = \Drupal::service('entity_display.repository');
+  $form_display = $display_repo->getFormDisplay('node', 'service_request', 'management');
+
+  if ($form_display && !$form_display->getComponent('field_escalation')) {
+    $form_display->setComponent('field_escalation', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 24,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'size' => 60,
+        'placeholder' => '',
+      ],
+      'third_party_settings' => [],
+    ])->save();
+    \Drupal::logger('markaspot_escalation')->notice('Added field_escalation to service_request management form display.');
+  }
+}
+
+/**
+ * Adds field_escalation to the group_administration field_group children.
+ */
+function _markaspot_escalation_add_escalation_to_field_group() {
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if ($form_display) {
+    $groups = $form_display->getThirdPartySetting('field_group', 'group_administration');
+    if ($groups && !in_array('field_escalation', $groups['children'])) {
+      $groups['children'][] = 'field_escalation';
+      $form_display->setThirdPartySetting('field_group', 'group_administration', $groups);
+      $form_display->save();
+      \Drupal::logger('markaspot_escalation')->notice('Added field_escalation to group_administration field group.');
+    }
+  }
+}
+
+/**
+ * Adds escalation fields to the service_category term form display.
+ *
+ * Adds field_escalation_target and field_escalation_days to the default
+ * form display for the service_category taxonomy vocabulary.
+ */
+function _markaspot_escalation_add_category_fields_to_display() {
+  /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+  $display_repo = \Drupal::service('entity_display.repository');
+  $term_display = $display_repo->getFormDisplay('taxonomy_term', 'service_category', 'default');
+
+  if ($term_display) {
+    $changed = FALSE;
+
+    if (!$term_display->getComponent('field_escalation_target')) {
+      $term_display->setComponent('field_escalation_target', [
+        'type' => 'entity_reference_autocomplete',
+        'weight' => 20,
+        'region' => 'content',
+        'settings' => [
+          'match_operator' => 'CONTAINS',
+          'size' => 60,
+          'placeholder' => '',
+        ],
+      ]);
+      $changed = TRUE;
+      \Drupal::logger('markaspot_escalation')->notice('Added field_escalation_target to service_category form display.');
+    }
+
+    if (!$term_display->getComponent('field_escalation_days')) {
+      $term_display->setComponent('field_escalation_days', [
+        'type' => 'number',
+        'weight' => 21,
+        'region' => 'content',
+        'settings' => [
+          'placeholder' => '',
+        ],
+      ]);
+      $changed = TRUE;
+      \Drupal::logger('markaspot_escalation')->notice('Added field_escalation_days to service_category form display.');
+    }
+
+    if ($changed) {
+      $term_display->save();
+    }
+  }
+}
+
+/**
+ * Adds jurisdiction fields to the jur group default form display.
+ *
+ * Adds field_jurisdiction_e_mail and field_jurisdiction_address to the
+ * default form display for the jur group type.
+ */
+function _markaspot_escalation_add_jurisdiction_fields_to_display() {
+  /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+  $display_repo = \Drupal::service('entity_display.repository');
+  $group_display = $display_repo->getFormDisplay('group', 'jur', 'default');
+
+  if ($group_display) {
+    $changed = FALSE;
+
+    if (!$group_display->getComponent('field_jurisdiction_e_mail')) {
+      $group_display->setComponent('field_jurisdiction_e_mail', [
+        'type' => 'email_default',
+        'weight' => 20,
+        'region' => 'content',
+        'settings' => [
+          'size' => 60,
+          'placeholder' => '',
+        ],
+      ]);
+      $changed = TRUE;
+      \Drupal::logger('markaspot_escalation')->notice('Added field_jurisdiction_e_mail to jur group form display.');
+    }
+
+    if (!$group_display->getComponent('field_jurisdiction_address')) {
+      $group_display->setComponent('field_jurisdiction_address', [
+        'type' => 'address_default',
+        'weight' => 21,
+        'region' => 'content',
+        'settings' => [],
+      ]);
+      $changed = TRUE;
+      \Drupal::logger('markaspot_escalation')->notice('Added field_jurisdiction_address to jur group form display.');
+    }
+
+    if ($changed) {
+      $group_display->save();
+    }
+  }
+}
