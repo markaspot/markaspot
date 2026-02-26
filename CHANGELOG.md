@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.2](https://github.com/markaspot/markaspot/compare/11.9.1...11.9.2) (2026-02-26)
+
+### Features
+
+* **group:** category filtering for child jurisdictions with allow-list ([21b5ee7](https://github.com/markaspot/markaspot/commit/21b5ee75356bf8b8d7bd4c2f1068c09f38248ddc))
+* **group:** make pages jurisdiction-aware with sticky start page ([9b98c81](https://github.com/markaspot/markaspot/commit/9b98c81791816e939f0a18e768b7679359b88de7))
+
+### Bug Fixes
+
+* **group:** harden update hook idempotency and relax multi-tenant test ([ce4ad93](https://github.com/markaspot/markaspot/commit/ce4ad9368f3efa1ece01d6bc37816fe5ea784b90))
+
 ## [11.9.1](https://github.com/markaspot/markaspot/compare/11.9.0...11.9.1) (2026-02-26)
 
 ### Features
