@@ -1,14 +1,13 @@
 name: Mark-a-Spot
-description: 'Mark-a-Spot Installation Profile'
+description: Mark-a-Spot Installation Profile
 type: profile
 core_version_requirement: ^10 || ^11
-version: '11.9.0'
+version: 11.9.1
 distribution:
   name: Mark-a-Spot
   install:
     finish_url: admin/content
 dependencies:
-
   - address
   - services_api_key_auth
   - block
@@ -69,7 +68,5 @@ dependencies:
   - markaspot_icons
   - markaspot_group
   - service_request
-
 themes:
   - gin
-

@@ -1,5 +1,23 @@
-
 # Changelog
+
+## [11.9.1](https://github.com/markaspot/markaspot/compare/11.9.0...11.9.1) (2026-02-26)
+
+### Features
+
+* configurable jurisdiction/organisation visibility in API response ([fe19fe6](https://github.com/markaspot/markaspot/commit/fe19fe64794ceaa259a447bc9d822f514a11eada))
+* **dashboard:** internal remarks, status note authors, session handoff, user matrix ([6bb2228](https://github.com/markaspot/markaspot/commit/6bb2228c87fa4222bf332ce0e732805e1fb9cf8d))
+* **escalation:** add markaspot_escalation module with jurisdiction-aware delegation ([c775916](https://github.com/markaspot/markaspot/commit/c77591688fe48fea56e1c833662b2f2212104fdb))
+* **group:** jurisdiction hierarchy, org derivation, taxonomy inheritance, backfill hooks ([84f7af5](https://github.com/markaspot/markaspot/commit/84f7af5ad67bed7994904bf50e8e2342d7fa98cd))
+* **group:** members matrix with hierarchy headers, CSRF enforcement, N+1 fix ([3868844](https://github.com/markaspot/markaspot/commit/3868844bf473b59f6aab553fca5a37de83c372fd))
+* hierarchical jurisdiction resolution with API parameter cleanup ([d7f9d2b](https://github.com/markaspot/markaspot/commit/d7f9d2b44610eb1e215a2a56a80f8e1fb52ba3a7))
+* **multi-tenant:** GeoReport jurisdiction filtering, boundary validation, emergency scoping ([4fc4e62](https://github.com/markaspot/markaspot/commit/4fc4e621b4d40a4da58fa8faba13866cce7be19a))
+* **nuxt-api:** settings API extensions, geocoding config, request ID service, JSON schema ([5494528](https://github.com/markaspot/markaspot/commit/549452821e89769b4892b9c3fc044641c3631db0))
+* **tenant_admin:** add per-jurisdiction taxonomy management module ([5df8bc8](https://github.com/markaspot/markaspot/commit/5df8bc8dc0c7088ecb411614c99da8ec4da364c3))
+* **vision:** jurisdiction-aware AI processing, language translation, GDPR gate ([ebeebcf](https://github.com/markaspot/markaspot/commit/ebeebcfaaa56a03853dcae68fa54bcdfd3d7ba46))
+
+### Bug Fixes
+
+* **group:** jurisdiction-aware initial status for multi-tenant requests ([c047f2f](https://github.com/markaspot/markaspot/commit/c047f2ff7053652376496af33d815a11ae1c0618))
 
 ## [11.9.0] - 2026-02-26
 
