@@ -1,6 +1,63 @@
 
 # Changelog
 
+## [11.9.0] - 2026-02-26
+
+### Features
+- **ai:** process both embedding and duplicate scan queues ([4a5c39c](https://github.com/markaspot/markaspot/commit/4a5c39c))
+- **contact:** add markaspot_contact REST API module ([eb3dded](https://github.com/markaspot/markaspot/commit/eb3dded))
+- **group:** auto-assign service requests to sub-jurisdictions by boundary ([793803a](https://github.com/markaspot/markaspot/commit/793803a))
+- **nuxt:** add /api/fonts.css endpoint for custom font delivery ([b0b89c4](https://github.com/markaspot/markaspot/commit/b0b89c4))
+- **nuxt:** add conditionalFields schema, deprecate legacy category arrays ([f7426b1](https://github.com/markaspot/markaspot/commit/f7426b1))
+- **nuxt:** add systemNotice to JSON schema for admin UI editing ([687cb9f](https://github.com/markaspot/markaspot/commit/687cb9f))
+- **nuxt:** extend config schema with feature flags and category arrays ([e9c067f](https://github.com/markaspot/markaspot/commit/e9c067f))
+- **nuxt:** pass systemNotice from field_nuxt_config to settings API ([30798b0](https://github.com/markaspot/markaspot/commit/30798b0))
+- **open311:** add Accept-Language support to single request endpoint ([04f59b5](https://github.com/markaspot/markaspot/commit/04f59b5))
+- **open311:** restrict sensitive fields to managers and add gid stats filter ([73ca19f](https://github.com/markaspot/markaspot/commit/73ca19f))
+- **service-provider:** add form_alter for read-only notes display ([b4b3f60](https://github.com/markaspot/markaspot/commit/b4b3f60))
+- **vision:** add AI hazard and privacy fields to media entity ([43b6923](https://github.com/markaspot/markaspot/commit/43b6923))
+
+### Bug Fixes
+- add Vary header for Accept-Language on GeoReport API responses ([988787c](https://github.com/markaspot/markaspot/commit/988787c))
+- **ai:** count all service requests in processing status ([b5dd420](https://github.com/markaspot/markaspot/commit/b5dd420))
+- **markaspot_group:** change jur-admin scope from insider to individual ([2a8cc44](https://github.com/markaspot/markaspot/commit/2a8cc44))
+- **markaspot_group:** add update hooks for group role scope fixes ([66ce851](https://github.com/markaspot/markaspot/commit/66ce851))
+- **open311:** use site default language instead of hardcoded 'en' fallback ([2d4e1f9](https://github.com/markaspot/markaspot/commit/2d4e1f9))
+
+### Refactoring
+- **open311:** extract language negotiation into shared trait ([5c65b0f](https://github.com/markaspot/markaspot/commit/5c65b0f))
+
+## [11.8.0] - 2026-02-02
+
+### Features
+- **ai:** add markaspot_ai module for AI-powered features ([c899888](https://github.com/markaspot/markaspot/commit/c899888))
+- **cap:** add CAP 1.2 export module + fix Drush 13 commands ([b244a00](https://github.com/markaspot/markaspot/commit/b244a00))
+- **config:** add service_request fields and WMS layer support ([673b029](https://github.com/markaspot/markaspot/commit/673b029))
+- **dashboard:** add markaspot_dashboard module, fix AI cron ENV check ([b2645c8](https://github.com/markaspot/markaspot/commit/b2645c8))
+- **nuxt:** add custom color picker with Tailwind presets
+- **nuxt:** add groupTypes config for JSON:API relationships
+- **open311:** add nid sort field for numeric ID sorting
+- **profile:** add jur group type config for multi-tenant support
+- **service_provider:** add ECA event for SP response notifications
+- **update:** add field_all_groups_member for Group 3 upgrade
+- **vision:** add hazard level and category fields with update hook
+
+### Bug Fixes
+- **deps:** remove npm-asset/leaflet.heat
+- **markaspot_group:** cast target_id to int for JSON:API compatibility
+- **markaspot_nuxt:** fix XSS vulnerability and remove unused code
+- **nuxt_config:** simplify oneOf patterns to object type
+- **open311:** prevent leading comma in address formatting
+- **open311:** prevent null reference error when status_term is missing
+- **publisher:** process all categories in each cron run
+- filter stats API by content language
+- update info block
+
+### Refactoring
+- **nuxt:** make json_form_widget a soft dependency
+- move StatusNoteController from markaspot_nuxt to markaspot_dashboard
+- **vision:** use CAP standard codes for hazard categories
+
 ## [11.7.0] - 2025-01-23
 
 ### Added
