@@ -1,0 +1,17 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - taxonomy
+id: taxonomy_term.field_escalation_days
+field_name: field_escalation_days
+entity_type: taxonomy_term
+type: integer
+settings: {}
+module: core
+locked: false
+cardinality: 1
+translatable: false
+indexes: {}
+persist_with_no_fields: false
+custom_storage: false

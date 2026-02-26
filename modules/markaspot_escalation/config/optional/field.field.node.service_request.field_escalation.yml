@@ -1,0 +1,28 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_escalation
+    - group.type.jur
+    - node.type.service_request
+id: node.service_request.field_escalation
+field_name: field_escalation
+entity_type: node
+bundle: service_request
+label: 'Escalation Target'
+description: 'The jurisdiction this request has been escalated to. Empty means not escalated.'
+required: false
+translatable: false
+default_value: {}
+default_value_callback: ''
+settings:
+  handler: 'default:group'
+  handler_settings:
+    target_bundles:
+      jur: jur
+    sort:
+      field: label
+      direction: ASC
+    auto_create: false
+    auto_create_bundle: ''
+field_type: entity_reference

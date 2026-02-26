@@ -1,0 +1,11 @@
+name: Mark-a-Spot Escalation
+type: module
+description: 'Escalation and delegation routing for service requests between jurisdictions and organisations.'
+package: Mark-a-Spot
+core_version_requirement: ^10 || ^11
+
+dependencies:
+  - markaspot_group
+  - markaspot_open311
+  - drupal:paragraphs
+  - address

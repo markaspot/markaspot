@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_escalation_days
+    - taxonomy.vocabulary.service_category
+id: taxonomy_term.service_category.field_escalation_days
+field_name: field_escalation_days
+entity_type: taxonomy_term
+bundle: service_category
+label: 'Auto-Escalation Days'
+description: 'Number of days without response before automatic escalation. Leave empty to disable auto-escalation for this category.'
+required: false
+translatable: false
+default_value: {}
+default_value_callback: ''
+settings:
+  min: 1
+  max: 365
+  prefix: ''
+  suffix: ''
+field_type: integer
