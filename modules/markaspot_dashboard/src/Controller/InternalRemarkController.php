@@ -10,9 +10,9 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Controller for status note operations.
+ * Controller for internal remark operations.
  */
-class StatusNoteController extends ControllerBase {
+class InternalRemarkController extends ControllerBase {
 
   /**
    * The entity type manager.
@@ -22,7 +22,7 @@ class StatusNoteController extends ControllerBase {
   protected $entityTypeManager;
 
   /**
-   * Constructs a StatusNoteController object.
+   * Constructs an InternalRemarkController object.
    */
   public function __construct(EntityTypeManagerInterface $entity_type_manager) {
     $this->entityTypeManager = $entity_type_manager;
@@ -38,13 +38,17 @@ class StatusNoteController extends ControllerBase {
   }
 
   /**
-   * Create a new status note.
+   * Create a new internal remark.
    */
   public function add(Request $request) {
     $data = json_decode($request->getContent(), TRUE);
 
     if (empty($data['request_uuid'])) {
       return new JsonResponse(['error' => 'Missing request_uuid'], 400);
+    }
+
+    if (empty(trim($data['text'] ?? ''))) {
+      return new JsonResponse(['error' => 'Missing text'], 400);
     }
 
     // Load the service request.
@@ -64,36 +68,14 @@ class StatusNoteController extends ControllerBase {
     }
 
     // Create the paragraph.
-    $paragraph = Paragraph::create(['type' => 'status']);
+    $paragraph = Paragraph::create(['type' => 'internal_remark']);
 
-    // Set status term.
-    if (!empty($data['status_term_uuid'])) {
-      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties([
-        'uuid' => $data['status_term_uuid'],
-        'vid' => 'service_status',
-      ]);
-      if (!empty($terms)) {
-        $paragraph->set('field_status_term', reset($terms)->id());
-      }
-    }
-
-    // Set note text.
-    if (!empty($data['note'])) {
-      $paragraph->set('field_status_note', [
-        'value' => $data['note'],
+    // Set remark text.
+    if (!empty($data['text'])) {
+      $paragraph->set('field_internal_remark_text', [
+        'value' => $data['text'],
         'format' => 'plain_text',
       ]);
-    }
-
-    // Set boilerplate.
-    if (!empty($data['boilerplate_uuid'])) {
-      $boilerplates = $this->entityTypeManager->getStorage('node')->loadByProperties([
-        'uuid' => $data['boilerplate_uuid'],
-        'type' => 'boilerplate',
-      ]);
-      if (!empty($boilerplates)) {
-        $paragraph->set('field_boilerplate', reset($boilerplates)->id());
-      }
     }
 
     // Track the actual author (paragraphs inherit parent ownership).
@@ -102,12 +84,12 @@ class StatusNoteController extends ControllerBase {
     $paragraph->save();
 
     // Link to service request.
-    $current = $node->get('field_status_notes')->getValue();
+    $current = $node->get('field_internal_remark')->getValue();
     $current[] = [
       'target_id' => $paragraph->id(),
       'target_revision_id' => $paragraph->getRevisionId(),
     ];
-    $node->field_status_notes->setValue($current);
+    $node->field_internal_remark->setValue($current);
     $node->save();
 
     return new JsonResponse([
@@ -117,12 +99,12 @@ class StatusNoteController extends ControllerBase {
   }
 
   /**
-   * Delete a status note.
+   * Delete an internal remark.
    */
   public function delete($uuid) {
     $paragraphs = $this->entityTypeManager->getStorage('paragraph')->loadByProperties([
       'uuid' => $uuid,
-      'type' => 'status',
+      'type' => 'internal_remark',
     ]);
 
     if (empty($paragraphs)) {
@@ -135,7 +117,7 @@ class StatusNoteController extends ControllerBase {
     // Find parent node.
     $query = $this->entityTypeManager->getStorage('node')->getQuery()
       ->condition('type', 'service_request')
-      ->condition('field_status_notes.target_id', $paragraph_id)
+      ->condition('field_internal_remark.target_id', $paragraph_id)
       ->accessCheck(TRUE);
     $nids = $query->execute();
 
@@ -150,9 +132,9 @@ class StatusNoteController extends ControllerBase {
     }
 
     // Remove reference.
-    $current = $node->get('field_status_notes')->getValue();
+    $current = $node->get('field_internal_remark')->getValue();
     $filtered = array_filter($current, fn($item) => $item['target_id'] != $paragraph_id);
-    $node->field_status_notes->setValue(array_values($filtered));
+    $node->field_internal_remark->setValue(array_values($filtered));
     $node->save();
 
     $paragraph->delete();
