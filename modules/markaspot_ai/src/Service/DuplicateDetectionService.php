@@ -161,6 +161,16 @@ class DuplicateDetectionService {
         $query->condition('n.nid', $excludeNids, 'NOT IN');
       }
 
+      // Jurisdiction filter: only compare within the same jurisdiction.
+      if (!empty($options['jurisdiction_id'])) {
+        $query->innerJoin('group_relationship_field_data', 'gr',
+          "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
+        $query->innerJoin('groups_field_data', 'grp',
+          'gr.gid = grp.id AND grp.default_langcode = 1');
+        $query->condition('grp.type', 'jur');
+        $query->condition('grp.id', (int) $options['jurisdiction_id']);
+      }
+
       // Apply geographic bounding box filter if coordinates available.
       if ($sourceLat !== NULL && $sourceLng !== NULL && $radius > 0) {
         $bbox = $this->calculateBoundingBox($sourceLat, $sourceLng, $radius);
@@ -592,7 +602,7 @@ class DuplicateDetectionService {
    * @return array
    *   Array of pending match records with node titles.
    */
-  public function getPendingMatches(int $limit = 50, int $offset = 0): array {
+  public function getPendingMatches(int $limit = 50, int $offset = 0, ?int $jurisdictionId = NULL): array {
     try {
       $query = $this->database->select('markaspot_ai_duplicate_matches', 'd')
         ->fields('d')
@@ -606,6 +616,16 @@ class DuplicateDetectionService {
       $query->leftJoin('node_field_data', 'nm', 'd.match_nid = nm.nid');
       $query->addField('ns', 'title', 'source_title');
       $query->addField('nm', 'title', 'match_title');
+
+      // Jurisdiction filter: scope to matches where source node belongs to jurisdiction.
+      if ($jurisdictionId !== NULL) {
+        $query->innerJoin('group_relationship_field_data', 'gr',
+          "d.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
+        $query->innerJoin('groups_field_data', 'grp',
+          'gr.gid = grp.id AND grp.default_langcode = 1');
+        $query->condition('grp.type', 'jur');
+        $query->condition('grp.id', $jurisdictionId);
+      }
 
       return $query->execute()->fetchAll(\PDO::FETCH_ASSOC);
     }
@@ -623,12 +643,22 @@ class DuplicateDetectionService {
    * @return array
    *   Array with status counts: 'pending', 'confirmed', 'rejected', 'total'.
    */
-  public function getMatchCounts(): array {
+  public function getMatchCounts(?int $jurisdictionId = NULL): array {
     try {
       $query = $this->database->select('markaspot_ai_duplicate_matches', 'd')
         ->fields('d', ['status']);
       $query->addExpression('COUNT(*)', 'count');
       $query->groupBy('d.status');
+
+      // Jurisdiction filter: scope counts to a specific jurisdiction.
+      if ($jurisdictionId !== NULL) {
+        $query->innerJoin('group_relationship_field_data', 'gr',
+          "d.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
+        $query->innerJoin('groups_field_data', 'grp',
+          'gr.gid = grp.id AND grp.default_langcode = 1');
+        $query->condition('grp.type', 'jur');
+        $query->condition('grp.id', $jurisdictionId);
+      }
 
       $results = $query->execute()->fetchAllKeyed();
 

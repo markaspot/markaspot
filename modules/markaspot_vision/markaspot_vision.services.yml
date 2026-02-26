@@ -13,6 +13,6 @@ services:
     arguments:
       - '@markaspot_vision.image_processing'
       - '@logger.factory'
-      - '@csrf_token'
+      - '@flood'
     tags:
       - { name: controller.service_arguments }

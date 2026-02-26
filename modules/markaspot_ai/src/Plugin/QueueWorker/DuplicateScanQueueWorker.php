@@ -173,8 +173,15 @@ class DuplicateScanQueueWorker extends QueueWorkerBase implements ContainerFacto
     try {
       $this->logger->debug('Starting duplicate scan for node @nid...', ['@nid' => $nid]);
 
-      // Find potential duplicates.
-      $duplicates = $this->duplicateDetectionService->findDuplicates($node);
+      // Resolve jurisdiction to scope duplicate search within same jurisdiction.
+      $jurisdictionId = _markaspot_ai_get_jurisdiction_id_for_node($node);
+
+      // Find potential duplicates (scoped to jurisdiction if available).
+      $options = [];
+      if ($jurisdictionId !== NULL) {
+        $options['jurisdiction_id'] = $jurisdictionId;
+      }
+      $duplicates = $this->duplicateDetectionService->findDuplicates($node, $options);
 
       if (empty($duplicates)) {
         $this->logger->debug('No duplicates found for node @nid.', ['@nid' => $nid]);
