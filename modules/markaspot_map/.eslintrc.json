@@ -1,8 +1,0 @@
-{
-  "extends": "../../../../../core/.eslintrc.json",
-  "globals": {
-    "L": true,
-    "Waypoint": true,
-    "dateFormat": true
-  }
-}

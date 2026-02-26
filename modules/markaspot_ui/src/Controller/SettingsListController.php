@@ -72,7 +72,6 @@ class SettingsListController extends ControllerBase {
   public function listSettings() {
     // Define markaspot module routes.
     $markaspot_modules = [
-      'markaspot_map' => 'markaspot_map.settings',
       'markaspot_request_id' => 'markaspot_request_id.settings',
       'markaspot_open311' => 'markaspot_open311.settings',
       'markaspot_validation' => 'markaspot_validation.settings',
