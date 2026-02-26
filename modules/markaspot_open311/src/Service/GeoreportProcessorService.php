@@ -1264,7 +1264,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $request['status_notes'] = $statusNote;
     }
 
-    // Add manager-only fields.
+    // Add manager-only PII fields.
     if ($extendedRole === 'manager') {
       if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
         $request['email'] = $node->get('field_e_mail')->value ?? '';
@@ -1283,34 +1283,42 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $request['last_name'] = $node->get('field_last_name')->value ?? '';
       }
 
-      // Add organisation (department) and jurisdiction - manager only.
-      if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
-        $organisationEntity = $node->get('field_organisation')->entity;
-        if ($organisationEntity) {
-          $request['organisation'] = [
-            'id' => (string) $organisationEntity->id(),
-            'uuid' => $organisationEntity->uuid(),
-            'label' => $organisationEntity->label(),
-            'name' => $organisationEntity->label(),
-          ];
-        }
-      }
-
-      // Resolve jurisdiction from node's direct jur-type group_relationship.
-      // This returns the most specific (child) jurisdiction, not the root.
-      // Falls back to org->field_jurisdiction only if no direct jur relationship exists.
-      if ($this->moduleHandler->moduleExists('group')) {
-        $jurGroup = $this->resolveNodeJurisdiction($node);
-        if ($jurGroup) {
-          $request['jurisdiction'] = [
-            'id' => (string) $jurGroup->id(),
-            'label' => $jurGroup->label(),
-          ];
-        }
-      }
-
       if ($node->hasField('uid') && !$node->get('uid')->isEmpty() && $node->get('uid')->entity) {
         $request['extended_attributes']['author'] = $node->get('uid')->entity->label();
+      }
+    }
+
+    // Organisation and jurisdiction: visible to managers always,
+    // visible to all users when configured via response_visibility.
+    $visibilityConfig = $this->configFactory->get('markaspot_open311.settings')->get('response_visibility') ?? [];
+
+    $showOrganisation = $extendedRole === 'manager' || !empty($visibilityConfig['public_organisation']);
+    if ($showOrganisation && $node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+      $organisationEntity = $node->get('field_organisation')->entity;
+      if ($organisationEntity) {
+        $request['organisation'] = [
+          'id' => (string) $organisationEntity->id(),
+          'uuid' => $organisationEntity->uuid(),
+          'label' => $organisationEntity->label(),
+          'name' => $organisationEntity->label(),
+        ];
+      }
+    }
+
+    $showJurisdiction = $extendedRole === 'manager' || !empty($visibilityConfig['public_jurisdiction']);
+    if ($showJurisdiction && $this->moduleHandler->moduleExists('group')) {
+      $jurGroup = $this->resolveNodeJurisdiction($node);
+      if ($jurGroup) {
+        $request['jurisdiction'] = [
+          'id' => (string) $jurGroup->id(),
+          'label' => $jurGroup->label(),
+        ];
+
+        // Build jurisdiction chain when configured.
+        $jurisdictionDisplay = $visibilityConfig['jurisdiction_display'] ?? 'leaf';
+        if ($jurisdictionDisplay === 'chain') {
+          $request['jurisdiction']['chain'] = $this->buildJurisdictionChain($jurGroup);
+        }
       }
     }
 
@@ -1778,9 +1786,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * specific (child) jurisdiction. Falls back to the organisation entity's
    * field_jurisdiction if no direct jur relationship exists.
    *
-   * Uses loadByProperties() which bypasses entity access checks. This method
-   * MUST only be called from contexts that have already verified the caller
-   * has manager-level access (extendedRole === 'manager').
+   * Uses loadByProperties() which bypasses entity access checks. This is
+   * intentional: the method is called for managers unconditionally, and for
+   * all users when response_visibility.public_jurisdiction is enabled by an
+   * administrator. Only group id and label are exposed, no sensitive data.
    *
    * @param object $node
    *   The service request node.
@@ -1812,6 +1821,56 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return NULL;
+  }
+
+  /**
+   * Builds the jurisdiction chain from leaf to root.
+   *
+   * Traverses field_parent_jurisdiction upward and returns an array
+   * ordered from root to leaf (e.g., ["Stadt Köln", "Lindenthal"]).
+   *
+   * @param object $leafGroup
+   *   The leaf jurisdiction group entity.
+   *
+   * @return array
+   *   Array of jurisdiction objects with id and label, root first.
+   */
+  protected function buildJurisdictionChain(object $leafGroup): array {
+    $chain = [];
+    $group = $leafGroup;
+    $visited = [];
+
+    // Collect from leaf upward.
+    while ($group) {
+      $groupId = (int) $group->id();
+
+      // Circular reference guard.
+      if (in_array($groupId, $visited, TRUE)) {
+        break;
+      }
+      $visited[] = $groupId;
+
+      $chain[] = [
+        'id' => (string) $group->id(),
+        'label' => $group->label(),
+      ];
+
+      // Walk up to parent.
+      if ($group->hasField('field_parent_jurisdiction')
+          && !$group->get('field_parent_jurisdiction')->isEmpty()) {
+        $parentId = (int) $group->get('field_parent_jurisdiction')->target_id;
+        $group = $this->entityTypeManager->getStorage('group')->load($parentId);
+        if (!$group || $group->bundle() !== 'jur') {
+          break;
+        }
+      }
+      else {
+        break;
+      }
+    }
+
+    // Reverse so root comes first.
+    return array_reverse($chain);
   }
 
   /**

@@ -414,6 +414,26 @@
     }
   },
 
+  "responseVisibility": {
+    "ui:options": {
+      "title": "Response Visibility",
+      "description": "How organisation and jurisdiction metadata appears in the frontend. The API-level toggle (whether data is included at all) is a global setting under Open311 Settings.",
+      "weight": 85
+    },
+    "properties": {
+      "showInList": {
+        "ui:options": {
+          "description": "Show badges in the report list. When off, badges only appear on detail pages and in followed reports."
+        }
+      },
+      "jurisdictionDisplay": {
+        "ui:options": {
+          "description": "leaf = direct jurisdiction only, chain = full hierarchy path"
+        }
+      }
+    }
+  },
+
   "filters": {
     "ui:options": {
       "title": "Filters",

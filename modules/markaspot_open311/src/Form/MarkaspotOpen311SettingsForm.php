@@ -299,6 +299,45 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       '#description' => $this->t('The group type machine name for jurisdictions (e.g., "jur" for new sites, "jurisdiction" for legacy sites). Used for multi-tenant configurations and jurisdiction-based filtering.'),
     ];
 
+    // Response Visibility Settings.
+    $form['markaspot_open311']['response_visibility'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Response Visibility'),
+      '#description' => $this->t('Control which fields are visible to all users in the API response.'),
+      '#collapsible' => TRUE,
+      '#group' => 'settings',
+    ];
+    $form['markaspot_open311']['response_visibility']['public_jurisdiction'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Show jurisdiction to all users'),
+      '#default_value' => $config->get('response_visibility.public_jurisdiction') ?? FALSE,
+      '#description' => $this->t('Include the jurisdiction (district/area) in the response for all users.'),
+      '#disabled' => !$group_module_enabled,
+    ];
+    if (!$group_module_enabled) {
+      $form['markaspot_open311']['response_visibility']['public_jurisdiction']['#description'] .= '<br><strong>' . $this->t('Note: The Group module is not installed.') . '</strong>';
+    }
+    $form['markaspot_open311']['response_visibility']['public_organisation'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Show organisation to all users'),
+      '#default_value' => $config->get('response_visibility.public_organisation') ?? FALSE,
+      '#description' => $this->t('Include the responsible organisation in the response for all users.'),
+    ];
+    $form['markaspot_open311']['response_visibility']['jurisdiction_display'] = [
+      '#type' => 'radios',
+      '#title' => $this->t('Jurisdiction display mode'),
+      '#default_value' => $config->get('response_visibility.jurisdiction_display') ?? 'leaf',
+      '#options' => [
+        'leaf' => $this->t('Leaf only (e.g. "Lindenthal")'),
+        'chain' => $this->t('Full chain (e.g. "Köln > Lindenthal")'),
+      ],
+      '#description' => $this->t('How to display the jurisdiction hierarchy in the API response.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="public_jurisdiction"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
     return parent::buildForm($form, $form_state);
   }
 
@@ -333,6 +372,10 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       ->set('group_filter_enabled', $values['group_filter_enabled'])
       ->set('group_filter_type', $values['group_filter_type'])
       ->set('jurisdiction_group_type', $values['jurisdiction_group_type'])
+      // Response Visibility.
+      ->set('response_visibility.public_jurisdiction', $values['public_jurisdiction'])
+      ->set('response_visibility.public_organisation', $values['public_organisation'])
+      ->set('response_visibility.jurisdiction_display', $values['jurisdiction_display'])
       ->save();
 
     parent::submitForm($form, $form_state);

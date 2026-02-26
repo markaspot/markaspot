@@ -137,3 +137,33 @@ markaspot_open311.settings:
     jurisdiction_group_type:
       type: string
       label: 'Jurisdiction group type machine name'
+
+    # Response Visibility
+    # Controls which organisational metadata is included in the GeoReport API
+    # response for unauthenticated/public users. By default, organisation and
+    # jurisdiction are only visible to managers (session-authenticated users).
+    # Enabling these options adds the fields to the top-level API response for
+    # all users, supporting multi-tenant transparency use cases.
+    response_visibility:
+      type: mapping
+      label: 'Response visibility settings'
+      mapping:
+        public_jurisdiction:
+          type: boolean
+          label: 'Show jurisdiction to all users'
+          # When enabled, the jurisdiction (Group entity of type "jur") that
+          # owns the service request is included in the response as a top-level
+          # "jurisdiction" object with id and label. Requires the Group module.
+        public_organisation:
+          type: boolean
+          label: 'Show organisation to all users'
+          # When enabled, the organisation (referenced via field_organisation)
+          # is included in the response as a top-level "organisation" object
+          # with id and label.
+        jurisdiction_display:
+          type: string
+          label: 'Jurisdiction display mode (leaf or chain)'
+          # "leaf" (default): Only the direct jurisdiction is shown.
+          # "chain": The full hierarchy is included as a "chain" array,
+          # traversing field_parent_jurisdiction upward. Example:
+          # chain: [{id: "1", label: "Köln"}, {id: "2", label: "Lindenthal"}]

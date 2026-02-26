@@ -1029,6 +1029,26 @@
         }
       }
     },
+    "responseVisibility": {
+      "type": "object",
+      "title": "Response Visibility",
+      "description": "Controls how organisation and jurisdiction metadata is displayed in the frontend. The API-level visibility (whether the data is included at all) is configured globally under Open311 Settings.",
+      "properties": {
+        "showInList": {
+          "type": "boolean",
+          "title": "Show in Report List",
+          "description": "Display organisation and jurisdiction badges in the main report list. When disabled, they only appear on detail pages and in followed reports.",
+          "default": false
+        },
+        "jurisdictionDisplay": {
+          "type": "string",
+          "title": "Jurisdiction Display Mode",
+          "description": "How the jurisdiction is presented: 'leaf' shows only the direct jurisdiction (e.g. 'Lindenthal'), 'chain' shows the full hierarchy (e.g. 'Köln > Lindenthal').",
+          "enum": ["leaf", "chain"],
+          "default": "leaf"
+        }
+      }
+    },
     "filters": {
       "type": "object",
       "title": "Filter Settings",

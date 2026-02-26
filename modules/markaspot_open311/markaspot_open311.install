@@ -1,0 +1,42 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the markaspot_open311 module.
+ */
+
+/**
+ * Add response_visibility config for configurable jurisdiction/organisation.
+ */
+function markaspot_open311_update_11801() {
+  $config = \Drupal::configFactory()->getEditable('markaspot_open311.settings');
+  $changed = FALSE;
+
+  if ($config->get('response_visibility') === NULL) {
+    $config->set('response_visibility', [
+      'public_jurisdiction' => FALSE,
+      'public_organisation' => FALSE,
+      'jurisdiction_display' => 'leaf',
+    ]);
+    $changed = TRUE;
+  }
+  else {
+    // Ensure jurisdiction_display exists on sites with partial config.
+    if ($config->get('response_visibility.jurisdiction_display') === NULL) {
+      $config->set('response_visibility.jurisdiction_display', 'leaf');
+      $changed = TRUE;
+    }
+    // Remove show_in_list if present (moved to per-jurisdiction config).
+    if ($config->get('response_visibility.show_in_list') !== NULL) {
+      $config->clear('response_visibility.show_in_list');
+      $changed = TRUE;
+    }
+  }
+
+  if ($changed) {
+    $config->save();
+    return t('Added or updated response_visibility configuration.');
+  }
+
+  return t('response_visibility configuration already up to date.');
+}
