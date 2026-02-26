@@ -1,0 +1,65 @@
+<?php
+
+/**
+ * @file
+ * Install/update functions for markaspot_tenant_admin.
+ */
+
+declare(strict_types=1);
+
+use Drupal\group\Entity\GroupMembership;
+use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\markaspot_tenant_admin\TenantAdminHelper;
+use Drupal\user\Entity\User;
+
+/**
+ * Implements hook_install().
+ *
+ * Scans existing jur-admin memberships and retroactively grants the
+ * tenant_admin Drupal role to those users.
+ */
+function markaspot_tenant_admin_install(): void {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $group_storage = $entity_type_manager->getStorage('group');
+
+  // Load all jur groups.
+  $jur_groups = $group_storage->loadByProperties(['type' => 'jur']);
+  if (empty($jur_groups)) {
+    return;
+  }
+
+  $synced_users = [];
+
+  foreach ($jur_groups as $group) {
+    // Load memberships with jur-tenant_admin role in this group.
+    $memberships = GroupMembership::loadByGroup($group, [TenantAdminHelper::GROUP_ROLE_ID]);
+
+    foreach ($memberships as $membership) {
+      assert($membership instanceof GroupRelationshipInterface);
+      $user_entity = $membership->getEntity();
+
+      if (!$user_entity instanceof \Drupal\user\UserInterface) {
+        continue;
+      }
+
+      $uid = (int) $user_entity->id();
+      if (isset($synced_users[$uid])) {
+        continue;
+      }
+
+      $user = User::load($uid);
+      if ($user && !$user->hasRole('tenant_admin')) {
+        $user->addRole('tenant_admin');
+        $user->save();
+        $synced_users[$uid] = $user->getAccountName();
+      }
+    }
+  }
+
+  if (!empty($synced_users)) {
+    \Drupal::messenger()->addStatus(t('Granted tenant_admin role to @count existing jur-admin users: @names.', [
+      '@count' => count($synced_users),
+      '@names' => implode(', ', $synced_users),
+    ]));
+  }
+}

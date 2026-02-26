@@ -1,0 +1,24 @@
+langcode: en
+status: true
+dependencies: {  }
+id: tenant_admin
+label: 'Tenant Admin'
+weight: 4
+is_admin: false
+permissions:
+  - 'access toolbar'
+  - 'view the administration theme'
+  - 'access taxonomy overview'
+  - 'access administration pages'
+  - 'administer tenant taxonomy'
+  - 'create terms in service_category'
+  - 'edit terms in service_category'
+  - 'delete terms in service_category'
+  - 'create terms in service_status'
+  - 'edit terms in service_status'
+  - 'delete terms in service_status'
+  - 'create content translations'
+  - 'update content translations'
+  - 'delete content translations'
+  - 'translate service_category taxonomy_term'
+  - 'translate service_status taxonomy_term'
