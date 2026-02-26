@@ -7,10 +7,10 @@ namespace Drupal\markaspot_nuxt;
 use Drupal\json_form_widget\ValueHandler;
 
 /**
- * Extended value handler with boolean support.
+ * Extended value handler with boolean and additionalProperties support.
  *
  * Extends json_form_widget's ValueHandler to add support for boolean
- * fields which are not handled by the base module.
+ * fields and dynamic key-value pairs from additionalProperties.
  */
 class ExtendedValueHandler extends ValueHandler {
 
@@ -25,6 +25,48 @@ class ExtendedValueHandler extends ValueHandler {
 
     // Delegate all other types to parent.
     return parent::flattenValues($formValues, $property, $schema);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function handleObjectValues($formValues, $property, $schema) {
+    // Let parent process known (static) properties.
+    $data = parent::handleObjectValues($formValues, $property, $schema);
+    if ($data === FALSE) {
+      $data = [];
+    }
+
+    // Process additional (dynamic) properties from the __additional container.
+    if (isset($schema->additionalProperties)
+      && is_object($schema->additionalProperties)
+      && isset($formValues['__additional']['items'])
+    ) {
+      $additional_schema = $schema->additionalProperties;
+      $ap_properties = (array) ($additional_schema->properties ?? []);
+
+      foreach ($formValues['__additional']['items'] as $entry) {
+        $key = trim($entry['_key'] ?? '');
+        if ($key === '') {
+          continue;
+        }
+
+        // Extract each sub-property value using the existing type handlers.
+        $value_obj = [];
+        foreach ($ap_properties as $sub_prop => $sub_schema) {
+          $sub_value = $this->flattenValues($entry, $sub_prop, $sub_schema);
+          if ($sub_value !== FALSE && $sub_value !== NULL) {
+            $value_obj[$sub_prop] = $sub_value;
+          }
+        }
+
+        if (!empty($value_obj)) {
+          $data[$key] = $value_obj;
+        }
+      }
+    }
+
+    return $data ?: FALSE;
   }
 
   /**

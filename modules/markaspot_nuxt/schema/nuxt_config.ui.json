@@ -179,6 +179,36 @@
         "ui:options": {
           "description": "Category-conditional field visibility. Keys are Drupal field names, values define which categories trigger them."
         }
+      },
+      "geocoding": {
+        "ui:options": {
+          "title": "Geocoding",
+          "description": "Address search provider and country/region bias"
+        },
+        "properties": {
+          "providers": {
+            "ui:options": {
+              "description": "Available providers: photon (Komoot, free), mapbox (requires API key), nominatim (OSM)"
+            }
+          },
+          "default": {
+            "ui:options": {
+              "description": "Which provider to use by default"
+            }
+          },
+          "country": {
+            "ui:options": {
+              "widget": "textfield",
+              "placeholder": "e.g. de, nl, us"
+            }
+          },
+          "region": {
+            "ui:options": {
+              "widget": "textfield",
+              "placeholder": "e.g. south-holland, bayern"
+            }
+          }
+        }
       }
     }
   },

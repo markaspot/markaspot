@@ -1,0 +1,9 @@
+markaspot_tenant_admin.overview:
+  path: '/admin/tenant'
+  defaults:
+    _controller: '\Drupal\markaspot_tenant_admin\Controller\TenantOverviewController::overview'
+    _title: 'Jurisdiction Administration'
+  requirements:
+    _permission: 'administer tenant taxonomy'
+  options:
+    _admin_route: TRUE

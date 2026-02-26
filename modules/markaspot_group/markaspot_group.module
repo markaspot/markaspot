@@ -11,11 +11,106 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\node\NodeInterface;
+use Drupal\taxonomy\TermInterface;
 use Drupal\user\UserInterface;
+
+/**
+ * Implements hook_mail().
+ */
+function markaspot_group_mail(string $key, array &$message, array $params): void {
+  if ($key === 'org_notification') {
+    $message['subject'] = $params['subject'];
+    $message['body'][] = $params['message'];
+  }
+}
+
+/**
+ * Implements hook_entity_presave() for taxonomy_term entities.
+ *
+ * Enforces taxonomy inheritance rule: child jurisdictions (those with
+ * field_parent_jurisdiction set) must not have their own taxonomy terms.
+ * If a term's field_jurisdiction points to a child jurisdiction, the reference
+ * is automatically redirected to the root parent jurisdiction.
+ *
+ * This prevents mixed taxonomy catalogs in hierarchical deployments
+ * (Landkreis model) where all subdivisions share the parent's service catalog.
+ *
+ * @see https://markaspot-docs/architecture/multi-jurisdiction.md
+ */
+function markaspot_group_entity_presave(EntityInterface $entity): void {
+  if (!($entity instanceof TermInterface)) {
+    return;
+  }
+
+  // Only process terms with a field_jurisdiction reference.
+  if (!$entity->hasField('field_jurisdiction') || $entity->get('field_jurisdiction')->isEmpty()) {
+    return;
+  }
+
+  $jurisdiction_id = (int) $entity->get('field_jurisdiction')->target_id;
+  if ($jurisdiction_id <= 0) {
+    return;
+  }
+
+  // Load the referenced jurisdiction group.
+  $group = \Drupal::entityTypeManager()->getStorage('group')->load($jurisdiction_id);
+  if (!$group || $group->bundle() !== 'jur') {
+    return;
+  }
+
+  // Check if this jurisdiction has a parent (is a child/subdivision).
+  if (!$group->hasField('field_parent_jurisdiction') || $group->get('field_parent_jurisdiction')->isEmpty()) {
+    // Root jurisdiction, no redirect needed.
+    return;
+  }
+
+  // Traverse up to the root jurisdiction.
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $root_id = $resolver->getRootJurisdictionId($jurisdiction_id);
+
+  // Redirect field_jurisdiction to the root parent.
+  $entity->set('field_jurisdiction', $root_id);
+
+  \Drupal::logger('markaspot_group')->notice(
+    'Taxonomy term "@term" (vid: @vid): redirected field_jurisdiction from child @child to root @root.',
+    [
+      '@term' => $entity->label() ?? '(new)',
+      '@vid' => $entity->bundle(),
+      '@child' => $jurisdiction_id,
+      '@root' => $root_id,
+    ]
+  );
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for user_form.
+ *
+ * Hides field_all_groups_member on the user edit form unless the edited
+ * user is uid=1 or has the 'administrator' role. The field should only
+ * be visible (and editable) for those accounts.
+ */
+function markaspot_group_form_user_form_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state): void {
+  if (!isset($form['field_all_groups_member'])) {
+    return;
+  }
+
+  $user = $form_state->getFormObject()->getEntity();
+  $uid = (int) $user->id();
+
+  // Only show for uid=1 or administrators.
+  if ($uid === 1 || $user->hasRole('administrator')) {
+    return;
+  }
+
+  $form['field_all_groups_member']['#access'] = FALSE;
+}
 
 /**
  * Implements hook_user_insert().
@@ -130,12 +225,10 @@ function _markaspot_group_add_all_groups_members_to_group(GroupInterface $group)
 }
 
 /**
- * Checks if a user is allowed to be auto-added to a group based on type.
+ * Checks if a user is allowed to be auto-added to a group.
  *
- * Rules:
- * - JUR (Jurisdiction): Only user 1 (uid=1) is allowed.
- * - ORG (Organisation): All users with field_all_groups_member are allowed.
- * - Other group types: All users with field_all_groups_member are allowed.
+ * Called by _markaspot_group_add_all_groups_members_to_group() for users
+ * with field_all_groups_member enabled. Currently allows all group types.
  *
  * @param \Drupal\user\UserInterface $account
  *   The user account to check.
@@ -146,14 +239,11 @@ function _markaspot_group_add_all_groups_members_to_group(GroupInterface $group)
  *   TRUE if the user is allowed to be added, FALSE otherwise.
  */
 function _markaspot_group_user_allowed_for_group(UserInterface $account, GroupInterface $group): bool {
-  $group_type_id = $group->bundle();
-
-  // JUR groups: Only user 1 (uid=1) is allowed to be auto-added.
-  if ($group_type_id === 'jur') {
+  // JUR groups: only uid=1 is auto-added as member.
+  if ($group->bundle() === 'jur') {
     return (int) $account->id() === 1;
   }
-
-  // ORG groups and other types: All users with field_all_groups_member allowed.
+  // ORG groups: all users with field_all_groups_member are added.
   return TRUE;
 }
 
@@ -247,9 +337,16 @@ function markaspot_group_node_presave(NodeInterface $node): void {
 /**
  * Implements hook_node_insert().
  *
- * Creates group relationship when a new service_request node is created
- * with field_organisation set. Also assigns the node to matching
- * sub-jurisdictions based on geographic boundaries.
+ * Handles all group assignments for new service_request nodes:
+ * 1. Assigns sub-jurisdictions by geographic boundary
+ * 2. Assigns root jurisdiction (fallback when no sub-jur matched)
+ * 3. Derives organisation from category (jurisdiction-aware)
+ * 4. Syncs field_organisation to org group relationship
+ * 5. Sends notification email to the assigned organisation
+ * 6. Saves node if org was derived
+ *
+ * The sub-jurisdiction assignment runs first so that org derivation can
+ * check whether a child jurisdiction has its own org handling the category.
  */
 function markaspot_group_node_insert(NodeInterface $node): void {
   // Only process service_request nodes.
@@ -257,7 +354,38 @@ function markaspot_group_node_insert(NodeInterface $node): void {
     return;
   }
 
-  // 1. Sync field_organisation to org group relationship (existing logic).
+  // 1. Auto-assign to sub-jurisdictions based on geographic boundaries.
+  // Returns the child jur group ID (int) or FALSE if no sub-jur matched.
+  // Run this BEFORE org derivation so we know which jurisdiction to check
+  // for jurisdiction-specific org assignments.
+  $child_jur_id = _markaspot_group_assign_sub_jurisdictions($node);
+
+  // 2. Auto-assign to root jurisdiction group (only if no child jur was found).
+  // Skip entirely when a sub-jurisdiction was assigned: the reporting jur
+  // (e.g. Noord) is the authoritative one. Adding the root (e.g. Amsterdam)
+  // would make escalation meaningless because the request already belongs
+  // to the parent's scope.
+  if (!$child_jur_id) {
+    _markaspot_group_assign_root_jurisdiction($node);
+  }
+
+  // 3. Derive organisation from category if not already set.
+  //    Replaces ECA rule process_apply_group which read
+  //    [node:field_category:entity:field_category_gid].
+  //    Now jurisdiction-aware: if a child jur was assigned, checks for an
+  //    org in that jurisdiction that handles the category before falling
+  //    back to the root-level org from field_category_gid.
+  $org_derived = FALSE;
+  if ($node->hasField('field_organisation') && $node->get('field_organisation')->isEmpty()) {
+    $org_group_id = _markaspot_group_derive_org_from_category($node, $child_jur_id ?: NULL);
+    if ($org_group_id) {
+      $node->set('field_organisation', ['target_id' => $org_group_id]);
+      $node->_markaspot_group_pending_sync = $org_group_id;
+      $org_derived = TRUE;
+    }
+  }
+
+  // 4. Sync field_organisation to org group relationship.
   if (isset($node->_markaspot_group_pending_sync)) {
     $group_id = $node->_markaspot_group_pending_sync;
     if (!empty($group_id) && !_markaspot_group_is_syncing()) {
@@ -265,8 +393,22 @@ function markaspot_group_node_insert(NodeInterface $node): void {
     }
   }
 
-  // 2. Auto-assign to sub-jurisdictions based on geographic boundaries.
-  _markaspot_group_assign_sub_jurisdictions($node);
+  // 5. Notify the assigned organisation via email.
+  if ($org_derived) {
+    _markaspot_group_notify_organisation($node);
+  }
+
+  // 6. Save the node if we derived the organisation (field_organisation changed).
+  if ($org_derived) {
+    // Prevent recursive hooks during this save.
+    _markaspot_group_set_syncing(TRUE);
+    try {
+      $node->save();
+    }
+    finally {
+      _markaspot_group_set_syncing(FALSE);
+    }
+  }
 }
 
 /**
@@ -377,6 +519,17 @@ function _markaspot_group_sync_field_to_relationship(NodeInterface $node, ?int $
           );
         }
       }
+      elseif ($group) {
+        \Drupal::logger('markaspot_group')->error(
+          'Node @nid: field_organisation references group @gid with bundle "@bundle", expected "@expected". Skipping sync.',
+          [
+            '@nid' => $node->id(),
+            '@gid' => $new_group_id,
+            '@bundle' => $group->bundle(),
+            '@expected' => $group_type,
+          ]
+        );
+      }
     }
   }
   finally {
@@ -430,7 +583,7 @@ function _markaspot_group_sync_relationship_to_field(GroupRelationshipInterface 
   _markaspot_group_set_syncing(TRUE);
 
   try {
-    $current_value = $entity->get('field_organisation')->isEmpty() ? NULL : $entity->get('field_organisation')->target_id;
+    $current_value = $entity->get('field_organisation')->isEmpty() ? NULL : (int) $entity->get('field_organisation')->target_id;
     $group_id = (int) $group->id();
 
     if ($operation === 'insert') {
@@ -469,16 +622,17 @@ function _markaspot_group_sync_relationship_to_field(GroupRelationshipInterface 
 }
 
 /**
- * Gets the configured org group type.
+ * Gets the organisation group type for field_organisation sync.
  *
- * Supports both 'org' (default) and legacy 'organisation' group type names.
+ * Always returns 'org' because field_organisation must only reference
+ * organisation groups, never jurisdiction groups. The group_filter_type
+ * config controls API scoping and is intentionally not used here.
  *
  * @return string
- *   The group type machine name.
+ *   The group type machine name ('org').
  */
 function _markaspot_group_get_org_group_type(): string {
-  $config = \Drupal::config('markaspot_open311.settings');
-  return $config->get('group_filter_type') ?? 'org';
+  return 'org';
 }
 
 /**
@@ -505,19 +659,269 @@ function _markaspot_group_set_syncing(bool $syncing): void {
 }
 
 /**
- * Assigns a service request to sub-jurisdictions based on boundaries.
+ * Derives the organisation group from a node's category term.
  *
- * Loads all jurisdiction groups with a field_boundary, checks if the node's
- * coordinates fall within each boundary polygon, and creates group
- * relationships for matches. Skips the main jurisdiction (handled by ECA).
+ * When a child jurisdiction ID is provided, first searches for an org in
+ * that jurisdiction that declares the category in its field_service_categories.
+ * If no jurisdiction-specific org is found, falls back to the root-level org
+ * from field_category_gid on the category term.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service_request node.
+ * @param int|null $child_jur_id
+ *   Optional child jurisdiction group ID. When provided, the function first
+ *   checks for an org in this jurisdiction that handles the node's category.
+ *
+ * @return int|null
+ *   The org group ID, or NULL if no mapping exists.
+ */
+function _markaspot_group_derive_org_from_category(NodeInterface $node, ?int $child_jur_id = NULL): ?int {
+  if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+    return NULL;
+  }
+
+  $term = $node->get('field_category')->entity;
+  if (!$term) {
+    return NULL;
+  }
+
+  $category_tid = (int) $term->id();
+  $group_storage = \Drupal::entityTypeManager()->getStorage('group');
+
+  // Strategy 1: Jurisdiction-aware lookup.
+  // If the node was assigned to a child jurisdiction, look for an org in that
+  // jurisdiction that declares this category in field_service_categories.
+  if ($child_jur_id) {
+    $org_ids = $group_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'org')
+      ->condition('field_jurisdiction', $child_jur_id)
+      ->condition('field_service_categories', $category_tid)
+      ->execute();
+
+    if (!empty($org_ids)) {
+      $org_id = (int) reset($org_ids);
+      \Drupal::logger('markaspot_group')->notice(
+        'Jurisdiction-aware org derivation: category TID=@tid matched org @org_id in child jur @jur_id.',
+        [
+          '@tid' => $category_tid,
+          '@org_id' => $org_id,
+          '@jur_id' => $child_jur_id,
+        ]
+      );
+      return $org_id;
+    }
+  }
+
+  // Strategy 2: Fallback to root-level org via field_category_gid.
+  if (!$term->hasField('field_category_gid') || $term->get('field_category_gid')->isEmpty()) {
+    return NULL;
+  }
+
+  $org_group_id = (int) $term->get('field_category_gid')->target_id;
+
+  // Verify the referenced group exists and is an org group.
+  $group = $group_storage->load($org_group_id);
+  if (!$group || $group->bundle() !== 'org') {
+    \Drupal::logger('markaspot_group')->warning(
+      'Category term @tid references non-existent or non-org group @gid via field_category_gid.',
+      ['@tid' => $term->id(), '@gid' => $org_group_id]
+    );
+    return NULL;
+  }
+
+  return $org_group_id;
+}
+
+/**
+ * Sends notification email to the assigned organisation.
+ *
+ * Replaces the email action from the ECA rule process_apply_group.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service_request node with field_organisation set.
+ */
+function _markaspot_group_notify_organisation(NodeInterface $node): void {
+  if (!$node->hasField('field_organisation') || $node->get('field_organisation')->isEmpty()) {
+    return;
+  }
+
+  $org_group = $node->get('field_organisation')->entity;
+  if (!$org_group || !$org_group->hasField('field_head_organisation_e_mail')) {
+    return;
+  }
+
+  $email = $org_group->get('field_head_organisation_e_mail')->isEmpty()
+    ? NULL
+    : $org_group->get('field_head_organisation_e_mail')->value;
+
+  if (!$email) {
+    return;
+  }
+
+  $request_id = _markaspot_group_sanitize_for_email(
+    (string) ($node->hasField('request_id') ? $node->get('request_id')->value ?? $node->id() : $node->id())
+  );
+  $category = _markaspot_group_sanitize_for_email(
+    $node->hasField('field_category') && !$node->get('field_category')->isEmpty()
+      ? $node->get('field_category')->entity->label()
+      : ''
+  );
+  $address = _markaspot_group_sanitize_for_email(
+    $node->hasField('field_address') ? $node->get('field_address')->value ?? '' : ''
+  );
+  $body_text = _markaspot_group_sanitize_for_email(
+    $node->hasField('body') && !$node->get('body')->isEmpty()
+      ? $node->get('body')->value
+      : ''
+  );
+  $site_url = \Drupal::request()->getSchemeAndHttpHost();
+
+  $subject = "A request #$request_id for the category $category";
+  $message = "Hello,\na citizen request has been assigned to your organization:\n\n"
+    . "Category: {$node->label()}\n"
+    . "Detailed Description: $body_text\n"
+    . "Location of the request: $address\n\n"
+    . "To process the request, please click on the following link:\n"
+    . "$site_url/{$node->id()}/edit\n\n"
+    . "Not registered yet today? $site_url/{$node->id()}/user\n\n"
+    . "--\nThis is an automatically generated email and cannot be replied to.";
+
+  /** @var \Drupal\Core\Mail\MailManagerInterface $mail_manager */
+  $mail_manager = \Drupal::service('plugin.manager.mail');
+  $mail_manager->mail('markaspot_group', 'org_notification', $email, 'en', [
+    'subject' => $subject,
+    'message' => $message,
+  ]);
+}
+
+/**
+ * Strips HTML tags and CRLF sequences from text for safe email embedding.
+ *
+ * Prevents header injection and XSS in email bodies.
+ */
+function _markaspot_group_sanitize_for_email(string $text): string {
+  return str_replace(["\r\n", "\r", "\n"], ' ', strip_tags($text));
+}
+
+/**
+ * Assigns a service request to its root jurisdiction group.
+ *
+ * Determines the root jurisdiction via two strategies:
+ * 1. From the node's field_organisation: if the org group has a
+ *    field_jurisdiction reference, resolve upward to the root jur.
+ * 2. Fallback: find the single root jur group (no field_parent_jurisdiction).
+ *
+ * Replaces the former ECA rule process_apply_jurisdiction which hardcoded
+ * group_id 1 for all service requests.
  *
  * @param \Drupal\node\NodeInterface $node
  *   The service_request node.
  */
-function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): void {
+function _markaspot_group_assign_root_jurisdiction(NodeInterface $node): void {
+  $plugin_id = 'group_node:service_request';
+  $etm = \Drupal::entityTypeManager();
+  $group_storage = $etm->getStorage('group');
+  $relationship_storage = $etm->getStorage('group_relationship');
+
+  $root_jur = NULL;
+
+  // Strategy 1: Derive from field_organisation -> org group -> field_jurisdiction.
+  if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+    $org_id = (int) $node->get('field_organisation')->target_id;
+    $org_group = $group_storage->load($org_id);
+    if ($org_group && $org_group->hasField('field_jurisdiction') && !$org_group->get('field_jurisdiction')->isEmpty()) {
+      $jur_id = (int) $org_group->get('field_jurisdiction')->target_id;
+      // Resolve upward to root using the hierarchy resolver service.
+      $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+        ->getRootJurisdictionId($jur_id);
+      $root_jur = $group_storage->load($root_id);
+    }
+  }
+
+  // Strategy 2: Fallback to the single root jur (no parent jurisdiction).
+  if (!$root_jur) {
+    $root_ids = $group_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'jur')
+      ->notExists('field_parent_jurisdiction')
+      ->execute();
+
+    if (count($root_ids) === 1) {
+      $root_jur = $group_storage->load(reset($root_ids));
+    }
+    elseif (count($root_ids) > 1) {
+      // Multiple root jurisdictions without org context. Cannot determine which
+      // one to use. Log a warning and skip assignment.
+      \Drupal::logger('markaspot_group')->warning(
+        'Cannot auto-assign root jurisdiction for node @nid: @count root jurisdictions exist but node has no organisation set.',
+        ['@nid' => $node->id(), '@count' => count($root_ids)]
+      );
+      return;
+    }
+    else {
+      return;
+    }
+  }
+
+  if (!$root_jur) {
+    return;
+  }
+
+  // Check if relationship already exists.
+  $existing = $relationship_storage->loadByProperties([
+    'entity_id' => $node->id(),
+    'gid' => $root_jur->id(),
+    'plugin_id' => $plugin_id,
+  ]);
+
+  if (!empty($existing)) {
+    return;
+  }
+
+  try {
+    $root_jur->addRelationship($node, $plugin_id);
+    \Drupal::logger('markaspot_group')->notice(
+      'Auto-assigned node @nid to root jurisdiction "@group" (id=@gid).',
+      [
+        '@nid' => $node->id(),
+        '@group' => $root_jur->label(),
+        '@gid' => $root_jur->id(),
+      ]
+    );
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot_group')->error(
+      'Failed to assign node @nid to root jurisdiction "@group": @error',
+      [
+        '@nid' => $node->id(),
+        '@group' => $root_jur->label(),
+        '@error' => $e->getMessage(),
+      ]
+    );
+  }
+}
+
+/**
+ * Assigns a service request to sub-jurisdictions based on boundaries.
+ *
+ * Loads all jurisdiction groups with a field_boundary, checks if the node's
+ * coordinates fall within each boundary polygon, and creates group
+ * relationships for matches. Skips top-level jurisdictions (assigned by
+ * _markaspot_group_assign_root_jurisdiction).
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service_request node.
+ *
+ * @return int|false
+ *   The child jurisdiction group ID if one was assigned, FALSE otherwise.
+ *   When multiple sub-jurisdictions match (overlapping boundaries), the
+ *   first matched child jur ID is returned.
+ */
+function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|false {
   // Get coordinates from the node.
   if (!$node->hasField('field_geolocation') || $node->get('field_geolocation')->isEmpty()) {
-    return;
+    return FALSE;
   }
 
   $geolocation = $node->get('field_geolocation')->first();
@@ -525,7 +929,7 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): void {
   $lng = (float) $geolocation->get('lng')->getValue();
 
   if ($lat === 0.0 && $lng === 0.0) {
-    return;
+    return FALSE;
   }
 
   // Load all jurisdiction groups with boundaries.
@@ -537,21 +941,31 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): void {
     ->execute();
 
   if (empty($group_ids)) {
-    return;
+    return FALSE;
   }
 
   $groups = $group_storage->loadMultiple($group_ids);
   $plugin_id = 'group_node:service_request';
   $relationship_storage = \Drupal::entityTypeManager()->getStorage('group_relationship');
+  // Track the first matched child jurisdiction group ID.
+  $assigned_child_jur_id = FALSE;
 
   foreach ($groups as $group) {
     if ($group->get('field_boundary')->isEmpty()) {
       continue;
     }
 
+    // Skip top-level jurisdictions (no parent). These are tenants or root
+    // cities, assigned by _markaspot_group_assign_root_jurisdiction(). Only
+    // districts/subdivisions (with a parent) get auto-assigned by boundary.
+    if (!$group->hasField('field_parent_jurisdiction')
+        || $group->get('field_parent_jurisdiction')->isEmpty()) {
+      continue;
+    }
+
     $boundary_json = $group->get('field_boundary')->value;
-    $boundary = json_decode($boundary_json, TRUE);
-    if (!is_array($boundary) || empty($boundary['type'])) {
+    $boundary = GeoJsonBoundary::fromJson($boundary_json);
+    if (!$boundary) {
       \Drupal::logger('markaspot_group')->warning(
         'Invalid boundary GeoJSON on jurisdiction group @gid.',
         ['@gid' => $group->id()]
@@ -559,8 +973,13 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): void {
       continue;
     }
 
-    if (!_markaspot_group_point_in_boundary($lng, $lat, $boundary)) {
+    if (!$boundary->contains($lng, $lat)) {
       continue;
+    }
+
+    // Record the first matched child jur ID for org derivation.
+    if ($assigned_child_jur_id === FALSE) {
+      $assigned_child_jur_id = (int) $group->id();
     }
 
     // Check if relationship already exists.
@@ -596,118 +1015,6 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): void {
       );
     }
   }
-}
 
-/**
- * Checks if a point falls within a GeoJSON boundary.
- *
- * Supports FeatureCollection, Feature, Polygon and MultiPolygon geometries.
- *
- * @param float $lng
- *   Longitude of the point.
- * @param float $lat
- *   Latitude of the point.
- * @param array $geojson
- *   The decoded GeoJSON boundary data.
- *
- * @return bool
- *   TRUE if the point is within the boundary.
- */
-function _markaspot_group_point_in_boundary(float $lng, float $lat, array $geojson): bool {
-  // Handle FeatureCollection.
-  if (($geojson['type'] ?? '') === 'FeatureCollection') {
-    foreach ($geojson['features'] ?? [] as $feature) {
-      if (_markaspot_group_point_in_boundary($lng, $lat, $feature)) {
-        return TRUE;
-      }
-    }
-    return FALSE;
-  }
-
-  // Handle Feature.
-  if (($geojson['type'] ?? '') === 'Feature') {
-    return _markaspot_group_point_in_boundary($lng, $lat, $geojson['geometry'] ?? []);
-  }
-
-  // Handle MultiPolygon.
-  if (($geojson['type'] ?? '') === 'MultiPolygon') {
-    foreach ($geojson['coordinates'] ?? [] as $polygon) {
-      if (_markaspot_group_point_in_polygon_with_holes($lng, $lat, $polygon)) {
-        return TRUE;
-      }
-    }
-    return FALSE;
-  }
-
-  // Handle Polygon (first ring = exterior, subsequent rings = holes).
-  if (($geojson['type'] ?? '') === 'Polygon') {
-    return _markaspot_group_point_in_polygon_with_holes($lng, $lat, $geojson['coordinates'] ?? []);
-  }
-
-  return FALSE;
-}
-
-/**
- * Checks if a point is inside a polygon, respecting holes.
- *
- * @param float $lng
- *   Longitude of the point.
- * @param float $lat
- *   Latitude of the point.
- * @param array $rings
- *   Array of rings: first is exterior, subsequent are holes.
- *
- * @return bool
- *   TRUE if the point is inside the exterior and not in any hole.
- */
-function _markaspot_group_point_in_polygon_with_holes(float $lng, float $lat, array $rings): bool {
-  if (empty($rings[0])) {
-    return FALSE;
-  }
-
-  // Must be inside the exterior ring.
-  if (!_markaspot_group_point_in_polygon($lng, $lat, $rings[0])) {
-    return FALSE;
-  }
-
-  // Must not be inside any hole.
-  for ($i = 1, $count = count($rings); $i < $count; $i++) {
-    if (_markaspot_group_point_in_polygon($lng, $lat, $rings[$i])) {
-      return FALSE;
-    }
-  }
-
-  return TRUE;
-}
-
-/**
- * Ray-casting algorithm to check if a point is inside a polygon ring.
- *
- * @param float $lng
- *   Longitude of the point.
- * @param float $lat
- *   Latitude of the point.
- * @param array $ring
- *   Array of [lng, lat] coordinate pairs forming the polygon ring.
- *
- * @return bool
- *   TRUE if the point is inside the polygon ring.
- */
-function _markaspot_group_point_in_polygon(float $lng, float $lat, array $ring): bool {
-  $inside = FALSE;
-  $count = count($ring);
-
-  for ($i = 0, $j = $count - 1; $i < $count; $j = $i++) {
-    $xi = $ring[$i][0];
-    $yi = $ring[$i][1];
-    $xj = $ring[$j][0];
-    $yj = $ring[$j][1];
-
-    if (($yi > $lat) !== ($yj > $lat)
-      && ($lng < ($xj - $xi) * ($lat - $yi) / ($yj - $yi) + $xi)) {
-      $inside = !$inside;
-    }
-  }
-
-  return $inside;
+  return $assigned_child_jur_id;
 }

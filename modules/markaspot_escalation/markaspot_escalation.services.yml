@@ -1,0 +1,25 @@
+services:
+  markaspot_escalation.service:
+    class: Drupal\markaspot_escalation\Service\EscalationService
+    arguments:
+      - '@entity_type.manager'
+      - '@markaspot_group.hierarchy_resolver'
+      - '@markaspot_open311.processor'
+      - '@current_user'
+      - '@config.factory'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_escalation'
+      - '@plugin.manager.mail'
+
+  markaspot_escalation.cron:
+    class: Drupal\markaspot_escalation\Service\EscalationCronService
+    arguments:
+      - '@entity_type.manager'
+      - '@markaspot_escalation.service'
+      - '@config.factory'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_escalation'
+
+  logger.channel.markaspot_escalation:
+    parent: logger.channel_base
+    arguments: ['markaspot_escalation']

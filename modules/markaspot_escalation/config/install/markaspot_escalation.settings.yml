@@ -1,0 +1,7 @@
+escalation_enabled: true
+delegation_enabled: false
+auto_escalation_enabled: false
+cron_interval: 86400
+notification_roles:
+  - jur-admin
+  - jur-moderator

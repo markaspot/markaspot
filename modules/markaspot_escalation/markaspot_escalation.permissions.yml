@@ -1,0 +1,7 @@
+'escalate service requests':
+  title: 'Escalate service requests'
+  description: 'Allows escalating service requests to a higher jurisdiction.'
+
+'delegate service requests':
+  title: 'Delegate service requests'
+  description: 'Allows delegating service requests to sub-jurisdictions or organisations.'

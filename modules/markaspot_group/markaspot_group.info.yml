@@ -9,3 +9,4 @@ dependencies:
   - gnode
   - drupal:user
   - drupal:node
+  - markaspot_validation

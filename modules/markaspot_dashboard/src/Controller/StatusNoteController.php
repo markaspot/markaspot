@@ -96,6 +96,9 @@ class StatusNoteController extends ControllerBase {
       }
     }
 
+    // Track the actual author (paragraphs inherit parent ownership).
+    $paragraph->set('field_author', \Drupal::currentUser()->id());
+
     $paragraph->save();
 
     // Link to service request.
@@ -136,19 +139,21 @@ class StatusNoteController extends ControllerBase {
       ->accessCheck(TRUE);
     $nids = $query->execute();
 
-    if (!empty($nids)) {
-      $node = $this->entityTypeManager->getStorage('node')->load(reset($nids));
-
-      if (!$node->access('update')) {
-        return new JsonResponse(['error' => 'Access denied'], 403);
-      }
-
-      // Remove reference.
-      $current = $node->get('field_status_notes')->getValue();
-      $filtered = array_filter($current, fn($item) => $item['target_id'] != $paragraph_id);
-      $node->field_status_notes->setValue(array_values($filtered));
-      $node->save();
+    if (empty($nids)) {
+      return new JsonResponse(['error' => 'Parent request not found'], 403);
     }
+
+    $node = $this->entityTypeManager->getStorage('node')->load(reset($nids));
+
+    if (!$node->access('update')) {
+      return new JsonResponse(['error' => 'Access denied'], 403);
+    }
+
+    // Remove reference.
+    $current = $node->get('field_status_notes')->getValue();
+    $filtered = array_filter($current, fn($item) => $item['target_id'] != $paragraph_id);
+    $node->field_status_notes->setValue(array_values($filtered));
+    $node->save();
 
     $paragraph->delete();
 

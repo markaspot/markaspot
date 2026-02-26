@@ -3,11 +3,12 @@ status: true
 dependencies:
   config:
     - group.type.org
+    - user.role.administrator
 id: org-admin
 label: Admin
 weight: -8
 admin: true
-scope: individual
-global_role: null
+scope: insider
+global_role: administrator
 group_type: org
 permissions: {  }

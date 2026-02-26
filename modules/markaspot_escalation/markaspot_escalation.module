@@ -1,0 +1,94 @@
+<?php
+
+/**
+ * @file
+ * Contains hook implementations for the markaspot_escalation module.
+ *
+ * Provides escalation and delegation routing for service requests between
+ * jurisdictions and organisations within the Mark-a-Spot group hierarchy.
+ */
+
+/**
+ * Implements hook_mail().
+ */
+function markaspot_escalation_mail(string $key, array &$message, array $params): void {
+  if (in_array($key, ['escalation_notification', 'delegation_notification'])) {
+    $message['subject'] = $params['subject'];
+    $message['body'][] = $params['body'];
+  }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function markaspot_escalation_cron(): void {
+  $config = \Drupal::config('markaspot_escalation.settings');
+
+  // Only run if auto-escalation is enabled.
+  if (!$config->get('auto_escalation_enabled')) {
+    return;
+  }
+
+  // Default to a daily interval.
+  $interval = $config->get('cron_interval') ?: 86400;
+
+  // Keep a time for the next run in the site state so we do not act
+  // every time cron runs (which could be every minute).
+  $next_execution = \Drupal::state()->get('markaspot_escalation.next_execution', 0);
+
+  if (\Drupal::time()->getRequestTime() >= $next_execution) {
+    \Drupal::service('markaspot_escalation.cron')->processEscalations();
+    \Drupal::state()->set(
+      'markaspot_escalation.next_execution',
+      \Drupal::time()->getRequestTime() + $interval
+    );
+  }
+}
+
+/**
+ * Implements hook_markaspot_open311_request_alter().
+ *
+ * Adds escalation data and escalation/delegation permission flags to the
+ * Open311 API response for each service request.
+ */
+function markaspot_escalation_markaspot_open311_request_alter(array &$request, $node): void {
+  if (!$node->hasField('field_escalation')) {
+    return;
+  }
+
+  // All escalation data goes into extended_attributes.markaspot (not top-level)
+  // to stay compliant with the Open311 GeoReport v2 spec.
+  $escalated = !$node->get('field_escalation')->isEmpty();
+
+  if (!isset($request['extended_attributes']['markaspot'])) {
+    $request['extended_attributes']['markaspot'] = [];
+  }
+  $request['extended_attributes']['markaspot']['escalated'] = $escalated;
+
+  // Add escalation/delegation permission flags and target label for
+  // session-authenticated users with escalation permissions.
+  // The target label is gated because it reveals internal org structure.
+  // The 'escalated' boolean above remains public for transparency.
+  $currentUser = \Drupal::currentUser();
+  if ($currentUser->hasPermission('escalate service requests')
+      || $currentUser->hasPermission('delegate service requests')) {
+    /** @var \Drupal\markaspot_escalation\Service\EscalationServiceInterface $escalationService */
+    $escalationService = \Drupal::service('markaspot_escalation.service');
+
+    // Expose target label only to users with escalation permissions.
+    if ($escalated) {
+      $jurEntity = $node->get('field_escalation')->entity;
+      if ($jurEntity) {
+        $request['extended_attributes']['markaspot']['escalation_target'] = $jurEntity->label();
+      }
+    }
+
+    if (!isset($request['extended_attributes']['markaspot']['permissions'])) {
+      $request['extended_attributes']['markaspot']['permissions'] = [];
+    }
+    $request['extended_attributes']['markaspot']['permissions']['escalate'] =
+      $escalationService->canEscalate($node, $currentUser);
+    $request['extended_attributes']['markaspot']['permissions']['delegate'] =
+      $escalationService->canDelegate($node, $currentUser);
+  }
+}

@@ -1,0 +1,4 @@
+services:
+  markaspot_group.hierarchy_resolver:
+    class: Drupal\markaspot_group\Service\JurisdictionHierarchyResolver
+    arguments: ['@entity_type.manager', '@database', '@logger.factory']

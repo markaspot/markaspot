@@ -6,6 +6,7 @@ namespace Drupal\markaspot_dashboard\Controller;
 
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
@@ -33,6 +34,11 @@ class DuplicateController extends ControllerBase {
   protected Connection $database;
 
   /**
+   * The time service.
+   */
+  protected TimeInterface $time;
+
+  /**
    * Constructs a DuplicateController object.
    */
   public function __construct(
@@ -40,11 +46,13 @@ class DuplicateController extends ControllerBase {
     EntityTypeManagerInterface $entity_type_manager,
     AccountProxyInterface $current_user,
     LanguageManagerInterface $language_manager,
+    TimeInterface $time,
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
     $this->currentUser = $current_user;
     $this->languageManager = $language_manager;
+    $this->time = $time;
   }
 
   /**
@@ -55,7 +63,8 @@ class DuplicateController extends ControllerBase {
       $container->get('database'),
       $container->get('entity_type.manager'),
       $container->get('current_user'),
-      $container->get('language_manager')
+      $container->get('language_manager'),
+      $container->get('datetime.time')
     );
   }
 
@@ -132,11 +141,36 @@ class DuplicateController extends ControllerBase {
     $limit = $request->query->get('limit', 50);
     $offset = $request->query->get('offset', 0);
 
+    // Jurisdiction filter: admins (uid=1 or 'administer nodes') see all.
+    $jurisdictionId = NULL;
+    $requestedJurisdiction = $request->query->get('jurisdiction_id');
+    $currentUser = $this->currentUser;
+    if ((int) $currentUser->id() === 1 || $currentUser->hasPermission('administer nodes')) {
+      // Admins can see all by omitting the parameter, or filter by choice.
+      $jurisdictionId = $requestedJurisdiction !== NULL ? (int) $requestedJurisdiction : NULL;
+    }
+    else {
+      // Non-admin users: require jurisdiction_id. Without it, return -1
+      // to produce empty results (no group has id -1).
+      $jurisdictionId = $requestedJurisdiction !== NULL ? (int) $requestedJurisdiction : -1;
+    }
+
     // Get total counts by status.
     $counts_query = $this->database->select('markaspot_ai_duplicate_matches', 'm')
       ->fields('m', ['status'])
       ->groupBy('status');
     $counts_query->addExpression('COUNT(*)', 'count');
+
+    // Apply jurisdiction filter to counts.
+    if ($jurisdictionId !== NULL) {
+      $counts_query->innerJoin('group_relationship_field_data', 'gr',
+        "m.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
+      $counts_query->innerJoin('groups_field_data', 'grp',
+        'gr.gid = grp.id AND grp.default_langcode = 1');
+      $counts_query->condition('grp.type', 'jur');
+      $counts_query->condition('grp.id', $jurisdictionId);
+    }
+
     $counts = $counts_query->execute()->fetchAllKeyed();
 
     $total_counts = [
@@ -152,6 +186,16 @@ class DuplicateController extends ControllerBase {
       ->condition('status', 'pending')
       ->orderBy('created', 'DESC')
       ->range((int) $offset, (int) $limit);
+
+    // Apply jurisdiction filter to pending matches.
+    if ($jurisdictionId !== NULL) {
+      $query->innerJoin('group_relationship_field_data', 'gr',
+        "m.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
+      $query->innerJoin('groups_field_data', 'grp',
+        'gr.gid = grp.id AND grp.default_langcode = 1');
+      $query->condition('grp.type', 'jur');
+      $query->condition('grp.id', $jurisdictionId);
+    }
 
     $results = $query->execute()->fetchAll();
 
@@ -183,6 +227,7 @@ class DuplicateController extends ControllerBase {
       'total_counts' => $total_counts,
       'limit' => (int) $limit,
       'offset' => (int) $offset,
+      'jurisdiction_id' => $jurisdictionId,
     ]);
 
     $response->getCacheableMetadata()
@@ -245,7 +290,7 @@ class DuplicateController extends ControllerBase {
       ->fields([
         'status' => $new_status,
         'reviewed_by' => $this->currentUser->id(),
-        'reviewed_at' => \Drupal::time()->getRequestTime(),
+        'reviewed_at' => $this->time->getRequestTime(),
       ])
       ->condition('id', $match_id)
       ->execute();
@@ -286,10 +331,11 @@ class DuplicateController extends ControllerBase {
     // Add the status note.
     $this->addStatusNote($duplicate_node, $note_text);
 
-    // Set status to Closed (tid 5).
-    $closed_status_tid = 5;
-    if ($duplicate_node->hasField('field_status')) {
-      $duplicate_node->set('field_status', ['target_id' => $closed_status_tid]);
+    // Resolve the "closed" status term for the node's jurisdiction.
+    // Status terms are jurisdiction-specific (field_jurisdiction + field_open311_mapping).
+    $closed_tid = $this->resolveClosedStatusTid($duplicate_node);
+    if ($closed_tid && $duplicate_node->hasField('field_status')) {
+      $duplicate_node->set('field_status', ['target_id' => $closed_tid]);
     }
 
     // Save the node.
@@ -331,6 +377,50 @@ class DuplicateController extends ControllerBase {
       'target_revision_id' => $status_note_paragraph->getRevisionId(),
     ];
     $node->set('field_status_notes', $notes);
+  }
+
+  /**
+   * Resolves the "closed" status term ID for a node's jurisdiction.
+   *
+   * Status terms are jurisdiction-specific: each jurisdiction has its own
+   * set of terms with field_open311_mapping indicating open/closed/initial.
+   * The jurisdiction is derived from the node's category term.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   *
+   * @return int|null
+   *   The closed status term ID, or NULL if not found.
+   */
+  protected function resolveClosedStatusTid(NodeInterface $node): ?int {
+    // Resolve jurisdiction from node's category.
+    $jurisdictionId = NULL;
+    if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+      $category = $node->get('field_category')->entity;
+      if ($category && $category->hasField('field_jurisdiction') && !$category->get('field_jurisdiction')->isEmpty()) {
+        $jurisdictionId = (int) $category->get('field_jurisdiction')->target_id;
+      }
+    }
+
+    // Build query for "closed" status terms in this jurisdiction.
+    $properties = [
+      'vid' => 'service_status',
+      'status' => 1,
+      'field_open311_mapping' => 'closed',
+    ];
+    if ($jurisdictionId) {
+      $properties['field_jurisdiction'] = $jurisdictionId;
+    }
+
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
+      ->loadByProperties($properties);
+
+    if (!empty($terms)) {
+      $term = reset($terms);
+      return (int) $term->id();
+    }
+
+    return NULL;
   }
 
   /**

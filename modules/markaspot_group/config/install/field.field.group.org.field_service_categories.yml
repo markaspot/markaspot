@@ -1,0 +1,27 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_service_categories
+    - group.type.org
+    - taxonomy.vocabulary.service_category
+id: group.org.field_service_categories
+field_name: field_service_categories
+entity_type: group
+bundle: org
+label: 'Service Categories'
+description: 'The service categories this organisation handles. Used for jurisdiction-aware org derivation.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      service_category: service_category
+    sort:
+      field: name
+      direction: ASC
+    auto_create: false
+field_type: entity_reference

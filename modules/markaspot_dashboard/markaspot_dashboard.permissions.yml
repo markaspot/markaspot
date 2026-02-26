@@ -3,6 +3,11 @@ access dashboard kpis:
   description: 'View dashboard key performance indicators including forwarding rate, FCR, and processing time.'
   restrict access: true
 
+manage dashboard notes:
+  title: 'Manage Dashboard Notes'
+  description: 'Create and delete status notes and internal remarks on service requests.'
+  restrict access: true
+
 administer dashboard:
   title: 'Administer Dashboard'
   description: 'Configure dashboard settings and access administrative functions.'

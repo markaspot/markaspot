@@ -16,6 +16,9 @@ process:
   body/format:
     plugin: default_value
     default_value: full_html
+  promote:
+    plugin: default_value
+    default_value: 1
   field_page_icon: field_page_icon
 destination:
   plugin: 'entity:node'

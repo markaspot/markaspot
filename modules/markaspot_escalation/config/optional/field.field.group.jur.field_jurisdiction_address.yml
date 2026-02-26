@@ -1,0 +1,23 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_jurisdiction_address
+    - group.type.jur
+  module:
+    - address
+id: group.jur.field_jurisdiction_address
+field_name: field_jurisdiction_address
+entity_type: group
+bundle: jur
+label: 'Jurisdiction Address'
+description: 'Official address for this jurisdiction. Used in email signatures and correspondence.'
+required: false
+translatable: false
+default_value: {}
+default_value_callback: ''
+settings:
+  available_countries: {}
+  langcode_override: ''
+  field_overrides: {}
+field_type: address

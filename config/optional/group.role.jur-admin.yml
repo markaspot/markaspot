@@ -4,14 +4,15 @@ status: true
 dependencies:
   config:
     - group.type.jur
+    - user.role.administrator
   module:
     - group
 id: jur-admin
 label: Administrator
 weight: -100
 admin: true
-scope: individual
-global_role: null
+scope: insider
+global_role: administrator
 group_type: jur
 permissions:
   - 'administer group'

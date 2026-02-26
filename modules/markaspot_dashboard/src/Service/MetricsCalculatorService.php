@@ -103,6 +103,7 @@ class MetricsCalculatorService {
    */
   protected function getFilteredNodeIds(array $filters): array {
     $query = $this->database->select('node_field_data', 'n');
+    $query->distinct();
     $query->fields('n', ['nid']);
     $query->condition('n.type', 'service_request');
 
@@ -137,7 +138,7 @@ class MetricsCalculatorService {
     // Jurisdiction filter (via group_relationship).
     if (!empty($filters['jurisdiction_id'])) {
       $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
-      $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id');
+      $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
       $query->condition('g.type', 'jur');
       $query->condition('g.id', $filters['jurisdiction_id']);
     }
@@ -592,7 +593,7 @@ class MetricsCalculatorService {
     // Jurisdiction filter.
     if (!empty($filters['jurisdiction_id'])) {
       $closed_query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
-      $closed_query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id');
+      $closed_query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
       $closed_query->condition('g.type', 'jur');
       $closed_query->condition('g.id', $filters['jurisdiction_id']);
     }
@@ -708,7 +709,7 @@ class MetricsCalculatorService {
     if (!empty($filters['jurisdiction_id'])) {
       $joins .= "
         INNER JOIN {group_relationship_field_data} gr ON n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'
-        INNER JOIN {groups_field_data} g ON gr.gid = g.id AND g.type = 'jur'
+        INNER JOIN {groups_field_data} g ON gr.gid = g.id AND g.type = 'jur' AND g.default_langcode = 1
       ";
       $conditions .= ' AND g.id = :jurisdiction_id';
       $args[':jurisdiction_id'] = $filters['jurisdiction_id'];
@@ -808,11 +809,11 @@ class MetricsCalculatorService {
       -- Source organization (group).
       INNER JOIN {group_relationship_field_data} gr_source ON nfo_prev.field_organisation_target_id = gr_source.entity_id
         AND gr_source.plugin_id LIKE 'group_node:%'
-      INNER JOIN {groups_field_data} g_source ON gr_source.gid = g_source.id
+      INNER JOIN {groups_field_data} g_source ON gr_source.gid = g_source.id AND g_source.default_langcode = 1
       -- Target organization (group).
       INNER JOIN {group_relationship_field_data} gr_target ON nfo_next.field_organisation_target_id = gr_target.entity_id
         AND gr_target.plugin_id LIKE 'group_node:%'
-      INNER JOIN {groups_field_data} g_target ON gr_target.gid = g_target.id
+      INNER JOIN {groups_field_data} g_target ON gr_target.gid = g_target.id AND g_target.default_langcode = 1
       WHERE nfo_prev.entity_id IN ($placeholders)
         AND nfo_prev.deleted = 0
         AND nfo_next.deleted = 0
@@ -993,7 +994,7 @@ class MetricsCalculatorService {
 
     if (!empty($filters['jurisdiction_id'])) {
       $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
-      $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id');
+      $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
       $query->condition('g.type', 'jur');
       $query->condition('g.id', $filters['jurisdiction_id']);
     }

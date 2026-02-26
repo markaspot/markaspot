@@ -47,3 +47,443 @@ function markaspot_group_update_11801(): void {
     $config->set('permissions', $permissions)->save();
   }
 }
+
+/**
+ * Add field_jurisdiction to org group type and disable ECA rules.
+ *
+ * Creates an entity reference field on organisation groups pointing to
+ * jurisdiction groups. Supports both legacy ('organisation') and modern ('org')
+ * group type names via markaspot_open311.settings config.
+ *
+ * Also disables ECA rules replaced by code-based group assignment.
+ */
+function markaspot_group_update_11900(): void {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $config = \Drupal::configFactory()->get('markaspot_open311.settings');
+  $logger = \Drupal::logger('markaspot_group');
+
+  // Read bundle names from config (legacy: 'organisation'/'jurisdiction').
+  $org_type = $config->get('group_filter_type') ?? 'org';
+  $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
+
+  // Verify the org group type exists.
+  $org_group_type = $entity_type_manager->getStorage('group_type')->load($org_type);
+  if (!$org_group_type) {
+    $logger->warning('Org group type "@type" not found. Skipping field_jurisdiction creation.', [
+      '@type' => $org_type,
+    ]);
+    return;
+  }
+
+  // 1. Create field storage if it does not exist.
+  $storage_id = 'group.field_jurisdiction';
+  $field_storage = $entity_type_manager->getStorage('field_storage_config')
+    ->load($storage_id);
+
+  if (!$field_storage) {
+    $field_storage = $entity_type_manager->getStorage('field_storage_config')
+      ->create([
+        'field_name' => 'field_jurisdiction',
+        'entity_type' => 'group',
+        'type' => 'entity_reference',
+        'settings' => [
+          'target_type' => 'group',
+        ],
+        'cardinality' => 1,
+      ]);
+    $field_storage->save();
+    $logger->info('Created field storage group.field_jurisdiction.');
+  }
+
+  // 2. Create field instance on the detected org bundle.
+  $field_id = "group.{$org_type}.field_jurisdiction";
+  $field_config = $entity_type_manager->getStorage('field_config')
+    ->load($field_id);
+
+  if (!$field_config) {
+    $field_config = $entity_type_manager->getStorage('field_config')
+      ->create([
+        'field_storage' => $field_storage,
+        'bundle' => $org_type,
+        'label' => 'Jurisdiction',
+        'description' => 'The jurisdiction (city/district) this organisation belongs to.',
+        'required' => FALSE,
+        'settings' => [
+          'handler' => 'default:group',
+          'handler_settings' => [
+            'target_bundles' => [$jur_type => $jur_type],
+            'sort' => ['field' => 'label', 'direction' => 'ASC'],
+            'auto_create' => FALSE,
+          ],
+        ],
+      ]);
+    $field_config->save();
+    $logger->info('Created field instance @id.', ['@id' => $field_id]);
+  }
+
+  // 3. Add field to org form display.
+  $form_display = $entity_type_manager->getStorage('entity_form_display')
+    ->load("group.{$org_type}.default");
+
+  if (!$form_display) {
+    $form_display = $entity_type_manager->getStorage('entity_form_display')
+      ->create([
+        'targetEntityType' => 'group',
+        'bundle' => $org_type,
+        'mode' => 'default',
+        'status' => TRUE,
+      ]);
+  }
+
+  $form_display->setComponent('field_jurisdiction', [
+    'type' => 'entity_reference_autocomplete',
+    'weight' => 5,
+    'settings' => [
+      'match_operator' => 'CONTAINS',
+      'match_limit' => 10,
+      'size' => 60,
+      'placeholder' => '',
+    ],
+  ]);
+  $form_display->save();
+
+  // 4. Disable ECA rules replaced by code-based group assignment.
+  $eca_rules = [
+    'eca.eca.process_apply_jurisdiction' => 'root jurisdiction assignment',
+    'eca.eca.process_apply_group' => 'organisation assignment + notification',
+  ];
+  foreach ($eca_rules as $config_name => $description) {
+    $eca_config = \Drupal::configFactory()->getEditable($config_name);
+    if (!$eca_config->isNew()) {
+      $eca_config->set('status', FALSE)->save();
+      $logger->info(
+        'Disabled ECA rule @name (replaced by code-based @desc).',
+        ['@name' => $config_name, '@desc' => $description]
+      );
+    }
+  }
+}
+
+/**
+ * Backfill org->jur references and jur group memberships for existing data.
+ *
+ * Uses $sandbox for batch processing to handle sites with 100k+ nodes.
+ *
+ * Phase 1 (first call): Sets field_jurisdiction on all org groups.
+ * Phase 2 (subsequent calls): Adds service_request nodes to root jur group
+ * in batches of 100.
+ */
+function markaspot_group_update_11901(array &$sandbox): void {
+  $etm = \Drupal::entityTypeManager();
+  $group_storage = $etm->getStorage('group');
+  $config = \Drupal::configFactory()->get('markaspot_open311.settings');
+  $logger = \Drupal::logger('markaspot_group');
+
+  // Resolve group type names.
+  $org_type = $config->get('group_filter_type') ?? 'org';
+  $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
+
+  // First call: initialize sandbox.
+  if (!isset($sandbox['phase'])) {
+    $sandbox['phase'] = 'init';
+    $sandbox['root_jur_id'] = NULL;
+    $sandbox['processed'] = 0;
+    $sandbox['total'] = 0;
+  }
+
+  // --- Phase: init (find root jur, validate) ---
+  if ($sandbox['phase'] === 'init') {
+    // Check if field_parent_jurisdiction is configured for this group type.
+    $has_parent_field = $etm->getStorage('field_config')
+      ->load("group.{$jur_type}.field_parent_jurisdiction") !== NULL;
+
+    if ($has_parent_field) {
+      $root_jur_ids = $group_storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $jur_type)
+        ->notExists('field_parent_jurisdiction')
+        ->execute();
+    }
+    else {
+      // No parent field means all jur groups are roots.
+      $root_jur_ids = $group_storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $jur_type)
+        ->execute();
+    }
+
+    if (empty($root_jur_ids)) {
+      $logger->warning('No root jurisdiction group found. Skipping backfill.');
+      $sandbox['#finished'] = 1;
+      return;
+    }
+
+    if (count($root_jur_ids) > 1) {
+      $logger->warning(
+        'Multiple root jurisdictions found (@count). Skipping automatic backfill. Assign field_jurisdiction on org groups manually.',
+        ['@count' => count($root_jur_ids)]
+      );
+      $sandbox['#finished'] = 1;
+      return;
+    }
+
+    $sandbox['root_jur_id'] = (int) reset($root_jur_ids);
+    $root_jur = $group_storage->load($sandbox['root_jur_id']);
+
+    $logger->info('Backfilling with root jurisdiction "@name" (id=@id).', [
+      '@name' => $root_jur->label(),
+      '@id' => $sandbox['root_jur_id'],
+    ]);
+
+    // Phase: org backfill (set field_jurisdiction on org groups).
+    $org_ids = $group_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $org_type)
+      ->execute();
+
+    $org_count = 0;
+    foreach ($group_storage->loadMultiple($org_ids) as $org_group) {
+      if (!$org_group->hasField('field_jurisdiction')) {
+        continue;
+      }
+      if (!$org_group->get('field_jurisdiction')->isEmpty()) {
+        continue;
+      }
+      $org_group->set('field_jurisdiction', ['target_id' => $sandbox['root_jur_id']]);
+      $org_group->save();
+      $org_count++;
+    }
+
+    if ($org_count > 0) {
+      $logger->info('Set field_jurisdiction on @count org groups.', ['@count' => $org_count]);
+    }
+
+    // Prepare node backfill: find nodes NOT yet in the root jur group.
+    $plugin_id = 'group_node:service_request';
+    $db = \Drupal::database();
+
+    // Direct DB query for existing nids (avoids loading 100k+ entities).
+    $existing_nids = $db->select('group_relationship_field_data', 'gr')
+      ->fields('gr', ['entity_id'])
+      ->condition('gid', $sandbox['root_jur_id'])
+      ->condition('plugin_id', $plugin_id)
+      ->execute()
+      ->fetchAllKeyed(0, 0);
+
+    $all_nids = $etm->getStorage('node')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->sort('nid', 'ASC')
+      ->execute();
+
+    $sandbox['missing_nids'] = array_values(array_diff($all_nids, array_keys($existing_nids)));
+    $sandbox['total'] = count($sandbox['missing_nids']);
+    $sandbox['processed'] = 0;
+    $sandbox['phase'] = 'nodes';
+
+    if ($sandbox['total'] === 0) {
+      $logger->info('All service requests already assigned to root jurisdiction.');
+      $sandbox['#finished'] = 1;
+      return;
+    }
+
+    $logger->info('Starting node backfill: @count nodes to add.', [
+      '@count' => $sandbox['total'],
+    ]);
+  }
+
+  // --- Phase: nodes (batch add to jur group) ---
+  if ($sandbox['phase'] === 'nodes') {
+    $batch_size = 100;
+    $root_jur = $group_storage->load($sandbox['root_jur_id']);
+    $plugin_id = 'group_node:service_request';
+
+    $offset = $sandbox['processed'];
+    $chunk = array_slice($sandbox['missing_nids'], $offset, $batch_size);
+
+    if (empty($chunk)) {
+      $sandbox['#finished'] = 1;
+      return;
+    }
+
+    $nodes = $etm->getStorage('node')->loadMultiple($chunk);
+    $added = 0;
+
+    foreach ($nodes as $node) {
+      try {
+        $root_jur->addRelationship($node, $plugin_id);
+        $added++;
+      }
+      catch (\Exception $e) {
+        // Cardinality constraint or other issue. Log and continue.
+        $logger->error('Failed to add node @nid to jur group: @msg', [
+          '@nid' => $node->id(),
+          '@msg' => $e->getMessage(),
+        ]);
+      }
+    }
+
+    $sandbox['processed'] += count($chunk);
+
+    // Free memory between batches.
+    $etm->getStorage('node')->resetCache($chunk);
+    $etm->getStorage('group_relationship')->resetCache();
+
+    $sandbox['#finished'] = $sandbox['total'] > 0
+      ? $sandbox['processed'] / $sandbox['total']
+      : 1;
+
+    if ($sandbox['#finished'] >= 1) {
+      $logger->info('Backfill complete: added @count of @total nodes to jurisdiction.', [
+        '@count' => $sandbox['processed'],
+        '@total' => $sandbox['total'],
+      ]);
+    }
+  }
+}
+
+/**
+ * Set jur-admin and org-admin group roles to insider scope with global_role.
+ *
+ * Reverses update_11800 which set scope=individual. Insider scope ensures
+ * that Drupal administrators automatically get group admin permissions in
+ * all groups they are members of, without explicit per-group role assignment.
+ */
+function markaspot_group_update_11902(): void {
+  $logger = \Drupal::logger('markaspot_group');
+  $storage = \Drupal::entityTypeManager()->getStorage('group_role');
+
+  $role_ids = ['jur-admin', 'org-admin'];
+
+  foreach ($role_ids as $role_id) {
+    /** @var \Drupal\group\Entity\GroupRoleInterface|null $role */
+    $role = $storage->load($role_id);
+    if (!$role) {
+      $logger->warning('Group role @id not found, skipping.', ['@id' => $role_id]);
+      continue;
+    }
+
+    $changed = FALSE;
+
+    if ($role->getScope() !== 'insider') {
+      $role->set('scope', 'insider');
+      $changed = TRUE;
+    }
+
+    if ($role->get('global_role') !== 'administrator') {
+      $role->set('global_role', 'administrator');
+      $changed = TRUE;
+    }
+
+    if ($changed) {
+      $role->save();
+      $logger->info('Updated @id: scope=insider, global_role=administrator.', [
+        '@id' => $role_id,
+      ]);
+    }
+  }
+}
+
+/**
+ * Add field_service_categories to org groups and delete obsolete ECA rules.
+ *
+ * Creates a multi-value entity reference field on org groups that maps each
+ * organisation to the service categories it handles. This enables
+ * jurisdiction-aware org derivation: when a request is created in a child
+ * jurisdiction (e.g. Noord), the system first checks for an org in that
+ * jurisdiction handling the category before falling back to the root-level org.
+ *
+ * Also deletes the ECA rules process_apply_jurisdiction and process_apply_group
+ * which were only disabled in 11900 but still fired on cascading entity events.
+ */
+function markaspot_group_update_11903(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+  $config = \Drupal::configFactory()->get('markaspot_open311.settings');
+  $org_type = $config->get('group_filter_type') ?? 'org';
+
+  // 1. Create field storage if it does not exist.
+  $storage_id = 'group.field_service_categories';
+  $field_storage = $etm->getStorage('field_storage_config')->load($storage_id);
+
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_service_categories',
+      'entity_type' => 'group',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'taxonomy_term'],
+      'cardinality' => -1,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage group.field_service_categories.');
+  }
+
+  // 2. Create field instance on org bundle.
+  $field_id = "group.{$org_type}.field_service_categories";
+  $field_config = $etm->getStorage('field_config')->load($field_id);
+
+  if (!$field_config) {
+    $field_config = $etm->getStorage('field_config')->create([
+      'field_storage' => $field_storage,
+      'bundle' => $org_type,
+      'label' => 'Service Categories',
+      'description' => 'The service categories this organisation handles. Used for jurisdiction-aware org derivation.',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:taxonomy_term',
+        'handler_settings' => [
+          'target_bundles' => ['service_category' => 'service_category'],
+          'sort' => ['field' => 'name', 'direction' => 'ASC'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ]);
+    $field_config->save();
+    $logger->info('Created field instance @id.', ['@id' => $field_id]);
+  }
+
+  // 3. Add field to org form display.
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load("group.{$org_type}.default");
+
+  if ($form_display) {
+    $form_display->setComponent('field_service_categories', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 6,
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+    $form_display->save();
+  }
+
+  // 4. Delete obsolete ECA rules (disabling alone is insufficient due to
+  // cascading entity event bug where disabled ECA models still execute).
+  $eca_rules = [
+    'process_apply_jurisdiction',
+    'process_apply_group',
+  ];
+  $eca_storage = $etm->getStorage('eca');
+  foreach ($eca_rules as $eca_id) {
+    // Log full config data before deletion for recovery purposes.
+    $raw_config = \Drupal::configFactory()->getEditable("eca.eca.{$eca_id}");
+    if (!$raw_config->isNew()) {
+      $logger->notice('Pre-deletion backup of @name: @data', [
+        '@name' => "eca.eca.{$eca_id}",
+        '@data' => json_encode($raw_config->getRawData()),
+      ]);
+    }
+    $eca = $eca_storage->load($eca_id);
+    if ($eca) {
+      $eca->delete();
+      $logger->info('Deleted obsolete ECA rule @id.', ['@id' => $eca_id]);
+    }
+    elseif (!$raw_config->isNew()) {
+      // Entity load failed but raw config exists: clean up directly.
+      $raw_config->delete();
+    }
+  }
+}

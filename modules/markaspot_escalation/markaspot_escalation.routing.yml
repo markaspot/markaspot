@@ -1,0 +1,19 @@
+markaspot_escalation.escalate:
+  path: '/api/escalation/{service_request_id}'
+  defaults:
+    _controller: '\Drupal\markaspot_escalation\Controller\EscalationController::escalate'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _permission: 'escalate service requests'
+    _csrf_request_header_token: 'TRUE'
+
+markaspot_escalation.delegate:
+  path: '/api/delegation/{service_request_id}'
+  defaults:
+    _controller: '\Drupal\markaspot_escalation\Controller\EscalationController::delegate'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _permission: 'delegate service requests'
+    _csrf_request_header_token: 'TRUE'

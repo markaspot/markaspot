@@ -1,0 +1,10 @@
+name: Mark-a-Spot Tenant Admin
+description: 'Per-jurisdiction taxonomy management for tenant administrators. Syncs jur-admin group role to tenant_admin Drupal role and filters taxonomy overviews by jurisdiction.'
+package: Mark-a-Spot
+type: module
+core_version_requirement: ^11
+
+dependencies:
+  - markaspot_group
+  - drupal:taxonomy
+  - drupal:group

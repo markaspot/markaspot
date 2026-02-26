@@ -7,6 +7,7 @@
 
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\field\Entity\FieldConfig;
+use Drupal\user\Entity\Role;
 
 /**
  * Implements hook_install().
@@ -142,4 +143,115 @@ function service_request_update_11002(&$sandbox) {
   }
 
   return empty($messages) ? 'Hazard level field already exists.' : implode("\n", $messages);
+}
+
+/**
+ * Install field_priority on service_request and grant JSON:API write access.
+ *
+ * Creates the boolean priority field (High/Low) with field_permissions custom
+ * access, and ensures both moderator and editorial_board roles can read/write
+ * it via JSON:API.
+ */
+function service_request_update_11003() {
+  $messages = [];
+  $module_handler = \Drupal::moduleHandler();
+  $has_field_permissions = $module_handler->moduleExists('field_permissions');
+
+  // 1. Create field storage if missing.
+  if (!FieldStorageConfig::loadByName('node', 'field_priority')) {
+    $storage_config = [
+      'field_name' => 'field_priority',
+      'entity_type' => 'node',
+      'type' => 'boolean',
+      'settings' => [],
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ];
+
+    if ($has_field_permissions) {
+      $storage_config['third_party_settings'] = [
+        'field_permissions' => [
+          'permission_type' => 'custom',
+        ],
+      ];
+    }
+
+    FieldStorageConfig::create($storage_config)->save();
+    $messages[] = 'Created field storage: node.field_priority';
+  }
+  else {
+    // Field exists but may not have field_permissions set. Ensure it does.
+    $storage = FieldStorageConfig::loadByName('node', 'field_priority');
+    if ($has_field_permissions && !$storage->getThirdPartySetting('field_permissions', 'permission_type')) {
+      $storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom');
+      $storage->save();
+      $messages[] = 'Enabled custom field_permissions on existing field_priority storage';
+    }
+  }
+
+  // 2. Create field instance if missing.
+  if (!FieldConfig::loadByName('node', 'service_request', 'field_priority')) {
+    FieldConfig::create([
+      'field_name' => 'field_priority',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Priority',
+      'description' => 'Check if this request is high priority.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [['value' => 0]],
+      'settings' => [
+        'on_label' => 'High',
+        'off_label' => 'Low',
+      ],
+    ])->save();
+    $messages[] = 'Created field instance: node.service_request.field_priority';
+  }
+
+  // 3. Grant field_priority permissions to moderator and editorial_board.
+  $priority_permissions = [
+    'create field_priority',
+    'edit field_priority',
+    'edit own field_priority',
+    'view field_priority',
+    'view own field_priority',
+  ];
+
+  foreach (['moderator', 'editorial_board'] as $role_id) {
+    $role = Role::load($role_id);
+
+    // Create editorial_board role if it doesn't exist.
+    if (!$role && $role_id === 'editorial_board') {
+      $role = Role::create([
+        'id' => 'editorial_board',
+        'label' => 'Editorial board',
+        'weight' => -4,
+      ]);
+      $role->grantPermission('access content');
+      $role->grantPermission('access content overview');
+      $role->grantPermission('access toolbar');
+      $role->grantPermission('edit any service_request content');
+      $role->grantPermission('edit own service_request content');
+      $role->grantPermission('view own unpublished content');
+      $role->grantPermission('view the administration theme');
+      $role->save();
+      $messages[] = 'Created editorial_board role';
+    }
+
+    if ($role) {
+      $granted = [];
+      foreach ($priority_permissions as $perm) {
+        if (!$role->hasPermission($perm)) {
+          $role->grantPermission($perm);
+          $granted[] = $perm;
+        }
+      }
+      if ($granted) {
+        $role->save();
+        $messages[] = "Granted to $role_id: " . implode(', ', $granted);
+      }
+    }
+  }
+
+  return empty($messages) ? 'field_priority already configured.' : implode("\n", $messages);
 }

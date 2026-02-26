@@ -1,0 +1,28 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_escalation_target
+    - group.type.jur
+    - taxonomy.vocabulary.service_category
+id: taxonomy_term.service_category.field_escalation_target
+field_name: field_escalation_target
+entity_type: taxonomy_term
+bundle: service_category
+label: 'Escalation Target Jurisdiction'
+description: 'The jurisdiction responsible when the primary organisation cannot resolve. Leave empty to disable escalation for this category.'
+required: false
+translatable: false
+default_value: {}
+default_value_callback: ''
+settings:
+  handler: 'default:group'
+  handler_settings:
+    target_bundles:
+      jur: jur
+    sort:
+      field: label
+      direction: ASC
+    auto_create: false
+    auto_create_bundle: ''
+field_type: entity_reference

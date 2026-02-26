@@ -120,7 +120,15 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
     // Determine format from URL extension.
     $current_path = $this->currentPath->getPath();
     if (strstr($current_path, 'georeport')) {
-      $format = pathinfo($current_path, PATHINFO_EXTENSION);
+      $ext = pathinfo($current_path, PATHINFO_EXTENSION);
+      if (!empty($ext)) {
+        $format = $ext;
+      }
+    }
+    // Default to json when no format could be determined (e.g. POST
+    // endpoints without a file extension in the URL).
+    if (empty($format)) {
+      $format = 'json';
     }
 
     // Call the resource method.
