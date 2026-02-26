@@ -88,7 +88,7 @@ markaspot_dashboard.status_note_create:
     _format: 'json'
   methods: [POST]
   requirements:
-    _permission: 'access content'
+    _permission: 'manage dashboard notes'
 
 markaspot_dashboard.status_note_delete:
   path: '/api/dashboard/status-notes/{uuid}'
@@ -97,4 +97,23 @@ markaspot_dashboard.status_note_delete:
     _format: 'json'
   methods: [DELETE]
   requirements:
-    _permission: 'access content'
+    _permission: 'manage dashboard notes'
+
+# Internal Remarks API (Staff/Dashboard feature)
+markaspot_dashboard.internal_remark_create:
+  path: '/api/dashboard/internal-remarks'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\InternalRemarkController::add'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _permission: 'manage dashboard notes'
+
+markaspot_dashboard.internal_remark_delete:
+  path: '/api/dashboard/internal-remarks/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\InternalRemarkController::delete'
+    _format: 'json'
+  methods: [DELETE]
+  requirements:
+    _permission: 'manage dashboard notes'

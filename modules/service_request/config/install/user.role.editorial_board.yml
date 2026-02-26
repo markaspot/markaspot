@@ -8,12 +8,20 @@ dependencies:
     - node
     - paragraphs
     - system
-id: moderator
-label: Moderator
-weight: -5
+    - toolbar
+id: editorial_board
+label: 'Editorial board'
+weight: -4
 is_admin: null
 permissions:
+  - 'access administration pages'
   - 'access content'
+  - 'access content overview'
+  - 'access toolbar'
+  - 'access user profiles'
+  - 'administer nodes'
+  - 'administer users'
+  - 'bypass node access'
   - 'create field_address'
   - 'create field_boilerplate'
   - 'create field_e_mail'
@@ -78,4 +86,5 @@ permissions:
   - 'view own field_status_note'
   - 'view own field_status_notes'
   - 'view own unpublished content'
+  - 'view the administration theme'
   - 'view unpublished paragraphs'

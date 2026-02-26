@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_priority
+    - node.type.service_request
+id: node.service_request.field_priority
+field_name: field_priority
+entity_type: node
+bundle: service_request
+label: Priority
+description: 'Check if this request is high priority.'
+required: false
+translatable: false
+default_value:
+  -
+    value: 0
+default_value_callback: ''
+settings:
+  on_label: High
+  off_label: Low
+field_type: boolean

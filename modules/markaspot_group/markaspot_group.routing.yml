@@ -1,0 +1,21 @@
+markaspot_group.members_matrix:
+  path: '/api/group-members'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupMembersController::getMatrix'
+    _title: 'Group Members Matrix'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
+  options:
+    _format: 'json'
+
+markaspot_group.member_update:
+  path: '/api/group-members/{uid}'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupMembersController::updateMemberships'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
+    uid: \d+
+  options:
+    _format: 'json'
