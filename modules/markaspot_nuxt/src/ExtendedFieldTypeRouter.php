@@ -47,6 +47,13 @@ class ExtendedFieldTypeRouter extends FieldTypeRouter {
       return $this->booleanHelper->handleBooleanElement($definition, $data, $object_schema);
     }
 
+    // Cast array data to object for object-type fields. This handles the case
+    // where JSON values like [] or associative arrays are decoded as PHP arrays
+    // instead of stdClass, which would cause a TypeError in handleObjectElement().
+    if ($type === 'object' && is_array($data)) {
+      $data = (object) $data;
+    }
+
     // Delegate all other types to parent (may return null for unhandled types).
     return parent::getFormElement($type, $definition, $data, $object_schema, $form_state, $context);
   }

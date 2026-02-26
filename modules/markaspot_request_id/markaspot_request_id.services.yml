@@ -1,0 +1,10 @@
+services:
+  markaspot_request_id.generator:
+    class: Drupal\markaspot_request_id\Service\RequestIdGenerator
+    arguments:
+      - '@database'
+      - '@config.factory'
+      - '@datetime.time'
+      - '@lock'
+      - '@logger.factory'
+      - '@?markaspot_group.hierarchy_resolver'

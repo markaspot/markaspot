@@ -3,11 +3,12 @@ status: true
 dependencies:
   config:
     - group.type.jur
+    - user.role.administrator
 id: jur-admin
 label: Admin
 weight: -99
 admin: true
-scope: individual
+scope: insider
 global_role: administrator
 group_type: jur
 permissions: {  }
