@@ -96,7 +96,9 @@ echo "\033[1m\n╔════════════════════�
 echo "║  Mark-a-Spot API Endpoint Tests                        ║\n";
 echo "╚══════════════════════════════════════════════════════════╝\033[0m\n";
 
-$base = 'http://localhost';
+// Use the request host so this works in both single-site and multisite.
+// In multisite, drush --uri=sitename.ddev.site sets the correct host.
+$base = \Drupal::request()->getSchemeAndHttpHost();
 $etm = \Drupal::entityTypeManager();
 $module_handler = \Drupal::moduleHandler();
 
@@ -373,7 +375,7 @@ if (!empty($data)) {
 if ($jur_id) {
   [$code, $data_jur] = http_get("$base/georeport/v2/services.json?jurisdiction_id=$jur_id");
   assert_equal(200, $code, "GET services.json?jurisdiction_id=$jur_id returns 200");
-  assert_true(count($data_jur) <= count($data), 'Jurisdiction-filtered services <= total');
+  assert_true(is_array($data_jur) && is_array($data) && count($data_jur) <= count($data), 'Jurisdiction-filtered services <= total');
 }
 
 // GET /georeport/v2/requests.json

@@ -231,19 +231,20 @@ else {
 
 test_group('4. GeoReport API - Services');
 
-$base = 'http://localhost';
+$base = \Drupal::request()->getSchemeAndHttpHost();
 $http = \Drupal::httpClient();
 $opts = ['headers' => ['Accept' => 'application/json'], 'http_errors' => FALSE];
 
 $r = $http->get("$base/georeport/v2/services.json", $opts);
 assert_equal(200, $r->getStatusCode(), "GET services.json returns 200");
 $svc_all = json_decode($r->getBody()->getContents(), TRUE);
-assert_equal($catN, count($svc_all), "Without jurisdiction: $catN services");
+assert_true(is_array($svc_all), "services.json returns array");
+assert_equal($catN, count($svc_all ?? []), "Without jurisdiction: $catN services");
 
 $svc_codes_by_jur = [];
 foreach ($jurs as $id => $j) {
   $rJ = $http->get("$base/georeport/v2/services.json?jurisdiction_id=$id", $opts);
-  $svc = json_decode($rJ->getBody()->getContents(), TRUE);
+  $svc = json_decode($rJ->getBody()->getContents(), TRUE) ?? [];
   // Child jurisdictions inherit parent's services via taxonomy fallback.
   $tax_root = $resolve_root($id);
   $expected = $jurs[$tax_root]['catCount'];
