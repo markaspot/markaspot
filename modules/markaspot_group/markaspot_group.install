@@ -1052,26 +1052,28 @@ function markaspot_group_update_11905(array &$sandbox): void {
     return;
   }
 
-  // --- Phase: backfill_init (find nodes to backfill) ---
+  // --- Phase: backfill_init (count nodes to backfill) ---
   if ($sandbox['phase'] === 'backfill_init') {
-    $nids = $etm->getStorage('node')->getQuery()
+    // Only store the count and a cursor (last processed NID), not all NIDs.
+    // This keeps $sandbox small even for 70k+ nodes.
+    $total = (int) $etm->getStorage('node')->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'service_request')
       ->notExists('field_jurisdiction')
-      ->sort('nid', 'ASC')
+      ->count()
       ->execute();
 
-    $sandbox['backfill_nids'] = array_values($nids);
-    $sandbox['backfill_total'] = count($nids);
+    $sandbox['backfill_total'] = $total;
     $sandbox['backfill_processed'] = 0;
+    $sandbox['backfill_last_nid'] = 0;
 
-    if (empty($nids)) {
+    if ($total === 0) {
       $logger->info('No service requests need field_jurisdiction backfill.');
       $sandbox['phase'] = 'populate';
     }
     else {
       $logger->info('Starting field_jurisdiction backfill for @count service requests.', [
-        '@count' => count($nids),
+        '@count' => $total,
       ]);
       $sandbox['phase'] = 'backfill';
     }
@@ -1083,20 +1085,34 @@ function markaspot_group_update_11905(array &$sandbox): void {
     $node_storage = $etm->getStorage('node');
     $relationship_storage = $etm->getStorage('group_relationship');
 
-    $offset = $sandbox['backfill_processed'];
-    $chunk = array_slice($sandbox['backfill_nids'], $offset, $batch_size);
+    // Cursor-based: query next batch starting after last processed NID.
+    $nids = $node_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->notExists('field_jurisdiction')
+      ->condition('nid', $sandbox['backfill_last_nid'], '>')
+      ->sort('nid', 'ASC')
+      ->range(0, $batch_size)
+      ->execute();
 
-    if (empty($chunk)) {
+    if (empty($nids)) {
+      $logger->info('Backfill complete: processed @count service requests.', [
+        '@count' => $sandbox['backfill_processed'],
+      ]);
       $sandbox['phase'] = 'populate';
     }
     else {
-      $nodes = $node_storage->loadMultiple($chunk);
+      $nodes = $node_storage->loadMultiple($nids);
 
       foreach ($nodes as $node) {
+        $sandbox['backfill_last_nid'] = (int) $node->id();
+
         if (!$node->hasField('field_jurisdiction')) {
+          $sandbox['backfill_processed']++;
           continue;
         }
         if (!$node->get('field_jurisdiction')->isEmpty()) {
+          $sandbox['backfill_processed']++;
           continue;
         }
 
@@ -1123,20 +1139,13 @@ function markaspot_group_update_11905(array &$sandbox): void {
         if (_markaspot_group_set_jurisdiction_field($node, $child_jur_id)) {
           $node->save();
         }
-      }
 
-      $sandbox['backfill_processed'] += count($chunk);
+        $sandbox['backfill_processed']++;
+      }
 
       // Free memory between batches.
-      $node_storage->resetCache($chunk);
+      $node_storage->resetCache(array_values($nids));
       $relationship_storage->resetCache();
-
-      if ($sandbox['backfill_processed'] >= $sandbox['backfill_total']) {
-        $logger->info('Backfill complete: processed @count service requests.', [
-          '@count' => $sandbox['backfill_processed'],
-        ]);
-        $sandbox['phase'] = 'populate';
-      }
     }
   }
 
