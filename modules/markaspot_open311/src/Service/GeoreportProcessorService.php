@@ -1810,18 +1810,50 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The jurisdiction group entity, or NULL if not found.
    */
   protected function resolveNodeJurisdiction(object $node): ?object {
-    // Primary: look for a direct jur-type group_relationship on the node.
+    // Primary: use field_jurisdiction which holds the most-specific
+    // jurisdiction (set by _markaspot_group_set_jurisdiction_field).
+    if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+      $jurEntity = $node->get('field_jurisdiction')->entity;
+      if ($jurEntity) {
+        return $jurEntity;
+      }
+    }
+
+    // Secondary: look for a direct jur-type group_relationship on the node.
+    // When multiple jur relationships exist (nested boundaries), pick the
+    // deepest child (the one whose ID is not referenced as parent by another).
     $relationship_storage = $this->entityTypeManager->getStorage('group_relationship');
     $relationships = $relationship_storage->loadByProperties([
       'entity_id' => $node->id(),
       'plugin_id' => 'group_node:service_request',
     ]);
 
+    $jurGroups = [];
     foreach ($relationships as $relationship) {
       $group = $relationship->getGroup();
       if ($group && $group->bundle() === 'jur') {
-        return $group;
+        $jurGroups[(int) $group->id()] = $group;
       }
+    }
+
+    if (count($jurGroups) === 1) {
+      return reset($jurGroups);
+    }
+
+    if (count($jurGroups) > 1) {
+      // Find deepest: the one not referenced as parent by any other match.
+      $parentIds = [];
+      foreach ($jurGroups as $g) {
+        if ($g->hasField('field_parent_jurisdiction') && !$g->get('field_parent_jurisdiction')->isEmpty()) {
+          $parentIds[(int) $g->get('field_parent_jurisdiction')->target_id] = TRUE;
+        }
+      }
+      foreach ($jurGroups as $id => $g) {
+        if (!isset($parentIds[$id])) {
+          return $g;
+        }
+      }
+      return reset($jurGroups);
     }
 
     // Fallback: derive from organisation's field_jurisdiction.
