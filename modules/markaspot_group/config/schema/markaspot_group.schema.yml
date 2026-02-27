@@ -1,0 +1,7 @@
+markaspot_group.settings:
+  type: config_object
+  label: 'Mark-a-Spot Group Settings'
+  mapping:
+    jurisdiction_field_strategy:
+      type: string
+      label: 'Jurisdiction field strategy'

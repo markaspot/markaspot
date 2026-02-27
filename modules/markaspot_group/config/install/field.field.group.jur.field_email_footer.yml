@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_email_footer
+    - group.type.jur
+id: group.jur.field_email_footer
+field_name: field_email_footer
+entity_type: group
+bundle: jur
+label: 'Email Footer'
+description: 'Closing text for citizen notification emails (e.g. "Your City Administration").'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string_long

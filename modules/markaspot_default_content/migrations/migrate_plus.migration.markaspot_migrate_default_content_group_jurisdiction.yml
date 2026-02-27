@@ -12,7 +12,9 @@ process:
   type: type
   label: label
   field_head_organisation_e_mail: field_head_organisation_e_mail
+  field_platform_name: field_platform_name
+  field_email_footer: field_email_footer
 destination:
   plugin: 'entity:group'
-  default_bundle: jurisdiction
+  default_bundle: jur
 migration_dependencies: {}

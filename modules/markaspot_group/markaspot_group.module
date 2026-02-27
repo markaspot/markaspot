@@ -565,7 +565,13 @@ function markaspot_group_node_insert(NodeInterface $node): void {
     _markaspot_group_assign_root_jurisdiction($node);
   }
 
-  // 3. Derive organisation from category if not already set.
+  // 3. Set field_jurisdiction based on configured strategy.
+  $jur_set = FALSE;
+  if ($node->hasField('field_jurisdiction') && $node->get('field_jurisdiction')->isEmpty()) {
+    $jur_set = _markaspot_group_set_jurisdiction_field($node, $child_jur_id);
+  }
+
+  // 4. Derive organisation from category if not already set.
   //    Replaces ECA rule process_apply_group which read
   //    [node:field_category:entity:field_category_gid].
   //    Now jurisdiction-aware: if a child jur was assigned, checks for an
@@ -581,7 +587,7 @@ function markaspot_group_node_insert(NodeInterface $node): void {
     }
   }
 
-  // 4. Sync field_organisation to org group relationship.
+  // 5. Sync field_organisation to org group relationship.
   if (isset($node->_markaspot_group_pending_sync)) {
     $group_id = $node->_markaspot_group_pending_sync;
     if (!empty($group_id) && !_markaspot_group_is_syncing()) {
@@ -589,13 +595,13 @@ function markaspot_group_node_insert(NodeInterface $node): void {
     }
   }
 
-  // 5. Notify the assigned organisation via email.
+  // 6. Notify the assigned organisation via email.
   if ($org_derived) {
     _markaspot_group_notify_organisation($node);
   }
 
-  // 6. Save the node if we derived the organisation (field_organisation changed).
-  if ($org_derived) {
+  // 7. Save the node if org was derived or jurisdiction was set.
+  if ($org_derived || $jur_set) {
     // Prevent recursive hooks during this save.
     _markaspot_group_set_syncing(TRUE);
     try {
@@ -1213,4 +1219,94 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|fal
   }
 
   return $assigned_child_jur_id;
+}
+
+/**
+ * Sets field_jurisdiction on a service_request based on configured strategy.
+ *
+ * Strategy is read from markaspot_group.settings.jurisdiction_field_strategy:
+ * - 'most_specific' (default): Uses child jur if assigned, else root.
+ * - 'root': Always resolves to root jurisdiction.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service_request node.
+ * @param int|false $child_jur_id
+ *   Child jurisdiction ID from sub-jur assignment, or FALSE.
+ *
+ * @return bool
+ *   TRUE if field_jurisdiction was set, FALSE otherwise.
+ */
+function _markaspot_group_set_jurisdiction_field(NodeInterface $node, int|false $child_jur_id): bool {
+  $strategy = \Drupal::config('markaspot_group.settings')
+    ->get('jurisdiction_field_strategy') ?? 'most_specific';
+
+  $jur_type = \Drupal::config('markaspot_open311.settings')
+    ->get('jurisdiction_group_type') ?? 'jur';
+
+  $jur_id = NULL;
+
+  if ($strategy === 'most_specific' && $child_jur_id) {
+    // Child jur is the most specific. Use it directly.
+    $jur_id = $child_jur_id;
+  }
+  elseif ($strategy === 'root' && $child_jur_id) {
+    // Resolve child to root jurisdiction.
+    /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+    $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+    $jur_id = $resolver->getRootJurisdictionId($child_jur_id);
+  }
+
+  // No child jur (or strategy is 'root' without child): find root via lookup.
+  if (!$jur_id) {
+    $etm = \Drupal::entityTypeManager();
+    $group_storage = $etm->getStorage('group');
+
+    // Guard: only use notExists() if the field storage actually exists.
+    // Without this, single-tenant sites without field_parent_jurisdiction
+    // would get a database exception.
+    $has_parent_field = $etm->getStorage('field_storage_config')
+      ->load('group.field_parent_jurisdiction') !== NULL;
+
+    $query = $group_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $jur_type);
+
+    if ($has_parent_field) {
+      $query->notExists('field_parent_jurisdiction');
+    }
+
+    $root_ids = $query->execute();
+
+    if (count($root_ids) === 1) {
+      $jur_id = (int) reset($root_ids);
+    }
+    elseif (count($root_ids) > 1) {
+      // Multiple roots without child context. Try deriving from category.
+      if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+        $term = $node->get('field_category')->entity;
+        if ($term && $term->hasField('field_jurisdiction') && !$term->get('field_jurisdiction')->isEmpty()) {
+          /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+          $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+          $jur_id = $resolver->getRootJurisdictionId((int) $term->get('field_jurisdiction')->target_id);
+        }
+      }
+    }
+  }
+
+  if (!$jur_id) {
+    return FALSE;
+  }
+
+  $node->set('field_jurisdiction', ['target_id' => $jur_id]);
+
+  \Drupal::logger('markaspot_group')->notice(
+    'Set field_jurisdiction on node @nid to jurisdiction @jur_id (strategy: @strategy).',
+    [
+      '@nid' => $node->id() ?? '(new)',
+      '@jur_id' => $jur_id,
+      '@strategy' => $strategy,
+    ]
+  );
+
+  return TRUE;
 }

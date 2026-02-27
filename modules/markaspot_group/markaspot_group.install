@@ -684,6 +684,58 @@ function markaspot_group_update_11904(): void {
     ]);
   }
 
+  // 5b. Migrate mas_custom block body into the sticky welcome page.
+  // For existing installations, the mas_custom block holds the welcome content
+  // that should now live in the sticky page.
+  $sticky_nids = $existing_sticky ?: ($first_page ? [$first_page->id()] : []);
+  if (!empty($sticky_nids)) {
+    $sticky_page = $etm->getStorage('node')->load(reset($sticky_nids));
+    $mas_custom_blocks = $etm->getStorage('block_content')
+      ->loadByProperties(['type' => 'mas_custom']);
+
+    if (!empty($mas_custom_blocks)) {
+      $mas_block = reset($mas_custom_blocks);
+      $block_body = $mas_block->get('body')->value ?? '';
+
+      if (!empty($block_body) && $sticky_page) {
+        // Migrate default language.
+        $sticky_page->set('title', 'Welcome');
+        $sticky_page->set('body', [
+          'value' => $block_body,
+          'format' => $mas_block->get('body')->format ?? 'full_html',
+        ]);
+        $sticky_page->save();
+
+        // Migrate translations.
+        foreach ($mas_block->getTranslationLanguages() as $langcode => $lang) {
+          if ($langcode === $sticky_page->language()->getId()) {
+            continue;
+          }
+          $block_trans = $mas_block->getTranslation($langcode);
+          $trans_body = $block_trans->get('body')->value ?? '';
+          if (empty($trans_body)) {
+            continue;
+          }
+          $page_trans = $sticky_page->hasTranslation($langcode)
+            ? $sticky_page->getTranslation($langcode)
+            : $sticky_page->addTranslation($langcode);
+          $page_trans->set('title', 'Welcome');
+          $page_trans->set('body', [
+            'value' => $trans_body,
+            'format' => $block_trans->get('body')->format ?? 'full_html',
+          ]);
+          $page_trans->save();
+        }
+
+        $logger->info('Migrated mas_custom block body (+ @count translations) into sticky page "@title" (nid=@nid).', [
+          '@title' => $sticky_page->label(),
+          '@nid' => $sticky_page->id(),
+          '@count' => count($mas_block->getTranslationLanguages()) - 1,
+        ]);
+      }
+    }
+  }
+
   // 6. Add field_jurisdiction to the page form display.
   $form_display = $etm->getStorage('entity_form_display')
     ->load('node.page.default');
@@ -799,5 +851,343 @@ function markaspot_group_update_11904(): void {
         '@role' => $role_id,
       ]);
     }
+  }
+}
+
+/**
+ * Add jurisdiction metadata fields and field_jurisdiction on service_request.
+ *
+ * Phase 1: Creates field_platform_name and field_email_footer on jur groups.
+ * Phase 2: Creates field_jurisdiction instance on service_request nodes.
+ * Phase 3: Installs markaspot_group.settings config.
+ * Phase 4: Backfills field_jurisdiction on existing service_requests.
+ * Phase 5: Populates field_platform_name from field_nuxt_config JSON.
+ */
+function markaspot_group_update_11905(array &$sandbox): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+  $config_factory = \Drupal::configFactory();
+
+  // Read group type names from config (consistent with earlier update hooks).
+  $o311_config = $config_factory->get('markaspot_open311.settings');
+  $jur_type = $o311_config->get('jurisdiction_group_type') ?? 'jur';
+
+  // Initialize sandbox on first call.
+  if (!isset($sandbox['phase'])) {
+    $sandbox['phase'] = 'fields';
+  }
+
+  // --- Phase: fields (create new fields, config, form displays) ---
+  if ($sandbox['phase'] === 'fields') {
+
+    // 1. field_platform_name on jur groups.
+    $storage_id = 'group.field_platform_name';
+    $field_storage = $etm->getStorage('field_storage_config')->load($storage_id);
+    if (!$field_storage) {
+      $field_storage = $etm->getStorage('field_storage_config')->create([
+        'field_name' => 'field_platform_name',
+        'entity_type' => 'group',
+        'type' => 'string',
+        'settings' => [
+          'max_length' => 255,
+          'is_ascii' => FALSE,
+          'case_sensitive' => FALSE,
+        ],
+        'cardinality' => 1,
+      ]);
+      $field_storage->save();
+      $logger->info('Created field storage group.field_platform_name.');
+    }
+
+    $field_id = "group.{$jur_type}.field_platform_name";
+    if (!$etm->getStorage('field_config')->load($field_id)) {
+      $etm->getStorage('field_config')->create([
+        'field_storage' => $field_storage,
+        'bundle' => $jur_type,
+        'label' => 'Platform Name',
+        'description' => 'Brand name for emails and UI (e.g. "Mängelmelder Bonn", "Mark-a-Spot").',
+        'required' => FALSE,
+        'translatable' => TRUE,
+        'settings' => [],
+      ])->save();
+      $logger->info('Created field instance group.jur.field_platform_name.');
+    }
+
+    // 2. field_email_footer on jur groups.
+    $storage_id = 'group.field_email_footer';
+    $field_storage_footer = $etm->getStorage('field_storage_config')->load($storage_id);
+    if (!$field_storage_footer) {
+      $field_storage_footer = $etm->getStorage('field_storage_config')->create([
+        'field_name' => 'field_email_footer',
+        'entity_type' => 'group',
+        'type' => 'string_long',
+        'settings' => [],
+        'cardinality' => 1,
+      ]);
+      $field_storage_footer->save();
+      $logger->info('Created field storage group.field_email_footer.');
+    }
+
+    $field_id = "group.{$jur_type}.field_email_footer";
+    if (!$etm->getStorage('field_config')->load($field_id)) {
+      $etm->getStorage('field_config')->create([
+        'field_storage' => $field_storage_footer,
+        'bundle' => $jur_type,
+        'label' => 'Email Footer',
+        'description' => 'Closing text for citizen notification emails (e.g. "Your City Administration").',
+        'required' => FALSE,
+        'translatable' => TRUE,
+        'settings' => [],
+      ])->save();
+      $logger->info('Created field instance group.jur.field_email_footer.');
+    }
+
+    // 3. Add new fields to jur form display.
+    $form_display = $etm->getStorage('entity_form_display')
+      ->load("group.{$jur_type}.default");
+    if ($form_display) {
+      if (!$form_display->getComponent('field_platform_name')) {
+        $form_display->setComponent('field_platform_name', [
+          'type' => 'string_textfield',
+          'weight' => 22,
+          'region' => 'content',
+          'settings' => [
+            'size' => 60,
+            'placeholder' => 'e.g. Mängelmelder Bonn',
+          ],
+        ]);
+      }
+      if (!$form_display->getComponent('field_email_footer')) {
+        $form_display->setComponent('field_email_footer', [
+          'type' => 'string_textarea',
+          'weight' => 23,
+          'region' => 'content',
+          'settings' => [
+            'rows' => 3,
+            'placeholder' => 'e.g. Your City Administration',
+          ],
+        ]);
+      }
+      $form_display->save();
+      $logger->info('Added field_platform_name and field_email_footer to jur form display.');
+    }
+
+    // 4. field_jurisdiction instance on service_request.
+    // Field storage already exists (created in update 11904 for pages).
+    $sr_field_id = 'node.service_request.field_jurisdiction';
+    if (!$etm->getStorage('field_config')->load($sr_field_id)) {
+      $node_jur_storage = $etm->getStorage('field_storage_config')
+        ->load('node.field_jurisdiction');
+      if ($node_jur_storage) {
+        $etm->getStorage('field_config')->create([
+          'field_storage' => $node_jur_storage,
+          'bundle' => 'service_request',
+          'label' => 'Jurisdiction',
+          'description' => 'The jurisdiction this service request belongs to. Set automatically on creation.',
+          'required' => FALSE,
+          'translatable' => FALSE,
+          'settings' => [
+            'handler' => 'default:group',
+            'handler_settings' => [
+              'target_bundles' => [$jur_type => $jur_type],
+              'sort' => ['field' => 'label', 'direction' => 'ASC'],
+              'auto_create' => FALSE,
+            ],
+          ],
+        ])->save();
+        $logger->info('Created field instance node.service_request.field_jurisdiction.');
+      }
+      else {
+        $logger->warning('Field storage node.field_jurisdiction not found. Run update 11904 first.');
+      }
+    }
+
+    // 5. Add field_jurisdiction to service_request form display.
+    $sr_form_display = $etm->getStorage('entity_form_display')
+      ->load('node.service_request.default');
+    if ($sr_form_display && !$sr_form_display->getComponent('field_jurisdiction')) {
+      $sr_form_display->setComponent('field_jurisdiction', [
+        'type' => 'entity_reference_autocomplete',
+        'weight' => 25,
+        'region' => 'content',
+        'settings' => [
+          'match_operator' => 'CONTAINS',
+          'match_limit' => 10,
+          'size' => 60,
+          'placeholder' => '',
+        ],
+      ]);
+      $sr_form_display->save();
+      $logger->info('Added field_jurisdiction to service_request form display.');
+    }
+
+    // 6. Update JSON:API resource config to expose field_jurisdiction.
+    $jsonapi_config = $config_factory
+      ->getEditable('jsonapi_extras.jsonapi_resource_config.node--service_request');
+    if (!$jsonapi_config->isNew()) {
+      $resource_fields = $jsonapi_config->get('resourceFields') ?? [];
+      if (!isset($resource_fields['field_jurisdiction'])) {
+        $resource_fields['field_jurisdiction'] = [
+          'disabled' => FALSE,
+          'fieldName' => 'field_jurisdiction',
+          'publicName' => 'field_jurisdiction',
+          'enhancer' => ['id' => ''],
+        ];
+        $jsonapi_config->set('resourceFields', $resource_fields)->save();
+        $logger->info('Added field_jurisdiction to JSON:API node--service_request resource config.');
+      }
+    }
+
+    // 7. Install markaspot_group.settings config if not present.
+    $settings_config = $config_factory->getEditable('markaspot_group.settings');
+    if ($settings_config->isNew()) {
+      $settings_config->set('jurisdiction_field_strategy', 'most_specific')->save();
+      $logger->info('Installed markaspot_group.settings with strategy=most_specific.');
+    }
+
+    // Move to backfill phase. Return to avoid cascading into next phase
+    // within the same PHP request (prevents timeout on large datasets).
+    $sandbox['phase'] = 'backfill_init';
+    $sandbox['#finished'] = 0;
+    return;
+  }
+
+  // --- Phase: backfill_init (find nodes to backfill) ---
+  if ($sandbox['phase'] === 'backfill_init') {
+    $nids = $etm->getStorage('node')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->notExists('field_jurisdiction')
+      ->sort('nid', 'ASC')
+      ->execute();
+
+    $sandbox['backfill_nids'] = array_values($nids);
+    $sandbox['backfill_total'] = count($nids);
+    $sandbox['backfill_processed'] = 0;
+
+    if (empty($nids)) {
+      $logger->info('No service requests need field_jurisdiction backfill.');
+      $sandbox['phase'] = 'populate';
+    }
+    else {
+      $logger->info('Starting field_jurisdiction backfill for @count service requests.', [
+        '@count' => count($nids),
+      ]);
+      $sandbox['phase'] = 'backfill';
+    }
+  }
+
+  // --- Phase: backfill (batch-fill field_jurisdiction) ---
+  if ($sandbox['phase'] === 'backfill') {
+    $batch_size = 50;
+    $node_storage = $etm->getStorage('node');
+    $relationship_storage = $etm->getStorage('group_relationship');
+
+    $offset = $sandbox['backfill_processed'];
+    $chunk = array_slice($sandbox['backfill_nids'], $offset, $batch_size);
+
+    if (empty($chunk)) {
+      $sandbox['phase'] = 'populate';
+    }
+    else {
+      $nodes = $node_storage->loadMultiple($chunk);
+
+      foreach ($nodes as $node) {
+        if (!$node->hasField('field_jurisdiction')) {
+          continue;
+        }
+        if (!$node->get('field_jurisdiction')->isEmpty()) {
+          continue;
+        }
+
+        // Find jur group relationships for this node.
+        $jur_relationships = $relationship_storage->loadByProperties([
+          'entity_id' => $node->id(),
+          'plugin_id' => 'group_node:service_request',
+        ]);
+
+        $child_jur_id = FALSE;
+        foreach ($jur_relationships as $rel) {
+          $group = $rel->getGroup();
+          if ($group && $group->bundle() === $jur_type) {
+            // Check if this is a child jur (has parent).
+            if ($group->hasField('field_parent_jurisdiction')
+                && !$group->get('field_parent_jurisdiction')->isEmpty()) {
+              $child_jur_id = (int) $group->id();
+              break;
+            }
+          }
+        }
+
+        // Use the helper function to set field_jurisdiction.
+        if (_markaspot_group_set_jurisdiction_field($node, $child_jur_id)) {
+          $node->save();
+        }
+      }
+
+      $sandbox['backfill_processed'] += count($chunk);
+
+      // Free memory between batches.
+      $node_storage->resetCache($chunk);
+      $relationship_storage->resetCache();
+
+      if ($sandbox['backfill_processed'] >= $sandbox['backfill_total']) {
+        $logger->info('Backfill complete: processed @count service requests.', [
+          '@count' => $sandbox['backfill_processed'],
+        ]);
+        $sandbox['phase'] = 'populate';
+      }
+    }
+  }
+
+  // --- Phase: populate (fill field_platform_name from field_nuxt_config) ---
+  if ($sandbox['phase'] === 'populate') {
+    $group_storage = $etm->getStorage('group');
+    $jur_ids = $group_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $jur_type)
+      ->execute();
+
+    $populated = 0;
+    foreach ($group_storage->loadMultiple($jur_ids) as $jur) {
+      // Populate field_platform_name from field_nuxt_config JSON.
+      if ($jur->hasField('field_platform_name')
+          && $jur->get('field_platform_name')->isEmpty()
+          && $jur->hasField('field_nuxt_config')
+          && !$jur->get('field_nuxt_config')->isEmpty()) {
+        $json = $jur->get('field_nuxt_config')->value;
+        $config_data = json_decode($json, TRUE);
+        $client_name = $config_data['client']['name'] ?? NULL;
+        if ($client_name) {
+          $jur->set('field_platform_name', $client_name);
+          $jur->save();
+          $populated++;
+          $logger->info('Set field_platform_name on jur "@label" to "@name" (from field_nuxt_config).', [
+            '@label' => $jur->label(),
+            '@name' => $client_name,
+          ]);
+        }
+      }
+    }
+
+    if ($populated > 0) {
+      $logger->info('Populated field_platform_name on @count jur groups from field_nuxt_config.', [
+        '@count' => $populated,
+      ]);
+    }
+
+    $sandbox['phase'] = 'done';
+  }
+
+  // Calculate progress.
+  if ($sandbox['phase'] === 'done') {
+    $sandbox['#finished'] = 1;
+  }
+  elseif ($sandbox['phase'] === 'backfill' && ($sandbox['backfill_total'] ?? 0) > 0) {
+    $sandbox['#finished'] = $sandbox['backfill_processed'] / $sandbox['backfill_total'];
+  }
+  else {
+    // Still in field creation or populate phase.
+    $sandbox['#finished'] = 0;
   }
 }
