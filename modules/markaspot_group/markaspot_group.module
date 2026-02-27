@@ -1149,8 +1149,10 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|fal
   $groups = $group_storage->loadMultiple($group_ids);
   $plugin_id = 'group_node:service_request';
   $relationship_storage = \Drupal::entityTypeManager()->getStorage('group_relationship');
-  // Track the first matched child jurisdiction group ID.
-  $assigned_child_jur_id = FALSE;
+  // Collect all matched child jurisdiction IDs (nested boundaries can match
+  // multiple levels, e.g. both "Bournemouth Town Council" and "Queens Park
+  // Ward" when the point lies inside the ward polygon).
+  $matched_child_jur_ids = [];
 
   foreach ($groups as $group) {
     if ($group->get('field_boundary')->isEmpty()) {
@@ -1179,10 +1181,7 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|fal
       continue;
     }
 
-    // Record the first matched child jur ID for org derivation.
-    if ($assigned_child_jur_id === FALSE) {
-      $assigned_child_jur_id = (int) $group->id();
-    }
+    $matched_child_jur_ids[] = (int) $group->id();
 
     // Check if relationship already exists.
     $existing = $relationship_storage->loadByProperties([
@@ -1218,7 +1217,33 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|fal
     }
   }
 
-  return $assigned_child_jur_id;
+  if (empty($matched_child_jur_ids)) {
+    return FALSE;
+  }
+
+  // When multiple child jurisdictions match (nested boundaries), find the
+  // most specific one: the deepest in the hierarchy. A child whose ID is
+  // referenced as parent by another match is NOT the deepest.
+  if (count($matched_child_jur_ids) === 1) {
+    return $matched_child_jur_ids[0];
+  }
+
+  $matched_groups = $group_storage->loadMultiple($matched_child_jur_ids);
+  $parent_ids_in_set = [];
+  foreach ($matched_groups as $g) {
+    if ($g->hasField('field_parent_jurisdiction') && !$g->get('field_parent_jurisdiction')->isEmpty()) {
+      $parent_ids_in_set[(int) $g->get('field_parent_jurisdiction')->target_id] = TRUE;
+    }
+  }
+  // The deepest is the one that is NOT a parent of any other match.
+  foreach ($matched_child_jur_ids as $id) {
+    if (!isset($parent_ids_in_set[$id])) {
+      return $id;
+    }
+  }
+
+  // Fallback: return first match if all are parents (shouldn't happen).
+  return $matched_child_jur_ids[0];
 }
 
 /**

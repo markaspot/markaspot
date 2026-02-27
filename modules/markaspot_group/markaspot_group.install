@@ -1122,16 +1122,39 @@ function markaspot_group_update_11905(array &$sandbox): void {
           'plugin_id' => 'group_node:service_request',
         ]);
 
-        $child_jur_id = FALSE;
+        // Collect all child jur IDs from relationships.
+        $child_jur_ids = [];
         foreach ($jur_relationships as $rel) {
           $group = $rel->getGroup();
           if ($group && $group->bundle() === $jur_type) {
-            // Check if this is a child jur (has parent).
             if ($group->hasField('field_parent_jurisdiction')
                 && !$group->get('field_parent_jurisdiction')->isEmpty()) {
-              $child_jur_id = (int) $group->id();
+              $child_jur_ids[] = (int) $group->id();
+            }
+          }
+        }
+
+        // Find the deepest child (not referenced as parent by another match).
+        $child_jur_id = FALSE;
+        if (count($child_jur_ids) === 1) {
+          $child_jur_id = $child_jur_ids[0];
+        }
+        elseif (count($child_jur_ids) > 1) {
+          $child_groups = $etm->getStorage('group')->loadMultiple($child_jur_ids);
+          $parent_ids_in_set = [];
+          foreach ($child_groups as $cg) {
+            if ($cg->hasField('field_parent_jurisdiction') && !$cg->get('field_parent_jurisdiction')->isEmpty()) {
+              $parent_ids_in_set[(int) $cg->get('field_parent_jurisdiction')->target_id] = TRUE;
+            }
+          }
+          foreach ($child_jur_ids as $cid) {
+            if (!isset($parent_ids_in_set[$cid])) {
+              $child_jur_id = $cid;
               break;
             }
+          }
+          if ($child_jur_id === FALSE) {
+            $child_jur_id = $child_jur_ids[0];
           }
         }
 
