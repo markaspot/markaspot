@@ -1100,6 +1100,8 @@ function markaspot_group_update_11905(array &$sandbox): void {
         '@count' => $sandbox['backfill_processed'],
       ]);
       $sandbox['phase'] = 'populate';
+      $sandbox['#finished'] = 0;
+      return;
     }
     else {
       $nodes = $node_storage->loadMultiple($nids);
@@ -1160,7 +1162,13 @@ function markaspot_group_update_11905(array &$sandbox): void {
 
         // Use the helper function to set field_jurisdiction.
         if (_markaspot_group_set_jurisdiction_field($node, $child_jur_id)) {
-          $node->save();
+          _markaspot_group_set_syncing(TRUE);
+          try {
+            $node->save();
+          }
+          finally {
+            _markaspot_group_set_syncing(FALSE);
+          }
         }
 
         $sandbox['backfill_processed']++;

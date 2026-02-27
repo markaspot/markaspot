@@ -1117,8 +1117,8 @@ function _markaspot_group_assign_root_jurisdiction(NodeInterface $node): void {
  *
  * @return int|false
  *   The child jurisdiction group ID if one was assigned, FALSE otherwise.
- *   When multiple sub-jurisdictions match (overlapping boundaries), the
- *   first matched child jur ID is returned.
+ *   When multiple sub-jurisdictions match (nested boundaries), the deepest
+ *   (most specific) child in the hierarchy is returned.
  */
 function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|false {
   // Get coordinates from the node.
