@@ -142,8 +142,19 @@ class ImageProcessingService {
       // Build messages array.
       $messages = [];
 
-      // Add optional system message if configured.
-      $system_prompt = trim($config->get('system_prompt') ?? '');
+      // Resolve system prompt: jurisdiction-specific overrides global.
+      $system_prompt = '';
+      if ($jurisdictionId) {
+        $group = $this->entityTypeManager->getStorage('group')->load($jurisdictionId);
+        if ($group && $group->hasField('field_ai_system_prompt') && !$group->get('field_ai_system_prompt')->isEmpty()) {
+          $system_prompt = trim($group->get('field_ai_system_prompt')->value);
+        }
+      }
+      // Fallback to global config.
+      if (empty($system_prompt)) {
+        $system_prompt = trim($config->get('system_prompt') ?? '');
+      }
+
       if (!empty($system_prompt)) {
         $messages[] = [
           'role' => 'system',

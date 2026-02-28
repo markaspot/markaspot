@@ -82,3 +82,76 @@ function markaspot_vision_update_11801(): string {
 
   return implode('. ', $message) ?: 'No changes made.';
 }
+
+/**
+ * Install per-jurisdiction AI system prompt field for group entities.
+ *
+ * Adds field_ai_system_prompt (text_long) to the jur group type,
+ * allowing each jurisdiction to override the global AI system prompt.
+ * Only runs when the group module is enabled.
+ */
+function markaspot_vision_update_11802(): string {
+  // Skip if group module is not installed.
+  if (!\Drupal::moduleHandler()->moduleExists('group')) {
+    return 'Skipped: group module is not enabled.';
+  }
+
+  $config_factory = \Drupal::configFactory();
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_vision');
+  $config_path = $module_path . '/config/optional';
+  $source = new FileStorage($config_path);
+
+  $configs = [
+    'field.storage.group.field_ai_system_prompt',
+    'field.field.group.jur.field_ai_system_prompt',
+  ];
+
+  $imported = [];
+  $skipped = [];
+
+  foreach ($configs as $config_name) {
+    if ($config_factory->get($config_name)->get('id')) {
+      $skipped[] = $config_name;
+      continue;
+    }
+
+    $config_data = $source->read($config_name);
+    if (empty($config_data)) {
+      \Drupal::logger('markaspot_vision')->warning('Config file not found: @name', ['@name' => $config_name]);
+      continue;
+    }
+
+    if (str_starts_with($config_name, 'field.storage.')) {
+      $entity_type = 'field_storage_config';
+    }
+    elseif (str_starts_with($config_name, 'field.field.')) {
+      $entity_type = 'field_config';
+    }
+    else {
+      continue;
+    }
+
+    try {
+      $entity_type_manager->getStorage($entity_type)->create($config_data)->save();
+      $imported[] = $config_name;
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_vision')->error('Failed to import @name: @error', [
+        '@name' => $config_name,
+        '@error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  $message = [];
+  if (!empty($imported)) {
+    $message[] = 'Imported: ' . implode(', ', $imported);
+  }
+  if (!empty($skipped)) {
+    $message[] = 'Skipped (already exists): ' . implode(', ', $skipped);
+  }
+
+  return implode('. ', $message) ?: 'No changes made.';
+}

@@ -3,6 +3,7 @@ langcode: en
 status: true
 dependencies:
   config:
+    - field.field.group.jur.field_ai_system_prompt
     - field.field.group.jur.field_boundary
     - field.field.group.jur.field_custom_css
     - field.field.group.jur.field_font_body
@@ -23,6 +24,14 @@ targetEntityType: group
 bundle: jur
 mode: default
 content:
+  field_ai_system_prompt:
+    type: text_textarea
+    weight: 8
+    region: content
+    settings:
+      rows: 4
+      placeholder: ''
+    third_party_settings: {  }
   field_boundary:
     type: text_textarea
     weight: 7
