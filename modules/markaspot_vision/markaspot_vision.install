@@ -96,8 +96,14 @@ function markaspot_vision_update_11802(): string {
     return 'Skipped: group module is not enabled.';
   }
 
-  $config_factory = \Drupal::configFactory();
   $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Skip if jur group type does not exist.
+  if (!$entity_type_manager->getStorage('group_type')->load('jur')) {
+    return 'Skipped: jur group type does not exist.';
+  }
+
+  $config_factory = \Drupal::configFactory();
 
   $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_vision');
   $config_path = $module_path . '/config/optional';
