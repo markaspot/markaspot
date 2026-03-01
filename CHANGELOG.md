@@ -1,5 +1,27 @@
 # Changelog
 
+## [11.9.3](https://github.com/markaspot/markaspot/compare/11.9.2...11.9.3) (2026-03-01)
+
+### Features
+
+* **escalation:** auto-grant permissions via update hooks ([e308934](https://github.com/markaspot/markaspot/commit/e308934a12c00a044bf944adefc9010b2d60f9d1))
+* **group:** add field_jurisdiction to service_request with jur metadata fields ([ae6872d](https://github.com/markaspot/markaspot/commit/ae6872d272db8238dcc98a85e662e1d66800a342))
+* **group:** grant tenant_admin field and escalation permissions ([7929020](https://github.com/markaspot/markaspot/commit/792902055743d02820fbc4a50a973d688f87e0b9))
+* **vision:** add per-jurisdiction AI system prompt ([99237dd](https://github.com/markaspot/markaspot/commit/99237ddbe40d2e2ce3270b075297c1582823bcd8))
+
+### Bug Fixes
+
+* **group:** add sync guard to backfill saves and prevent phase cascade ([e0825bc](https://github.com/markaspot/markaspot/commit/e0825bc220657d91993f27ec04f8ced9dc599b61))
+* **group:** resolve deepest child jurisdiction in nested hierarchies ([ce1f54d](https://github.com/markaspot/markaspot/commit/ce1f54d2c3c6d02f4d7a15f9bcf1237773e85737))
+* **open311:** resolve most-specific jurisdiction in API response ([e76fb0e](https://github.com/markaspot/markaspot/commit/e76fb0e5578933500908db8d2c619a0f3e5dfd58))
+* **tenant-admin:** resolve jurisdiction hierarchy for taxonomy term access ([61a4c86](https://github.com/markaspot/markaspot/commit/61a4c86c93da6dbd3823371cf916bc6845a32183))
+* **tests:** use request host for multisite compatibility ([5ede383](https://github.com/markaspot/markaspot/commit/5ede383634d64aee413946550aded43f19cf5154))
+* **vision:** guard update hook against missing jur group type ([94d00c7](https://github.com/markaspot/markaspot/commit/94d00c7dc2f0728a5664131fc8efca0e6dafca0b))
+
+### Performance
+
+* **group:** use cursor-based backfill in update_11905 for large datasets ([64a2edd](https://github.com/markaspot/markaspot/commit/64a2edd37587837f8402198043bcc94d76fe054e))
+
 ## [11.9.2](https://github.com/markaspot/markaspot/compare/11.9.1...11.9.2) (2026-02-26)
 
 ### Features
