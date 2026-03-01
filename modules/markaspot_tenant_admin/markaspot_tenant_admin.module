@@ -21,6 +21,7 @@ use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_tenant_admin\TenantAdminHelper;
 use Drupal\user\Entity\User;
+use Drupal\user\UserInterface;
 
 /**
  * Implements hook_ENTITY_TYPE_insert() for group_relationship entities.
@@ -69,7 +70,7 @@ function _markaspot_tenant_admin_sync_role(GroupRelationshipInterface $relations
   }
 
   $user_entity = $relationship->getEntity();
-  if (!$user_entity instanceof \Drupal\user\UserInterface) {
+  if (!$user_entity instanceof UserInterface) {
     return;
   }
 
@@ -119,6 +120,10 @@ function _markaspot_tenant_admin_sync_role(GroupRelationshipInterface $relations
  *
  * Filters taxonomy term queries to show only terms belonging to the current
  * user's jurisdictions. Full Drupal admins are unaffected.
+ *
+ * Child jurisdictions inherit taxonomy terms from their root parent, so the
+ * filter resolves each direct jurisdiction to its full ancestor tree via
+ * JurisdictionHierarchyResolver::getTermJurisdictionIds().
  */
 function markaspot_tenant_admin_query_taxonomy_term_access_alter(AlterableInterface $query): void {
   $current_user = \Drupal::currentUser();
@@ -139,6 +144,17 @@ function markaspot_tenant_admin_query_taxonomy_term_access_alter(AlterableInterf
     $query->where('1 = 0');
     return;
   }
+
+  // Resolve each direct jurisdiction to include the full tree (root + all
+  // descendants). Child jurisdictions inherit their root parent's taxonomy
+  // terms, so a Queens Park Ward admin (id=10) also needs to see BCP
+  // Council's terms (id=8).
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $all_jur_ids = [];
+  foreach ($jur_ids as $jur_id) {
+    $all_jur_ids = array_merge($all_jur_ids, $resolver->getTermJurisdictionIds($jur_id));
+  }
+  $jur_ids = array_unique($all_jur_ids);
 
   // Find the base table alias dynamically. TermStorage::loadTree() uses 't',
   // but getNodeTerms() uses 'td' and Views may use other aliases.
