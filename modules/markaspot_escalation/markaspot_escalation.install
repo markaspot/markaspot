@@ -34,6 +34,9 @@ function markaspot_escalation_install() {
   // Add jurisdiction fields to jur group form display.
   _markaspot_escalation_add_jurisdiction_fields_to_display();
 
+  // Grant escalation/delegation permissions to management roles.
+  _markaspot_escalation_grant_permissions();
+
   \Drupal::logger('markaspot_escalation')->notice('Mark-a-Spot Escalation module installed successfully.');
   \Drupal::messenger()->addStatus(t('Mark-a-Spot Escalation module installed successfully. All fields and displays have been configured.'));
 }
@@ -440,4 +443,129 @@ function _markaspot_escalation_add_jurisdiction_fields_to_display() {
       $group_display->save();
     }
   }
+}
+
+/**
+ * Grants escalation and delegation permissions to management roles.
+ *
+ * Also grants 'bypass node access' to tenant_admin. This is a global
+ * permission; application-level filtering ensures tenant admins only
+ * interact with requests in their jurisdiction context.
+ */
+function _markaspot_escalation_grant_permissions() {
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+
+  // Escalation/delegation permissions for all management roles.
+  $escalation_roles = ['moderator', 'editorial_board', 'tenant_admin'];
+  $escalation_permissions = [
+    'escalate service requests',
+    'delegate service requests',
+  ];
+
+  // Only grant dashboard permission if that module is installed.
+  if (\Drupal::moduleHandler()->moduleExists('markaspot_dashboard')) {
+    $escalation_permissions[] = 'manage dashboard notes';
+  }
+
+  foreach ($escalation_roles as $role_id) {
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      continue;
+    }
+    $changed = FALSE;
+    foreach ($escalation_permissions as $permission) {
+      if (!$role->hasPermission($permission)) {
+        $role->grantPermission($permission);
+        $changed = TRUE;
+      }
+    }
+
+    // Tenant admins need bypass node access to manage all requests.
+    // Note: This is a global permission (not scoped to jurisdictions).
+    // Application-level filtering in the frontend ensures tenant admins
+    // only see and edit requests within their jurisdiction context.
+    if ($role_id === 'tenant_admin' && !$role->hasPermission('bypass node access')) {
+      $role->grantPermission('bypass node access');
+      $changed = TRUE;
+      \Drupal::logger('markaspot_escalation')->notice('Granted "bypass node access" to tenant_admin.');
+    }
+
+    if ($changed) {
+      $role->save();
+      \Drupal::logger('markaspot_escalation')->notice('Granted escalation permissions to @role.', ['@role' => $role_id]);
+    }
+  }
+}
+
+/**
+ * Grant escalation/delegation permissions to management roles.
+ *
+ * Ensures moderator, editorial_board, and tenant_admin have escalation
+ * and delegation permissions. Also grants 'bypass node access' to
+ * tenant_admin for full service request management.
+ */
+function markaspot_escalation_update_10001() {
+  _markaspot_escalation_grant_permissions();
+  return t('Granted escalation/delegation permissions to management roles and bypass node access to tenant_admin.');
+}
+
+/**
+ * Grant missing base permissions to tenant_admin role.
+ *
+ * The tenant_admin role was created without foundational permissions needed
+ * for JSON:API entity resolution (access content), GeoReport API access,
+ * and content management. Without 'access content', JSON:API returns UUIDs
+ * instead of entity labels for included relationships.
+ */
+function markaspot_escalation_update_10002() {
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  $role = $role_storage->load('tenant_admin');
+  if (!$role) {
+    return t('tenant_admin role not found.');
+  }
+
+  $permissions = [
+    // Entity access: required for JSON:API to resolve taxonomy terms,
+    // nodes, and other entities. Without this, included relationships
+    // show UUIDs instead of labels.
+    'access content',
+    'access open311 extension',
+    // Content management.
+    'edit any service_request content',
+    'edit any request_image media',
+    'edit own service_request content',
+    'view own unpublished content',
+    'view unpublished paragraphs',
+    'bypass mas validation',
+    // GeoReport API access.
+    'restful get georeport_request_index_resource',
+    'restful get georeport_request_resource',
+    'restful get georeport_service_index_resource',
+    'restful post georeport_request_index_resource',
+    'restful post georeport_request_resource',
+    // Field permissions for service provider management.
+    'view field_service_provider',
+    'view field_service_provider_notes',
+    'view field_sp_attachment',
+    'edit field_service_provider',
+    'edit field_service_provider_notes',
+    'create field_service_provider',
+    'create field_service_provider_notes',
+    'view field_boilerplate',
+  ];
+
+  $changed = FALSE;
+  foreach ($permissions as $permission) {
+    if (!$role->hasPermission($permission)) {
+      $role->grantPermission($permission);
+      $changed = TRUE;
+    }
+  }
+
+  if ($changed) {
+    $role->save();
+    \Drupal::logger('markaspot_escalation')->notice('Granted missing base permissions to tenant_admin.');
+  }
+
+  return t('Granted missing base permissions (access content, GeoReport API, field access) to tenant_admin.');
 }
