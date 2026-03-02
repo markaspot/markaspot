@@ -13,6 +13,28 @@ use Drupal\markaspot_tenant_admin\TenantAdminHelper;
 use Drupal\user\Entity\User;
 
 /**
+ * Grant AI and dashboard permissions to tenant_admin role.
+ */
+function markaspot_tenant_admin_update_10001(): void {
+  $role = \Drupal\user\Entity\Role::load('tenant_admin');
+  if (!$role) {
+    return;
+  }
+
+  $permissions = [
+    'access ai insights',
+    'review ai duplicates',
+    'view ai sentiment',
+    'access dashboard kpis',
+  ];
+
+  foreach ($permissions as $permission) {
+    $role->grantPermission($permission);
+  }
+  $role->save();
+}
+
+/**
  * Implements hook_install().
  *
  * Scans existing jur-admin memberships and retroactively grants the

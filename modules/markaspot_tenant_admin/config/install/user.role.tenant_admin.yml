@@ -22,3 +22,7 @@ permissions:
   - 'delete content translations'
   - 'translate service_category taxonomy_term'
   - 'translate service_status taxonomy_term'
+  - 'access ai insights'
+  - 'review ai duplicates'
+  - 'view ai sentiment'
+  - 'access dashboard kpis'
