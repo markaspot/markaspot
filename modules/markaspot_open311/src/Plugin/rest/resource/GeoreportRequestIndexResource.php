@@ -589,33 +589,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // Get jurisdiction ID early (needed for both status and service code filtering).
     $jurisdictionId = isset($parameters['jurisdiction_id']) ? (int) $parameters['jurisdiction_id'] : NULL;
 
-    // Filter requests by jurisdiction.
-    // For child jurisdictions (with a parent), filter by group membership
-    // since they inherit the parent's category terms.
-    // For root jurisdictions, filter by category TIDs (existing behavior).
-    if ($jurisdictionId && !isset($parameters['service_code'])) {
-      $isChild = $this->hierarchyResolver->isChildJurisdiction($jurisdictionId);
-      if ($isChild) {
-        // Child jurisdiction: filter by group membership (nodes in this group).
-        $nodeIds = $this->hierarchyResolver->getNodeIdsInJurisdiction($jurisdictionId);
-        if (!empty($nodeIds)) {
-          $query->condition('nid', $nodeIds, 'IN');
-        }
-        else {
-          $query->condition('nid', [0], 'IN');
-        }
-      }
-      else {
-        // Root jurisdiction: filter by category TIDs.
-        $categoryTids = $this->georeportProcessor->getCategoryTidsForJurisdiction($jurisdictionId);
-        if (!empty($categoryTids)) {
-          $query->condition('field_category', $categoryTids, 'IN');
-        }
-        else {
-          $query->condition('nid', [0], 'IN');
-        }
-      }
-    }
+    // Note: Jurisdiction node filtering is already handled in createNodeQuery()
+    // via resolveJurisdictionId() + getNodeIdsInJurisdiction(), which correctly
+    // resolves both root and child jurisdictions through group membership.
 
     // Handle status filtering (jurisdiction-aware).
     if (isset($parameters['status'])) {
