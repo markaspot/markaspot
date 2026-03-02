@@ -586,10 +586,14 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
     }
 
-    // Get jurisdiction ID early (needed for both status and service code filtering).
+    // Get jurisdiction ID for downstream status/service_code filtering.
+    // Note: This only checks 'jurisdiction_id'. Deprecated aliases ('jurisdiction',
+    // 'gid') and slug resolution are handled by resolveJurisdictionId() in
+    // createNodeQuery() for node filtering, but not propagated here yet.
+    // @todo Use resolveJurisdictionId() once it is public on the processor service.
     $jurisdictionId = isset($parameters['jurisdiction_id']) ? (int) $parameters['jurisdiction_id'] : NULL;
 
-    // Note: Jurisdiction node filtering is already handled in createNodeQuery()
+    // Jurisdiction node filtering is already handled in createNodeQuery()
     // via resolveJurisdictionId() + getNodeIdsInJurisdiction(), which correctly
     // resolves both root and child jurisdictions through group membership.
 
