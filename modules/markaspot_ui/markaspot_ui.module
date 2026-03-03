@@ -101,7 +101,15 @@ function markaspot_ui_menu_local_tasks_alter(&$data, $route_name) {
       // Get frontend URL from config, fallback to localhost.
       $frontend_url = \Drupal::config('markaspot_nuxt.settings')->get('frontend_base_url') ?: 'http://localhost:3000';
       $frontend_url = rtrim($frontend_url, '/');
-      $data['tabs'][0]['entity.node.canonical']['#link']['url'] = Url::fromUri($frontend_url . '/requests/' . $node->request_id->value);
+      // Build jurisdiction-prefixed frontend URL.
+      $jur_slug = '';
+      if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+        $jur = $node->get('field_jurisdiction')->entity;
+        if ($jur && $jur->hasField('field_slug') && !$jur->get('field_slug')->isEmpty()) {
+          $jur_slug = $jur->get('field_slug')->value . '/';
+        }
+      }
+      $data['tabs'][0]['entity.node.canonical']['#link']['url'] = Url::fromUri($frontend_url . '/' . $jur_slug . 'requests/' . $node->request_id->value);
     }
   }
 }
