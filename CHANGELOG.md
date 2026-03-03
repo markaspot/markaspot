@@ -1,5 +1,9 @@
 # Changelog
 
+* fix(security): validate frontend_base_url scheme and sanitize URL construction (7ea449d)
+* feat(nuxt): add [node:markaspot_frontend_url] token with jurisdiction slug (a90e77f)
+* fix(group): resolve root jurisdiction from category when multiple roots exist (7caee09)
+
 ## [11.9.3](https://github.com/markaspot/markaspot/compare/11.9.2...11.9.3) (2026-03-01)
 
 ### Features
