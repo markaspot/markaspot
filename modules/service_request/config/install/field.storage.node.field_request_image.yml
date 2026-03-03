@@ -13,7 +13,7 @@ field_name: field_request_image
 entity_type: node
 type: image
 settings:
-  uri_scheme: public
+  uri_scheme: private
   default_image:
     uuid: 28092016578ed0b641-35fa-18405-a389-0b64135fa87e53ae389afc372908628092016
     alt: 'No image uploaded'
