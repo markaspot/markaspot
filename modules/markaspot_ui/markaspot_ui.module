@@ -98,18 +98,33 @@ function markaspot_ui_menu_local_tasks_alter(&$data, $route_name) {
   if ($route_name == 'entity.node.edit_form' && isset($data['tabs'][0]['entity.node.canonical'])) {
     $node = \Drupal::routeMatch()->getParameter('node');
     if ($node && $node->bundle() == 'service_request' && !empty($node->request_id->value) && $node->isPublished()) {
-      // Get frontend URL from config, fallback to localhost.
-      $frontend_url = \Drupal::config('markaspot_nuxt.settings')->get('frontend_base_url') ?: 'http://localhost:3000';
-      $frontend_url = rtrim($frontend_url, '/');
-      // Build jurisdiction-prefixed frontend URL.
+      /** @var \Drupal\markaspot_nuxt\Service\FrontendUrlService $frontend_url_service */
+      $frontend_url_service = \Drupal::service('markaspot_nuxt.frontend_url');
+      $frontend_url = $frontend_url_service->getFrontendBaseUrl();
+
+      // Only override the View tab when frontend URL generation is enabled.
+      if (!$frontend_url) {
+        return;
+      }
+
+      // Build jurisdiction-prefixed path.
       $jur_slug = '';
       if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
         $jur = $node->get('field_jurisdiction')->entity;
         if ($jur && $jur->hasField('field_slug') && !$jur->get('field_slug')->isEmpty()) {
-          $jur_slug = $jur->get('field_slug')->value . '/';
+          $jur_slug = rawurlencode($jur->get('field_slug')->value) . '/';
         }
       }
-      $data['tabs'][0]['entity.node.canonical']['#link']['url'] = Url::fromUri($frontend_url . '/' . $jur_slug . 'requests/' . $node->request_id->value);
+
+      $request_id = rawurlencode($node->request_id->value);
+      $url = Url::fromUri($frontend_url . '/' . $jur_slug . 'requests/' . $request_id);
+
+      $data['tabs'][0]['entity.node.canonical']['#link']['url'] = $url;
+      // Add cache dependency on the frontend config.
+      $data['tabs'][0]['entity.node.canonical']['#cache']['tags'] = Cache::mergeTags(
+        $data['tabs'][0]['entity.node.canonical']['#cache']['tags'] ?? [],
+        ['config:markaspot_nuxt.settings']
+      );
     }
   }
 }

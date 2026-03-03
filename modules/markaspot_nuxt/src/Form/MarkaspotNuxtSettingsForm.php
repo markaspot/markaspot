@@ -217,6 +217,22 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
+  public function validateForm(array &$form, FormStateInterface $form_state) {
+    parent::validateForm($form, $form_state);
+
+    $frontend_base_url = trim($form_state->getValue('frontend_base_url') ?? '');
+    if ($frontend_base_url !== '') {
+      $parsed = parse_url($frontend_base_url);
+      $allowed_schemes = ['https', 'http'];
+      if (!isset($parsed['scheme']) || !in_array(strtolower($parsed['scheme']), $allowed_schemes, TRUE)) {
+        $form_state->setErrorByName('frontend_base_url', $this->t('Frontend base URL must use https:// or http://.'));
+      }
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
 

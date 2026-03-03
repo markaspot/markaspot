@@ -85,19 +85,19 @@ function markaspot_nuxt_tokens($type, $tokens, array $data, array $options, Bubb
       }
       $base_url = rtrim($base_url, '/');
 
-      // Get jurisdiction slug.
+      // Get jurisdiction slug (URL-encoded for safety).
       $jur_slug = '';
       if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
         $jur = $node->get('field_jurisdiction')->entity;
         if ($jur && $jur->hasField('field_slug') && !$jur->get('field_slug')->isEmpty()) {
-          $jur_slug = $jur->get('field_slug')->value;
+          $jur_slug = rawurlencode($jur->get('field_slug')->value);
           $bubbleable_metadata->addCacheableDependency($jur);
         }
       }
 
-      // Get request ID.
+      // Get request ID (URL-encoded for defense in depth).
       $request_id = $node->hasField('request_id') && !$node->get('request_id')->isEmpty()
-        ? $node->get('request_id')->value
+        ? rawurlencode($node->get('request_id')->value)
         : $node->id();
 
       // Build: {base_url}/{slug}/requests/{request_id}
