@@ -1041,7 +1041,19 @@ function _markaspot_group_assign_root_jurisdiction(NodeInterface $node): void {
     }
   }
 
-  // Strategy 2: Fallback to the single root jur (no parent jurisdiction).
+  // Strategy 2: Derive from category term's field_jurisdiction.
+  // Category terms reference their root jurisdiction, so this resolves
+  // correctly even when field_organisation is not yet set.
+  if (!$root_jur && $node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+    $term = $node->get('field_category')->entity;
+    if ($term && $term->hasField('field_jurisdiction') && !$term->get('field_jurisdiction')->isEmpty()) {
+      $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+        ->getRootJurisdictionId((int) $term->get('field_jurisdiction')->target_id);
+      $root_jur = $group_storage->load($root_id);
+    }
+  }
+
+  // Strategy 3: Fallback to the single root jur (no parent jurisdiction).
   if (!$root_jur) {
     $root_ids = $group_storage->getQuery()
       ->accessCheck(FALSE)
