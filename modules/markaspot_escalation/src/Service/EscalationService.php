@@ -158,6 +158,14 @@ class EscalationService implements EscalationServiceInterface {
     // Set the escalation target to the new jurisdiction.
     $node->set('field_escalation', ['target_id' => $targetJurId]);
 
+    // Update field_jurisdiction so the API response reflects the new
+    // jurisdiction. Without this, resolveNodeJurisdiction() returns the
+    // original (child) jurisdiction because field_jurisdiction takes priority
+    // over group_relationships.
+    if ($node->hasField('field_jurisdiction')) {
+      $node->set('field_jurisdiction', ['target_id' => $targetJurId]);
+    }
+
     // Create a new revision with a descriptive log message.
     $node->setNewRevision(TRUE);
     $node->setRevisionLogMessage(
