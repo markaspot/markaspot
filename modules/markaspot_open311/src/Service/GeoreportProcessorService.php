@@ -361,10 +361,17 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Handle service definition attributes.
     $attributes = $requestData['attributes'] ?? $requestData['attribute'] ?? NULL;
     if ($attributes) {
-      // Accept both JSON object {"CODE": "value"} and array formats.
-      $values['field_request_attributes'] = [
-        'value' => is_string($attributes) ? $attributes : json_encode($attributes),
-      ];
+      // Validate and normalize to a JSON string.
+      if (is_string($attributes)) {
+        // Verify the string is valid JSON before storing.
+        $decoded = json_decode($attributes, TRUE);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+          $values['field_request_attributes'] = ['value' => $attributes];
+        }
+      }
+      elseif (is_array($attributes) || is_object($attributes)) {
+        $values['field_request_attributes'] = ['value' => json_encode($attributes)];
+      }
     }
 
     return array_filter($values, function ($value) {
@@ -557,7 +564,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $service['attributes'] = $attributes;
     }
 
+    // Exclude field_service_definition from extended_attributes since its
+    // parsed content is already exposed as top-level 'attributes'.
     foreach ($term->getFields() as $key => $value) {
+      if ($key === 'field_service_definition') {
+        continue;
+      }
       $service['extended_attributes'][$key] = $value->value;
     }
 

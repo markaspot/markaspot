@@ -12,7 +12,9 @@
           "code": {
             "type": "string",
             "title": "Code",
-            "description": "Unique identifier for this attribute (e.g. 'vehicle_color')"
+            "description": "Unique identifier for this attribute (e.g. 'vehicle_color')",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "minLength": 1
           },
           "variable": {
             "type": "boolean",
@@ -42,7 +44,8 @@
           "description": {
             "type": "string",
             "title": "Description",
-            "description": "Human-readable label or question shown to the user"
+            "description": "Human-readable label or question shown to the user",
+            "minLength": 1
           },
           "order": {
             "type": "integer",

@@ -91,14 +91,16 @@ function markaspot_open311_update_11802() {
 
   // Create field storage for field_request_attributes on node.
   if (!$field_storage->load('node.field_request_attributes')) {
-    $field_storage->create([
+    $storage = $field_storage->create([
       'field_name' => 'field_request_attributes',
       'entity_type' => 'node',
       'type' => 'text_long',
       'cardinality' => 1,
       'translatable' => FALSE,
-    ])->save();
-    $messages[] = 'Created field_request_attributes storage.';
+    ]);
+    $storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom');
+    $storage->save();
+    $messages[] = 'Created field_request_attributes storage with custom permissions.';
   }
 
   // Create field instance on service_request bundle.
@@ -122,12 +124,15 @@ function markaspot_open311_update_11802() {
     $messages[] = 'Hidden field_request_attributes from node form display.';
   }
 
-  // Grant anonymous permission for field_request_attributes.
-  $role = $entity_type_manager->getStorage('user_role')->load('anonymous');
-  if ($role) {
-    $role->grantPermission('create field_request_attributes content');
-    $role->save();
-    $messages[] = 'Granted anonymous create field_request_attributes permission.';
+  // Grant anonymous and authenticated permission for field_request_attributes.
+  $role_storage = $entity_type_manager->getStorage('user_role');
+  foreach (['anonymous', 'authenticated'] as $role_id) {
+    $role = $role_storage->load($role_id);
+    if ($role) {
+      $role->grantPermission('create field_request_attributes');
+      $role->save();
+      $messages[] = "Granted $role_id create field_request_attributes permission.";
+    }
   }
 
   return implode(' ', $messages) ?: t('Service definition fields already installed.');
@@ -148,4 +153,41 @@ function markaspot_open311_update_11803() {
   }
 
   return t('field_service_definition already translatable or not installed.');
+}
+
+/**
+ * Enable field_permissions on field_request_attributes, fix role permissions.
+ */
+function markaspot_open311_update_11804() {
+  $messages = [];
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Enable custom field permissions on field_request_attributes storage.
+  $field_storage = $entity_type_manager->getStorage('field_storage_config')
+    ->load('node.field_request_attributes');
+  if ($field_storage) {
+    $current = $field_storage->getThirdPartySetting('field_permissions', 'permission_type');
+    if ($current !== 'custom') {
+      $field_storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom');
+      $field_storage->save();
+      $messages[] = 'Enabled custom field permissions on field_request_attributes.';
+    }
+  }
+
+  // Grant create permission to anonymous and authenticated roles.
+  // Remove incorrect permission name if present from earlier updates.
+  $role_storage = $entity_type_manager->getStorage('user_role');
+  foreach (['anonymous', 'authenticated'] as $role_id) {
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      continue;
+    }
+    if (!$role->hasPermission('create field_request_attributes')) {
+      $role->grantPermission('create field_request_attributes');
+      $role->save();
+      $messages[] = "Granted $role_id create field_request_attributes permission.";
+    }
+  }
+
+  return implode(' ', $messages) ?: t('field_request_attributes permissions already configured.');
 }
