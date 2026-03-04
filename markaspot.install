@@ -1059,6 +1059,25 @@ function markaspot_update_11902() {
 }
 
 /**
+ * Enable markaspot_dashboard and markaspot_escalation on existing sites.
+ *
+ * These modules provide status note authoring (field_author on paragraphs),
+ * internal remarks, and escalation routing. Previously optional, now part of
+ * the standard profile to ensure the dashboard edit page works correctly.
+ */
+function markaspot_update_11903(): void {
+  $installer = \Drupal::service('module_installer');
+  $handler = \Drupal::moduleHandler();
+
+  foreach (['markaspot_dashboard', 'markaspot_escalation'] as $module) {
+    if (!$handler->moduleExists($module)) {
+      $installer->install([$module]);
+      \Drupal::logger('markaspot')->notice('Enabled @module.', ['@module' => $module]);
+    }
+  }
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {

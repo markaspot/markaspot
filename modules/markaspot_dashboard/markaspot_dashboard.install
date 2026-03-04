@@ -1,0 +1,73 @@
+<?php
+
+/**
+ * @file
+ * Install and update functions for markaspot_dashboard.
+ */
+
+/**
+ * Add field_author (entity_reference to user) on status paragraph type.
+ *
+ * StatusNoteController sets field_author on paragraph creation. This hook
+ * ensures the field storage and instance exist on sites that enabled the
+ * module before the field config was shipped.
+ */
+function markaspot_dashboard_update_11900(): void {
+  _markaspot_dashboard_ensure_field_author('status');
+}
+
+/**
+ * Creates field_author on a paragraph bundle if missing.
+ *
+ * Shared helper: field storage is created once, instances per bundle.
+ *
+ * @param string $bundle
+ *   The paragraph type machine name.
+ */
+function _markaspot_dashboard_ensure_field_author(string $bundle): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_dashboard');
+
+  // Skip if the paragraph type does not exist.
+  if (!$etm->getStorage('paragraphs_type')->load($bundle)) {
+    $logger->notice('Paragraph type @bundle not found, skipping field_author.', [
+      '@bundle' => $bundle,
+    ]);
+    return;
+  }
+
+  // Ensure field storage exists.
+  $field_storage = $etm->getStorage('field_storage_config')
+    ->load('paragraph.field_author');
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_author',
+      'entity_type' => 'paragraph',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'user'],
+      'cardinality' => 1,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage paragraph.field_author.');
+  }
+
+  // Create field instance.
+  $field_id = "paragraph.{$bundle}.field_author";
+  if (!$etm->getStorage('field_config')->load($field_id)) {
+    $etm->getStorage('field_config')->create([
+      'field_storage' => $field_storage,
+      'bundle' => $bundle,
+      'label' => 'Author',
+      'description' => 'The user who created this paragraph.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [
+        'handler' => 'default:user',
+        'handler_settings' => ['include_anonymous' => FALSE],
+      ],
+    ])->save();
+    $logger->info('Created field instance paragraph.@bundle.field_author.', [
+      '@bundle' => $bundle,
+    ]);
+  }
+}

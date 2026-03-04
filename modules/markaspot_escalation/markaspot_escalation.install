@@ -569,3 +569,56 @@ function markaspot_escalation_update_10002() {
 
   return t('Granted missing base permissions (access content, GeoReport API, field access) to tenant_admin.');
 }
+
+/**
+ * Add field_author on internal_remark paragraph type.
+ *
+ * InternalRemarkController sets field_author on paragraph creation. Reuses
+ * the shared field storage from markaspot_dashboard if it exists.
+ */
+function markaspot_escalation_update_10003(): void {
+  // Reuse the dashboard helper if available, otherwise create inline.
+  if (function_exists('_markaspot_dashboard_ensure_field_author')) {
+    _markaspot_dashboard_ensure_field_author('internal_remark');
+    return;
+  }
+
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_escalation');
+
+  if (!$etm->getStorage('paragraphs_type')->load('internal_remark')) {
+    $logger->notice('Paragraph type internal_remark not found, skipping field_author.');
+    return;
+  }
+
+  $field_storage = $etm->getStorage('field_storage_config')
+    ->load('paragraph.field_author');
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_author',
+      'entity_type' => 'paragraph',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'user'],
+      'cardinality' => 1,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage paragraph.field_author.');
+  }
+
+  $field_id = 'paragraph.internal_remark.field_author';
+  if (!$etm->getStorage('field_config')->load($field_id)) {
+    $etm->getStorage('field_config')->create([
+      'field_storage' => $field_storage,
+      'bundle' => 'internal_remark',
+      'label' => 'Author',
+      'description' => 'The user who created this remark.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [
+        'handler' => 'default:user',
+        'handler_settings' => ['include_anonymous' => FALSE],
+      ],
+    ])->save();
+    $logger->info('Created field instance paragraph.internal_remark.field_author.');
+  }
+}
