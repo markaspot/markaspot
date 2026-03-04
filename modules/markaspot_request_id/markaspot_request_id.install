@@ -135,6 +135,7 @@ function markaspot_request_id_update_9600() {
 function markaspot_request_id_update_11800() {
   $schema = \Drupal::database()->schema();
   $connection = \Drupal::database();
+  $messages = [];
 
   // Add jurisdiction_id column.
   if (!$schema->fieldExists('markaspot_request_id', 'jurisdiction_id')) {
@@ -144,6 +145,7 @@ function markaspot_request_id_update_11800() {
       'default' => 0,
       'description' => 'Root jurisdiction group ID. 0 = single-tenant.',
     ]);
+    $messages[] = 'Added jurisdiction_id column.';
   }
 
   // Add seq column.
@@ -154,6 +156,7 @@ function markaspot_request_id_update_11800() {
       'default' => 0,
       'description' => 'Per-jurisdiction sequence number.',
     ]);
+    $messages[] = 'Added seq column.';
   }
 
   // Backfill seq from existing request_id strings.
@@ -166,6 +169,7 @@ function markaspot_request_id_update_11800() {
     ->execute()
     ->fetchAll();
 
+  $seqUpdated = 0;
   foreach ($rows as $row) {
     if (empty($row->request_id)) {
       continue;
@@ -177,67 +181,76 @@ function markaspot_request_id_update_11800() {
         ->fields(['seq' => $seq])
         ->condition('id', $row->id)
         ->execute();
+      $seqUpdated++;
     }
   }
+  $messages[] = "Backfilled seq on $seqUpdated rows.";
 
   // Backfill jurisdiction_id from nodes if markaspot_group is installed.
-  // Only relevant for multi-tenant dev environments. Production single-tenant
-  // sites keep jurisdiction_id = 0.
+  // Uses SQL instead of entity loading for performance (scales to 100k+ nodes).
   if (\Drupal::moduleHandler()->moduleExists('markaspot_group')) {
     try {
-      /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
-      $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+      // Check how many jurisdictions exist.
+      $jurisdictions = $connection->select('groups_field_data', 'g')
+        ->fields('g', ['id'])
+        ->condition('type', 'jur')
+        ->execute()
+        ->fetchCol();
 
-      $nids = \Drupal::entityQuery('node')
-        ->condition('type', 'service_request')
-        ->accessCheck(FALSE)
-        ->execute();
+      $jurCount = count($jurisdictions);
 
-      $nodeStorage = \Drupal::entityTypeManager()->getStorage('node');
+      if ($jurCount === 1) {
+        // Single jurisdiction: assign all rows directly, no JOINs needed.
+        $jid = (int) reset($jurisdictions);
+        $updated = $connection->update('markaspot_request_id')
+          ->fields(['jurisdiction_id' => $jid])
+          ->condition('jurisdiction_id', 0)
+          ->execute();
+        $messages[] = "Assigned $updated rows to jurisdiction $jid (single-tenant).";
+      }
+      elseif ($jurCount > 1) {
+        // Multi-tenant: resolve jurisdiction via category term field_jurisdiction.
+        // Uses a temporary index on request_id for JOIN performance.
+        $hasIndex = FALSE;
+        try {
+          $connection->query("CREATE INDEX tmp_req_id_backfill ON {node_field_data} (request_id(32))");
+          $hasIndex = TRUE;
+        }
+        catch (\Exception $e) {
+          // Index may already exist or request_id column missing.
+        }
 
-      foreach (array_chunk($nids, 50) as $chunk) {
-        $nodes = $nodeStorage->loadMultiple($chunk);
-        foreach ($nodes as $node) {
-          if (empty($node->request_id->value)) {
-            continue;
-          }
+        $updated = $connection->query("
+          UPDATE {markaspot_request_id} rid
+          INNER JOIN {node_field_data} nfd ON nfd.request_id = rid.request_id AND nfd.type = 'service_request'
+          INNER JOIN {node__field_category} nfc ON nfc.entity_id = nfd.nid
+          INNER JOIN {taxonomy_term__field_jurisdiction} ttfj ON ttfj.entity_id = nfc.field_category_target_id
+          LEFT JOIN {group__field_parent_jurisdiction} gpj ON gpj.entity_id = ttfj.field_jurisdiction_target_id
+          SET rid.jurisdiction_id = COALESCE(gpj.field_parent_jurisdiction_target_id, ttfj.field_jurisdiction_target_id)
+          WHERE rid.jurisdiction_id = 0
+            AND ttfj.field_jurisdiction_target_id > 0
+        ")->rowCount();
 
-          // Resolve jurisdiction from node's category term.
-          if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
-            continue;
-          }
-          $categoryTerm = $node->get('field_category')->entity;
-          if (!$categoryTerm || !$categoryTerm->hasField('field_jurisdiction') || $categoryTerm->get('field_jurisdiction')->isEmpty()) {
-            continue;
-          }
-
-          $jid = (int) $categoryTerm->get('field_jurisdiction')->target_id;
+        if ($hasIndex) {
           try {
-            $rootJid = $resolver->getRootJurisdictionId($jid);
+            $connection->query("DROP INDEX tmp_req_id_backfill ON {node_field_data}");
           }
           catch (\Exception $e) {
-            $rootJid = $jid;
-          }
-
-          if ($rootJid > 0) {
-            // Only update rows not yet assigned to a jurisdiction.
-            // This prevents cross-tenant corruption when multiple tenants
-            // share the same request_id string (e.g., "1-2026" after rollover).
-            $connection->update('markaspot_request_id')
-              ->fields(['jurisdiction_id' => $rootJid])
-              ->condition('request_id', $node->request_id->value)
-              ->condition('jurisdiction_id', 0)
-              ->execute();
+            // Ignore cleanup errors.
           }
         }
+        $messages[] = "Resolved $updated rows across $jurCount jurisdictions (multi-tenant).";
+      }
+      else {
+        $messages[] = 'No jurisdictions found, skipping backfill.';
       }
     }
     catch (\Exception $e) {
-      \Drupal::logger('markaspot_request_id')
-        ->warning('Jurisdiction backfill skipped: @message', [
-          '@message' => $e->getMessage(),
-        ]);
+      $messages[] = 'Jurisdiction backfill skipped: ' . $e->getMessage();
     }
+  }
+  else {
+    $messages[] = 'markaspot_group not installed, skipping jurisdiction backfill.';
   }
 
   // Add composite indexes.
@@ -266,11 +279,15 @@ function markaspot_request_id_update_11800() {
     $schema->addIndex('markaspot_request_id', 'jurisdiction_seq', [
       'jurisdiction_id', 'seq',
     ], $spec);
+    $messages[] = 'Added jurisdiction_seq index.';
   }
 
   if (!$schema->indexExists('markaspot_request_id', 'jurisdiction_timestamp')) {
     $schema->addIndex('markaspot_request_id', 'jurisdiction_timestamp', [
       'jurisdiction_id', 'timestamp',
     ], $spec);
+    $messages[] = 'Added jurisdiction_timestamp index.';
   }
+
+  return implode(' ', $messages);
 }
