@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_service_definition
+    - taxonomy.vocabulary.service_category
+  module:
+    - text
+id: taxonomy_term.service_category.field_service_definition
+field_name: field_service_definition
+entity_type: taxonomy_term
+bundle: service_category
+label: 'Service Definition Attributes'
+description: 'Open311 service definition attributes for custom form fields per category.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

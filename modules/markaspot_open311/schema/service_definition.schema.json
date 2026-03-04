@@ -1,0 +1,77 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "service_definition.schema.json",
+  "type": "object",
+  "properties": {
+    "attributes": {
+      "type": "array",
+      "title": "Attributes",
+      "items": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "Unique identifier for this attribute (e.g. 'vehicle_color')"
+          },
+          "variable": {
+            "type": "boolean",
+            "title": "Variable",
+            "description": "Whether this attribute is user-editable (true) or informational only (false)",
+            "default": true
+          },
+          "datatype": {
+            "type": "string",
+            "title": "Datatype",
+            "enum": [
+              "string",
+              "number",
+              "text",
+              "datetime",
+              "singlevaluelist",
+              "multivaluelist"
+            ],
+            "default": "string"
+          },
+          "required": {
+            "type": "boolean",
+            "title": "Required",
+            "description": "Whether this attribute must be filled in",
+            "default": false
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Human-readable label or question shown to the user"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order",
+            "description": "Display order (lower numbers first)",
+            "default": 0
+          },
+          "values": {
+            "type": "array",
+            "title": "Values",
+            "description": "Options for singlevaluelist and multivaluelist datatypes",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "title": "Key"
+                },
+                "name": {
+                  "type": "string",
+                  "title": "Name"
+                }
+              },
+              "required": ["key", "name"]
+            }
+          }
+        },
+        "required": ["code", "datatype", "description"]
+      }
+    }
+  }
+}

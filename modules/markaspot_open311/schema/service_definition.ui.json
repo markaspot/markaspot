@@ -1,0 +1,61 @@
+{
+  "attributes": {
+    "ui:options": {
+      "title": "Service Definition Attributes",
+      "description": "Define additional form fields for this category. Each attribute becomes a form field in the reporting form."
+    },
+    "items": {
+      "code": {
+        "ui:options": {
+          "placeholder": "e.g. vehicle_color",
+          "description": "Unique machine name (lowercase, underscores)"
+        }
+      },
+      "variable": {
+        "ui:options": {
+          "description": "Set to false for read-only informational attributes"
+        }
+      },
+      "datatype": {
+        "ui:options": {
+          "description": "string = short text, number = numeric, text = long text, datetime = date/time picker, singlevaluelist = dropdown, multivaluelist = checkboxes"
+        }
+      },
+      "required": {
+        "ui:options": {
+          "description": "If checked, the user must fill in this field"
+        }
+      },
+      "description": {
+        "ui:options": {
+          "placeholder": "e.g. What color is the vehicle?",
+          "description": "Label or question shown to the user"
+        }
+      },
+      "order": {
+        "ui:options": {
+          "placeholder": "0",
+          "description": "Lower numbers are shown first"
+        }
+      },
+      "values": {
+        "ui:options": {
+          "title": "Options",
+          "description": "Only for singlevaluelist and multivaluelist"
+        },
+        "items": {
+          "key": {
+            "ui:options": {
+              "placeholder": "e.g. red"
+            }
+          },
+          "name": {
+            "ui:options": {
+              "placeholder": "e.g. Red"
+            }
+          }
+        }
+      }
+    }
+  }
+}

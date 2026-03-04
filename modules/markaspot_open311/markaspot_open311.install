@@ -40,3 +40,112 @@ function markaspot_open311_update_11801() {
 
   return t('response_visibility configuration already up to date.');
 }
+
+/**
+ * Install service definition and request attributes fields.
+ */
+function markaspot_open311_update_11802() {
+  $messages = [];
+
+  // Install field_service_definition on taxonomy_term (service_category).
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Create field storage for field_service_definition.
+  $field_storage = $entity_type_manager->getStorage('field_storage_config');
+  if (!$field_storage->load('taxonomy_term.field_service_definition')) {
+    $field_storage->create([
+      'field_name' => 'field_service_definition',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'text_long',
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ])->save();
+    $messages[] = 'Created field_service_definition storage.';
+  }
+
+  // Create field instance on service_category bundle.
+  $field_config = $entity_type_manager->getStorage('field_config');
+  if (!$field_config->load('taxonomy_term.service_category.field_service_definition')) {
+    $field_config->create([
+      'field_name' => 'field_service_definition',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => 'service_category',
+      'label' => 'Service Definition Attributes',
+      'description' => 'Open311 service definition attributes for custom form fields per category.',
+      'required' => FALSE,
+      'translatable' => TRUE,
+    ])->save();
+    $messages[] = 'Created field_service_definition on service_category.';
+  }
+
+  // Set widget on form display.
+  $form_display = $entity_type_manager->getStorage('entity_form_display')
+    ->load('taxonomy_term.service_category.default');
+  if ($form_display) {
+    $form_display->setComponent('field_service_definition', [
+      'type' => 'service_definition_json_form',
+      'weight' => 20,
+    ])->save();
+    $messages[] = 'Set service_definition_json_form widget on form display.';
+  }
+
+  // Create field storage for field_request_attributes on node.
+  if (!$field_storage->load('node.field_request_attributes')) {
+    $field_storage->create([
+      'field_name' => 'field_request_attributes',
+      'entity_type' => 'node',
+      'type' => 'text_long',
+      'cardinality' => 1,
+      'translatable' => FALSE,
+    ])->save();
+    $messages[] = 'Created field_request_attributes storage.';
+  }
+
+  // Create field instance on service_request bundle.
+  if (!$field_config->load('node.service_request.field_request_attributes')) {
+    $field_config->create([
+      'field_name' => 'field_request_attributes',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Request Attributes',
+      'description' => 'JSON-encoded service definition attribute values submitted with the request.',
+      'required' => FALSE,
+    ])->save();
+    $messages[] = 'Created field_request_attributes on service_request.';
+  }
+
+  // Hide field_request_attributes from node form display (API-only).
+  $node_form_display = $entity_type_manager->getStorage('entity_form_display')
+    ->load('node.service_request.default');
+  if ($node_form_display) {
+    $node_form_display->removeComponent('field_request_attributes')->save();
+    $messages[] = 'Hidden field_request_attributes from node form display.';
+  }
+
+  // Grant anonymous permission for field_request_attributes.
+  $role = $entity_type_manager->getStorage('user_role')->load('anonymous');
+  if ($role) {
+    $role->grantPermission('create field_request_attributes content');
+    $role->save();
+    $messages[] = 'Granted anonymous create field_request_attributes permission.';
+  }
+
+  return implode(' ', $messages) ?: t('Service definition fields already installed.');
+}
+
+/**
+ * Make field_service_definition translatable for multilingual attribute labels.
+ */
+function markaspot_open311_update_11803() {
+  $field_config = \Drupal::entityTypeManager()
+    ->getStorage('field_config')
+    ->load('taxonomy_term.service_category.field_service_definition');
+
+  if ($field_config && !$field_config->isTranslatable()) {
+    $field_config->setTranslatable(TRUE);
+    $field_config->save();
+    return t('Made field_service_definition translatable.');
+  }
+
+  return t('field_service_definition already translatable or not installed.');
+}

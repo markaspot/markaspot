@@ -358,6 +358,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
     }
 
+    // Handle service definition attributes.
+    $attributes = $requestData['attributes'] ?? $requestData['attribute'] ?? NULL;
+    if ($attributes) {
+      // Accept both JSON object {"CODE": "value"} and array formats.
+      $values['field_request_attributes'] = [
+        'value' => is_string($attributes) ? $attributes : json_encode($attributes),
+      ];
+    }
+
     return array_filter($values, function ($value) {
       return ($value !== NULL && $value !== FALSE && $value !== '');
     });
@@ -522,14 +531,31 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $term = $term->getTranslation($langcode);
     }
 
+    // Check for service definition attributes.
+    $hasDefinition = $term->hasField('field_service_definition')
+      && !$term->get('field_service_definition')->isEmpty();
+    $attributes = [];
+    if ($hasDefinition) {
+      $definitionJson = $term->get('field_service_definition')->value;
+      $definition = json_decode($definitionJson, TRUE);
+      if (json_last_error() === JSON_ERROR_NONE && !empty($definition['attributes'])) {
+        $attributes = $definition['attributes'];
+      }
+    }
+
     $service = [
       'service_code' => $term->field_service_code->value,
       'service_name' => $term->getName(),
-      'metadata' => 'false',
+      'metadata' => !empty($attributes) ? 'true' : 'false',
       'type' => 'realtime',
       'description' => $term->getDescription(),
       'keywords' => $term->field_keywords->value ?? '',
     ];
+
+    // Include attributes inline when present.
+    if (!empty($attributes)) {
+      $service['attributes'] = $attributes;
+    }
 
     foreach ($term->getFields() as $key => $value) {
       $service['extended_attributes'][$key] = $value->value;
@@ -1365,6 +1391,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         if (!empty($accessibleFields)) {
           $request['extended_attributes']['drupal'] = $this->getFieldValues($node, implode(',', $accessibleFields));
         }
+      }
+    }
+
+    // Include service definition attributes if present.
+    if ($node->hasField('field_request_attributes') && !$node->get('field_request_attributes')->isEmpty()) {
+      $attributesJson = $node->get('field_request_attributes')->value;
+      $attributesData = json_decode($attributesJson, TRUE);
+      if (json_last_error() === JSON_ERROR_NONE && !empty($attributesData)) {
+        $request['extended_attributes']['attributes'] = $attributesData;
       }
     }
 

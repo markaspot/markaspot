@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_request_attributes
+    - node.type.service_request
+  module:
+    - text
+id: node.service_request.field_request_attributes
+field_name: field_request_attributes
+entity_type: node
+bundle: service_request
+label: 'Request Attributes'
+description: 'JSON-encoded service definition attribute values submitted with the request.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long
