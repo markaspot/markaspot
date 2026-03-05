@@ -12,7 +12,6 @@ use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslationInterface;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Flood\FloodInterface;
-use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
@@ -679,22 +678,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
         $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
         $initialStatusTid = $this->georeportProcessor->getInitialStatusTid($jurisdictionId);
 
-        $status_note_initial = $this->t('The service request has been created.');
-
-        $paragraph_fields = [
-          'type' => 'status',
-          'field_status_note' => [
-            "value"  => $status_note_initial,
-            "format" => "full_html",
-          ],
-        ];
-        if ($initialStatusTid) {
-          $paragraph_fields['field_status_term'] = [
-            "target_id" => $initialStatusTid,
-          ];
+        // Uses status term description as note text; falls back to t() string.
+        $langcode = $node->language()->getId();
+        $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
+          'status_term_id' => $initialStatusTid,
+        ], $langcode);
+        if ($paragraph->get('field_status_note')->isEmpty()) {
+          $paragraph->set('field_status_note', [
+            'value' => $this->t('The service request has been created.'),
+            'format' => 'plain_text',
+          ]);
+          $paragraph->save();
         }
-        $paragraph = Paragraph::create($paragraph_fields);
-        $paragraph->save();
 
         $node->field_status_notes = [
           [

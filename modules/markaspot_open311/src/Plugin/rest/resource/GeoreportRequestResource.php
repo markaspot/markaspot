@@ -430,8 +430,10 @@ class GeoreportRequestResource extends ResourceBase {
     if (isset($values['field_status_notes'])) {
       // Use target_id for entity reference field, not value.
       $status = $values['field_status'] ?? $node->get('field_status')->target_id;
-      $paragraphData = [$status, $values['field_status_notes']];
-      $paragraph = $this->georeportProcessor->createStatusNoteParagraph($paragraphData);
+      $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
+        'status_term_id' => $status,
+        'note' => $values['field_status_notes'],
+      ], $node->language()->getId());
 
       $current = $node->get('field_status_notes')->getValue();
       $current[] = [

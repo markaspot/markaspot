@@ -4,7 +4,8 @@ namespace Drupal\markaspot_dashboard\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\paragraphs\Entity\Paragraph;
+use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,10 +23,30 @@ class StatusNoteController extends ControllerBase {
   protected $entityTypeManager;
 
   /**
+   * The georeport processor service.
+   *
+   * @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface
+   */
+  protected $georeportProcessor;
+
+  /**
+   * The current user.
+   *
+   * @var \Drupal\Core\Session\AccountProxyInterface
+   */
+  protected $currentUser;
+
+  /**
    * Constructs a StatusNoteController object.
    */
-  public function __construct(EntityTypeManagerInterface $entity_type_manager) {
+  public function __construct(
+    EntityTypeManagerInterface $entity_type_manager,
+    GeoreportProcessorServiceInterface $georeport_processor,
+    AccountProxyInterface $current_user,
+  ) {
     $this->entityTypeManager = $entity_type_manager;
+    $this->georeportProcessor = $georeport_processor;
+    $this->currentUser = $current_user;
   }
 
   /**
@@ -33,7 +54,9 @@ class StatusNoteController extends ControllerBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('entity_type.manager')
+      $container->get('entity_type.manager'),
+      $container->get('markaspot_open311.processor'),
+      $container->get('current_user'),
     );
   }
 
@@ -63,43 +86,36 @@ class StatusNoteController extends ControllerBase {
       return new JsonResponse(['error' => 'Access denied'], 403);
     }
 
-    // Create the paragraph.
-    $paragraph = Paragraph::create(['type' => 'status']);
-
-    // Set status term.
+    // Resolve UUIDs to entity IDs.
+    $statusTermId = NULL;
     if (!empty($data['status_term_uuid'])) {
       $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties([
         'uuid' => $data['status_term_uuid'],
         'vid' => 'service_status',
       ]);
       if (!empty($terms)) {
-        $paragraph->set('field_status_term', reset($terms)->id());
+        $statusTermId = reset($terms)->id();
       }
     }
 
-    // Set note text.
-    if (!empty($data['note'])) {
-      $paragraph->set('field_status_note', [
-        'value' => $data['note'],
-        'format' => 'plain_text',
-      ]);
-    }
-
-    // Set boilerplate.
+    $boilerplateId = NULL;
     if (!empty($data['boilerplate_uuid'])) {
       $boilerplates = $this->entityTypeManager->getStorage('node')->loadByProperties([
         'uuid' => $data['boilerplate_uuid'],
         'type' => 'boilerplate',
       ]);
       if (!empty($boilerplates)) {
-        $paragraph->set('field_boilerplate', reset($boilerplates)->id());
+        $boilerplateId = reset($boilerplates)->id();
       }
     }
 
-    // Track the actual author (paragraphs inherit parent ownership).
-    $paragraph->set('field_author', \Drupal::currentUser()->id());
-
-    $paragraph->save();
+    // Create paragraph via central factory.
+    $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
+      'status_term_id' => $statusTermId,
+      'note' => $data['note'] ?? NULL,
+      'boilerplate_id' => $boilerplateId,
+      'author_id' => $this->currentUser->id(),
+    ], $node->language()->getId());
 
     // Link to service request.
     $current = $node->get('field_status_notes')->getValue();

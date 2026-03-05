@@ -250,15 +250,18 @@ interface GeoreportProcessorServiceInterface {
   public function getJurisdictionIdFromNode(object $node): ?int;
 
   /**
-   * Creates an initial status note paragraph entity.
+   * Creates a status note paragraph entity.
    *
-   * @param array $paragraphData
-   *   An array containing the term ID and status note text.
+   * @param array $fields
+   *   Associative array with keys: 'status_term_id', 'note', 'format',
+   *   'boilerplate_id', 'author_id'. See implementation for details.
+   * @param string $langcode
+   *   The language code for the paragraph. Defaults to site default language.
    *
    * @return \Drupal\paragraphs\Entity\Paragraph
    *   The created paragraph entity.
    */
-  public function createStatusNoteParagraph(array $paragraphData): Paragraph;
+  public function createStatusNoteParagraph(array $fields, string $langcode = ''): Paragraph;
 
   /**
    * Updates the published status of media entities.

@@ -8,7 +8,6 @@
  */
 
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\paragraphs\Entity\Paragraph;
 
 /**
  * Implements hook_node_presave().
@@ -79,19 +78,22 @@ function _service_request_handle_creation(EntityInterface $node, $config, bool $
   // by markaspot_group to a jurisdiction-specific value).
   $actual_status_tid = (int) $node->get('field_status')->target_id;
 
-  $paragraph = Paragraph::create([
-    'type' => 'status',
-    'field_status_note' => [
-      'value' => t('The service request has been created.', [], [
-        'langcode' => $node->language()->getId(),
-      ]),
+  /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
+  $processor = \Drupal::service('markaspot_open311.processor');
+  $langcode = $node->language()->getId();
+
+  // Note is omitted so the factory uses the status term's description.
+  // Falls back to t() string if term description is empty.
+  $paragraph = $processor->createStatusNoteParagraph([
+    'status_term_id' => $actual_status_tid,
+  ], $langcode);
+  if ($paragraph->get('field_status_note')->isEmpty()) {
+    $paragraph->set('field_status_note', [
+      'value' => t('The service request has been created.', [], ['langcode' => $langcode]),
       'format' => 'plain_text',
-    ],
-    'field_status_term' => [
-      'target_id' => $actual_status_tid,
-    ],
-  ]);
-  $paragraph->save();
+    ]);
+    $paragraph->save();
+  }
 
   $node->field_status_notes = [
     [
@@ -139,19 +141,22 @@ function _service_request_handle_update(EntityInterface $node, $config, bool $au
     }
   }
 
-  $paragraph = Paragraph::create([
-    'type' => 'status',
-    'field_status_note' => [
-      'value' => t('Status changed.', [], [
-        'langcode' => $node->language()->getId(),
-      ]),
+  /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
+  $processor = \Drupal::service('markaspot_open311.processor');
+  $langcode = $node->language()->getId();
+
+  // Note is omitted so the factory uses the status term's description.
+  // Falls back to t() string if term description is empty.
+  $paragraph = $processor->createStatusNoteParagraph([
+    'status_term_id' => $newStatus,
+  ], $langcode);
+  if ($paragraph->get('field_status_note')->isEmpty()) {
+    $paragraph->set('field_status_note', [
+      'value' => t('Status changed.', [], ['langcode' => $langcode]),
       'format' => 'plain_text',
-    ],
-    'field_status_term' => [
-      'target_id' => $newStatus,
-    ],
-  ]);
-  $paragraph->save();
+    ]);
+    $paragraph->save();
+  }
 
   $node->field_status_notes->appendItem([
     'target_id' => $paragraph->id(),

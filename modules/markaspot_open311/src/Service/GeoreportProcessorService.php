@@ -1965,10 +1965,22 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   }
 
   /**
-   * Creates an initial status note paragraph entity.
+   * Creates a status note paragraph entity.
    *
-   * @param array $paragraphData
-   *   An array containing the taxonomy term ID and status note text.
+   * Central factory for all status note paragraphs. All code paths that create
+   * status paragraphs should use this method to ensure consistent langcode,
+   * format, and field handling.
+   *
+   * @param array $fields
+   *   Associative array with keys:
+   *   - 'status_term_id' (int|string): Taxonomy term ID for field_status_term.
+   *   - 'note' (string): The status note text. If empty and status_term_id is
+   *     set, falls back to the status term's description.
+   *   - 'format' (string): Text format. Defaults to 'plain_text'.
+   *   - 'boilerplate_id' (int|string): Optional boilerplate node ID.
+   *   - 'author_id' (int|string): Optional author user ID.
+   * @param string $langcode
+   *   The language code for the paragraph. Defaults to site default language.
    *
    * @return \Drupal\paragraphs\Entity\Paragraph
    *   The created paragraph entity.
@@ -1976,16 +1988,64 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If there is an error saving the paragraph entity.
    */
-  public function createStatusNoteParagraph(array $paragraphData): Paragraph {
-    $paragraph = Paragraph::create(['type' => 'status']);
-    $paragraph->set('field_status_term', $paragraphData[0]);
-    // Set with user's default format.
-    $paragraph->set('field_status_note', [
-      'value' => $paragraphData[1],
-      'format' => filter_default_format(),
+  public function createStatusNoteParagraph(array $fields, string $langcode = ''): Paragraph {
+    $langcode = $langcode ?: $this->languageManager->getDefaultLanguage()->getId();
+
+    $paragraph = Paragraph::create([
+      'type' => 'status',
+      'langcode' => $langcode,
     ]);
+
+    if (!empty($fields['status_term_id'])) {
+      $paragraph->set('field_status_term', $fields['status_term_id']);
+    }
+
+    // Resolve note text: explicit note > status term description > empty.
+    $noteText = $fields['note'] ?? '';
+    if (empty($noteText) && !empty($fields['status_term_id'])) {
+      $noteText = $this->getStatusTermDescription((int) $fields['status_term_id'], $langcode);
+    }
+
+    if (!empty($noteText)) {
+      $paragraph->set('field_status_note', [
+        'value' => $noteText,
+        'format' => $fields['format'] ?? 'plain_text',
+      ]);
+    }
+
+    if (!empty($fields['boilerplate_id'])) {
+      $paragraph->set('field_boilerplate', $fields['boilerplate_id']);
+    }
+
+    if (!empty($fields['author_id'])) {
+      $paragraph->set('field_author', $fields['author_id']);
+    }
+
     $paragraph->save();
     return $paragraph;
+  }
+
+  /**
+   * Gets the translated description of a status taxonomy term.
+   *
+   * @param int $termId
+   *   The taxonomy term ID.
+   * @param string $langcode
+   *   The language code.
+   *
+   * @return string
+   *   The term description, or empty string if not available.
+   */
+  private function getStatusTermDescription(int $termId, string $langcode): string {
+    $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($termId);
+    if (!$term) {
+      return '';
+    }
+    if ($term->hasTranslation($langcode)) {
+      $term = $term->getTranslation($langcode);
+    }
+    $description = $term->getDescription();
+    return $description ? strip_tags($description) : '';
   }
 
   /**
