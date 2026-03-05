@@ -50,6 +50,14 @@ markaspot_nuxt.jurisdictions:
   requirements:
     _permission: 'access content'
 
+markaspot_nuxt.jurisdiction_hosts:
+  path: '/api/jurisdiction-hosts'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getJurisdictionHosts'
+    _format: 'json'
+  requirements:
+    _access: 'TRUE'
+
 markaspot_nuxt.organisations:
   path: '/api/organisations'
   defaults:

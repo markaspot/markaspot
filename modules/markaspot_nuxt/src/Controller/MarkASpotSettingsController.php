@@ -884,6 +884,60 @@ class MarkASpotSettingsController extends ControllerBase {
   }
 
   /**
+   * Returns host-to-mode mappings for all jurisdictions.
+   *
+   * Lightweight endpoint used by the Nuxt server middleware to determine
+   * whether a given hostname should run in 'citizen' or 'full' app mode.
+   * Only returns the auth.allowedHosts and auth.publicHosts arrays from
+   * each jurisdiction's field_nuxt_config.
+   */
+  public function getJurisdictionHosts() {
+    $open311_config = $this->configFactory->get('markaspot_open311.settings');
+    $jur_type = $open311_config->get('jurisdiction_group_type') ?? 'jur';
+
+    $group_ids = $this->entityTypeManager->getStorage('group')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $jur_type)
+      ->condition('status', 1)
+      ->sort('id', 'ASC')
+      ->execute();
+
+    $groups = $this->entityTypeManager->getStorage('group')->loadMultiple($group_ids);
+
+    $host_mappings = [];
+
+    $cache_metadata = new CacheableMetadata();
+    $cache_metadata->addCacheTags(['group_list:' . $jur_type]);
+    $cache_metadata->setCacheMaxAge(300);
+
+    foreach ($groups as $group) {
+      $cache_metadata->addCacheableDependency($group);
+
+      if (!$group->hasField('field_nuxt_config') || $group->get('field_nuxt_config')->isEmpty()) {
+        continue;
+      }
+
+      $config = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (empty($config['auth'])) {
+        continue;
+      }
+
+      $host_mappings[] = [
+        'jurisdiction_id' => (int) $group->id(),
+        'name' => $group->label(),
+        'allowedHosts' => $config['auth']['allowedHosts'] ?? [],
+        'publicHosts' => $config['auth']['publicHosts'] ?? [],
+      ];
+    }
+
+    $response = new CacheableJsonResponse($host_mappings);
+    $response->addCacheableDependency($cache_metadata);
+
+    return $response;
+  }
+
+  /**
    * Returns available organisations for the dashboard.
    *
    * Used by the frontend dashboard to populate organisation dropdowns
