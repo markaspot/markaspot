@@ -69,7 +69,7 @@ class DashboardController extends ControllerBase {
    * - end_date: End date filter (Y-m-d or UNIX timestamp)
    * - jurisdiction_id: Filter by jurisdiction group ID
    * - organization_id: Filter by organization group ID
-   * - category_id: Filter by category taxonomy term ID
+   * - category_id: Filter by category taxonomy term ID.
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   JSON response containing all KPI metrics.
@@ -132,7 +132,7 @@ class DashboardController extends ControllerBase {
    * - end_date: End date filter (Y-m-d or UNIX timestamp)
    * - granularity: Time grouping (day|week|month), defaults to 'day'
    * - jurisdiction_id: Filter by jurisdiction group ID
-   * - category_id: Filter by category taxonomy term ID
+   * - category_id: Filter by category taxonomy term ID.
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   JSON response containing time series volume data.
@@ -173,7 +173,7 @@ class DashboardController extends ControllerBase {
    * - end_date: End date filter (Y-m-d or UNIX timestamp)
    * - granularity: Time grouping (day|week|month), defaults to 'day'
    * - jurisdiction_id: Filter by jurisdiction group ID
-   * - category_id: Filter by category taxonomy term ID
+   * - category_id: Filter by category taxonomy term ID.
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   JSON response containing time series processing data.
@@ -212,7 +212,7 @@ class DashboardController extends ControllerBase {
    * Supports query parameters:
    * - start_date: Start date filter (Y-m-d or UNIX timestamp)
    * - end_date: End date filter (Y-m-d or UNIX timestamp)
-   * - jurisdiction_id: Filter by jurisdiction group ID
+   * - jurisdiction_id: Filter by jurisdiction group ID.
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   JSON response containing forwarding breakdown data.

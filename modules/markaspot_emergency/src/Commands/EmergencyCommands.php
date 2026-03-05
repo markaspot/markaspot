@@ -2,7 +2,6 @@
 
 namespace Drupal\markaspot_emergency\Commands;
 
-use Symfony\Component\HttpFoundation\Request;
 use Drush\Commands\DrushCommands;
 use Drush\Attributes as CLI;
 use Drupal\Core\Config\ConfigFactoryInterface;

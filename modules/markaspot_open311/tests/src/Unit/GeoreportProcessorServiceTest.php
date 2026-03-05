@@ -2,6 +2,9 @@
 
 namespace Drupal\Tests\markaspot_open311\Unit;
 
+use Drupal\node\NodeInterface;
+use Drupal\taxonomy\TermInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
@@ -132,7 +135,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ]);
 
     // Default config mock.
-    $config = $this->createMock(\Drupal\Core\Config\ImmutableConfig::class);
+    $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')
       ->willReturnMap([
         ['bundle', 'service_request'],
@@ -344,9 +347,9 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->with(10)
       ->willReturn(10);
 
-    $term1 = $this->createMock(\Drupal\taxonomy\TermInterface::class);
+    $term1 = $this->createMock(TermInterface::class);
     $term1->method('id')->willReturn(100);
-    $term2 = $this->createMock(\Drupal\taxonomy\TermInterface::class);
+    $term2 = $this->createMock(TermInterface::class);
     $term2->method('id')->willReturn(101);
 
     $this->termStorage->method('loadByProperties')
@@ -370,7 +373,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->with(20)
       ->willReturn(10);
 
-    $term1 = $this->createMock(\Drupal\taxonomy\TermInterface::class);
+    $term1 = $this->createMock(TermInterface::class);
     $term1->method('id')->willReturn(100);
 
     $this->termStorage->method('loadByProperties')
@@ -561,9 +564,13 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $jurisdictionField = new class {
       public int $target_id = 42;
 
+      /**
+       *
+       */
       public function isEmpty(): bool {
         return FALSE;
       }
+
     };
 
     $categoryTerm = new class($jurisdictionField) {
@@ -573,13 +580,20 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         $this->jurisdictionField = $jurisdictionField;
       }
 
+      /**
+       *
+       */
       public function hasField(string $name): bool {
         return $name === 'field_jurisdiction';
       }
 
+      /**
+       *
+       */
       public function get(string $name): object {
         return $this->jurisdictionField;
       }
+
     };
 
     $categoryField = new class($categoryTerm) {
@@ -589,12 +603,16 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         $this->entity = $entity;
       }
 
+      /**
+       *
+       */
       public function isEmpty(): bool {
         return FALSE;
       }
+
     };
 
-    $node = $this->createMock(\Drupal\node\NodeInterface::class);
+    $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')
       ->willReturnCallback(fn($name) => $name === 'field_category');
     $node->method('get')
@@ -613,7 +631,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
    * @covers ::getJurisdictionIdFromNode
    */
   public function testGetJurisdictionIdFromNodeWithoutCategory(): void {
-    $node = $this->createMock(\Drupal\node\NodeInterface::class);
+    $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')
       ->with('field_category')
       ->willReturn(FALSE);

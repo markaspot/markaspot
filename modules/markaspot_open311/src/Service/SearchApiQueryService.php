@@ -181,7 +181,6 @@ class SearchApiQueryService {
       // query / result processing will handle returning the correct translation.
       // If strict language filtering is needed in the future, it can be enabled
       // via an option like 'filter_by_language' => TRUE.
-
       // Execute the query.
       $results = $query->execute();
 

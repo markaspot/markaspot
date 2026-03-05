@@ -2,8 +2,6 @@
 
 namespace Drupal\Tests\markaspot_vision\Unit;
 
-use Drupal\Core\Access\AccessResultAllowed;
-use Drupal\Core\Access\AccessResultForbidden;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Flood\FloodInterface;
@@ -149,9 +147,13 @@ class ImageProcessingControllerTest extends UnitTestCase {
           $this->uri = $uri;
         }
 
+        /**
+         *
+         */
         public function getFileUri(): string {
           return $this->uri;
         }
+
       };
 
       $fieldItem = new class($file) {
@@ -162,9 +164,13 @@ class ImageProcessingControllerTest extends UnitTestCase {
           $this->entity = $file;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
+
       };
 
       $media->method('get')
@@ -382,16 +388,18 @@ class ImageProcessingControllerTest extends UnitTestCase {
         $this->anything(),
         $this->anything(),
       )
-      ->willReturn(['ai_result' => json_encode([
-        'category' => 1,
-        'description' => 'Test',
-        'alt_text' => ['Alt'],
-        'hazard_flag' => FALSE,
-        'hazard_level' => 0,
-        'hazard_issues' => [],
-        'privacy_flag' => FALSE,
-        'privacy_issues' => [],
-      ])]);
+      ->willReturn([
+        'ai_result' => json_encode([
+          'category' => 1,
+          'description' => 'Test',
+          'alt_text' => ['Alt'],
+          'hazard_flag' => FALSE,
+          'hazard_level' => 0,
+          'hazard_issues' => [],
+          'privacy_flag' => FALSE,
+          'privacy_issues' => [],
+        ]),
+      ]);
 
     $request = $this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]);
     $response = $this->controller->getAIResults($request);

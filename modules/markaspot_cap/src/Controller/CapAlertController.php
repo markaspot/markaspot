@@ -86,7 +86,7 @@ class CapAlertController extends ControllerBase {
     TimeInterface $time,
     EntityTypeManagerInterface $entity_type_manager,
     CapProcessorService $cap_processor,
-    CapEncoder $cap_encoder
+    CapEncoder $cap_encoder,
   ) {
     $this->currentUser = $current_user;
     $this->config = $config->get('markaspot_cap.settings');

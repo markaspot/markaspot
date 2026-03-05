@@ -107,7 +107,7 @@ class ImageProcessingService {
       foreach ($file_uris as $file_uri) {
         $styled_file_path = $this->getStyledImagePath($file_uri);
         $contents = file_get_contents($styled_file_path);
-        if ($contents === false) {
+        if ($contents === FALSE) {
           $this->logger->warning('Failed to read image file: @path', ['@path' => $styled_file_path]);
           continue;
         }

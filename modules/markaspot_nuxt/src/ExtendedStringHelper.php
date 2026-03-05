@@ -180,7 +180,6 @@ class ExtendedStringHelper extends StringHelper {
 
     // No PHP validation needed - JavaScript updates the hidden 'value' field
     // and json_form_widget reads from $formValues[$property]['value'].
-
     // Attach JavaScript for dynamic behavior.
     $element['#attached']['library'][] = 'markaspot_nuxt/color_picker';
 

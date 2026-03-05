@@ -55,5 +55,3 @@ leaflet.fullscreen:
   css:
     component:
       /libraries/leaflet-fullscreen/dist/leaflet.fullscreen.css: { }
-
-

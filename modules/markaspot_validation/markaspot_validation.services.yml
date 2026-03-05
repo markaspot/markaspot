@@ -10,4 +10,3 @@ services:
   markaspot_validation.default_location_constraint_validator:
     class: Drupal\markaspot_validation\Plugin\Validation\Constraint\DefaultLocationConstraintValidator
     arguments: ['@datetime.time', '@request_stack', '@entity_type.manager', '@config.factory', '@current_user']
-

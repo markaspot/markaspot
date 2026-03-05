@@ -16,4 +16,3 @@ configuration:
       - json
     supported_auth:
       - cookie
-

@@ -72,8 +72,8 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       $form['service']['api_key_status'] = [
         '#type' => 'item',
         '#markup' => '<div class="messages messages--status">' .
-          $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
-          '</div>',
+        $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
+        '</div>',
         '#weight' => -1,
         '#states' => [
           'invisible' => [
@@ -112,8 +112,8 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
         $form['service']['api_key_status'] = [
           '#type' => 'item',
           '#markup' => '<div class="messages messages--warning">' .
-            $this->t('API key stored in config database. Consider using environment variable for better security.') .
-            '</div>',
+          $this->t('API key stored in config database. Consider using environment variable for better security.') .
+          '</div>',
           '#weight' => -1,
           '#states' => [
             'invisible' => [

@@ -595,7 +595,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // Jurisdiction node filtering is already handled in createNodeQuery()
     // via resolveJurisdictionId() + getNodeIdsInJurisdiction(), which correctly
     // resolves both root and child jurisdictions through group membership.
-
     // Handle status filtering (jurisdiction-aware).
     if (isset($parameters['status'])) {
       $tids = $this->georeportProcessor->mapStatusToTaxonomyIds($parameters['status'], $jurisdictionId);

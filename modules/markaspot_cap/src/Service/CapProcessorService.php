@@ -35,7 +35,7 @@ class CapProcessorService {
    */
   public function __construct(
     ConfigFactoryInterface $config_factory,
-    EntityTypeManagerInterface $entity_type_manager
+    EntityTypeManagerInterface $entity_type_manager,
   ) {
     $this->configFactory = $config_factory;
     $this->entityTypeManager = $entity_type_manager;
@@ -153,11 +153,16 @@ class CapProcessorService {
 
     // Map Mark-a-Spot priority (0-4) to CAP severity.
     $severityMap = [
-      0 => 'Extreme',   // Critical.
-      1 => 'Severe',    // High.
-      2 => 'Moderate',  // Medium.
-      3 => 'Minor',     // Low.
-      4 => 'Minor',     // Very Low.
+    // Critical.
+      0 => 'Extreme',
+    // High.
+      1 => 'Severe',
+    // Medium.
+      2 => 'Moderate',
+    // Low.
+      3 => 'Minor',
+    // Very Low.
+      4 => 'Minor',
     ];
 
     return $severityMap[$priority] ?? 'Minor';

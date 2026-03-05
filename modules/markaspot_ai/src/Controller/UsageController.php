@@ -106,7 +106,8 @@ class UsageController extends ControllerBase {
 
     // Add cache metadata.
     $cacheMetadata = new CacheableMetadata();
-    $cacheMetadata->setCacheMaxAge(300); // Cache for 5 minutes.
+    // Cache for 5 minutes.
+    $cacheMetadata->setCacheMaxAge(300);
     $cacheMetadata->addCacheTags(['markaspot_ai:usage']);
     $cacheMetadata->addCacheContexts(['url.query_args']);
 

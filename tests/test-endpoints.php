@@ -14,13 +14,18 @@
 // ---------------------------------------------------------------------------
 // Test framework (same as test-multi-tenant.php)
 // ---------------------------------------------------------------------------
-
 $GLOBALS['_test'] = ['pass' => 0, 'fail' => 0, 'skip' => 0];
 
+/**
+ *
+ */
 function test_group(string $name): void {
   echo "\n\033[1;36m━━━ $name ━━━\033[0m\n";
 }
 
+/**
+ *
+ */
 function assert_true(bool $condition, string $message): void {
   if ($condition) {
     $GLOBALS['_test']['pass']++;
@@ -32,6 +37,9 @@ function assert_true(bool $condition, string $message): void {
   }
 }
 
+/**
+ *
+ */
 function assert_equal($expected, $actual, string $message): void {
   if ($expected === $actual) {
     assert_true(TRUE, $message);
@@ -41,12 +49,18 @@ function assert_equal($expected, $actual, string $message): void {
   }
 }
 
+/**
+ *
+ */
 function assert_json_keys(array $data, array $keys, string $context): void {
   foreach ($keys as $key) {
     assert_true(array_key_exists($key, $data), "$context: has key '$key'");
   }
 }
 
+/**
+ *
+ */
 function skip_test(string $message): void {
   $GLOBALS['_test']['skip']++;
   echo "  \033[33m⊘ SKIP:\033[0m $message\n";
@@ -91,7 +105,6 @@ function http_post(string $url, $body = NULL, array $extra_opts = []): array {
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
-
 echo "\033[1m\n╔══════════════════════════════════════════════════════════╗\n";
 echo "║  Mark-a-Spot API Endpoint Tests                        ║\n";
 echo "╚══════════════════════════════════════════════════════════╝\033[0m\n";
@@ -135,14 +148,13 @@ echo "\n";
 // ===========================================================================
 // 1. Stats Endpoints (public, no auth)
 // ===========================================================================
-
 test_group('1. Stats API');
 
 if (!$module_handler->moduleExists('markaspot_stats')) {
   skip_test('markaspot_stats not enabled');
 }
 else {
-  // GET /stats/status
+  // GET /stats/status.
   [$code, $data] = http_get("$base/stats/status");
   assert_equal(200, $code, 'GET /stats/status returns 200');
   assert_true(is_array($data), '/stats/status returns array');
@@ -155,14 +167,14 @@ else {
   [$code] = http_get("$base/api/stats/status");
   assert_equal(200, $code, 'GET /api/stats/status returns 200');
 
-  // GET /stats/status?jurisdiction=
+  // GET /stats/status?jurisdiction=.
   if ($jur_id) {
     [$code, $data] = http_get("$base/stats/status?jurisdiction=$jur_id");
     assert_equal(200, $code, "GET /stats/status?jurisdiction=$jur_id returns 200");
     assert_true(is_array($data), '/stats/status with jurisdiction returns array');
   }
 
-  // GET /stats/categories
+  // GET /stats/categories.
   [$code, $data] = http_get("$base/stats/categories");
   assert_equal(200, $code, 'GET /stats/categories returns 200');
   assert_true(is_array($data), '/stats/categories returns array');
@@ -174,13 +186,13 @@ else {
   [$code] = http_get("$base/api/stats/categories");
   assert_equal(200, $code, 'GET /api/stats/categories returns 200');
 
-  // GET /stats/categories?jurisdiction=
+  // GET /stats/categories?jurisdiction=.
   if ($jur_id) {
     [$code, $data] = http_get("$base/stats/categories?jurisdiction=$jur_id");
     assert_equal(200, $code, "GET /stats/categories?jurisdiction=$jur_id returns 200");
   }
 
-  // GET /stats/categories/hierarchical
+  // GET /stats/categories/hierarchical.
   [$code, $data] = http_get("$base/stats/categories/hierarchical");
   assert_equal(200, $code, 'GET /stats/categories/hierarchical returns 200');
   assert_true(is_array($data), '/stats/categories/hierarchical returns array');
@@ -200,14 +212,13 @@ else {
 // ===========================================================================
 // 2. Emergency Mode API (public)
 // ===========================================================================
-
 test_group('2. Emergency Mode API');
 
 if (!$module_handler->moduleExists('markaspot_emergency')) {
   skip_test('markaspot_emergency not enabled');
 }
 else {
-  // GET /api/emergency-mode/status
+  // GET /api/emergency-mode/status.
   [$code, $data] = http_get("$base/api/emergency-mode/status");
   assert_equal(200, $code, 'GET /api/emergency-mode/status returns 200');
   assert_true(is_array($data), 'Emergency status returns object');
@@ -218,7 +229,7 @@ else {
     assert_true(in_array($data['status'], ['off', 'active'], TRUE), "status is 'off' or 'active'");
   }
 
-  // With jurisdiction_id
+  // With jurisdiction_id.
   if ($jur_id) {
     [$code, $data] = http_get("$base/api/emergency-mode/status?jurisdiction_id=$jur_id");
     assert_equal(200, $code, "GET /api/emergency-mode/status?jurisdiction_id=$jur_id returns 200");
@@ -232,14 +243,13 @@ else {
 // ===========================================================================
 // 3. Configuration / Settings API (access content)
 // ===========================================================================
-
 test_group('3. Configuration API');
 
 if (!$module_handler->moduleExists('markaspot_nuxt')) {
   skip_test('markaspot_nuxt not enabled');
 }
 else {
-  // GET /api/mark-a-spot-settings
+  // GET /api/mark-a-spot-settings.
   [$code, $data] = http_get("$base/api/mark-a-spot-settings");
   assert_equal(200, $code, 'GET /api/mark-a-spot-settings returns 200');
   if ($data) {
@@ -257,7 +267,7 @@ else {
     }
   }
 
-  // With jurisdiction
+  // With jurisdiction.
   if ($jur_id) {
     [$code, $data] = http_get("$base/api/mark-a-spot-settings?jurisdiction=$jur_id");
     assert_equal(200, $code, "GET /api/mark-a-spot-settings?jurisdiction=$jur_id returns 200");
@@ -265,7 +275,7 @@ else {
       assert_true(isset($data['jurisdiction']), 'Settings with jurisdiction has jurisdiction key');
     }
 
-    // With exclude=boundary
+    // With exclude=boundary.
     [$code, $data] = http_get("$base/api/mark-a-spot-settings?jurisdiction=$jur_id&exclude=boundary");
     assert_equal(200, $code, 'GET settings?exclude=boundary returns 200');
     if ($data) {
@@ -283,7 +293,7 @@ else {
     }
   }
 
-  // GET /api/mark-a-spot-form-mode-settings
+  // GET /api/mark-a-spot-form-mode-settings.
   [$code, $data] = http_get("$base/api/mark-a-spot-form-mode-settings/node/service_request/nuxt");
   assert_equal(200, $code, 'GET form-mode-settings/node/service_request/nuxt returns 200');
   if ($data) {
@@ -296,7 +306,7 @@ else {
   [$code] = http_get("$base/api/mark-a-spot-form-mode-settings/node/service_request/nonexistent");
   assert_true(in_array($code, [404, 200]), 'Non-existent form mode returns 404 or empty 200');
 
-  // GET /api/field-options
+  // GET /api/field-options.
   [$code, $data] = http_get("$base/api/field-options/node/field_hazard_level");
   if ($code === 200 && $data) {
     assert_json_keys($data, ['field_name', 'field_type', 'options'], 'Field options');
@@ -307,7 +317,7 @@ else {
     assert_true(in_array($code, [200, 404]), "GET /api/field-options responds ($code)");
   }
 
-  // GET /api/jurisdictions
+  // GET /api/jurisdictions.
   [$code, $data] = http_get("$base/api/jurisdictions");
   assert_equal(200, $code, 'GET /api/jurisdictions returns 200');
   if ($data) {
@@ -318,7 +328,7 @@ else {
     }
   }
 
-  // GET /api/organisations
+  // GET /api/organisations.
   [$code, $data] = http_get("$base/api/organisations");
   assert_equal(200, $code, 'GET /api/organisations returns 200');
   if ($data) {
@@ -329,14 +339,14 @@ else {
     }
   }
 
-  // GET /api/fonts.css
+  // GET /api/fonts.css.
   $http = \Drupal::httpClient();
   $r = $http->get("$base/api/fonts.css", ['http_errors' => FALSE]);
   $ct = $r->getHeader('Content-Type')[0] ?? '';
   assert_equal(200, $r->getStatusCode(), 'GET /api/fonts.css returns 200');
   assert_true(str_contains($ct, 'text/css'), "fonts.css Content-Type is text/css (got: $ct)");
 
-  // GET /api/vote-sum/{uuid}
+  // GET /api/vote-sum/{uuid}.
   if ($sample_uuid) {
     [$code, $data] = http_get("$base/api/vote-sum/$sample_uuid");
     // 500 if Voting API module not configured, 200 if working.
@@ -360,7 +370,6 @@ else {
 // ===========================================================================
 // 4. GeoReport v2 API (api_key auth)
 // ===========================================================================
-
 test_group('4. GeoReport v2 API');
 
 // GET /georeport/v2/services.json (public)
@@ -371,14 +380,14 @@ if (!empty($data)) {
   assert_json_keys($data[0], ['service_code', 'service_name'], 'services[0]');
 }
 
-// With jurisdiction_id
+// With jurisdiction_id.
 if ($jur_id) {
   [$code, $data_jur] = http_get("$base/georeport/v2/services.json?jurisdiction_id=$jur_id");
   assert_equal(200, $code, "GET services.json?jurisdiction_id=$jur_id returns 200");
   assert_true(is_array($data_jur) && is_array($data) && count($data_jur) <= count($data), 'Jurisdiction-filtered services <= total');
 }
 
-// GET /georeport/v2/requests.json
+// GET /georeport/v2/requests.json.
 if ($api_key) {
   [$code, $data] = http_get("$base/georeport/v2/requests.json?api_key=$api_key&limit=5");
   assert_true(in_array($code, [200, 403]), "GET requests.json responds ($code)");
@@ -386,20 +395,20 @@ if ($api_key) {
     assert_json_keys($data[0], ['service_request_id', 'status', 'service_code', 'lat', 'long'], 'requests[0]');
   }
 
-  // With extensions
+  // With extensions.
   [$code, $data] = http_get("$base/georeport/v2/requests.json?api_key=$api_key&limit=1&extensions=true");
   if ($code === 200 && is_array($data) && !empty($data)) {
     assert_true(isset($data[0]['extended_attributes']), 'extensions=true returns extended_attributes');
   }
 
-  // Single request
+  // Single request.
   if ($sample_node) {
     $request_id = $sample_node->get('request_id')->value ?? $sample_node->id();
     [$code, $data] = http_get("$base/georeport/v2/requests/$request_id.json?api_key=$api_key");
     assert_true(in_array($code, [200, 404]), "GET requests/{id}.json responds ($code)");
   }
 
-  // With jurisdiction_id
+  // With jurisdiction_id.
   if ($jur_id) {
     [$code] = http_get("$base/georeport/v2/requests.json?api_key=$api_key&jurisdiction_id=$jur_id&limit=5");
     assert_true(in_array($code, [200, 403]), "GET requests.json?jurisdiction_id=$jur_id responds ($code)");
@@ -413,14 +422,13 @@ else {
 [$code, $data] = http_get("$base/georeport/v2/stats.json");
 assert_true(in_array($code, [200, 404]), "GET /georeport/v2/stats.json responds ($code)");
 
-// GET /georeport/v2/stats/categories.json
+// GET /georeport/v2/stats/categories.json.
 [$code] = http_get("$base/georeport/v2/stats/categories.json");
 assert_true(in_array($code, [200, 404]), "GET /georeport/v2/stats/categories.json responds ($code)");
 
 // ===========================================================================
 // 5. Auth API (passwordless)
 // ===========================================================================
-
 test_group('5. Auth API');
 
 if (!$module_handler->moduleExists('markaspot_passwordless')) {
@@ -458,7 +466,6 @@ else {
 // ===========================================================================
 // 6. Dashboard API (requires 'access dashboard kpis')
 // ===========================================================================
-
 test_group('6. Dashboard API');
 
 if (!$module_handler->moduleExists('markaspot_dashboard')) {
@@ -497,7 +504,6 @@ else {
 // ===========================================================================
 // 7. AI API (requires various permissions)
 // ===========================================================================
-
 test_group('7. AI API');
 
 if (!$module_handler->moduleExists('markaspot_ai')) {
@@ -540,7 +546,6 @@ else {
 // ===========================================================================
 // 8. Group Members API (custom access check)
 // ===========================================================================
-
 test_group('8. Group Members API');
 
 if (!$module_handler->moduleExists('markaspot_group')) {
@@ -565,7 +570,6 @@ else {
 // ===========================================================================
 // 9. CAP Export API (public)
 // ===========================================================================
-
 test_group('9. CAP Export API');
 
 if (!$module_handler->moduleExists('markaspot_cap')) {
@@ -584,7 +588,6 @@ else {
 // ===========================================================================
 // 10. Confirm API (public)
 // ===========================================================================
-
 test_group('10. Confirm API');
 
 if (!$module_handler->moduleExists('markaspot_confirm')) {
@@ -605,7 +608,6 @@ else {
 // ===========================================================================
 // 11. Contact API
 // ===========================================================================
-
 test_group('11. Contact API');
 
 if (!$module_handler->moduleExists('markaspot_contact')) {
@@ -624,7 +626,6 @@ else {
 // ===========================================================================
 // 12. Feedback API
 // ===========================================================================
-
 test_group('12. Feedback API');
 
 if (!$module_handler->moduleExists('markaspot_feedback')) {
@@ -643,7 +644,6 @@ else {
 // ===========================================================================
 // 13. Service Provider API
 // ===========================================================================
-
 test_group('13. Service Provider API');
 
 if (!$module_handler->moduleExists('markaspot_service_provider')) {
@@ -662,16 +662,15 @@ else {
 // ===========================================================================
 // 14. SHS Tweak / Icon APIs
 // ===========================================================================
-
 test_group('14. Utility APIs');
 
-// FA Icon API
+// FA Icon API.
 if ($module_handler->moduleExists('fa_icon_class')) {
   [$code] = http_get("$base/api/iconify_field/render/fa-home");
   assert_true(in_array($code, [200, 400, 404]), "GET /api/iconify_field/render/{icon} responds ($code)");
 }
 
-// SHS Tweak
+// SHS Tweak.
 if ($module_handler->moduleExists('markaspot_shstweak')) {
   // Need a real term ID.
   $cats = $etm->getStorage('taxonomy_term')->loadByProperties(['vid' => 'service_category', 'status' => 1]);
@@ -686,7 +685,6 @@ if ($module_handler->moduleExists('markaspot_shstweak')) {
 // ===========================================================================
 // 15. Response Format Consistency
 // ===========================================================================
-
 test_group('15. Response Consistency');
 
 // Verify JSON Content-Type headers on API responses.
@@ -699,10 +697,18 @@ $json_endpoints = [
 ];
 
 foreach ($json_endpoints as $ep) {
-  if ($ep === '/api/emergency-mode/status' && !$module_handler->moduleExists('markaspot_emergency')) continue;
-  if ($ep === '/api/mark-a-spot-settings' && !$module_handler->moduleExists('markaspot_nuxt')) continue;
-  if ($ep === '/api/jurisdictions' && !$module_handler->moduleExists('markaspot_nuxt')) continue;
-  if ($ep === '/api/organisations' && !$module_handler->moduleExists('markaspot_nuxt')) continue;
+  if ($ep === '/api/emergency-mode/status' && !$module_handler->moduleExists('markaspot_emergency')) {
+    continue;
+  }
+  if ($ep === '/api/mark-a-spot-settings' && !$module_handler->moduleExists('markaspot_nuxt')) {
+    continue;
+  }
+  if ($ep === '/api/jurisdictions' && !$module_handler->moduleExists('markaspot_nuxt')) {
+    continue;
+  }
+  if ($ep === '/api/organisations' && !$module_handler->moduleExists('markaspot_nuxt')) {
+    continue;
+  }
 
   $http = \Drupal::httpClient();
   $r = $http->get("$base$ep", ['http_errors' => FALSE, 'headers' => ['Accept' => 'application/json']]);
@@ -724,7 +730,6 @@ if (is_array($j1) && is_array($j2)) {
 // ===========================================================================
 // 16. Cache Headers
 // ===========================================================================
-
 test_group('16. Cache Headers');
 
 // Emergency endpoint should have no-cache.
@@ -746,7 +751,6 @@ if ($module_handler->moduleExists('markaspot_nuxt')) {
 // ===========================================================================
 // 17. Pages (JSON:API node/page)
 // ===========================================================================
-
 test_group('17. Pages (JSON:API node/page)');
 
 // Check if pages exist as group content.
@@ -814,7 +818,6 @@ else {
 // ===========================================================================
 // Summary
 // ===========================================================================
-
 $t = $GLOBALS['_test'];
 $total = $t['pass'] + $t['fail'] + $t['skip'];
 $tested = $t['pass'] + $t['fail'];

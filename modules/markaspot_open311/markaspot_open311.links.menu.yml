@@ -5,4 +5,3 @@ markaspot_open311.settings:
   description: 'Configure map parameters'
   parent: system.admin_config_services
   weight: 99
-

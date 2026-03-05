@@ -486,7 +486,7 @@ class PasswordlessAuthController extends ControllerBase {
   /**
    * List users available for switching.
    *
-   * GET /api/auth/switch-users
+   * GET /api/auth/switch-users.
    *
    * Requires 'switch users' permission and Devel module enabled.
    *

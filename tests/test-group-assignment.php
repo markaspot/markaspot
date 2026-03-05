@@ -4,22 +4,31 @@
  * @file
  * Integration tests for group assignment logic in markaspot_group.module.
  *
- * Run: ddev drush php:script web/profiles/contrib/markaspot/tests/test-group-assignment.php
+ * Run: ddev drush php:script web/profiles/contrib/markaspot/tests/test-group-assignment.php.
  *
  * Tests sub-jurisdiction boundary assignment, root jurisdiction fallback,
  * and organisation derivation from category terms.
  */
 
+use Drupal\node\Entity\Node;
+use Drupal\node\NodeInterface;
+use Drupal\group\Entity\GroupInterface;
+
 // ---------------------------------------------------------------------------
 // Test framework
 // ---------------------------------------------------------------------------
-
 $GLOBALS['_test'] = ['pass' => 0, 'fail' => 0, 'skip' => 0];
 
+/**
+ *
+ */
 function test_group(string $name): void {
   echo "\n\033[1;36m━━━ $name ━━━\033[0m\n";
 }
 
+/**
+ *
+ */
 function assert_true(bool $condition, string $message): void {
   if ($condition) {
     $GLOBALS['_test']['pass']++;
@@ -31,6 +40,9 @@ function assert_true(bool $condition, string $message): void {
   }
 }
 
+/**
+ *
+ */
 function assert_equal($expected, $actual, string $message): void {
   if ($expected === $actual) {
     assert_true(TRUE, $message);
@@ -40,6 +52,9 @@ function assert_equal($expected, $actual, string $message): void {
   }
 }
 
+/**
+ *
+ */
 function skip_test(string $message): void {
   $GLOBALS['_test']['skip']++;
   echo "  \033[33m⊘ SKIP:\033[0m $message\n";
@@ -98,7 +113,7 @@ function _test_has_group_relationship(int $nid, int $gid): bool {
  * @return bool
  *   TRUE if the group is a child jurisdiction.
  */
-function _test_is_child_jur(\Drupal\group\Entity\GroupInterface $group): bool {
+function _test_is_child_jur(GroupInterface $group): bool {
   return $group->hasField('field_parent_jurisdiction')
     && !$group->get('field_parent_jurisdiction')->isEmpty();
 }
@@ -109,7 +124,7 @@ function _test_is_child_jur(\Drupal\group\Entity\GroupInterface $group): bool {
  * @param \Drupal\node\NodeInterface|null $node
  *   The node to delete, or NULL.
  */
-function _test_cleanup_node(?\Drupal\node\NodeInterface $node): void {
+function _test_cleanup_node(?NodeInterface $node): void {
   if (!$node || !$node->id()) {
     return;
   }
@@ -176,7 +191,6 @@ function _test_compute_centroid(string $geojson_raw): ?array {
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
-
 echo "\033[1m\n╔══════════════════════════════════════════════════════════╗\n";
 echo "║  Group Assignment Logic - Integration Tests             ║\n";
 echo "╚══════════════════════════════════════════════════════════╝\033[0m\n";
@@ -247,7 +261,6 @@ echo "  Default category TID: $default_category_tid\n";
 // ===========================================================================
 // 1. Sub-jurisdiction assignment priority
 // ===========================================================================
-
 test_group('1. Sub-jurisdiction assignment priority');
 
 if (empty($child_jurs)) {
@@ -274,7 +287,8 @@ else {
     $root_id = $test_child['parent_id'];
 
     // Resolve root upward (in case the parent is itself a child).
-    /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+    /**
+ * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
     $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
     $root_id = $resolver->getRootJurisdictionId($test_child_id);
     $root_group = $group_storage->load($root_id);
@@ -318,7 +332,7 @@ else {
       $test_node = NULL;
       try {
         // Create a test service_request node inside the child boundary.
-        $test_node = \Drupal\node\Entity\Node::create([
+        $test_node = Node::create([
           'type' => 'service_request',
           'title' => 'Test group assignment - child jur - ' . date('c'),
           'status' => 0,
@@ -379,7 +393,6 @@ else {
 // ===========================================================================
 // 2. Root jurisdiction fallback
 // ===========================================================================
-
 test_group('2. Root jurisdiction fallback');
 
 if (empty($root_jurs)) {
@@ -396,7 +409,7 @@ else {
   $test_node = NULL;
   try {
     // Create a test node with coordinates outside ALL boundaries.
-    $test_node = \Drupal\node\Entity\Node::create([
+    $test_node = Node::create([
       'type' => 'service_request',
       'title' => 'Test group assignment - root fallback - ' . date('c'),
       'status' => 1,
@@ -465,7 +478,6 @@ else {
 // ===========================================================================
 // 3. Organisation derivation
 // ===========================================================================
-
 test_group('3. Organisation derivation');
 
 // Find a category term with field_category_gid set (org reference).
@@ -580,7 +592,7 @@ else {
   $test_node = NULL;
   try {
     // Create a test node with the org-mapped category.
-    $test_node = \Drupal\node\Entity\Node::create([
+    $test_node = Node::create([
       'type' => 'service_request',
       'title' => 'Test group assignment - org derivation - ' . date('c'),
       'status' => 1,
@@ -659,7 +671,6 @@ else {
 // ===========================================================================
 // Summary
 // ===========================================================================
-
 $t = $GLOBALS['_test'];
 $total = $t['pass'] + $t['fail'] + $t['skip'];
 $tested = $t['pass'] + $t['fail'];
@@ -668,7 +679,8 @@ $pct = $tested > 0 ? round($t['pass'] / $tested * 100) : 0;
 echo "\n\033[1m╔══════════════════════════════════════════════════════════╗\033[0m\n";
 if ($t['fail'] === 0) {
   echo "\033[1;32m║  ALL TESTS PASSED                                        ║\033[0m\n";
-} else {
+}
+else {
   echo "\033[1;31m║  SOME TESTS FAILED                                       ║\033[0m\n";
 }
 echo "\033[1m╚══════════════════════════════════════════════════════════╝\033[0m\n";

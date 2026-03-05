@@ -5,6 +5,7 @@
  * Contains markaspot_request_id.module.
  */
 
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
@@ -85,7 +86,7 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
           'Cannot generate request ID: @message. Node save aborted.',
           ['@message' => $e->getMessage()]
         );
-        throw new \Drupal\Core\Entity\EntityStorageException(
+        throw new EntityStorageException(
           'Report cannot be saved: request ID generation failed.',
           0,
           $e

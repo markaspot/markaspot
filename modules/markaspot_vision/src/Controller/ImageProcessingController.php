@@ -116,7 +116,7 @@ class ImageProcessingController extends ControllerBase {
         throw new \Exception('No valid media entities found for the provided media_ids.');
       }
 
-      // Collect file URIs
+      // Collect file URIs.
       $file_uris = [];
       foreach ($media_entities as $media) {
         $field_media_image = $media->get('field_media_image');
@@ -137,17 +137,16 @@ class ImageProcessingController extends ControllerBase {
       // Get jurisdiction ID for filtering categories (multi-tenant mode).
       $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
 
-      // Process images with ImageProcessingService
+      // Process images with ImageProcessingService.
       $ai_result = $this->imageProcessingService->processImages($file_uris, $langcode, $jurisdictionId);
       if (!$ai_result) {
         throw new \Exception('Failed to process images using the AI service.');
       }
-      // Decode AI results
+      // Decode AI results.
       $decoded_result = json_decode($ai_result['ai_result'], TRUE);
       if (json_last_error() !== JSON_ERROR_NONE) {
         throw new \Exception('Failed to decode AI service response: ' . json_last_error_msg());
       }
-
 
       $media_index = 0;
       foreach ($media_entities as $media) {
@@ -159,10 +158,10 @@ class ImageProcessingController extends ControllerBase {
 
           $media->set('field_ai_metadata', json_encode($decoded_result));
           $media->set('field_ai_privacy_flag', $privacy_flag);
-          $media->set('field_ai_privacy_issues', implode(', ', (array)$privacy_issues));
+          $media->set('field_ai_privacy_issues', implode(', ', (array) $privacy_issues));
           $media->set('field_ai_hazard_flag', $hazard_flag);
-          $media->set('field_ai_hazard_issues', implode(', ', (array)$hazard_issues));
-          
+          $media->set('field_ai_hazard_issues', implode(', ', (array) $hazard_issues));
+
           // Populate alt text with AI-generated description for accessibility.
           if (!empty($decoded_result['alt_text']) && is_array($decoded_result['alt_text'])) {
             $field_media_image = $media->get('field_media_image');

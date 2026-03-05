@@ -364,11 +364,16 @@ class AiClientService {
 
     // Retryable HTTP status codes.
     $retryableCodes = [
-      429, // Rate limited.
-      500, // Internal server error.
-      502, // Bad gateway.
-      503, // Service unavailable.
-      504, // Gateway timeout.
+    // Rate limited.
+      429,
+    // Internal server error.
+      500,
+    // Bad gateway.
+      502,
+    // Service unavailable.
+      503,
+    // Gateway timeout.
+      504,
     ];
 
     if (in_array($code, $retryableCodes, TRUE)) {
@@ -420,7 +425,7 @@ class AiClientService {
   /**
    * Resolves the API key from environment variable or config.
    *
-   * Priority: Environment variable > Config value
+   * Priority: Environment variable > Config value.
    *
    * @param string $provider
    *   The provider name (e.g., 'openai', 'azure').

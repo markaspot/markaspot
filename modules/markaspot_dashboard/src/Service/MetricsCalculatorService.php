@@ -18,7 +18,7 @@ use Psr\Log\LoggerInterface;
  * - Forwarding rate (organization changes between revisions)
  * - First-Contact-Resolution (FCR) rate
  * - Average processing time
- * - Status distribution
+ * - Status distribution.
  */
 class MetricsCalculatorService {
 
@@ -84,7 +84,7 @@ class MetricsCalculatorService {
    *   - end_date: End date (UNIX timestamp or Y-m-d format)
    *   - jurisdiction_id: Filter by jurisdiction group ID
    *   - organization_id: Filter by organization group ID
-   *   - category_id: Filter by category taxonomy term ID
+   *   - category_id: Filter by category taxonomy term ID.
    *
    * @return array
    *   Array containing all KPI metrics.
@@ -223,7 +223,7 @@ class MetricsCalculatorService {
    *
    * FCR criteria:
    * - Node has exactly 2 paragraphs in field_status_notes (Open -> Closed)
-   * - No organisation change between revisions
+   * - No organisation change between revisions.
    *
    * @param array $node_ids
    *   Array of node IDs to analyze.
@@ -543,7 +543,7 @@ class MetricsCalculatorService {
    *   - end_date: End date (UNIX timestamp or Y-m-d format)
    *   - granularity: Time grouping (day|week|month)
    *   - jurisdiction_id: Filter by jurisdiction group ID
-   *   - category_id: Filter by category taxonomy term ID
+   *   - category_id: Filter by category taxonomy term ID.
    *
    * @return array
    *   Array of time series data points.
@@ -1106,7 +1106,7 @@ class MetricsCalculatorService {
    *   - end_date: End date (UNIX timestamp or Y-m-d format)
    *   - jurisdiction_id: Filter by jurisdiction group ID
    *   - organization_id: Filter by organization group ID
-   *   - category_id: Filter by category taxonomy term ID
+   *   - category_id: Filter by category taxonomy term ID.
    *
    * @return array
    *   Array containing hazard statistics.

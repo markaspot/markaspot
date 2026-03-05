@@ -3,4 +3,3 @@ description: Provides some constraints and configuration for entities of the Mar
 package: Mark-a-Spot
 type: module
 core_version_requirement: ^10 || ^11
-

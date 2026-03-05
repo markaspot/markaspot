@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311\Service;
 
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\media\MediaInterface;
 use Drupal\Core\File\Exception\InvalidStreamWrapperException;
@@ -1773,14 +1774,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Load the jurisdiction group.
     $group = $this->entityTypeManager->getStorage('group')->load($jurisdictionId);
     if (!$group) {
-      throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException(
+      throw new AccessDeniedHttpException(
         'Invalid jurisdiction_id: group not found.'
       );
     }
 
     // Verify it's a jurisdiction group type.
     if ($group->bundle() !== 'jur') {
-      throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException(
+      throw new AccessDeniedHttpException(
         'Invalid jurisdiction_id: not a jurisdiction group.'
       );
     }
@@ -1788,7 +1789,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Check if user is a member of this jurisdiction group.
     $membership = $group->getMember($account);
     if (!$membership) {
-      throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException(
+      throw new AccessDeniedHttpException(
         'Access denied: user is not a member of this jurisdiction.'
       );
     }
@@ -2722,15 +2723,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Extract postal code (supports formats: 50667, 1067 PV, 1067PV, SW1A 1AA).
     $extractPostalCode = function ($str) {
-      // Dutch: 1234 AB or 1234AB
+      // Dutch: 1234 AB or 1234AB.
       if (preg_match('/\b(\d{4}\s?[A-Z]{2})\b/i', $str, $matches)) {
         return $matches[1];
       }
-      // UK: SW1A 1AA, EC1A 1BB
+      // UK: SW1A 1AA, EC1A 1BB.
       if (preg_match('/\b([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})\b/i', $str, $matches)) {
         return $matches[1];
       }
-      // Generic numeric: 4-7 digits, optionally followed by letters
+      // Generic numeric: 4-7 digits, optionally followed by letters.
       if (preg_match('/\b(\d{4,7})\b/', $str, $matches)) {
         return $matches[1];
       }

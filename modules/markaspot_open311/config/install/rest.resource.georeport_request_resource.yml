@@ -23,4 +23,3 @@ configuration:
       - json
     supported_auth:
       - api_key_auth
-

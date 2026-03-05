@@ -113,33 +113,55 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
           $this->target_id = $parentId;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
 
+        /**
+         *
+         */
         public function current(): mixed {
           return $this;
         }
 
+        /**
+         *
+         */
         public function key(): int {
           return 0;
         }
 
+        /**
+         *
+         */
         public function next(): void {
           $this->valid = FALSE;
         }
 
+        /**
+         *
+         */
         public function rewind(): void {
           $this->valid = TRUE;
         }
 
+        /**
+         *
+         */
         public function valid(): bool {
           return $this->valid;
         }
 
+        /**
+         *
+         */
         public function count(): int {
           return 1;
         }
+
       };
 
       $group->method('hasField')
@@ -155,9 +177,14 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
     else {
       // Root jurisdiction: field exists but is empty.
       $fieldItem = new class {
+
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return TRUE;
         }
+
       };
 
       $group->method('hasField')

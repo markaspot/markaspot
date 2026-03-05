@@ -216,17 +216,26 @@ class EscalationServiceTest extends UnitTestCase {
           $this->target_id = $parentId;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
+
       };
       $fieldMap['field_parent_jurisdiction'] = $fieldItem;
     }
     else {
       $fieldItem = new class() {
+
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return TRUE;
         }
+
       };
       $fieldMap['field_parent_jurisdiction'] = $fieldItem;
     }
@@ -261,9 +270,13 @@ class EscalationServiceTest extends UnitTestCase {
         $this->group = $group;
       }
 
+      /**
+       *
+       */
       public function getGroup(): object {
         return $this->group;
       }
+
     };
     return $relationship;
   }
@@ -303,16 +316,25 @@ class EscalationServiceTest extends UnitTestCase {
             $this->target_id = $targetId;
           }
 
+          /**
+           *
+           */
           public function isEmpty(): bool {
             return FALSE;
           }
+
         };
       }
       else {
         $fields['field_escalation'] = new class() {
+
+          /**
+           *
+           */
           public function isEmpty(): bool {
             return TRUE;
           }
+
         };
       }
     }
@@ -326,16 +348,25 @@ class EscalationServiceTest extends UnitTestCase {
           $this->target_id = $targetId;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
+
       };
     }
     else {
       $fields['field_status'] = new class() {
+
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return TRUE;
         }
+
       };
     }
 
@@ -348,16 +379,25 @@ class EscalationServiceTest extends UnitTestCase {
           $this->entity = $entity;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
+
       };
     }
     else {
       $fields['field_organisation'] = new class() {
+
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return TRUE;
         }
+
       };
     }
 
@@ -370,16 +410,25 @@ class EscalationServiceTest extends UnitTestCase {
           $this->entity = $entity;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
+
       };
     }
     else {
       $fields['field_category'] = new class() {
+
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return TRUE;
         }
+
       };
     }
 
@@ -431,16 +480,25 @@ class EscalationServiceTest extends UnitTestCase {
           $this->target_id = $targetId;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
+
       };
     }
     else {
       $fieldMap['field_jurisdiction'] = new class() {
+
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return TRUE;
         }
+
       };
     }
 
@@ -481,9 +539,13 @@ class EscalationServiceTest extends UnitTestCase {
           $this->target_id = $targetId;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
+
       };
     }
 
@@ -495,9 +557,13 @@ class EscalationServiceTest extends UnitTestCase {
           $this->target_id = $targetId;
         }
 
+        /**
+         *
+         */
         public function isEmpty(): bool {
           return FALSE;
         }
+
       };
     }
 
@@ -510,24 +576,39 @@ class EscalationServiceTest extends UnitTestCase {
         $this->fieldMap = $fieldMap;
       }
 
+      /**
+       *
+       */
       public function id(): int {
         return $this->tid;
       }
 
+      /**
+       *
+       */
       public function hasField(string $name): bool {
         return isset($this->fieldMap[$name]);
       }
 
+      /**
+       *
+       */
       public function get(string $name): object {
         if (isset($this->fieldMap[$name])) {
           return $this->fieldMap[$name];
         }
         return new class() {
+
+          /**
+           *
+           */
           public function isEmpty(): bool {
             return TRUE;
           }
+
         };
       }
+
     };
 
     return $term;

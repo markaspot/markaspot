@@ -7,6 +7,8 @@
 
 declare(strict_types=1);
 
+use Drupal\user\UserInterface;
+use Drupal\user\Entity\Role;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_tenant_admin\TenantAdminHelper;
@@ -16,7 +18,7 @@ use Drupal\user\Entity\User;
  * Grant AI and dashboard permissions to tenant_admin role.
  */
 function markaspot_tenant_admin_update_10001(): void {
-  $role = \Drupal\user\Entity\Role::load('tenant_admin');
+  $role = Role::load('tenant_admin');
   if (!$role) {
     return;
   }
@@ -60,7 +62,7 @@ function markaspot_tenant_admin_install(): void {
       assert($membership instanceof GroupRelationshipInterface);
       $user_entity = $membership->getEntity();
 
-      if (!$user_entity instanceof \Drupal\user\UserInterface) {
+      if (!$user_entity instanceof UserInterface) {
         continue;
       }
 

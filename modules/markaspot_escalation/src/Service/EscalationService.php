@@ -530,7 +530,7 @@ class EscalationService implements EscalationServiceInterface {
    *
    * Handles both group_filter_type configurations:
    * - 'org': field_organisation -> org group -> field_jurisdiction -> jur ID
-   * - 'jur': find the most specific (child) jur group_relationship
+   * - 'jur': find the most specific (child) jur group_relationship.
    *
    * @param \Drupal\node\NodeInterface $node
    *   The service request node.

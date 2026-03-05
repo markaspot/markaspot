@@ -100,7 +100,7 @@ function markaspot_nuxt_tokens($type, $tokens, array $data, array $options, Bubb
         ? rawurlencode($node->get('request_id')->value)
         : $node->id();
 
-      // Build: {base_url}/{slug}/requests/{request_id}
+      // Build: {base_url}/{slug}/requests/{request_id}.
       $path = $jur_slug ? "$jur_slug/requests/$request_id" : "requests/$request_id";
       $replacements[$original] = "$base_url/$path";
     }

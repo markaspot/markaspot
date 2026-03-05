@@ -24,7 +24,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * Provides REST endpoints for:
  * - Fetching duplicates for a specific service request
  * - Reviewing duplicate matches (confirm/reject)
- * - Fetching all pending duplicates system-wide
+ * - Fetching all pending duplicates system-wide.
  */
 class DuplicateController extends ControllerBase {
 
@@ -243,7 +243,7 @@ class DuplicateController extends ControllerBase {
    * When confirmed, this will:
    * - Add a status note to the duplicate request
    * - Set the duplicate request's status to Closed
-   * - Update the match status
+   * - Update the match status.
    *
    * @param int $match_id
    *   The duplicate match ID.

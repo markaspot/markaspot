@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_group\Controller;
 
+use Drupal\Core\Database\Database;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Controller\ControllerBase;
@@ -451,7 +452,7 @@ class GroupMembersController extends ControllerBase {
     // jurisdiction scope.
     if (!$isDrupalAdmin && !empty($groups)) {
       $groupIds = array_map(fn($g) => (int) $g->id(), $groups);
-      $connection = \Drupal\Core\Database\Database::getConnection();
+      $connection = Database::getConnection();
       $memberUids = $connection->select('group_relationship_field_data', 'gr')
         ->fields('gr', ['entity_id'])
         ->condition('gid', $groupIds, 'IN')

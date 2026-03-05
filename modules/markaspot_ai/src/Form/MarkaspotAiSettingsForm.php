@@ -73,8 +73,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $form['provider']['openai']['api_key_status'] = [
         '#type' => 'item',
         '#markup' => '<div class="messages messages--status">' .
-          $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
-          '</div>',
+        $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
+        '</div>',
         '#weight' => -1,
       ];
       $form['provider']['openai']['api_key'] = [
@@ -102,8 +102,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
         $form['provider']['openai']['api_key_status'] = [
           '#type' => 'item',
           '#markup' => '<div class="messages messages--warning">' .
-            $this->t('API key stored in config database. Consider using environment variable for better security.') .
-            '</div>',
+          $this->t('API key stored in config database. Consider using environment variable for better security.') .
+          '</div>',
           '#weight' => -1,
         ];
       }
@@ -338,7 +338,6 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $config->set('providers.openai.api_key', $new_api_key);
     }
     // Keep existing key if field was empty.
-
     $config->set('providers.openai.api_url', $form_state->getValue('api_url'));
     $config->set('providers.openai.chat_model', $form_state->getValue('chat_model'));
     $config->set('providers.openai.embedding_model', $form_state->getValue('embedding_model'));

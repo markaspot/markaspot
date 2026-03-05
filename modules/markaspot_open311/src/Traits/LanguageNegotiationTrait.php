@@ -7,7 +7,7 @@ namespace Drupal\markaspot_open311\Traits;
  *
  * Classes using this trait must have:
  * - $languageManager: \Drupal\Core\Language\LanguageManagerInterface
- * - $requestStack: \Symfony\Component\HttpFoundation\RequestStack
+ * - $requestStack: \Symfony\Component\HttpFoundation\RequestStack.
  */
 trait LanguageNegotiationTrait {
 
