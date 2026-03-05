@@ -45,6 +45,17 @@ services:
       - '@module_handler'
       - '@?markaspot_group.hierarchy_resolver'
 
+  markaspot_ai.attribute_filling:
+    class: Drupal\markaspot_ai\Service\AttributeFillingService
+    arguments:
+      - '@markaspot_ai.client'
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@logger.factory'
+      - '@markaspot_ai.token_tracking'
+      - '@file_system'
+      - '@database'
+
   logger.channel.markaspot_ai:
     parent: logger.channel_base
     arguments: ['markaspot_ai']

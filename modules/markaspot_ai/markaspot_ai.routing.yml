@@ -167,3 +167,37 @@ markaspot_ai.processing_run:
     _permission: 'administer markaspot ai'
   options:
     _format: 'json'
+
+# Attribute Filling Routes
+markaspot_ai.attributes.status:
+  path: '/api/ai/attributes/status'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\AttributeController::getStatus'
+    _title: 'AI Attribute Filling Status'
+  methods: [GET]
+  requirements:
+    _permission: 'access ai insights'
+  options:
+    _format: 'json'
+
+markaspot_ai.attributes.fill:
+  path: '/api/ai/attributes/fill'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\AttributeController::fillSingle'
+    _title: 'Fill Attributes for Single Request'
+  methods: [POST]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'
+
+markaspot_ai.attributes.queue:
+  path: '/api/ai/attributes/queue'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\AttributeController::queueBatch'
+    _title: 'Queue Missing Attributes for Filling'
+  methods: [POST]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'
