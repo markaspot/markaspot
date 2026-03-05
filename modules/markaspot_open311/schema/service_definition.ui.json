@@ -55,6 +55,68 @@
             }
           }
         }
+      },
+      "datatype_description": {
+        "ui:options": {
+          "widget": "textarea",
+          "rows": 2,
+          "placeholder": "e.g. Enter the 6-digit number from the metal plate"
+        }
+      },
+      "default_value": {
+        "ui:options": {
+          "placeholder": "e.g. asphalt (for multivaluelist: key1, key2)"
+        }
+      },
+      "validation": {
+        "ui:options": {
+          "title": "Validation Rules",
+          "description": "Optional constraints for this attribute"
+        },
+        "pattern": {
+          "ui:options": {
+            "placeholder": "e.g. ^[0-9]{6}$"
+          }
+        },
+        "pattern_message": {
+          "ui:options": {
+            "placeholder": "e.g. Must be exactly 6 digits"
+          }
+        },
+        "min": {
+          "ui:options": {
+            "placeholder": "e.g. 0"
+          }
+        },
+        "max": {
+          "ui:options": {
+            "placeholder": "e.g. 100"
+          }
+        }
+      },
+      "conditions": {
+        "ui:options": {
+          "title": "Visibility Conditions",
+          "description": "Show this attribute only when conditions are met"
+        },
+        "show_when": {
+          "ui:options": {
+            "title": "Show When (AND logic)",
+            "description": "All conditions must be true"
+          },
+          "items": {
+            "attribute_code": {
+              "ui:options": {
+                "placeholder": "e.g. damage_type"
+              }
+            },
+            "value": {
+              "ui:options": {
+                "placeholder": "e.g. graffiti"
+              }
+            }
+          }
+        }
       }
     }
   }

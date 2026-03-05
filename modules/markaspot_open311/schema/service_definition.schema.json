@@ -71,6 +71,72 @@
               },
               "required": ["key", "name"]
             }
+          },
+          "datatype_description": {
+            "type": "string",
+            "title": "Helper Text",
+            "description": "Optional helper text shown below the field label"
+          },
+          "default_value": {
+            "type": "string",
+            "title": "Default Value",
+            "description": "Pre-filled value when category is selected. For multivaluelist: comma-separated keys."
+          },
+          "validation": {
+            "type": "object",
+            "title": "Validation Rules",
+            "properties": {
+              "pattern": {
+                "type": "string",
+                "title": "Pattern (Regex)",
+                "description": "Regex the value must match (string/text types)"
+              },
+              "pattern_message": {
+                "type": "string",
+                "title": "Pattern Error Message",
+                "description": "Custom error when pattern fails"
+              },
+              "min": {
+                "type": "integer",
+                "title": "Minimum",
+                "description": "Min value (number) or min length (string)"
+              },
+              "max": {
+                "type": "integer",
+                "title": "Maximum",
+                "description": "Max value (number) or max length (string)"
+              }
+            }
+          },
+          "conditions": {
+            "type": "object",
+            "title": "Visibility Conditions",
+            "properties": {
+              "show_when": {
+                "type": "array",
+                "title": "Show When",
+                "description": "All conditions must be true (AND logic)",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "attribute_code": {
+                      "type": "string",
+                      "title": "Depends on Attribute"
+                    },
+                    "operator": {
+                      "type": "string",
+                      "enum": ["equals", "not_equals", "contains", "not_empty"],
+                      "default": "equals"
+                    },
+                    "value": {
+                      "type": "string",
+                      "title": "Value"
+                    }
+                  },
+                  "required": ["attribute_code", "operator"]
+                }
+              }
+            }
           }
         },
         "required": ["code", "datatype", "description"]
