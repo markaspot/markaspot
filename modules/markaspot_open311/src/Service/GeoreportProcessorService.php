@@ -1661,6 +1661,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @param string $status
    *   The status value ("open" or "closed").
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction ID for scoped lookup.
    *
    * @return array
    *   An array of taxonomy term IDs.

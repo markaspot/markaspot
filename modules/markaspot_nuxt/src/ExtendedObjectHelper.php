@@ -372,6 +372,7 @@ class ExtendedObjectHelper extends ObjectHelper {
    * @return int
    *   Current item count.
    */
+  // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
   protected function getAPItemCount(string $context_name, int $data_count, FormStateInterface $form_state): int {
     $count_property = self::buildAPStateProperty(self::AP_COUNT, $context_name);
     $item_count = $form_state->get($count_property);
@@ -393,6 +394,7 @@ class ExtendedObjectHelper extends ObjectHelper {
    * @return array
    *   FormState property path.
    */
+  // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
   public static function buildAPStateProperty(string $name, string $context_name): array {
     return [self::AP_STATE, $context_name, $name];
   }

@@ -446,6 +446,8 @@ class EscalationService implements EscalationServiceInterface {
    *
    * @param string $text
    *   The remark text.
+   * @param string $langcode
+   *   The language code. Defaults to site default.
    *
    * @return \Drupal\paragraphs\Entity\Paragraph
    *   The saved paragraph entity.

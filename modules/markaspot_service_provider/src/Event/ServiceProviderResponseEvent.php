@@ -16,7 +16,9 @@ class ServiceProviderResponseEvent extends Event implements EntityEventInterface
   /**
    * Event name.
    *
-   * @deprecated Use ServiceProviderEvents::RESPONSE_SUBMITTED instead.
+   * @deprecated in markaspot:11.8.0 and is removed from markaspot:12.0.0.
+   *   Use ServiceProviderEvents::RESPONSE_SUBMITTED instead.
+   * @see \Drupal\markaspot_service_provider\Event\ServiceProviderEvents
    */
   const EVENT_NAME = ServiceProviderEvents::RESPONSE_SUBMITTED;
 

@@ -613,6 +613,8 @@ class DuplicateDetectionService {
    *   Maximum number of matches to return.
    * @param int $offset
    *   Offset for pagination.
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction ID to filter matches.
    *
    * @return array
    *   Array of pending match records with node titles.

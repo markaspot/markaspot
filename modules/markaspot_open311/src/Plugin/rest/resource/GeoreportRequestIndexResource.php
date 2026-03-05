@@ -430,29 +430,27 @@ class GeoreportRequestIndexResource extends ResourceBase {
       // Note: The Open311 GeoReport v2 standard does not define a sort
       // parameter. This is a Mark-a-Spot extension for enhanced usability.
       //
-      // RECOMMENDED: JSON:API style (use this for new implementations)
-      //   sort=field      Ascending order
-      //   sort=-field     Descending order (prefix with minus)
+      // RECOMMENDED: JSON:API style (new implementations)
+      // sort=field     Ascending order
+      // sort=-field    Descending order (prefix with minus)
       //
       // Available sort fields:
-      //   - created       Request creation date (default)
-      //   - updated       Last modification date
-      //   - status        Status field
-      //   - service_code  Category/service type
-      //   - request_id    String-based request ID (e.g., "47-2026")
-      //   - nid           Numeric node ID (for proper numeric sorting)
+      // - created      Request creation date (default)
+      // - updated      Last modification date
+      // - status       Status field
+      // - service_code Category/service type
+      // - request_id   String-based request ID
+      // - nid          Numeric node ID
       //
       // Examples:
-      //   sort=-created   Newest first (default behavior)
-      //   sort=created    Oldest first
-      //   sort=-nid       Highest ID first (numeric)
-      //   sort=nid        Lowest ID first (numeric)
+      // sort=-created  Newest first (default behavior)
+      // sort=created   Oldest first
+      // sort=-nid      Highest ID first (numeric)
+      // sort=nid       Lowest ID first (numeric)
       //
-      // DEPRECATED (kept for backward compatibility):
-      //   sort=DESC       Equivalent to sort=-created
-      //   sort=ASC        Equivalent to sort=created
-      //   These legacy values will continue to work but new clients should
-      //   use the JSON:API style format above.
+      // DEPRECATED (backward compatibility):
+      // sort=DESC      Equivalent to sort=-created
+      // sort=ASC       Equivalent to sort=created
       // -----------------------------------------------------------------------
       $sortField = 'created';
       $sortDirection = 'ASC';

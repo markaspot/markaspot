@@ -2,8 +2,7 @@
 
 /**
  * @file
- * Contains markaspot_privacy.module.
- * based on Zebralog DSGVO for Drupal 7
+ * Contains markaspot_privacy.module. Based on Zebralog DSGVO for Drupal 7.
  */
 
 use Drupal\Core\Entity\EntityFormInterface;
@@ -37,7 +36,7 @@ function markaspot_privacy_help($route_name, RouteMatchInterface $route_match) {
  * @param array $form
  *   The form.
  */
-function _add_terms_of_use(array &$form) {
+function markaspot_privacy_add_terms_of_use(array &$form) {
 
   // Check if the user ins anonymous or if the user has not accepted the privacy notes yet.
   if (\Drupal::currentUser()->isAnonymous()) {
@@ -71,7 +70,7 @@ function markaspot_privacy_form_alter(&$form, FormStateInterface $form_state, $f
 
       // Add a "terms of use" checkbox in node forms, if a new node will be created.
       if ((isset($config['field_save']) && $config['field_save'] === 0)) {
-        _add_terms_of_use($form);
+        markaspot_privacy_add_terms_of_use($form);
         unset($form['field_gdpr']);
       }
     }
@@ -79,7 +78,7 @@ function markaspot_privacy_form_alter(&$form, FormStateInterface $form_state, $f
 }
 
 /**
- *
+ * Gets the weight of the email field in the form.
  */
 function markaspot_privacy_get_weight($form) {
   $elements = Element::getVisibleChildren($form);

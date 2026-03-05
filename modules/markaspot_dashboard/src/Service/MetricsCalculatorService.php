@@ -509,7 +509,9 @@ class MetricsCalculatorService {
    * @return int|null
    *   The term ID or NULL if not found.
    *
-   * @deprecated Use getClosedStatusTids() for multiple closed statuses.
+   * @deprecated in markaspot:11.8.0 and is removed from markaspot:12.0.0.
+   *   Use getClosedStatusTids() for multiple closed statuses.
+   * @see \Drupal\markaspot_dashboard\Service\MetricsCalculatorService::getClosedStatusTids()
    */
   protected function getClosedStatusTid(): ?int {
     $tids = $this->getClosedStatusTids();

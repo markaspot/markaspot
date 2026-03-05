@@ -90,6 +90,7 @@ class MarkASpotSettingsController extends ControllerBase {
    * @return \Drupal\Core\Cache\CacheableJsonResponse
    *   The configuration settings in JSON format.
    */
+  // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
   public function getMarkASpotSettings(Request $request) {
     // Build cache metadata.
     $cache_metadata = new CacheableMetadata();

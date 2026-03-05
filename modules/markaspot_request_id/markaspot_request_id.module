@@ -107,10 +107,11 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
  * @throws \Drupal\Component\Plugin\Exception\PluginNotFoundException
  *
  * @deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0.
- *   Use \Drupal::service('markaspot_request_id.generator')->generateRequestId()
- *   instead.
+ *   Use the markaspot_request_id.generator service instead.
+ * @see \Drupal\markaspot_request_id\Service\RequestIdGenerator::generateRequestId()
  */
 function markaspot_request_id_create_request_id() {
+  // phpcs:ignore Drupal.Semantics.FunctionTriggerError
   @trigger_error('markaspot_request_id_create_request_id() is deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0. Use the markaspot_request_id.generator service instead.', E_USER_DEPRECATED);
 
   /** @var \Drupal\Core\Database\Connection $connection */
@@ -232,9 +233,11 @@ function markaspot_request_id_create_request_id() {
  *   The number of rows affected.
  *
  * @deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0.
- *   No replacement needed. The RequestIdGenerator service handles this.
+ *   The RequestIdGenerator service handles this internally.
+ * @see \Drupal\markaspot_request_id\Service\RequestIdGenerator
  */
 function markaspot_request_id_update_timestamp($connection, $id, $timestamp) {
+  // phpcs:ignore Drupal.Semantics.FunctionTriggerError
   @trigger_error('markaspot_request_id_update_timestamp() is deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0. Use the markaspot_request_id.generator service instead.', E_USER_DEPRECATED);
   return $connection->update('markaspot_request_id')
     ->fields([
@@ -293,8 +296,10 @@ function markaspot_request_id_create_title($node, $request_id) {
  *
  * @deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0.
  *   The RequestIdGenerator service assumes the table exists.
+ * @see \Drupal\markaspot_request_id\Service\RequestIdGenerator
  */
 function markaspot_request_id_check_table($connection) {
+  // phpcs:ignore Drupal.Semantics.FunctionTriggerError
   @trigger_error('markaspot_request_id_check_table() is deprecated in markaspot:11.8.0 and is removed from markaspot:11.9.0. The RequestIdGenerator service assumes the table exists.', E_USER_DEPRECATED);
   // Check if table exists, by simply querying it.
   try {

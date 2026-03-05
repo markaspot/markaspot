@@ -77,6 +77,7 @@ class ImageProcessingController extends ControllerBase {
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   The JSON response with AI results.
    */
+  // phpcs:ignore Drupal.NamingConventions.ValidFunctionName.ScopeNotCamelCaps
   public function getAIResults(Request $request): JsonResponse {
     // Rate limiting: 10 requests per IP per hour.
     $ip = $request->getClientIp();

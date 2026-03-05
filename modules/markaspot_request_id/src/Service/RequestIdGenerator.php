@@ -22,11 +22,34 @@ use Psr\Log\LoggerInterface;
  */
 class RequestIdGenerator implements RequestIdGeneratorInterface {
 
+  /**
+   * The database connection.
+   */
   protected Connection $database;
+
+  /**
+   * The config factory.
+   */
   protected ConfigFactoryInterface $configFactory;
+
+  /**
+   * The time service.
+   */
   protected TimeInterface $time;
+
+  /**
+   * The lock backend.
+   */
   protected LockBackendInterface $lock;
+
+  /**
+   * The logger.
+   */
   protected LoggerInterface $logger;
+
+  /**
+   * The jurisdiction hierarchy resolver.
+   */
   protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   public function __construct(

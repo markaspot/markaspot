@@ -164,6 +164,8 @@ class StatsController extends ControllerBase {
    *
    * @param string $langcode
    *   The language code.
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction ID for scoped stats.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   The JSON response.
