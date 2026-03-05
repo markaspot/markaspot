@@ -147,7 +147,7 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     // Create internal remark paragraph with the escalation note.
-    $paragraph = $this->createInternalRemarkParagraph($note);
+    $paragraph = $this->createInternalRemarkParagraph($note, $node->language()->getId());
 
     // Append to the node's field_internal_remark (unlimited cardinality).
     $this->appendInternalRemark($node, $paragraph);
@@ -300,7 +300,7 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     // Create internal remark paragraph with the delegation note.
-    $paragraph = $this->createInternalRemarkParagraph($note);
+    $paragraph = $this->createInternalRemarkParagraph($note, $node->language()->getId());
 
     // Append to the node's field_internal_remark.
     $this->appendInternalRemark($node, $paragraph);
@@ -450,9 +450,10 @@ class EscalationService implements EscalationServiceInterface {
    * @return \Drupal\paragraphs\Entity\Paragraph
    *   The saved paragraph entity.
    */
-  protected function createInternalRemarkParagraph(string $text): Paragraph {
+  protected function createInternalRemarkParagraph(string $text, string $langcode = ''): Paragraph {
     $paragraph = Paragraph::create([
       'type' => 'internal_remark',
+      'langcode' => $langcode ?: \Drupal::languageManager()->getDefaultLanguage()->getId(),
       'field_internal_remark_text' => [
         'value' => $text,
         'format' => 'plain_text',

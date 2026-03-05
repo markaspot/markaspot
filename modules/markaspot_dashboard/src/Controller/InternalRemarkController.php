@@ -67,8 +67,11 @@ class InternalRemarkController extends ControllerBase {
       return new JsonResponse(['error' => 'Access denied'], 403);
     }
 
-    // Create the paragraph.
-    $paragraph = Paragraph::create(['type' => 'internal_remark']);
+    // Create the paragraph in the same language as the parent node.
+    $paragraph = Paragraph::create([
+      'type' => 'internal_remark',
+      'langcode' => $node->language()->getId(),
+    ]);
 
     // Set remark text.
     if (!empty($data['text'])) {

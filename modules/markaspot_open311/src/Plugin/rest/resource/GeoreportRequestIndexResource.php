@@ -685,7 +685,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
         ], $langcode);
         if ($paragraph->get('field_status_note')->isEmpty()) {
           $paragraph->set('field_status_note', [
-            'value' => $this->t('The service request has been created.'),
+            'value' => $this->t('The service request has been created.', [], ['langcode' => $langcode]),
             'format' => 'plain_text',
           ]);
           $paragraph->save();
