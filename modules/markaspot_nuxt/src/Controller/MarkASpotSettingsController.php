@@ -1111,7 +1111,7 @@ class MarkASpotSettingsController extends ControllerBase {
       }
 
       // 1. @font-face declarations.
-      //    Primary: theme.customCss inside field_nuxt_config (may contain @font-face rules).
+      //    Primary: theme.customCss inside field_nuxt_config.
       //    Secondary: field_custom_css standalone field.
       $custom_css = trim($nuxt_config['theme']['customCss'] ?? '');
       if (!$custom_css && $group->hasField('field_custom_css') && !$group->get('field_custom_css')->isEmpty()) {
@@ -1121,7 +1121,7 @@ class MarkASpotSettingsController extends ControllerBase {
         $css_parts[] = $custom_css;
       }
 
-      // 2. CSS custom properties (--font-heading, --font-body) from theme.fonts.
+      // 2. CSS custom properties from theme.fonts.
       $fonts = $nuxt_config['theme']['fonts'] ?? [];
       $font_vars = [];
 
