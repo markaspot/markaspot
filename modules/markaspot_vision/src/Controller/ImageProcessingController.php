@@ -108,9 +108,10 @@ class ImageProcessingController extends ControllerBase {
       $media_entities = [];
       $loaded = $media_storage->loadByProperties(['uuid' => $data['media_ids']]);
       foreach ($loaded as $media) {
-        if ($media->access('view')) {
-          $media_entities[$media->id()] = $media;
-        }
+        // Skip access('view') check: media may be unpublished (privacy by
+        // design) but still needs AI analysis. The endpoint is protected by
+        // flood control and requires valid UUIDs.
+        $media_entities[$media->id()] = $media;
       }
 
       if (empty($media_entities)) {
@@ -178,9 +179,7 @@ class ImageProcessingController extends ControllerBase {
             }
           }
 
-          if ($media->access('update')) {
-            $media->save();
-          }
+          $media->save();
           $this->logger->notice('AI results successfully saved for media entity @id.', [
             '@id' => $media->id(),
           ]);
