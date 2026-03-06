@@ -54,6 +54,7 @@ services:
       - '@logger.factory'
       - '@markaspot_ai.token_tracking'
       - '@file_system'
+      - '@language_manager'
       - '@database'
 
   logger.channel.markaspot_ai:

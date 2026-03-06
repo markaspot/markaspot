@@ -201,3 +201,25 @@ markaspot_ai.attributes.queue:
     _permission: 'administer markaspot ai'
   options:
     _format: 'json'
+
+markaspot_ai.attributes.assist:
+  path: '/api/ai/assist'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\AttributeController::assist'
+    _title: 'AI Form Assistant'
+  methods: [POST]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'
+
+markaspot_ai.attributes.describe:
+  path: '/api/ai/attributes/describe'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\AttributeController::describe'
+    _title: 'Generate Description via AI Vision'
+  methods: [POST]
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _format: 'json'

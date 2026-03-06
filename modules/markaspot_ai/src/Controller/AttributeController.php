@@ -133,8 +133,14 @@ class AttributeController extends ControllerBase {
       ], 403);
     }
 
+    // Pass content language to AI service.
+    $langcode = $content['langcode'] ?? NULL;
+    // Preview mode: return proposed attributes without saving to node.
+    $preview = !empty($content['preview']);
+    $save = !$preview;
+
     try {
-      $result = $this->attributeFillingService->fillAttributes($node, TRUE);
+      $result = $this->attributeFillingService->fillAttributes($node, TRUE, $langcode, $save);
 
       if ($result === NULL) {
         return new JsonResponse([
@@ -160,6 +166,176 @@ class AttributeController extends ControllerBase {
       return new JsonResponse([
         'success' => FALSE,
         'message' => 'Attribute filling failed. Check logs for details.',
+      ], 500);
+    }
+  }
+
+  /**
+   * Generate a description for a service request using AI vision.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request object containing { nid: int, langcode?: string }.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON response with generated description.
+   */
+  public function describe(Request $request): JsonResponse {
+    $content = json_decode($request->getContent(), TRUE) ?? [];
+    $nid = (int) ($content['nid'] ?? 0);
+
+    if (!$nid) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Missing nid parameter.',
+      ], 400);
+    }
+
+    $node = $this->entityTypeManager()->getStorage('node')->load($nid);
+    if (!$node || $node->bundle() !== 'service_request') {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Service request not found.',
+      ], 404);
+    }
+
+    if (!$node->access('update')) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Access denied.',
+      ], 403);
+    }
+
+    if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'AI processing is disabled for this jurisdiction.',
+      ], 403);
+    }
+
+    $langcode = $content['langcode'] ?? NULL;
+
+    try {
+      $result = $this->attributeFillingService->generateDescription($node, $langcode);
+
+      if ($result === NULL) {
+        return new JsonResponse([
+          'success' => FALSE,
+          'message' => 'Could not generate description. The request may not have photos.',
+        ]);
+      }
+
+      return new JsonResponse([
+        'success' => TRUE,
+        'description' => $result['description'],
+        'model' => $result['model'],
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_ai')->error('Description generation failed for node @nid: @message', [
+        '@nid' => $nid,
+        '@message' => $e->getMessage(),
+      ]);
+
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Description generation failed.',
+      ], 500);
+    }
+  }
+
+  /**
+   * Unified AI form assistant.
+   *
+   * Returns suggestions for multiple form fields in a single LLM call.
+   * GDPR: Only allowlisted node fields are sent to the LLM. No PII.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request containing { nid, langcode?, fields: string[] }.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with suggestions for the requested fields.
+   */
+  public function assist(Request $request): JsonResponse {
+    $content = json_decode($request->getContent(), TRUE) ?? [];
+    $nid = (int) ($content['nid'] ?? 0);
+
+    if (!$nid) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Missing nid parameter.',
+      ], 400);
+    }
+
+    $node = $this->entityTypeManager()->getStorage('node')->load($nid);
+    if (!$node || $node->bundle() !== 'service_request') {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Service request not found.',
+      ], 404);
+    }
+
+    if (!$node->access('update')) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Access denied.',
+      ], 403);
+    }
+
+    if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'AI processing is disabled for this jurisdiction.',
+      ], 403);
+    }
+
+    $langcode = $content['langcode'] ?? NULL;
+
+    // Validate requested fields against allowed set.
+    if (empty($content['fields']) || !is_array($content['fields'])) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'The "fields" parameter is required (array of field names).',
+      ], 400);
+    }
+
+    $allowedFields = ['body', 'attributes', 'organisation', 'status_note', 'priority'];
+    $requestedFields = array_values(array_intersect(
+      $content['fields'],
+      $allowedFields
+    ));
+
+    if (empty($requestedFields)) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'No valid fields requested.',
+      ], 400);
+    }
+
+    try {
+      $result = $this->attributeFillingService->assistForm($node, $requestedFields, $langcode);
+
+      if ($result === NULL) {
+        return new JsonResponse([
+          'success' => FALSE,
+          'message' => 'AI could not generate suggestions for this request.',
+        ]);
+      }
+
+      return new JsonResponse([
+        'success' => TRUE,
+        'suggestions' => $result['suggestions'],
+        'model' => $result['model'],
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_ai')->error('AI assist failed for node @nid: @message', [
+        '@nid' => $nid,
+        '@message' => $e->getMessage(),
+      ]);
+
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'AI assist failed. Check logs for details.',
       ], 500);
     }
   }
