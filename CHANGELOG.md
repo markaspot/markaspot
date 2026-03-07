@@ -1,5 +1,32 @@
 # Changelog
 
+## [11.9.5](https://github.com/markaspot/markaspot/compare/11.9.4...11.9.5) (2026-03-07)
+
+### Features
+
+* add dashboard + escalation as default profile dependencies ([ece7c8a](https://github.com/markaspot/markaspot/commit/ece7c8a25d5116d655e7ccca21181a49175bc0fe))
+* **ai:** add AI-powered attribute filling for service requests ([1d2e83d](https://github.com/markaspot/markaspot/commit/1d2e83d2fd218b2e27ce17228ebbf067803fcd00))
+* **ai:** add form assistant endpoint with status, organisation, and priority suggestions ([bfa6a3e](https://github.com/markaspot/markaspot/commit/bfa6a3e09719c57a1f7734fe0653661af5c16d82))
+* **group:** add update_11907 reconciliation hook for jur/org infrastructure ([0890c77](https://github.com/markaspot/markaspot/commit/0890c772115a95a00237754331e49dd338ce8180))
+* **nuxt:** add /api/jurisdiction-hosts endpoint for app-mode resolution ([ac7f803](https://github.com/markaspot/markaspot/commit/ac7f803f9d02951d5bba0ae7e1fe53f6611659a1))
+* **open311:** add datatype_description, default_value, validation, and conditions to service definition schema ([f020eef](https://github.com/markaspot/markaspot/commit/f020eeff01c8fa4da2e21e18c561c94eda2098b8))
+* **open311:** add service definition attributes support ([aeedfe8](https://github.com/markaspot/markaspot/commit/aeedfe8415d4f01dce33d003ff05d5545a92c44e))
+
+### Bug Fixes
+
+* **escalation:** update field_jurisdiction when escalating request ([7ca537c](https://github.com/markaspot/markaspot/commit/7ca537c90244ffe4bc30df62cb4a58f4597fdae2))
+* **open311:** harden service definition with DI, input validation and permissions ([a948fd1](https://github.com/markaspot/markaspot/commit/a948fd1dce4cbb48e432f6fb34afa5408320984e))
+* **privacy:** publish media on node save instead of unpublishing flagged media ([e5ed1b5](https://github.com/markaspot/markaspot/commit/e5ed1b5dd64d338cea91030f18f9fef17d06e472))
+* resolve remaining PHPCS comment and naming violations ([7885691](https://github.com/markaspot/markaspot/commit/7885691914474e14b4721dcad430668b5397f5de))
+* **service_request:** use private:// for request images ([8a20cfd](https://github.com/markaspot/markaspot/commit/8a20cfd60bb0a8518e8204433af410f497a2d76f))
+* set langcode on internal_remark paragraphs and t() consistency ([bc2f3b2](https://github.com/markaspot/markaspot/commit/bc2f3b2609e382783ef9b1e04bf569a1f29508c1))
+* set paragraph langcode from parent node on status notes ([fa2bd27](https://github.com/markaspot/markaspot/commit/fa2bd27fa4128cee244a272382f63b7dc2687230))
+* **vision:** remove access checks blocking unpublished media in AI analysis ([c0b66a1](https://github.com/markaspot/markaspot/commit/c0b66a1275635d5eccef2e61fa0c4f20ca43fdb2))
+
+### Performance
+
+* **request_id:** use SQL for jurisdiction backfill in update hook ([4912ac5](https://github.com/markaspot/markaspot/commit/4912ac5b756402639296b42fe86bd1acfe20665b))
+
 * fix(security): validate frontend_base_url scheme and sanitize URL construction (7ea449d)
 * feat(nuxt): add [node:markaspot_frontend_url] token with jurisdiction slug (a90e77f)
 * fix(group): resolve root jurisdiction from category when multiple roots exist (7caee09)
