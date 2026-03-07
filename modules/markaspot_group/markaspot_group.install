@@ -1574,7 +1574,29 @@ function markaspot_group_update_11907(): void {
     }
   }
 
-  // --- 7. Ensure jur relationship types exist ---
+  // --- 7. Ensure gnode module + group_roles field storage ---
+  // gnode provides group_node:* plugins needed for relationship types.
+  // group_roles field storage is needed by PostInstall handler for memberships.
+  if (!\Drupal::moduleHandler()->moduleExists('gnode')) {
+    \Drupal::service('module_installer')->install(['gnode']);
+    $logger->info('Enabled gnode module.');
+  }
+
+  $group_roles_storage = $etm->getStorage('field_storage_config')
+    ->load('group_relationship.group_roles');
+  if (!$group_roles_storage) {
+    $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'group_roles',
+      'entity_type' => 'group_relationship',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group_role'],
+      'cardinality' => -1,
+      'translatable' => FALSE,
+    ])->save();
+    $logger->info('Created group_relationship.group_roles field storage.');
+  }
+
+  // --- 8. Ensure jur relationship types exist ---
   $rel_storage = $etm->getStorage('group_relationship_type');
 
   $relationships = [
@@ -1599,7 +1621,7 @@ function markaspot_group_update_11907(): void {
     }
   }
 
-  // --- 8. Create default jurisdiction group if none exists ---
+  // --- 9. Create default jurisdiction group if none exists ---
   $group_storage = $etm->getStorage('group');
   $existing = $group_storage->getQuery()
     ->accessCheck(FALSE)
