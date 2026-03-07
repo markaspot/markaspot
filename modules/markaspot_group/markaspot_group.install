@@ -1621,6 +1621,30 @@ function markaspot_group_update_11907(): void {
     }
   }
 
+  // --- 8b. Ensure group_roles field instance on jur-group_membership ---
+  // GroupMembershipPostInstall handler doesn't fire for programmatically
+  // created relationship types, so we create the instance manually.
+  $fc = $etm->getStorage('field_config');
+  if (!$fc->load('group_relationship.jur-group_membership.group_roles')) {
+    $roles_storage = $etm->getStorage('field_storage_config')
+      ->load('group_relationship.group_roles');
+    if ($roles_storage) {
+      $fc->create([
+        'field_storage' => $roles_storage,
+        'bundle' => 'jur-group_membership',
+        'label' => 'Roles',
+        'required' => FALSE,
+        'settings' => [
+          'handler' => 'default:group_role',
+          'handler_settings' => [
+            'sort' => ['field' => 'label', 'direction' => 'ASC'],
+          ],
+        ],
+      ])->save();
+      $logger->info('Created group_roles field instance on jur-group_membership.');
+    }
+  }
+
   // --- 9. Create default jurisdiction group if none exists ---
   $group_storage = $etm->getStorage('group');
   $existing = $group_storage->getQuery()
