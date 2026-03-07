@@ -1310,3 +1310,328 @@ function markaspot_group_update_11906(): void {
     \Drupal::logger('markaspot_group')->notice('tenant_admin already has all required permissions.');
   }
 }
+
+/**
+ * Ensure jur/org group types and all required fields exist.
+ *
+ * Reconciliation hook for sites upgrading from 11.7.x or earlier where:
+ * - markaspot_group was added to core.extension via SQL bypass (config/install
+ *   never ran, so group types and fields are missing)
+ * - Earlier update hooks (11903-11905) failed because jur/org types did not
+ *   exist yet
+ * - field_nuxt_config and field_boundary were only in config/install YMLs,
+ *   never created by any update hook
+ *
+ * This hook is idempotent: it checks each entity before creating.
+ */
+function markaspot_group_update_11907(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+  $config_factory = \Drupal::configFactory();
+
+  // --- 1. Ensure jur group type exists ---
+  $jur_type = $etm->getStorage('group_type')->load('jur');
+  if (!$jur_type) {
+    $jur_type = $etm->getStorage('group_type')->create([
+      'id' => 'jur',
+      'label' => 'Jurisdiction',
+      'description' => 'A jurisdiction group for multi-tenant setups.',
+      'creator_membership' => TRUE,
+      'creator_wizard' => FALSE,
+    ]);
+    $jur_type->save();
+    $logger->info('Created group type: jur');
+  }
+
+  // --- 2. Ensure org group type exists ---
+  $org_type = $etm->getStorage('group_type')->load('org');
+  if (!$org_type) {
+    $org_type = $etm->getStorage('group_type')->create([
+      'id' => 'org',
+      'label' => 'Organisation',
+      'description' => 'An organisation group.',
+      'creator_membership' => TRUE,
+      'creator_wizard' => FALSE,
+    ]);
+    $org_type->save();
+    $logger->info('Created group type: org');
+  }
+
+  // --- 3. Ensure all jur field storages exist ---
+  $fsc = $etm->getStorage('field_storage_config');
+
+  $storages = [
+    'field_nuxt_config' => [
+      'field_name' => 'field_nuxt_config',
+      'entity_type' => 'group',
+      'type' => 'text_long',
+      'module' => 'text',
+      'cardinality' => 1,
+    ],
+    'field_boundary' => [
+      'field_name' => 'field_boundary',
+      'entity_type' => 'group',
+      'type' => 'text_long',
+      'module' => 'text',
+      'cardinality' => 1,
+    ],
+    'field_custom_css' => [
+      'field_name' => 'field_custom_css',
+      'entity_type' => 'group',
+      'type' => 'text_long',
+      'module' => 'text',
+      'cardinality' => 1,
+    ],
+    'field_slug' => [
+      'field_name' => 'field_slug',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 64],
+    ],
+    'field_logo_dark' => [
+      'field_name' => 'field_logo_dark',
+      'entity_type' => 'group',
+      'type' => 'image',
+      'cardinality' => 1,
+      'settings' => [
+        'uri_scheme' => 'public',
+        'default_image' => ['uuid' => NULL, 'alt' => '', 'title' => '', 'width' => NULL, 'height' => NULL],
+        'target_type' => 'file',
+      ],
+    ],
+    'field_logo_light' => [
+      'field_name' => 'field_logo_light',
+      'entity_type' => 'group',
+      'type' => 'image',
+      'cardinality' => 1,
+      'settings' => [
+        'uri_scheme' => 'public',
+        'default_image' => ['uuid' => NULL, 'alt' => '', 'title' => '', 'width' => NULL, 'height' => NULL],
+        'target_type' => 'file',
+      ],
+    ],
+    'field_font_body' => [
+      'field_name' => 'field_font_body',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 255],
+    ],
+    'field_font_heading' => [
+      'field_name' => 'field_font_heading',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => ['max_length' => 255],
+    ],
+    'field_parent_jurisdiction' => [
+      'field_name' => 'field_parent_jurisdiction',
+      'entity_type' => 'group',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+      'cardinality' => 1,
+    ],
+  ];
+
+  foreach ($storages as $name => $definition) {
+    if (!$fsc->load('group.' . $name)) {
+      $fsc->create($definition)->save();
+      $logger->info('Created field storage: group.@name', ['@name' => $name]);
+    }
+  }
+
+  // --- 4. Ensure all jur field instances exist ---
+  $fc = $etm->getStorage('field_config');
+
+  $fields = [
+    'field_nuxt_config' => [
+      'label' => 'Nuxt Configuration',
+      'description' => 'JSON configuration for jurisdiction-specific Nuxt frontend settings (theme, features, map center, etc.)',
+      'required' => FALSE,
+      'translatable' => FALSE,
+    ],
+    'field_boundary' => [
+      'label' => 'Boundary',
+      'description' => 'GeoJSON boundary polygon for this jurisdiction. Used for map display and validation.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+    ],
+    'field_custom_css' => [
+      'label' => 'Custom CSS',
+      'description' => 'Custom CSS for this jurisdiction.',
+      'required' => FALSE,
+    ],
+    'field_slug' => [
+      'label' => 'URL Slug',
+      'description' => 'Short identifier for URLs (e.g., "bonn", "koeln")',
+      'required' => FALSE,
+    ],
+    'field_logo_dark' => [
+      'label' => 'Logo (Dark Mode)',
+      'required' => FALSE,
+    ],
+    'field_logo_light' => [
+      'label' => 'Logo (Light Mode)',
+      'required' => FALSE,
+    ],
+    'field_font_body' => [
+      'label' => 'Body Font',
+      'description' => 'Font family for body text',
+      'required' => FALSE,
+    ],
+    'field_font_heading' => [
+      'label' => 'Heading Font',
+      'description' => 'Font family for headings',
+      'required' => FALSE,
+    ],
+    'field_parent_jurisdiction' => [
+      'label' => 'Parent Jurisdiction',
+      'description' => 'The parent jurisdiction in a hierarchy.',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => ['jur' => 'jur'],
+          'sort' => ['field' => 'label', 'direction' => 'ASC'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ],
+  ];
+
+  foreach ($fields as $name => $definition) {
+    $field_id = 'group.jur.' . $name;
+    if (!$fc->load($field_id)) {
+      $storage = $fsc->load('group.' . $name);
+      if ($storage) {
+        $definition['field_storage'] = $storage;
+        $definition['bundle'] = 'jur';
+        $definition['entity_type'] = 'group';
+        $definition['field_name'] = $name;
+        $fc->create($definition)->save();
+        $logger->info('Created field instance: @id', ['@id' => $field_id]);
+      }
+    }
+  }
+
+  // --- 5. Ensure jur form display has all fields ---
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('group.jur.default');
+  if (!$form_display) {
+    $form_display = $etm->getStorage('entity_form_display')->create([
+      'targetEntityType' => 'group',
+      'bundle' => 'jur',
+      'mode' => 'default',
+      'status' => TRUE,
+    ]);
+  }
+
+  $display_components = [
+    'field_slug' => ['type' => 'string_textfield', 'weight' => 1, 'region' => 'content', 'settings' => ['size' => 60, 'placeholder' => 'stadt-osnabrueck']],
+    'field_parent_jurisdiction' => ['type' => 'entity_reference_autocomplete', 'weight' => 2, 'region' => 'content', 'settings' => ['match_operator' => 'CONTAINS', 'match_limit' => 10, 'size' => 60, 'placeholder' => '']],
+    'field_logo_light' => ['type' => 'file_generic', 'weight' => 3, 'region' => 'content', 'settings' => ['progress_indicator' => 'throbber']],
+    'field_logo_dark' => ['type' => 'file_generic', 'weight' => 4, 'region' => 'content', 'settings' => ['progress_indicator' => 'throbber']],
+    'field_custom_css' => ['type' => 'text_textarea', 'weight' => 5, 'region' => 'content', 'settings' => ['rows' => 5, 'placeholder' => '']],
+    'field_nuxt_config' => ['type' => 'text_textarea', 'weight' => 6, 'region' => 'content', 'settings' => ['rows' => 15, 'placeholder' => '']],
+    'field_boundary' => ['type' => 'text_textarea', 'weight' => 7, 'region' => 'content', 'settings' => ['rows' => 5, 'placeholder' => 'GeoJSON FeatureCollection']],
+    'field_font_heading' => ['type' => 'file_generic', 'weight' => 10, 'region' => 'content', 'settings' => ['progress_indicator' => 'throbber']],
+    'field_font_body' => ['type' => 'file_generic', 'weight' => 11, 'region' => 'content', 'settings' => ['progress_indicator' => 'throbber']],
+  ];
+
+  foreach ($display_components as $field_name => $component) {
+    if (!$form_display->getComponent($field_name) && $fc->load('group.jur.' . $field_name)) {
+      $form_display->setComponent($field_name, $component);
+    }
+  }
+  $form_display->save();
+
+  // --- 6. Ensure jur group roles exist ---
+  $role_storage = $etm->getStorage('group_role');
+  $roles = [
+    'jur-anonymous' => ['label' => 'Anonymous', 'scope' => 'outsider', 'global_role' => 'anonymous', 'permissions' => ['view group', 'view group_node:service_request entity']],
+    'jur-outsider' => ['label' => 'Outsider', 'scope' => 'outsider', 'global_role' => 'authenticated', 'permissions' => ['view group', 'view group_node:service_request entity']],
+    'jur-member' => ['label' => 'Member', 'scope' => 'individual', 'permissions' => ['view group', 'view group_node:service_request entity']],
+    'jur-moderator' => ['label' => 'Moderator', 'scope' => 'individual', 'permissions' => ['view group', 'view group_node:service_request entity', 'update any group_node:service_request entity']],
+    'jur-editorial' => ['label' => 'Editorial', 'scope' => 'individual', 'permissions' => ['view group', 'view group_node:service_request entity', 'update any group_node:service_request entity']],
+    'jur-admin' => ['label' => 'Admin', 'scope' => 'insider', 'global_role' => 'administrator', 'permissions' => ['administer group', 'view group', 'edit group', 'delete group']],
+  ];
+
+  foreach ($roles as $role_id => $role_def) {
+    if (!$role_storage->load($role_id)) {
+      $role_data = [
+        'id' => $role_id,
+        'label' => $role_def['label'],
+        'group_type' => 'jur',
+        'scope' => $role_def['scope'],
+        'permissions' => $role_def['permissions'],
+      ];
+      if (isset($role_def['global_role'])) {
+        $role_data['global_role'] = $role_def['global_role'];
+      }
+      $role_storage->create($role_data)->save();
+      $logger->info('Created group role: @id', ['@id' => $role_id]);
+    }
+  }
+
+  // --- 7. Ensure jur relationship types exist ---
+  $rel_storage = $etm->getStorage('group_relationship_type');
+
+  $relationships = [
+    'jur-group_membership' => ['content_plugin' => 'group_membership'],
+    'jur-group_node-service_request' => ['content_plugin' => 'group_node:service_request'],
+    'jur-group_node-page' => ['content_plugin' => 'group_node:page'],
+  ];
+
+  foreach ($relationships as $rel_id => $rel_def) {
+    if (!$rel_storage->load($rel_id)) {
+      $rel_storage->create([
+        'id' => $rel_id,
+        'group_type' => 'jur',
+        'content_plugin' => $rel_def['content_plugin'],
+        'plugin_config' => [
+          'group_cardinality' => 0,
+          'entity_cardinality' => 0,
+          'use_creation_wizard' => FALSE,
+        ],
+      ])->save();
+      $logger->info('Created relationship type: @id', ['@id' => $rel_id]);
+    }
+  }
+
+  // --- 8. Create default jurisdiction group if none exists ---
+  $group_storage = $etm->getStorage('group');
+  $existing = $group_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->count()
+    ->execute();
+
+  if ((int) $existing === 0) {
+    if (function_exists('_markaspot_create_default_jurisdiction')) {
+      $group = _markaspot_create_default_jurisdiction('jur', $group_storage);
+      if ($group) {
+        $logger->info('Created default jurisdiction: "@label" (id=@id).', [
+          '@label' => $group->label(),
+          '@id' => $group->id(),
+        ]);
+      }
+    }
+    else {
+      // Fallback: create a basic jurisdiction from site name.
+      $site_name = $config_factory->get('system.site')->get('name') ?: 'Default';
+      $group = $group_storage->create([
+        'type' => 'jur',
+        'label' => $site_name,
+        'uid' => 1,
+      ]);
+      $group->save();
+      $logger->info('Created default jurisdiction: "@label" (id=@id).', [
+        '@label' => $group->label(),
+        '@id' => $group->id(),
+      ]);
+    }
+  }
+
+  $logger->info('Reconciliation complete: jur/org types and all fields ensured.');
+}
