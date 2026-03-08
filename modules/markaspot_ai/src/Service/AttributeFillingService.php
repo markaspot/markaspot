@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Psr\Log\LoggerInterface;
@@ -82,6 +83,13 @@ class AttributeFillingService {
   protected Connection $database;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null
+   */
+  protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Constructs a new AttributeFillingService.
    *
    * @param \Drupal\markaspot_ai\Service\AiClientService $ai_client
@@ -100,6 +108,8 @@ class AttributeFillingService {
    *   The language manager.
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   *   The jurisdiction hierarchy resolver (optional).
    */
   public function __construct(
     AiClientService $ai_client,
@@ -110,6 +120,7 @@ class AttributeFillingService {
     FileSystemInterface $file_system,
     LanguageManagerInterface $language_manager,
     Connection $database,
+    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->aiClient = $ai_client;
     $this->entityTypeManager = $entity_type_manager;
@@ -119,6 +130,7 @@ class AttributeFillingService {
     $this->fileSystem = $file_system;
     $this->languageManager = $language_manager;
     $this->database = $database;
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -1445,13 +1457,19 @@ class AttributeFillingService {
     $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
 
     // Resolve jurisdiction to scope status terms like the frontend does.
+    // Child jurisdictions inherit their root's status terms, so walk up the
+    // parent chain to find the root jurisdiction ID.
     $jurisdictionId = NULL;
     try {
       $groupRelationships = GroupRelationship::loadByEntity($node);
       foreach ($groupRelationships as $relationship) {
         $group = $relationship->getGroup();
         if ($group && $group->bundle() === 'jur') {
-          $jurisdictionId = (int) $group->id();
+          $directId = (int) $group->id();
+          // Resolve to root jurisdiction (status terms live on the root).
+          $jurisdictionId = $this->hierarchyResolver
+            ? $this->hierarchyResolver->getRootJurisdictionId($directId)
+            : $directId;
           break;
         }
       }
