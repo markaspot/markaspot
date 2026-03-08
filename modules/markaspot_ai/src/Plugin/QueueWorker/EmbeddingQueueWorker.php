@@ -165,12 +165,6 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
       return;
     }
 
-    // Skip unpublished nodes unless explicitly requested.
-    if (!$node->isPublished() && empty($data['include_unpublished'])) {
-      $this->logger->debug('Skipping unpublished node @nid.', ['@nid' => $nid]);
-      return;
-    }
-
     // GDPR safety net: skip if AI processing is disabled for this jurisdiction.
     // This catches nodes queued before the feature flag was disabled, or
     // items picked up by the cron backfill.

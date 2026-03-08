@@ -3,7 +3,7 @@ providers:
   openai:
     api_key: ''
     api_url: 'https://api.openai.com/v1'
-    chat_model: 'gpt-4o'
+    chat_model: 'gpt-4.1-mini'
     embedding_model: 'text-embedding-3-large'
     auth_type: 'bearer'
 duplicate_detection:
@@ -18,4 +18,4 @@ token_tracking:
   alert_threshold: 0.9
 sentiment_analysis:
   enabled: true
-  model: 'gpt-4o-mini'
+  model: 'gpt-4.1-mini'

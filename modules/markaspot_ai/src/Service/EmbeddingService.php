@@ -334,9 +334,6 @@ class EmbeddingService {
           $entity_query->condition('n.type', $bundle);
         }
 
-        // Only published nodes.
-        $entity_query->condition('n.status', 1);
-
         // Left join to find nodes without embeddings.
         $entity_query->leftJoin('markaspot_ai_embeddings', 'e',
           "n.nid = e.entity_id AND e.entity_type = :entity_type AND e.embedding_type = :embedding_type",
