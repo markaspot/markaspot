@@ -163,6 +163,8 @@ class ImageProcessingController extends ControllerBase {
           $media->set('field_ai_privacy_issues', implode(', ', (array) $privacy_issues));
           $media->set('field_ai_hazard_flag', $hazard_flag);
           $media->set('field_ai_hazard_issues', implode(', ', (array) $hazard_issues));
+          $media->set('field_ai_hazard_level', $decoded_result['hazard_level'] ?? 0);
+          $media->set('field_ai_hazard_category', $decoded_result['hazard_category'] ?? NULL);
 
           // Populate alt text with AI-generated description for accessibility.
           if (!empty($decoded_result['alt_text']) && is_array($decoded_result['alt_text'])) {
@@ -191,6 +193,41 @@ class ImageProcessingController extends ControllerBase {
           ]);
         }
         $media_index++;
+      }
+
+      // Transfer hazard data from media to parent service_request node.
+      // Find nodes referencing any of these media entities.
+      $media_ids = array_keys($media_entities);
+      if (!empty($media_ids)) {
+        $node_storage = $this->entityTypeManager()->getStorage('node');
+        $nids = $node_storage->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('type', 'service_request')
+          ->condition('field_request_media', $media_ids, 'IN')
+          ->execute();
+
+        foreach ($node_storage->loadMultiple($nids) as $node) {
+          // Determine the highest hazard level across all media on this node.
+          $max_hazard_level = 0;
+          $referenced_media = $node->get('field_request_media')->referencedEntities();
+          foreach ($referenced_media as $ref_media) {
+            if ($ref_media->hasField('field_ai_hazard_level')) {
+              $level = (int) $ref_media->get('field_ai_hazard_level')->value;
+              if ($level > $max_hazard_level) {
+                $max_hazard_level = $level;
+              }
+            }
+          }
+
+          if ($node->hasField('field_hazard_level')) {
+            $node->set('field_hazard_level', $max_hazard_level);
+            $node->save();
+            $this->logger->notice('Updated field_hazard_level to @level on node @nid.', [
+              '@level' => $max_hazard_level,
+              '@nid' => $node->id(),
+            ]);
+          }
+        }
       }
 
       // Return only the AI result for frontend compatibility.

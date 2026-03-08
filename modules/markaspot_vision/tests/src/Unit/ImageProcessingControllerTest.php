@@ -4,6 +4,7 @@ namespace Drupal\Tests\markaspot_vision\Unit;
 
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
@@ -57,6 +58,13 @@ class ImageProcessingControllerTest extends UnitTestCase {
   protected $mediaStorage;
 
   /**
+   * Mocked node storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $nodeStorage;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -66,6 +74,15 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->logger = $this->createMock(LoggerInterface::class);
     $this->flood = $this->createMock(FloodInterface::class);
     $this->mediaStorage = $this->createMock(EntityStorageInterface::class);
+    $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
+
+    // Default: node query returns no results (no parent nodes).
+    $nodeQuery = $this->createMock(QueryInterface::class);
+    $nodeQuery->method('accessCheck')->willReturnSelf();
+    $nodeQuery->method('condition')->willReturnSelf();
+    $nodeQuery->method('execute')->willReturn([]);
+    $this->nodeStorage->method('getQuery')->willReturn($nodeQuery);
+    $this->nodeStorage->method('loadMultiple')->willReturn([]);
 
     $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
     $loggerFactory->method('get')
@@ -74,8 +91,10 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')
-      ->with('media')
-      ->willReturn($this->mediaStorage);
+      ->willReturnMap([
+        ['media', $this->mediaStorage],
+        ['node', $this->nodeStorage],
+      ]);
 
     $this->controller = new ImageProcessingController(
       $this->imageProcessingService,
@@ -338,14 +357,15 @@ class ImageProcessingControllerTest extends UnitTestCase {
   /**
    * @covers ::getAIResults
    */
-  public function testMediaWithoutUpdateAccessSkipsSave(): void {
+  public function testMediaWithoutUpdateAccessStillSaves(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
 
+    // The controller intentionally skips access checks (privacy by design:
+    // media may be unpublished but still needs AI analysis).
     $media = $this->createMockMedia(1, viewAccess: TRUE, updateAccess: FALSE);
     $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
 
-    // media->save() should NOT be called when update access is denied.
-    $media->expects($this->never())->method('save');
+    $media->expects($this->once())->method('save');
 
     $aiResult = json_encode([
       'category' => 42,
@@ -370,20 +390,22 @@ class ImageProcessingControllerTest extends UnitTestCase {
   /**
    * @covers ::getAIResults
    */
-  public function testOnlyViewableMediaIsProcessed(): void {
+  public function testAllLoadedMediaIsProcessed(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
 
-    $accessible = $this->createMockMedia(1, viewAccess: TRUE);
-    $denied = $this->createMockMedia(2, viewAccess: FALSE);
+    // The controller skips access checks (privacy by design), so all loaded
+    // media entities are processed regardless of view access.
+    $media1 = $this->createMockMedia(1, viewAccess: TRUE);
+    $media2 = $this->createMockMedia(2, viewAccess: FALSE);
     $this->mediaStorage->method('loadByProperties')
-      ->willReturn([1 => $accessible, 2 => $denied]);
+      ->willReturn([1 => $media1, 2 => $media2]);
 
-    // processImages should receive only 1 file URI (from the accessible media).
+    // processImages should receive 2 file URIs (all loaded media).
     $this->imageProcessingService->expects($this->once())
       ->method('processImages')
       ->with(
         $this->callback(function ($uris) {
-          return count($uris) === 1;
+          return count($uris) === 2;
         }),
         $this->anything(),
         $this->anything(),
@@ -392,7 +414,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
         'ai_result' => json_encode([
           'category' => 1,
           'description' => 'Test',
-          'alt_text' => ['Alt'],
+          'alt_text' => ['Alt 1', 'Alt 2'],
           'hazard_flag' => FALSE,
           'hazard_level' => 0,
           'hazard_issues' => [],
