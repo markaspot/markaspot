@@ -989,7 +989,7 @@ class AttributeFillingService {
     // Status term options (for status_note suggestion).
     $statusOptions = '';
     if (in_array('status_note', $requestedFields, TRUE)) {
-      $statusOptions = $this->buildStatusOptions($langcode);
+      $statusOptions = $this->buildStatusOptions($node, $langcode);
     }
 
     // --- Build unified prompt ---
@@ -1430,15 +1430,48 @@ class AttributeFillingService {
   /**
    * Builds available status term options for the prompt.
    *
+   * Scopes status terms by the node's jurisdiction so AI only suggests
+   * statuses that exist in the frontend's filtered dropdown.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node (used to resolve jurisdiction).
    * @param string $langcode
    *   Language code.
    *
    * @return string
    *   Formatted status list, or empty string.
    */
-  protected function buildStatusOptions(string $langcode): string {
+  protected function buildStatusOptions(NodeInterface $node, string $langcode): string {
     $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $terms = $termStorage->loadByProperties(['vid' => 'service_status', 'status' => 1]);
+
+    // Resolve jurisdiction to scope status terms like the frontend does.
+    $jurisdictionId = NULL;
+    try {
+      $groupRelationships = GroupRelationship::loadByEntity($node);
+      foreach ($groupRelationships as $relationship) {
+        $group = $relationship->getGroup();
+        if ($group && $group->bundle() === 'jur') {
+          $jurisdictionId = (int) $group->id();
+          break;
+        }
+      }
+    }
+    catch (\Exception $e) {
+      // Fall through to unfiltered load.
+    }
+
+    $properties = ['vid' => 'service_status', 'status' => 1];
+    if ($jurisdictionId) {
+      $properties['field_jurisdiction'] = $jurisdictionId;
+    }
+    $terms = $termStorage->loadByProperties($properties);
+
+    // Fallback: if jurisdiction filter yielded nothing (e.g. terms lack
+    // field_jurisdiction values), try without jurisdiction filter.
+    if (empty($terms) && $jurisdictionId) {
+      unset($properties['field_jurisdiction']);
+      $terms = $termStorage->loadByProperties($properties);
+    }
 
     if (empty($terms)) {
       return '';
