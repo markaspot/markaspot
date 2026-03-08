@@ -393,6 +393,73 @@ function markaspot_ai_update_10001(): void {
 }
 
 /**
+ * Add AI analysis fields and update manager_fields config.
+ *
+ * Creates field_sentiment (from config/install), field_risk_score and
+ * field_hazard_category (from config/optional) on service_request nodes.
+ * Also adds field_risk_score and field_hazard_category to the
+ * markaspot_open311 manager_fields config for API access control.
+ */
+function markaspot_ai_update_10002(): void {
+  $module_path = \Drupal::service('extension.list.module')
+    ->getPath('markaspot_ai');
+
+  // Field configs to import: [config_name => subdirectory].
+  $configs_to_import = [
+    // Storages first (order matters).
+    'field.storage.node.field_sentiment' => 'config/install',
+    'field.storage.node.field_risk_score' => 'config/optional',
+    'field.storage.node.field_hazard_category' => 'config/optional',
+    // Then field instances.
+    'field.field.node.service_request.field_sentiment' => 'config/install',
+    'field.field.node.service_request.field_risk_score' => 'config/optional',
+    'field.field.node.service_request.field_hazard_category' => 'config/optional',
+  ];
+
+  $config_factory = \Drupal::configFactory();
+
+  foreach ($configs_to_import as $config_name => $subdir) {
+    // Skip if config already exists.
+    if (!$config_factory->get($config_name)->isNew()) {
+      continue;
+    }
+
+    $file_path = $module_path . '/' . $subdir . '/' . $config_name . '.yml';
+    if (!file_exists($file_path)) {
+      \Drupal::logger('markaspot_ai')->warning('Config file not found: @file', [
+        '@file' => $file_path,
+      ]);
+      continue;
+    }
+
+    $yaml = file_get_contents($file_path);
+    $data = \Drupal\Core\Serialization\Yaml::decode($yaml);
+
+    $entity_type = str_starts_with($config_name, 'field.storage.')
+      ? 'field_storage_config'
+      : 'field_config';
+
+    $storage = \Drupal::entityTypeManager()->getStorage($entity_type);
+    $entity = $storage->createFromStorageRecord($data);
+    $entity->save();
+  }
+
+  // Add new fields to markaspot_open311 manager_fields for API access.
+  $open311_config = $config_factory->getEditable('markaspot_open311.settings');
+  $manager_fields = $open311_config->get('field_access.manager_fields') ?? [];
+
+  $new_fields = ['field_hazard_category', 'field_risk_score'];
+  foreach ($new_fields as $field) {
+    if (!in_array($field, $manager_fields, TRUE)) {
+      $manager_fields[] = $field;
+    }
+  }
+
+  $open311_config->set('field_access.manager_fields', $manager_fields);
+  $open311_config->save();
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {

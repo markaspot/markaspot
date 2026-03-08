@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_ai\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\markaspot_ai\Service\NodeAnalysisService;
 use Drupal\markaspot_ai\Service\SentimentService;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -28,13 +29,26 @@ class SentimentController extends ControllerBase {
   protected SentimentService $sentimentService;
 
   /**
+   * The node analysis service.
+   *
+   * @var \Drupal\markaspot_ai\Service\NodeAnalysisService
+   */
+  protected NodeAnalysisService $nodeAnalysisService;
+
+  /**
    * Constructs a SentimentController object.
    *
    * @param \Drupal\markaspot_ai\Service\SentimentService $sentiment_service
    *   The sentiment service.
+   * @param \Drupal\markaspot_ai\Service\NodeAnalysisService $node_analysis_service
+   *   The node analysis service.
    */
-  public function __construct(SentimentService $sentiment_service) {
+  public function __construct(
+    SentimentService $sentiment_service,
+    NodeAnalysisService $node_analysis_service,
+  ) {
     $this->sentimentService = $sentiment_service;
+    $this->nodeAnalysisService = $node_analysis_service;
   }
 
   /**
@@ -42,7 +56,8 @@ class SentimentController extends ControllerBase {
    */
   public static function create(ContainerInterface $container): static {
     return new static(
-      $container->get('markaspot_ai.sentiment')
+      $container->get('markaspot_ai.sentiment'),
+      $container->get('markaspot_ai.node_analysis')
     );
   }
 
@@ -105,7 +120,7 @@ class SentimentController extends ControllerBase {
     $nid = (int) $node->id();
 
     try {
-      $result = $this->sentimentService->analyzeNode($node, $force);
+      $result = $this->nodeAnalysisService->analyzeNode($node, $force);
 
       if ($result === NULL) {
         return new JsonResponse([
@@ -114,8 +129,8 @@ class SentimentController extends ControllerBase {
             'nid' => $nid,
             'title' => $node->getTitle(),
           ],
-          'message' => 'Failed to analyze sentiment. Check logs for details.',
-        ], 500);
+          'message' => 'Analysis skipped (already processed or no content). Use force=true to re-analyze.',
+        ]);
       }
 
       return new JsonResponse([
@@ -124,12 +139,15 @@ class SentimentController extends ControllerBase {
           'nid' => $nid,
           'title' => $node->getTitle(),
         ],
-        'sentiment' => $result,
+        'sentiment' => $result['sentiment'],
+        'hazard' => $result['hazard'],
+        'risk_score' => $result['risk_score'],
         'message' => sprintf(
-          'Analyzed sentiment for node %d: %s (score: %.2f)',
+          'Analyzed node %d: sentiment=%s, hazard=%d, risk=%.2f',
           $nid,
-          $result['sentiment'],
-          $result['score']
+          $result['sentiment']['sentiment'],
+          $result['hazard']['level'],
+          $result['risk_score']
         ),
       ]);
 

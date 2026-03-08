@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_risk_score
+    - node.type.service_request
+id: node.service_request.field_risk_score
+field_name: field_risk_score
+entity_type: node
+bundle: service_request
+label: Risk Score
+description: 'Calculated priority score (0.00-1.00) combining hazard level, category, sentiment, media, and duplicates.'
+required: false
+translatable: false
+default_value: []
+default_value_callback: ''
+settings:
+  min: 0
+  max: 1
+  prefix: ''
+  suffix: ''
+field_type: decimal

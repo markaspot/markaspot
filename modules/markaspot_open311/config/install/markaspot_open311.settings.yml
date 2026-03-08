@@ -29,6 +29,8 @@ nid-limit: ''
 field_access:
   manager_fields:
     - field_hazard_level
+    - field_hazard_category
+    - field_risk_score
     - field_sentiment
     - field_ai_hazard_category
     - field_organisation

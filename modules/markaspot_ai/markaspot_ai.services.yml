@@ -58,6 +58,23 @@ services:
       - '@database'
       - '@?markaspot_group.hierarchy_resolver'
 
+  markaspot_ai.risk_score_calculator:
+    class: Drupal\markaspot_ai\Service\RiskScoreCalculator
+    arguments:
+      - '@config.factory'
+
+  markaspot_ai.node_analysis:
+    class: Drupal\markaspot_ai\Service\NodeAnalysisService
+    arguments:
+      - '@markaspot_ai.client'
+      - '@markaspot_ai.sentiment'
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@logger.factory'
+      - '@markaspot_ai.token_tracking'
+      - '@markaspot_ai.risk_score_calculator'
+      - '@database'
+
   logger.channel.markaspot_ai:
     parent: logger.channel_base
     arguments: ['markaspot_ai']

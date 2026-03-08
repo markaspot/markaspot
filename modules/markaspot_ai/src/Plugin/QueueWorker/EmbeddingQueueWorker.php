@@ -11,7 +11,7 @@ use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\markaspot_ai\Service\EmbeddingService;
-use Drupal\markaspot_ai\Service\SentimentService;
+use Drupal\markaspot_ai\Service\NodeAnalysisService;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -66,11 +66,11 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
   protected ConfigFactoryInterface $configFactory;
 
   /**
-   * The sentiment service.
+   * The node analysis service.
    *
-   * @var \Drupal\markaspot_ai\Service\SentimentService
+   * @var \Drupal\markaspot_ai\Service\NodeAnalysisService
    */
-  protected SentimentService $sentimentService;
+  protected NodeAnalysisService $nodeAnalysisService;
 
   /**
    * Constructs a new EmbeddingQueueWorker.
@@ -91,8 +91,8 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
    *   The logger channel.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory.
-   * @param \Drupal\markaspot_ai\Service\SentimentService $sentiment_service
-   *   The sentiment service.
+   * @param \Drupal\markaspot_ai\Service\NodeAnalysisService $node_analysis_service
+   *   The node analysis service.
    */
   public function __construct(
     array $configuration,
@@ -103,7 +103,7 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
     QueueFactory $queue_factory,
     LoggerChannelInterface $logger,
     ConfigFactoryInterface $config_factory,
-    SentimentService $sentiment_service,
+    NodeAnalysisService $node_analysis_service,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->entityTypeManager = $entity_type_manager;
@@ -111,7 +111,7 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
     $this->queueFactory = $queue_factory;
     $this->logger = $logger;
     $this->configFactory = $config_factory;
-    $this->sentimentService = $sentiment_service;
+    $this->nodeAnalysisService = $node_analysis_service;
   }
 
   /**
@@ -132,7 +132,7 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
       $container->get('queue'),
       $container->get('logger.factory')->get('markaspot_ai'),
       $container->get('config.factory'),
-      $container->get('markaspot_ai.sentiment')
+      $container->get('markaspot_ai.node_analysis')
     );
   }
 
@@ -296,7 +296,10 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
   }
 
   /**
-   * Analyzes sentiment for a node if enabled.
+   * Runs combined analysis (sentiment + hazard) for a node if enabled.
+   *
+   * Uses NodeAnalysisService for a single API call that returns both
+   * sentiment and text-based hazard, then stores results separately.
    *
    * @param \Drupal\node\NodeInterface $node
    *   The node to analyze.
@@ -312,20 +315,21 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
     $nid = (int) $node->id();
 
     try {
-      $result = $this->sentimentService->analyzeNode($node);
+      $result = $this->nodeAnalysisService->analyzeNode($node);
 
       if ($result !== NULL) {
-        $this->logger->debug('Analyzed sentiment for node @nid: @sentiment (score: @score).', [
+        $this->logger->debug('Analyzed node @nid: sentiment=@sentiment, hazard=@hazard, risk=@risk.', [
           '@nid' => $nid,
-          '@sentiment' => $result['sentiment'],
-          '@score' => $result['score'],
+          '@sentiment' => $result['sentiment']['sentiment'],
+          '@hazard' => $result['hazard']['level'],
+          '@risk' => $result['risk_score'],
         ]);
       }
     }
     catch (\Exception $e) {
-      // Log but don't throw - sentiment analysis failure shouldn't
+      // Log but don't throw - analysis failure shouldn't
       // block embedding generation.
-      $this->logger->warning('Sentiment analysis failed for node @nid: @message', [
+      $this->logger->warning('Node analysis failed for node @nid: @message', [
         '@nid' => $nid,
         '@message' => $e->getMessage(),
       ]);
