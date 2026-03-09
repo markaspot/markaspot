@@ -6,6 +6,8 @@ dependencies:
     - field.storage.node.field_request_media
     - media.type.request_image
     - node.type.service_request
+  module:
+    - markaspot_media
 id: node.service_request.field_request_media
 field_name: field_request_media
 entity_type: node
@@ -17,7 +19,7 @@ translatable: false
 default_value: {  }
 default_value_callback: ''
 settings:
-  handler: 'default:media'
+  handler: 'request_media:media'
   handler_settings:
     target_bundles:
       request_image: request_image
