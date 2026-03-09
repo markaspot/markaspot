@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.7](https://github.com/markaspot/markaspot/compare/11.9.6...11.9.7) (2026-03-09)
+
+### Features
+
+* **media:** entity reference selection allowing unpublished request_image during AI screening ([b4de59c](https://github.com/markaspot/markaspot/commit/b4de59cb9084775fb3cfd07e5317432a6e2a1551))
+* **nuxt:** enforce feature flags based on installed modules ([2c18dd9](https://github.com/markaspot/markaspot/commit/2c18dd9e4e5025b05d6c8e3b978af58592b64ec3))
+
+### Bug Fixes
+
+* **ai:** scope findMissingEmbeddings by jurisdiction at query level ([045782b](https://github.com/markaspot/markaspot/commit/045782b29369ca3106dc61fbd203510753aec881))
+
 ## [11.9.6](https://github.com/markaspot/markaspot/compare/11.9.5...11.9.6) (2026-03-09)
 
 ### Features
