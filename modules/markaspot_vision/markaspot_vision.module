@@ -70,7 +70,13 @@ function _markaspot_vision_publish_safe_media(NodeInterface $node): void {
     $ai_completed = !empty($media->get('field_ai_metadata')->value);
     $has_privacy_flag = !empty($media->get('field_ai_privacy_flag')->value);
 
-    if (!$media->isPublished()) {
+    if ($has_privacy_flag && $media->isPublished()) {
+      // Safety net: unpublish media flagged for PII (e.g. published by
+      // ImageProcessingController before a late privacy detection).
+      $media->setUnpublished();
+      $media->save();
+    }
+    elseif (!$media->isPublished()) {
       if ($require_screening) {
         // Strict mode: only publish if AI ran and found no privacy issues.
         if ($ai_completed && !$has_privacy_flag) {

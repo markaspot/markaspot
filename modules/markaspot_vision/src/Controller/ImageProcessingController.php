@@ -181,6 +181,13 @@ class ImageProcessingController extends ControllerBase {
             }
           }
 
+          // Publish media immediately after successful AI screening if safe.
+          // This must happen here (not only in hook_node_insert) because
+          // entity reference validation rejects unpublished media for anonymous.
+          if (!$privacy_flag) {
+            $media->setPublished();
+          }
+
           $media->save();
           $this->logger->notice('AI results successfully saved for media entity @id.', [
             '@id' => $media->id(),
