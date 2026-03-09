@@ -132,8 +132,25 @@ class ImageProcessingService {
       );
       $prompt = $collective_prefix . $prompt;
 
-      // Append a language instruction so the AI responds in the user's language.
-      // This works even if the prompt template doesn't contain {language}.
+      // Instruct AI to generate privacy-safe descriptions even
+      // when PII is detected. Still categorize and assess hazards,
+      // but describe the scene without referencing identifiable
+      // people, license plates, or readable names.
+      $prompt .= "\n\nPRIVACY INSTRUCTION: "
+        . "If you detect personal data "
+        . "(faces, license plates, readable names), "
+        . "set privacy_flag to true and list issues "
+        . "in privacy_issues. "
+        . "IMPORTANT: Still generate a useful description, "
+        . "category, and hazard assessment, "
+        . "but write the description WITHOUT mentioning "
+        . "or referencing any identifiable persons, "
+        . "license plates, or personal names. "
+        . "Describe the situation and the issue, "
+        . "not the people.";
+
+      // Append a language instruction so the AI responds in the
+      // user's language, even without {language} in the template.
       if ($langcode && $langcode !== 'en') {
         $prompt .= "\n\nIMPORTANT: Write the \"description\" and \"hazard_issues\" fields in {$language}. "
           . "Use the JSON key \"description\" (not \"description_de\" or any locale-suffixed key).";

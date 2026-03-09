@@ -44,6 +44,13 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('multiple_uploads') ?? TRUE,
     ];
 
+    $form['file_upload']['require_ai_screening'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Require AI screening before publishing media'),
+      '#description' => $this->t('When enabled, uploaded media stays unpublished until AI analysis completes successfully and confirms no privacy issues. When disabled, media is published immediately on node save (legacy behavior). Recommended: enabled.'),
+      '#default_value' => $config->get('require_ai_screening') ?? TRUE,
+    ];
+
     $form['service'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('AI Vision Service Settings'),
@@ -238,6 +245,7 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
     // Save basic settings.
     $config
       ->set('multiple_uploads', $form_state->getValue('multiple_uploads'))
+      ->set('require_ai_screening', $form_state->getValue('require_ai_screening'))
       ->set('auth_type', $form_state->getValue('auth_type'))
       ->set('api_key', $form_state->getValue('api_key'))
       ->set('api_url', $form_state->getValue('api_url'))

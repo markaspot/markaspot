@@ -32,3 +32,6 @@ markaspot_vision.settings:
     max_tokens:
       type: integer
       label: 'Max Tokens'
+    require_ai_screening:
+      type: boolean
+      label: 'Require AI screening before publishing media'
