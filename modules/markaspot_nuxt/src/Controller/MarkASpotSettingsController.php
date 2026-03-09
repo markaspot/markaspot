@@ -104,8 +104,12 @@ class MarkASpotSettingsController extends ControllerBase {
 
     // Load the 'markaspot_nuxt.settings' configuration.
     $nuxt_config = $this->configFactory->get('markaspot_nuxt.settings');
-    // Add config cache tag.
-    $cache_metadata->addCacheTags(['config:markaspot_nuxt.settings']);
+    // Add config cache tag. 'config:core.extension' invalidates when modules
+    // are installed/uninstalled (ensures feature flags update immediately).
+    $cache_metadata->addCacheTags([
+      'config:markaspot_nuxt.settings',
+      'config:core.extension',
+    ]);
 
     // Load group type settings from markaspot_open311 (supports legacy naming).
     $open311_config = $this->configFactory->get('markaspot_open311.settings');
@@ -278,6 +282,31 @@ class MarkASpotSettingsController extends ControllerBase {
             $settings['geocoding_region'] = $geo['region'];
           }
         }
+      }
+    }
+
+    // Enforce feature flags based on installed modules.
+    // If a module is not installed, force the feature to FALSE regardless
+    // of what field_nuxt_config says. This prevents the frontend from
+    // exposing routes for features whose backend modules are absent.
+    $module_feature_map = [
+      'markaspot_ai' => 'aiAnalysis',
+      'markaspot_stats' => 'statistics',
+      'markaspot_dashboard' => 'dashboard',
+      'markaspot_vision' => 'photoReporting',
+      'markaspot_privacy' => 'privacyBlur',
+      'markaspot_feedback' => 'feedback',
+      'markaspot_passwordless' => 'passwordless',
+      'markaspot_emergency' => 'emergency',
+      'markaspot_contact' => 'contactForm',
+    ];
+    if (!isset($settings['features'])) {
+      $settings['features'] = [];
+    }
+    $module_handler = $this->moduleHandler();
+    foreach ($module_feature_map as $module => $feature) {
+      if (!$module_handler->moduleExists($module)) {
+        $settings['features'][$feature] = FALSE;
       }
     }
 
