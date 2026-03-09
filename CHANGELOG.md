@@ -1,5 +1,23 @@
 # Changelog
 
+## [11.9.6](https://github.com/markaspot/markaspot/compare/11.9.5...11.9.6) (2026-03-09)
+
+### Features
+
+* **ai:** add NodeAnalysisService for combined sentiment + hazard analysis ([e9163f1](https://github.com/markaspot/markaspot/commit/e9163f1fea614a46024217283bc108482f8fe6e7))
+
+### Bug Fixes
+
+* **ai:** process unpublished nodes and update default models ([f43bced](https://github.com/markaspot/markaspot/commit/f43bceda84d0f20898ad382e4ce3f78bf12c5550))
+* **ai:** scope status options by jurisdiction in AI assist ([114d01a](https://github.com/markaspot/markaspot/commit/114d01a506f4372cd616d0f6edf337acb3119e5a))
+* **group:** create group_roles field instance on jur-group_membership ([f1bd72a](https://github.com/markaspot/markaspot/commit/f1bd72a87df67a03946181bb6722a91996c2c126))
+* **group:** enable gnode + create group_roles field storage in update_11907 ([fab1a6c](https://github.com/markaspot/markaspot/commit/fab1a6c37cc509466162fcc17aa475720d03c805))
+* **group:** use nuxt_config_json_form widget in update_11907 ([31a4aea](https://github.com/markaspot/markaspot/commit/31a4aea70653d7c4cb6ab17c3d4853b3d24564b8))
+* privacy fail-closed, hazard propagation, CSRF, PII-safe descriptions ([32b0104](https://github.com/markaspot/markaspot/commit/32b01041fae406530dfee6bbde6d7e1039f7b396))
+* publish media after AI screening, unpublish on PII ([d9e69f3](https://github.com/markaspot/markaspot/commit/d9e69f32b11ef085cc8ba13b0edb9021ecfda192))
+* resolve root jurisdiction for AI assist status term selection ([8b01501](https://github.com/markaspot/markaspot/commit/8b015011d7f774a09d0d27a711047d7f10800ea0))
+* save hazard_level and hazard_category from vision AI, propagate to node ([b387c71](https://github.com/markaspot/markaspot/commit/b387c71c1b9651f2783f7389f19e8ece8842a9f1))
+
 ## [11.9.5](https://github.com/markaspot/markaspot/compare/11.9.4...11.9.5) (2026-03-07)
 
 ### Features
