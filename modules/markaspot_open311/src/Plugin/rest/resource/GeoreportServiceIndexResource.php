@@ -216,8 +216,8 @@ class GeoreportServiceIndexResource extends ResourceBase {
   public function get() {
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
 
-    // Get the language code from the query parameters, default to 'en' if not provided
-    $langcode = $parameters['langcode'] ?? 'en';
+    // Get the language code from the query parameters, default to site default language
+    $langcode = $parameters['langcode'] ?? $this->languageManager->getDefaultLanguage()->getId();
 
     // Validate the language code
     $languages = $this->languageManager->getLanguages();
