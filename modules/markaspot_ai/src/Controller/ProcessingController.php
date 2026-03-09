@@ -157,18 +157,14 @@ class ProcessingController extends ControllerBase {
       : NULL;
 
     try {
-      // Find nodes without embeddings.
+      // Find nodes without embeddings, scoped to jurisdiction if specified.
       $missing = $this->embeddingService->findMissingEmbeddings(
         $limit,
         'node',
         'service_request',
-        'content'
+        'content',
+        $jurisdiction_node_ids
       );
-
-      // Post-filter by jurisdiction if specified.
-      if ($jurisdiction_node_ids !== NULL) {
-        $missing = array_values(array_intersect($missing, $jurisdiction_node_ids));
-      }
 
       if (empty($missing)) {
         return new JsonResponse([

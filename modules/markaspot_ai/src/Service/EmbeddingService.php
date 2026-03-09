@@ -314,6 +314,9 @@ class EmbeddingService {
    *   Optional bundle to filter by (e.g., 'service_request').
    * @param string $embeddingType
    *   The embedding type to check for (default: 'content').
+   * @param array|null $nodeIds
+   *   Optional array of node IDs to restrict the search to (e.g. for
+   *   jurisdiction scoping). NULL means no restriction.
    *
    * @return array
    *   Array of entity IDs that are missing embeddings.
@@ -323,6 +326,7 @@ class EmbeddingService {
     string $entityType = 'node',
     ?string $bundle = 'service_request',
     string $embeddingType = 'content',
+    ?array $nodeIds = NULL,
   ): array {
     try {
       // Build query based on entity type.
@@ -332,6 +336,14 @@ class EmbeddingService {
 
         if ($bundle !== NULL) {
           $entity_query->condition('n.type', $bundle);
+        }
+
+        // Filter to specific node IDs if provided (jurisdiction scoping).
+        if ($nodeIds !== NULL) {
+          if (empty($nodeIds)) {
+            return [];
+          }
+          $entity_query->condition('n.nid', $nodeIds, 'IN');
         }
 
         // Left join to find nodes without embeddings.
