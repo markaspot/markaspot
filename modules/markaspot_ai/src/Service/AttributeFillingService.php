@@ -635,7 +635,7 @@ class AttributeFillingService {
     // Join to ensure category has a service definition.
     $query->innerJoin('taxonomy_term__field_service_definition', 'sd',
       'fc.field_category_target_id = sd.entity_id');
-    $query->condition('sd.field_service_definition_value', '', '<>');
+    $query->isNotNull('sd.field_service_definition_value');
 
     // Exclude nodes that already have attributes.
     $query->leftJoin('node__field_request_attributes', 'ra', 'n.nid = ra.entity_id');

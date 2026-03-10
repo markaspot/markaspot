@@ -427,7 +427,7 @@ class AttributeController extends ControllerBase {
     // Join to check that the referenced term has a service definition.
     $query->innerJoin('taxonomy_term__field_service_definition', 'sd',
       'fc.field_category_target_id = sd.entity_id');
-    $query->condition('sd.field_service_definition_value', '', '<>');
+    $query->isNotNull('sd.field_service_definition_value');
 
     if ($node_ids !== NULL) {
       $query->condition('n.nid', $node_ids, 'IN');
@@ -454,11 +454,11 @@ class AttributeController extends ControllerBase {
     $query->innerJoin('node__field_category', 'fc', 'n.nid = fc.entity_id');
     $query->innerJoin('taxonomy_term__field_service_definition', 'sd',
       'fc.field_category_target_id = sd.entity_id');
-    $query->condition('sd.field_service_definition_value', '', '<>');
+    $query->isNotNull('sd.field_service_definition_value');
 
     // Join to the attributes field and check it's not empty.
     $query->innerJoin('node__field_request_attributes', 'ra', 'n.nid = ra.entity_id');
-    $query->condition('ra.field_request_attributes_value', '', '<>');
+    $query->isNotNull('ra.field_request_attributes_value');
 
     if ($node_ids !== NULL) {
       $query->condition('n.nid', $node_ids, 'IN');
