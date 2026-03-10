@@ -31,7 +31,8 @@
               "text",
               "datetime",
               "singlevaluelist",
-              "multivaluelist"
+              "multivaluelist",
+              "imagelist"
             ],
             "default": "string"
           },
@@ -71,6 +72,12 @@
               },
               "required": ["key", "name"]
             }
+          },
+          "media_type": {
+            "type": "string",
+            "title": "Media Type",
+            "description": "Drupal Media Type machine name. Required for imagelist datatype. The frontend loads all media entities of this type as selectable options.",
+            "pattern": "^[a-z][a-z0-9_]*$"
           },
           "datatype_description": {
             "type": "string",
@@ -139,7 +146,13 @@
             }
           }
         },
-        "required": ["code", "datatype", "description"]
+        "required": ["code", "datatype", "description"],
+        "if": {
+          "properties": { "datatype": { "const": "imagelist" } }
+        },
+        "then": {
+          "required": ["media_type"]
+        }
       }
     }
   }

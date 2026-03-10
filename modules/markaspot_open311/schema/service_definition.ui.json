@@ -18,7 +18,7 @@
       },
       "datatype": {
         "ui:options": {
-          "description": "string = short text, number = numeric, text = long text, datetime = date/time picker, singlevaluelist = dropdown, multivaluelist = checkboxes"
+          "description": "string = short text, number = numeric, text = long text, datetime = date/time picker, singlevaluelist = dropdown, multivaluelist = checkboxes, imagelist = image selection grid (requires media_type)"
         }
       },
       "required": {
@@ -54,6 +54,12 @@
               "placeholder": "e.g. Red"
             }
           }
+        }
+      },
+      "media_type": {
+        "ui:options": {
+          "placeholder": "e.g. systemskizze",
+          "description": "Machine name of a Drupal Media Type. Only for imagelist datatype."
         }
       },
       "datatype_description": {

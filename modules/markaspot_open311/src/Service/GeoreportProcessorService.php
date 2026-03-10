@@ -367,17 +367,100 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         // Verify the string is valid JSON before storing.
         $decoded = json_decode($attributes, TRUE);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-          $values['field_request_attributes'] = ['value' => $attributes];
+          $decoded = $this->validateImagelistAttributes($decoded, $requestData);
+          $values['field_request_attributes'] = ['value' => json_encode($decoded)];
         }
       }
       elseif (is_array($attributes) || is_object($attributes)) {
-        $values['field_request_attributes'] = ['value' => json_encode($attributes)];
+        $decoded = (array) $attributes;
+        $decoded = $this->validateImagelistAttributes($decoded, $requestData);
+        $values['field_request_attributes'] = ['value' => json_encode($decoded)];
       }
     }
 
     return array_filter($values, function ($value) {
       return ($value !== NULL && $value !== FALSE && $value !== '');
     });
+  }
+
+  /**
+   * Validates imagelist attribute values against their media type.
+   *
+   * For attributes with datatype 'imagelist', checks that the submitted
+   * value is a valid media entity UUID of the correct bundle. Invalid
+   * values are stripped from the attributes array.
+   *
+   * @param array $attributes
+   *   The submitted attribute key-value pairs.
+   * @param array $requestData
+   *   The full request data (used to look up service_code for definition).
+   *
+   * @return array
+   *   The validated attributes with invalid imagelist values removed.
+   */
+  private function validateImagelistAttributes(array $attributes, array $requestData): array {
+    $serviceCode = $requestData['service_code'] ?? NULL;
+    if (!$serviceCode) {
+      return $attributes;
+    }
+
+    // Load the service definition to find imagelist attributes.
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
+      ->loadByProperties([
+        'vid' => 'service_category',
+        'field_service_code' => $serviceCode,
+      ]);
+
+    if (empty($terms)) {
+      return $attributes;
+    }
+
+    $term = reset($terms);
+    if (!$term->hasField('field_service_definition') || $term->get('field_service_definition')->isEmpty()) {
+      return $attributes;
+    }
+
+    $definition = json_decode($term->get('field_service_definition')->value, TRUE);
+    if (empty($definition['attributes'])) {
+      return $attributes;
+    }
+
+    // Build a map of imagelist attribute codes to their media types.
+    $imagelistTypes = [];
+    foreach ($definition['attributes'] as $attr) {
+      if (($attr['datatype'] ?? '') === 'imagelist' && !empty($attr['media_type'])) {
+        $imagelistTypes[$attr['code']] = $attr['media_type'];
+      }
+    }
+
+    // Validate each imagelist attribute value.
+    foreach ($imagelistTypes as $code => $mediaType) {
+      if (empty($attributes[$code])) {
+        continue;
+      }
+
+      // Support both single UUID and array of UUIDs.
+      $submittedValues = (array) $attributes[$code];
+
+      $mediaEntities = $this->entityTypeManager->getStorage('media')
+        ->loadByProperties([
+          'uuid' => $submittedValues,
+          'bundle' => $mediaType,
+          'status' => 1,
+        ]);
+
+      // Filter to only valid, published UUIDs.
+      $validUuids = array_map(fn($entity) => $entity->uuid(), $mediaEntities);
+      $filtered = array_values(array_intersect($submittedValues, $validUuids));
+
+      if (empty($filtered)) {
+        unset($attributes[$code]);
+      } else {
+        $attributes[$code] = count($filtered) === 1 ? $filtered[0] : $filtered;
+      }
+    }
+
+    return $attributes;
   }
 
   /**
