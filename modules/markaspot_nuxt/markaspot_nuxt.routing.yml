@@ -65,3 +65,40 @@ markaspot_nuxt.organisations:
     _format: 'json'
   requirements:
     _permission: 'access content'
+
+markaspot_nuxt.tenant_settings_logo:
+  path: '/api/tenant-settings/{jurisdiction_id}/logo'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::uploadLogo'
+    _title: 'Upload Tenant Logo'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_token: 'TRUE'
+    jurisdiction_id: \d+
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_general_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/general'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::getGeneralSettings'
+    _title: 'Get Tenant General Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: \d+
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_general_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/general'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::updateGeneralSettings'
+    _title: 'Update Tenant General Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: \d+
+  options:
+    _format: 'json'

@@ -890,6 +890,7 @@ class MarkASpotSettingsController extends ControllerBase {
 
       $jurisdictions[] = [
         'id' => (int) $group->id(),
+        'uuid' => $group->uuid(),
         'name' => $group->label(),
         'slug' => $slug,
         'isDefault' => $first,

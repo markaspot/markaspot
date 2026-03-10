@@ -91,6 +91,11 @@ class GroupMembersController extends ControllerBase {
    *   The access result.
    */
   public function accessCheck(AccountInterface $account): AccessResultInterface {
+    // User 1 (superadmin) always has access — bypasses all checks.
+    if ((int) $account->id() === 1) {
+      return AccessResult::allowed()->addCacheContexts(['user']);
+    }
+
     // Drupal administrators always have access.
     if (in_array('administrator', $account->getRoles(), TRUE)) {
       return AccessResult::allowed()->addCacheContexts(['user.roles']);
