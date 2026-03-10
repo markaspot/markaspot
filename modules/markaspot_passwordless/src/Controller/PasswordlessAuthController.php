@@ -159,9 +159,13 @@ class PasswordlessAuthController extends ControllerBase {
       ], Response::HTTP_TOO_MANY_REQUESTS);
     }
 
+    // Optional: language and jurisdiction from request body.
+    $langcode = !empty($data['langcode']) ? trim($data['langcode']) : '';
+    $jurisdiction_id = !empty($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : 0;
+
     try {
       // Request OTP code.
-      $result = $this->otpService->requestCode($email);
+      $result = $this->otpService->requestCode($email, $langcode, $jurisdiction_id);
 
       if ($result['success']) {
         // Register the successful request for rate limiting.

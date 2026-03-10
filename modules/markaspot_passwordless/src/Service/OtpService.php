@@ -132,7 +132,7 @@ class OtpService {
    * @return array
    *   Result array with status and message.
    */
-  public function requestCode(string $email): array {
+  public function requestCode(string $email, string $langcode = '', int $jurisdiction_id = 0): array {
     // Clean up expired codes first.
     $this->cleanupExpiredCodes();
 
@@ -177,7 +177,7 @@ class OtpService {
     }
 
     // Send email.
-    $sent = $this->sendCode($email, $code, $code_lifetime);
+    $sent = $this->sendCode($email, $code, $code_lifetime, $langcode, $jurisdiction_id);
 
     if ($sent) {
       return [
@@ -351,20 +351,56 @@ class OtpService {
    * @return bool
    *   TRUE if email was sent successfully.
    */
-  protected function sendCode(string $email, string $code, int $code_lifetime): bool {
+  protected function sendCode(string $email, string $code, int $code_lifetime, string $langcode = '', int $jurisdiction_id = 0): bool {
+    // Determine language: explicit > current > default.
+    if (empty($langcode)) {
+      $langcode = $this->languageManager->getCurrentLanguage()->getId();
+    }
+
     $params = [
       'code' => $code,
       'email' => $email,
-    // Convert to minutes.
-      'expires_in' => $code_lifetime / 60,
+      'expires_in' => (int) ($code_lifetime / 60),
+      'platform_name' => '',
+      'email_footer' => '',
     ];
+
+    // Load jurisdiction group entity for platform name and email footer.
+    if ($jurisdiction_id > 0) {
+      try {
+        $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
+        if ($group) {
+          // Use translation if available.
+          if ($group->hasTranslation($langcode)) {
+            $group = $group->getTranslation($langcode);
+          }
+          if ($group->hasField('field_platform_name') && !$group->get('field_platform_name')->isEmpty()) {
+            $params['platform_name'] = $group->get('field_platform_name')->value;
+          }
+          if ($group->hasField('field_email_footer') && !$group->get('field_email_footer')->isEmpty()) {
+            $params['email_footer'] = $group->get('field_email_footer')->value;
+          }
+        }
+      }
+      catch (\Exception $e) {
+        $this->logger->warning('Failed to load jurisdiction @id for email: @message', [
+          '@id' => $jurisdiction_id,
+          '@message' => $e->getMessage(),
+        ]);
+      }
+    }
+
+    // Fallback platform name to site name.
+    if (empty($params['platform_name'])) {
+      $params['platform_name'] = $this->configFactory->get('system.site')->get('name') ?: 'Mark-a-Spot';
+    }
 
     try {
       $result = $this->mailManager->mail(
         'markaspot_passwordless',
         'verification_code',
         $email,
-        $this->languageManager->getDefaultLanguage()->getId(),
+        $langcode,
         $params,
         NULL,
         TRUE

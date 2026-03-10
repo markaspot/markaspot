@@ -21,7 +21,10 @@ class PasswordlessSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   protected function getEditableConfigNames() {
-    return ['markaspot_passwordless.settings'];
+    return [
+      'markaspot_passwordless.settings',
+      'markaspot_passwordless.mail',
+    ];
   }
 
   /**
@@ -103,6 +106,32 @@ class PasswordlessSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    // Mail template settings.
+    $mail_config = $this->config('markaspot_passwordless.mail');
+
+    $form['mail'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Email template'),
+      '#open' => FALSE,
+    ];
+
+    $form['mail']['mail_subject'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Subject'),
+      '#description' => $this->t('Available tokens: @code, @expires_in, @platform_name'),
+      '#default_value' => $mail_config->get('verification_code.subject') ?? '',
+      '#required' => TRUE,
+    ];
+
+    $form['mail']['mail_body'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Body'),
+      '#description' => $this->t('Available tokens: @code, @expires_in, @platform_name. The jurisdiction email footer is appended automatically.'),
+      '#default_value' => $mail_config->get('verification_code.body') ?? '',
+      '#rows' => 8,
+      '#required' => TRUE,
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -152,6 +181,11 @@ class PasswordlessSettingsForm extends ConfigFormBase {
       ->set('request_limit_per_ip', $form_state->getValue('request_limit_per_ip'))
       ->set('verify_lockout_attempts', $form_state->getValue('verify_lockout_attempts'))
       ->set('verify_lockout_duration', $form_state->getValue('verify_lockout_duration'))
+      ->save();
+
+    $this->config('markaspot_passwordless.mail')
+      ->set('verification_code.subject', $form_state->getValue('mail_subject'))
+      ->set('verification_code.body', $form_state->getValue('mail_body'))
       ->save();
 
     parent::submitForm($form, $form_state);
