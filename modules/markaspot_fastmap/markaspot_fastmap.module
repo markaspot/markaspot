@@ -1,0 +1,39 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * @file
+ * Hook implementations for markaspot_fastmap.
+ */
+
+/**
+ * Implements hook_mail().
+ */
+function markaspot_fastmap_mail(string $key, array &$message, array $params): void {
+  if ($key !== 'workspace_verification') {
+    return;
+  }
+
+  $langcode = $message['langcode'] ?? 'en';
+
+  // Load mail config in the message's language.
+  $mail_config = \Drupal::languageManager()
+    ->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail')
+    ->get($key);
+
+  // Fallback to default language if translation doesn't exist.
+  if (empty($mail_config)) {
+    $mail_config = \Drupal::config('markaspot_fastmap.mail')->get($key);
+  }
+
+  $replacements = [
+    '@site_name' => $params['site_name'] ?? 'FastMap',
+    '@workspace_name' => $params['workspace_name'] ?? '',
+    '@verify_url' => $params['verify_url'] ?? '',
+    '@cleanup_days' => $params['cleanup_days'] ?? '7',
+  ];
+
+  $message['subject'] = strtr($mail_config['subject'], $replacements);
+  $message['body'][] = strtr($mail_config['body'], $replacements);
+}

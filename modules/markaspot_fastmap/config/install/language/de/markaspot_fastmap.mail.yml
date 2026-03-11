@@ -1,0 +1,12 @@
+langcode: de
+workspace_verification:
+  subject: '@site_name: Workspace "@workspace_name" bestätigen'
+  body: |
+    Sie haben einen neuen Workspace angefordert: @workspace_name
+
+    Klicken Sie auf den folgenden Link, um Ihren Workspace zu bestätigen und zu aktivieren:
+    @verify_url
+
+    Dieser Link ist @cleanup_days Tage gültig.
+
+    Falls Sie dies nicht angefordert haben, ignorieren Sie bitte diese E-Mail.

@@ -1,0 +1,10 @@
+name: 'Mark-a-Spot FastMap'
+description: 'Self-service workspace provisioning for FastMap with email verification.'
+package: Mark-a-Spot
+type: module
+core_version_requirement: ^11
+dependencies:
+  - markaspot_group
+  - markaspot_passwordless
+  - drupal:group
+  - drupal:taxonomy

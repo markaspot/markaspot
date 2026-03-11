@@ -1,0 +1,23 @@
+markaspot_fastmap.create_workspace:
+  path: '/api/fastmap/create-workspace'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\FastMapWorkspaceController::createWorkspace'
+    _title: 'Create FastMap Workspace'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: 'TRUE'
+
+markaspot_fastmap.verify_workspace:
+  path: '/api/fastmap/verify/{token}'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\FastMapWorkspaceController::verifyWorkspace'
+    _title: 'Verify FastMap Workspace'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'
+    token: '[a-f0-9]{64}'
+  options:
+    no_cache: 'TRUE'

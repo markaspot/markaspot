@@ -1,0 +1,7 @@
+create fastmap workspace:
+  title: 'Create FastMap workspace'
+  description: 'Allows creating new FastMap workspaces via API.'
+
+delete fastmap workspace:
+  title: 'Delete FastMap workspace'
+  description: 'Allows tearing down FastMap workspaces and all associated data.'

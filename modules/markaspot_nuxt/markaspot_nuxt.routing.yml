@@ -66,18 +66,6 @@ markaspot_nuxt.organisations:
   requirements:
     _permission: 'access content'
 
-markaspot_nuxt.fastmap_create_workspace:
-  path: '/api/fastmap/create-workspace'
-  defaults:
-    _controller: '\Drupal\markaspot_nuxt\Controller\FastMapWorkspaceController::createWorkspace'
-    _title: 'Create FastMap Workspace'
-    _format: 'json'
-  methods: [POST]
-  requirements:
-    _access: 'TRUE'
-  options:
-    no_cache: 'TRUE'
-
 markaspot_nuxt.tenant_settings_logo:
   path: '/api/tenant-settings/{jurisdiction_id}/logo'
   defaults:

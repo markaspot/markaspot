@@ -1,0 +1,59 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * @file
+ * Install, update and uninstall functions for markaspot_fastmap.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function markaspot_fastmap_schema(): array {
+  $schema['markaspot_fastmap_pending'] = [
+    'description' => 'Stores pending workspace creation requests awaiting email verification.',
+    'fields' => [
+      'id' => [
+        'description' => 'Primary Key.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'token' => [
+        'description' => 'Verification token (hex, 64 chars).',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ],
+      'email' => [
+        'description' => 'Email address of the requester.',
+        'type' => 'varchar',
+        'length' => 254,
+        'not null' => TRUE,
+      ],
+      'workspace_data' => [
+        'description' => 'Serialized workspace parameters.',
+        'type' => 'text',
+        'size' => 'big',
+        'not null' => TRUE,
+      ],
+      'created' => [
+        'description' => 'Unix timestamp of request creation.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'token' => ['token'],
+    ],
+    'indexes' => [
+      'email' => ['email'],
+      'created' => ['created'],
+    ],
+  ];
+
+  return $schema;
+}

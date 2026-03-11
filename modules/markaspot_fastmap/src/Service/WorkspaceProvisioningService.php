@@ -2,18 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Drupal\markaspot_nuxt\Controller;
+namespace Drupal\markaspot_fastmap\Service;
 
-use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
-use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
+use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\user\UserInterface;
+use Psr\Log\LoggerInterface;
 
 /**
- * Creates FastMap workspaces (jurisdiction groups with categories and statuses).
+ * Provisions and tears down FastMap workspaces.
  */
-class FastMapWorkspaceController extends ControllerBase {
+class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterface {
 
   /**
    * Default status terms every workspace gets, with translations.
@@ -100,49 +101,38 @@ class FastMapWorkspaceController extends ControllerBase {
     '#D53F8C', '#718096', '#2B6CB0', '#C05621',
   ];
 
-  /**
-   * Maximum number of categories per workspace.
-   */
   private const MAX_CATEGORIES = 30;
 
+  private const ALLOWED_LANGS = ['en', 'de', 'nl', 'fr', 'es'];
+
   /**
-   * The database connection.
+   * Theme presets by template name.
    */
-  protected Connection $database;
+  private const THEME_TEMPLATES = [
+    'crisis-map' => ['primary' => 'red', 'secondary' => 'orange', 'neutral' => 'slate'],
+    'civic-report' => ['primary' => 'blue', 'secondary' => 'cyan', 'neutral' => 'slate'],
+    'safe-routes' => ['primary' => 'amber', 'secondary' => 'orange', 'neutral' => 'stone'],
+    'access-map' => ['primary' => 'violet', 'secondary' => 'purple', 'neutral' => 'slate'],
+    'climate-watch' => ['primary' => 'orange', 'secondary' => 'amber', 'neutral' => 'stone'],
+    'trail-watch' => ['primary' => 'green', 'secondary' => 'emerald', 'neutral' => 'stone'],
+    'eco-map' => ['primary' => 'emerald', 'secondary' => 'teal', 'neutral' => 'slate'],
+    'neighbourhood' => ['primary' => 'cyan', 'secondary' => 'sky', 'neutral' => 'slate'],
+    'construction-watch' => ['primary' => 'yellow', 'secondary' => 'amber', 'neutral' => 'stone'],
+  ];
+
+  public function __construct(
+    protected readonly EntityTypeManagerInterface $entityTypeManager,
+    protected readonly Connection $database,
+    protected readonly LoggerInterface $logger,
+  ) {}
 
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container): static {
-    $instance = parent::create($container);
-    $instance->database = $container->get('database');
-    return $instance;
-  }
-
-  /**
-   * Creates a new FastMap workspace.
-   *
-   * POST /api/fastmap/create-workspace
-   * Body: { api_key, name, slug, categories[], lat, lng, zoom?, template? }
-   */
-  public function createWorkspace(Request $request): JsonResponse {
-    $content = $request->getContent();
-    $data = json_decode($content, TRUE);
-
-    if (!$data) {
-      return new JsonResponse(['error' => 'Invalid JSON body'], 400);
-    }
-
-    // Validate API key (stored in services_api_key_auth module).
-    $expectedKey = $this->config('services_api_key_auth.api_key.nuxt')->get('key');
-    $apiKey = $data['api_key'] ?? $request->query->get('api_key');
-    if (!$expectedKey || !$apiKey || !hash_equals($expectedKey, (string) $apiKey)) {
-      return new JsonResponse(['error' => 'Invalid API key'], 403);
-    }
-
-    // Validate required fields.
+  public function provisionWorkspace(array $data): array {
     $name = mb_substr(trim($data['name'] ?? ''), 0, 255);
     $slug = trim($data['slug'] ?? '');
+    $email = trim($data['email'] ?? '');
     $categories = $data['categories'] ?? [];
     $lat = max(-90.0, min(90.0, (float) ($data['lat'] ?? 0)));
     $lng = max(-180.0, min(180.0, (float) ($data['lng'] ?? 0)));
@@ -151,67 +141,49 @@ class FastMapWorkspaceController extends ControllerBase {
     $requestedLang = $data['language'] ?? '';
     $boundary = $data['boundary'] ?? NULL;
 
-    if (!$name || !$slug) {
-      return new JsonResponse(['error' => 'name and slug are required'], 400);
+    // Validate.
+    if (!$name || !$slug || !$email) {
+      throw new \RuntimeException('name, slug and email are required');
     }
 
     if (!preg_match('/^[a-z0-9-]{2,30}$/', $slug)) {
-      return new JsonResponse(['error' => 'slug must be 2-30 chars, lowercase alphanumeric and hyphens'], 400);
+      throw new \RuntimeException('slug must be 2-30 chars, lowercase alphanumeric and hyphens');
     }
 
     if (empty($categories) || !is_array($categories)) {
-      return new JsonResponse(['error' => 'categories must be provided'], 400);
+      throw new \RuntimeException('categories must be provided');
     }
 
-    // Categories can be Record<lang, string[]> (multilingual) or string[] (legacy).
     $multilingualCategories = $this->normalizeCategories($categories);
     if (empty($multilingualCategories)) {
-      return new JsonResponse(['error' => 'categories must contain at least one non-empty string'], 400);
+      throw new \RuntimeException('categories must contain at least one non-empty string');
     }
 
-    // Determine default language: prefer explicitly requested language,
-    // fall back to first key in the categories map.
-    $allowedLangs = ['en', 'de', 'nl', 'fr', 'es'];
-    $defaultLang = (is_string($requestedLang) && in_array($requestedLang, $allowedLangs, TRUE) && isset($multilingualCategories[$requestedLang]))
+    $defaultLang = (is_string($requestedLang) && in_array($requestedLang, self::ALLOWED_LANGS, TRUE) && isset($multilingualCategories[$requestedLang]))
       ? $requestedLang
       : array_key_first($multilingualCategories);
     $defaultCategories = $multilingualCategories[$defaultLang];
 
     if (count($defaultCategories) > self::MAX_CATEGORIES) {
-      return new JsonResponse(['error' => 'Maximum ' . self::MAX_CATEGORIES . ' categories allowed'], 400);
+      throw new \RuntimeException('Maximum ' . self::MAX_CATEGORIES . ' categories allowed');
     }
 
-    // Check slug uniqueness.
-    $groupStorage = $this->entityTypeManager()->getStorage('group');
+    // Slug uniqueness check.
+    $groupStorage = $this->entityTypeManager->getStorage('group');
     $existing = $groupStorage->loadByProperties(['field_slug' => $slug]);
     if (!empty($existing)) {
-      return new JsonResponse(['error' => 'Slug already taken'], 409);
+      throw new \RuntimeException('Slug already taken');
     }
 
     $transaction = $this->database->startTransaction();
 
     try {
-      $termStorage = $this->entityTypeManager()->getStorage('taxonomy_term');
-
-      // 1. Create the Group entity.
+      $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
       $availableLanguages = array_keys($multilingualCategories);
-      $nuxtConfig = $this->buildNuxtConfig($name, $slug, $lat, $lng, $zoom, $template, $availableLanguages, $defaultLang);
 
-      // Wrap boundary geometry in a GeoJSON FeatureCollection for field_boundary.
-      $boundaryJson = NULL;
-      if (is_array($boundary) && in_array($boundary['type'] ?? '', ['Polygon', 'MultiPolygon'], TRUE)) {
-        $feature = [
-          'type' => 'FeatureCollection',
-          'features' => [
-            [
-              'type' => 'Feature',
-              'properties' => ['name' => $name],
-              'geometry' => $boundary,
-            ],
-          ],
-        ];
-        $boundaryJson = json_encode($feature, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-      }
+      // 1. Create Group entity.
+      $nuxtConfig = $this->buildNuxtConfig($name, $slug, $lat, $lng, $zoom, $template, $availableLanguages, $defaultLang);
+      $boundaryJson = $this->buildBoundaryJson($boundary, $name);
 
       $groupFields = [
         'type' => 'jur',
@@ -229,37 +201,121 @@ class FastMapWorkspaceController extends ControllerBase {
 
       $groupId = (int) $group->id();
 
-      // 2. Create status terms (with translations).
+      // 2. Create status terms.
       $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages);
 
-      // 3. Create category terms (with translations).
+      // 3. Create category terms.
       $categoryTermIds = $this->createCategoryTerms($termStorage, $groupId, $multilingualCategories, $defaultLang);
 
-      // 4. Assign categories to the group.
+      // 4. Assign categories to group.
       $group->set('field_service_categories', array_map(fn($tid) => ['target_id' => $tid], $categoryTermIds));
       $group->save();
 
-      return new JsonResponse([
-        'id' => $groupId,
+      // 5. Create tenant admin user.
+      $user = $this->createTenantAdmin($email, $name);
+
+      // 6. Add user as group member with admin role.
+      $this->addGroupMembership($group, $user);
+
+      return [
+        'group_id' => $groupId,
         'slug' => $slug,
         'name' => $name,
         'url' => '/' . $slug,
         'categories' => count($categoryTermIds),
-      ], 201);
-
+        'user_id' => (int) $user->id(),
+      ];
     }
     catch (\Exception $e) {
       $transaction->rollBack();
-      $this->getLogger('fastmap')->error('Workspace creation failed: @msg', ['@msg' => $e->getMessage()]);
-      return new JsonResponse(['error' => 'Workspace creation failed'], 500);
+      $this->logger->error('Workspace provisioning failed: @msg', ['@msg' => $e->getMessage()]);
+      throw new \RuntimeException('Workspace provisioning failed: ' . $e->getMessage(), 0, $e);
     }
   }
 
   /**
-   * Build minimal field_nuxt_config for a new workspace.
+   * {@inheritdoc}
    */
-  private function buildNuxtConfig(string $name, string $slug, float $lat, float $lng, int $zoom, string $template, array $languages = ['en'], string $defaultLang = 'en'): array {
-    $themeColors = $this->getThemeForTemplate($template);
+  public function teardownWorkspace(int $groupId): void {
+    $groupStorage = $this->entityTypeManager->getStorage('group');
+    $group = $groupStorage->load($groupId);
+
+    if (!$group) {
+      throw new \RuntimeException('Group not found: ' . $groupId);
+    }
+
+    $transaction = $this->database->startTransaction();
+
+    try {
+      $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
+      $userStorage = $this->entityTypeManager->getStorage('user');
+
+      // 1. Collect members before deleting relationships.
+      $memberUserIds = [];
+      $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');
+      $memberships = $relationshipStorage->loadByProperties([
+        'gid' => $groupId,
+        'plugin_id' => 'group_membership',
+      ]);
+      foreach ($memberships as $membership) {
+        $memberUserIds[] = (int) $membership->getEntity()->id();
+        $membership->delete();
+      }
+
+      // 2. Delete taxonomy terms belonging to this group.
+      foreach (['service_category', 'service_status'] as $vid) {
+        $termIds = $termStorage->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('vid', $vid)
+          ->condition('field_jurisdiction', $groupId)
+          ->execute();
+        if (!empty($termIds)) {
+          $terms = $termStorage->loadMultiple($termIds);
+          $termStorage->delete($terms);
+        }
+      }
+
+      // 3. Delete users that have no other group memberships.
+      foreach ($memberUserIds as $uid) {
+        if ($uid <= 1) {
+          continue;
+        }
+        $user = $userStorage->load($uid);
+        if (!$user) {
+          continue;
+        }
+
+        $otherMemberships = $this->entityTypeManager
+          ->getStorage('group_relationship')
+          ->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('entity_id', $uid)
+          ->condition('plugin_id', 'group_membership')
+          ->count()
+          ->execute();
+
+        if ((int) $otherMemberships === 0) {
+          $user->delete();
+        }
+      }
+
+      // 4. Delete group entity.
+      $group->delete();
+
+      $this->logger->info('Workspace torn down: group @id', ['@id' => $groupId]);
+    }
+    catch (\Exception $e) {
+      $transaction->rollBack();
+      $this->logger->error('Workspace teardown failed for group @id: @msg', [
+        '@id' => $groupId,
+        '@msg' => $e->getMessage(),
+      ]);
+      throw new \RuntimeException('Workspace teardown failed: ' . $e->getMessage(), 0, $e);
+    }
+  }
+
+  private function buildNuxtConfig(string $name, string $slug, float $lat, float $lng, int $zoom, string $template, array $languages, string $defaultLang): array {
+    $themeColors = self::THEME_TEMPLATES[$template] ?? self::THEME_TEMPLATES['civic-report'];
 
     return [
       'client' => [
@@ -314,29 +370,26 @@ class FastMapWorkspaceController extends ControllerBase {
     ];
   }
 
-  /**
-   * Get theme colors based on template.
-   */
-  private function getThemeForTemplate(string $template): array {
-    $themes = [
-      'crisis-map' => ['primary' => 'red', 'secondary' => 'orange', 'neutral' => 'slate'],
-      'civic-report' => ['primary' => 'blue', 'secondary' => 'cyan', 'neutral' => 'slate'],
-      'safe-routes' => ['primary' => 'amber', 'secondary' => 'orange', 'neutral' => 'stone'],
-      'access-map' => ['primary' => 'violet', 'secondary' => 'purple', 'neutral' => 'slate'],
-      'climate-watch' => ['primary' => 'orange', 'secondary' => 'amber', 'neutral' => 'stone'],
-      'trail-watch' => ['primary' => 'green', 'secondary' => 'emerald', 'neutral' => 'stone'],
-      'eco-map' => ['primary' => 'emerald', 'secondary' => 'teal', 'neutral' => 'slate'],
-      'neighbourhood' => ['primary' => 'cyan', 'secondary' => 'sky', 'neutral' => 'slate'],
-      'construction-watch' => ['primary' => 'yellow', 'secondary' => 'amber', 'neutral' => 'stone'],
+  private function buildBoundaryJson(mixed $boundary, string $name): ?string {
+    if (!is_array($boundary) || !in_array($boundary['type'] ?? '', ['Polygon', 'MultiPolygon'], TRUE)) {
+      return NULL;
+    }
+
+    $feature = [
+      'type' => 'FeatureCollection',
+      'features' => [
+        [
+          'type' => 'Feature',
+          'properties' => ['name' => $name],
+          'geometry' => $boundary,
+        ],
+      ],
     ];
 
-    return $themes[$template] ?? $themes['civic-report'];
+    return json_encode($feature, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   }
 
-  /**
-   * Create default status terms for a jurisdiction with translations.
-   */
-  private function createStatusTerms($termStorage, int $groupId, string $defaultLang, array $languages): void {
+  private function createStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $languages): void {
     $weight = 0;
     foreach (self::DEFAULT_STATUSES as $status) {
       $defaultName = $status['name'][$defaultLang] ?? $status['name']['en'];
@@ -352,7 +405,6 @@ class FastMapWorkspaceController extends ControllerBase {
       ]);
       $term->save();
 
-      // Add translations for other languages.
       foreach ($languages as $lang) {
         if ($lang === $defaultLang) {
           continue;
@@ -367,27 +419,15 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
-   * Create category terms for a jurisdiction with translations.
-   *
-   * @param mixed $termStorage
-   *   The taxonomy term storage.
-   * @param int $groupId
-   *   The jurisdiction group ID.
-   * @param array $multilingualCategories
-   *   Categories keyed by language: ['en' => [...], 'de' => [...]].
-   * @param string $defaultLang
-   *   The default language code.
-   *
    * @return int[]
-   *   The created term IDs.
+   *   Created term IDs.
    */
-  private function createCategoryTerms($termStorage, int $groupId, array $multilingualCategories, string $defaultLang): array {
+  private function createCategoryTerms(EntityStorageInterface $termStorage, int $groupId, array $multilingualCategories, string $defaultLang): array {
     $termIds = [];
     $weight = 0;
     $defaultCategories = $multilingualCategories[$defaultLang];
 
     foreach ($defaultCategories as $index => $categoryName) {
-      // Use English name for icon guessing (more keywords match).
       $enName = $multilingualCategories['en'][$index] ?? $categoryName;
       $icon = $this->guessIcon($enName);
       $color = self::CATEGORY_COLORS[$index % count(self::CATEGORY_COLORS)];
@@ -406,7 +446,6 @@ class FastMapWorkspaceController extends ControllerBase {
       $term->save();
       $termIds[] = (int) $term->id();
 
-      // Add translations for other languages.
       foreach ($multilingualCategories as $lang => $langCategories) {
         if ($lang === $defaultLang) {
           continue;
@@ -430,25 +469,20 @@ class FastMapWorkspaceController extends ControllerBase {
    * - ['Cat A', 'Cat B'] (legacy, treated as 'en')
    *
    * @return array<string, string[]>
-   *   Validated multilingual categories.
    */
   private function normalizeCategories(array $categories): array {
-    // Check if it's a legacy flat array (string values at top level).
     $firstValue = reset($categories);
     if (is_string($firstValue)) {
-      // Legacy format: flat string array -> wrap as 'en'.
       $valid = array_filter($categories, fn($c) => is_string($c) && trim($c) !== '');
       $valid = array_map(fn($c) => mb_substr(trim($c), 0, 255), $valid);
       return $valid ? ['en' => array_values($valid)] : [];
     }
 
-    // Multilingual format: Record<lang, string[]>.
     $result = [];
     foreach ($categories as $lang => $names) {
       if (!is_string($lang) || !is_array($names)) {
         continue;
       }
-      // Only allow known language codes.
       if (!preg_match('/^[a-z]{2}(-[a-z]{2})?$/', $lang)) {
         continue;
       }
@@ -466,9 +500,6 @@ class FastMapWorkspaceController extends ControllerBase {
     return $result;
   }
 
-  /**
-   * Guess an icon for a category name based on keyword matching.
-   */
   private function guessIcon(string $categoryName): string {
     $lower = strtolower($categoryName);
     foreach (self::CATEGORY_ICONS as $keyword => $icon) {
@@ -477,6 +508,52 @@ class FastMapWorkspaceController extends ControllerBase {
       }
     }
     return 'i-lucide-circle-dot';
+  }
+
+  private function createTenantAdmin(string $email, string $workspaceName): UserInterface {
+    $userStorage = $this->entityTypeManager->getStorage('user');
+
+    // Check if user already exists.
+    $existing = $userStorage->loadByProperties(['mail' => $email]);
+    if (!empty($existing)) {
+      // Reuse existing account. Group-scoped permissions come from the
+      // jur-tenant_admin group role on the membership, so no global Drupal
+      // role is needed. This avoids privilege escalation across workspaces.
+      return reset($existing);
+    }
+
+    $user = $userStorage->create([
+      'name' => $email,
+      'mail' => $email,
+      'status' => 1,
+    ]);
+    $user->save();
+
+    $this->logger->info('Created tenant admin @email for workspace @name', [
+      '@email' => $email,
+      '@name' => $workspaceName,
+    ]);
+
+    return $user;
+  }
+
+  private function addGroupMembership(GroupInterface $group, UserInterface $user): void {
+    $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');
+
+    // Check for existing membership.
+    $existing = $relationshipStorage->loadByProperties([
+      'gid' => $group->id(),
+      'entity_id' => $user->id(),
+      'plugin_id' => 'group_membership',
+    ]);
+
+    if (!empty($existing)) {
+      return;
+    }
+
+    $membership = $group->addRelationship($user, 'group_membership');
+    $membership->set('group_roles', ['jur-tenant_admin']);
+    $membership->save();
   }
 
 }
