@@ -57,7 +57,7 @@ class FastMapWorkspaceController extends ControllerBase {
     // Validate service key.
     $config = $this->config('markaspot_fastmap.settings');
     $expectedKey = $config->get('service_key');
-    $apiKey = $data['api_key'] ?? $request->query->get('api_key');
+    $apiKey = $data['service_key'] ?? $request->query->get('service_key');
     if (!$expectedKey || !$apiKey || !hash_equals($expectedKey, (string) $apiKey)) {
       return new JsonResponse(['error' => 'Invalid API key'], 403);
     }
