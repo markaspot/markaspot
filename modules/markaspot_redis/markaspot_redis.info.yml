@@ -1,0 +1,5 @@
+name: 'Mark-a-Spot Redis'
+type: module
+description: 'Optional Redis cache backend for Mark-a-Spot. Provides status page diagnostics.'
+package: 'Mark-a-Spot'
+core_version_requirement: ^11

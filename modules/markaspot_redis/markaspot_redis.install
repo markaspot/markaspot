@@ -1,0 +1,89 @@
+<?php
+
+/**
+ * @file
+ * Install/requirements for Mark-a-Spot Redis.
+ */
+
+use Drupal\Core\Site\Settings;
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_redis_requirements($phase) {
+  $requirements = [];
+
+  if ($phase === 'runtime') {
+    // Check PhpRedis extension.
+    $has_extension = extension_loaded('redis');
+    $requirements['markaspot_redis_extension'] = [
+      'title' => t('Redis PHP extension'),
+      'value' => $has_extension ? t('Installed (PhpRedis)') : t('Not installed'),
+      'severity' => $has_extension ? REQUIREMENT_OK : REQUIREMENT_WARNING,
+    ];
+
+    // Check Redis connectivity.
+    if ($has_extension) {
+      $connection = Settings::get('redis.connection', []);
+      $host = $connection['host'] ?? NULL;
+      $port = $connection['port'] ?? 6379;
+
+      if ($host) {
+        try {
+          $redis = new \Redis();
+          $connected = @$redis->connect($host, (int) $port, 2.0);
+          if ($connected && $redis->ping()) {
+            $info = $redis->info();
+            $redis->close();
+            $requirements['markaspot_redis_connection'] = [
+              'title' => t('Redis connection'),
+              'value' => t('Connected to @host:@port (v@version, @memory used)', [
+                '@host' => $host,
+                '@port' => $port,
+                '@version' => $info['redis_version'] ?? 'unknown',
+                '@memory' => $info['used_memory_human'] ?? 'unknown',
+              ]),
+              'severity' => REQUIREMENT_OK,
+            ];
+          }
+          else {
+            $requirements['markaspot_redis_connection'] = [
+              'title' => t('Redis connection'),
+              'value' => t('Failed to connect to @host:@port', [
+                '@host' => $host,
+                '@port' => $port,
+              ]),
+              'severity' => REQUIREMENT_ERROR,
+            ];
+          }
+        }
+        catch (\Exception $e) {
+          $requirements['markaspot_redis_connection'] = [
+            'title' => t('Redis connection'),
+            'value' => t('Connection error: @message', ['@message' => $e->getMessage()]),
+            'severity' => REQUIREMENT_ERROR,
+          ];
+        }
+      }
+      else {
+        $requirements['markaspot_redis_connection'] = [
+          'title' => t('Redis connection'),
+          'value' => t('Not configured (set REDIS_HOST environment variable)'),
+          'severity' => REQUIREMENT_INFO,
+        ];
+      }
+
+      // Check if Redis is active as cache backend.
+      $cache_settings = Settings::get('cache', []);
+      $default_backend = $cache_settings['default'] ?? 'cache.backend.database';
+      $is_redis_backend = ($default_backend === 'cache.backend.redis');
+      $requirements['markaspot_redis_backend'] = [
+        'title' => t('Redis cache backend'),
+        'value' => $is_redis_backend ? t('Active (default cache backend)') : t('Inactive (using @backend)', ['@backend' => $default_backend]),
+        'severity' => $is_redis_backend ? REQUIREMENT_OK : REQUIREMENT_INFO,
+      ];
+    }
+  }
+
+  return $requirements;
+}

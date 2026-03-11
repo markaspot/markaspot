@@ -61,6 +61,9 @@
         "drupal/shs": "^3",
         "drupal/json_form_widget": "^1"
     },
+    "suggest": {
+        "drupal/redis": "Optional Redis cache backend for improved performance"
+    },
     "minimum-stability": "dev",
     "prefer-stable": true,
     "extra": {
