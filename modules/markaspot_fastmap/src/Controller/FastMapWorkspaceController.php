@@ -12,7 +12,7 @@ use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\RedirectResponse;
+use Drupal\Core\Routing\TrustedRedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -179,7 +179,7 @@ class FastMapWorkspaceController extends ControllerBase {
    *
    * Looks up the pending record, provisions the workspace, then redirects.
    */
-  public function verifyWorkspace(string $token): JsonResponse|RedirectResponse {
+  public function verifyWorkspace(string $token): JsonResponse|TrustedRedirectResponse {
     $record = $this->database->select('markaspot_fastmap_pending', 'p')
       ->fields('p')
       ->condition('token', $token)
@@ -224,8 +224,12 @@ class FastMapWorkspaceController extends ControllerBase {
       // Redirect to workspace dashboard or return JSON.
       $baseUrl = $config->get('workspace_base_url');
       if ($baseUrl) {
-        $redirectUrl = str_replace('{slug}', $result['slug'], $baseUrl);
-        return new RedirectResponse($redirectUrl);
+        $redirectUrl = str_replace(
+          ['{slug}', '{id}'],
+          [$result['slug'], $result['group_id']],
+          $baseUrl
+        );
+        return new TrustedRedirectResponse($redirectUrl);
       }
 
       return new JsonResponse([
