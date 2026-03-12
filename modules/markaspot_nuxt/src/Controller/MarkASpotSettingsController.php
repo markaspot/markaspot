@@ -456,6 +456,9 @@ class MarkASpotSettingsController extends ControllerBase {
       'taxonomy_term_list:service_status',
     ]);
 
+    // Allow other modules to alter the settings before response.
+    $this->moduleHandler()->alter('markaspot_nuxt_settings', $settings, $group);
+
     // Return the configuration as a cacheable JSON response.
     $response = new CacheableJsonResponse($settings);
     $response->addCacheableDependency($cache_metadata);
