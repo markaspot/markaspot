@@ -151,3 +151,84 @@ function markaspot_fastmap_update_11900(): void {
     }
   }
 }
+
+/**
+ * Add field_visibility to jur group type for workspace access control.
+ */
+function markaspot_fastmap_update_11901(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_fastmap');
+  $fsc = $etm->getStorage('field_storage_config');
+  $fc = $etm->getStorage('field_config');
+
+  // Create field storage.
+  if (!$fsc->load('group.field_visibility')) {
+    $fsc->create([
+      'field_name' => 'field_visibility',
+      'entity_type' => 'group',
+      'type' => 'list_string',
+      'module' => 'options',
+      'cardinality' => 1,
+      'settings' => [
+        'allowed_values' => [
+          'public' => 'Public',
+          'submission_only' => 'Submission Only',
+          'authenticated' => 'Authenticated',
+        ],
+        'allowed_values_function' => '',
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'custom',
+        ],
+      ],
+    ])->save();
+    $logger->info('Created field storage: group.field_visibility');
+  }
+
+  // Create field instance on jur bundle.
+  if (!$fc->load('group.jur.field_visibility')) {
+    $storage = $fsc->load('group.field_visibility');
+    if ($storage) {
+      $fc->create([
+        'field_storage' => $storage,
+        'bundle' => 'jur',
+        'entity_type' => 'group',
+        'field_name' => 'field_visibility',
+        'label' => 'Visibility',
+        'description' => 'Controls anonymous access to this workspace.',
+        'required' => FALSE,
+        'translatable' => FALSE,
+        'default_value' => [['value' => 'public']],
+      ])->save();
+      $logger->info('Created field instance: group.jur.field_visibility');
+    }
+  }
+
+  // Add to form display.
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('group.jur.default');
+  if ($form_display && !$form_display->getComponent('field_visibility')) {
+    $form_display->setComponent('field_visibility', [
+      'type' => 'options_select',
+      'weight' => 2,
+      'region' => 'content',
+      'settings' => [],
+    ]);
+    $form_display->save();
+  }
+
+  // Backfill existing jurisdictions with 'public'.
+  $group_storage = $etm->getStorage('group');
+  $ids = $group_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->execute();
+
+  foreach ($group_storage->loadMultiple($ids) as $group) {
+    if ($group->hasField('field_visibility') && $group->get('field_visibility')->isEmpty()) {
+      $group->set('field_visibility', 'public');
+      $group->save();
+    }
+  }
+}

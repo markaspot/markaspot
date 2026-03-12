@@ -116,6 +116,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
   protected $flood;
 
   /**
+   * The workspace visibility service (optional, from markaspot_fastmap).
+   *
+   * @var object|null
+   */
+  protected $workspaceVisibility;
+
+  /**
    * Rate limit: max requests per window for regular users.
    */
   protected const RATE_LIMIT_THRESHOLD = 60;
@@ -175,6 +182,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   The flood service for rate limiting.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
    *   The jurisdiction hierarchy resolver.
+   * @param object|null $workspace_visibility
+   *   The workspace visibility service (optional).
    */
   public function __construct(
     array $configuration,
@@ -193,6 +202,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     SearchApiQueryService $search_api_query_service,
     FloodInterface $flood,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
+    ?object $workspace_visibility = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -205,6 +215,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $this->searchApiQueryService = $search_api_query_service;
     $this->flood = $flood;
     $this->hierarchyResolver = $hierarchy_resolver;
+    $this->workspaceVisibility = $workspace_visibility;
   }
 
   /**
@@ -227,7 +238,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $container->get('language_manager'),
       $container->get('markaspot_open311.search_api_query'),
       $container->get('flood'),
-      $container->get('markaspot_group.hierarchy_resolver')
+      $container->get('markaspot_group.hierarchy_resolver'),
+      $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL
     );
   }
 
@@ -367,6 +379,14 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
     // Start with the secure base query from the processor service.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
+
+    // Workspace visibility enforcement: block anonymous GET for restricted workspaces.
+    $jurisdictionId = $parameters['jurisdiction_id'] ?? NULL;
+    if ($jurisdictionId && $this->workspaceVisibility && $this->currentUser->isAnonymous()) {
+      if (!$this->workspaceVisibility->canAnonymousView((int) $jurisdictionId)) {
+        throw new GeoreportException('Authentication required to view this workspace.', 403);
+      }
+    }
 
     // Apply common filters.
     $bundle = $this->config->get('bundle') ?? 'service_request';
@@ -645,6 +665,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
       // Validate jurisdiction access for authenticated API users.
       $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
       $this->georeportProcessor->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
+
+      // Workspace visibility enforcement: block anonymous POST for authenticated-only workspaces.
+      if ($jurisdictionId && $this->workspaceVisibility && $this->currentUser->isAnonymous()) {
+        if (!$this->workspaceVisibility->canAnonymousSubmit($jurisdictionId)) {
+          throw new GeoreportException('Authentication required to submit to this workspace.', 403);
+        }
+      }
 
       // Return result to handler for formatting and response.
       return $this->createNode($request_data);

@@ -54,4 +54,12 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
   if ($group && $group->hasField('field_tier') && !$group->get('field_tier')->isEmpty()) {
     $settings['jurisdiction']['tier'] = $group->get('field_tier')->value;
   }
+
+  // Workspace visibility (public, submission_only, authenticated).
+  if ($group && $group->hasField('field_visibility') && !$group->get('field_visibility')->isEmpty()) {
+    $settings['jurisdiction']['visibility'] = $group->get('field_visibility')->value;
+  }
+  else {
+    $settings['jurisdiction']['visibility'] = 'public';
+  }
 }
