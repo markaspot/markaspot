@@ -7,6 +7,45 @@ declare(strict_types=1);
  * Hook implementations for markaspot_fastmap.
  */
 
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_node_access().
+ *
+ * Enforces workspace visibility for all node access (JSON:API, REST, Views).
+ * Anonymous users are denied view access to nodes in restricted jurisdictions.
+ */
+function markaspot_fastmap_node_access(NodeInterface $node, string $op, AccountInterface $account): AccessResult {
+  // Only gate view operations for anonymous users.
+  if ($op !== 'view' || !$account->isAnonymous()) {
+    return AccessResult::neutral();
+  }
+
+  // Only gate nodes that belong to a jurisdiction.
+  if (!$node->hasField('field_jurisdiction') || $node->get('field_jurisdiction')->isEmpty()) {
+    return AccessResult::neutral();
+  }
+
+  $jurisdictionId = (int) $node->get('field_jurisdiction')->target_id;
+  if (!$jurisdictionId) {
+    return AccessResult::neutral();
+  }
+
+  /** @var \Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService $service */
+  $service = \Drupal::service('markaspot_fastmap.workspace_visibility');
+  if (!$service->canAnonymousView($jurisdictionId)) {
+    return AccessResult::forbidden('Workspace requires authentication for viewing.')
+      ->addCacheContexts(['user.roles:anonymous'])
+      ->addCacheTags(['group:' . $jurisdictionId]);
+  }
+
+  return AccessResult::neutral()
+    ->addCacheContexts(['user.roles:anonymous'])
+    ->addCacheTags(['group:' . $jurisdictionId]);
+}
+
 /**
  * Implements hook_mail().
  */
@@ -36,6 +75,18 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
 
   $message['subject'] = strtr($mail_config['subject'], $replacements);
   $message['body'][] = strtr($mail_config['body'], $replacements);
+}
+
+/**
+ * Implements hook_entity_update().
+ *
+ * Invalidates the workspace visibility static cache when a group is saved,
+ * ensuring visibility changes take effect immediately within the same request.
+ */
+function markaspot_fastmap_entity_update(\Drupal\Core\Entity\EntityInterface $entity): void {
+  if ($entity->getEntityTypeId() === 'group') {
+    \Drupal::service('markaspot_fastmap.workspace_visibility')->resetCache();
+  }
 }
 
 /**
