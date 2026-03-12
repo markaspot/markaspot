@@ -37,3 +37,12 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
   $message['subject'] = strtr($mail_config['subject'], $replacements);
   $message['body'][] = strtr($mail_config['body'], $replacements);
 }
+
+/**
+ * Implements hook_markaspot_nuxt_settings_alter().
+ */
+function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $group): void {
+  if ($group && $group->hasField('field_tier') && !$group->get('field_tier')->isEmpty()) {
+    $settings['jurisdiction']['tier'] = $group->get('field_tier')->value;
+  }
+}
