@@ -216,6 +216,9 @@ class MarkASpotSettingsController extends ControllerBase {
           'slug' => $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()
             ? $group->get('field_slug')->value
             : NULL,
+          'tier' => $group->hasField('field_tier') && !$group->get('field_tier')->isEmpty()
+            ? $group->get('field_tier')->value
+            : 'free',
           'taxonomyJurisdictionId' => $taxonomyJurisdictionId,
         ];
 

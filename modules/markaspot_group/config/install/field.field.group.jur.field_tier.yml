@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_tier
+    - group.type.jur
+  module:
+    - options
+id: group.jur.field_tier
+field_name: field_tier
+entity_type: group
+bundle: jur
+label: Tier
+description: 'SaaS subscription tier. Controls feature availability in the dashboard.'
+required: false
+translatable: false
+default_value:
+  -
+    value: free
+default_value_callback: ''
+settings: {  }
+field_type: list_string

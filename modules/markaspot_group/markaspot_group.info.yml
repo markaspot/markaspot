@@ -10,4 +10,5 @@ dependencies:
   - gnode
   - drupal:user
   - drupal:node
+  - field_permissions:field_permissions
   - markaspot_validation
