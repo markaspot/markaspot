@@ -765,7 +765,6 @@ function markaspot_update_11900() {
 
   // Step 4: Set field_open311_mapping on existing service_status terms.
   $config = \Drupal::config('markaspot_open311.settings');
-  $status_open = array_values($config->get('status_open') ?: []);
   $status_closed = array_values($config->get('status_closed') ?: []);
   $status_start = $config->get('status_open_start');
 

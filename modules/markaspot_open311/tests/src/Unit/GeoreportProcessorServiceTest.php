@@ -141,8 +141,26 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         ['bundle', 'service_request'],
         ['group_filter_enabled', FALSE],
         ['jurisdiction_group_type', 'jur'],
-        ['field_access', ['manager_fields' => ['field_hazard_level', 'field_sentiment', 'field_ai_hazard_category', 'field_organisation']]],
-        ['field_access.manager_fields', ['field_hazard_level', 'field_sentiment', 'field_ai_hazard_category', 'field_organisation']],
+        [
+          'field_access',
+          [
+            'manager_fields' => [
+              'field_hazard_level',
+              'field_sentiment',
+              'field_ai_hazard_category',
+              'field_organisation',
+            ],
+          ],
+        ],
+        [
+          'field_access.manager_fields',
+          [
+            'field_hazard_level',
+            'field_sentiment',
+            'field_ai_hazard_category',
+            'field_organisation',
+          ],
+        ],
       ]);
     $this->configFactory->method('get')
       ->with('markaspot_open311.settings')
@@ -487,7 +505,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $anon->method('hasPermission')->willReturn(FALSE);
     $anon->method('id')->willReturn(0);
 
-    $result = $this->processor->createNodeQuery([], $anon);
+    $this->processor->createNodeQuery([], $anon);
 
     // Should have type=service_request and status=1 conditions.
     $fieldNames = array_column($conditions, 'field');
@@ -561,34 +579,47 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   public function testGetJurisdictionIdFromNodeWithCategory(): void {
     // Use anonymous classes to provide target_id and entity as real properties.
     // PHPUnit mocks of interfaces don't support dynamic properties in PHP 8.2+.
-    $jurisdictionField = new class {
-      public int $target_id = 42;
+    $jurisdictionField = new class() {
 
       /**
-       *
+       * The target entity ID.
+       */
+      public int $targetId = 42;
+
+      /**
+       * Checks if the field is empty.
        */
       public function isEmpty(): bool {
         return FALSE;
       }
 
     };
+    // Map target_id property for compatibility.
+    $jurisdictionField->target_id = 42;
 
     $categoryTerm = new class($jurisdictionField) {
+
+      /**
+       * The jurisdiction field reference.
+       */
       private object $jurisdictionField;
 
+      /**
+       * Constructs the category term stub.
+       */
       public function __construct(object $jurisdictionField) {
         $this->jurisdictionField = $jurisdictionField;
       }
 
       /**
-       *
+       * Checks if a field exists.
        */
       public function hasField(string $name): bool {
         return $name === 'field_jurisdiction';
       }
 
       /**
-       *
+       * Gets a field value.
        */
       public function get(string $name): object {
         return $this->jurisdictionField;
@@ -597,14 +628,21 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     };
 
     $categoryField = new class($categoryTerm) {
+
+      /**
+       * The referenced entity.
+       */
       public object $entity;
 
+      /**
+       * Constructs the category field stub.
+       */
       public function __construct(object $entity) {
         $this->entity = $entity;
       }
 
       /**
-       *
+       * Checks if the field is empty.
        */
       public function isEmpty(): bool {
         return FALSE;

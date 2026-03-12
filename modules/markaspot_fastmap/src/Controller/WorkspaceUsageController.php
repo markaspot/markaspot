@@ -20,6 +20,11 @@ use Symfony\Component\HttpFoundation\JsonResponse;
  */
 class WorkspaceUsageController extends ControllerBase {
 
+  /**
+   * The tier configuration service.
+   *
+   * @var \Drupal\markaspot_fastmap\Service\TierConfigService
+   */
   protected TierConfigService $tierConfig;
 
   /**

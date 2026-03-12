@@ -463,7 +463,7 @@ class EmbeddingService {
       $results = $query->execute()->fetchAllAssoc('entity_id', \PDO::FETCH_ASSOC);
 
       // Decode vectors.
-      foreach ($results as $entity_id => &$row) {
+      foreach ($results as &$row) {
         $row['vector'] = json_decode($row['embedding'], TRUE);
         unset($row['embedding']);
       }

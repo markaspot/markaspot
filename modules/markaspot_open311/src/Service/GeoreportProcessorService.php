@@ -455,7 +455,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
       if (empty($filtered)) {
         unset($attributes[$code]);
-      } else {
+      }
+      else {
         $attributes[$code] = count($filtered) === 1 ? $filtered[0] : $filtered;
       }
     }
@@ -2562,9 +2563,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       \Drupal::service('file_system')->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
 
       foreach ($urls as $url) {
-        // Destroy the client after use.
-        unset($client);
-
         $destination = $directoryPath . basename($url);
 
         if (strstr($url, 'http')) {

@@ -4,11 +4,13 @@
  * @file
  * Integration tests for multi-tenant jurisdiction isolation.
  *
- * Run: ddev drush php:script scripts/test-multi-tenant.php
+ * Run: ddev drush php:script scripts/test-multi-tenant.php.
  *
  * Auto-discovers all jurisdictions and tests isolation between ALL of them.
  * Works with any number of jurisdictions and any city data.
  */
+
+use Drupal\markaspot_tenant_admin\TenantAdminHelper;
 
 // ---------------------------------------------------------------------------
 // Test framework
@@ -16,10 +18,16 @@
 
 $GLOBALS['_test'] = ['pass' => 0, 'fail' => 0, 'skip' => 0];
 
+/**
+ * Prints a test group header.
+ */
 function test_group(string $name): void {
   echo "\n\033[1;36m━━━ $name ━━━\033[0m\n";
 }
 
+/**
+ * Asserts that a condition is true.
+ */
 function assert_true(bool $condition, string $message): void {
   if ($condition) {
     $GLOBALS['_test']['pass']++;
@@ -31,6 +39,9 @@ function assert_true(bool $condition, string $message): void {
   }
 }
 
+/**
+ * Asserts that two values are strictly equal.
+ */
 function assert_equal($expected, $actual, string $message): void {
   if ($expected === $actual) {
     assert_true(TRUE, $message);
@@ -40,10 +51,16 @@ function assert_equal($expected, $actual, string $message): void {
   }
 }
 
+/**
+ * Asserts that a value is greater than a minimum.
+ */
 function assert_gt(int $min, int $actual, string $message): void {
   assert_true($actual > $min, "$message (expected > $min, got: $actual)");
 }
 
+/**
+ * Records a skipped test with a message.
+ */
 function skip_test(string $message): void {
   $GLOBALS['_test']['skip']++;
   echo "  \033[33m⊘ SKIP:\033[0m $message\n";
@@ -73,8 +90,16 @@ $statN = count($all_stat);
 
 foreach ($groups as $gid => $group) {
   $id = (int) $gid;
-  $cats = $etm->getStorage('taxonomy_term')->loadByProperties(['vid' => 'service_category', 'status' => 1, 'field_jurisdiction' => $id]);
-  $stats = $etm->getStorage('taxonomy_term')->loadByProperties(['vid' => 'service_status', 'status' => 1, 'field_jurisdiction' => $id]);
+  $cats = $etm->getStorage('taxonomy_term')->loadByProperties([
+    'vid' => 'service_category',
+    'status' => 1,
+    'field_jurisdiction' => $id,
+  ]);
+  $stats = $etm->getStorage('taxonomy_term')->loadByProperties([
+    'vid' => 'service_status',
+    'status' => 1,
+    'field_jurisdiction' => $id,
+  ]);
   $jurs[$id] = [
     'group' => $group,
     'label' => $group->label(),
@@ -104,7 +129,8 @@ echo "  Sum: $catSum categories" . ($catSum === $catN ? ' (matches total)' : " (
 // Child jurisdictions (with field_parent_jurisdiction) have 0 own terms
 // and inherit from the root parent.
 // ---------------------------------------------------------------------------
-$parent_of = [];  // child_id => parent_id
+// Map of child_id => parent_id.
+$parent_of = [];
 if (\Drupal::database()->schema()->tableExists('group__field_parent_jurisdiction')) {
   $prows = \Drupal::database()->select('group__field_parent_jurisdiction', 'p')
     ->fields('p', ['entity_id', 'field_parent_jurisdiction_target_id'])
@@ -122,7 +148,9 @@ if (\Drupal::database()->schema()->tableExists('group__field_parent_jurisdiction
 $resolve_root = function (int $id) use ($parent_of): int {
   $visited = [];
   while (isset($parent_of[$id])) {
-    if (in_array($id, $visited)) break;
+    if (in_array($id, $visited)) {
+      break;
+    }
     $visited[] = $id;
     $id = $parent_of[$id];
   }
@@ -149,7 +177,11 @@ test_group('1. Category Taxonomy Isolation');
 
 // Each jurisdiction returns expected count.
 foreach ($jurs as $id => $j) {
-  $loaded = $etm->getStorage('taxonomy_term')->loadByProperties(['vid' => 'service_category', 'status' => 1, 'field_jurisdiction' => $id]);
+  $loaded = $etm->getStorage('taxonomy_term')->loadByProperties([
+    'vid' => 'service_category',
+    'status' => 1,
+    'field_jurisdiction' => $id,
+  ]);
   assert_equal($j['catCount'], count($loaded), "{$j['label']} (ID=$id): {$j['catCount']} categories");
 }
 
@@ -157,7 +189,8 @@ foreach ($jurs as $id => $j) {
 $ids = array_keys($jurs);
 for ($i = 0; $i < count($ids); $i++) {
   for ($k = $i + 1; $k < count($ids); $k++) {
-    $a = $ids[$i]; $b = $ids[$k];
+    $a = $ids[$i];
+    $b = $ids[$k];
     $overlap = array_intersect($jurs[$a]['catTids'], $jurs[$b]['catTids']);
     assert_equal(0, count($overlap), "No category overlap: {$jurs[$a]['label']} vs {$jurs[$b]['label']}");
   }
@@ -189,7 +222,8 @@ foreach ($jurs as $id => $j) {
 // Pairwise overlap: skip parent-child pairs (they share taxonomy by design).
 for ($i = 0; $i < count($ids); $i++) {
   for ($k = $i + 1; $k < count($ids); $k++) {
-    $a = $ids[$i]; $b = $ids[$k];
+    $a = $ids[$i];
+    $b = $ids[$k];
     if ($resolve_root($a) === $resolve_root($b)) {
       assert_true(TRUE, "Status: {$jurs[$a]['label']} and {$jurs[$b]['label']} share taxonomy (parent-child)");
       continue;
@@ -207,7 +241,10 @@ test_group('3. Translation Support');
 
 $test_lang = NULL;
 foreach (['nl', 'de', 'fr', 'es'] as $l) {
-  if (in_array($l, $langs) && $l !== 'en') { $test_lang = $l; break; }
+  if (in_array($l, $langs) && $l !== 'en') {
+    $test_lang = $l;
+    break;
+  }
 }
 
 if (!$test_lang) {
@@ -217,8 +254,14 @@ else {
   // Test translation for each jurisdiction's first category.
   foreach ($jurs as $id => $j) {
     $sample = reset($j['cats']);
-    if (!$sample) { skip_test("{$j['label']}: no categories"); continue; }
-    if (!$sample->hasTranslation($test_lang)) { skip_test("{$j['label']}: '{$sample->label()}' has no $test_lang translation"); continue; }
+    if (!$sample) {
+      skip_test("{$j['label']}: no categories");
+      continue;
+    }
+    if (!$sample->hasTranslation($test_lang)) {
+      skip_test("{$j['label']}: '{$sample->label()}' has no $test_lang translation");
+      continue;
+    }
     $en = $sample->label();
     $tr = $sample->getTranslation($test_lang)->label();
     assert_true($en !== $tr, "{$j['label']}: '$en' -> '$tr' ($test_lang)");
@@ -256,7 +299,8 @@ foreach ($jurs as $id => $j) {
 // Pairwise service_code isolation: skip parent-child pairs (they share taxonomy).
 for ($i = 0; $i < count($ids); $i++) {
   for ($k = $i + 1; $k < count($ids); $k++) {
-    $a = $ids[$i]; $b = $ids[$k];
+    $a = $ids[$i];
+    $b = $ids[$k];
     if ($resolve_root($a) === $resolve_root($b)) {
       assert_true(TRUE, "Services: {$jurs[$a]['label']} and {$jurs[$b]['label']} share taxonomy (parent-child)");
       continue;
@@ -339,7 +383,9 @@ foreach ($jurs as $id => $j) {
 
   $set = json_decode($rS->getBody()->getContents(), TRUE);
   $settings_by_jur[$id] = $set;
-  if (!$set) continue;
+  if (!$set) {
+    continue;
+  }
 
   $set_svc = $set['services'] ?? [];
   $set_stat = $set['statuses'] ?? [];
@@ -358,7 +404,8 @@ foreach ($jurs as $id => $j) {
 // Skip pairs where one is a child of the other (they share terms by design).
 for ($i = 0; $i < count($ids); $i++) {
   for ($k = $i + 1; $k < count($ids); $k++) {
-    $a = $ids[$i]; $b = $ids[$k];
+    $a = $ids[$i];
+    $b = $ids[$k];
     // If both resolve to the same root, they share taxonomy (parent-child pair).
     if ($resolve_root($a) === $resolve_root($b)) {
       assert_true(TRUE, "Settings: {$jurs[$a]['label']} and {$jurs[$b]['label']} share taxonomy (parent-child)");
@@ -405,7 +452,8 @@ else {
   }
   for ($i = 0; $i < count($ids); $i++) {
     for ($k = $i + 1; $k < count($ids); $k++) {
-      $a = $ids[$i]; $b = $ids[$k];
+      $a = $ids[$i];
+      $b = $ids[$k];
       $overlap = array_intersect($vision_tids_by_jur[$a], $vision_tids_by_jur[$b]);
       assert_equal(0, count($overlap), "Vision: no TID overlap {$jurs[$a]['label']} vs {$jurs[$b]['label']}");
     }
@@ -456,7 +504,10 @@ else {
   foreach ($jurs as $id => $j) {
     $g = $j['group'];
     $has_bnd = $g->hasField('field_boundary') && !$g->get('field_boundary')->isEmpty();
-    if (!$has_bnd) { skip_test("{$j['label']}: no boundary"); continue; }
+    if (!$has_bnd) {
+      skip_test("{$j['label']}: no boundary");
+      continue;
+    }
 
     $raw = strip_tags($g->get('field_boundary')->value);
     $bnd = $boundary_class::fromJson($raw);
@@ -476,7 +527,9 @@ else {
 
     foreach ($jurs as $id => $j) {
       $g = $j['group'];
-      if (!$g->hasField('field_boundary') || $g->get('field_boundary')->isEmpty()) continue;
+      if (!$g->hasField('field_boundary') || $g->get('field_boundary')->isEmpty()) {
+        continue;
+      }
       $loaded = $loadRef->invoke($validator, $id);
       assert_true($loaded !== NULL, "{$j['label']}: validator loads boundary");
     }
@@ -506,13 +559,23 @@ if (!\Drupal::moduleHandler()->moduleExists('markaspot_emergency')) {
 }
 else {
   $ec = 'Drupal\markaspot_emergency\Controller\EmergencyModeController';
-  if (!class_exists($ec)) { skip_test('Controller not found'); }
+  if (!class_exists($ec)) {
+    skip_test('Controller not found');
+  }
   else {
     $ctrl = \Drupal::classResolver()->getInstanceFromDefinition($ec);
 
     // Check method signatures.
-    foreach (['getRegularPublishedTermIds', 'unpublishRegularCategories', 'createEmergencyCategories', 'restoreRegularCategories'] as $m) {
-      if (!method_exists($ctrl, $m)) { skip_test("$m() not found"); continue; }
+    foreach ([
+      'getRegularPublishedTermIds',
+      'unpublishRegularCategories',
+      'createEmergencyCategories',
+      'restoreRegularCategories',
+    ] as $m) {
+      if (!method_exists($ctrl, $m)) {
+        skip_test("$m() not found");
+        continue;
+      }
       $params = array_map(fn($p) => $p->getName(), (new \ReflectionMethod($ctrl, $m))->getParameters());
       assert_true(in_array('jurisdictionId', $params), "Emergency $m() has jurisdictionId");
     }
@@ -669,14 +732,24 @@ else {
         $roles_changed = TRUE;
       }
     }
-    if ($roles_changed) $moderation->save();
+    if ($roles_changed) {
+      $moderation->save();
+    }
   }
   $test_users['moderation'] = $moderation;
 
   // --- Setup: API keys ---
   $api_keys = [
-    'test_editorial_key' => ['label' => 'Test Editorial Key', 'key' => 'test-editorial-key-2026', 'user' => $editorial],
-    'test_moderation_key' => ['label' => 'Test Moderation Key', 'key' => 'test-moderation-key-2026', 'user' => $moderation],
+    'test_editorial_key' => [
+      'label' => 'Test Editorial Key',
+      'key' => 'test-editorial-key-2026',
+      'user' => $editorial,
+    ],
+    'test_moderation_key' => [
+      'label' => 'Test Moderation Key',
+      'key' => 'test-moderation-key-2026',
+      'user' => $moderation,
+    ],
   ];
 
   foreach ($api_keys as $kid => $kd) {
@@ -712,14 +785,25 @@ else {
       // Resolve to first polygon's exterior ring [lng, lat] pairs.
       $ring = [];
       $geom = $geo;
-      if (($geom['type'] ?? '') === 'FeatureCollection') $geom = $geom['features'][0] ?? [];
-      if (($geom['type'] ?? '') === 'Feature') $geom = $geom['geometry'] ?? [];
-      if (($geom['type'] ?? '') === 'MultiPolygon') $ring = $geom['coordinates'][0][0] ?? [];
-      elseif (($geom['type'] ?? '') === 'Polygon') $ring = $geom['coordinates'][0] ?? [];
+      if (($geom['type'] ?? '') === 'FeatureCollection') {
+        $geom = $geom['features'][0] ?? [];
+      }
+      if (($geom['type'] ?? '') === 'Feature') {
+        $geom = $geom['geometry'] ?? [];
+      }
+      if (($geom['type'] ?? '') === 'MultiPolygon') {
+        $ring = $geom['coordinates'][0][0] ?? [];
+      }
+      elseif (($geom['type'] ?? '') === 'Polygon') {
+        $ring = $geom['coordinates'][0] ?? [];
+      }
 
       if (!empty($ring) && is_array($ring[0]) && is_float($ring[0][0] ?? NULL)) {
         $sum_lng = $sum_lat = 0;
-        foreach ($ring as $c) { $sum_lng += $c[0]; $sum_lat += $c[1]; }
+        foreach ($ring as $c) {
+          $sum_lng += $c[0];
+          $sum_lat += $c[1];
+        }
         $test_lng = $sum_lng / count($ring);
         $test_lat = $sum_lat / count($ring);
       }
@@ -859,7 +943,7 @@ else {
     );
 
     // Test 13b: TenantAdminHelper returns correct jurisdiction IDs.
-    $ta_jur_ids = \Drupal\markaspot_tenant_admin\TenantAdminHelper::getUserJurisdictionIds($ta_user);
+    $ta_jur_ids = TenantAdminHelper::getUserJurisdictionIds($ta_user);
     assert_true(
       !empty($ta_jur_ids),
       'TenantAdminHelper::getUserJurisdictionIds() returns non-empty (got: ' . implode(', ', $ta_jur_ids) . ')'
@@ -908,7 +992,7 @@ else {
     );
 
     // Test 13e: jur-tenant_admin group role exists and is individual scope.
-    $group_role_id = \Drupal\markaspot_tenant_admin\TenantAdminHelper::GROUP_ROLE_ID;
+    $group_role_id = TenantAdminHelper::GROUP_ROLE_ID;
     $group_role = $etm->getStorage('group_role')
       ->load($group_role_id);
     assert_true(
@@ -1078,7 +1162,8 @@ else {
   // Pairwise: different root jurisdictions return different counts (if they have different node counts).
   $root_list = array_values($root_ids);
   if (count($root_list) >= 2) {
-    $a = $root_list[0]; $b = $root_list[1];
+    $a = $root_list[0];
+    $b = $root_list[1];
     if ($node_counts_effective[$a] !== $node_counts_effective[$b]) {
       assert_true($status_totals[$a] !== $status_totals[$b],
         "Different jurisdictions return different totals ({$jurs[$a]['label']}: {$status_totals[$a]}, {$jurs[$b]['label']}: {$status_totals[$b]})");
@@ -1245,15 +1330,26 @@ else {
     if ($boundary_field && !$boundary_field->isEmpty()) {
       $geo = json_decode(strip_tags($boundary_field->value), TRUE);
       $geom = $geo;
-      if (($geom['type'] ?? '') === 'FeatureCollection') $geom = $geom['features'][0] ?? [];
-      if (($geom['type'] ?? '') === 'Feature') $geom = $geom['geometry'] ?? [];
+      if (($geom['type'] ?? '') === 'FeatureCollection') {
+        $geom = $geom['features'][0] ?? [];
+      }
+      if (($geom['type'] ?? '') === 'Feature') {
+        $geom = $geom['geometry'] ?? [];
+      }
       $ring = [];
-      if (($geom['type'] ?? '') === 'MultiPolygon') $ring = $geom['coordinates'][0][0] ?? [];
-      elseif (($geom['type'] ?? '') === 'Polygon') $ring = $geom['coordinates'][0] ?? [];
+      if (($geom['type'] ?? '') === 'MultiPolygon') {
+        $ring = $geom['coordinates'][0][0] ?? [];
+      }
+      elseif (($geom['type'] ?? '') === 'Polygon') {
+        $ring = $geom['coordinates'][0] ?? [];
+      }
 
       if (!empty($ring) && is_array($ring[0]) && is_float($ring[0][0] ?? NULL)) {
         $sum_lng = $sum_lat = 0;
-        foreach ($ring as $c) { $sum_lng += $c[0]; $sum_lat += $c[1]; }
+        foreach ($ring as $c) {
+          $sum_lng += $c[0];
+          $sum_lat += $c[1];
+        }
         $test_lng = $sum_lng / count($ring);
         $test_lat = $sum_lat / count($ring);
       }
@@ -1265,15 +1361,26 @@ else {
       if ($pbf && !$pbf->isEmpty()) {
         $geo = json_decode(strip_tags($pbf->value), TRUE);
         $geom = $geo;
-        if (($geom['type'] ?? '') === 'FeatureCollection') $geom = $geom['features'][0] ?? [];
-        if (($geom['type'] ?? '') === 'Feature') $geom = $geom['geometry'] ?? [];
+        if (($geom['type'] ?? '') === 'FeatureCollection') {
+          $geom = $geom['features'][0] ?? [];
+        }
+        if (($geom['type'] ?? '') === 'Feature') {
+          $geom = $geom['geometry'] ?? [];
+        }
         $ring = [];
-        if (($geom['type'] ?? '') === 'MultiPolygon') $ring = $geom['coordinates'][0][0] ?? [];
-        elseif (($geom['type'] ?? '') === 'Polygon') $ring = $geom['coordinates'][0] ?? [];
+        if (($geom['type'] ?? '') === 'MultiPolygon') {
+          $ring = $geom['coordinates'][0][0] ?? [];
+        }
+        elseif (($geom['type'] ?? '') === 'Polygon') {
+          $ring = $geom['coordinates'][0] ?? [];
+        }
 
         if (!empty($ring) && is_array($ring[0]) && is_float($ring[0][0] ?? NULL)) {
           $sum_lng = $sum_lat = 0;
-          foreach ($ring as $c) { $sum_lng += $c[0]; $sum_lat += $c[1]; }
+          foreach ($ring as $c) {
+            $sum_lng += $c[0];
+            $sum_lat += $c[1];
+          }
           $test_lng = $sum_lng / count($ring);
           $test_lat = $sum_lat / count($ring);
         }
@@ -1529,7 +1636,8 @@ $pct = $tested > 0 ? round($t['pass'] / $tested * 100) : 0;
 echo "\n\033[1m╔══════════════════════════════════════════════════════════╗\033[0m\n";
 if ($t['fail'] === 0) {
   echo "\033[1;32m║  ALL TESTS PASSED                                        ║\033[0m\n";
-} else {
+}
+else {
   echo "\033[1;31m║  SOME TESTS FAILED                                       ║\033[0m\n";
 }
 echo "\033[1m╚══════════════════════════════════════════════════════════╝\033[0m\n";

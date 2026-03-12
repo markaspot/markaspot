@@ -1320,7 +1320,7 @@ function markaspot_group_update_11906(): void {
  * - Earlier update hooks (11903-11905) failed because jur/org types did not
  *   exist yet
  * - field_nuxt_config and field_boundary were only in config/install YMLs,
- *   never created by any update hook
+ *   never created by any update hook.
  *
  * This hook is idempotent: it checks each entity before creating.
  */
@@ -1528,15 +1528,74 @@ function markaspot_group_update_11907(): void {
   }
 
   $display_components = [
-    'field_slug' => ['type' => 'string_textfield', 'weight' => 1, 'region' => 'content', 'settings' => ['size' => 60, 'placeholder' => 'stadt-osnabrueck']],
-    'field_parent_jurisdiction' => ['type' => 'entity_reference_autocomplete', 'weight' => 2, 'region' => 'content', 'settings' => ['match_operator' => 'CONTAINS', 'match_limit' => 10, 'size' => 60, 'placeholder' => '']],
-    'field_logo_light' => ['type' => 'file_generic', 'weight' => 3, 'region' => 'content', 'settings' => ['progress_indicator' => 'throbber']],
-    'field_logo_dark' => ['type' => 'file_generic', 'weight' => 4, 'region' => 'content', 'settings' => ['progress_indicator' => 'throbber']],
-    'field_custom_css' => ['type' => 'text_textarea', 'weight' => 5, 'region' => 'content', 'settings' => ['rows' => 5, 'placeholder' => '']],
-    'field_nuxt_config' => ['type' => 'nuxt_config_json_form', 'weight' => 6, 'region' => 'content', 'settings' => []],
-    'field_boundary' => ['type' => 'text_textarea', 'weight' => 7, 'region' => 'content', 'settings' => ['rows' => 5, 'placeholder' => 'GeoJSON FeatureCollection']],
-    'field_font_heading' => ['type' => 'file_generic', 'weight' => 10, 'region' => 'content', 'settings' => ['progress_indicator' => 'throbber']],
-    'field_font_body' => ['type' => 'file_generic', 'weight' => 11, 'region' => 'content', 'settings' => ['progress_indicator' => 'throbber']],
+    'field_slug' => [
+      'type' => 'string_textfield',
+      'weight' => 1,
+      'region' => 'content',
+      'settings' => [
+        'size' => 60,
+        'placeholder' => 'stadt-osnabrueck',
+      ],
+    ],
+    'field_parent_jurisdiction' => [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 2,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ],
+    'field_logo_light' => [
+      'type' => 'file_generic',
+      'weight' => 3,
+      'region' => 'content',
+      'settings' => ['progress_indicator' => 'throbber'],
+    ],
+    'field_logo_dark' => [
+      'type' => 'file_generic',
+      'weight' => 4,
+      'region' => 'content',
+      'settings' => ['progress_indicator' => 'throbber'],
+    ],
+    'field_custom_css' => [
+      'type' => 'text_textarea',
+      'weight' => 5,
+      'region' => 'content',
+      'settings' => [
+        'rows' => 5,
+        'placeholder' => '',
+      ],
+    ],
+    'field_nuxt_config' => [
+      'type' => 'nuxt_config_json_form',
+      'weight' => 6,
+      'region' => 'content',
+      'settings' => [],
+    ],
+    'field_boundary' => [
+      'type' => 'text_textarea',
+      'weight' => 7,
+      'region' => 'content',
+      'settings' => [
+        'rows' => 5,
+        'placeholder' => 'GeoJSON FeatureCollection',
+      ],
+    ],
+    'field_font_heading' => [
+      'type' => 'file_generic',
+      'weight' => 10,
+      'region' => 'content',
+      'settings' => ['progress_indicator' => 'throbber'],
+    ],
+    'field_font_body' => [
+      'type' => 'file_generic',
+      'weight' => 11,
+      'region' => 'content',
+      'settings' => ['progress_indicator' => 'throbber'],
+    ],
   ];
 
   foreach ($display_components as $field_name => $component) {
@@ -1549,12 +1608,61 @@ function markaspot_group_update_11907(): void {
   // --- 6. Ensure jur group roles exist ---
   $role_storage = $etm->getStorage('group_role');
   $roles = [
-    'jur-anonymous' => ['label' => 'Anonymous', 'scope' => 'outsider', 'global_role' => 'anonymous', 'permissions' => ['view group', 'view group_node:service_request entity']],
-    'jur-outsider' => ['label' => 'Outsider', 'scope' => 'outsider', 'global_role' => 'authenticated', 'permissions' => ['view group', 'view group_node:service_request entity']],
-    'jur-member' => ['label' => 'Member', 'scope' => 'individual', 'permissions' => ['view group', 'view group_node:service_request entity']],
-    'jur-moderator' => ['label' => 'Moderator', 'scope' => 'individual', 'permissions' => ['view group', 'view group_node:service_request entity', 'update any group_node:service_request entity']],
-    'jur-editorial' => ['label' => 'Editorial', 'scope' => 'individual', 'permissions' => ['view group', 'view group_node:service_request entity', 'update any group_node:service_request entity']],
-    'jur-admin' => ['label' => 'Admin', 'scope' => 'insider', 'global_role' => 'administrator', 'permissions' => ['administer group', 'view group', 'edit group', 'delete group']],
+    'jur-anonymous' => [
+      'label' => 'Anonymous',
+      'scope' => 'outsider',
+      'global_role' => 'anonymous',
+      'permissions' => [
+        'view group',
+        'view group_node:service_request entity',
+      ],
+    ],
+    'jur-outsider' => [
+      'label' => 'Outsider',
+      'scope' => 'outsider',
+      'global_role' => 'authenticated',
+      'permissions' => [
+        'view group',
+        'view group_node:service_request entity',
+      ],
+    ],
+    'jur-member' => [
+      'label' => 'Member',
+      'scope' => 'individual',
+      'permissions' => [
+        'view group',
+        'view group_node:service_request entity',
+      ],
+    ],
+    'jur-moderator' => [
+      'label' => 'Moderator',
+      'scope' => 'individual',
+      'permissions' => [
+        'view group',
+        'view group_node:service_request entity',
+        'update any group_node:service_request entity',
+      ],
+    ],
+    'jur-editorial' => [
+      'label' => 'Editorial',
+      'scope' => 'individual',
+      'permissions' => [
+        'view group',
+        'view group_node:service_request entity',
+        'update any group_node:service_request entity',
+      ],
+    ],
+    'jur-admin' => [
+      'label' => 'Admin',
+      'scope' => 'insider',
+      'global_role' => 'administrator',
+      'permissions' => [
+        'administer group',
+        'view group',
+        'edit group',
+        'delete group',
+      ],
+    ],
   ];
 
   foreach ($roles as $role_id => $role_def) {

@@ -78,6 +78,7 @@ class TierConfigService {
    * Gets all tier limits.
    *
    * @return array<string, array{limit: int, period: string}>
+   *   All tier limits keyed by tier name.
    */
   public function getAllLimits(): array {
     $config = $this->configFactory->get('markaspot_fastmap.settings');

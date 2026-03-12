@@ -119,9 +119,6 @@ class PublisherService implements PublisherServiceInterface {
 
       // Get threshold for manual unpublishing in seconds (from hours)
       $threshold_hours = (int) $config->get('manual_unpublish_threshold') ?: 6;
-      $threshold_seconds = $threshold_hours * 3600;
-      $manual_change_threshold = time() - $threshold_seconds;
-
       $query = $storage->getQuery()
         ->condition('field_category', $category_tid)
       // Use creation date instead of changed date.

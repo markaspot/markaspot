@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_fastmap\Controller;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Mail\MailManagerInterface;
@@ -23,9 +22,32 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class FastMapWorkspaceController extends ControllerBase {
 
+  /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
   protected Connection $database;
+
+  /**
+   * The workspace provisioning service.
+   *
+   * @var \Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface
+   */
   protected WorkspaceProvisioningServiceInterface $provisioning;
+
+  /**
+   * The mail manager service.
+   *
+   * @var \Drupal\Core\Mail\MailManagerInterface
+   */
   protected MailManagerInterface $mailManager;
+
+  /**
+   * The FastMap logger channel.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
   protected LoggerInterface $fastmapLogger;
 
   /**
@@ -41,7 +63,7 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
-   * POST /api/fastmap/create-workspace
+   * POST /api/fastmap/create-workspace.
    *
    * Validates input, stores a pending record and sends a verification email.
    * The workspace is NOT created until the token is verified.
@@ -175,7 +197,7 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
-   * GET /api/fastmap/verify/{token}
+   * GET /api/fastmap/verify/{token}.
    *
    * Looks up the pending record, provisions the workspace, then redirects.
    */
@@ -247,6 +269,9 @@ class FastMapWorkspaceController extends ControllerBase {
     }
   }
 
+  /**
+   * Sends a verification email for workspace creation.
+   */
   private function sendVerificationEmail(string $email, string $verifyUrl, string $name, string $slug, string $langcode, int $cleanupDays): bool {
     $config = $this->config('markaspot_fastmap.settings');
     $from = $config->get('mail_from') ?: NULL;
@@ -279,6 +304,9 @@ class FastMapWorkspaceController extends ControllerBase {
     }
   }
 
+  /**
+   * Removes expired pending workspace requests.
+   */
   private function cleanupExpired(): void {
     $config = $this->config('markaspot_fastmap.settings');
     $cleanupDays = (int) ($config->get('cleanup_days') ?? 7);

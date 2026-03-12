@@ -89,7 +89,6 @@ class RequestMediaSelection extends MediaSelection {
     // Intentionally NOT adding condition('status', 1). Unpublished
     // request_image media must be referenceable during the AI screening
     // workflow. Display-level access control prevents unauthorized viewing.
-
     return $query;
   }
 

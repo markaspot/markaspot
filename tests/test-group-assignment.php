@@ -20,14 +20,14 @@ use Drupal\group\Entity\GroupInterface;
 $GLOBALS['_test'] = ['pass' => 0, 'fail' => 0, 'skip' => 0];
 
 /**
- *
+ * Prints a test group header.
  */
 function test_group(string $name): void {
   echo "\n\033[1;36m━━━ $name ━━━\033[0m\n";
 }
 
 /**
- *
+ * Asserts a condition is true and reports result.
  */
 function assert_true(bool $condition, string $message): void {
   if ($condition) {
@@ -41,7 +41,7 @@ function assert_true(bool $condition, string $message): void {
 }
 
 /**
- *
+ * Asserts two values are strictly equal.
  */
 function assert_equal($expected, $actual, string $message): void {
   if ($expected === $actual) {
@@ -53,7 +53,7 @@ function assert_equal($expected, $actual, string $message): void {
 }
 
 /**
- *
+ * Marks a test as skipped with a reason.
  */
 function skip_test(string $message): void {
   $GLOBALS['_test']['skip']++;
@@ -287,8 +287,7 @@ else {
     $root_id = $test_child['parent_id'];
 
     // Resolve root upward (in case the parent is itself a child).
-    /**
- * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+    // @phpstan-ignore-next-line
     $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
     $root_id = $resolver->getRootJurisdictionId($test_child_id);
     $root_group = $group_storage->load($root_id);

@@ -17,14 +17,14 @@
 $GLOBALS['_test'] = ['pass' => 0, 'fail' => 0, 'skip' => 0];
 
 /**
- *
+ * Prints a test group header.
  */
 function test_group(string $name): void {
   echo "\n\033[1;36m━━━ $name ━━━\033[0m\n";
 }
 
 /**
- *
+ * Asserts a condition is true and reports result.
  */
 function assert_true(bool $condition, string $message): void {
   if ($condition) {
@@ -38,7 +38,7 @@ function assert_true(bool $condition, string $message): void {
 }
 
 /**
- *
+ * Asserts two values are strictly equal.
  */
 function assert_equal($expected, $actual, string $message): void {
   if ($expected === $actual) {
@@ -50,7 +50,7 @@ function assert_equal($expected, $actual, string $message): void {
 }
 
 /**
- *
+ * Asserts that an array contains all specified keys.
  */
 function assert_json_keys(array $data, array $keys, string $context): void {
   foreach ($keys as $key) {
@@ -59,7 +59,7 @@ function assert_json_keys(array $data, array $keys, string $context): void {
 }
 
 /**
- *
+ * Marks a test as skipped with a reason.
  */
 function skip_test(string $message): void {
   $GLOBALS['_test']['skip']++;
@@ -223,7 +223,10 @@ else {
   assert_equal(200, $code, 'GET /api/emergency-mode/status returns 200');
   assert_true(is_array($data), 'Emergency status returns object');
   if ($data) {
-    assert_json_keys($data, ['emergency_mode', 'status', 'mode_type', 'lite_ui', 'available_categories', 'banner', 'details'], 'Emergency status');
+    assert_json_keys($data, [
+      'emergency_mode', 'status', 'mode_type', 'lite_ui',
+      'available_categories', 'banner', 'details',
+    ], 'Emergency status');
     assert_true(is_bool($data['emergency_mode']), 'emergency_mode is boolean');
     assert_true(is_array($data['available_categories']), 'available_categories is array');
     assert_true(in_array($data['status'], ['off', 'active'], TRUE), "status is 'off' or 'active'");
@@ -236,7 +239,7 @@ else {
   }
 
   // GET /sos (HTML page)
-  [$code, , $raw, $response] = http_get("$base/sos", ['headers' => ['Accept' => 'text/html']]);
+  [$code] = http_get("$base/sos", ['headers' => ['Accept' => 'text/html']]);
   assert_true(in_array($code, [200, 301, 302, 303]), "GET /sos responds ($code)");
 }
 
@@ -520,7 +523,7 @@ else {
     ['GET', '/api/ai/processing/status'],
   ];
 
-  foreach ($ai_endpoints as [$method, $ep]) {
+  foreach ($ai_endpoints as [, $ep]) {
     [$code] = http_get("$base$ep");
     assert_equal(403, $code, "GET $ep returns 403 (anonymous)");
   }

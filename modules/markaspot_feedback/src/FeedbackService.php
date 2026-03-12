@@ -431,7 +431,6 @@ class FeedbackService implements FeedbackServiceInterface {
     // Get information about configured status terms.
     $status_terms = [];
     $config = $this->configFactory->get('markaspot_feedback.settings');
-    $status_vocabulary = $config->get('tax_status') ?: 'service_status';
     $term_storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $status_terms_resubmissive = $config->get('status_resubmissive');
 

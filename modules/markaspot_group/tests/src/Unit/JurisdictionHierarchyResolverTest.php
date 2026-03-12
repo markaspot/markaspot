@@ -106,57 +106,70 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
       // Use an anonymous class to provide target_id as a real property.
       // PHPUnit mocks of interfaces don't support dynamic properties in PHP 8.2+.
       $fieldItem = new class($parentId) implements \Iterator, \Countable {
-        public int $target_id;
+
+        /**
+         * The target entity ID.
+         */
+        public int $targetId;
+
+        /**
+         * Whether the iterator is still valid.
+         */
         private bool $valid = TRUE;
 
+        /**
+         * Constructs the field item stub.
+         */
         public function __construct(int $parentId) {
+          $this->targetId = $parentId;
+          // @phpstan-ignore-next-line
           $this->target_id = $parentId;
         }
 
         /**
-         *
+         * Checks if the field is empty.
          */
         public function isEmpty(): bool {
           return FALSE;
         }
 
         /**
-         *
+         * Returns the current element.
          */
         public function current(): mixed {
           return $this;
         }
 
         /**
-         *
+         * Returns the key of the current element.
          */
         public function key(): int {
           return 0;
         }
 
         /**
-         *
+         * Moves to the next element.
          */
         public function next(): void {
           $this->valid = FALSE;
         }
 
         /**
-         *
+         * Rewinds the iterator.
          */
         public function rewind(): void {
           $this->valid = TRUE;
         }
 
         /**
-         *
+         * Checks if the current position is valid.
          */
         public function valid(): bool {
           return $this->valid;
         }
 
         /**
-         *
+         * Returns the number of elements.
          */
         public function count(): int {
           return 1;
@@ -179,7 +192,7 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
       $fieldItem = new class {
 
         /**
-         *
+         * Checks if the field is empty.
          */
         public function isEmpty(): bool {
           return TRUE;
@@ -417,7 +430,6 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
     $statementEmpty = $this->createMock(StatementInterface::class);
     $statementEmpty->method('fetchCol')->willReturn([]);
 
-    $callCount = 0;
     $select = $this->createMock(Select::class);
     $select->method('fields')->willReturnSelf();
 

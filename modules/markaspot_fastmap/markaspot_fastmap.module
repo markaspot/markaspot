@@ -1,5 +1,10 @@
 <?php
 
+/**
+ * @file
+ * Hook implementations for the FastMap module.
+ */
+
 declare(strict_types=1);
 
 /**
@@ -7,6 +12,7 @@ declare(strict_types=1);
  * Hook implementations for markaspot_fastmap.
  */
 
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\node\NodeInterface;
@@ -83,7 +89,7 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
  * Invalidates the workspace visibility static cache when a group is saved,
  * ensuring visibility changes take effect immediately within the same request.
  */
-function markaspot_fastmap_entity_update(\Drupal\Core\Entity\EntityInterface $entity): void {
+function markaspot_fastmap_entity_update(EntityInterface $entity): void {
   if ($entity->getEntityTypeId() === 'group') {
     \Drupal::service('markaspot_fastmap.workspace_visibility')->resetCache();
   }

@@ -314,6 +314,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     }
   }
 
+  /**
+   * Builds the Nuxt configuration JSON for a workspace.
+   */
   private function buildNuxtConfig(string $name, string $slug, float $lat, float $lng, int $zoom, string $template, array $languages, string $defaultLang): array {
     $themeColors = self::THEME_TEMPLATES[$template] ?? self::THEME_TEMPLATES['civic-report'];
 
@@ -370,6 +373,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     ];
   }
 
+  /**
+   * Builds a GeoJSON FeatureCollection from a boundary geometry.
+   */
   private function buildBoundaryJson(mixed $boundary, string $name): ?string {
     if (!is_array($boundary) || !in_array($boundary['type'] ?? '', ['Polygon', 'MultiPolygon'], TRUE)) {
       return NULL;
@@ -389,6 +395,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     return json_encode($feature, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
   }
 
+  /**
+   * Creates default status terms for a workspace.
+   */
   private function createStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $languages): void {
     $weight = 0;
     foreach (self::DEFAULT_STATUSES as $status) {
@@ -419,6 +428,8 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   }
 
   /**
+   * Creates category terms for a workspace.
+   *
    * @return int[]
    *   Created term IDs.
    */
@@ -469,6 +480,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    * - ['Cat A', 'Cat B'] (legacy, treated as 'en')
    *
    * @return array<string, string[]>
+   *   Normalized multilingual categories keyed by language code.
    */
   private function normalizeCategories(array $categories): array {
     $firstValue = reset($categories);
@@ -500,6 +512,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     return $result;
   }
 
+  /**
+   * Guesses an icon for a category based on keyword matching.
+   */
   private function guessIcon(string $categoryName): string {
     $lower = strtolower($categoryName);
     foreach (self::CATEGORY_ICONS as $keyword => $icon) {
@@ -510,6 +525,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     return 'i-lucide-circle-dot';
   }
 
+  /**
+   * Creates or retrieves the tenant admin user.
+   */
   private function createTenantAdmin(string $email, string $workspaceName): UserInterface {
     $userStorage = $this->entityTypeManager->getStorage('user');
 
@@ -537,6 +555,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     return $user;
   }
 
+  /**
+   * Adds a user as a group member with tenant admin role.
+   */
   private function addGroupMembership(GroupInterface $group, UserInterface $user): void {
     $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');
 

@@ -128,6 +128,10 @@ class OtpService {
    *
    * @param string $email
    *   The email address.
+   * @param string $langcode
+   *   The language code for the email.
+   * @param int $jurisdiction_id
+   *   The jurisdiction group ID for branding.
    *
    * @return array
    *   Result array with status and message.
@@ -347,6 +351,10 @@ class OtpService {
    *   The 6-digit OTP code.
    * @param int $code_lifetime
    *   The code lifetime in seconds.
+   * @param string $langcode
+   *   The language code for the email.
+   * @param int $jurisdiction_id
+   *   The jurisdiction group ID for branding.
    *
    * @return bool
    *   TRUE if email was sent successfully.

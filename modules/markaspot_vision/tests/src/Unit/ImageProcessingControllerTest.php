@@ -160,14 +160,21 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     if ($fileUri) {
       $file = new class($fileUri) {
+
+        /**
+         * The file URI.
+         */
         private string $uri;
 
+        /**
+         * Constructs the file stub.
+         */
         public function __construct(string $uri) {
           $this->uri = $uri;
         }
 
         /**
-         *
+         * Returns the file URI.
          */
         public function getFileUri(): string {
           return $this->uri;
@@ -176,15 +183,26 @@ class ImageProcessingControllerTest extends UnitTestCase {
       };
 
       $fieldItem = new class($file) {
+
+        /**
+         * The referenced file entity.
+         */
         public object $entity;
+
+        /**
+         * The alt text value.
+         */
         public ?string $alt = NULL;
 
+        /**
+         * Constructs the field item stub.
+         */
         public function __construct(object $file) {
           $this->entity = $file;
         }
 
         /**
-         *
+         * Checks if the field is empty.
          */
         public function isEmpty(): bool {
           return FALSE;

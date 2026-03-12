@@ -40,13 +40,60 @@ class NodeAnalysisService {
     'Fire', 'Health', 'Geo', 'Met', 'Other',
   ];
 
+  /**
+   * The AI client service.
+   *
+   * @var \Drupal\markaspot_ai\Service\AiClientService
+   */
   protected AiClientService $aiClient;
+
+  /**
+   * The sentiment analysis service.
+   *
+   * @var \Drupal\markaspot_ai\Service\SentimentService
+   */
   protected SentimentService $sentimentService;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
   protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
   protected ConfigFactoryInterface $configFactory;
+
+  /**
+   * The logger.
+   *
+   * @var \Psr\Log\LoggerInterface
+   */
   protected LoggerInterface $logger;
+
+  /**
+   * The token tracking service.
+   *
+   * @var \Drupal\markaspot_ai\Service\TokenTrackingService
+   */
   protected TokenTrackingService $tokenTracking;
+
+  /**
+   * The risk score calculator.
+   *
+   * @var \Drupal\markaspot_ai\Service\RiskScoreCalculator
+   */
   protected RiskScoreCalculator $riskScoreCalculator;
+
+  /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
   protected Connection $database;
 
   /**
@@ -489,15 +536,6 @@ PROMPT;
   }
 
   /**
-   * Gets the duplicate count for a node.
-   *
-   * @param int $nid
-   *   The node ID.
-   *
-   * @return int
-   *   Number of detected duplicates.
-   */
-  /**
    * Checks if a node has been fully analyzed (sentiment + hazard + risk).
    *
    * Nodes analyzed before the refactoring only have sentiment data.
@@ -534,6 +572,15 @@ PROMPT;
     return TRUE;
   }
 
+  /**
+   * Gets the duplicate count for a node.
+   *
+   * @param int $nid
+   *   The node ID.
+   *
+   * @return int
+   *   Number of detected duplicates.
+   */
   protected function getDuplicateCount(int $nid): int {
     try {
       $count = $this->database->select('markaspot_ai_duplicate_matches', 'd')

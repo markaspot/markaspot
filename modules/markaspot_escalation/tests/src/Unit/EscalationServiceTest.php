@@ -210,14 +210,24 @@ class EscalationServiceTest extends UnitTestCase {
 
     if ($parentId !== NULL) {
       $fieldItem = new class($parentId) {
+
+        /**
+         * The referenced entity target ID.
+         *
+         * @var int
+         */
+        // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
         public int $target_id;
 
+        /**
+         * Constructs a field item stub.
+         */
         public function __construct(int $parentId) {
           $this->target_id = $parentId;
         }
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return FALSE;
@@ -230,7 +240,7 @@ class EscalationServiceTest extends UnitTestCase {
       $fieldItem = new class() {
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return TRUE;
@@ -264,14 +274,23 @@ class EscalationServiceTest extends UnitTestCase {
    */
   protected function createMockRelationship(GroupInterface $group): object {
     $relationship = new class($group) {
+
+      /**
+       * The group entity.
+       *
+       * @var object
+       */
       private object $group;
 
+      /**
+       * Constructs a relationship stub.
+       */
       public function __construct(object $group) {
         $this->group = $group;
       }
 
       /**
-       *
+       * Returns the group entity.
        */
       public function getGroup(): object {
         return $this->group;
@@ -310,14 +329,24 @@ class EscalationServiceTest extends UnitTestCase {
     if ($hasFieldEscalation) {
       if (isset($config['field_escalation'])) {
         $fields['field_escalation'] = new class($config['field_escalation']) {
+
+          /**
+           * The referenced entity target ID.
+           *
+           * @var int
+           */
+          // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
           public int $target_id;
 
+          /**
+           * Constructs a field item stub.
+           */
           public function __construct(int $targetId) {
             $this->target_id = $targetId;
           }
 
           /**
-           *
+           * Checks whether the field item is empty.
            */
           public function isEmpty(): bool {
             return FALSE;
@@ -329,7 +358,7 @@ class EscalationServiceTest extends UnitTestCase {
         $fields['field_escalation'] = new class() {
 
           /**
-           *
+           * Checks whether the field item is empty.
            */
           public function isEmpty(): bool {
             return TRUE;
@@ -342,14 +371,24 @@ class EscalationServiceTest extends UnitTestCase {
     // field_status.
     if (isset($config['field_status'])) {
       $fields['field_status'] = new class($config['field_status']) {
+
+        /**
+         * The referenced entity target ID.
+         *
+         * @var int
+         */
+        // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
         public int $target_id;
 
+        /**
+         * Constructs a field item stub.
+         */
         public function __construct(int $targetId) {
           $this->target_id = $targetId;
         }
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return FALSE;
@@ -361,7 +400,7 @@ class EscalationServiceTest extends UnitTestCase {
       $fields['field_status'] = new class() {
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return TRUE;
@@ -373,14 +412,23 @@ class EscalationServiceTest extends UnitTestCase {
     // field_organisation.
     if (isset($config['field_organisation'])) {
       $fields['field_organisation'] = new class($config['field_organisation']) {
+
+        /**
+         * The referenced entity.
+         *
+         * @var object
+         */
         public object $entity;
 
+        /**
+         * Constructs a field item stub.
+         */
         public function __construct(object $entity) {
           $this->entity = $entity;
         }
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return FALSE;
@@ -392,7 +440,7 @@ class EscalationServiceTest extends UnitTestCase {
       $fields['field_organisation'] = new class() {
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return TRUE;
@@ -404,14 +452,23 @@ class EscalationServiceTest extends UnitTestCase {
     // field_category.
     if (isset($config['field_category'])) {
       $fields['field_category'] = new class($config['field_category']) {
+
+        /**
+         * The referenced entity.
+         *
+         * @var object
+         */
         public object $entity;
 
+        /**
+         * Constructs a field item stub.
+         */
         public function __construct(object $entity) {
           $this->entity = $entity;
         }
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return FALSE;
@@ -423,7 +480,7 @@ class EscalationServiceTest extends UnitTestCase {
       $fields['field_category'] = new class() {
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return TRUE;
@@ -474,14 +531,24 @@ class EscalationServiceTest extends UnitTestCase {
 
     if ($jurId !== NULL) {
       $fieldMap['field_jurisdiction'] = new class($jurId) {
+
+        /**
+         * The referenced entity target ID.
+         *
+         * @var int
+         */
+        // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
         public int $target_id;
 
+        /**
+         * Constructs a field item stub.
+         */
         public function __construct(int $targetId) {
           $this->target_id = $targetId;
         }
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return FALSE;
@@ -493,7 +560,7 @@ class EscalationServiceTest extends UnitTestCase {
       $fieldMap['field_jurisdiction'] = new class() {
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return TRUE;
@@ -533,14 +600,24 @@ class EscalationServiceTest extends UnitTestCase {
 
     if ($jurId !== NULL) {
       $fieldMap['field_jurisdiction'] = new class($jurId) {
+
+        /**
+         * The referenced entity target ID.
+         *
+         * @var int
+         */
+        // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
         public int $target_id;
 
+        /**
+         * Constructs a field item stub.
+         */
         public function __construct(int $targetId) {
           $this->target_id = $targetId;
         }
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return FALSE;
@@ -551,14 +628,24 @@ class EscalationServiceTest extends UnitTestCase {
 
     if ($escalationTargetId !== NULL) {
       $fieldMap['field_escalation_target'] = new class($escalationTargetId) {
+
+        /**
+         * The referenced entity target ID.
+         *
+         * @var int
+         */
+        // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
         public int $target_id;
 
+        /**
+         * Constructs a field item stub.
+         */
         public function __construct(int $targetId) {
           $this->target_id = $targetId;
         }
 
         /**
-         *
+         * Checks whether the field item is empty.
          */
         public function isEmpty(): bool {
           return FALSE;
@@ -568,30 +655,45 @@ class EscalationServiceTest extends UnitTestCase {
     }
 
     $term = new class($tid, $fieldMap) {
+
+      /**
+       * The term ID.
+       *
+       * @var int
+       */
       private int $tid;
+
+      /**
+       * Map of field name to field item stub.
+       *
+       * @var array
+       */
       private array $fieldMap;
 
+      /**
+       * Constructs a category term stub.
+       */
       public function __construct(int $tid, array $fieldMap) {
         $this->tid = $tid;
         $this->fieldMap = $fieldMap;
       }
 
       /**
-       *
+       * Returns the term ID.
        */
       public function id(): int {
         return $this->tid;
       }
 
       /**
-       *
+       * Checks whether a field exists.
        */
       public function hasField(string $name): bool {
         return isset($this->fieldMap[$name]);
       }
 
       /**
-       *
+       * Returns a field item stub.
        */
       public function get(string $name): object {
         if (isset($this->fieldMap[$name])) {
@@ -600,7 +702,7 @@ class EscalationServiceTest extends UnitTestCase {
         return new class() {
 
           /**
-           *
+           * Checks whether the field item is empty.
            */
           public function isEmpty(): bool {
             return TRUE;
@@ -766,7 +868,7 @@ class EscalationServiceTest extends UnitTestCase {
       ->willReturn($membership);
 
     $this->groupStorage->method('load')
-      ->willReturnCallback(function ($id) use ($childJur, $parentJur, $childJurForMembership) {
+      ->willReturnCallback(function ($id) use ($parentJur, $childJurForMembership) {
         if ($id === 4) {
           // Return the membership-enabled mock for isGroupMember.
           return $childJurForMembership;
@@ -803,7 +905,7 @@ class EscalationServiceTest extends UnitTestCase {
       ->willReturn(FALSE);
 
     $this->groupStorage->method('load')
-      ->willReturnCallback(function ($id) use ($childJur, $parentJur, $childJurForMembership) {
+      ->willReturnCallback(function ($id) use ($parentJur, $childJurForMembership) {
         if ($id === 4) {
           return $childJurForMembership;
         }
@@ -1341,7 +1443,6 @@ class EscalationServiceTest extends UnitTestCase {
     ]);
     $account = $this->createMockAccount(5, ['escalate service requests']);
 
-    $currentJur = $this->createMockGroup(1, 'jur', 99, 'Amsterdam');
     $parentJur = $this->createMockGroup(99, 'jur', NULL, 'Netherlands');
 
     $membership = $this->createMock(GroupMembership::class);
@@ -1379,7 +1480,6 @@ class EscalationServiceTest extends UnitTestCase {
     ]);
     $account = $this->createMockAccount(5, ['escalate service requests']);
 
-    $currentJur = $this->createMockGroup(1, 'jur', 99, 'Amsterdam');
     $parentJur = $this->createMockGroup(99, 'jur', NULL, 'Netherlands');
 
     // User is NOT a member.

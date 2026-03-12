@@ -71,6 +71,11 @@ class RiskScoreCalculator {
     'Lärmbelästigung' => 0.2,
   ];
 
+  /**
+   * The config factory.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
   protected ConfigFactoryInterface $configFactory;
 
   /**

@@ -88,7 +88,6 @@ function markaspot_feedback_cron() {
 
   // Get information about the status terms for better logging.
   $status_terms = [];
-  $status_vocabulary = $config->get('tax_status') ?: 'service_status';
   $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
   $status_terms_feedback_enabled = $config->get('status_feedback_enabled');
 

@@ -511,7 +511,7 @@ class MetricsCalculatorService {
    *
    * @deprecated in markaspot:11.8.0 and is removed from markaspot:12.0.0.
    *   Use getClosedStatusTids() for multiple closed statuses.
-   * @see \Drupal\markaspot_dashboard\Service\MetricsCalculatorService::getClosedStatusTids()
+   * @see https://www.drupal.org/node/3000000
    */
   protected function getClosedStatusTid(): ?int {
     $tids = $this->getClosedStatusTids();
@@ -926,7 +926,7 @@ class MetricsCalculatorService {
     // Build final by_category array with all required fields.
     $by_category = [];
     $total_forwards = 0;
-    foreach ($category_totals as $tid => $data) {
+    foreach ($category_totals as $data) {
       $forwarded = $data['forwarded_count'];
       $total = $data['total_count'];
       $not_forwarded = $total - $forwarded;

@@ -5,6 +5,8 @@
  * Install, update, and uninstall functions for the Mark-a-Spot AI module.
  */
 
+use Drupal\Core\Serialization\Yaml;
+
 declare(strict_types=1);
 
 /**
@@ -433,7 +435,7 @@ function markaspot_ai_update_10002(): void {
     }
 
     $yaml = file_get_contents($file_path);
-    $data = \Drupal\Core\Serialization\Yaml::decode($yaml);
+    $data = Yaml::decode($yaml);
 
     $entity_type = str_starts_with($config_name, 'field.storage.')
       ? 'field_storage_config'

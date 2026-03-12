@@ -22,12 +22,32 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
  */
 class TierLimitConstraintValidatorTest extends UnitTestCase {
 
+  /**
+   * The mocked current user.
+   *
+   * @var \Drupal\Core\Session\AccountInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
   protected AccountInterface $currentUser;
 
+  /**
+   * The mocked tier config service.
+   *
+   * @var \Drupal\markaspot_fastmap\Service\TierConfigService|\PHPUnit\Framework\MockObject\MockObject
+   */
   protected TierConfigService $tierConfig;
 
+  /**
+   * The mocked execution context.
+   *
+   * @var \Symfony\Component\Validator\Context\ExecutionContextInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
   protected ExecutionContextInterface $executionContext;
 
+  /**
+   * The constraint being tested.
+   *
+   * @var \Drupal\markaspot_fastmap\Plugin\Validation\Constraint\TierLimitConstraint
+   */
   protected TierLimitConstraint $constraint;
 
   /**

@@ -110,7 +110,6 @@ class EscalationCronService implements EscalationCronServiceInterface {
     }
 
     $nodeStorage = $this->entityTypeManager->getStorage('node');
-    $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
 
     foreach ($nids as $nid) {
       $node = $nodeStorage->load($nid);
