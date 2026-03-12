@@ -1,5 +1,33 @@
 # Changelog
 
+## [11.9.8](https://github.com/markaspot/markaspot/compare/11.9.7...11.9.8) (2026-03-12)
+
+### Features
+
+* add optional markaspot_redis status module ([5aa373b](https://github.com/markaspot/markaspot/commit/5aa373b065c18492e3e6a4456b11a3dd02b89830))
+* **fastmap:** add field_tier for workspace subscription management ([81dca2b](https://github.com/markaspot/markaspot/commit/81dca2b72e22369e5fd6437515d416bd79dd2899))
+* **fastmap:** add tier limit validation constraint ([7270c64](https://github.com/markaspot/markaspot/commit/7270c64c9a19f1d0908cd9ba16dd398026de9ea9))
+* **fastmap:** add workspace visibility modes (public/submission_only/authenticated) ([4550131](https://github.com/markaspot/markaspot/commit/455013199944bb9c081eaa606d0cb878dd45bb7d))
+* **fastmap:** workspace visibility enforcement and cache invalidation ([0e20981](https://github.com/markaspot/markaspot/commit/0e209814673c4b80f3b07851dbb491fd55e2f8d7))
+* **group:** add field_tier for SaaS subscription tiers ([4dac7de](https://github.com/markaspot/markaspot/commit/4dac7de53ad1b779be8c33abca995b70c4727b25))
+* **markaspot_nuxt:** tenant settings API for self-service configuration ([d00e8c8](https://github.com/markaspot/markaspot/commit/d00e8c8f09080daa6b82572c2d31319c18511f62))
+* **nuxt:** add [node:markaspot_media_url] token ([cecaf46](https://github.com/markaspot/markaspot/commit/cecaf46b700fc71dca52a1a9a96c66073a657ec0))
+* **nuxt:** add FastMap workspace creation endpoint ([ac59578](https://github.com/markaspot/markaspot/commit/ac59578741f014b0f5b9083c5e01b054be0bdfee))
+* **nuxt:** add settings alter hook for module extensibility ([20423ab](https://github.com/markaspot/markaspot/commit/20423ab3810a142706c80534b15b91299172ad55))
+* **open311:** add imagelist datatype with backend validation ([94006fb](https://github.com/markaspot/markaspot/commit/94006fb39e0a78ee0ddb9270e3f06fb73fd5cfe5))
+* **passwordless:** translatable mail templates with jurisdiction context ([b4687d3](https://github.com/markaspot/markaspot/commit/b4687d363b70d921a7720d904fd423676acf46f9))
+
+### Bug Fixes
+
+* **ai:** use isNotNull for longtext field checks in attribute queries ([36b7604](https://github.com/markaspot/markaspot/commit/36b7604ce0731ca09e27799b92e43fddb9f6127b))
+* **fastmap:** rename api_key to service_key to avoid auth provider collision ([019704d](https://github.com/markaspot/markaspot/commit/019704deb9befb5da9ec8f23e3d0a53487e6d00d))
+* **fastmap:** use TrustedRedirectResponse and add {id} placeholder ([3cfc93e](https://github.com/markaspot/markaspot/commit/3cfc93ed0bc203e1bacfc5da4d2512b44b375086))
+* resolve all phpcs errors and add FastMap unit tests ([3464ead](https://github.com/markaspot/markaspot/commit/3464ead465938adf416b1e82d313bb0c03af58d5))
+
+### Refactoring
+
+* **fastmap:** extract dedicated module with security and i18n fixes ([4bdd953](https://github.com/markaspot/markaspot/commit/4bdd953f287eb6c99b3bcf01a02a8ab25381e881))
+
 ## [11.9.7](https://github.com/markaspot/markaspot/compare/11.9.6...11.9.7) (2026-03-09)
 
 ### Features
