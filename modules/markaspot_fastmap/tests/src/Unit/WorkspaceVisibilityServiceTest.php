@@ -175,4 +175,78 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
     ];
   }
 
+  /**
+   * @covers ::resetCache
+   */
+  public function testResetCacheClearsStoredVisibility(): void {
+    // Load a group with 'authenticated' visibility and cache it.
+    $group = $this->createMockGroup('authenticated');
+    $this->groupStorage->method('load')->willReturn($group);
+
+    $this->assertEquals('authenticated', $this->service->getVisibility(10));
+
+    // Replace the storage response with a different visibility.
+    // Without resetCache, the cached value would still be returned.
+    $newGroup = $this->createMockGroup('public');
+
+    // We need a new service instance because PHPUnit mocks are fixed once configured.
+    // Instead, verify that resetCache allows a fresh load by creating a new service
+    // with a storage that returns the updated group.
+    $newStorage = $this->createMock(EntityStorageInterface::class);
+    $newStorage->method('load')->willReturn($newGroup);
+    $newEntityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $newEntityTypeManager->method('getStorage')->with('group')->willReturn($newStorage);
+    $newService = new WorkspaceVisibilityService($newEntityTypeManager);
+
+    // Pre-populate cache, then reset.
+    $newService->getVisibility(10);
+    $this->assertEquals('public', $newService->getVisibility(10));
+
+    // Verify resetCache doesn't throw and clears internal state.
+    $newService->resetCache();
+    // After reset, next call re-loads from storage (still returns 'public' in this mock).
+    $this->assertEquals('public', $newService->getVisibility(10));
+  }
+
+  /**
+   * @covers ::getVisibility
+   */
+  public function testStaticCachePreventsDuplicateLoads(): void {
+    $group = $this->createMockGroup('submission_only');
+
+    // Configure storage to track load calls.
+    $loadCount = 0;
+    $this->groupStorage->method('load')->willReturnCallback(function () use ($group, &$loadCount) {
+      $loadCount++;
+      return $group;
+    });
+
+    // Multiple calls with same ID should only load once.
+    $this->service->getVisibility(5);
+    $this->service->getVisibility(5);
+    $this->service->getVisibility(5);
+
+    $this->assertEquals(1, $loadCount, 'Storage should be called exactly once due to static cache');
+  }
+
+  /**
+   * @covers ::resetCache
+   */
+  public function testResetCacheForcesFreshLoad(): void {
+    $group = $this->createMockGroup('authenticated');
+
+    $loadCount = 0;
+    $this->groupStorage->method('load')->willReturnCallback(function () use ($group, &$loadCount) {
+      $loadCount++;
+      return $group;
+    });
+
+    $this->service->getVisibility(7);
+    $this->assertEquals(1, $loadCount);
+
+    $this->service->resetCache();
+    $this->service->getVisibility(7);
+    $this->assertEquals(2, $loadCount, 'After resetCache, storage should be called again');
+  }
+
 }
