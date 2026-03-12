@@ -3,6 +3,14 @@ services:
     parent: logger.channel_base
     arguments: ['markaspot_fastmap']
 
+  markaspot_fastmap.tier_config:
+    class: Drupal\markaspot_fastmap\Service\TierConfigService
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_fastmap'
+
   markaspot_fastmap.workspace_provisioning:
     class: Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService
     arguments:

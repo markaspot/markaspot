@@ -80,7 +80,7 @@ function markaspot_fastmap_update_11900(): void {
           'free' => 'Free',
           'starter' => 'Starter',
           'pro' => 'Pro',
-          'enterprise' => 'Enterprise',
+          'heart' => 'Heart',
         ],
         'allowed_values_function' => '',
       ],
@@ -123,6 +123,18 @@ function markaspot_fastmap_update_11900(): void {
       'settings' => [],
     ]);
     $form_display->save();
+  }
+
+  // Ensure tier_limits config exists (for sites updating from before TierConfigService).
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
+  if (!$config->get('tier_limits')) {
+    $config->set('tier_limits', [
+      'free' => ['limit' => 50, 'period' => 'monthly'],
+      'starter' => ['limit' => 500, 'period' => 'monthly'],
+      'pro' => ['limit' => 2000, 'period' => 'monthly'],
+      'heart' => ['limit' => 500, 'period' => 'monthly'],
+    ])->save();
+    $logger->info('Set default tier_limits config.');
   }
 
   // Backfill existing jurisdictions.

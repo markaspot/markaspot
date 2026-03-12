@@ -21,3 +21,18 @@ markaspot_fastmap.verify_workspace:
     token: '[a-f0-9]{64}'
   options:
     no_cache: 'TRUE'
+
+markaspot_fastmap.workspace_usage:
+  path: '/api/fastmap/usage/{group}'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\WorkspaceUsageController::usage'
+    _title: 'Workspace Usage'
+    _format: 'json'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_fastmap\Controller\WorkspaceUsageController::access'
+    group: \d+
+  options:
+    parameters:
+      group:
+        type: entity:group

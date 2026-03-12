@@ -24,8 +24,8 @@ settings:
       value: pro
       label: Pro
     -
-      value: enterprise
-      label: Enterprise
+      value: heart
+      label: Heart
   allowed_values_function: ''
 module: options
 locked: false

@@ -3,3 +3,16 @@ cleanup_days: 7
 workspace_base_url: ''
 verify_base_url: ''
 mail_from: ''
+tier_limits:
+  free:
+    limit: 50
+    period: monthly
+  starter:
+    limit: 500
+    period: monthly
+  pro:
+    limit: 2000
+    period: monthly
+  heart:
+    limit: 500
+    period: monthly

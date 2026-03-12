@@ -39,6 +39,15 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
 }
 
 /**
+ * Implements hook_entity_type_alter().
+ */
+function markaspot_fastmap_entity_type_alter(array &$entity_types): void {
+  if (isset($entity_types['node'])) {
+    $entity_types['node']->addConstraint('TierLimit');
+  }
+}
+
+/**
  * Implements hook_markaspot_nuxt_settings_alter().
  */
 function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $group): void {

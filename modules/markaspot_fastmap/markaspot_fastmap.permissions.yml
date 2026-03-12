@@ -5,3 +5,7 @@ create fastmap workspace:
 delete fastmap workspace:
   title: 'Delete FastMap workspace'
   description: 'Allows tearing down FastMap workspaces and all associated data.'
+
+access workspace usage:
+  title: 'Access workspace usage'
+  description: 'View request count and tier limits for workspaces.'

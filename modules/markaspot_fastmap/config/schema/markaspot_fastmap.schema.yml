@@ -17,6 +17,19 @@ markaspot_fastmap.settings:
     mail_from:
       type: string
       label: 'From address for verification emails'
+    tier_limits:
+      type: sequence
+      label: 'Request limits per tier'
+      sequence:
+        type: mapping
+        label: 'Tier limit'
+        mapping:
+          limit:
+            type: integer
+            label: 'Request limit'
+          period:
+            type: string
+            label: 'Count period (monthly or total)'
 
 markaspot_fastmap.mail:
   type: config_object
