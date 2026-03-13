@@ -567,15 +567,9 @@ class GroupInvitationController extends ControllerBase {
       return reset($existing);
     }
 
-    // Auto-create user.
+    // Auto-create user with randomized suffix to prevent username enumeration.
     $emailPrefix = strstr($email, '@', TRUE) ?: $email;
-    // Ensure unique username.
-    $username = $emailPrefix;
-    $suffix = 0;
-    while (!empty($userStorage->loadByProperties(['name' => $username]))) {
-      $suffix++;
-      $username = $emailPrefix . '_' . $suffix;
-    }
+    $username = $emailPrefix . '_' . bin2hex(random_bytes(4));
 
     try {
       /** @var \Drupal\user\UserInterface $user */
