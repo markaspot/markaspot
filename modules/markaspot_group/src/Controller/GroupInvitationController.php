@@ -63,6 +63,7 @@ class GroupInvitationController extends ControllerBase {
     protected readonly GroupMembershipLoaderInterface $membershipLoader,
     protected readonly JurisdictionHierarchyResolverInterface $hierarchyResolver,
     AccountInterface $currentUser,
+    protected readonly ?object $tierConfigService = NULL,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->moduleHandler = $moduleHandler;
@@ -82,6 +83,9 @@ class GroupInvitationController extends ControllerBase {
       $container->get('group.membership_loader'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('current_user'),
+      $container->get('module_handler')->moduleExists('markaspot_fastmap')
+        ? $container->get('markaspot_fastmap.tier_config')
+        : NULL,
     );
   }
 
@@ -467,7 +471,7 @@ class GroupInvitationController extends ControllerBase {
    *   Error message if limit is exceeded, NULL if within limits.
    */
   protected function checkMemberLimit(GroupInterface $group): ?string {
-    if (!$this->moduleHandler()->moduleExists('markaspot_fastmap')) {
+    if (!$this->tierConfigService) {
       return NULL;
     }
 
@@ -478,17 +482,14 @@ class GroupInvitationController extends ControllerBase {
     }
 
     $tier = $jurGroup->get('field_tier')->value;
-
-    /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierService */
-    $tierService = \Drupal::service('markaspot_fastmap.tier_config');
-    $limit = $tierService->getMemberLimit($tier);
+    $limit = $this->tierConfigService->getMemberLimit($tier);
 
     if ($limit === NULL) {
       // Unknown tier, no limit.
       return NULL;
     }
 
-    $currentMembers = $tierService->countMembers((int) $jurGroup->id());
+    $currentMembers = $this->tierConfigService->countMembers((int) $jurGroup->id());
 
     // Count pending invitations across all groups in this jurisdiction
     // (jur + all org sub-groups) to prevent limit bypass via multiple orgs.
