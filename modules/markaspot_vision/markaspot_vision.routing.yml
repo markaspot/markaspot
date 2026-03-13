@@ -12,6 +12,8 @@ markaspot_vision.image_processing:
     _controller: '\Drupal\markaspot_vision\Controller\ImageProcessingController::getAIResults'
     _title: 'Vision Analysis API'
   methods: [POST]
+  options:
+    _auth: ['cookie', 'api_key_auth']
   requirements:
     _permission: 'access content'
     _csrf_request_header_token: 'TRUE'

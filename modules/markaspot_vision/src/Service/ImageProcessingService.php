@@ -335,7 +335,12 @@ class ImageProcessingService {
   }
 
   /**
-   * Resolves the API key from environment variable or config.
+   * Resolves the API key from config or environment variable.
+   *
+   * Priority: MARKASPOT_VISION_API_KEY env > Drupal config > OPENAI_API_KEY env.
+   * Config is the standard source, set per site in Drupal admin for each
+   * provider (OpenAI, Azure, local LLM). The generic OPENAI_API_KEY is only
+   * used as a last-resort fallback.
    *
    * @param \Drupal\Core\Config\ImmutableConfig $config
    *   The module configuration.
@@ -344,17 +349,20 @@ class ImageProcessingService {
    *   The resolved API key.
    */
   protected function resolveApiKey(ImmutableConfig $config): string {
-    // Check environment variables first (in order of priority).
-    $envVars = ['OPENAI_API_KEY', 'MARKASPOT_VISION_API_KEY'];
-    foreach ($envVars as $envVar) {
-      $value = getenv($envVar);
-      if (!empty($value)) {
-        return $value;
-      }
+    // Vision-specific ENV override (explicit deployment override).
+    $envKey = getenv('MARKASPOT_VISION_API_KEY');
+    if (!empty($envKey)) {
+      return $envKey;
     }
 
-    // Fall back to config value.
-    return trim($config->get('api_key') ?? '');
+    // Drupal config is the standard source (per-site, per-provider).
+    $configKey = trim($config->get('api_key') ?? '');
+    if (!empty($configKey)) {
+      return $configKey;
+    }
+
+    // Generic fallback only if nothing else is configured.
+    return trim(getenv('OPENAI_API_KEY') ?: '');
   }
 
   /**

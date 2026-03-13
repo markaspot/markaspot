@@ -16,6 +16,7 @@ markaspot_ai.duplicates:
     _permission: 'access ai insights'
     node: \d+
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
     parameters:
       node:
@@ -31,6 +32,7 @@ markaspot_ai.duplicate_review:
     _permission: 'review ai duplicates'
     match: \d+
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.duplicate_scan:
@@ -43,6 +45,7 @@ markaspot_ai.duplicate_scan:
     _permission: 'review ai duplicates'
     node: \d+
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
     parameters:
       node:
@@ -57,6 +60,7 @@ markaspot_ai.pending_matches:
   requirements:
     _permission: 'review ai duplicates'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.usage:
@@ -68,6 +72,7 @@ markaspot_ai.usage:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.usage_summary:
@@ -79,6 +84,7 @@ markaspot_ai.usage_summary:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 # Sentiment Analysis Routes
@@ -92,6 +98,7 @@ markaspot_ai.sentiment:
     _permission: 'view ai sentiment'
     node: \d+
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
     parameters:
       node:
@@ -107,6 +114,7 @@ markaspot_ai.sentiment_analyze:
     _permission: 'administer markaspot ai'
     node: \d+
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
     parameters:
       node:
@@ -121,6 +129,7 @@ markaspot_ai.sentiment_stats:
   requirements:
     _permission: 'view ai sentiment'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.sentiment_frustrated:
@@ -132,6 +141,7 @@ markaspot_ai.sentiment_frustrated:
   requirements:
     _permission: 'view ai sentiment'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 # Processing Control Routes (Dashboard)
@@ -144,6 +154,7 @@ markaspot_ai.processing_status:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.processing_queue:
@@ -155,6 +166,7 @@ markaspot_ai.processing_queue:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.processing_run:
@@ -166,6 +178,7 @@ markaspot_ai.processing_run:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 # Attribute Filling Routes
@@ -178,6 +191,7 @@ markaspot_ai.attributes.status:
   requirements:
     _permission: 'access ai insights'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.attributes.fill:
@@ -189,6 +203,7 @@ markaspot_ai.attributes.fill:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.attributes.queue:
@@ -200,6 +215,7 @@ markaspot_ai.attributes.queue:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.attributes.assist:
@@ -211,6 +227,7 @@ markaspot_ai.attributes.assist:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
 
 markaspot_ai.attributes.describe:
@@ -222,4 +239,5 @@ markaspot_ai.attributes.describe:
   requirements:
     _permission: 'administer markaspot ai'
   options:
+    _auth: ['cookie', 'api_key_auth']
     _format: 'json'
