@@ -158,6 +158,15 @@ class GroupInvitationController extends ControllerBase {
       return new JsonResponse(['error' => 'Access denied to this group.'], 403);
     }
 
+    // Validate roles against permitted set to prevent privilege escalation.
+    if (!empty($roles)) {
+      $permittedRoles = $this->getPermittedRoles($isDrupalAdmin);
+      $invalidRoles = array_diff($roles, $permittedRoles);
+      if (!empty($invalidRoles)) {
+        return new JsonResponse(['error' => 'One or more requested roles are not permitted.'], 403);
+      }
+    }
+
     // Check member limit if markaspot_fastmap is available.
     $limitError = $this->checkMemberLimit($group);
     if ($limitError !== NULL) {
@@ -245,7 +254,7 @@ class GroupInvitationController extends ControllerBase {
     }
 
     $results = $this->database->select('markaspot_group_invitations', 'i')
-      ->fields('i', ['id', 'token', 'email', 'group_id', 'roles', 'invited_by', 'created', 'expires'])
+      ->fields('i', ['id', 'email', 'group_id', 'roles', 'invited_by', 'created', 'expires'])
       ->condition('group_id', $groupId)
       ->condition('expires', time(), '>')
       ->isNull('claimed')
@@ -257,7 +266,6 @@ class GroupInvitationController extends ControllerBase {
     foreach ($results as $row) {
       $invitations[] = [
         'id' => (int) $row['id'],
-        'token' => $row['token'],
         'email' => $row['email'],
         'group_id' => (int) $row['group_id'],
         'roles' => json_decode($row['roles'], TRUE) ?? [],
@@ -281,10 +289,11 @@ class GroupInvitationController extends ControllerBase {
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON response confirming revocation.
    */
-  public function revokeInvitation(string $token): JsonResponse {
+  public function revokeInvitation(int $invitation_id): JsonResponse {
     $invitation = $this->database->select('markaspot_group_invitations', 'i')
       ->fields('i', ['id', 'group_id', 'email'])
-      ->condition('token', $token)
+      ->condition('id', $invitation_id)
+      ->condition('expires', time(), '>')
       ->isNull('claimed')
       ->execute()
       ->fetchAssoc();
@@ -333,20 +342,58 @@ class GroupInvitationController extends ControllerBase {
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON response with claim result.
    */
-  public function claimInvitation(string $token): JsonResponse {
+  public function claimInvitation(string $token, Request $request): JsonResponse {
+    // Atomically mark the invitation as claimed to prevent double-claim race condition.
+    $now = time();
+    $affected = $this->database->update('markaspot_group_invitations')
+      ->fields(['claimed' => $now])
+      ->condition('token', $token)
+      ->condition('expires', $now, '>')
+      ->isNull('claimed')
+      ->execute();
+
+    if ($affected === 0) {
+      // Check if the token exists at all to distinguish expired from invalid.
+      $row = $this->database->select('markaspot_group_invitations', 'i')
+        ->fields('i', ['id', 'expires', 'claimed'])
+        ->condition('token', $token)
+        ->execute()
+        ->fetchAssoc();
+
+      if (!$row) {
+        return new JsonResponse(['error' => 'Invalid or already claimed invitation.'], 404);
+      }
+      if (!empty($row['claimed'])) {
+        return new JsonResponse(['error' => 'Invalid or already claimed invitation.'], 404);
+      }
+      return new JsonResponse(['error' => 'This invitation has expired.'], 410);
+    }
+
+    // Re-fetch the full invitation row.
     $invitation = $this->database->select('markaspot_group_invitations', 'i')
       ->fields('i')
       ->condition('token', $token)
-      ->isNull('claimed')
       ->execute()
       ->fetchAssoc();
 
     if (!$invitation) {
-      return new JsonResponse(['error' => 'Invalid or already claimed invitation.'], 404);
+      return new JsonResponse(['error' => 'Invitation not found.'], 404);
     }
 
-    if ((int) $invitation['expires'] < time()) {
-      return new JsonResponse(['error' => 'This invitation has expired.'], 410);
+    // If user is authenticated, verify their email matches the invitation.
+    $currentAccount = $this->currentUser();
+    if (!$currentAccount->isAnonymous()) {
+      $currentEmail = $currentAccount->getEmail();
+      if ($currentEmail && strtolower($currentEmail) !== strtolower($invitation['email'])) {
+        // Unclaim - this invitation is for a different email.
+        $this->database->update('markaspot_group_invitations')
+          ->fields(['claimed' => NULL])
+          ->condition('id', (int) $invitation['id'])
+          ->execute();
+        return new JsonResponse([
+          'error' => 'This invitation is for a different email address. Please log in with the correct account.',
+        ], 403);
+      }
     }
 
     $groupId = (int) $invitation['group_id'];
@@ -375,12 +422,6 @@ class GroupInvitationController extends ControllerBase {
     // Check if user is already a member.
     $existingMember = $group->getMember($user);
     if ($existingMember) {
-      // Mark invitation as claimed even if already a member.
-      $this->database->update('markaspot_group_invitations')
-        ->fields(['claimed' => time()])
-        ->condition('id', (int) $invitation['id'])
-        ->execute();
-
       return new JsonResponse([
         'status' => 'already_member',
         'redirect' => '/dashboard',
@@ -400,12 +441,7 @@ class GroupInvitationController extends ControllerBase {
       return new JsonResponse(['error' => 'Failed to add member to group.'], 500);
     }
 
-    // Mark invitation as claimed.
-    $this->database->update('markaspot_group_invitations')
-      ->fields(['claimed' => time()])
-      ->condition('id', (int) $invitation['id'])
-      ->execute();
-
+    // Invitation was already marked as claimed atomically at the top.
     $this->logger->notice('Invitation claimed: @email joined group @group (id=@gid).', [
       '@email' => $email,
       '@group' => $group->label(),
@@ -454,9 +490,19 @@ class GroupInvitationController extends ControllerBase {
 
     $currentMembers = $tierService->countMembers((int) $jurGroup->id());
 
-    // Also count pending (unclaimed, not expired) invitations for this group.
+    // Count pending invitations across all groups in this jurisdiction
+    // (jur + all org sub-groups) to prevent limit bypass via multiple orgs.
+    $allGroupIds = [(int) $jurGroup->id()];
+    $orgGroups = $this->entityTypeManager()->getStorage('group')->loadByProperties([
+      'type' => 'org',
+      'field_jurisdiction' => $jurGroup->id(),
+    ]);
+    foreach ($orgGroups as $orgGroup) {
+      $allGroupIds[] = (int) $orgGroup->id();
+    }
+
     $pendingInvites = (int) $this->database->select('markaspot_group_invitations', 'i')
-      ->condition('group_id', (int) $group->id())
+      ->condition('group_id', $allGroupIds, 'IN')
       ->condition('expires', time(), '>')
       ->isNull('claimed')
       ->countQuery()
@@ -578,14 +624,19 @@ class GroupInvitationController extends ControllerBase {
     string $langcode,
     Request $request,
   ): void {
-    // Build the claim URL.
-    // Prefer frontend_base_url from the request body (set by Nuxt proxy),
-    // then fall back to the request origin.
-    $content = json_decode($request->getContent(), TRUE) ?? [];
-    $frontendBase = $content['frontend_base_url'] ?? '';
-
-    if (!$frontendBase || !preg_match('#^https?://#', $frontendBase)) {
-      $frontendBase = $request->getSchemeAndHttpHost();
+    // Build the claim URL from server-side config only (never from request body
+    // to prevent open redirect / phishing via attacker-controlled URLs).
+    $frontendBase = $this->config('markaspot_nuxt.settings')->get('frontend_base_url') ?: '';
+    if (!$frontendBase) {
+      // Fall back to the X-Forwarded-Host or request origin.
+      $forwardedHost = $request->headers->get('X-Forwarded-Host');
+      if ($forwardedHost) {
+        $scheme = $request->headers->get('X-Forwarded-Proto', 'https');
+        $frontendBase = $scheme . '://' . $forwardedHost;
+      }
+      else {
+        $frontendBase = $request->getSchemeAndHttpHost();
+      }
     }
 
     $claimUrl = rtrim($frontendBase, '/') . '/auth/invite?token=' . $token;
@@ -639,6 +690,38 @@ class GroupInvitationController extends ControllerBase {
       $adminJurIds = array_merge($adminJurIds, $this->hierarchyResolver->getDescendantIds($jurId));
     }
     return array_values(array_unique($adminJurIds));
+  }
+
+  /**
+   * Returns the set of group roles the inviting user is permitted to assign.
+   *
+   * Tenant admins can assign member-level and editorial roles.
+   * Only Drupal administrators can assign tenant_admin roles.
+   *
+   * @param bool $isDrupalAdmin
+   *   Whether the inviting user is a Drupal administrator.
+   *
+   * @return string[]
+   *   Array of permitted group role IDs.
+   */
+  protected function getPermittedRoles(bool $isDrupalAdmin): array {
+    // Base roles any tenant admin may assign.
+    $permitted = [
+      'jur-member',
+      'jur-editorial_board',
+      'jur-moderator',
+      'org-member',
+      'org-editorial_board',
+      'org-moderator',
+    ];
+
+    // Only Drupal admins may create new tenant admins.
+    if ($isDrupalAdmin) {
+      $permitted[] = 'jur-tenant_admin';
+      $permitted[] = 'org-tenant_admin';
+    }
+
+    return $permitted;
   }
 
   /**

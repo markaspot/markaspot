@@ -45,14 +45,14 @@ markaspot_group.invitation_list:
     _auth: ['cookie', 'api_key_auth']
 
 markaspot_group.invitation_revoke:
-  path: '/api/group-members/invitations/{token}'
+  path: '/api/group-members/invitations/{invitation_id}'
   defaults:
     _controller: '\Drupal\markaspot_group\Controller\GroupInvitationController::revokeInvitation'
   methods: [DELETE]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
     _csrf_token: 'TRUE'
-    token: '[a-f0-9]{64}'
+    invitation_id: \d+
   options:
     _format: 'json'
     _auth: ['cookie', 'api_key_auth']
