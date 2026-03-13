@@ -15,6 +15,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -53,6 +54,8 @@ class GroupInvitationController extends ControllerBase {
    *   The jurisdiction hierarchy resolver.
    * @param \Drupal\Core\Session\AccountInterface $currentUser
    *   The current user.
+   * @param object|null $tierConfigService
+   *   The tier config service (from markaspot_fastmap), or NULL.
    */
   public function __construct(
     protected readonly Connection $database,
@@ -122,7 +125,7 @@ class GroupInvitationController extends ControllerBase {
   /**
    * Sends an invitation to join a group.
    *
-   * POST /api/group-members/invite
+   * POST /api/group-members/invite.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The current request.
@@ -285,10 +288,10 @@ class GroupInvitationController extends ControllerBase {
   /**
    * Revokes a pending invitation.
    *
-   * DELETE /api/group-members/invitations/{token}
+   * DELETE /api/group-members/invitations/{invitation_id}
    *
-   * @param string $token
-   *   The invitation token.
+   * @param int $invitation_id
+   *   The invitation ID.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON response confirming revocation.
@@ -342,12 +345,14 @@ class GroupInvitationController extends ControllerBase {
    *
    * @param string $token
    *   The invitation token.
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The current request.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON response with claim result.
    */
   public function claimInvitation(string $token, Request $request): JsonResponse {
-    // Atomically mark the invitation as claimed to prevent double-claim race condition.
+    // Atomically mark as claimed to prevent double-claim.
     $now = time();
     $affected = $this->database->update('markaspot_group_invitations')
       ->fields(['claimed' => $now])
@@ -475,7 +480,7 @@ class GroupInvitationController extends ControllerBase {
       return NULL;
     }
 
-    // Resolve to the jurisdiction group (for org groups, look up the parent jur).
+    // Resolve to the jurisdiction group (for org groups, find parent).
     $jurGroup = $this->resolveJurisdictionGroup($group);
     if (!$jurGroup || !$jurGroup->hasField('field_tier') || $jurGroup->get('field_tier')->isEmpty()) {
       return NULL;
@@ -559,7 +564,7 @@ class GroupInvitationController extends ControllerBase {
    * @return \Drupal\user\UserInterface|null
    *   The user entity, or NULL on failure.
    */
-  protected function findOrCreateUser(string $email, string $langcode): ?\Drupal\user\UserInterface {
+  protected function findOrCreateUser(string $email, string $langcode): ?UserInterface {
     $userStorage = $this->entityTypeManager()->getStorage('user');
 
     // Look up existing user by email.
