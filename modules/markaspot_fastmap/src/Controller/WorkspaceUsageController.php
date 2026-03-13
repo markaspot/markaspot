@@ -62,7 +62,8 @@ class WorkspaceUsageController extends ControllerBase {
       return $hasPermission;
     }
 
-    // Non-admins must be a member of this group.
+    // Non-admins must be a member of this group to prevent cross-tenant
+    // usage enumeration (tier + report counts are business-sensitive).
     $membership = $group->getMember($account);
     $isMember = AccessResult::allowedIf($membership !== FALSE)
       ->cachePerUser()

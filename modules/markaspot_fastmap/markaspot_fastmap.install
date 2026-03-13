@@ -237,3 +237,18 @@ function markaspot_fastmap_update_11901(): void {
     }
   }
 }
+
+/**
+ * Grant 'access workspace usage' permission to api_user role.
+ */
+function markaspot_fastmap_update_11902(): void {
+  $logger = \Drupal::logger('markaspot_fastmap');
+  foreach (['api_user', 'tenant_admin', 'moderator', 'editorial_board'] as $role_id) {
+    $role = \Drupal\user\Entity\Role::load($role_id);
+    if ($role && !$role->hasPermission('access workspace usage')) {
+      $role->grantPermission('access workspace usage');
+      $role->save();
+      $logger->info('Granted "access workspace usage" to @role role.', ['@role' => $role_id]);
+    }
+  }
+}
