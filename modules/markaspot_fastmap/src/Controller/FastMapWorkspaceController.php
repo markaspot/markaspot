@@ -162,13 +162,13 @@ class FastMapWorkspaceController extends ControllerBase {
     $verifyBaseUrl = $config->get('verify_base_url');
     $frontendBase = $data['frontend_base_url'] ?? '';
     if ($frontendBase && preg_match('#^https?://#', $frontendBase)) {
-      $verifyUrl = rtrim($frontendBase, '/') . '/api/fastmap/verify/' . $token;
+      $verifyUrl = rtrim($frontendBase, '/') . '/start/verify/' . $token;
     }
     elseif ($verifyBaseUrl) {
-      $verifyUrl = rtrim($verifyBaseUrl, '/') . '/api/fastmap/verify/' . $token;
+      $verifyUrl = rtrim($verifyBaseUrl, '/') . '/start/verify/' . $token;
     }
     else {
-      $verifyUrl = $request->getSchemeAndHttpHost() . '/api/fastmap/verify/' . $token;
+      $verifyUrl = $request->getSchemeAndHttpHost() . '/start/verify/' . $token;
     }
 
     $cleanupDays = (int) ($config->get('cleanup_days') ?? 7);
@@ -202,7 +202,7 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
-   * GET /api/fastmap/verify/{token}.
+   * GET /start/verify/{token}.
    *
    * Looks up the pending record, provisions the workspace, then redirects.
    */
