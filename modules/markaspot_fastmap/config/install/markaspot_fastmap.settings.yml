@@ -16,3 +16,8 @@ tier_limits:
   heart:
     limit: 500
     period: monthly
+member_limits:
+  free: 1
+  starter: 5
+  pro: 20
+  heart: 5

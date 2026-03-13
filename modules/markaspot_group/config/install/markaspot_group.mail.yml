@@ -1,0 +1,12 @@
+langcode: en
+member_invitation:
+  subject: '@site_name: You have been invited to "@group_name"'
+  body: |
+    You have been invited to join the group "@group_name" on @site_name.
+
+    Click the link below to accept the invitation:
+    @claim_url
+
+    This invitation expires in 7 days.
+
+    If you did not expect this invitation, please ignore this email.

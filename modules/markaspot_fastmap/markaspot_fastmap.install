@@ -252,3 +252,19 @@ function markaspot_fastmap_update_11902(): void {
     }
   }
 }
+
+/**
+ * Add member_limits config to markaspot_fastmap.settings.
+ */
+function markaspot_fastmap_update_11903(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
+  if (!$config->get('member_limits')) {
+    $config->set('member_limits', [
+      'free' => 1,
+      'starter' => 5,
+      'pro' => 20,
+      'heart' => 5,
+    ])->save();
+    \Drupal::logger('markaspot_fastmap')->info('Added member_limits config.');
+  }
+}

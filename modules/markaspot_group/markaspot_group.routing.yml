@@ -20,3 +20,50 @@ markaspot_group.member_update:
     uid: \d+
   options:
     _format: 'json'
+
+markaspot_group.invitation_send:
+  path: '/api/group-members/invite'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupInvitationController::invite'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
+    _csrf_token: 'TRUE'
+  options:
+    _format: 'json'
+    _auth: ['cookie', 'api_key_auth']
+
+markaspot_group.invitation_list:
+  path: '/api/group-members/invitations'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupInvitationController::listInvitations'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
+  options:
+    _format: 'json'
+    _auth: ['cookie', 'api_key_auth']
+
+markaspot_group.invitation_revoke:
+  path: '/api/group-members/invitations/{token}'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupInvitationController::revokeInvitation'
+  methods: [DELETE]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
+    _csrf_token: 'TRUE'
+    token: '[a-f0-9]{64}'
+  options:
+    _format: 'json'
+    _auth: ['cookie', 'api_key_auth']
+
+markaspot_group.invitation_claim:
+  path: '/api/group-members/claim/{token}'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupInvitationController::claimInvitation'
+  methods: [POST]
+  requirements:
+    _access: 'TRUE'
+    token: '[a-f0-9]{64}'
+  options:
+    _format: 'json'

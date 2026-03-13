@@ -122,6 +122,61 @@ class TierConfigService {
   }
 
   /**
+   * Gets the member limit for a tier.
+   *
+   * @param string $tier
+   *   The tier machine name (free, starter, pro, heart).
+   *
+   * @return int|null
+   *   The member limit, or NULL for unknown tiers (unlimited).
+   */
+  public function getMemberLimit(string $tier): ?int {
+    $config = $this->configFactory->get('markaspot_fastmap.settings');
+    $memberLimits = $config->get('member_limits');
+
+    if (!empty($memberLimits) && isset($memberLimits[$tier])) {
+      return (int) $memberLimits[$tier];
+    }
+
+    // Hardcoded defaults if config is not set.
+    return match ($tier) {
+      'free' => 1,
+      'starter', 'heart' => 5,
+      'pro' => 20,
+      default => NULL,
+    };
+  }
+
+  /**
+   * Counts active members of a group.
+   *
+   * Uses a direct database query on group_relationship_field_data for
+   * performance, avoiding loading full entity objects.
+   *
+   * @param int $groupId
+   *   The group entity ID.
+   *
+   * @return int
+   *   The number of active members.
+   */
+  public function countMembers(int $groupId): int {
+    $group = $this->entityTypeManager->getStorage('group')->load($groupId);
+    if (!$group) {
+      return 0;
+    }
+
+    $groupType = $group->bundle();
+    $membershipType = $groupType . '-group_membership';
+
+    $query = $this->entityTypeManager->getStorage('group_relationship')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('gid', $groupId)
+      ->condition('type', $membershipType);
+
+    return (int) $query->count()->execute();
+  }
+
+  /**
    * Raw tier lookup without fallback (for getAllLimits).
    */
   protected function getLimitsRaw(string $tier): ?array {

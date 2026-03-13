@@ -1,0 +1,12 @@
+langcode: de
+member_invitation:
+  subject: '@site_name: Einladung zur Gruppe "@group_name"'
+  body: |
+    Sie wurden eingeladen, der Gruppe "@group_name" auf @site_name beizutreten.
+
+    Klicken Sie auf den folgenden Link, um die Einladung anzunehmen:
+    @claim_url
+
+    Diese Einladung ist 7 Tage gueltig.
+
+    Falls Sie diese Einladung nicht erwartet haben, ignorieren Sie bitte diese E-Mail.

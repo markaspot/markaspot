@@ -6,6 +6,80 @@
  */
 
 /**
+ * Implements hook_schema().
+ */
+function markaspot_group_schema(): array {
+  $schema['markaspot_group_invitations'] = [
+    'description' => 'Stores pending group membership invitations.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Primary key.',
+      ],
+      'token' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+        'description' => 'Unique invitation token (hex-encoded random bytes).',
+      ],
+      'email' => [
+        'type' => 'varchar',
+        'length' => 254,
+        'not null' => TRUE,
+        'description' => 'Invitee email address.',
+      ],
+      'group_id' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Target group entity ID.',
+      ],
+      'roles' => [
+        'type' => 'text',
+        'not null' => TRUE,
+        'description' => 'JSON array of group role IDs.',
+      ],
+      'invited_by' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'UID of the user who created the invitation.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Timestamp when the invitation was created.',
+      ],
+      'expires' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'description' => 'Timestamp when the invitation expires.',
+      ],
+      'claimed' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'default' => NULL,
+        'description' => 'Timestamp when the invitation was claimed, NULL if pending.',
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'token' => ['token'],
+    ],
+    'indexes' => [
+      'email_group' => ['email', 'group_id'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
  * Fix jur-admin and org-admin group role scopes to individual.
  *
  * Previously jur-admin had scope=insider (all members became admins) and
@@ -1788,4 +1862,19 @@ function markaspot_group_update_11907(): void {
   }
 
   $logger->info('Reconciliation complete: jur/org types and all fields ensured.');
+}
+
+/**
+ * Create the markaspot_group_invitations table for member invitations.
+ */
+function markaspot_group_update_11908(): void {
+  $schema = \Drupal::database()->schema();
+  if ($schema->tableExists('markaspot_group_invitations')) {
+    return;
+  }
+
+  $table_schema = markaspot_group_schema()['markaspot_group_invitations'];
+  $schema->createTable('markaspot_group_invitations', $table_schema);
+
+  \Drupal::logger('markaspot_group')->info('Created markaspot_group_invitations table.');
 }

@@ -5,3 +5,21 @@ markaspot_group.settings:
     jurisdiction_field_strategy:
       type: string
       label: 'Jurisdiction field strategy'
+
+markaspot_group.mail:
+  type: config_object
+  label: 'Mark-a-Spot Group mail templates'
+  mapping:
+    langcode:
+      type: string
+      label: 'Language code'
+    member_invitation:
+      type: mapping
+      label: 'Member invitation email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'

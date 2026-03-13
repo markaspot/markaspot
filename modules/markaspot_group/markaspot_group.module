@@ -28,6 +28,38 @@ function markaspot_group_mail(string $key, array &$message, array $params): void
   if ($key === 'org_notification') {
     $message['subject'] = $params['subject'];
     $message['body'][] = $params['message'];
+    return;
+  }
+
+  if ($key === 'member_invitation') {
+    $langcode = $message['langcode'] ?? $params['langcode'] ?? 'en';
+
+    // Load mail config in the message's language.
+    $mail_config = \Drupal::languageManager()
+      ->getLanguageConfigOverride($langcode, 'markaspot_group.mail')
+      ->get($key);
+
+    // Fallback to default language if translation doesn't exist.
+    if (empty($mail_config)) {
+      $mail_config = \Drupal::config('markaspot_group.mail')->get($key);
+    }
+
+    // Final fallback: hardcoded English templates.
+    if (empty($mail_config)) {
+      $mail_config = [
+        'subject' => '@site_name: You have been invited to "@group_name"',
+        'body' => "You have been invited to join the group \"@group_name\" on @site_name.\n\nClick the link below to accept the invitation:\n@claim_url\n\nThis invitation expires in 7 days.\n\nIf you did not expect this invitation, please ignore this email.",
+      ];
+    }
+
+    $replacements = [
+      '@site_name' => $params['site_name'] ?? 'Mark-a-Spot',
+      '@group_name' => $params['group_name'] ?? '',
+      '@claim_url' => $params['claim_url'] ?? '',
+    ];
+
+    $message['subject'] = strtr($mail_config['subject'], $replacements);
+    $message['body'][] = strtr($mail_config['body'], $replacements);
   }
 }
 

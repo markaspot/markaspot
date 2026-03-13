@@ -30,6 +30,12 @@ markaspot_fastmap.settings:
           period:
             type: string
             label: 'Count period (monthly or total)'
+    member_limits:
+      type: sequence
+      label: 'Member limits per tier'
+      sequence:
+        type: integer
+        label: 'Maximum number of group members'
 
 markaspot_fastmap.mail:
   type: config_object
