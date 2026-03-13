@@ -157,9 +157,14 @@ class FastMapWorkspaceController extends ControllerBase {
       return new JsonResponse(['error' => 'Failed to create pending workspace'], 500);
     }
 
-    // Build verify URL from config or request host.
+    // Build verify URL: prefer frontend_base_url from request (set by Nuxt
+    // proxy), then config, then fall back to request host.
     $verifyBaseUrl = $config->get('verify_base_url');
-    if ($verifyBaseUrl) {
+    $frontendBase = $data['frontend_base_url'] ?? '';
+    if ($frontendBase && preg_match('#^https?://#', $frontendBase)) {
+      $verifyUrl = rtrim($frontendBase, '/') . '/api/fastmap/verify/' . $token;
+    }
+    elseif ($verifyBaseUrl) {
       $verifyUrl = rtrim($verifyBaseUrl, '/') . '/api/fastmap/verify/' . $token;
     }
     else {
