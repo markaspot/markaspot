@@ -708,10 +708,8 @@ class GroupInvitationController extends ControllerBase {
     // Base roles any tenant admin may assign.
     $permitted = [
       'jur-member',
-      'jur-editorial_board',
       'jur-moderator',
       'org-member',
-      'org-editorial_board',
       'org-moderator',
     ];
 
