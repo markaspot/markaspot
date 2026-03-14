@@ -14,7 +14,6 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\group\PermissionScopeInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
-use Drupal\Core\Session\SessionManagerInterface;
 use Drupal\user\UserInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -44,13 +43,6 @@ class GroupMembersController extends ControllerBase {
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
-   * The session manager.
-   *
-   * @var \Drupal\Core\Session\SessionManagerInterface
-   */
-  protected SessionManagerInterface $sessionManager;
-
-  /**
    * Constructs a GroupMembersController.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -61,21 +53,17 @@ class GroupMembersController extends ControllerBase {
    *   The jurisdiction hierarchy resolver.
    * @param \Drupal\Core\Session\AccountInterface $currentUser
    *   The current user.
-   * @param \Drupal\Core\Session\SessionManagerInterface $sessionManager
-   *   The session manager.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
     GroupMembershipLoaderInterface $membershipLoader,
     JurisdictionHierarchyResolverInterface $hierarchyResolver,
     AccountInterface $currentUser,
-    SessionManagerInterface $sessionManager,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->membershipLoader = $membershipLoader;
     $this->hierarchyResolver = $hierarchyResolver;
     $this->currentUser = $currentUser;
-    $this->sessionManager = $sessionManager;
   }
 
   /**
@@ -87,7 +75,6 @@ class GroupMembersController extends ControllerBase {
       $container->get('group.membership_loader'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('current_user'),
-      $container->get('session_manager'),
     );
   }
 
@@ -275,7 +262,7 @@ class GroupMembersController extends ControllerBase {
       }
       elseif ($action === 'set') {
         $roles = $update['roles'] ?? [];
-        $result = $this->handleSetMembership($group, $targetUser, $roles, $currentAccount);
+        $result = $this->handleSetMembership($group, $targetUser, $roles, $currentAccount, $isDrupalAdmin);
       }
       else {
         $errors[] = "Invalid action '$action' for group $groupId.";
@@ -298,8 +285,8 @@ class GroupMembersController extends ControllerBase {
     $this->getLogger('markaspot_group')->notice(
       'User @admin updated memberships for user @target: @updates',
       [
-        '@admin' => $currentAccount->getDisplayName(),
-        '@target' => $targetUser->getDisplayName(),
+        '@admin' => preg_replace('/[\r\n\t]/', ' ', $currentAccount->getDisplayName()),
+        '@target' => preg_replace('/[\r\n\t]/', ' ', $targetUser->getDisplayName()),
         '@updates' => json_encode($updated),
       ]
     );
@@ -332,23 +319,35 @@ class GroupMembersController extends ControllerBase {
       return new JsonResponse(['error' => 'Access denied to this user.'], 403);
     }
 
-    // Build memberships with group labels.
+    // Build memberships with group labels, scoped to caller's visible groups.
+    $visibleGroups = $this->loadVisibleGroups('');
+    $visibleGroupIds = array_map(fn($g) => (int) $g->id(), $visibleGroups);
+
     $memberships = [];
     $allMemberships = $this->membershipLoader->loadByUser($targetUser);
     foreach ($allMemberships as $membership) {
       $group = $membership->getGroup();
-      $groupId = (string) $group->id();
+      $groupId = (int) $group->id();
+      if (!$isDrupalAdmin && !in_array($groupId, $visibleGroupIds, TRUE)) {
+        continue;
+      }
       $roles = [];
       foreach ($membership->getRoles(FALSE) as $role) {
         if ($role->getScope() === PermissionScopeInterface::INDIVIDUAL_ID) {
           $roles[] = $role->id();
         }
       }
-      $memberships[$groupId] = [
+      $memberships[(string) $groupId] = [
         'roles' => $roles,
         'group_label' => $group->label(),
       ];
     }
+
+    // Filter out sensitive Drupal roles.
+    $exposedRoles = array_values(array_filter(
+      $targetUser->getRoles(),
+      fn($r) => !in_array($r, ['administrator', 'api_user'], TRUE)
+    ));
 
     return new JsonResponse([
       'uid' => (int) $targetUser->id(),
@@ -357,7 +356,7 @@ class GroupMembersController extends ControllerBase {
       'status' => (int) $targetUser->isActive(),
       'created' => (int) $targetUser->getCreatedTime(),
       'last_login' => (int) $targetUser->getLastLoginTime(),
-      'drupal_roles' => array_values($targetUser->getRoles()),
+      'drupal_roles' => $exposedRoles,
       'memberships' => $memberships,
     ]);
   }
@@ -408,6 +407,9 @@ class GroupMembersController extends ControllerBase {
         if ($isSelf) {
           return new JsonResponse(['error' => 'Cannot anonymize your own account.'], 400);
         }
+        if (str_starts_with($targetUser->getAccountName(), 'anonymized_')) {
+          return new JsonResponse(['error' => 'User is already anonymized.'], 409);
+        }
 
         $anonymizedName = 'anonymized_' . $uid;
         $anonymizedEmail = 'anonymized_' . $uid . '@deleted.invalid';
@@ -431,8 +433,8 @@ class GroupMembersController extends ControllerBase {
         $this->getLogger('markaspot_group')->notice(
           'User @admin anonymized user @target (uid: @uid).',
           [
-            '@admin' => $currentAccount->getDisplayName(),
-            '@target' => $anonymizedName,
+            '@admin' => preg_replace('/[\r\n\t]/', ' ', $currentAccount->getDisplayName()),
+            '@target' => preg_replace('/[\r\n\t]/', ' ', $anonymizedName),
             '@uid' => $uid,
           ]
         );
@@ -450,6 +452,19 @@ class GroupMembersController extends ControllerBase {
       if (isset($content['name']) && is_string($content['name'])) {
         $newName = trim($content['name']);
         if ($newName !== '') {
+          if (mb_strlen($newName) > 60) {
+            return new JsonResponse(['error' => 'Name exceeds maximum length of 60 characters.'], 400);
+          }
+          // Check username uniqueness.
+          $existingName = $userStorage->getQuery()
+            ->accessCheck(FALSE)
+            ->condition('name', $newName)
+            ->condition('uid', $uid, '<>')
+            ->count()
+            ->execute();
+          if ((int) $existingName > 0) {
+            return new JsonResponse(['error' => 'Username is already in use.'], 409);
+          }
           $targetUser->setUsername($newName);
           $changes[] = 'name';
         }
@@ -459,6 +474,9 @@ class GroupMembersController extends ControllerBase {
       if (isset($content['email']) && is_string($content['email'])) {
         $newEmail = trim($content['email']);
         if ($newEmail !== '' && $newEmail !== $targetUser->getEmail()) {
+          if (!\Drupal::service('email.validator')->isValid($newEmail)) {
+            return new JsonResponse(['error' => 'Invalid email address format.'], 400);
+          }
           // Check email uniqueness.
           $existing = $userStorage->getQuery()
             ->accessCheck(FALSE)
@@ -497,18 +515,32 @@ class GroupMembersController extends ControllerBase {
       }
 
       if (!empty($changes)) {
+        $violations = $targetUser->validate();
+        if ($violations->count() > 0) {
+          $messages = [];
+          foreach ($violations as $violation) {
+            $messages[] = (string) $violation->getMessage();
+          }
+          return new JsonResponse(['error' => implode('; ', $messages)], 422);
+        }
         $targetUser->save();
 
         $this->getLogger('markaspot_group')->notice(
           'User @admin updated profile for user @target (uid: @uid): @changes.',
           [
-            '@admin' => $currentAccount->getDisplayName(),
-            '@target' => $targetUser->getDisplayName(),
+            '@admin' => preg_replace('/[\r\n\t]/', ' ', $currentAccount->getDisplayName()),
+            '@target' => preg_replace('/[\r\n\t]/', ' ', $targetUser->getDisplayName()),
             '@uid' => $uid,
             '@changes' => implode(', ', $changes),
           ]
         );
       }
+
+      // Filter out sensitive Drupal roles.
+      $exposedRoles = array_values(array_filter(
+        $targetUser->getRoles(),
+        fn($r) => !in_array($r, ['administrator', 'api_user'], TRUE)
+      ));
 
       return new JsonResponse([
         'uid' => (int) $targetUser->id(),
@@ -517,7 +549,7 @@ class GroupMembersController extends ControllerBase {
         'status' => (int) $targetUser->isActive(),
         'created' => (int) $targetUser->getCreatedTime(),
         'last_login' => (int) $targetUser->getLastLoginTime(),
-        'drupal_roles' => array_values($targetUser->getRoles()),
+        'drupal_roles' => $exposedRoles,
         'changes' => $changes,
       ]);
     }
@@ -537,6 +569,13 @@ class GroupMembersController extends ControllerBase {
    *   The user ID whose sessions should be invalidated.
    */
   protected function invalidateUserSessions(int $uid): void {
+    $userStorage = $this->entityTypeManager()->getStorage('user');
+    $user = $userStorage->load($uid);
+    if ($user instanceof UserInterface) {
+      $user->set('login', \Drupal::time()->getRequestTime());
+      $user->save();
+    }
+    // Also clear from SQL sessions table as fallback.
     $connection = Database::getConnection();
     $connection->delete('sessions')
       ->condition('uid', $uid)
@@ -679,6 +718,8 @@ class GroupMembersController extends ControllerBase {
    *   The visible groups to load memberships for.
    * @param bool $isDrupalAdmin
    *   Whether the requesting user is a Drupal administrator.
+   * @param bool $includeInactive
+   *   Whether to include blocked/inactive users in the results.
    *
    * @return array
    *   Tuple of [users array, total count].
@@ -753,13 +794,19 @@ class GroupMembersController extends ControllerBase {
         && !$user->get('field_all_groups_member')->isEmpty()
         && (bool) $user->get('field_all_groups_member')->value;
 
+      // Filter out sensitive Drupal roles.
+      $exposedRoles = array_values(array_filter(
+        $user->getRoles(),
+        fn($r) => !in_array($r, ['administrator', 'api_user'], TRUE)
+      ));
+
       $userData = [
         'uid' => (int) $user->id(),
         'name' => $user->getDisplayName(),
         'email' => $user->getEmail() ?? '',
         'status' => (int) $user->isActive(),
         'created' => (int) $user->getCreatedTime(),
-        'drupal_roles' => array_values($user->getRoles()),
+        'drupal_roles' => $exposedRoles,
         'memberships' => $this->loadUserMemberships($user, $groupIds),
         'all_groups_member' => $isAllGroupsMember,
       ];
@@ -877,9 +924,22 @@ class GroupMembersController extends ControllerBase {
     UserInterface $targetUser,
     array $roleIds,
     AccountInterface $currentAccount,
+    bool $isDrupalAdmin = FALSE,
   ): array {
     $groupId = (int) $group->id();
     $groupType = $group->bundle();
+
+    // Prevent tenant_admin from assigning tenant_admin role.
+    if (!$isDrupalAdmin) {
+      foreach ($roleIds as $roleId) {
+        if (str_ends_with($roleId, '-tenant_admin')) {
+          return [
+            'success' => FALSE,
+            'error' => 'Only administrators can assign the tenant_admin role.',
+          ];
+        }
+      }
+    }
 
     // Validate that all roles are individual-scope roles for this group type.
     $roleStorage = $this->entityTypeManager()->getStorage('group_role');
