@@ -60,6 +60,34 @@ function markaspot_fastmap_schema(): array {
     ],
   ];
 
+  $schema['markaspot_fastmap_verified'] = [
+    'description' => 'Tracks verified tokens so re-verify works after email prefetch.',
+    'fields' => [
+      'token' => [
+        'description' => 'Original verification token.',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ],
+      'slug' => [
+        'description' => 'Provisioned workspace slug.',
+        'type' => 'varchar',
+        'length' => 30,
+        'not null' => TRUE,
+      ],
+      'created' => [
+        'description' => 'Unix timestamp of verification.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+    ],
+    'primary key' => ['token'],
+    'indexes' => [
+      'created' => ['created'],
+    ],
+  ];
+
   return $schema;
 }
 
@@ -250,6 +278,21 @@ function markaspot_fastmap_update_11902(): void {
       $role->save();
       $logger->info('Granted "access workspace usage" to @role role.', ['@role' => $role_id]);
     }
+  }
+}
+
+/**
+ * Add verified tokens table (re-verify after email prefetch).
+ */
+function markaspot_fastmap_update_11904(): void {
+  $schema = markaspot_fastmap_schema();
+  if (!$schema['markaspot_fastmap_verified']) {
+    return;
+  }
+  $db = \Drupal::database();
+  if (!$db->schema()->tableExists('markaspot_fastmap_verified')) {
+    $db->schema()->createTable('markaspot_fastmap_verified', $schema['markaspot_fastmap_verified']);
+    \Drupal::logger('markaspot_fastmap')->info('Created markaspot_fastmap_verified table.');
   }
 }
 

@@ -215,6 +215,25 @@ class FastMapWorkspaceController extends ControllerBase {
       ->fetchAssoc();
 
     if (!$record) {
+      // Token may have been consumed by a prefetch/preload from the email
+      // client. Check if the workspace was already provisioned by looking
+      // for a verified record or matching group.
+      $verified = $this->database->select('markaspot_fastmap_verified', 'v')
+        ->fields('v', ['slug'])
+        ->condition('token', $token)
+        ->range(0, 1)
+        ->execute()
+        ->fetchField();
+
+      if ($verified) {
+        $baseUrl = $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
+        if ($baseUrl) {
+          $redirectUrl = str_replace('{slug}', $verified, $baseUrl);
+          return new TrustedRedirectResponse($redirectUrl);
+        }
+        return new JsonResponse(['slug' => $verified], 200);
+      }
+
       return new JsonResponse(['error' => 'Invalid or expired verification token'], 404);
     }
 
@@ -238,9 +257,17 @@ class FastMapWorkspaceController extends ControllerBase {
     try {
       $result = $this->provisioning->provisionWorkspace($workspaceData);
 
-      // Delete the pending record.
+      // Move from pending to verified (allows re-verify after prefetch).
       $this->database->delete('markaspot_fastmap_pending')
         ->condition('id', $record['id'])
+        ->execute();
+
+      $this->database->merge('markaspot_fastmap_verified')
+        ->keys(['token' => $token])
+        ->fields([
+          'slug' => $result['slug'],
+          'created' => time(),
+        ])
         ->execute();
 
       $this->fastmapLogger->info('Workspace provisioned via email verification: @slug (group @id)', [
