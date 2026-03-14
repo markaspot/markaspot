@@ -1867,6 +1867,9 @@ function markaspot_group_update_11907(): void {
 /**
  * Create the markaspot_group_invitations table for member invitations.
  */
+/**
+ * Create markaspot_group_invitations table.
+ */
 function markaspot_group_update_11908(): void {
   $schema = \Drupal::database()->schema();
   if ($schema->tableExists('markaspot_group_invitations')) {
@@ -1877,4 +1880,49 @@ function markaspot_group_update_11908(): void {
   $schema->createTable('markaspot_group_invitations', $table_schema);
 
   \Drupal::logger('markaspot_group')->info('Created markaspot_group_invitations table.');
+}
+
+/**
+ * Rename Moderator role to Moderation, fix scope to individual.
+ */
+function markaspot_group_update_11909(): void {
+  $storage = \Drupal::entityTypeManager()->getStorage('group_role');
+  $logger = \Drupal::logger('markaspot_group');
+
+  $roles_to_fix = [
+    'jur-moderator' => 'Moderation',
+    'org-moderator' => 'Moderation',
+  ];
+
+  foreach ($roles_to_fix as $role_id => $new_label) {
+    /** @var \Drupal\group\Entity\GroupRoleInterface|null $role */
+    $role = $storage->load($role_id);
+    if (!$role) {
+      $logger->warning('Group role @id not found, skipping.', ['@id' => $role_id]);
+      continue;
+    }
+
+    $changed = FALSE;
+
+    // Rename label.
+    if ($role->label() !== $new_label) {
+      $role->set('label', $new_label);
+      $changed = TRUE;
+    }
+
+    // Fix scope from outsider to individual.
+    if ($role->getScope() !== 'individual') {
+      $role->set('scope', 'individual');
+      $role->set('global_role', NULL);
+      $changed = TRUE;
+    }
+
+    if ($changed) {
+      $role->save();
+      $logger->info('Updated group role @id: label=@label, scope=individual.', [
+        '@id' => $role_id,
+        '@label' => $new_label,
+      ]);
+    }
+  }
 }
