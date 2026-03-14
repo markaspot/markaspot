@@ -412,7 +412,9 @@ class GroupMembersController extends ControllerBase {
         $anonymizedName = 'anonymized_' . $uid;
         $anonymizedEmail = 'anonymized_' . $uid . '@deleted.invalid';
         $targetUser->setUsername($anonymizedName);
-        $targetUser->set('field_display_name', $anonymizedName);
+        if ($targetUser->hasField('field_display_name')) {
+          $targetUser->set('field_display_name', $anonymizedName);
+        }
         $targetUser->setEmail($anonymizedEmail);
         $targetUser->block();
         $targetUser->save();
