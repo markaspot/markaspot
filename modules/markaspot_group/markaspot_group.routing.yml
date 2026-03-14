@@ -21,6 +21,29 @@ markaspot_group.member_update:
   options:
     _format: 'json'
 
+markaspot_group.member_detail:
+  path: '/api/group-members/{uid}/detail'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupMembersController::getUserDetail'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
+    uid: \d+
+  options:
+    _format: 'json'
+
+markaspot_group.member_profile_update:
+  path: '/api/group-members/{uid}/profile'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupMembersController::updateUserProfile'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
+    _csrf_token: 'TRUE'
+    uid: \d+
+  options:
+    _format: 'json'
+
 markaspot_group.invitation_send:
   path: '/api/group-members/invite'
   defaults:

@@ -14,6 +14,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\group\PermissionScopeInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\Core\Session\SessionManagerInterface;
 use Drupal\user\UserInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -43,6 +44,13 @@ class GroupMembersController extends ControllerBase {
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * The session manager.
+   *
+   * @var \Drupal\Core\Session\SessionManagerInterface
+   */
+  protected SessionManagerInterface $sessionManager;
+
+  /**
    * Constructs a GroupMembersController.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -53,17 +61,21 @@ class GroupMembersController extends ControllerBase {
    *   The jurisdiction hierarchy resolver.
    * @param \Drupal\Core\Session\AccountInterface $currentUser
    *   The current user.
+   * @param \Drupal\Core\Session\SessionManagerInterface $sessionManager
+   *   The session manager.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
     GroupMembershipLoaderInterface $membershipLoader,
     JurisdictionHierarchyResolverInterface $hierarchyResolver,
     AccountInterface $currentUser,
+    SessionManagerInterface $sessionManager,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->membershipLoader = $membershipLoader;
     $this->hierarchyResolver = $hierarchyResolver;
     $this->currentUser = $currentUser;
+    $this->sessionManager = $sessionManager;
   }
 
   /**
@@ -75,6 +87,7 @@ class GroupMembersController extends ControllerBase {
       $container->get('group.membership_loader'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('current_user'),
+      $container->get('session_manager'),
     );
   }
 
@@ -127,10 +140,11 @@ class GroupMembersController extends ControllerBase {
     $groupTypeFilter = (string) $request->query->get('group_type', '');
 
     try {
+      $includeInactive = $request->query->has('include_inactive');
       $groups = $this->loadVisibleGroups($groupTypeFilter);
       $availableRolesByType = $this->loadAvailableRoles($groups);
       $isDrupalAdmin = in_array('administrator', $this->currentUser()->getRoles(), TRUE);
-      [$users, $totalUsers] = $this->loadUsers($page, $pageSize, $search, $groups, $isDrupalAdmin);
+      [$users, $totalUsers] = $this->loadUsers($page, $pageSize, $search, $groups, $isDrupalAdmin, $includeInactive);
 
       // Build group data with hierarchy metadata.
       $groupsData = [];
@@ -294,6 +308,240 @@ class GroupMembersController extends ControllerBase {
   }
 
   /**
+   * Returns detailed information for a single user.
+   *
+   * @param int $uid
+   *   The user ID to get details for.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON response with detailed user data.
+   */
+  public function getUserDetail(int $uid): JsonResponse {
+    $currentAccount = $this->currentUser();
+    $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
+
+    $userStorage = $this->entityTypeManager()->getStorage('user');
+    /** @var \Drupal\user\UserInterface|null $targetUser */
+    $targetUser = $userStorage->load($uid);
+    if (!$targetUser) {
+      return new JsonResponse(['error' => 'User not found.'], 404);
+    }
+
+    // Verify the target user is within the caller's admin scope.
+    if (!$isDrupalAdmin && !$this->isUserInAdminScope($targetUser, $currentAccount)) {
+      return new JsonResponse(['error' => 'Access denied to this user.'], 403);
+    }
+
+    // Build memberships with group labels.
+    $memberships = [];
+    $allMemberships = $this->membershipLoader->loadByUser($targetUser);
+    foreach ($allMemberships as $membership) {
+      $group = $membership->getGroup();
+      $groupId = (string) $group->id();
+      $roles = [];
+      foreach ($membership->getRoles(FALSE) as $role) {
+        if ($role->getScope() === PermissionScopeInterface::INDIVIDUAL_ID) {
+          $roles[] = $role->id();
+        }
+      }
+      $memberships[$groupId] = [
+        'roles' => $roles,
+        'group_label' => $group->label(),
+      ];
+    }
+
+    return new JsonResponse([
+      'uid' => (int) $targetUser->id(),
+      'name' => $targetUser->getDisplayName(),
+      'email' => $targetUser->getEmail() ?? '',
+      'status' => (int) $targetUser->isActive(),
+      'created' => (int) $targetUser->getCreatedTime(),
+      'last_login' => (int) $targetUser->getLastLoginTime(),
+      'drupal_roles' => array_values($targetUser->getRoles()),
+      'memberships' => $memberships,
+    ]);
+  }
+
+  /**
+   * Updates a user's profile (name, email, status, anonymization).
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The current request containing profile update data.
+   * @param int $uid
+   *   The user ID to update.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON response with the updated user data or error.
+   */
+  public function updateUserProfile(Request $request, int $uid): JsonResponse {
+    // Cannot modify superadmin.
+    if ($uid === 1) {
+      return new JsonResponse(['error' => 'Cannot modify the superadmin account.'], 403);
+    }
+
+    $content = json_decode($request->getContent(), TRUE);
+    if (empty($content) || !is_array($content)) {
+      return new JsonResponse(['error' => 'Invalid request body.'], 400);
+    }
+
+    $currentAccount = $this->currentUser();
+    $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
+
+    $userStorage = $this->entityTypeManager()->getStorage('user');
+    /** @var \Drupal\user\UserInterface|null $targetUser */
+    $targetUser = $userStorage->load($uid);
+    if (!$targetUser) {
+      return new JsonResponse(['error' => 'User not found.'], 404);
+    }
+
+    // Verify the target user is within the caller's admin scope.
+    if (!$isDrupalAdmin && !$this->isUserInAdminScope($targetUser, $currentAccount)) {
+      return new JsonResponse(['error' => 'Access denied to this user.'], 403);
+    }
+
+    $isSelf = (int) $currentAccount->id() === $uid;
+    $changes = [];
+
+    try {
+      // Handle anonymization (irreversible, must be processed first).
+      if (!empty($content['anonymize'])) {
+        if ($isSelf) {
+          return new JsonResponse(['error' => 'Cannot anonymize your own account.'], 400);
+        }
+
+        $anonymizedName = 'anonymized_' . $uid;
+        $anonymizedEmail = 'anonymized_' . $uid . '@deleted.invalid';
+        $targetUser->setUsername($anonymizedName);
+        $targetUser->set('field_display_name', $anonymizedName);
+        $targetUser->setEmail($anonymizedEmail);
+        $targetUser->block();
+        $targetUser->save();
+
+        // Remove from all groups.
+        $allMemberships = $this->membershipLoader->loadByUser($targetUser);
+        foreach ($allMemberships as $membership) {
+          $membership->getGroup()->removeMember($targetUser);
+        }
+
+        // Invalidate sessions.
+        $this->invalidateUserSessions($uid);
+
+        $this->getLogger('markaspot_group')->notice(
+          'User @admin anonymized user @target (uid: @uid).',
+          [
+            '@admin' => $currentAccount->getDisplayName(),
+            '@target' => $anonymizedName,
+            '@uid' => $uid,
+          ]
+        );
+
+        return new JsonResponse([
+          'uid' => $uid,
+          'name' => $anonymizedName,
+          'email' => $anonymizedEmail,
+          'status' => 0,
+          'anonymized' => TRUE,
+        ]);
+      }
+
+      // Handle name update.
+      if (isset($content['name']) && is_string($content['name'])) {
+        $newName = trim($content['name']);
+        if ($newName !== '') {
+          $targetUser->setUsername($newName);
+          $changes[] = 'name';
+        }
+      }
+
+      // Handle email update with uniqueness check.
+      if (isset($content['email']) && is_string($content['email'])) {
+        $newEmail = trim($content['email']);
+        if ($newEmail !== '' && $newEmail !== $targetUser->getEmail()) {
+          // Check email uniqueness.
+          $existing = $userStorage->getQuery()
+            ->accessCheck(FALSE)
+            ->condition('mail', $newEmail)
+            ->condition('uid', $uid, '<>')
+            ->count()
+            ->execute();
+          if ((int) $existing > 0) {
+            return new JsonResponse(['error' => 'Email address is already in use.'], 409);
+          }
+          $targetUser->setEmail($newEmail);
+          $changes[] = 'email';
+        }
+      }
+
+      // Handle status update.
+      if (isset($content['status']) && in_array($content['status'], [0, 1], TRUE)) {
+        $newStatus = (int) $content['status'];
+        $currentStatus = (int) $targetUser->isActive();
+
+        if ($newStatus !== $currentStatus) {
+          if ($newStatus === 0 && $isSelf) {
+            return new JsonResponse(['error' => 'Cannot deactivate your own account.'], 400);
+          }
+
+          if ($newStatus === 0) {
+            $targetUser->block();
+            $this->invalidateUserSessions($uid);
+            $changes[] = 'blocked';
+          }
+          else {
+            $targetUser->activate();
+            $changes[] = 'activated';
+          }
+        }
+      }
+
+      if (!empty($changes)) {
+        $targetUser->save();
+
+        $this->getLogger('markaspot_group')->notice(
+          'User @admin updated profile for user @target (uid: @uid): @changes.',
+          [
+            '@admin' => $currentAccount->getDisplayName(),
+            '@target' => $targetUser->getDisplayName(),
+            '@uid' => $uid,
+            '@changes' => implode(', ', $changes),
+          ]
+        );
+      }
+
+      return new JsonResponse([
+        'uid' => (int) $targetUser->id(),
+        'name' => $targetUser->getDisplayName(),
+        'email' => $targetUser->getEmail() ?? '',
+        'status' => (int) $targetUser->isActive(),
+        'created' => (int) $targetUser->getCreatedTime(),
+        'last_login' => (int) $targetUser->getLastLoginTime(),
+        'drupal_roles' => array_values($targetUser->getRoles()),
+        'changes' => $changes,
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_group')->error(
+        'Failed to update profile for user @uid: @message',
+        ['@uid' => $uid, '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to update user profile.'], 500);
+    }
+  }
+
+  /**
+   * Invalidates all sessions for a given user.
+   *
+   * @param int $uid
+   *   The user ID whose sessions should be invalidated.
+   */
+  protected function invalidateUserSessions(int $uid): void {
+    $connection = Database::getConnection();
+    $connection->delete('sessions')
+      ->condition('uid', $uid)
+      ->execute();
+  }
+
+  /**
    * Loads groups visible to the current user.
    *
    * Drupal administrators see all groups. Tenant admins see groups within
@@ -433,15 +681,19 @@ class GroupMembersController extends ControllerBase {
    * @return array
    *   Tuple of [users array, total count].
    */
-  protected function loadUsers(int $page, int $pageSize, string $search, array $groups, bool $isDrupalAdmin = FALSE): array {
+  protected function loadUsers(int $page, int $pageSize, string $search, array $groups, bool $isDrupalAdmin = FALSE, bool $includeInactive = FALSE): array {
     $userStorage = $this->entityTypeManager()->getStorage('user');
 
     // Build user query.
     $query = $userStorage->getQuery()
       ->accessCheck(FALSE)
       ->condition('uid', [0, 2], 'NOT IN')
-      ->condition('status', 1)
       ->sort('name');
+
+    // Only show active users unless explicitly including inactive.
+    if (!$includeInactive) {
+      $query->condition('status', 1);
+    }
 
     if ($search !== '') {
       // Escape LIKE metacharacters in user input.
@@ -503,6 +755,8 @@ class GroupMembersController extends ControllerBase {
         'uid' => (int) $user->id(),
         'name' => $user->getDisplayName(),
         'email' => $user->getEmail() ?? '',
+        'status' => (int) $user->isActive(),
+        'created' => (int) $user->getCreatedTime(),
         'drupal_roles' => array_values($user->getRoles()),
         'memberships' => $this->loadUserMemberships($user, $groupIds),
         'all_groups_member' => $isAllGroupsMember,
