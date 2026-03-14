@@ -218,6 +218,11 @@ class GroupMembersController extends ControllerBase {
       return new JsonResponse(['error' => 'User not found.'], 404);
     }
 
+    // Non-admin callers cannot modify Drupal administrators.
+    if (!$isDrupalAdmin && in_array('administrator', $targetUser->getRoles(), TRUE)) {
+      return new JsonResponse(['error' => 'Cannot modify administrator accounts.'], 403);
+    }
+
     // Verify the target user is within the caller's admin scope.
     if (!$isDrupalAdmin && !$this->isUserInAdminScope($targetUser, $currentAccount)) {
       return new JsonResponse(['error' => 'Access denied to this user.'], 403);
@@ -307,11 +312,21 @@ class GroupMembersController extends ControllerBase {
     $currentAccount = $this->currentUser();
     $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
 
+    // Non-admin callers cannot view superadmin or Drupal administrator details.
+    if (!$isDrupalAdmin && ($uid === 1)) {
+      return new JsonResponse(['error' => 'Access denied.'], 403);
+    }
+
     $userStorage = $this->entityTypeManager()->getStorage('user');
     /** @var \Drupal\user\UserInterface|null $targetUser */
     $targetUser = $userStorage->load($uid);
     if (!$targetUser) {
       return new JsonResponse(['error' => 'User not found.'], 404);
+    }
+
+    // Non-admin callers cannot view Drupal administrators.
+    if (!$isDrupalAdmin && in_array('administrator', $targetUser->getRoles(), TRUE)) {
+      return new JsonResponse(['error' => 'Access denied.'], 403);
     }
 
     // Verify the target user is within the caller's admin scope.
@@ -391,6 +406,11 @@ class GroupMembersController extends ControllerBase {
     $targetUser = $userStorage->load($uid);
     if (!$targetUser) {
       return new JsonResponse(['error' => 'User not found.'], 404);
+    }
+
+    // Non-admin callers cannot modify Drupal administrators.
+    if (!$isDrupalAdmin && in_array('administrator', $targetUser->getRoles(), TRUE)) {
+      return new JsonResponse(['error' => 'Cannot modify administrator accounts.'], 403);
     }
 
     // Verify the target user is within the caller's admin scope.
@@ -569,14 +589,14 @@ class GroupMembersController extends ControllerBase {
    *   The user ID whose sessions should be invalidated.
    */
   protected function invalidateUserSessions(int $uid): void {
-    $userStorage = $this->entityTypeManager()->getStorage('user');
-    $user = $userStorage->load($uid);
-    if ($user instanceof UserInterface) {
-      $user->set('login', \Drupal::time()->getRequestTime());
-      $user->save();
-    }
-    // Also clear from SQL sessions table as fallback.
     $connection = Database::getConnection();
+    // Update login timestamp directly via SQL to avoid a second entity save
+    // (and its hook invocations) during flows like anonymization.
+    $connection->update('users_field_data')
+      ->fields(['login' => \Drupal::time()->getRequestTime()])
+      ->condition('uid', $uid)
+      ->execute();
+    // Clear session records as belt-and-suspenders.
     $connection->delete('sessions')
       ->condition('uid', $uid)
       ->execute();
@@ -728,9 +748,28 @@ class GroupMembersController extends ControllerBase {
     $userStorage = $this->entityTypeManager()->getStorage('user');
 
     // Build user query.
+    // Exclude anonymous (0) and api_user (2) always.
+    $excludeUids = [0, 2];
+
+    // Non-admin callers must not see Drupal administrators (including uid 1).
+    // This prevents PII leakage (email, name) of privileged accounts.
+    if (!$isDrupalAdmin) {
+      $adminUids = $userStorage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('roles', 'administrator')
+        ->execute();
+      if (!empty($adminUids)) {
+        $excludeUids = array_merge($excludeUids, array_map('intval', $adminUids));
+      }
+      // Always exclude uid 1 even if they somehow lack the administrator role.
+      if (!in_array(1, $excludeUids, TRUE)) {
+        $excludeUids[] = 1;
+      }
+    }
+
     $query = $userStorage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('uid', [0, 2], 'NOT IN')
+      ->condition('uid', $excludeUids, 'NOT IN')
       ->sort('name');
 
     // Only show active users unless explicitly including inactive.

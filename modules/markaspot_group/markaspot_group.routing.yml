@@ -8,6 +8,7 @@ markaspot_group.members_matrix:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
   options:
     _format: 'json'
+    _auth: ['cookie']
 
 markaspot_group.member_update:
   path: '/api/group-members/{uid}'
@@ -32,6 +33,7 @@ markaspot_group.member_detail:
     uid: \d+
   options:
     _format: 'json'
+    _auth: ['cookie']
 
 markaspot_group.member_profile_update:
   path: '/api/group-members/{uid}/profile'
