@@ -848,11 +848,11 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       }
     }
 
-    // Fallback: ~2km radius around center.
-    // 1 degree latitude ~ 111km, so 2km ~ 0.018 degrees.
-    // Longitude offset adjusted by cos(lat).
-    $latOffset = 0.018;
-    $lngOffset = $centerLat != 0 ? 0.018 / cos(deg2rad($centerLat)) : 0.018;
+    // Fallback: ~500m radius around center.
+    // 1 degree latitude ~ 111km, so 500m ~ 0.0045 degrees.
+    // Longitude offset adjusted by cos(lat). Guard against poles.
+    $latOffset = 0.0045;
+    $lngOffset = abs($centerLat) < 89.9 ? 0.0045 / cos(deg2rad($centerLat)) : 0.0045;
 
     return [
       $centerLat - $latOffset,
