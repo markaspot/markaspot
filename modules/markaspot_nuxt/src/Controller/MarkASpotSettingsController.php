@@ -154,16 +154,13 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata->addCacheTags(['group_list:' . $jur_type]);
 
     if ($jurisdiction_param) {
-      // Try numeric ID first.
+      // SECURITY: Numeric IDs are blocked to prevent trivial enumeration
+      // (1,2,3...). Only slug-based access is allowed. See #133.
       if (is_numeric($jurisdiction_param)) {
-        $loaded_group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_param);
-        // Only use group if it's published.
-        if ($loaded_group && $loaded_group->isPublished()) {
-          $group = $loaded_group;
-        }
+        return new CacheableJsonResponse(['error' => 'Numeric jurisdiction IDs are not supported. Use the jurisdiction slug.'], 400);
       }
-      // Try slug lookup (validate format first).
-      if (!$group && preg_match('/^[a-z0-9_-]{1,64}$/i', $jurisdiction_param)) {
+      // Slug lookup (validate format first).
+      if (preg_match('/^[a-z0-9_-]{1,64}$/i', $jurisdiction_param)) {
         $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
           'type' => $jur_type,
           'field_slug' => $jurisdiction_param,
