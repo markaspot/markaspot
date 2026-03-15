@@ -1,0 +1,12 @@
+langcode: pl
+workspace_verification:
+  subject: '@site_name: Potwierdź swoją przestrzeń roboczą "@workspace_name"'
+  body: |
+    Wysłałeś prośbę o nową przestrzeń roboczą: @workspace_name
+
+    Kliknij poniższy link, aby potwierdzić i aktywować swoją przestrzeń roboczą:
+    @verify_url
+
+    Ten link wygaśnie za @cleanup_days dni.
+
+    Jeśli nie składałeś tej prośby, zignoruj tego e-maila.

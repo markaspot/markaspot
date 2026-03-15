@@ -1,0 +1,12 @@
+langcode: tr
+workspace_verification:
+  subject: '@site_name: "@workspace_name" çalışma alanınızı doğrulayın'
+  body: |
+    Yeni bir çalışma alanı talep ettiniz: @workspace_name
+
+    Çalışma alanınızı doğrulamak ve etkinleştirmek için aşağıdaki bağlantıya tıklayın:
+    @verify_url
+
+    Bu bağlantının süresi @cleanup_days gün içinde dolacaktır.
+
+    Bu talebi siz yapmadıysanız, lütfen bu e-postayı dikkate almayın.

@@ -1,0 +1,12 @@
+langcode: fr
+workspace_verification:
+  subject: '@site_name: Confirmez votre espace de travail "@workspace_name"'
+  body: |
+    Vous avez demandé un nouvel espace de travail : @workspace_name
+
+    Cliquez sur le lien ci-dessous pour confirmer et activer votre espace de travail :
+    @verify_url
+
+    Ce lien expirera dans @cleanup_days jours.
+
+    Si vous n'avez pas fait cette demande, veuillez ignorer cet e-mail.

@@ -1,0 +1,12 @@
+langcode: ar
+workspace_verification:
+  subject: '@site_name: قم بتأكيد مساحة العمل الخاصة بك "@workspace_name"'
+  body: |
+    لقد طلبت مساحة عمل جديدة: @workspace_name
+
+    انقر على الرابط أدناه لتأكيد وتفعيل مساحة العمل الخاصة بك:
+    @verify_url
+
+    ستنتهي صلاحية هذا الرابط خلال @cleanup_days أيام.
+
+    إذا لم تقم بهذا الطلب، يرجى تجاهل هذا البريد الإلكتروني.

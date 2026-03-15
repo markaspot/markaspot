@@ -1,0 +1,12 @@
+langcode: nl
+workspace_verification:
+  subject: '@site_name: Bevestig je werkruimte "@workspace_name"'
+  body: |
+    Je hebt een nieuwe werkruimte aangevraagd: @workspace_name
+
+    Klik op de onderstaande link om je werkruimte te bevestigen en te activeren:
+    @verify_url
+
+    Deze link verloopt over @cleanup_days dagen.
+
+    Als je dit niet hebt aangevraagd, kun je deze e-mail negeren.

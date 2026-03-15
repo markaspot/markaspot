@@ -1,0 +1,12 @@
+langcode: da
+workspace_verification:
+  subject: '@site_name: Bekræft dit arbejdsområde "@workspace_name"'
+  body: |
+    Du har anmodet om et nyt arbejdsområde: @workspace_name
+
+    Klik på linket nedenfor for at bekræfte og aktivere dit arbejdsområde:
+    @verify_url
+
+    Dette link udløber om @cleanup_days dage.
+
+    Hvis du ikke har anmodet om dette, kan du ignorere denne e-mail.

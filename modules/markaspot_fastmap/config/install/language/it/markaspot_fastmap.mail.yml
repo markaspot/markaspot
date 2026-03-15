@@ -1,0 +1,12 @@
+langcode: it
+workspace_verification:
+  subject: '@site_name: Conferma il tuo spazio di lavoro "@workspace_name"'
+  body: |
+    Hai richiesto un nuovo spazio di lavoro: @workspace_name
+
+    Clicca sul link qui sotto per confermare e attivare il tuo spazio di lavoro:
+    @verify_url
+
+    Questo link scadra tra @cleanup_days giorni.
+
+    Se non hai effettuato questa richiesta, ignora questa e-mail.
