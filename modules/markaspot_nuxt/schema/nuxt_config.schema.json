@@ -1029,6 +1029,41 @@
         }
       }
     },
+    "embed": {
+      "type": "object",
+      "title": "Embed Configuration",
+      "description": "Settings for the embeddable map widget (/embed/map). Variants are named presets that can be referenced via the 'variant' query parameter.",
+      "properties": {
+        "variants": {
+          "type": "object",
+          "title": "Embed Variants",
+          "description": "Named presets for embed configuration. Each variant is an object with embed properties (reporting, menu, theme, controls, branding, tabs, etc.).",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "reporting": { "type": "boolean", "description": "Enable click-to-report flow" },
+              "menu": { "type": "boolean", "description": "Show hamburger menu button" },
+              "menuPosition": { "type": "string", "enum": ["topLeft", "topRight", "bottomLeft", "bottomRight"] },
+              "theme": { "type": "string", "enum": ["auto", "system", "light", "dark"] },
+              "controls": { "type": "string", "enum": ["none", "minimal", "standard"] },
+              "branding": { "type": "boolean", "description": "Show 'Powered by' footer" },
+              "tabs": { "type": "array", "items": { "type": "string" }, "description": "Visible tabs: list, info, following" },
+              "geolocate": { "type": "boolean", "description": "Auto-geolocate user on init" },
+              "photoButton": { "type": "boolean", "description": "Show photo report button" },
+              "classicButton": { "type": "boolean", "description": "Show classic report button" },
+              "logo": { "type": "boolean", "description": "Show logo in header" },
+              "slogan": { "type": "boolean", "description": "Show slogan text" }
+            }
+          }
+        },
+        "allowedOrigins": {
+          "type": "array",
+          "title": "Allowed Origins",
+          "description": "Origins allowed to embed this workspace (CSP frame-ancestors). Empty array means allow all.",
+          "items": { "type": "string" }
+        }
+      }
+    },
     "responseVisibility": {
       "type": "object",
       "title": "Response Visibility",

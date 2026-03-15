@@ -238,6 +238,7 @@ class MarkASpotSettingsController extends ControllerBase {
           'groupTypes',
           'systemNotice',
           'responseVisibility',
+          'embed',
         ];
         foreach ($config_keys as $key) {
           if (!empty($jurisdiction_config[$key])) {
