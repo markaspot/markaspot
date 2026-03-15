@@ -255,3 +255,51 @@ function service_request_update_11003() {
 
   return empty($messages) ? 'field_priority already configured.' : implode("\n", $messages);
 }
+
+/**
+ * Make field_address subfields optional on service_request nodes.
+ *
+ * The address field is auto-populated by the geocoder (reverse geocode from
+ * coordinates), so its subfields should not be required. This update changes
+ * the address field settings from the legacy `fields` format to
+ * `field_overrides` with optional subfields, and hides name/organization
+ * subfields that are not used for service requests.
+ *
+ * @see https://github.com/markaspot/markaspot/issues/130
+ */
+function service_request_update_11004() {
+  $config = \Drupal::configFactory()->getEditable('field.field.node.service_request.field_address');
+
+  if (!$config || $config->isNew()) {
+    return 'field_address config not found.';
+  }
+
+  $messages = [];
+
+  // Ensure the field itself is not required.
+  if ($config->get('required') !== FALSE) {
+    $config->set('required', FALSE);
+    $messages[] = 'Set field_address required to FALSE.';
+  }
+
+  // Update settings to use field_overrides with optional subfields.
+  $settings = $config->get('settings') ?: [];
+  $settings['langcode_override'] = $settings['langcode_override'] ?? 'en';
+  $settings['field_overrides'] = [
+    'givenName' => ['override' => 'hidden'],
+    'additionalName' => ['override' => 'hidden'],
+    'familyName' => ['override' => 'hidden'],
+    'organization' => ['override' => 'hidden'],
+    'addressLine1' => ['override' => 'optional'],
+    'addressLine2' => ['override' => 'optional'],
+    'postalCode' => ['override' => 'optional'],
+    'locality' => ['override' => 'optional'],
+  ];
+  // Clear legacy fields format.
+  $settings['fields'] = [];
+
+  $config->set('settings', $settings)->save(TRUE);
+  $messages[] = 'Updated field_overrides: addressLine1, addressLine2, postalCode, locality set to optional; name/organization fields hidden.';
+
+  return implode("\n", $messages);
+}

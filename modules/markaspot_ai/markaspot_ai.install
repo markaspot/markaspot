@@ -1,13 +1,13 @@
 <?php
 
+declare(strict_types=1);
+
 /**
  * @file
  * Install, update, and uninstall functions for the Mark-a-Spot AI module.
  */
 
 use Drupal\Core\Serialization\Yaml;
-
-declare(strict_types=1);
 
 /**
  * Implements hook_schema().

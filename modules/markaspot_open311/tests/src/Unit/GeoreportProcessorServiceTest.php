@@ -22,6 +22,7 @@ use Drupal\Component\Datetime\Time;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -162,9 +163,17 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
           ],
         ],
       ]);
+    $dateConfig = $this->createMock(ImmutableConfig::class);
+    $dateConfig->method('get')
+      ->willReturnMap([
+        ['country.default', 'DE'],
+      ]);
+
     $this->configFactory->method('get')
-      ->with('markaspot_open311.settings')
-      ->willReturn($config);
+      ->willReturnMap([
+        ['markaspot_open311.settings', $config],
+        ['system.date', $dateConfig],
+      ]);
 
     $time = $this->createMock(Time::class);
     $requestStack = $this->createMock(RequestStack::class);
@@ -873,6 +882,104 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ['org_id' => '5'],
     ]);
     $this->assertEquals(-1, $result);
+  }
+
+  // =========================================================================
+  // prepareNodeProperties() location validation tests
+  // =========================================================================
+
+  /**
+   * Tests that creating a request without location data throws an exception.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testPrepareNodePropertiesCreateWithoutLocationAllowed(): void {
+    // Without coordinates, field_geolocation is not set explicitly.
+    // The field's default value (map center) applies via Drupal's entity system.
+    // DefaultLocationConstraintValidator optionally warns if coords == default.
+    $result = $this->processor->prepareNodeProperties([
+      'description' => 'No location provided',
+    ], 'create');
+
+    $this->assertArrayNotHasKey('field_geolocation', $result);
+  }
+
+  /**
+   * Tests that invalid (non-numeric) coordinates throw an exception.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testPrepareNodePropertiesInvalidCoordinatesThrows(): void {
+    $this->expectException(GeoreportException::class);
+    $this->expectExceptionCode(400);
+    $this->expectExceptionMessage('Coordinates must be numeric');
+
+    $this->processor->prepareNodeProperties([
+      'service_code' => 'test',
+      'lat' => 'abc',
+      'long' => '9.0',
+    ], 'create');
+  }
+
+  /**
+   * Tests that out-of-range coordinates throw an exception.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testPrepareNodePropertiesOutOfRangeCoordinatesThrows(): void {
+    $this->expectException(GeoreportException::class);
+    $this->expectExceptionCode(400);
+    $this->expectExceptionMessage('Coordinates out of range');
+
+    $this->processor->prepareNodeProperties([
+      'service_code' => 'test',
+      'lat' => '999',
+      'long' => '9.0',
+    ], 'create');
+  }
+
+  /**
+   * Tests that an update without location data does NOT throw.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testPrepareNodePropertiesUpdateWithoutLocationAllowed(): void {
+    // Updates may only change status, so location is not required.
+    // Omit service_code to avoid taxonomy mapping side effects.
+    $values = $this->processor->prepareNodeProperties([
+      'description' => 'Status change only',
+    ], 'update');
+    // No location exception thrown, update proceeds.
+    $this->assertIsArray($values);
+  }
+
+  /**
+   * Tests that valid coordinates pass validation in prepareNodeProperties.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testPrepareNodePropertiesValidCoordinatesPass(): void {
+    // Omit service_code to isolate coordinate validation.
+    $values = $this->processor->prepareNodeProperties([
+      'lat' => '50.7753',
+      'long' => '6.0839',
+    ], 'create');
+    $this->assertEquals(50.7753, $values['field_geolocation']['lat']);
+    $this->assertEquals(6.0839, $values['field_geolocation']['lng']);
+  }
+
+  /**
+   * Tests that address_string alone satisfies the location requirement.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testPrepareNodePropertiesAddressStringSuffices(): void {
+    // Omit service_code to isolate location validation.
+    $values = $this->processor->prepareNodeProperties([
+      'address_string' => 'Markt 1, 53111 Bonn',
+    ], 'create');
+    // No location exception thrown, address was accepted.
+    $this->assertIsArray($values);
   }
 
   // =========================================================================

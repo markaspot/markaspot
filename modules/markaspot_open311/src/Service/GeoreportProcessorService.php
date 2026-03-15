@@ -260,18 +260,32 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         'format' => 'plain_text',
       ];
     }
-    if (array_key_exists('lat', $requestData) && array_key_exists('long', $requestData)) {
+    $hasCoordinates = array_key_exists('lat', $requestData) && array_key_exists('long', $requestData);
+    if ($hasCoordinates) {
+      $lat = filter_var($requestData['lat'], FILTER_VALIDATE_FLOAT);
+      $lng = filter_var($requestData['long'], FILTER_VALIDATE_FLOAT);
+      if ($lat === FALSE || $lng === FALSE) {
+        throw new GeoreportException('Coordinates must be numeric values', 400);
+      }
+      if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+        throw new GeoreportException('Coordinates out of range: lat must be -90..90, long must be -180..180', 400);
+      }
       $values['field_geolocation'] = [
-        'lat' => $requestData['lat'],
-        'lng' => $requestData['long'],
+        'lat' => $lat,
+        'lng' => $lng,
       ];
     }
+
+    // Location is optional: if no coordinates are provided, the field_geolocation
+    // default value (map center) is used. The DefaultLocationConstraintValidator
+    // can optionally warn when the submitted point equals the default.
+    $addressString = $requestData['address_string'] ?? ($requestData['address'] ?? NULL);
+
     // Handle Media URL file creation.
     if (array_key_exists('media_url', $requestData)) {
       $values['field_request_media'] = $this->handleMediaUrls($requestData);
     }
     // $values['created'] = isset($request_data['requested_datetime']) && $operation == 'update' ? strtotime($request_data['requested_datetime']) : '';
-    $addressString = $requestData['address_string'] ?? ($requestData['address'] ?? NULL);
     if ($addressString) {
       $address = $this->addressParser(Html::escape(stripslashes($addressString)));
       if (!empty($address)) {
