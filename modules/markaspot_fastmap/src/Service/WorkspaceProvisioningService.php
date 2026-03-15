@@ -279,6 +279,13 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       if ($boundaryJson) {
         $groupFields['field_boundary'] = $boundaryJson;
       }
+      elseif ($centerLat && $centerLng) {
+        // Generate a 1km radius circle as default boundary.
+        $groupFields['field_boundary'] = json_encode(
+          $this->generateCircleBoundary((float) $centerLat, (float) $centerLng, 1.0),
+          JSON_UNESCAPED_UNICODE
+        );
+      }
       $group = $groupStorage->create($groupFields);
       $group->save();
 
@@ -909,6 +916,42 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $lat = $minLat + (random_int(0, PHP_INT_MAX) / PHP_INT_MAX) * ($maxLat - $minLat);
     $lng = $minLng + (random_int(0, PHP_INT_MAX) / PHP_INT_MAX) * ($maxLng - $minLng);
     return [round($lat, 6), round($lng, 6)];
+  }
+
+  /**
+   * Generates a GeoJSON Polygon circle around a center point.
+   *
+   * @param float $lat
+   *   Center latitude.
+   * @param float $lng
+   *   Center longitude.
+   * @param float $radiusKm
+   *   Radius in kilometers.
+   * @param int $points
+   *   Number of vertices (default 32).
+   *
+   * @return array
+   *   GeoJSON Polygon geometry.
+   */
+  private function generateCircleBoundary(float $lat, float $lng, float $radiusKm, int $points = 32): array {
+    $coords = [];
+    $latOffset = $radiusKm / 111.0;
+    $lngOffset = abs($lat) < 89.9 ? $radiusKm / (111.0 * cos(deg2rad($lat))) : $latOffset;
+
+    for ($i = 0; $i < $points; $i++) {
+      $angle = 2 * M_PI * $i / $points;
+      $coords[] = [
+        round($lng + $lngOffset * cos($angle), 6),
+        round($lat + $latOffset * sin($angle), 6),
+      ];
+    }
+    // Close the ring.
+    $coords[] = $coords[0];
+
+    return [
+      'type' => 'Polygon',
+      'coordinates' => [$coords],
+    ];
   }
 
   /**
