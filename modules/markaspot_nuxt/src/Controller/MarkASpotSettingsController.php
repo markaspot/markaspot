@@ -251,10 +251,10 @@ class MarkASpotSettingsController extends ControllerBase {
         // but jurisdictions store these inside the nested 'map' object.
         if (!empty($settings['map'])) {
           $map = $settings['map'];
-          // Handle array format: map.center = [lat, lng].
+          // Handle array format: map.center = [lng, lat] (GeoJSON/MapLibre convention).
           if (!empty($map['center']) && is_array($map['center'])) {
-            $settings['center_lat'] = $map['center'][0];
-            $settings['center_lng'] = $map['center'][1];
+            $settings['center_lat'] = $map['center'][1];
+            $settings['center_lng'] = $map['center'][0];
           }
           // Handle separate key format: map.centerLat / map.centerLng.
           if (!empty($map['centerLat'])) {
