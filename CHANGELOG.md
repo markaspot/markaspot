@@ -1,5 +1,46 @@
 # Changelog
 
+## [11.9.9](https://github.com/markaspot/markaspot/compare/11.9.8...11.9.9) (2026-03-15)
+
+### Features
+
+* add status term translations for all 12 supported languages ([62f0d19](https://github.com/markaspot/markaspot/commit/62f0d19c47325fb5b80934126fe96205a7ec0ff6)), closes [markaspot/markaspot-ui#123](https://github.com/markaspot/markaspot-ui/issues/123)
+* add Stripe billing fields and controller to markaspot_fastmap ([761a258](https://github.com/markaspot/markaspot/commit/761a2582fd229d1ff6fb800f7e91377c4b40b981))
+* expose embed config from field_nuxt_config to frontend ([dad48b9](https://github.com/markaspot/markaspot/commit/dad48b9108b02a157e1c7dd1721f8611121a84f9))
+* **fastmap:** add usage permission to dashboard roles and document access check ([88db8df](https://github.com/markaspot/markaspot/commit/88db8df7656cca5f6d6bde2248dda7da8061de52))
+* generate 1km circle boundary when no boundary provided ([935f3d8](https://github.com/markaspot/markaspot/commit/935f3d828c559319290d24a5ef3cb617bdbe692c))
+* generate demo reports on workspace creation with security fixes ([a289c30](https://github.com/markaspot/markaspot/commit/a289c301c971d2c0be9efeabd493bf5c8b7aae76))
+* **group:** add member invitation system with email tokens ([#86](https://github.com/markaspot/markaspot/issues/86)) ([ba7c22f](https://github.com/markaspot/markaspot/commit/ba7c22f566bfa3d56753f5e304161245e1f04d5c))
+* **group:** add update hook 11909 for moderator role rename and scope fix ([68cbd7b](https://github.com/markaspot/markaspot/commit/68cbd7b497b93f1ebba79717151e186f0ece08af))
+* **group:** add user detail and profile update endpoints for member management ([#105](https://github.com/markaspot/markaspot/issues/105)) ([b3fe6f3](https://github.com/markaspot/markaspot/commit/b3fe6f31e31668cfc2f405c58d7a83a80cfdb832))
+* support custom status terms in workspace provisioning ([03e8126](https://github.com/markaspot/markaspot/commit/03e8126856a491bff1f84bc6493c89bc0b195821)), closes [markaspot/markaspot-ui#124](https://github.com/markaspot/markaspot-ui/issues/124)
+
+### Bug Fixes
+
+* **ai,vision:** add api_key_auth to all AI/Vision routes and fix resolveApiKey priority ([d9ced9d](https://github.com/markaspot/markaspot/commit/d9ced9d830390dc739242f898f7928b26b2c388a))
+* **fastmap:** accept frontend_base_url for verify email links ([57586d2](https://github.com/markaspot/markaspot/commit/57586d2ce40da4d0ec54830e0ddc7f51a9267b90))
+* **fastmap:** re-verify support after email prefetch consumes token ([0a3c32a](https://github.com/markaspot/markaspot/commit/0a3c32a6de8aba5d890595cfcb6a1ec7f3626cfa)), closes [markaspot/markaspot-ui#104](https://github.com/markaspot/markaspot-ui/issues/104)
+* **fastmap:** use /start/verify/ path for email verification links ([befe605](https://github.com/markaspot/markaspot/commit/befe60582631c3b883196f2f41973ec66d760ff9))
+* **group:** harden invitation system against security review findings ([d8cd5ba](https://github.com/markaspot/markaspot/commit/d8cd5bae607adbc64365a66ca97ed7c95a229e5f))
+* **group:** randomize auto-created usernames to prevent enumeration ([f235bff](https://github.com/markaspot/markaspot/commit/f235bffc87c5e96b801c871ca2f717860765b460))
+* **group:** remove editorial role from invitation permitted roles ([4aba889](https://github.com/markaspot/markaspot/commit/4aba889339e91fb846a8c79fad24036ee9f61f42))
+* **group:** replace _csrf_token route requirement with _auth cookie for API endpoints ([f3d726f](https://github.com/markaspot/markaspot/commit/f3d726f8528deb750f802e181b2aeecb39be074b))
+* **group:** resolve PHPCS violations in GroupInvitationController ([e55e870](https://github.com/markaspot/markaspot/commit/e55e870a7af8eafc7b781a183945bb90a1f17bd3))
+* harmonize ALLOWED_LANGS to 12 languages, auto-install missing languages ([9b8e5e7](https://github.com/markaspot/markaspot/commit/9b8e5e706aba2482f7e6dbf75abcd0fd4ae6537c)), closes [markaspot/markaspot-ui#122](https://github.com/markaspot/markaspot-ui/issues/122)
+* make field_address optional and validate coordinate bounds ([abdb858](https://github.com/markaspot/markaspot/commit/abdb8582f9117c803e1394e7358cf0784e6f625c)), closes [markaspot/markaspot-ui#130](https://github.com/markaspot/markaspot-ui/issues/130)
+* reduce demo report fallback radius from 2km to 500m ([3ce83f1](https://github.com/markaspot/markaspot/commit/3ce83f15b610c16b7a8eb9dfdb66bc761ca9dd92))
+* review findings - language install, icon sanitization, test property ([1ac1fc7](https://github.com/markaspot/markaspot/commit/1ac1fc70db4ca7a8b1bbb8f2f96ef1129c9a2f31))
+* **security:** harden user management endpoints against review findings ([b2185d1](https://github.com/markaspot/markaspot/commit/b2185d1cea88984f4551f3dd4888a1f15d06742e))
+* **security:** protect admin accounts from tenant admin access ([6d539e2](https://github.com/markaspot/markaspot/commit/6d539e2f8e4954dc76537a7b650e881058035c80)), closes [markaspot/markaspot-ui#105](https://github.com/markaspot/markaspot-ui/issues/105)
+* swap center_lat/center_lng extraction from map.center array ([c8def97](https://github.com/markaspot/markaspot/commit/c8def97d1ae0e06f03c1d6d6c15d9e840a5687d7)), closes [markaspot/markaspot-ui#126](https://github.com/markaspot/markaspot-ui/issues/126)
+* use GeoJSON convention [lng, lat] in install hook map.center ([68b78fe](https://github.com/markaspot/markaspot/commit/68b78fe17e062357fd2ed52c0e4c8b3a658174a6)), closes [markaspot/markaspot-ui#126](https://github.com/markaspot/markaspot-ui/issues/126)
+* verify endpoint returns JSON with login_token for Nuxt proxy ([d867072](https://github.com/markaspot/markaspot/commit/d867072395310b34e3d75f06734e8f3247c0f938))
+
+### Refactoring
+
+* **group:** inject TierConfigService via DI instead of static call ([e891059](https://github.com/markaspot/markaspot/commit/e89105944df945d031a2d628bbdaa73c23b703fc))
+* simplify default statuses to 2 (Created/Done) ([e58f7cb](https://github.com/markaspot/markaspot/commit/e58f7cb646dada294a8e90116a5c1054a690a440))
+
 ## [11.9.8](https://github.com/markaspot/markaspot/compare/11.9.7...11.9.8) (2026-03-12)
 
 ### Features
