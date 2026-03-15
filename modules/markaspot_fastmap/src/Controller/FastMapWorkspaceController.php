@@ -197,7 +197,7 @@ class FastMapWorkspaceController extends ControllerBase {
       'zoom' => (int) ($data['zoom'] ?? 13),
       'template' => $data['template'] ?? 'civic-report',
       'language' => $data['language'] ?? '',
-      'boundary' => $data['boundary'] ?? NULL,
+      'boundary' => $this->validateBoundarySize($data['boundary'] ?? NULL),
       'statuses' => $statuses,
     ];
 
@@ -382,6 +382,20 @@ class FastMapWorkspaceController extends ControllerBase {
       // Slug taken race condition or other provisioning error.
       return new JsonResponse(['error' => $e->getMessage()], 409);
     }
+  }
+
+  /**
+   * Validates boundary size, returns NULL if too large (max 512KB).
+   */
+  private function validateBoundarySize(mixed $boundary): mixed {
+    if ($boundary === NULL) {
+      return NULL;
+    }
+    $encoded = json_encode($boundary);
+    if ($encoded === FALSE || strlen($encoded) > 512 * 1024) {
+      return NULL;
+    }
+    return $boundary;
   }
 
   /**

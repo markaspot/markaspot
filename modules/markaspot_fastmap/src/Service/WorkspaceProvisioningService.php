@@ -125,6 +125,62 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
   private const MAX_CATEGORIES = 30;
 
+  private const DEMO_REQUEST_COUNT = 5;
+
+  /**
+   * Demo request templates per language.
+   *
+   * Each entry provides a title and description. The templates are cycled
+   * through and paired with workspace categories. Languages without explicit
+   * templates fall back to English.
+   */
+  private const DEMO_TEMPLATES = [
+    'en' => [
+      ['title' => 'Broken street light', 'description' => 'The street light at this location has been out for several days.'],
+      ['title' => 'Pothole on main road', 'description' => 'A large pothole has formed on the road surface, causing problems for traffic.'],
+      ['title' => 'Damaged sidewalk', 'description' => 'The sidewalk tiles are cracked and uneven, creating a tripping hazard.'],
+      ['title' => 'Overflowing waste bin', 'description' => 'The public waste bin at this location is overflowing and needs to be emptied.'],
+      ['title' => 'Graffiti on building', 'description' => 'There is graffiti on the facade of the building at this location.'],
+    ],
+    'de' => [
+      ['title' => 'Defekte Straßenlaterne', 'description' => 'Die Straßenlaterne an diesem Standort ist seit mehreren Tagen ausgefallen.'],
+      ['title' => 'Schlagloch auf der Hauptstraße', 'description' => 'Auf der Fahrbahn hat sich ein großes Schlagloch gebildet.'],
+      ['title' => 'Beschädigter Gehweg', 'description' => 'Die Gehwegplatten sind gerissen und uneben, es besteht Stolpergefahr.'],
+      ['title' => 'Überfüllter Mülleimer', 'description' => 'Der öffentliche Mülleimer an diesem Standort ist überfüllt und muss geleert werden.'],
+      ['title' => 'Graffiti an Gebäude', 'description' => 'An der Fassade des Gebäudes befindet sich Graffiti.'],
+    ],
+    'nl' => [
+      ['title' => 'Kapotte straatlantaarn', 'description' => 'De straatlantaarn op deze locatie is al meerdere dagen kapot.'],
+      ['title' => 'Gat in de weg', 'description' => 'Er is een groot gat in het wegdek ontstaan.'],
+      ['title' => 'Beschadigd trottoir', 'description' => 'De stoeptegels zijn gebarsten en ongelijk, er is struikelgevaar.'],
+      ['title' => 'Overvolle prullenbak', 'description' => 'De openbare prullenbak op deze locatie is overvol.'],
+      ['title' => 'Graffiti op gebouw', 'description' => 'Er is graffiti aangebracht op de gevel van het gebouw.'],
+    ],
+    'fr' => [
+      ['title' => 'Lampadaire en panne', 'description' => "Le lampadaire a cet endroit est en panne depuis plusieurs jours."],
+      ['title' => 'Nid-de-poule sur la route', 'description' => 'Un grand nid-de-poule est apparu sur la chaussee.'],
+      ['title' => 'Trottoir endommage', 'description' => 'Les dalles du trottoir sont fissurees et inegales.'],
+      ['title' => 'Poubelle debordante', 'description' => 'La poubelle publique a cet endroit deborde.'],
+      ['title' => 'Graffiti sur batiment', 'description' => 'Il y a des graffitis sur la facade du batiment.'],
+    ],
+    'es' => [
+      ['title' => 'Farola rota', 'description' => 'La farola en esta ubicacion lleva varios dias sin funcionar.'],
+      ['title' => 'Bache en la calle', 'description' => 'Se ha formado un gran bache en la calzada.'],
+      ['title' => 'Acera danada', 'description' => 'Las baldosas de la acera estan agrietadas y desniveladas.'],
+      ['title' => 'Papelera desbordada', 'description' => 'La papelera publica en esta ubicacion esta desbordada.'],
+      ['title' => 'Grafiti en edificio', 'description' => 'Hay grafitis en la fachada del edificio.'],
+    ],
+  ];
+
+  /**
+   * Status mapping distribution for demo requests.
+   *
+   * Defines the Open311 status mapping for each of the 5 demo requests.
+   * If a mapping is not available (e.g. no "open" status term), falls back
+   * to "initial".
+   */
+  private const DEMO_STATUS_MAPPINGS = ['initial', 'initial', 'initial', 'open', 'closed'];
+
   private const ALLOWED_LANGS = ['en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'it', 'pl', 'pt', 'tr', 'uk'];
 
   /**
@@ -248,6 +304,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
       // 6. Add user as group member with admin role.
       $this->addGroupMembership($group, $user);
+
+      // 7. Create demo service requests.
+      $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang);
 
       return [
         'group_id' => $groupId,
@@ -645,6 +704,211 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $membership = $group->addRelationship($user, 'group_membership');
     $membership->set('group_roles', ['jur-tenant_admin']);
     $membership->save();
+  }
+
+  /**
+   * Creates demo service request nodes for a newly provisioned workspace.
+   *
+   * Generates DEMO_REQUEST_COUNT nodes distributed across the workspace's
+   * categories, with coordinates randomly placed within the boundary bounding
+   * box (or a 2km radius of center if no boundary is available).
+   *
+   * @param array $data
+   *   The original workspace provisioning data.
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The provisioned group entity.
+   * @param int[] $categoryTermIds
+   *   Term IDs of the created service categories.
+   * @param int $groupId
+   *   The group entity ID.
+   * @param string $lang
+   *   The workspace default language code.
+   */
+  private function createDemoRequests(array $data, GroupInterface $group, array $categoryTermIds, int $groupId, string $lang): void {
+    if (empty($categoryTermIds)) {
+      return;
+    }
+
+    $nodeStorage = $this->entityTypeManager->getStorage('node');
+    $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
+
+    // Resolve status term IDs by Open311 mapping for this jurisdiction.
+    $statusMap = $this->resolveStatusTermIds($termStorage, $groupId);
+
+    // Determine coordinate generation strategy.
+    $boundary = $data['boundary'] ?? NULL;
+    $centerLat = (float) ($data['lat'] ?? 0);
+    $centerLng = (float) ($data['lng'] ?? 0);
+    $bbox = $this->extractBbox($boundary, $centerLat, $centerLng);
+
+    // Get localized templates (fall back to English).
+    $templates = self::DEMO_TEMPLATES[$lang] ?? self::DEMO_TEMPLATES['en'];
+
+    for ($i = 0; $i < self::DEMO_REQUEST_COUNT; $i++) {
+      $categoryTid = $categoryTermIds[$i % count($categoryTermIds)];
+      $template = $templates[$i % count($templates)];
+
+      // Determine status for this demo request.
+      $mapping = self::DEMO_STATUS_MAPPINGS[$i] ?? 'initial';
+      $statusTid = $statusMap[$mapping] ?? $statusMap['initial'] ?? NULL;
+
+      // Generate a random coordinate within the bounding box.
+      [$lat, $lng] = $this->randomCoordinateInBbox($bbox);
+
+      $values = [
+        'type' => 'service_request',
+        'langcode' => $lang,
+        'title' => $template['title'],
+        'body' => [
+          'value' => $template['description'] . "\n\n[demo-content]",
+          'format' => 'plain_text',
+        ],
+        'field_category' => ['target_id' => $categoryTid],
+        'field_geolocation' => [
+          'lat' => $lat,
+          'lng' => $lng,
+        ],
+        'field_address' => $data['name'] ?? 'Demo Location',
+        'uid' => 1,
+        'field_jurisdiction' => ['target_id' => $groupId],
+      ];
+
+      if ($statusTid) {
+        $values['field_status'] = ['target_id' => $statusTid];
+      }
+
+      $node = $nodeStorage->create($values);
+      $node->save();
+    }
+
+    $this->logger->info('Created @count demo requests for workspace @name (group @id).', [
+      '@count' => self::DEMO_REQUEST_COUNT,
+      '@name' => $data['name'] ?? '',
+      '@id' => $groupId,
+    ]);
+  }
+
+  /**
+   * Resolves status term IDs by Open311 mapping for a jurisdiction.
+   *
+   * @param \Drupal\Core\Entity\EntityStorageInterface $termStorage
+   *   The taxonomy term storage.
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return array<string, int>
+   *   Map of Open311 mapping string to term ID.
+   */
+  private function resolveStatusTermIds(EntityStorageInterface $termStorage, int $groupId): array {
+    $termIds = $termStorage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('vid', 'service_status')
+      ->condition('field_jurisdiction', $groupId)
+      ->execute();
+
+    if (empty($termIds)) {
+      return [];
+    }
+
+    $statusMap = [];
+    $terms = $termStorage->loadMultiple($termIds);
+    foreach ($terms as $term) {
+      if ($term->hasField('field_open311_mapping') && !$term->get('field_open311_mapping')->isEmpty()) {
+        $mapping = $term->get('field_open311_mapping')->value;
+        // Only store the first term for each mapping (lowest weight wins).
+        if (!isset($statusMap[$mapping])) {
+          $statusMap[$mapping] = (int) $term->id();
+        }
+      }
+    }
+
+    return $statusMap;
+  }
+
+  /**
+   * Extracts a bounding box from boundary geometry or center point.
+   *
+   * @param mixed $boundary
+   *   The boundary geometry (Polygon/MultiPolygon) or NULL.
+   * @param float $centerLat
+   *   Center latitude (fallback).
+   * @param float $centerLng
+   *   Center longitude (fallback).
+   *
+   * @return array{float, float, float, float}
+   *   Bounding box as [minLat, minLng, maxLat, maxLng].
+   */
+  private function extractBbox(mixed $boundary, float $centerLat, float $centerLng): array {
+    if (is_array($boundary) && isset($boundary['coordinates'])) {
+      $coords = $this->flattenCoordinates($boundary['coordinates']);
+      if (!empty($coords)) {
+        $lats = array_column($coords, 1);
+        $lngs = array_column($coords, 0);
+        return [min($lats), min($lngs), max($lats), max($lngs)];
+      }
+    }
+
+    // Fallback: ~2km radius around center.
+    // 1 degree latitude ~ 111km, so 2km ~ 0.018 degrees.
+    // Longitude offset adjusted by cos(lat).
+    $latOffset = 0.018;
+    $lngOffset = $centerLat != 0 ? 0.018 / cos(deg2rad($centerLat)) : 0.018;
+
+    return [
+      $centerLat - $latOffset,
+      $centerLng - $lngOffset,
+      $centerLat + $latOffset,
+      $centerLng + $lngOffset,
+    ];
+  }
+
+  /**
+   * Recursively flattens nested coordinate arrays to [lng, lat] pairs.
+   *
+   * @param array $coords
+   *   Nested coordinate array from GeoJSON geometry.
+   *
+   * @return array<array{float, float}>
+   *   Flat list of [lng, lat] pairs.
+   */
+  private function flattenCoordinates(array $coords, int $depth = 0): array {
+    // Guard against deeply nested GeoJSON (max 8 levels, MultiPolygon needs 4).
+    if ($depth > 8 || empty($coords)) {
+      return [];
+    }
+    // Check if this is a coordinate pair [lng, lat].
+    if (is_numeric($coords[0])) {
+      return [$coords];
+    }
+    $result = [];
+    foreach ($coords as $item) {
+      if (is_array($item)) {
+        foreach ($this->flattenCoordinates($item, $depth + 1) as $pair) {
+          $result[] = $pair;
+          // Cap at 50,000 coordinates to prevent memory exhaustion.
+          if (count($result) > 50000) {
+            return $result;
+          }
+        }
+      }
+    }
+    return $result;
+  }
+
+  /**
+   * Generates a random coordinate within a bounding box.
+   *
+   * @param array{float, float, float, float} $bbox
+   *   Bounding box as [minLat, minLng, maxLat, maxLng].
+   *
+   * @return array{float, float}
+   *   Random [lat, lng] within the box.
+   */
+  private function randomCoordinateInBbox(array $bbox): array {
+    [$minLat, $minLng, $maxLat, $maxLng] = $bbox;
+    $lat = $minLat + (random_int(0, PHP_INT_MAX) / PHP_INT_MAX) * ($maxLat - $minLat);
+    $lng = $minLng + (random_int(0, PHP_INT_MAX) / PHP_INT_MAX) * ($maxLng - $minLng);
+    return [round($lat, 6), round($lng, 6)];
   }
 
   /**

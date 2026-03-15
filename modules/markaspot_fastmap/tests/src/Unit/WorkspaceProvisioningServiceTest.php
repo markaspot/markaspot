@@ -14,6 +14,7 @@ use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
+use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
@@ -84,6 +85,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   protected EntityStorageInterface $relationshipStorage;
 
   /**
+   * The mocked node storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $nodeStorage;
+
+  /**
    * The mocked configurable language storage.
    *
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -107,6 +115,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->termStorage = $this->createMock(EntityStorageInterface::class);
     $this->userStorage = $this->createMock(EntityStorageInterface::class);
     $this->relationshipStorage = $this->createMock(EntityStorageInterface::class);
+    $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
 
     $this->langStorage = $this->createMock(EntityStorageInterface::class);
     $langEntity = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
@@ -119,6 +128,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         'group' => $this->groupStorage,
         'taxonomy_term' => $this->termStorage,
         'user' => $this->userStorage,
+        'node' => $this->nodeStorage,
         'group_relationship' => $this->relationshipStorage,
         'configurable_language' => $this->langStorage,
         default => $this->createMock(EntityStorageInterface::class),
@@ -221,6 +231,21 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     // Relationship storage: no existing membership.
     $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    // Node storage: for demo request creation.
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function () {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        return $node;
+      });
+
+    // Term storage query: for resolveStatusTermIds().
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
   }
 
   /**
@@ -507,6 +532,19 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $this->relationshipStorage->method('loadByProperties')->willReturn([]);
 
+    // Node storage for demo requests.
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function () {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        return $node;
+      });
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
     $result = $this->service->provisionWorkspace($this->validData());
     $this->assertEquals(99, $result['user_id']);
   }
@@ -725,6 +763,239 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     // Should succeed (name is truncated internally).
     $this->assertEquals(42, $result['group_id']);
     $this->assertEquals(255, mb_strlen($result['name']));
+  }
+
+  /**
+   * Tests that provisioning creates 5 demo service request nodes.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testProvisionWorkspaceCreatesDemoRequests(): void {
+    // Group storage: slug not taken.
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    // Group entity mock.
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+
+    $this->groupStorage->method('create')->willReturn($group);
+
+    // Term storage: create terms that return incremental IDs.
+    $termIdCounter = 0;
+    $this->termStorage->method('create')
+      ->willReturnCallback(function () use (&$termIdCounter) {
+        $termIdCounter++;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn($termIdCounter);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    // Status term query: return two status term IDs.
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([100, 101]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    // Mock status terms with Open311 mappings.
+    $initialTerm = $this->createMock(TermInterface::class);
+    $initialTerm->method('id')->willReturn(100);
+    $initialTerm->method('hasField')->willReturn(TRUE);
+    $initialField = $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class);
+    $initialField->method('isEmpty')->willReturn(FALSE);
+    $initialField->__set('value', 'initial');
+    $initialField->method('__get')->with('value')->willReturn('initial');
+    $initialTerm->method('get')->willReturn($initialField);
+
+    $closedTerm = $this->createMock(TermInterface::class);
+    $closedTerm->method('id')->willReturn(101);
+    $closedTerm->method('hasField')->willReturn(TRUE);
+    $closedField = $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class);
+    $closedField->method('isEmpty')->willReturn(FALSE);
+    $closedField->__set('value', 'closed');
+    $closedField->method('__get')->with('value')->willReturn('closed');
+    $closedTerm->method('get')->willReturn($closedField);
+
+    $this->termStorage->method('loadMultiple')
+      ->with([100, 101])
+      ->willReturn([100 => $initialTerm, 101 => $closedTerm]);
+
+    // User storage.
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    // Node storage: expect exactly 5 demo nodes to be created.
+    $nodeCreateCount = 0;
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$nodeCreateCount) {
+        $nodeCreateCount++;
+        $this->assertEquals('service_request', $values['type']);
+        $this->assertArrayHasKey('field_category', $values);
+        $this->assertArrayHasKey('field_geolocation', $values);
+        $this->assertStringContainsString('[demo-content]', $values['body']['value']);
+
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        return $node;
+      });
+
+    $this->service->provisionWorkspace($this->validData([
+      'lat' => 50.9,
+      'lng' => 6.9,
+    ]));
+
+    $this->assertEquals(5, $nodeCreateCount, 'Expected 5 demo requests to be created.');
+  }
+
+  /**
+   * Tests demo requests use coordinates within boundary bbox.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testDemoRequestsUseBoundaryBbox(): void {
+    // Group storage.
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    // Terms.
+    $this->termStorage->method('create')
+      ->willReturnCallback(function () {
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(1);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    // User.
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    // Track coordinates from created nodes.
+    $coords = [];
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$coords) {
+        $coords[] = $values['field_geolocation'];
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        return $node;
+      });
+
+    // Boundary: a box from [10,20] to [11,21] (lat range 10-11, lng range 20-21).
+    $boundary = [
+      'type' => 'Polygon',
+      'coordinates' => [[[20, 10], [21, 10], [21, 11], [20, 11], [20, 10]]],
+    ];
+
+    $this->service->provisionWorkspace($this->validData([
+      'boundary' => $boundary,
+    ]));
+
+    $this->assertCount(5, $coords);
+    foreach ($coords as $coord) {
+      $this->assertGreaterThanOrEqual(10.0, $coord['lat'], 'Lat should be >= 10');
+      $this->assertLessThanOrEqual(11.0, $coord['lat'], 'Lat should be <= 11');
+      $this->assertGreaterThanOrEqual(20.0, $coord['lng'], 'Lng should be >= 20');
+      $this->assertLessThanOrEqual(21.0, $coord['lng'], 'Lng should be <= 21');
+    }
+  }
+
+  /**
+   * Tests demo requests use German templates when language is 'de'.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testDemoRequestsUseLanguageTemplates(): void {
+    // Group storage.
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    // Terms.
+    $termIdCounter = 0;
+    $this->termStorage->method('create')
+      ->willReturnCallback(function () use (&$termIdCounter) {
+        $termIdCounter++;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn($termIdCounter);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    // User.
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    // Node storage: track created titles and langcodes.
+    $titles = [];
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$titles) {
+        $titles[] = $values['title'];
+        $this->assertEquals('de', $values['langcode']);
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        return $node;
+      });
+
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => [
+        'de' => ['Strassenschaden', 'Hochwasser'],
+        'en' => ['Road Damage', 'Flood'],
+      ],
+      'language' => 'de',
+    ]));
+
+    $this->assertCount(5, $titles);
+    // First title should be German.
+    $this->assertEquals('Defekte Straßenlaterne', $titles[0]);
   }
 
   /**
