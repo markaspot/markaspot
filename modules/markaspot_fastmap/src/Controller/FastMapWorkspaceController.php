@@ -161,6 +161,31 @@ class FastMapWorkspaceController extends ControllerBase {
     // Generate verification token.
     $token = bin2hex(random_bytes(32));
 
+    // Validate optional custom statuses.
+    $statuses = $data['statuses'] ?? NULL;
+    if ($statuses !== NULL) {
+      if (!is_array($statuses)) {
+        $statuses = NULL;
+      }
+      else {
+        $validMappings = ['initial', 'open', 'closed'];
+        $statuses = array_filter($statuses, function ($s) use ($validMappings) {
+          return is_array($s)
+            && !empty($s['name']) && is_string($s['name'])
+            && !empty($s['hex']) && is_string($s['hex']) && preg_match('/^#[0-9a-fA-F]{6}$/', $s['hex'])
+            && !empty($s['icon']) && is_string($s['icon'])
+            && !empty($s['mapping']) && in_array($s['mapping'], $validMappings, TRUE);
+        });
+        $mappingsPresent = array_unique(array_column($statuses, 'mapping'));
+        if (count(array_intersect($validMappings, $mappingsPresent)) < 3) {
+          $statuses = NULL;
+        }
+        else {
+          $statuses = array_values(array_slice($statuses, 0, 10));
+        }
+      }
+    }
+
     // Store all workspace data for later provisioning.
     $workspaceData = [
       'name' => $name,
@@ -173,6 +198,7 @@ class FastMapWorkspaceController extends ControllerBase {
       'template' => $data['template'] ?? 'civic-report',
       'language' => $data['language'] ?? '',
       'boundary' => $data['boundary'] ?? NULL,
+      'statuses' => $statuses,
     ];
 
     try {

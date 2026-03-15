@@ -181,6 +181,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $template = $data['template'] ?? 'civic-report';
     $requestedLang = $data['language'] ?? '';
     $boundary = $data['boundary'] ?? NULL;
+    $customStatuses = $data['statuses'] ?? NULL;
 
     // Validate.
     if (!$name || !$slug || !$email) {
@@ -245,8 +246,13 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
       $groupId = (int) $group->id();
 
-      // 2. Create status terms.
-      $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages);
+      // 2. Create status terms (custom or default).
+      if (is_array($customStatuses) && !empty($customStatuses)) {
+        $this->createCustomStatusTerms($termStorage, $groupId, $defaultLang, $customStatuses);
+      }
+      else {
+        $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages);
+      }
 
       // 3. Create category terms.
       $categoryTermIds = $this->createCategoryTerms($termStorage, $groupId, $multilingualCategories, $defaultLang);
@@ -468,6 +474,44 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
           $translation->save();
         }
       }
+    }
+  }
+
+  /**
+   * Creates custom status terms from user-provided definitions.
+   *
+   * @param \Drupal\Core\Entity\EntityStorageInterface $termStorage
+   *   The taxonomy term storage.
+   * @param int $groupId
+   *   The group ID.
+   * @param string $defaultLang
+   *   The default language code.
+   * @param array $statuses
+   *   Array of status definitions with name, hex, icon, mapping.
+   */
+  private function createCustomStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $statuses): void {
+    $weight = 0;
+    foreach ($statuses as $status) {
+      $name = mb_substr(trim($status['name'] ?? ''), 0, 255);
+      $hex = $status['hex'] ?? '#808080';
+      $icon = $status['icon'] ?? 'i-lucide-circle';
+      $mapping = $status['mapping'] ?? 'open';
+
+      if (!$name) {
+        continue;
+      }
+
+      $term = $termStorage->create([
+        'vid' => 'service_status',
+        'name' => $name,
+        'langcode' => $defaultLang,
+        'weight' => $weight++,
+        'field_status_hex' => ['color' => $hex],
+        'field_status_icon' => $icon,
+        'field_open311_mapping' => $mapping,
+        'field_jurisdiction' => ['target_id' => $groupId],
+      ]);
+      $term->save();
     }
   }
 
