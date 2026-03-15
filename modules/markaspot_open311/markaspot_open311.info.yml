@@ -8,3 +8,4 @@ dependencies:
   - service_request
   - rest
   - services_api_key_auth
+  - markaspot_group
