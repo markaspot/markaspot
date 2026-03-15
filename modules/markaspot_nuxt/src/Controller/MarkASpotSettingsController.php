@@ -123,23 +123,18 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Build settings array from markaspot_nuxt.settings.
+    // SECURITY: mapbox_token, fallback_api_key, and frontend config are
+    // intentionally excluded. API keys must stay server-side (Nuxt ENV).
+    // See: markaspot/markaspot-ui#133
     $settings = [
-      // Frontend configuration.
-      'frontend' => [
-        'base_url' => $nuxt_config->get('frontend_base_url'),
-        'enabled' => $nuxt_config->get('frontend_enabled'),
-        'cors_enabled' => $nuxt_config->get('api_cors_enabled'),
-      ],
-      // Map configuration - Mapbox/MapLibre.
-      'mapbox_token' => $nuxt_config->get('mapbox_token'),
+      // Map configuration - styles only, no keys.
       'mapbox_style' => $nuxt_config->get('mapbox_style'),
       'mapbox_style_dark' => $nuxt_config->get('mapbox_style_dark'),
       'osm_custom_attribution' => $nuxt_config->get('osm_custom_attribution'),
       'osm_custom_tile_url' => $nuxt_config->get('osm_custom_tile_url'),
-      // Fallback style configuration.
+      // Fallback style configuration - no keys.
       'fallback_style' => $nuxt_config->get('fallback_style'),
       'fallback_style_dark' => $nuxt_config->get('fallback_style_dark'),
-      'fallback_api_key' => $nuxt_config->get('fallback_api_key'),
       'fallback_attribution' => $nuxt_config->get('fallback_attribution'),
       // Map position.
       'zoom_initial' => $nuxt_config->get('zoom_initial') ?: 13,
@@ -178,7 +173,13 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    // Default to first published jurisdiction group (by ID) if none specified or found.
+    // If a specific jurisdiction was requested but not found, return 404.
+    // Do NOT fall back to default (prevents tenant enumeration via ID brute-force).
+    if ($group === NULL && $jurisdiction_param) {
+      return new CacheableJsonResponse(['error' => 'Jurisdiction not found'], 404);
+    }
+
+    // Default to first published jurisdiction group only when NO param specified.
     if ($group === NULL) {
       $group_ids = $this->entityTypeManager->getStorage('group')
         ->getQuery()
