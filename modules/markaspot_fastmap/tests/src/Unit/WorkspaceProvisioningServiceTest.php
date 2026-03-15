@@ -84,6 +84,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   protected EntityStorageInterface $relationshipStorage;
 
   /**
+   * The mocked configurable language storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $langStorage;
+
+  /**
    * The service under test.
    *
    * @var \Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService
@@ -123,12 +130,17 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $this->logger = $this->createMock(LoggerInterface::class);
 
-    // Language manager: return 'en' as the only installed language by default.
-    // ensureLanguagesExist() will "install" missing languages.
+    // Language manager: return all supported languages as "installed".
+    // This prevents ensureLanguagesExist() from calling the static
+    // ConfigurableLanguage::createFromLangcode() which needs the container.
     $this->languageManager = $this->createMock(LanguageManagerInterface::class);
-    $enLanguage = $this->createMock(LanguageInterface::class);
+    $langMock = $this->createMock(LanguageInterface::class);
+    $allLangs = [];
+    foreach (['en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'it', 'pl', 'pt', 'tr', 'uk'] as $code) {
+      $allLangs[$code] = $langMock;
+    }
     $this->languageManager->method('getLanguages')
-      ->willReturn(['en' => $enLanguage]);
+      ->willReturn($allLangs);
 
     $this->service = new WorkspaceProvisioningService(
       $this->entityTypeManager,

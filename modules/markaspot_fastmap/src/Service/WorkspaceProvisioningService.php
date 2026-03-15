@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 
@@ -658,9 +659,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       if (in_array($langcode, $installed, TRUE)) {
         continue;
       }
-      $storage = $this->entityTypeManager->getStorage('configurable_language');
-      $language = $storage->create(['id' => $langcode]);
-      $language->save();
+      ConfigurableLanguage::createFromLangcode($langcode)->save();
       $this->logger->info('Installed language @lang for workspace provisioning.', ['@lang' => $langcode]);
     }
   }

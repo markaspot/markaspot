@@ -173,7 +173,7 @@ class FastMapWorkspaceController extends ControllerBase {
           return is_array($s)
             && !empty($s['name']) && is_string($s['name'])
             && !empty($s['hex']) && is_string($s['hex']) && preg_match('/^#[0-9a-fA-F]{6}$/', $s['hex'])
-            && !empty($s['icon']) && is_string($s['icon'])
+            && !empty($s['icon']) && is_string($s['icon']) && preg_match('/^i-[a-z0-9-]+$/', $s['icon'])
             && !empty($s['mapping']) && in_array($s['mapping'], $validMappings, TRUE);
         });
         $mappingsPresent = array_unique(array_column($statuses, 'mapping'));
