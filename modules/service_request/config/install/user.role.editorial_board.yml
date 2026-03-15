@@ -8,7 +8,6 @@ dependencies:
     - node
     - paragraphs
     - system
-    - toolbar
 id: editorial_board
 label: 'Editorial board'
 weight: -4
