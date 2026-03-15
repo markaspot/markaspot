@@ -9,19 +9,25 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\Delete;
 use Drupal\Core\Database\Query\Insert;
+use Drupal\Core\Database\Query\Merge;
 use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Flood\FloodInterface;
+use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
+use Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Controller\FastMapWorkspaceController;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
+use Drupal\Core\Routing\TrustedRedirectResponse;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Tests the FastMapWorkspaceController.
@@ -74,6 +80,23 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
+   * The mocked key-value expirable factory.
+   *
+   * @var \Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected KeyValueExpirableFactoryInterface $keyValueExpirable;
+
+  /**
+   * The request stack used by verifyWorkspace().
+   */
+  protected RequestStack $requestStack;
+
+  /**
+   * Mutable workspace base URL for config callbacks.
+   */
+  protected ?string $workspaceBaseUrl = NULL;
+
+  /**
    * The controller under test.
    *
    * @var \Drupal\markaspot_fastmap\Controller\FastMapWorkspaceController
@@ -87,10 +110,19 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     parent::setUp();
 
     $this->database = $this->createMock(Connection::class);
+    // startTransaction() must return an object with rollBack() for the
+    // transaction wrapper in verifyWorkspace().
+    $transactionStub = new class {
+
+      public function rollBack(): void {}
+
+    };
+    $this->database->method('startTransaction')->willReturn($transactionStub);
     $this->provisioning = $this->createMock(WorkspaceProvisioningServiceInterface::class);
     $this->mailManager = $this->createMock(MailManagerInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $this->requestStack = new RequestStack();
 
     // Build FastMap config.
     $fastmapConfig = $this->createMock(ImmutableConfig::class);
@@ -100,7 +132,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
         'verify_base_url' => 'https://example.com',
         'cleanup_days' => 7,
         'mail_from' => 'noreply@example.com',
-        'workspace_base_url' => NULL,
+        'workspace_base_url' => $this->workspaceBaseUrl,
         default => NULL,
       });
 
@@ -120,12 +152,22 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
         default => $this->createMock(ImmutableConfig::class),
       });
 
-    // Group storage for slug uniqueness check.
+    // Storage mocks for group (slug uniqueness) and user (claim token).
     $groupStorage = $this->createMock(EntityStorageInterface::class);
     $groupStorage->method('loadByProperties')->willReturn([]);
+    $userStorage = $this->createMock(EntityStorageInterface::class);
     $this->entityTypeManager->method('getStorage')
-      ->with('group')
-      ->willReturn($groupStorage);
+      ->willReturnCallback(fn(string $type) => match ($type) {
+        'group' => $groupStorage,
+        'user' => $userStorage,
+        default => $this->createMock(EntityStorageInterface::class),
+      });
+
+    // Mock keyvalue.expirable: returns a store that silently ignores writes.
+    $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $kvStore->method('setWithExpire')->willReturn(NULL);
+    $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $this->keyValueExpirable->method('get')->willReturn($kvStore);
 
     // Set up the Drupal container so ControllerBase::config() works.
     $container = new ContainerBuilder();
@@ -135,6 +177,11 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $container->set('markaspot_fastmap.workspace_provisioning', $this->provisioning);
     $container->set('plugin.manager.mail', $this->mailManager);
     $container->set('logger.channel.markaspot_fastmap', $this->logger);
+    $container->set('keyvalue.expirable', $this->keyValueExpirable);
+    $container->set('request_stack', $this->requestStack);
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->method('isAllowed')->willReturn(TRUE);
+    $container->set('flood', $flood);
     \Drupal::setContainer($container);
 
     $this->controller = FastMapWorkspaceController::create($container);
@@ -159,6 +206,17 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       ['CONTENT_TYPE' => 'application/json'],
       json_encode($data)
     );
+  }
+
+  /**
+   * Pushes the current request for controller methods that inspect headers.
+   */
+  protected function pushCurrentRequest(array $server = []): void {
+    while ($this->requestStack->getCurrentRequest()) {
+      $this->requestStack->pop();
+    }
+
+    $this->requestStack->push(Request::create('/api/fastmap/verify/valid-token', 'GET', [], [], [], $server));
   }
 
   /**
@@ -636,8 +694,15 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $delete->method('condition')->willReturnSelf();
     $delete->method('execute')->willReturn(1);
 
+    // Mock the merge query for the verified record.
+    $merge = $this->createMock(Merge::class);
+    $merge->method('keys')->willReturnSelf();
+    $merge->method('fields')->willReturnSelf();
+    $merge->method('execute')->willReturn(Merge::STATUS_INSERT);
+
     $this->database->method('select')->willReturn($select);
     $this->database->method('delete')->willReturn($delete);
+    $this->database->method('merge')->willReturn($merge);
 
     $this->provisioning->method('provisionWorkspace')
       ->with($workspaceData)
@@ -647,6 +712,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
         'name' => 'Test Workspace',
         'url' => '/test-ws',
         'categories' => 1,
+        'user_id' => 7,
       ]);
 
     $response = $this->controller->verifyWorkspace('valid-token');
@@ -660,6 +726,227 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals('Test Workspace', $data['name']);
     $this->assertEquals('/test-ws', $data['url']);
     $this->assertEquals('provisioned', $data['status']);
+    // A login_token should be present when provisioning succeeds.
+    $this->assertArrayHasKey('login_token', $data);
+    $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $data['login_token']);
+  }
+
+  /**
+   * Tests JSON verify mode when workspace_base_url is configured.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspacePrefersJsonWhenRequested(): void {
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest([
+      'HTTP_ACCEPT' => 'application/json',
+      'HTTP_X_FASTMAP_RESPONSE_MODE' => 'json',
+    ]);
+
+    $workspaceData = [
+      'name' => 'JSON Workspace',
+      'slug' => 'json-ws',
+      'email' => 'user@example.com',
+      'categories' => ['Cat A'],
+    ];
+
+    $record = [
+      'id' => 1,
+      'token' => 'valid-token',
+      'email' => 'user@example.com',
+      'workspace_data' => json_encode($workspaceData),
+      'created' => time() - 3600,
+    ];
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAssoc')->willReturn($record);
+
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(1);
+
+    $merge = $this->createMock(Merge::class);
+    $merge->method('keys')->willReturnSelf();
+    $merge->method('fields')->willReturnSelf();
+    $merge->method('execute')->willReturn(Merge::STATUS_INSERT);
+
+    $this->database->method('select')->willReturn($select);
+    $this->database->method('delete')->willReturn($delete);
+    $this->database->method('merge')->willReturn($merge);
+
+    $this->provisioning->method('provisionWorkspace')
+      ->willReturn([
+        'group_id' => 42,
+        'slug' => 'json-ws',
+        'name' => 'JSON Workspace',
+        'url' => '/json-ws',
+        'categories' => 1,
+        'user_id' => 7,
+      ]);
+
+    $response = $this->controller->verifyWorkspace('valid-token');
+
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertEquals(201, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('json-ws', $data['slug']);
+    $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $data['login_token']);
+  }
+
+  /**
+   * Tests the legacy redirect path still exposes the login token header.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceRedirectIncludesLoginTokenHeader(): void {
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest(['HTTP_ACCEPT' => 'text/html']);
+
+    $workspaceData = [
+      'name' => 'Redirect Workspace',
+      'slug' => 'redirect-ws',
+      'email' => 'user@example.com',
+      'categories' => ['Cat A'],
+    ];
+
+    $record = [
+      'id' => 1,
+      'token' => 'valid-token',
+      'email' => 'user@example.com',
+      'workspace_data' => json_encode($workspaceData),
+      'created' => time() - 3600,
+    ];
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAssoc')->willReturn($record);
+
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(1);
+
+    $merge = $this->createMock(Merge::class);
+    $merge->method('keys')->willReturnSelf();
+    $merge->method('fields')->willReturnSelf();
+    $merge->method('execute')->willReturn(Merge::STATUS_INSERT);
+
+    $this->database->method('select')->willReturn($select);
+    $this->database->method('delete')->willReturn($delete);
+    $this->database->method('merge')->willReturn($merge);
+
+    $this->provisioning->method('provisionWorkspace')
+      ->willReturn([
+        'group_id' => 42,
+        'slug' => 'redirect-ws',
+        'name' => 'Redirect Workspace',
+        'url' => '/redirect-ws',
+        'categories' => 1,
+        'user_id' => 7,
+      ]);
+
+    $response = $this->controller->verifyWorkspace('valid-token');
+
+    $this->assertInstanceOf(TrustedRedirectResponse::class, $response);
+    $this->assertStringContainsString('/redirect-ws/dashboard', $response->headers->get('location'));
+    $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', (string) $response->headers->get('X-Login-Token'));
+  }
+
+  /**
+   * Tests that a verified token can return a fresh login token in JSON mode.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceAlreadyVerifiedJsonResponseIncludesLoginToken(): void {
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest([
+      'HTTP_ACCEPT' => 'application/json',
+      'HTTP_X_FASTMAP_RESPONSE_MODE' => 'json',
+    ]);
+
+    $pendingStatement = $this->createMock(StatementInterface::class);
+    $pendingStatement->method('fetchAssoc')->willReturn(FALSE);
+
+    $verifiedStatement = $this->createMock(StatementInterface::class);
+    $verifiedStatement->method('fetchField')->willReturn('verified-ws');
+
+    $pendingSelect = $this->createMock(SelectInterface::class);
+    $pendingSelect->method('fields')->willReturnSelf();
+    $pendingSelect->method('condition')->willReturnSelf();
+    $pendingSelect->method('range')->willReturnSelf();
+    $pendingSelect->method('execute')->willReturn($pendingStatement);
+
+    $verifiedSelect = $this->createMock(SelectInterface::class);
+    $verifiedSelect->method('fields')->willReturnSelf();
+    $verifiedSelect->method('condition')->willReturnSelf();
+    $verifiedSelect->method('range')->willReturnSelf();
+    $verifiedSelect->method('execute')->willReturn($verifiedStatement);
+
+    $this->database->method('select')
+      ->willReturnOnConsecutiveCalls($pendingSelect, $verifiedSelect);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(99);
+
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('loadByProperties')
+      ->with(['field_slug' => 'verified-ws'])
+      ->willReturn([$group]);
+
+    $membership = new class {
+      public function hasField(string $fieldName): bool {
+        return in_array($fieldName, ['group_roles', 'entity_id'], TRUE);
+      }
+      public function get(string $fieldName): object {
+        return match ($fieldName) {
+          'group_roles' => new class {
+            public function getValue(): array {
+              return [['target_id' => 'jur-tenant_admin']];
+            }
+          },
+          'entity_id' => new class {
+            public int $target_id = 123;
+          },
+        };
+      }
+    };
+
+    $relationshipStorage = $this->createMock(EntityStorageInterface::class);
+    $relationshipStorage->method('loadByProperties')
+      ->with([
+        'gid' => 99,
+        'plugin_id' => 'group_membership',
+      ])
+      ->willReturn([$membership]);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->willReturnCallback(fn(string $type) => match ($type) {
+        'group' => $groupStorage,
+        'group_relationship' => $relationshipStorage,
+        default => $this->createMock(EntityStorageInterface::class),
+      });
+
+    $container = \Drupal::getContainer();
+    $container->set('entity_type.manager', $entityTypeManager);
+
+    $response = $this->controller->verifyWorkspace('valid-token');
+
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('verified-ws', $data['slug']);
+    $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $data['login_token']);
   }
 
   /**
@@ -736,6 +1023,175 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals(409, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertEquals('Slug already taken', $data['error']);
+  }
+
+  // =========================================================================
+  // claimLoginToken() tests
+  // =========================================================================
+
+  /**
+   * Creates a POST request for the claim endpoint.
+   */
+  protected function createClaimRequest(array $body): Request {
+    return Request::create(
+      '/api/fastmap/claim-login-token',
+      'POST',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode($body)
+    );
+  }
+
+  /**
+   * Tests that an invalid token format returns 400.
+   *
+   * @covers ::claimLoginToken
+   */
+  public function testClaimLoginTokenInvalidFormat(): void {
+    $request = $this->createClaimRequest(['token' => 'too-short']);
+    $response = $this->controller->claimLoginToken($request);
+
+    $this->assertEquals(400, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('Invalid token format', $data['error']);
+  }
+
+  /**
+   * Tests that an empty token returns 400.
+   *
+   * @covers ::claimLoginToken
+   */
+  public function testClaimLoginTokenEmpty(): void {
+    $request = $this->createClaimRequest(['token' => '']);
+    $response = $this->controller->claimLoginToken($request);
+
+    $this->assertEquals(400, $response->getStatusCode());
+  }
+
+  /**
+   * Tests that an expired or missing token returns 401.
+   *
+   * @covers ::claimLoginToken
+   */
+  public function testClaimLoginTokenExpired(): void {
+    // KV store returns NULL (token not found or expired).
+    $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $kvStore->method('get')->willReturn(NULL);
+
+    $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $this->keyValueExpirable->method('get')
+      ->with('markaspot_fastmap_login_tokens')
+      ->willReturn($kvStore);
+
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $this->keyValueExpirable);
+    $this->controller = FastMapWorkspaceController::create($container);
+
+    $validToken = str_repeat('ab', 32);
+    $request = $this->createClaimRequest(['token' => $validToken]);
+    $response = $this->controller->claimLoginToken($request);
+
+    $this->assertEquals(401, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertStringContainsString('Invalid or expired', $data['error']);
+  }
+
+  /**
+   * Tests single-use: second claim with same token fails.
+   *
+   * @covers ::claimLoginToken
+   */
+  public function testClaimLoginTokenSingleUse(): void {
+    $validToken = str_repeat('cd', 32);
+    $callCount = 0;
+
+    // First call returns token data, second returns NULL (consumed).
+    $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $kvStore->method('get')
+      ->with($validToken)
+      ->willReturnCallback(function () use (&$callCount) {
+        return $callCount++ === 0
+          ? ['uid' => 99, 'slug' => 'test']
+          : NULL;
+      });
+    $kvStore->expects($this->once())->method('delete')->with($validToken);
+
+    $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $this->keyValueExpirable->method('get')
+      ->with('markaspot_fastmap_login_tokens')
+      ->willReturn($kvStore);
+
+    // User storage returns NULL (user not found) to stop early.
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->method('load')->with(99)->willReturn(NULL);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->willReturnCallback(fn(string $type) => match ($type) {
+        'user' => $userStorage,
+        default => $this->createMock(EntityStorageInterface::class),
+      });
+
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $this->keyValueExpirable);
+    $container->set('entity_type.manager', $entityTypeManager);
+    $this->controller = FastMapWorkspaceController::create($container);
+
+    // First call: token consumed, user not found -> 403.
+    $request = $this->createClaimRequest(['token' => $validToken]);
+    $response = $this->controller->claimLoginToken($request);
+    $this->assertEquals(403, $response->getStatusCode());
+
+    // Recreate controller for second call (simulates fresh request).
+    $this->controller = FastMapWorkspaceController::create($container);
+    $response2 = $this->controller->claimLoginToken($request);
+    $this->assertEquals(401, $response2->getStatusCode());
+  }
+
+  /**
+   * Tests that a blocked user returns 403.
+   *
+   * @covers ::claimLoginToken
+   */
+  public function testClaimLoginTokenBlockedUser(): void {
+    $validToken = str_repeat('ef', 32);
+
+    $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $kvStore->method('get')->with($validToken)->willReturn(['uid' => 5, 'slug' => 'ws']);
+    $kvStore->method('delete');
+
+    $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $this->keyValueExpirable->method('get')
+      ->with('markaspot_fastmap_login_tokens')
+      ->willReturn($kvStore);
+
+    // User is blocked.
+    $user = $this->createMock(\Drupal\user\UserInterface::class);
+    $user->method('isBlocked')->willReturn(TRUE);
+
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->method('load')->with(5)->willReturn($user);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->willReturnCallback(fn(string $type) => match ($type) {
+        'user' => $userStorage,
+        default => $this->createMock(EntityStorageInterface::class),
+      });
+
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $this->keyValueExpirable);
+    $container->set('entity_type.manager', $entityTypeManager);
+    $this->controller = FastMapWorkspaceController::create($container);
+
+    $request = $this->createClaimRequest(['token' => $validToken]);
+    $response = $this->controller->claimLoginToken($request);
+
+    $this->assertEquals(403, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertStringContainsString('not available', $data['error']);
   }
 
 }

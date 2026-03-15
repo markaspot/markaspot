@@ -6,6 +6,8 @@ namespace Drupal\markaspot_fastmap\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Flood\FloodInterface;
+use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
 use Psr\Log\LoggerInterface;
@@ -21,6 +23,11 @@ use Symfony\Component\HttpFoundation\Request;
  * email -> GET verify/{token} -> provisions workspace -> redirects to dashboard.
  */
 class FastMapWorkspaceController extends ControllerBase {
+
+  /**
+   * Verification token time-to-live in seconds (48 hours).
+   */
+  private const VERIFICATION_TTL = 172800;
 
   /**
    * The database connection.
@@ -51,6 +58,27 @@ class FastMapWorkspaceController extends ControllerBase {
   protected LoggerInterface $fastmapLogger;
 
   /**
+   * The expirable key-value store factory.
+   *
+   * @var \Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface
+   */
+  protected KeyValueExpirableFactoryInterface $keyValueExpirable;
+
+  /**
+   * The flood control service.
+   *
+   * @var \Drupal\Core\Flood\FloodInterface
+   */
+  protected FloodInterface $flood;
+
+  /**
+   * The group membership loader (NULL if group module not installed).
+   *
+   * @var mixed|null
+   */
+  protected mixed $membershipLoader = NULL;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
@@ -59,6 +87,11 @@ class FastMapWorkspaceController extends ControllerBase {
     $instance->provisioning = $container->get('markaspot_fastmap.workspace_provisioning');
     $instance->mailManager = $container->get('plugin.manager.mail');
     $instance->fastmapLogger = $container->get('logger.channel.markaspot_fastmap');
+    $instance->keyValueExpirable = $container->get('keyvalue.expirable');
+    $instance->flood = $container->get('flood');
+    if ($container->has('group.membership_loader')) {
+      $instance->membershipLoader = $container->get('group.membership_loader');
+    }
     return $instance;
   }
 
@@ -158,16 +191,21 @@ class FastMapWorkspaceController extends ControllerBase {
     }
 
     // Build verify URL: prefer frontend_base_url from request (set by Nuxt
-    // proxy), then config, then fall back to request host.
+    // proxy) if it matches the configured verify_base_url origin, then config,
+    // then fall back to request host.
     $verifyBaseUrl = $config->get('verify_base_url');
     $frontendBase = $data['frontend_base_url'] ?? '';
     if ($frontendBase && preg_match('#^https?://#', $frontendBase)) {
-      $verifyUrl = rtrim($frontendBase, '/') . '/start/verify/' . $token;
+      $configuredOrigin = $verifyBaseUrl ? parse_url($verifyBaseUrl, PHP_URL_HOST) : '';
+      $requestedHost = parse_url($frontendBase, PHP_URL_HOST);
+      if ($configuredOrigin && $requestedHost === $configuredOrigin) {
+        $verifyUrl = rtrim($frontendBase, '/') . '/start/verify/' . $token;
+      }
     }
-    elseif ($verifyBaseUrl) {
+    if (!isset($verifyUrl) && $verifyBaseUrl) {
       $verifyUrl = rtrim($verifyBaseUrl, '/') . '/start/verify/' . $token;
     }
-    else {
+    elseif (!isset($verifyUrl)) {
       $verifyUrl = $request->getSchemeAndHttpHost() . '/start/verify/' . $token;
     }
 
@@ -207,6 +245,7 @@ class FastMapWorkspaceController extends ControllerBase {
    * Looks up the pending record, provisions the workspace, then redirects.
    */
   public function verifyWorkspace(string $token): JsonResponse|TrustedRedirectResponse {
+    $wantsJsonResponse = $this->wantsJsonVerifyResponse();
     $record = $this->database->select('markaspot_fastmap_pending', 'p')
       ->fields('p')
       ->condition('token', $token)
@@ -227,22 +266,26 @@ class FastMapWorkspaceController extends ControllerBase {
 
       if ($verified) {
         $baseUrl = $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
-        if ($baseUrl) {
-          $redirectUrl = str_replace('{slug}', $verified, $baseUrl);
-          return new TrustedRedirectResponse($redirectUrl);
+        $loginToken = $this->createLoginTokenForVerifiedWorkspace($verified);
+
+        if ($baseUrl && !$wantsJsonResponse) {
+          return $this->buildWorkspaceRedirectResponse($verified, NULL, $loginToken);
         }
-        return new JsonResponse(['slug' => $verified], 200);
+
+        $response = ['slug' => $verified];
+        if ($loginToken) {
+          $response['login_token'] = $loginToken;
+        }
+        return new JsonResponse($response, 200);
       }
 
       return new JsonResponse(['error' => 'Invalid or expired verification token'], 404);
     }
 
-    // Check expiration (cleanup_days from config).
+    // Check expiration using a fixed 48-hour security window.
     $config = $this->config('markaspot_fastmap.settings');
-    $cleanupDays = (int) ($config->get('cleanup_days') ?? 7);
-    $maxAge = $cleanupDays * 86400;
 
-    if ((time() - (int) $record['created']) > $maxAge) {
+    if ((time() - (int) $record['created']) > self::VERIFICATION_TTL) {
       $this->database->delete('markaspot_fastmap_pending')
         ->condition('id', $record['id'])
         ->execute();
@@ -254,6 +297,8 @@ class FastMapWorkspaceController extends ControllerBase {
       return new JsonResponse(['error' => 'Corrupted workspace data'], 500);
     }
 
+    // Wrap verify-provision-delete in a transaction to prevent race conditions.
+    $transaction = $this->database->startTransaction();
     try {
       $result = $this->provisioning->provisionWorkspace($workspaceData);
 
@@ -275,29 +320,262 @@ class FastMapWorkspaceController extends ControllerBase {
         '@id' => $result['group_id'],
       ]);
 
+      // Generate a short-lived one-time login token so the user is
+      // automatically logged in after email verification.
+      // Uses the same keyvalue.expirable store as the dev switch-token flow,
+      // but with a production-safe 5-minute TTL and no devel-module guard.
+      $loginToken = $this->createWorkspaceLoginToken((int) $result['user_id'], $result['slug']);
+
       // Redirect to workspace dashboard or return JSON.
       $baseUrl = $config->get('workspace_base_url');
-      if ($baseUrl) {
-        $redirectUrl = str_replace(
-          ['{slug}', '{id}'],
-          [$result['slug'], $result['group_id']],
-          $baseUrl
-        );
-        return new TrustedRedirectResponse($redirectUrl);
+      if ($baseUrl && !$wantsJsonResponse) {
+        // Clean up verified rows older than 24 hours.
+        $this->cleanupVerified();
+        return $this->buildWorkspaceRedirectResponse($result['slug'], (int) $result['group_id'], $loginToken);
       }
 
-      return new JsonResponse([
+      $response = [
         'id' => $result['group_id'],
         'slug' => $result['slug'],
         'name' => $result['name'],
         'url' => $result['url'],
         'categories' => $result['categories'],
         'status' => 'provisioned',
-      ], 201);
+      ];
+      if ($loginToken) {
+        $response['login_token'] = $loginToken;
+      }
+
+      // Clean up verified rows older than 24 hours.
+      $this->cleanupVerified();
+
+      return new JsonResponse($response, 201);
     }
     catch (\RuntimeException $e) {
+      $transaction->rollBack();
       // Slug taken race condition or other provisioning error.
       return new JsonResponse(['error' => $e->getMessage()], 409);
+    }
+  }
+
+  /**
+   * Returns TRUE when verify should respond with JSON instead of redirecting.
+   */
+  private function wantsJsonVerifyResponse(): bool {
+    $request = \Drupal::request();
+    if (!$request) {
+      return FALSE;
+    }
+
+    $modeHeader = strtolower((string) $request->headers->get('X-Fastmap-Response-Mode', ''));
+    if ($modeHeader === 'json') {
+      return TRUE;
+    }
+
+    return str_contains(strtolower((string) $request->headers->get('Accept', '')), 'application/json');
+  }
+
+  /**
+   * Creates a short-lived workspace login token.
+   */
+  private function createWorkspaceLoginToken(int $uid, string $slug): ?string {
+    try {
+      $loginToken = bin2hex(random_bytes(32));
+      $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
+      $store->setWithExpire($loginToken, [
+        'uid' => $uid,
+        'slug' => $slug,
+      ], 300);
+      return $loginToken;
+    }
+    catch (\Exception $e) {
+      // Non-fatal: workspace is provisioned, user just won't be auto-logged in.
+      $this->fastmapLogger->warning('Could not generate login token for @slug: @msg', [
+        '@slug' => $slug,
+        '@msg' => $e->getMessage(),
+      ]);
+      return NULL;
+    }
+  }
+
+  /**
+   * Re-issues a login token for an already verified workspace when possible.
+   */
+  private function createLoginTokenForVerifiedWorkspace(string $slug): ?string {
+    $userId = $this->resolveVerifiedWorkspaceUserId($slug);
+    if (!$userId) {
+      return NULL;
+    }
+
+    return $this->createWorkspaceLoginToken($userId, $slug);
+  }
+
+  /**
+   * Resolves the tenant admin user ID for a provisioned workspace slug.
+   */
+  private function resolveVerifiedWorkspaceUserId(string $slug): ?int {
+    $groupStorage = $this->entityTypeManager()->getStorage('group');
+    $groups = $groupStorage->loadByProperties(['field_slug' => $slug]);
+    $group = reset($groups);
+    if (!$group) {
+      return NULL;
+    }
+
+    $relationshipStorage = $this->entityTypeManager()->getStorage('group_relationship');
+    $memberships = $relationshipStorage->loadByProperties([
+      'gid' => $group->id(),
+      'plugin_id' => 'group_membership',
+    ]);
+
+    foreach ($memberships as $membership) {
+      if (!$membership->hasField('group_roles') || !$membership->hasField('entity_id')) {
+        continue;
+      }
+
+      $roleIds = array_column($membership->get('group_roles')->getValue(), 'target_id');
+      if (!in_array('jur-tenant_admin', $roleIds, TRUE)) {
+        continue;
+      }
+
+      $targetId = (int) ($membership->get('entity_id')->target_id ?? 0);
+      if ($targetId > 0) {
+        return $targetId;
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Builds the workspace redirect response and exposes the login token header.
+   */
+  private function buildWorkspaceRedirectResponse(string $slug, ?int $groupId = NULL, ?string $loginToken = NULL): TrustedRedirectResponse {
+    $baseUrl = (string) $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
+    $redirectUrl = str_replace('{slug}', $slug, $baseUrl);
+    if ($groupId !== NULL) {
+      $redirectUrl = str_replace('{id}', (string) $groupId, $redirectUrl);
+    }
+
+    if ($loginToken) {
+      $redirectUrl .= '#login_token=' . $loginToken;
+    }
+
+    $redirect = new TrustedRedirectResponse($redirectUrl);
+    if ($loginToken) {
+      $redirect->headers->set('X-Login-Token', $loginToken);
+    }
+
+    return $redirect;
+  }
+
+  /**
+   * POST /api/fastmap/claim-login-token.
+   *
+   * Exchanges a one-time login token (issued during workspace verification)
+   * for a Drupal session cookie. Single-use, 5-minute TTL.
+   *
+   * This endpoint is publicly accessible by design: security relies entirely
+   * on the token's 256-bit entropy and single-use guarantee.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON response with authenticated user data on success.
+   */
+  public function claimLoginToken(Request $request): JsonResponse {
+    // Flood control: max 10 attempts per IP per hour.
+    $ip = $request->getClientIp() ?? 'unknown';
+    if (!$this->flood->isAllowed('fastmap_claim_token', 10, 3600, $ip)) {
+      return new JsonResponse(['error' => 'Too many attempts. Try again later.'], 429);
+    }
+    $this->flood->register('fastmap_claim_token', 3600, $ip);
+
+    $data = json_decode($request->getContent(), TRUE);
+    $token = trim($data['token'] ?? '');
+
+    if (!$token || !preg_match('/^[0-9a-f]{64}$/', $token)) {
+      return new JsonResponse(['error' => 'Invalid token format'], 400);
+    }
+
+    $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
+    $tokenData = $store->get($token);
+
+    if (!$tokenData) {
+      return new JsonResponse(['error' => 'Invalid or expired login token'], 401);
+    }
+
+    // Consume token immediately (single-use guarantee).
+    $store->delete($token);
+
+    $uid = (int) ($tokenData['uid'] ?? 0);
+    if (!$uid) {
+      return new JsonResponse(['error' => 'Token data corrupted'], 500);
+    }
+
+    $userStorage = $this->entityTypeManager()->getStorage('user');
+    $user = $userStorage->load($uid);
+
+    if (!$user || $user->isBlocked()) {
+      return new JsonResponse(['error' => 'User account not available'], 403);
+    }
+
+    try {
+      // Establish a full Drupal session for the user.
+      // user_login_finalize() handles session migration, login hooks, and
+      // the login timestamp in one canonical call.
+      user_login_finalize($user);
+
+      $this->fastmapLogger->info('Login token claimed for uid @uid (workspace @slug).', [
+        '@uid' => $uid,
+        '@slug' => $tokenData['slug'] ?? '?',
+      ]);
+
+      // Load membership data for the frontend auth state.
+      $groups = [];
+      if ($this->membershipLoader) {
+        try {
+          $memberships = $this->membershipLoader->loadByUser($user);
+          foreach ($memberships as $membership) {
+            $group = $membership->getGroup();
+            $groupRoles = [];
+            foreach ($membership->getRoles() as $role) {
+              $groupRoles[] = ['id' => $role->id(), 'label' => $role->label()];
+            }
+            $groups[] = [
+              'id' => $group->id(),
+              'uuid' => $group->uuid(),
+              'label' => $group->label(),
+              'type' => $group->bundle(),
+              'roles' => $groupRoles,
+            ];
+          }
+        }
+        catch (\Exception $e) {
+          // Non-fatal: return user without group data.
+          $this->fastmapLogger->warning('Could not load groups for login token claim: @msg', [
+            '@msg' => $e->getMessage(),
+          ]);
+        }
+      }
+
+      return new JsonResponse([
+        'success' => TRUE,
+        'user' => [
+          'uid' => $user->id(),
+          'name' => $user->getAccountName(),
+          'email' => $user->getEmail(),
+          'roles' => $user->getRoles(),
+          'groups' => $groups,
+        ],
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->fastmapLogger->error('Login token claim failed for uid @uid: @msg', [
+        '@uid' => $uid,
+        '@msg' => $e->getMessage(),
+      ]);
+      return new JsonResponse(['error' => 'Login failed'], 500);
     }
   }
 
@@ -345,6 +623,20 @@ class FastMapWorkspaceController extends ControllerBase {
     $cutoff = time() - ($cleanupDays * 86400);
 
     $this->database->delete('markaspot_fastmap_pending')
+      ->condition('created', $cutoff, '<')
+      ->execute();
+  }
+
+  /**
+   * Removes verified workspace records older than 24 hours.
+   *
+   * These records only exist to handle email-client prefetch scenarios
+   * and have no long-term value.
+   */
+  private function cleanupVerified(): void {
+    $cutoff = time() - 86400;
+
+    $this->database->delete('markaspot_fastmap_verified')
       ->condition('created', $cutoff, '<')
       ->execute();
   }

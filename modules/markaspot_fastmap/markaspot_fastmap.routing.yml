@@ -22,6 +22,18 @@ markaspot_fastmap.verify_workspace:
   options:
     no_cache: 'TRUE'
 
+markaspot_fastmap.claim_login_token:
+  path: '/api/fastmap/claim-login-token'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\FastMapWorkspaceController::claimLoginToken'
+    _title: 'Claim FastMap Login Token'
+    _format: 'json'
+  methods: [POST]
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: 'TRUE'
+
 markaspot_fastmap.workspace_usage:
   path: '/api/fastmap/usage/{group}'
   defaults:

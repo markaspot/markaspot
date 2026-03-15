@@ -38,6 +38,7 @@ class TenantSettingsController extends ControllerBase {
     'field_jurisdiction_e_mail',
     'field_email_footer',
     'field_jurisdiction_address',
+    'field_visibility',
   ];
 
   /**
@@ -456,6 +457,9 @@ class TenantSettingsController extends ControllerBase {
       'field_email_footer' => $group->hasField('field_email_footer') && !$group->get('field_email_footer')->isEmpty()
         ? $group->get('field_email_footer')->value
         : '',
+      'field_visibility' => $group->hasField('field_visibility') && !$group->get('field_visibility')->isEmpty()
+        ? $group->get('field_visibility')->value
+        : 'public',
       'field_jurisdiction_address' => $address,
       'available_countries' => $countries,
     ]);
@@ -617,6 +621,16 @@ class TenantSettingsController extends ControllerBase {
               return "field_jurisdiction_address.$subfield must be a string.";
             }
           }
+        }
+        return NULL;
+
+      case 'field_visibility':
+        if (!is_string($value)) {
+          return 'field_visibility must be a string.';
+        }
+        $allowed = ['public', 'submission_only', 'authenticated'];
+        if (!in_array($value, $allowed, TRUE)) {
+          return 'field_visibility must be one of: ' . implode(', ', $allowed) . '.';
         }
         return NULL;
 
