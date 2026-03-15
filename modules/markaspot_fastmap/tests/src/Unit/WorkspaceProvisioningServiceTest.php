@@ -9,6 +9,8 @@ use Drupal\Core\Database\Transaction;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
@@ -45,6 +47,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    * @var \Psr\Log\LoggerInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected LoggerInterface $logger;
+
+  /**
+   * The mocked language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected LanguageManagerInterface $languageManager;
 
   /**
    * The mocked group storage.
@@ -92,6 +101,11 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->userStorage = $this->createMock(EntityStorageInterface::class);
     $this->relationshipStorage = $this->createMock(EntityStorageInterface::class);
 
+    $this->langStorage = $this->createMock(EntityStorageInterface::class);
+    $langEntity = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+    $langEntity->method('save')->willReturn(1);
+    $this->langStorage->method('create')->willReturn($langEntity);
+
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->entityTypeManager->method('getStorage')
       ->willReturnCallback(fn(string $type) => match ($type) {
@@ -99,6 +113,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         'taxonomy_term' => $this->termStorage,
         'user' => $this->userStorage,
         'group_relationship' => $this->relationshipStorage,
+        'configurable_language' => $this->langStorage,
         default => $this->createMock(EntityStorageInterface::class),
       });
 
@@ -108,10 +123,18 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $this->logger = $this->createMock(LoggerInterface::class);
 
+    // Language manager: return 'en' as the only installed language by default.
+    // ensureLanguagesExist() will "install" missing languages.
+    $this->languageManager = $this->createMock(LanguageManagerInterface::class);
+    $enLanguage = $this->createMock(LanguageInterface::class);
+    $this->languageManager->method('getLanguages')
+      ->willReturn(['en' => $enLanguage]);
+
     $this->service = new WorkspaceProvisioningService(
       $this->entityTypeManager,
       $this->database,
       $this->logger,
+      $this->languageManager,
     );
   }
 

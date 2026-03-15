@@ -17,6 +17,7 @@ services:
       - '@entity_type.manager'
       - '@database'
       - '@logger.channel.markaspot_fastmap'
+      - '@language_manager'
 
   markaspot_fastmap.workspace_visibility:
     class: Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService

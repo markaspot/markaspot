@@ -7,6 +7,7 @@ namespace Drupal\markaspot_fastmap\Service;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
@@ -103,7 +104,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
   private const MAX_CATEGORIES = 30;
 
-  private const ALLOWED_LANGS = ['en', 'de', 'nl', 'fr', 'es'];
+  private const ALLOWED_LANGS = ['en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'it', 'pl', 'pt', 'tr', 'uk'];
 
   /**
    * Theme presets by template name.
@@ -124,6 +125,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly Connection $database,
     protected readonly LoggerInterface $logger,
+    protected readonly LanguageManagerInterface $languageManager,
   ) {}
 
   /**
@@ -180,6 +182,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     try {
       $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
       $availableLanguages = array_keys($multilingualCategories);
+
+      // 0. Ensure all requested languages are installed in Drupal.
+      $this->ensureLanguagesExist($availableLanguages);
 
       // 1. Create Group entity.
       $nuxtConfig = $this->buildNuxtConfig($name, $slug, $lat, $lng, $zoom, $template, $availableLanguages, $defaultLang);
@@ -575,6 +580,25 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $membership = $group->addRelationship($user, 'group_membership');
     $membership->set('group_roles', ['jur-tenant_admin']);
     $membership->save();
+  }
+
+  /**
+   * Ensures all requested languages are installed in Drupal.
+   *
+   * @param string[] $langcodes
+   *   Language codes to ensure exist.
+   */
+  private function ensureLanguagesExist(array $langcodes): void {
+    $installed = array_keys($this->languageManager->getLanguages());
+    foreach ($langcodes as $langcode) {
+      if (in_array($langcode, $installed, TRUE)) {
+        continue;
+      }
+      $storage = $this->entityTypeManager->getStorage('configurable_language');
+      $language = $storage->create(['id' => $langcode]);
+      $language->save();
+      $this->logger->info('Installed language @lang for workspace provisioning.', ['@lang' => $langcode]);
+    }
   }
 
 }
