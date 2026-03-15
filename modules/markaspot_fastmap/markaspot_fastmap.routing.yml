@@ -34,6 +34,38 @@ markaspot_fastmap.claim_login_token:
   options:
     no_cache: 'TRUE'
 
+markaspot_fastmap.billing_get:
+  path: '/api/fastmap/billing/{group}'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\BillingController::get'
+    _title: 'Billing Data'
+    _format: 'json'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_fastmap\Controller\BillingController::access'
+    group: \d+
+  options:
+    parameters:
+      group:
+        type: entity:group
+    no_cache: 'TRUE'
+
+markaspot_fastmap.billing_update:
+  path: '/api/fastmap/billing/{group}'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\BillingController::update'
+    _title: 'Update Billing Data'
+    _format: 'json'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_fastmap\Controller\BillingController::access'
+    group: \d+
+  options:
+    parameters:
+      group:
+        type: entity:group
+    no_cache: 'TRUE'
+
 markaspot_fastmap.workspace_usage:
   path: '/api/fastmap/usage/{group}'
   defaults:

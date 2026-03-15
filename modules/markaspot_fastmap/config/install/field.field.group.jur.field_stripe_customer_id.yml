@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_stripe_customer_id
+    - group.type.jur
+id: group.jur.field_stripe_customer_id
+field_name: field_stripe_customer_id
+entity_type: group
+bundle: jur
+label: 'Stripe Customer ID'
+description: 'Stripe customer identifier for billing. Managed automatically.'
+required: false
+translatable: false
+default_value: []
+default_value_callback: ''
+settings: {  }
+field_type: string

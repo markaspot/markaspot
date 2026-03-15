@@ -311,3 +311,77 @@ function markaspot_fastmap_update_11903(): void {
     \Drupal::logger('markaspot_fastmap')->info('Added member_limits config.');
   }
 }
+
+/**
+ * Add Stripe billing fields to jur group type.
+ */
+function markaspot_fastmap_update_11905(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_fastmap');
+  $fsc = $etm->getStorage('field_storage_config');
+  $fc = $etm->getStorage('field_config');
+
+  $stripe_fields = [
+    'field_stripe_customer_id' => [
+      'label' => 'Stripe Customer ID',
+      'description' => 'Stripe customer identifier for billing. Managed automatically.',
+    ],
+    'field_stripe_subscription_id' => [
+      'label' => 'Stripe Subscription ID',
+      'description' => 'Active Stripe subscription identifier. Managed automatically.',
+    ],
+  ];
+
+  foreach ($stripe_fields as $field_name => $meta) {
+    // Create field storage.
+    if (!$fsc->load("group.$field_name")) {
+      $fsc->create([
+        'field_name' => $field_name,
+        'entity_type' => 'group',
+        'type' => 'string',
+        'module' => 'core',
+        'cardinality' => 1,
+        'settings' => [
+          'max_length' => 255,
+          'is_ascii' => TRUE,
+          'case_sensitive' => FALSE,
+        ],
+        'third_party_settings' => [
+          'field_permissions' => [
+            'permission_type' => 'custom',
+          ],
+        ],
+      ])->save();
+      $logger->info('Created field storage: group.@field', ['@field' => $field_name]);
+    }
+
+    // Create field instance on jur bundle.
+    if (!$fc->load("group.jur.$field_name")) {
+      $storage = $fsc->load("group.$field_name");
+      if ($storage) {
+        $fc->create([
+          'field_storage' => $storage,
+          'bundle' => 'jur',
+          'entity_type' => 'group',
+          'field_name' => $field_name,
+          'label' => $meta['label'],
+          'description' => $meta['description'],
+          'required' => FALSE,
+          'translatable' => FALSE,
+          'default_value' => [],
+        ])->save();
+        $logger->info('Created field instance: group.jur.@field', ['@field' => $field_name]);
+      }
+    }
+  }
+
+  // Hide Stripe fields in form display (admin should not edit these manually).
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('group.jur.default');
+  if ($form_display) {
+    foreach (array_keys($stripe_fields) as $field_name) {
+      $form_display->removeComponent($field_name);
+    }
+    $form_display->save();
+  }
+}
