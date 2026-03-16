@@ -4,15 +4,15 @@ dependencies:
   config:
     - field.storage.node.field_jurisdiction
     - group.type.jur
-    - node.type.service_request
-id: node.service_request.field_jurisdiction
+    - node.type.page
+id: node.page.field_jurisdiction
 field_name: field_jurisdiction
 entity_type: node
-bundle: service_request
+bundle: page
 label: Jurisdiction
-description: 'The jurisdiction this service request belongs to. Set automatically on creation.'
+description: 'The jurisdiction this page belongs to.'
 required: false
-translatable: false
+translatable: true
 default_value: {  }
 default_value_callback: ''
 settings:

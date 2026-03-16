@@ -2,17 +2,17 @@ langcode: en
 status: true
 dependencies:
   config:
-    - field.storage.node.field_jurisdiction
+    - field.storage.taxonomy_term.field_jurisdiction
     - group.type.jur
-    - node.type.service_request
-id: node.service_request.field_jurisdiction
+    - taxonomy.vocabulary.service_category
+id: taxonomy_term.service_category.field_jurisdiction
 field_name: field_jurisdiction
-entity_type: node
-bundle: service_request
+entity_type: taxonomy_term
+bundle: service_category
 label: Jurisdiction
-description: 'The jurisdiction this service request belongs to. Set automatically on creation.'
+description: 'The jurisdiction this category belongs to.'
 required: false
-translatable: false
+translatable: true
 default_value: {  }
 default_value_callback: ''
 settings:
