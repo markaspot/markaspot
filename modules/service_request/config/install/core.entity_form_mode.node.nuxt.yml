@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - node
+id: node.nuxt
+label: 'Nuxt Frontend'
+description: 'Form mode optimized for Nuxt frontend with accordion-based layout'
+targetEntityType: node
+cache: true

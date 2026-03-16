@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.paragraph.field_author
+    - paragraphs.paragraphs_type.internal_remark
+id: paragraph.internal_remark.field_author
+field_name: field_author
+entity_type: paragraph
+bundle: internal_remark
+label: Author
+description: 'The user who created this internal remark.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:user'
+  handler_settings:
+    include_anonymous: false
+field_type: entity_reference

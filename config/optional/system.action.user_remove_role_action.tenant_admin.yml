@@ -1,0 +1,13 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - user.role.tenant_admin
+  module:
+    - user
+id: user_remove_role_action.tenant_admin
+label: 'Remove the Tenant Admin role from the selected user(s)'
+type: user
+plugin: user_remove_role_action
+configuration:
+  rid: tenant_admin

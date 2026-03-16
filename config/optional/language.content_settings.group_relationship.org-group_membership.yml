@@ -1,0 +1,17 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.relationship_type.org-group_membership
+  module:
+    - content_translation
+third_party_settings:
+  content_translation:
+    enabled: false
+    bundle_settings:
+      untranslatable_fields_hide: '0'
+id: group_relationship.org-group_membership
+target_entity_type_id: group_relationship
+target_bundle: org-group_membership
+default_langcode: site_default
+language_alterable: false

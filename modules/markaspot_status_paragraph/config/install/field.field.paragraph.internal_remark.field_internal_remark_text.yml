@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.paragraph.field_internal_remark_text
+    - paragraphs.paragraphs_type.internal_remark
+  module:
+    - text
+id: paragraph.internal_remark.field_internal_remark_text
+field_name: field_internal_remark_text
+entity_type: paragraph
+bundle: internal_remark
+label: 'Remark Text'
+description: 'The text content of the internal remark.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

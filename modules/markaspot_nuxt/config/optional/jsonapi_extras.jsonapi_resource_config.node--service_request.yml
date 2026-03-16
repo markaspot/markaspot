@@ -1,0 +1,286 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - node.type.service_request
+id: node--service_request
+disabled: false
+path: node/service_request
+resourceType: node--service_request
+resourceFields:
+  nid:
+    disabled: true
+    fieldName: nid
+    publicName: nid
+    enhancer:
+      id: ''
+  uuid:
+    disabled: true
+    fieldName: uuid
+    publicName: uuid
+    enhancer:
+      id: ''
+  vid:
+    disabled: false
+    fieldName: vid
+    publicName: vid
+    enhancer:
+      id: ''
+  langcode:
+    disabled: false
+    fieldName: langcode
+    publicName: langcode
+    enhancer:
+      id: ''
+  type:
+    disabled: false
+    fieldName: type
+    publicName: type
+    enhancer:
+      id: ''
+  revision_timestamp:
+    disabled: false
+    fieldName: revision_timestamp
+    publicName: revision_timestamp
+    enhancer:
+      id: ''
+  revision_uid:
+    disabled: false
+    fieldName: revision_uid
+    publicName: revision_uid
+    enhancer:
+      id: ''
+  revision_log:
+    disabled: false
+    fieldName: revision_log
+    publicName: revision_log
+    enhancer:
+      id: ''
+  status:
+    disabled: false
+    fieldName: status
+    publicName: status
+    enhancer:
+      id: ''
+  uid:
+    disabled: false
+    fieldName: uid
+    publicName: uid
+    enhancer:
+      id: ''
+  title:
+    disabled: false
+    fieldName: title
+    publicName: title
+    enhancer:
+      id: ''
+  created:
+    disabled: false
+    fieldName: created
+    publicName: created
+    enhancer:
+      id: ''
+  changed:
+    disabled: false
+    fieldName: changed
+    publicName: changed
+    enhancer:
+      id: ''
+  promote:
+    disabled: false
+    fieldName: promote
+    publicName: promote
+    enhancer:
+      id: ''
+  sticky:
+    disabled: false
+    fieldName: sticky
+    publicName: sticky
+    enhancer:
+      id: ''
+  default_langcode:
+    disabled: false
+    fieldName: default_langcode
+    publicName: default_langcode
+    enhancer:
+      id: ''
+  revision_default:
+    disabled: false
+    fieldName: revision_default
+    publicName: revision_default
+    enhancer:
+      id: ''
+  revision_translation_affected:
+    disabled: false
+    fieldName: revision_translation_affected
+    publicName: revision_translation_affected
+    enhancer:
+      id: ''
+  request_id:
+    disabled: false
+    fieldName: request_id
+    publicName: request_id
+    enhancer:
+      id: ''
+  path:
+    disabled: false
+    fieldName: path
+    publicName: path
+    enhancer:
+      id: ''
+  menu_link:
+    disabled: false
+    fieldName: menu_link
+    publicName: menu_link
+    enhancer:
+      id: ''
+  content_translation_source:
+    disabled: false
+    fieldName: content_translation_source
+    publicName: content_translation_source
+    enhancer:
+      id: ''
+  content_translation_outdated:
+    disabled: false
+    fieldName: content_translation_outdated
+    publicName: content_translation_outdated
+    enhancer:
+      id: ''
+  body:
+    disabled: false
+    fieldName: body
+    publicName: body
+    enhancer:
+      id: ''
+  field_address:
+    disabled: false
+    fieldName: field_address
+    publicName: field_address
+    enhancer:
+      id: ''
+  field_approved:
+    disabled: false
+    fieldName: field_approved
+    publicName: field_approved
+    enhancer:
+      id: ''
+  field_attachment:
+    disabled: false
+    fieldName: field_attachment
+    publicName: field_attachment
+    enhancer:
+      id: ''
+  field_category:
+    disabled: false
+    fieldName: field_category
+    publicName: field_category
+    enhancer:
+      id: ''
+  field_e_mail:
+    disabled: false
+    fieldName: field_e_mail
+    publicName: field_e_mail
+    enhancer:
+      id: ''
+  field_feedback:
+    disabled: false
+    fieldName: field_feedback
+    publicName: field_feedback
+    enhancer:
+      id: ''
+  field_first_name:
+    disabled: false
+    fieldName: field_first_name
+    publicName: field_first_name
+    enhancer:
+      id: ''
+  field_gdpr:
+    disabled: false
+    fieldName: field_gdpr
+    publicName: field_gdpr
+    enhancer:
+      id: ''
+  field_geolocation:
+    disabled: false
+    fieldName: field_geolocation
+    publicName: field_geolocation
+    enhancer:
+      id: ''
+  field_last_name:
+    disabled: false
+    fieldName: field_last_name
+    publicName: field_last_name
+    enhancer:
+      id: ''
+  field_notes:
+    disabled: false
+    fieldName: field_notes
+    publicName: field_notes
+    enhancer:
+      id: ''
+  field_notification:
+    disabled: false
+    fieldName: field_notification
+    publicName: field_notification
+    enhancer:
+      id: ''
+  field_object_id:
+    disabled: false
+    fieldName: field_object_id
+    publicName: field_object_id
+    enhancer:
+      id: ''
+  field_phone:
+    disabled: false
+    fieldName: field_phone
+    publicName: field_phone
+    enhancer:
+      id: ''
+  field_priority:
+    disabled: false
+    fieldName: field_priority
+    publicName: field_priority
+    enhancer:
+      id: ''
+  field_request_image:
+    disabled: false
+    fieldName: field_request_image
+    publicName: field_request_image
+    enhancer:
+      id: ''
+  field_request_media:
+    disabled: false
+    fieldName: field_request_media
+    publicName: field_request_media
+    enhancer:
+      id: ''
+  field_service_provider:
+    disabled: false
+    fieldName: field_service_provider
+    publicName: field_service_provider
+    enhancer:
+      id: ''
+  field_service_provider_notes:
+    disabled: false
+    fieldName: field_service_provider_notes
+    publicName: field_service_provider_notes
+    enhancer:
+      id: ''
+  field_sp_attachment:
+    disabled: false
+    fieldName: field_sp_attachment
+    publicName: field_sp_attachment
+    enhancer:
+      id: ''
+  field_status:
+    disabled: false
+    fieldName: field_status
+    publicName: field_status
+    enhancer:
+      id: ''
+  field_status_notes:
+    disabled: false
+    fieldName: field_status_notes
+    publicName: field_status_notes
+    enhancer:
+      id: ''

@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - paragraphs.paragraphs_type.internal_remark
+id: paragraph--internal_remark
+disabled: false
+path: paragraph/internal_remark
+resourceType: paragraph--internal_remark
+resourceFields: {  }

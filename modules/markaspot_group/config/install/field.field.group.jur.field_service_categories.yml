@@ -1,0 +1,27 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_service_categories
+    - group.type.jur
+    - taxonomy.vocabulary.service_category
+id: group.jur.field_service_categories
+field_name: field_service_categories
+entity_type: group
+bundle: jur
+label: 'Service Categories'
+description: 'Optional: Restrict visible categories for this child jurisdiction. Leave empty to inherit all categories from the parent. Only categories belonging to the parent jurisdiction are shown.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'jurisdiction_category:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      service_category: service_category
+    sort:
+      field: name
+      direction: ASC
+    auto_create: false
+field_type: entity_reference

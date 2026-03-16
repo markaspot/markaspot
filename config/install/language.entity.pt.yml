@@ -1,0 +1,8 @@
+langcode: en
+status: true
+dependencies: {  }
+id: pt
+label: 'Portuguese, International'
+direction: ltr
+weight: 0
+locked: false

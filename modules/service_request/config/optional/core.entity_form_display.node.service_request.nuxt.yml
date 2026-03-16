@@ -1,0 +1,399 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - core.entity_form_mode.node.nuxt
+    - field.field.node.service_request.body
+    - field.field.node.service_request.field_address
+    - field.field.node.service_request.field_approved
+    - field.field.node.service_request.field_attachment
+    - field.field.node.service_request.field_category
+    - field.field.node.service_request.field_e_mail
+    - field.field.node.service_request.field_feedback
+    - field.field.node.service_request.field_first_name
+    - field.field.node.service_request.field_gdpr
+    - field.field.node.service_request.field_geolocation
+    - field.field.node.service_request.field_last_name
+    - field.field.node.service_request.field_notes
+    - field.field.node.service_request.field_notification
+    - field.field.node.service_request.field_object_id
+    - field.field.node.service_request.field_phone
+    - field.field.node.service_request.field_priority
+    - field.field.node.service_request.field_request_image
+    - field.field.node.service_request.field_request_media
+    - field.field.node.service_request.field_service_provider
+    - field.field.node.service_request.field_service_provider_notes
+    - field.field.node.service_request.field_sp_attachment
+    - field.field.node.service_request.field_status
+    - field.field.node.service_request.field_status_notes
+    - node.type.service_request
+  module:
+    - address
+    - field_group
+    - file
+    - inline_entity_form
+    - paragraphs
+    - shs
+    - telephone
+    - text
+third_party_settings:
+  field_group:
+    group_quick_actions:
+      children:
+        - status
+        - field_status
+      label: 'Quick Actions'
+      region: content
+      parent_name: ''
+      weight: 0
+      format_type: fieldset
+      format_settings:
+        classes: quick-actions-panel
+        id: ''
+        description: ''
+        required_fields: false
+    group_accordion:
+      children:
+        - group_request_details
+        - group_location
+        - group_media
+        - group_status_notes
+        - group_contact
+        - group_service_provider
+        - group_internal
+      label: 'Request Sections'
+      region: content
+      parent_name: ''
+      weight: 1
+      format_type: tabs
+      format_settings:
+        classes: ''
+        show_empty_fields: false
+        id: ''
+        label_as_html: false
+        direction: vertical
+        width_breakpoint: 640
+        effect: bounceslide
+    group_request_details:
+      children:
+        - field_category
+        - body
+      label: 'Request Details'
+      region: content
+      parent_name: group_accordion
+      weight: 0
+      format_type: tabs
+      format_settings:
+        classes: ''
+        show_empty_fields: false
+        id: ''
+        label_as_html: false
+        description: ''
+        required_fields: true
+        direction: vertical
+        width_breakpoint: 640
+        open: true
+    group_location:
+      children:
+        - field_geolocation
+        - field_address
+      label: Location
+      region: content
+      parent_name: group_accordion
+      weight: 1
+      format_type: tabs
+      format_settings:
+        classes: ''
+        show_empty_fields: false
+        id: ''
+        label_as_html: false
+        description: ''
+        required_fields: false
+        direction: vertical
+        width_breakpoint: 640
+        open: false
+    group_media:
+      children:
+        - field_request_media
+      label: Media
+      region: content
+      parent_name: group_accordion
+      weight: 2
+      format_type: tabs
+      format_settings:
+        classes: ''
+        show_empty_fields: false
+        id: ''
+        label_as_html: false
+        description: ''
+        required_fields: false
+        direction: vertical
+        width_breakpoint: 640
+        open: false
+    group_status_notes:
+      children:
+        - field_status_notes
+      label: 'Status History'
+      region: content
+      parent_name: group_accordion
+      weight: 3
+      format_type: tabs
+      format_settings:
+        classes: ''
+        show_empty_fields: false
+        id: ''
+        label_as_html: false
+        description: 'Timeline of status changes and notes'
+        required_fields: false
+        direction: vertical
+        width_breakpoint: 640
+        open: false
+    group_contact:
+      children:
+        - field_e_mail
+        - field_phone
+        - field_first_name
+        - field_last_name
+      label: 'Contact Information'
+      region: content
+      parent_name: group_accordion
+      weight: 4
+      format_type: tabs
+      format_settings:
+        classes: ''
+        show_empty_fields: false
+        id: ''
+        label_as_html: false
+        description: ''
+        required_fields: false
+        direction: vertical
+        width_breakpoint: 640
+        open: false
+    group_service_provider:
+      children:
+        - field_service_provider
+        - field_service_provider_notes
+        - field_sp_attachment
+      label: 'Service Provider'
+      region: content
+      parent_name: group_accordion
+      weight: 5
+      format_type: tabs
+      format_settings:
+        classes: ''
+        show_empty_fields: false
+        id: ''
+        label_as_html: false
+        description: ''
+        required_fields: false
+        direction: vertical
+        width_breakpoint: 640
+        open: false
+    group_internal:
+      children:
+        - field_notes
+        - field_notification
+        - field_attachment
+      label: Internal
+      region: content
+      parent_name: group_accordion
+      weight: 6
+      format_type: tabs
+      format_settings:
+        classes: ''
+        show_empty_fields: false
+        id: ''
+        label_as_html: false
+        description: 'Internal fields - not publicly visible'
+        required_fields: false
+        direction: vertical
+        width_breakpoint: 640
+        open: false
+id: node.service_request.nuxt
+targetEntityType: node
+bundle: service_request
+mode: nuxt
+content:
+  body:
+    type: text_textarea_with_summary
+    weight: 1
+    region: content
+    settings:
+      rows: 9
+      summary_rows: 3
+      placeholder: ''
+      show_summary: false
+    third_party_settings: {  }
+  field_address:
+    type: address_default
+    weight: 1
+    region: content
+    settings:
+      wrapper_type: details
+    third_party_settings: {  }
+  field_attachment:
+    type: file_generic
+    weight: 2
+    region: content
+    settings:
+      progress_indicator: throbber
+    third_party_settings: {  }
+  field_category:
+    type: options_shs
+    weight: 0
+    region: content
+    settings:
+      display_node_count: false
+      create_new_items: false
+      create_new_levels: false
+      force_deepest: false
+    third_party_settings: {  }
+  field_e_mail:
+    type: email_default
+    weight: 0
+    region: content
+    settings:
+      placeholder: ''
+      size: 60
+    third_party_settings: {  }
+  field_first_name:
+    type: string_textfield
+    weight: 2
+    region: content
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  field_geolocation:
+    type: geolocation_mapbox_widget
+    weight: 0
+    region: content
+    settings:
+      zoom: '18'
+      center_lat: '51.4349'
+      center_lng: '6.7595'
+      limit_countrycodes: de
+      limit_viewbox: '6.67056,51.34078,6.83437,51.56140'
+      city: Duisburg
+      set_address_field: '1'
+      tileServerUrl: 'http://{s}.tile.osm.org/{z}/{x}/{y}.png'
+      wmsLayer: ''
+      customAttribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      mapboxToken: ''
+      mapboxStyle: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json'
+      fullscreenControl: '1'
+      streetNumberFormat: '1'
+      dragging: '1'
+      tab: '1'
+      autoLocate: 0
+      zoomControl: 0
+    third_party_settings: {  }
+  field_last_name:
+    type: string_textfield
+    weight: 3
+    region: content
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  field_notes:
+    type: text_textarea
+    weight: 0
+    region: content
+    settings:
+      rows: 5
+      placeholder: ''
+    third_party_settings: {  }
+  field_notification:
+    type: boolean_checkbox
+    weight: 1
+    region: content
+    settings:
+      display_label: true
+    third_party_settings: {  }
+  field_phone:
+    type: telephone_default
+    weight: 1
+    region: content
+    settings:
+      placeholder: ''
+    third_party_settings: {  }
+  field_request_media:
+    type: inline_entity_form_simple
+    weight: 0
+    region: content
+    settings:
+      form_mode: default
+      override_labels: false
+      label_singular: ''
+      label_plural: ''
+      collapsible: false
+      collapsed: false
+      revision: false
+    third_party_settings: {  }
+  field_service_provider:
+    type: options_select
+    weight: 0
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  field_service_provider_notes:
+    type: text_textarea
+    weight: 1
+    region: content
+    settings:
+      rows: 5
+      placeholder: ''
+    third_party_settings: {  }
+  field_sp_attachment:
+    type: file_generic
+    weight: 2
+    region: content
+    settings:
+      progress_indicator: throbber
+    third_party_settings: {  }
+  field_status:
+    type: options_buttons
+    weight: 1
+    region: content
+    settings: {  }
+    third_party_settings: {  }
+  field_status_notes:
+    type: entity_reference_paragraphs
+    weight: 0
+    region: content
+    settings:
+      title: Paragraph
+      title_plural: Paragraphs
+      edit_mode: preview
+      add_mode: dropdown
+      form_display_mode: default
+      default_paragraph_type: status
+    third_party_settings: {  }
+  status:
+    type: boolean_checkbox
+    weight: 0
+    region: content
+    settings:
+      display_label: true
+    third_party_settings: {  }
+hidden:
+  created: true
+  field_approved: true
+  field_feedback: true
+  field_gdpr: true
+  field_object_id: true
+  field_organisation: true
+  field_priority: true
+  field_request_image: true
+  group_content: true
+  groups: true
+  groups_type_organisation: true
+  langcode: true
+  path: true
+  promote: true
+  request_id: true
+  sticky: true
+  title: true
+  uid: true
+  url_redirects: true

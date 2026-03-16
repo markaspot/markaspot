@@ -1,0 +1,22 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_open311_mapping
+    - taxonomy.vocabulary.service_status
+  module:
+    - options
+id: taxonomy_term.service_status.field_open311_mapping
+field_name: field_open311_mapping
+entity_type: taxonomy_term
+bundle: service_status
+label: 'Open311 Status Mapping'
+description: 'Maps this status to the Open311 open/closed value. "Initial" marks the default status for new requests.'
+required: true
+translatable: true
+default_value:
+  -
+    value: open
+default_value_callback: ''
+settings: {  }
+field_type: list_string

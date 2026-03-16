@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - media.type.catalog_image
+id: media--catalog_image
+disabled: false
+path: media/catalog_image
+resourceType: media--catalog_image
+resourceFields: {  }

@@ -1,0 +1,148 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - taxonomy.vocabulary.service_category
+id: taxonomy_term--service_category
+disabled: false
+path: taxonomy_term/service_category
+resourceType: taxonomy_term--service_category
+resourceFields:
+  tid:
+    disabled: false
+    fieldName: tid
+    publicName: tid
+    enhancer:
+      id: ''
+  uuid:
+    disabled: false
+    fieldName: uuid
+    publicName: uuid
+    enhancer:
+      id: ''
+  revision_id:
+    disabled: false
+    fieldName: revision_id
+    publicName: revision_id
+    enhancer:
+      id: ''
+  langcode:
+    disabled: false
+    fieldName: langcode
+    publicName: langcode
+    enhancer:
+      id: ''
+  vid:
+    disabled: false
+    fieldName: vid
+    publicName: vid
+    enhancer:
+      id: ''
+  revision_created:
+    disabled: false
+    fieldName: revision_created
+    publicName: revision_created
+    enhancer:
+      id: ''
+  revision_user:
+    disabled: false
+    fieldName: revision_user
+    publicName: revision_user
+    enhancer:
+      id: ''
+  revision_log_message:
+    disabled: false
+    fieldName: revision_log_message
+    publicName: revision_log_message
+    enhancer:
+      id: ''
+  status:
+    disabled: false
+    fieldName: status
+    publicName: status
+    enhancer:
+      id: ''
+  name:
+    disabled: false
+    fieldName: name
+    publicName: name
+    enhancer:
+      id: ''
+  description:
+    disabled: false
+    fieldName: description
+    publicName: description
+    enhancer:
+      id: ''
+  weight:
+    disabled: false
+    fieldName: weight
+    publicName: weight
+    enhancer:
+      id: ''
+  parent:
+    disabled: false
+    fieldName: parent
+    publicName: parent
+    enhancer:
+      id: ''
+  changed:
+    disabled: false
+    fieldName: changed
+    publicName: changed
+    enhancer:
+      id: ''
+  default_langcode:
+    disabled: false
+    fieldName: default_langcode
+    publicName: default_langcode
+    enhancer:
+      id: ''
+  revision_default:
+    disabled: false
+    fieldName: revision_default
+    publicName: revision_default
+    enhancer:
+      id: ''
+  revision_translation_affected:
+    disabled: false
+    fieldName: revision_translation_affected
+    publicName: revision_translation_affected
+    enhancer:
+      id: ''
+  path:
+    disabled: false
+    fieldName: path
+    publicName: path
+    enhancer:
+      id: ''
+  field_archive_days:
+    disabled: false
+    fieldName: field_archive_days
+    publicName: field_archive_days
+    enhancer:
+      id: ''
+  field_category_gid:
+    disabled: false
+    fieldName: field_category_gid
+    publicName: field_category_gid
+    enhancer:
+      id: ''
+  field_category_hex:
+    disabled: false
+    fieldName: field_category_hex
+    publicName: field_category_hex
+    enhancer:
+      id: ''
+  field_category_icon:
+    disabled: false
+    fieldName: field_category_icon
+    publicName: field_category_icon
+    enhancer:
+      id: ''
+  field_service_code:
+    disabled: false
+    fieldName: field_service_code
+    publicName: field_service_code
+    enhancer:
+      id: ''

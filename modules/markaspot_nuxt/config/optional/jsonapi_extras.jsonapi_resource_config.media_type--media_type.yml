@@ -1,0 +1,94 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - media
+id: media_type--media_type
+disabled: false
+path: media_type/media_type
+resourceType: media_type--media_type
+resourceFields:
+  uuid:
+    disabled: false
+    fieldName: uuid
+    publicName: uuid
+    enhancer:
+      id: ''
+  langcode:
+    disabled: false
+    fieldName: langcode
+    publicName: langcode
+    enhancer:
+      id: ''
+  status:
+    disabled: false
+    fieldName: status
+    publicName: status
+    enhancer:
+      id: ''
+  dependencies:
+    disabled: false
+    fieldName: dependencies
+    publicName: dependencies
+    enhancer:
+      id: ''
+  third_party_settings:
+    disabled: false
+    fieldName: third_party_settings
+    publicName: third_party_settings
+    enhancer:
+      id: ''
+  _core:
+    disabled: false
+    fieldName: _core
+    publicName: _core
+    enhancer:
+      id: ''
+  id:
+    disabled: false
+    fieldName: id
+    publicName: id
+    enhancer:
+      id: ''
+  label:
+    disabled: false
+    fieldName: label
+    publicName: label
+    enhancer:
+      id: ''
+  description:
+    disabled: false
+    fieldName: description
+    publicName: description
+    enhancer:
+      id: ''
+  source:
+    disabled: false
+    fieldName: source
+    publicName: source
+    enhancer:
+      id: ''
+  queue_thumbnail_downloads:
+    disabled: false
+    fieldName: queue_thumbnail_downloads
+    publicName: queue_thumbnail_downloads
+    enhancer:
+      id: ''
+  new_revision:
+    disabled: false
+    fieldName: new_revision
+    publicName: new_revision
+    enhancer:
+      id: ''
+  source_configuration:
+    disabled: false
+    fieldName: source_configuration
+    publicName: source_configuration
+    enhancer:
+      id: ''
+  field_map:
+    disabled: false
+    fieldName: field_map
+    publicName: field_map
+    enhancer:
+      id: ''

@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - group
+id: group.subgroup_tree
+field_name: subgroup_tree
+entity_type: group
+type: integer
+settings:
+  unsigned: true
+  size: normal
+module: core
+locked: true
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: true
+custom_storage: false
