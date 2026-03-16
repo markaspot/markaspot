@@ -1,5 +1,28 @@
 # Changelog
 
+## [11.9.10](https://github.com/markaspot/markaspot/compare/11.9.9...11.9.10) (2026-03-16)
+
+### Features
+
+* add anonymous and authenticated role configs to profile ([7adc520](https://github.com/markaspot/markaspot/commit/7adc520209713ac77b39818fbc8d56587ff1ba1d))
+* add field_jurisdiction configs to markaspot_group ([63af6b2](https://github.com/markaspot/markaspot/commit/63af6b20fc6a90c725e6ea094cbb584181ee6cf6))
+* add group field storages to markaspot_nuxt config/install ([fbe53bc](https://github.com/markaspot/markaspot/commit/fbe53bc853e62d098993aba7c34dcffbc39f8e72))
+* config audit - profile installs without config/sync ([fe7ecac](https://github.com/markaspot/markaspot/commit/fe7ecac6c4c593c2f53d75c03fa4a16b4aa6f5af))
+* **fastmap:** concurrent published limit for Free tier ([c08a414](https://github.com/markaspot/markaspot/commit/c08a414ee50830c75043579be45293f57e2b7363))
+
+### Bug Fixes
+
+* add markaspot_group as dependency of markaspot_open311 ([66de93a](https://github.com/markaspot/markaspot/commit/66de93a9bd3b6edb8f8497922f5a5c8d80f3662c))
+* guard field_jurisdiction queries in MarkASpotSettingsController ([4b9af52](https://github.com/markaspot/markaspot/commit/4b9af523ea7fc4916282397124fb535c3d914241))
+* move field.storage.node.body to config/optional ([dc1650f](https://github.com/markaspot/markaspot/commit/dc1650f4773cbf497218e430a124a5d648c1ac9b))
+* move group configs with external dependencies to config/optional ([3987bd7](https://github.com/markaspot/markaspot/commit/3987bd7ddcf23eabd358f01c2afa112fa3346794))
+* move markaspot_nuxt field storages to config/optional ([f7a563b](https://github.com/markaspot/markaspot/commit/f7a563b0187d0c9de08ed3e763d2c8fcb4f96a67))
+* move page field config to config/optional in default_content ([662b7fd](https://github.com/markaspot/markaspot/commit/662b7fd206e739a17022ac9c8aa96d83a7840e05))
+* move profile configs with optional dependencies to config/optional ([6e10cf4](https://github.com/markaspot/markaspot/commit/6e10cf4382c9ceef0f7a1d83e4501f1f04f7442a))
+* remove toolbar module dependency from editorial_board role ([2775076](https://github.com/markaspot/markaspot/commit/2775076bb52de5002f19fecf9299fdb469e63c34))
+* **security:** block numeric jurisdiction IDs on settings endpoint ([7ec0ba4](https://github.com/markaspot/markaspot/commit/7ec0ba445a0566bda61c3e7b02187cf7cf00577b))
+* **security:** remove API keys from public settings response ([839a616](https://github.com/markaspot/markaspot/commit/839a616c4684b045e383f1562e88f5a10d4647eb))
+
 ## [11.9.9](https://github.com/markaspot/markaspot/compare/11.9.8...11.9.9) (2026-03-15)
 
 ### Features
