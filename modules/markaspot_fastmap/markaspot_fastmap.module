@@ -14,8 +14,54 @@ declare(strict_types=1);
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\node\NodeInterface;
+
+/**
+ * Implements hook_entity_field_access().
+ *
+ * Allows editing the 'status' (published) field on service_request nodes
+ * for users who have the Group-level 'update' permission on that node's
+ * jurisdiction. This bypasses Drupal Core's 'administer node published status'
+ * requirement while keeping access scoped to Group membership.
+ */
+function markaspot_fastmap_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
+  if ($operation !== 'edit' || $field_definition->getName() !== 'status') {
+    return AccessResult::neutral();
+  }
+
+  if (!$items) {
+    return AccessResult::neutral();
+  }
+
+  $entity = $items->getEntity();
+  if (!$entity instanceof NodeInterface || $entity->bundle() !== 'service_request') {
+    return AccessResult::neutral();
+  }
+
+  if (!$entity->hasField('field_jurisdiction') || $entity->get('field_jurisdiction')->isEmpty()) {
+    return AccessResult::neutral();
+  }
+
+  $group = $entity->get('field_jurisdiction')->entity;
+  if (!$group) {
+    return AccessResult::neutral();
+  }
+
+  $member = $group->getMember($account);
+  if (!$member) {
+    return AccessResult::neutral()->cachePerUser()->addCacheableDependency($group);
+  }
+
+  $hasPermission = $member->hasPermission('update any group_node:service_request entity')
+    || $member->hasPermission('update own group_node:service_request entity');
+
+  return $hasPermission
+    ? AccessResult::allowed()->cachePerUser()->addCacheableDependency($group)->addCacheableDependency($entity)
+    : AccessResult::neutral()->cachePerUser()->addCacheableDependency($group);
+}
 
 /**
  * Implements hook_node_access().
@@ -96,6 +142,119 @@ function markaspot_fastmap_entity_update(EntityInterface $entity): void {
 }
 
 /**
+ * Implements hook_node_presave().
+ *
+ * Silently sets new service_request nodes to unpublished when the
+ * jurisdiction's published-reports limit is reached. This avoids rejecting
+ * anonymous submissions with a validation error. The report is still created
+ * but stays unpublished until a slot is freed.
+ */
+function markaspot_fastmap_node_presave(NodeInterface $node): void {
+  if ($node->bundle() !== 'service_request' || !$node->isNew() || !$node->isPublished()) {
+    return;
+  }
+
+  // Admins bypass tier limits.
+  $currentUser = \Drupal::currentUser();
+  if ($currentUser->hasPermission('bypass mas validation')
+    || $currentUser->hasPermission('administer nodes')) {
+    return;
+  }
+
+  // Resolve the jurisdiction group for tier-limit enforcement.
+  // Priority: 1) field_jurisdiction on the node (set by form/JSON:API creates),
+  // 2) jurisdiction_id from the current GeoReport API request (child jur),
+  // 3) category term's field_jurisdiction (always the ROOT jurisdiction).
+  // The API request fallback (#2) is critical for child jurisdictions: without
+  // it, the category-term fallback resolves to the root (e.g., BCP Council)
+  // instead of the child (e.g., Queens Park Ward), bypassing child tier limits.
+  $group = NULL;
+  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+    $group = $node->get('field_jurisdiction')->entity;
+  }
+  else {
+    // Derive root jurisdiction from category term (authoritative).
+    $categoryRootId = NULL;
+    if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+      $categoryTerm = $node->get('field_category')->entity;
+      if ($categoryTerm && $categoryTerm->hasField('field_jurisdiction') && !$categoryTerm->get('field_jurisdiction')->isEmpty()) {
+        $categoryRootId = (int) $categoryTerm->get('field_jurisdiction')->target_id;
+      }
+    }
+
+    // Try to get jurisdiction_id from the current HTTP request (GeoReport API).
+    // Validate against the category term's root jurisdiction to prevent
+    // cross-tenant spoofing (attacker sending a Pro-tier jurisdiction_id).
+    $request = \Drupal::request();
+    $jurisdictionId = $request->request->get('jurisdiction_id')
+      ?? $request->query->get('jurisdiction_id');
+    if ($jurisdictionId) {
+      $candidate = \Drupal::entityTypeManager()
+        ->getStorage('group')
+        ->load((int) $jurisdictionId);
+      if ($candidate && $candidate->bundle() === 'jur') {
+        // Only trust the request jurisdiction if it matches the category root
+        // or is a child of it (same hierarchy).
+        $candidateId = (int) $candidate->id();
+        if ($categoryRootId === NULL || $candidateId === $categoryRootId) {
+          $group = $candidate;
+        }
+        else {
+          // Check if candidate is a child of the category root.
+          /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolver|null $resolver */
+          $resolver = \Drupal::hasService('markaspot_group.jurisdiction_hierarchy_resolver')
+            ? \Drupal::service('markaspot_group.jurisdiction_hierarchy_resolver')
+            : NULL;
+          if ($resolver && $resolver->getRootJurisdictionId($candidateId) === $categoryRootId) {
+            $group = $candidate;
+          }
+        }
+      }
+    }
+    // Final fallback: use the category root jurisdiction directly.
+    if (!$group && $categoryRootId) {
+      $group = \Drupal::entityTypeManager()
+        ->getStorage('group')
+        ->load($categoryRootId);
+    }
+  }
+
+  if (!$group || !$group->hasField('field_tier')) {
+    return;
+  }
+
+  $tier = !$group->get('field_tier')->isEmpty()
+    ? $group->get('field_tier')->value
+    : 'free';
+
+  /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
+  $tierConfig = \Drupal::service('markaspot_fastmap.tier_config');
+  $tierLimits = $tierConfig->getLimits($tier);
+
+  if ($tierLimits === NULL || !empty($tierLimits['unlimited'])) {
+    return;
+  }
+
+  // Only apply silent unpublish for the published-count period.
+  if ($tierLimits['period'] !== 'published') {
+    return;
+  }
+
+  $count = $tierConfig->countRequests((int) $group->id(), 'published');
+  if ($count >= $tierLimits['limit']) {
+    $node->setUnpublished();
+    \Drupal::logger('markaspot_fastmap')->notice(
+      'New service request silently unpublished: jurisdiction @jid has @count/@limit published reports.',
+      [
+        '@jid' => $group->id(),
+        '@count' => $count,
+        '@limit' => $tierLimits['limit'],
+      ]
+    );
+  }
+}
+
+/**
  * Implements hook_entity_type_alter().
  */
 function markaspot_fastmap_entity_type_alter(array &$entity_types): void {
@@ -118,5 +277,111 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
   }
   else {
     $settings['jurisdiction']['visibility'] = 'public';
+  }
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Enforces tier published-report limits retroactively. When a jurisdiction is
+ * downgraded (e.g. Pro to Free), existing published nodes may exceed the new
+ * limit. This cron job unpublishes the oldest excess reports (FIFO).
+ *
+ * Runs at most once per hour to avoid unnecessary processing.
+ */
+function markaspot_fastmap_cron(): void {
+  $state = \Drupal::state();
+  $lastRun = (int) $state->get('markaspot_fastmap.last_limit_check', 0);
+  $now = \Drupal::time()->getRequestTime();
+
+  // Run at most once per hour.
+  if (($now - $lastRun) < 3600) {
+    return;
+  }
+
+  $state->set('markaspot_fastmap.last_limit_check', $now);
+
+  $entityTypeManager = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_fastmap');
+
+  /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
+  $tierConfig = \Drupal::service('markaspot_fastmap.tier_config');
+
+  // Load all jurisdiction groups that have a field_tier.
+  $groupIds = $entityTypeManager->getStorage('group')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->exists('field_tier')
+    ->execute();
+
+  if (empty($groupIds)) {
+    return;
+  }
+
+  $groups = $entityTypeManager->getStorage('group')->loadMultiple($groupIds);
+
+  foreach ($groups as $group) {
+    $tier = !$group->get('field_tier')->isEmpty()
+      ? $group->get('field_tier')->value
+      : 'free';
+
+    $tierLimits = $tierConfig->getLimits($tier);
+
+    // Skip unlimited tiers or missing config.
+    if ($tierLimits === NULL || !empty($tierLimits['unlimited'])) {
+      continue;
+    }
+
+    // Only enforce for published-count period.
+    if ($tierLimits['period'] !== 'published') {
+      continue;
+    }
+
+    $groupId = (int) $group->id();
+    $limit = $tierLimits['limit'];
+    $count = $tierConfig->countRequests($groupId, 'published');
+
+    if ($count <= $limit) {
+      continue;
+    }
+
+    $excess = $count - $limit;
+
+    // Query the oldest excess published nodes.
+    $nids = $entityTypeManager->getStorage('node')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('status', 1)
+      ->condition('field_jurisdiction', $groupId)
+      ->sort('created', 'ASC')
+      ->range(0, $excess)
+      ->execute();
+
+    if (empty($nids)) {
+      continue;
+    }
+
+    $nodes = $entityTypeManager->getStorage('node')->loadMultiple($nids);
+    $unpublished = 0;
+
+    foreach ($nodes as $node) {
+      $node->setUnpublished();
+      $node->save();
+      $unpublished++;
+    }
+
+    // Invalidate cache tags for the affected jurisdiction.
+    \Drupal::service('cache_tags.invalidator')
+      ->invalidateTags(['group:' . $groupId]);
+
+    $logger->notice(
+      'Cron: unpublished @unpublished excess reports for jurisdiction @jid (@count/@limit published).',
+      [
+        '@unpublished' => $unpublished,
+        '@jid' => $groupId,
+        '@count' => $count,
+        '@limit' => $limit,
+      ]
+    );
   }
 }

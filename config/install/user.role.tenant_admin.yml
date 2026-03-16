@@ -1,0 +1,147 @@
+uuid: 61303ddb-6f50-4b3b-9de4-5139fb42596e
+langcode: en
+status: true
+dependencies:
+  config:
+    - media.type.request_image
+    - node.type.page
+    - node.type.service_request
+    - rest.resource.georeport_request_index_resource
+    - rest.resource.georeport_request_resource
+    - rest.resource.georeport_service_index_resource
+    - taxonomy.vocabulary.service_category
+    - taxonomy.vocabulary.service_status
+  module:
+    - content_translation
+    - field_permissions
+    - markaspot_ai
+    - markaspot_dashboard
+    - markaspot_escalation
+    - markaspot_fastmap
+    - markaspot_open311
+    - markaspot_tenant_admin
+    - markaspot_validation
+    - media
+    - node
+    - paragraphs
+    - rest
+    - system
+    - taxonomy
+    - toolbar
+_core:
+  default_config_hash: kWw5m-czFOXee1twsVR_iiW2H1YPPgP_xZWiNK98e1Q
+id: tenant_admin
+label: 'Tenant Admin'
+weight: 4
+is_admin: false
+permissions:
+  - 'access administration pages'
+  - 'access ai insights'
+  - 'access content'
+  - 'access dashboard kpis'
+  - 'access open311 advanced properties'
+  - 'access open311 extension'
+  - 'access taxonomy overview'
+  - 'access toolbar'
+  - 'access workspace usage'
+  - 'administer tenant taxonomy'
+  - 'bypass mas validation'
+  - 'bypass node access'
+  - 'create content translations'
+  - 'create field_address'
+  - 'create field_approved'
+  - 'create field_attachment'
+  - 'create field_e_mail'
+  - 'create field_escalation'
+  - 'create field_internal_remark'
+  - 'create field_notes'
+  - 'create field_priority'
+  - 'create field_request_media'
+  - 'create field_service_provider'
+  - 'create field_service_provider_notes'
+  - 'create field_status'
+  - 'create field_status_note'
+  - 'create field_status_notes'
+  - 'create page content'
+  - 'create terms in service_category'
+  - 'create terms in service_status'
+  - 'delegate service requests'
+  - 'delete content translations'
+  - 'delete terms in service_category'
+  - 'delete terms in service_status'
+  - 'edit any page content'
+  - 'edit any request_image media'
+  - 'edit any service_request content'
+  - 'edit field_address'
+  - 'edit field_approved'
+  - 'edit field_attachment'
+  - 'edit field_e_mail'
+  - 'edit field_escalation'
+  - 'edit field_internal_remark'
+  - 'edit field_notes'
+  - 'edit field_priority'
+  - 'edit field_request_media'
+  - 'edit field_service_provider'
+  - 'edit field_service_provider_notes'
+  - 'edit field_status'
+  - 'edit field_status_note'
+  - 'edit field_status_notes'
+  - 'edit own field_address'
+  - 'edit own field_approved'
+  - 'edit own field_attachment'
+  - 'edit own field_e_mail'
+  - 'edit own field_escalation'
+  - 'edit own field_internal_remark'
+  - 'edit own field_notes'
+  - 'edit own field_priority'
+  - 'edit own field_request_media'
+  - 'edit own field_status'
+  - 'edit own field_status_note'
+  - 'edit own field_status_notes'
+  - 'edit own service_request content'
+  - 'edit terms in service_category'
+  - 'edit terms in service_status'
+  - 'escalate service requests'
+  - 'manage dashboard notes'
+  - 'restful get georeport_request_index_resource'
+  - 'restful get georeport_request_resource'
+  - 'restful get georeport_service_index_resource'
+  - 'restful post georeport_request_index_resource'
+  - 'restful post georeport_request_resource'
+  - 'review ai duplicates'
+  - 'translate service_category taxonomy_term'
+  - 'translate service_status taxonomy_term'
+  - 'update content translations'
+  - 'view ai sentiment'
+  - 'view field_address'
+  - 'view field_approved'
+  - 'view field_attachment'
+  - 'view field_boilerplate'
+  - 'view field_e_mail'
+  - 'view field_escalation'
+  - 'view field_internal_remark'
+  - 'view field_notes'
+  - 'view field_priority'
+  - 'view field_request_media'
+  - 'view field_service_provider'
+  - 'view field_service_provider_notes'
+  - 'view field_sp_attachment'
+  - 'view field_status'
+  - 'view field_status_note'
+  - 'view field_status_notes'
+  - 'view own field_address'
+  - 'view own field_approved'
+  - 'view own field_attachment'
+  - 'view own field_e_mail'
+  - 'view own field_escalation'
+  - 'view own field_internal_remark'
+  - 'view own field_notes'
+  - 'view own field_priority'
+  - 'view own field_request_media'
+  - 'view own field_status'
+  - 'view own field_status_note'
+  - 'view own field_status_notes'
+  - 'view own unpublished content'
+  - 'view own unpublished media'
+  - 'view the administration theme'
+  - 'view unpublished paragraphs'

@@ -27,4 +27,9 @@ class TierLimitConstraint extends Constraint {
    */
   public string $monthlyLimitMessage = 'This workspace has reached its monthly limit of @limit reports. Please upgrade your plan or wait until next month.';
 
+  /**
+   * Violation message when published-reports limit is reached.
+   */
+  public string $publishedLimitMessage = 'This workspace has reached its limit of @limit published reports. Unpublish existing reports or upgrade your plan.';
+
 }

@@ -1077,6 +1077,28 @@ function markaspot_update_11903(): void {
 }
 
 /**
+ * Grant dashboard roles permission to view own unpublished content/media.
+ *
+ * Required to see AI-flagged (unpublished) photos and soft-limited
+ * (unpublished) reports in the dashboard.
+ */
+function markaspot_update_11904(): void {
+  $storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  $roles = ['tenant_admin', 'editorial_board', 'moderator'];
+  $perms = ['view own unpublished content', 'view own unpublished media'];
+  foreach ($roles as $rid) {
+    $role = $storage->load($rid);
+    if ($role) {
+      foreach ($perms as $perm) {
+        $role->grantPermission($perm);
+      }
+      $role->save();
+    }
+  }
+  \Drupal::logger('markaspot')->notice('Granted unpublished view permissions to dashboard roles.');
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {

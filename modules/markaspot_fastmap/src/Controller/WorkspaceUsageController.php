@@ -91,12 +91,18 @@ class WorkspaceUsageController extends ControllerBase {
 
     $tierLimits = $this->tierConfig->getLimits($tier);
 
-    if ($tierLimits === NULL) {
+    if ($tierLimits === NULL || !empty($tierLimits['unlimited'])) {
+      // No config or explicitly unlimited tier. Still count for informational
+      // display, but report no limit.
+      $count = $tierLimits !== NULL
+        ? $this->tierConfig->countRequests((int) $group->id(), $tierLimits['period'])
+        : NULL;
+
       $response = new CacheableJsonResponse([
         'tier' => $tier,
         'limit' => NULL,
-        'count' => NULL,
-        'period' => NULL,
+        'count' => $count,
+        'period' => $tierLimits['period'] ?? NULL,
         'unlimited' => TRUE,
       ]);
       $response->addCacheableDependency($cache);

@@ -6,16 +6,16 @@ mail_from: ''
 tier_limits:
   free:
     limit: 50
-    period: monthly
+    period: published
   starter:
-    limit: 500
-    period: monthly
+    limit: null
+    period: published
   pro:
-    limit: 2000
-    period: monthly
+    limit: null
+    period: published
   heart:
-    limit: 500
-    period: monthly
+    limit: null
+    period: published
 member_limits:
   free: 1
   starter: 5

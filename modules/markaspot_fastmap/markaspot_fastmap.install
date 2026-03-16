@@ -313,6 +313,23 @@ function markaspot_fastmap_update_11903(): void {
 }
 
 /**
+ * Migrate tier limits from monthly creation limits to concurrent published.
+ *
+ * Free tier: 50 concurrent published reports.
+ * Starter, Pro, Heart: unlimited (null limit).
+ */
+function markaspot_fastmap_update_11906(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
+  $config->set('tier_limits', [
+    'free' => ['limit' => 50, 'period' => 'published'],
+    'starter' => ['limit' => NULL, 'period' => 'published'],
+    'pro' => ['limit' => NULL, 'period' => 'published'],
+    'heart' => ['limit' => NULL, 'period' => 'published'],
+  ])->save();
+  \Drupal::logger('markaspot_fastmap')->info('Migrated tier limits to concurrent published model.');
+}
+
+/**
  * Add Stripe billing fields to jur group type.
  */
 function markaspot_fastmap_update_11905(): void {

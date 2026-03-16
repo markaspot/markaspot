@@ -26,10 +26,11 @@ markaspot_fastmap.settings:
         mapping:
           limit:
             type: integer
-            label: 'Request limit'
+            label: 'Request limit (null for unlimited)'
+            nullable: true
           period:
             type: string
-            label: 'Count period (monthly or total)'
+            label: 'Count period (published, monthly, or total)'
     member_limits:
       type: sequence
       label: 'Member limits per tier'

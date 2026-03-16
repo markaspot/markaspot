@@ -27,11 +27,16 @@ class TierConfigService {
    * Falls back to 'free' tier limits for unknown/misconfigured tiers and logs
    * a warning. Returns NULL only if no tier_limits config exists at all.
    *
+   * A tier with `limit: null` is explicitly unlimited (starter, pro, heart).
+   * This is distinct from a missing or corrupted tier config, which falls back
+   * to the free tier (fail-closed).
+   *
    * @param string $tier
    *   The tier machine name (free, starter, pro, heart).
    *
-   * @return array{limit: int, period: string}|null
-   *   The limit config or NULL if no tier_limits config exists.
+   * @return array{limit: int|null, period: string, unlimited?: bool}|null
+   *   The limit config, or NULL if no tier_limits config exists at all.
+   *   When limit is null, 'unlimited' is TRUE.
    */
   public function getLimits(string $tier): ?array {
     $config = $this->configFactory->get('markaspot_fastmap.settings');
@@ -44,34 +49,29 @@ class TierConfigService {
 
     $tierConfig = $allLimits[$tier] ?? NULL;
 
-    if (!$tierConfig || empty($tierConfig['limit'])) {
-      // Unknown or corrupted tier: fall back to free limits (fail-closed).
-      $freeLimits = $allLimits['free'] ?? NULL;
-
-      if (!$freeLimits || empty($freeLimits['limit'])) {
-        // Even free tier is broken. Log and apply a hard default.
-        $this->logger->error('Tier limits config is missing or corrupted. Tier "@tier" and free fallback both unavailable.', [
-          '@tier' => $tier,
-        ]);
-        return ['limit' => 50, 'period' => 'monthly'];
-      }
-
-      if ($tier !== 'free') {
-        $this->logger->warning('Unknown or misconfigured tier "@tier". Falling back to free tier limits.', [
-          '@tier' => $tier,
-        ]);
-      }
-
-      return [
-        'limit' => (int) $freeLimits['limit'],
-        'period' => $freeLimits['period'] ?? 'monthly',
-      ];
+    // Tier exists and has an explicit config entry (including limit: null).
+    if (is_array($tierConfig) && array_key_exists('limit', $tierConfig)) {
+      return $this->buildLimitsResult($tierConfig);
     }
 
-    return [
-      'limit' => (int) $tierConfig['limit'],
-      'period' => $tierConfig['period'] ?? 'monthly',
-    ];
+    // Unknown or corrupted tier: fall back to free limits (fail-closed).
+    $freeLimits = $allLimits['free'] ?? NULL;
+
+    if (!is_array($freeLimits) || !array_key_exists('limit', $freeLimits)) {
+      // Even free tier is broken. Log and apply a hard default.
+      $this->logger->error('Tier limits config is missing or corrupted. Tier "@tier" and free fallback both unavailable.', [
+        '@tier' => $tier,
+      ]);
+      return ['limit' => 50, 'period' => 'published'];
+    }
+
+    if ($tier !== 'free') {
+      $this->logger->warning('Unknown or misconfigured tier "@tier". Falling back to free tier limits.', [
+        '@tier' => $tier,
+      ]);
+    }
+
+    return $this->buildLimitsResult($freeLimits);
   }
 
   /**
@@ -95,13 +95,13 @@ class TierConfigService {
    *
    * Uses accessCheck(FALSE) for authoritative quota enforcement.
    * Note: the count-then-validate pattern has an inherent race window under
-   * concurrent writes. This is acceptable for soft monthly limits (50-2000
-   * range). At most 1-2 requests can overshoot per race event.
+   * concurrent writes. This is acceptable for soft limits (50-2000 range).
+   * At most 1-2 requests can overshoot per race event.
    *
    * @param int $groupId
    *   The jurisdiction group ID.
    * @param string $period
-   *   The counting period: 'monthly' or 'total'.
+   *   The counting period: 'published', 'monthly', or 'total'.
    *
    * @return int
    *   The number of service requests.
@@ -112,7 +112,11 @@ class TierConfigService {
       ->condition('type', 'service_request')
       ->condition('field_jurisdiction', $groupId);
 
-    if ($period === 'monthly') {
+    if ($period === 'published') {
+      // Count only currently published nodes (no time window).
+      $query->condition('status', 1);
+    }
+    elseif ($period === 'monthly') {
       $now = $this->time->getRequestTime();
       $firstOfMonth = (int) strtotime(date('Y-m-01 00:00:00', $now));
       $query->condition('created', $firstOfMonth, '>=');
@@ -183,13 +187,37 @@ class TierConfigService {
     $config = $this->configFactory->get('markaspot_fastmap.settings');
     $tierConfig = $config->get('tier_limits.' . $tier);
 
-    if (!$tierConfig || empty($tierConfig['limit'])) {
+    if (!is_array($tierConfig) || !array_key_exists('limit', $tierConfig)) {
       return NULL;
     }
 
+    return $this->buildLimitsResult($tierConfig);
+  }
+
+  /**
+   * Builds a normalized limits result array from raw tier config.
+   *
+   * @param array $tierConfig
+   *   Raw tier config with 'limit' and optionally 'period'.
+   *
+   * @return array{limit: int|null, period: string, unlimited?: bool}
+   *   Normalized limits. When limit is null, 'unlimited' is TRUE.
+   */
+  protected function buildLimitsResult(array $tierConfig): array {
+    $limit = $tierConfig['limit'];
+    $period = $tierConfig['period'] ?? 'published';
+
+    if ($limit === NULL) {
+      return [
+        'limit' => NULL,
+        'period' => $period,
+        'unlimited' => TRUE,
+      ];
+    }
+
     return [
-      'limit' => (int) $tierConfig['limit'],
-      'period' => $tierConfig['period'] ?? 'monthly',
+      'limit' => (int) $limit,
+      'period' => $period,
     ];
   }
 

@@ -46,7 +46,7 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
       return;
     }
 
-    if ($value->bundle() !== 'service_request' || !$value->isNew()) {
+    if ($value->bundle() !== 'service_request') {
       return;
     }
 
@@ -78,16 +78,46 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
     // getLimits() fails closed: unknown tiers fall back to free tier limits.
     // Returns NULL only if tier_limits config is completely missing.
     $tierLimits = $this->tierConfig->getLimits($tier);
-    if ($tierLimits === NULL) {
+    if ($tierLimits === NULL || !empty($tierLimits['unlimited'])) {
       return;
+    }
+
+    // Determine what kind of operation this is.
+    // Note: $value->original is only set during preSave(), not during
+    // validate(). Load the unchanged entity from storage to detect
+    // publish transitions reliably (e.g. JSON:API PATCH, bulk updates).
+    $isPublishTransition = FALSE;
+    if (!$value->isNew() && $value->isPublished()) {
+      $original = $value->original
+        ?? \Drupal::entityTypeManager()->getStorage('node')->loadUnchanged($value->id());
+      if ($original && !$original->isPublished()) {
+        $isPublishTransition = TRUE;
+      }
+    }
+
+    if ($tierLimits['period'] === 'published') {
+      // For published-count limits: only block unpublished->published
+      // transitions via validation. New node creation is handled silently
+      // by hook_node_presave (sets status=0 instead of rejecting).
+      if (!$isPublishTransition) {
+        return;
+      }
+    }
+    else {
+      // Legacy monthly/total: block new node creation.
+      if (!$value->isNew()) {
+        return;
+      }
     }
 
     $count = $this->tierConfig->countRequests((int) $group->id(), $tierLimits['period']);
 
     if ($count >= $tierLimits['limit']) {
-      $messageProperty = $tierLimits['period'] === 'total'
-        ? 'totalLimitMessage'
-        : 'monthlyLimitMessage';
+      $messageProperty = match ($tierLimits['period']) {
+        'published' => 'publishedLimitMessage',
+        'total' => 'totalLimitMessage',
+        default => 'monthlyLimitMessage',
+      };
 
       $this->context->addViolation($constraint->{$messageProperty}, [
         '@limit' => $tierLimits['limit'],

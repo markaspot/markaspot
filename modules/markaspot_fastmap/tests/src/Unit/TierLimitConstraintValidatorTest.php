@@ -60,14 +60,14 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $this->executionContext = $this->createMock(ExecutionContextInterface::class);
     $this->constraint = new TierLimitConstraint();
 
-    // Mock TierConfigService with default limits.
+    // Default: published period limits (new model).
     $this->tierConfig = $this->createMock(TierConfigService::class);
     $this->tierConfig->method('getLimits')
       ->willReturnCallback(fn(string $tier) => match ($tier) {
-        'free' => ['limit' => 50, 'period' => 'monthly'],
-        'starter' => ['limit' => 500, 'period' => 'monthly'],
-        'pro' => ['limit' => 2000, 'period' => 'monthly'],
-        'heart' => ['limit' => 500, 'period' => 'monthly'],
+        'free' => ['limit' => 50, 'period' => 'published'],
+        'starter' => ['limit' => NULL, 'period' => 'published', 'unlimited' => TRUE],
+        'pro' => ['limit' => NULL, 'period' => 'published', 'unlimited' => TRUE],
+        'heart' => ['limit' => NULL, 'period' => 'published', 'unlimited' => TRUE],
         default => NULL,
       });
 
@@ -76,14 +76,182 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->willReturn(FALSE);
   }
 
+  // ---------------------------------------------------------------
+  // Published period: new node creation is NOT blocked by validator.
+  // (presave hook handles silent unpublish instead.)
+  // ---------------------------------------------------------------
+
   /**
-   * Tests that free tier blocks creation when over limit.
+   * Tests that new nodes are NOT rejected for published period.
+   *
+   * The presave hook handles silent unpublish, not the validator.
    *
    * @covers ::validate
    */
-  public function testFreeTierBlocksWhenOverLimit(): void {
+  public function testPublishedPeriodDoesNotBlockNewNodes(): void {
     $node = $this->createNode('service_request', TRUE, 1);
     $this->mockRequestCount(60);
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that new nodes under limit are also not blocked.
+   *
+   * @covers ::validate
+   */
+  public function testPublishedPeriodAllowsNewNodesUnderLimit(): void {
+    $node = $this->createNode('service_request', TRUE, 1);
+    $this->mockRequestCount(30);
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  // ---------------------------------------------------------------
+  // Published period: unpublished -> published transition.
+  // ---------------------------------------------------------------
+
+  /**
+   * Tests that publish transition is blocked when at limit.
+   *
+   * @covers ::validate
+   */
+  public function testPublishTransitionBlockedAtLimit(): void {
+    $node = $this->createPublishTransitionNode(1);
+    $this->mockRequestCount(50);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->publishedLimitMessage,
+        ['@limit' => 50]
+      );
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that publish transition is blocked when over limit.
+   *
+   * @covers ::validate
+   */
+  public function testPublishTransitionBlockedOverLimit(): void {
+    $node = $this->createPublishTransitionNode(1);
+    $this->mockRequestCount(60);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->publishedLimitMessage,
+        ['@limit' => 50]
+      );
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that publish transition is allowed under limit.
+   *
+   * @covers ::validate
+   */
+  public function testPublishTransitionAllowedUnderLimit(): void {
+    $node = $this->createPublishTransitionNode(1);
+    $this->mockRequestCount(30);
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that unpublishing is always allowed (not a publish transition).
+   *
+   * @covers ::validate
+   */
+  public function testUnpublishAlwaysAllowed(): void {
+    $node = $this->createUnpublishTransitionNode(1);
+    $this->mockRequestCount(50);
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that saving an already-published node (no status change) is allowed.
+   *
+   * @covers ::validate
+   */
+  public function testAlreadyPublishedUpdateAllowed(): void {
+    $node = $this->createAlreadyPublishedNode(1);
+    $this->mockRequestCount(50);
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  // ---------------------------------------------------------------
+  // Unlimited tiers (starter, pro, heart).
+  // ---------------------------------------------------------------
+
+  /**
+   * Tests that unlimited tiers skip validation entirely.
+   *
+   * @covers ::validate
+   */
+  public function testUnlimitedTierSkipsValidation(): void {
+    $node = $this->createPublishTransitionNode(1, 'starter');
+
+    $this->tierConfig->expects($this->never())
+      ->method('countRequests');
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that pro tier (unlimited) allows everything.
+   *
+   * @covers ::validate
+   */
+  public function testProUnlimitedAllows(): void {
+    $node = $this->createPublishTransitionNode(1, 'pro');
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  // ---------------------------------------------------------------
+  // Legacy monthly/total periods (backwards compatibility).
+  // ---------------------------------------------------------------
+
+  /**
+   * Tests that monthly period blocks new node creation at limit.
+   *
+   * @covers ::validate
+   */
+  public function testMonthlyPeriodBlocksNewCreation(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->willReturn(['limit' => 50, 'period' => 'monthly']);
+    $this->tierConfig->method('countRequests')
+      ->willReturn(50);
+
+    $node = $this->createNode('service_request', TRUE, 1);
 
     $this->executionContext->expects($this->once())
       ->method('addViolation')
@@ -96,130 +264,18 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
-   * Tests that free tier allows creation when under monthly limit.
+   * Tests that monthly period allows new creation under limit.
    *
    * @covers ::validate
    */
-  public function testFreeTierAllowsWhenUnderLimit(): void {
+  public function testMonthlyPeriodAllowsUnderLimit(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->willReturn(['limit' => 50, 'period' => 'monthly']);
+    $this->tierConfig->method('countRequests')
+      ->willReturn(30);
+
     $node = $this->createNode('service_request', TRUE, 1);
-    $this->mockRequestCount(30);
-
-    $this->executionContext->expects($this->never())
-      ->method('addViolation');
-
-    $this->createValidator()->validate($node, $this->constraint);
-  }
-
-  /**
-   * Tests that free tier blocks at exactly the monthly limit.
-   *
-   * @covers ::validate
-   */
-  public function testFreeTierBlocksAtExactLimit(): void {
-    $node = $this->createNode('service_request', TRUE, 1);
-    $this->mockRequestCount(50);
-
-    $this->executionContext->expects($this->once())
-      ->method('addViolation');
-
-    $this->createValidator()->validate($node, $this->constraint);
-  }
-
-  /**
-   * Tests that starter tier uses monthly counting.
-   *
-   * @covers ::validate
-   */
-  public function testStarterTierBlocksMonthlyLimit(): void {
-    $node = $this->createNode('service_request', TRUE, 1, 'starter');
-    $this->mockRequestCount(500);
-
-    $this->executionContext->expects($this->once())
-      ->method('addViolation')
-      ->with(
-        $this->constraint->monthlyLimitMessage,
-        ['@limit' => 500]
-      );
-
-    $this->createValidator()->validate($node, $this->constraint);
-  }
-
-  /**
-   * Tests that starter tier allows when under monthly limit.
-   *
-   * @covers ::validate
-   */
-  public function testStarterTierAllowsUnderMonthlyLimit(): void {
-    $node = $this->createNode('service_request', TRUE, 1, 'starter');
-    $this->mockRequestCount(200);
-
-    $this->executionContext->expects($this->never())
-      ->method('addViolation');
-
-    $this->createValidator()->validate($node, $this->constraint);
-  }
-
-  /**
-   * Tests that pro tier enforces 2000/month limit.
-   *
-   * @covers ::validate
-   */
-  public function testProTierBlocksMonthlyLimit(): void {
-    $node = $this->createNode('service_request', TRUE, 1, 'pro');
-    $this->mockRequestCount(2000);
-
-    $this->executionContext->expects($this->once())
-      ->method('addViolation')
-      ->with(
-        $this->constraint->monthlyLimitMessage,
-        ['@limit' => 2000]
-      );
-
-    $this->createValidator()->validate($node, $this->constraint);
-  }
-
-  /**
-   * Tests that pro tier allows under limit.
-   *
-   * @covers ::validate
-   */
-  public function testProTierAllowsUnderLimit(): void {
-    $node = $this->createNode('service_request', TRUE, 1, 'pro');
-    $this->mockRequestCount(1500);
-
-    $this->executionContext->expects($this->never())
-      ->method('addViolation');
-
-    $this->createValidator()->validate($node, $this->constraint);
-  }
-
-  /**
-   * Tests that heart tier enforces 500/month (same as starter).
-   *
-   * @covers ::validate
-   */
-  public function testHeartTierBlocksMonthlyLimit(): void {
-    $node = $this->createNode('service_request', TRUE, 1, 'heart');
-    $this->mockRequestCount(500);
-
-    $this->executionContext->expects($this->once())
-      ->method('addViolation')
-      ->with(
-        $this->constraint->monthlyLimitMessage,
-        ['@limit' => 500]
-      );
-
-    $this->createValidator()->validate($node, $this->constraint);
-  }
-
-  /**
-   * Tests that heart tier allows under limit.
-   *
-   * @covers ::validate
-   */
-  public function testHeartTierAllowsUnderLimit(): void {
-    $node = $this->createNode('service_request', TRUE, 1, 'heart');
-    $this->mockRequestCount(200);
 
     $this->executionContext->expects($this->never())
       ->method('addViolation');
@@ -233,7 +289,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
    * @covers ::validate
    */
   public function testTotalPeriodUsesTotalMessage(): void {
-    // Override getLimits for this test to return 'total' period.
     $this->tierConfig = $this->createMock(TierConfigService::class);
     $this->tierConfig->method('getLimits')
       ->willReturn(['limit' => 100, 'period' => 'total']);
@@ -273,25 +328,47 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
+   * Tests published period uses publishedLimitMessage.
+   *
+   * @covers ::validate
+   */
+  public function testPublishedPeriodUsesCorrectMessage(): void {
+    $node = $this->createPublishTransitionNode(1);
+    $this->mockRequestCount(50);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->publishedLimitMessage,
+        ['@limit' => 50]
+      );
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  // ---------------------------------------------------------------
+  // Edge cases and bypass.
+  // ---------------------------------------------------------------
+
+  /**
    * Tests that unknown tier falls back to free limits (fail-closed).
    *
    * @covers ::validate
    */
   public function testUnknownTierFallsBackToFreeLimits(): void {
-    // TierConfigService with fail-closed behavior: unknown tier returns free limits.
     $this->tierConfig = $this->createMock(TierConfigService::class);
     $this->tierConfig->method('getLimits')
       ->with('bogus_tier')
-      ->willReturn(['limit' => 50, 'period' => 'monthly']);
+      ->willReturn(['limit' => 50, 'period' => 'published']);
     $this->tierConfig->method('countRequests')
       ->willReturn(50);
 
-    $node = $this->createNode('service_request', TRUE, 1, 'bogus_tier');
+    $node = $this->createPublishTransitionNode(1, 'bogus_tier');
 
     $this->executionContext->expects($this->once())
       ->method('addViolation')
       ->with(
-        $this->constraint->monthlyLimitMessage,
+        $this->constraint->publishedLimitMessage,
         ['@limit' => 50]
       );
 
@@ -308,20 +385,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
 
     $this->tierConfig->expects($this->never())
       ->method('countRequests');
-
-    $this->executionContext->expects($this->never())
-      ->method('addViolation');
-
-    $this->createValidator()->validate($node, $this->constraint);
-  }
-
-  /**
-   * Tests that existing nodes (updates) are not checked.
-   *
-   * @covers ::validate
-   */
-  public function testUpdatesAreSkipped(): void {
-    $node = $this->createNode('service_request', FALSE, 1);
 
     $this->executionContext->expects($this->never())
       ->method('addViolation');
@@ -366,7 +429,8 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $this->currentUser->method('hasPermission')
       ->willReturnCallback(fn(string $perm) => $perm === 'administer nodes');
 
-    $node = $this->createNode('service_request', TRUE, 1);
+    $node = $this->createPublishTransitionNode(1);
+    $this->mockRequestCount(50);
 
     $this->executionContext->expects($this->never())
       ->method('addViolation');
@@ -384,7 +448,8 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $this->currentUser->method('hasPermission')
       ->willReturnCallback(fn(string $perm) => $perm === 'bypass mas validation');
 
-    $node = $this->createNode('service_request', TRUE, 1);
+    $node = $this->createPublishTransitionNode(1);
+    $this->mockRequestCount(50);
 
     $this->executionContext->expects($this->never())
       ->method('addViolation');
@@ -506,6 +571,139 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->willReturn($jurisdictionField);
 
     return $node;
+  }
+
+  /**
+   * Creates a node simulating unpublished -> published transition.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param string $tier
+   *   The tier value.
+   */
+  protected function createPublishTransitionNode(int $groupId, string $tier = 'free'): NodeInterface {
+    $group = $this->createGroupMock($groupId, $tier);
+    $jurisdictionField = $this->createJurisdictionField($group);
+
+    // Original node was unpublished.
+    $original = $this->createMock(NodeInterface::class);
+    $original->method('isPublished')->willReturn(FALSE);
+
+    // Current node is published (transition).
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('isNew')->willReturn(FALSE);
+    $node->method('isPublished')->willReturn(TRUE);
+    $node->method('hasField')
+      ->with('field_jurisdiction')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('field_jurisdiction')
+      ->willReturn($jurisdictionField);
+
+    // Set the original property via reflection (it's a public property).
+    $node->original = $original;
+
+    return $node;
+  }
+
+  /**
+   * Creates a node simulating published -> unpublished transition.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param string $tier
+   *   The tier value.
+   */
+  protected function createUnpublishTransitionNode(int $groupId, string $tier = 'free'): NodeInterface {
+    $group = $this->createGroupMock($groupId, $tier);
+    $jurisdictionField = $this->createJurisdictionField($group);
+
+    // Original node was published.
+    $original = $this->createMock(NodeInterface::class);
+    $original->method('isPublished')->willReturn(TRUE);
+
+    // Current node is unpublished (transition).
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('isNew')->willReturn(FALSE);
+    $node->method('isPublished')->willReturn(FALSE);
+    $node->method('hasField')
+      ->with('field_jurisdiction')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('field_jurisdiction')
+      ->willReturn($jurisdictionField);
+
+    $node->original = $original;
+
+    return $node;
+  }
+
+  /**
+   * Creates a node that is already published (no status change).
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param string $tier
+   *   The tier value.
+   */
+  protected function createAlreadyPublishedNode(int $groupId, string $tier = 'free'): NodeInterface {
+    $group = $this->createGroupMock($groupId, $tier);
+    $jurisdictionField = $this->createJurisdictionField($group);
+
+    // Original was also published.
+    $original = $this->createMock(NodeInterface::class);
+    $original->method('isPublished')->willReturn(TRUE);
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('isNew')->willReturn(FALSE);
+    $node->method('isPublished')->willReturn(TRUE);
+    $node->method('hasField')
+      ->with('field_jurisdiction')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('field_jurisdiction')
+      ->willReturn($jurisdictionField);
+
+    $node->original = $original;
+
+    return $node;
+  }
+
+  /**
+   * Creates a mocked group entity.
+   */
+  protected function createGroupMock(int $groupId, string $tier = 'free'): GroupInterface {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($groupId);
+    $group->method('hasField')
+      ->willReturnCallback(fn(string $name) => $name === 'field_tier');
+
+    $tierField = $this->createMock(FieldItemListInterface::class);
+    $tierField->method('isEmpty')->willReturn(FALSE);
+    $tierField->method('__get')
+      ->with('value')
+      ->willReturn($tier);
+
+    $group->method('get')
+      ->with('field_tier')
+      ->willReturn($tierField);
+
+    return $group;
+  }
+
+  /**
+   * Creates a mocked jurisdiction field pointing to a group.
+   */
+  protected function createJurisdictionField(GroupInterface $group): FieldItemListInterface {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('isEmpty')->willReturn(FALSE);
+    $field->method('__get')
+      ->with('entity')
+      ->willReturn($group);
+    return $field;
   }
 
   /**
