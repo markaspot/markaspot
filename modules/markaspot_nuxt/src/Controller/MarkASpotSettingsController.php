@@ -481,7 +481,7 @@ class MarkASpotSettingsController extends ControllerBase {
   private function loadServices(?int $jurisdictionId, ?GroupInterface $group = NULL): array {
     $langcode = $this->languageManager()->getCurrentLanguage()->getId();
     $properties = ['vid' => 'service_category', 'status' => 1];
-    if ($jurisdictionId) {
+    if ($jurisdictionId && FieldStorageConfig::loadByName('taxonomy_term', 'field_jurisdiction')) {
       $properties['field_jurisdiction'] = $jurisdictionId;
     }
     $terms = $this->entityTypeManager->getStorage('taxonomy_term')
@@ -563,7 +563,7 @@ class MarkASpotSettingsController extends ControllerBase {
   private function loadStatuses(?int $jurisdictionId = NULL): array {
     $langcode = $this->languageManager()->getCurrentLanguage()->getId();
     $properties = ['vid' => 'service_status', 'status' => 1];
-    if ($jurisdictionId) {
+    if ($jurisdictionId && FieldStorageConfig::loadByName('taxonomy_term', 'field_jurisdiction')) {
       $properties['field_jurisdiction'] = $jurisdictionId;
     }
     $terms = $this->entityTypeManager->getStorage('taxonomy_term')
