@@ -22,7 +22,9 @@ is_admin: false
 permissions:
   - 'access content'
   - 'access open311 extension'
+  - 'create field_address'
   - 'create field_approved'
+  - 'create field_e_mail'
   - 'create field_request_media'
   - 'create media'
   - 'create service_request content'
