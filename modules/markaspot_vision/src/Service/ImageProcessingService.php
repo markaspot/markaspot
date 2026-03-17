@@ -163,7 +163,7 @@ class ImageProcessingService {
       $system_prompt = '';
       if ($jurisdictionId) {
         $group = $this->entityTypeManager->getStorage('group')->load($jurisdictionId);
-        if ($group && $group->hasField('field_ai_system_prompt') && !$group->get('field_ai_system_prompt')->isEmpty()) {
+        if ($group && $group->bundle() === 'jur' && $group->hasField('field_ai_system_prompt') && !$group->get('field_ai_system_prompt')->isEmpty()) {
           $system_prompt = trim($group->get('field_ai_system_prompt')->value);
         }
       }
