@@ -58,6 +58,7 @@ dependencies:
   - text
   - user
   - views
+  - jsonapi
   - markaspot_open311
   - markaspot_bbox_cache
   - markaspot_nuxt

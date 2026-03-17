@@ -1006,6 +1006,36 @@ EOF
   " 2>/dev/null || true
   success "Start page content ensured"
 
+  step "Setting jurisdiction on pages..."
+  $DRUSH_CMD $DRUSH_URI php:eval "
+    // Ensure field_jurisdiction exists on page bundle
+    \$field_storage = \Drupal::entityTypeManager()->getStorage('field_storage_config')->load('node.field_jurisdiction');
+    if (\$field_storage) {
+      \$field = \Drupal::entityTypeManager()->getStorage('field_config')->load('node.page.field_jurisdiction');
+      if (!\$field) {
+        \$field = \Drupal\field\Entity\FieldConfig::create([
+          'field_storage' => \$field_storage,
+          'bundle' => 'page',
+          'label' => 'Jurisdiction',
+          'settings' => [
+            'handler' => 'default:group',
+            'handler_settings' => ['target_bundles' => ['jur' => 'jur']],
+          ],
+        ]);
+        \$field->save();
+      }
+      // Set jurisdiction=1 on all pages that lack it
+      \$nodes = \Drupal::entityTypeManager()->getStorage('node')->loadByProperties(['type' => 'page']);
+      foreach (\$nodes as \$node) {
+        if (\$node->get('field_jurisdiction')->isEmpty()) {
+          \$node->set('field_jurisdiction', 1);
+          \$node->save();
+        }
+      }
+    }
+  " 2>/dev/null || true
+  success "Page jurisdictions set"
+
   $DRUSH_CMD $DRUSH_URI php:eval "
     \$user = \Drupal\user\Entity\User::load(1);
     \$groups = \Drupal::entityTypeManager()->getStorage('group')->loadMultiple();
