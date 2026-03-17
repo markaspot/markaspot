@@ -555,6 +555,27 @@ EOF
       " 2>/dev/null || true
     done
     success "Role permissions restored"
+
+    # Re-import form displays from profile config/optional.
+    # site:install + config cleanup loses form display components.
+    step "Restoring form displays from profile..."
+    for display_file in "$PROFILE_CONFIG"/core.entity_form_display.*.yml; do
+      [ -f "$display_file" ] || continue
+      config_name=$(basename "$display_file" .yml)
+      $DRUSH_CMD $DRUSH_URI php:eval "
+        \$yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents('$display_file'));
+        \$storage = \Drupal::entityTypeManager()->getStorage('entity_form_display');
+        \$existing = \$storage->load(\$yaml['id'] ?? '');
+        if (\$existing && !empty(\$yaml['content'])) {
+          foreach (\$yaml['content'] as \$field => \$component) {
+            \$existing->setComponent(\$field, \$component);
+          }
+          \$existing->save();
+          echo \"Restored form display: \$yaml[id]\\n\";
+        }
+      " 2>/dev/null || true
+    done
+    success "Form displays restored"
   else
     warn "Profile config/optional not found, skipping permission restore"
   fi
