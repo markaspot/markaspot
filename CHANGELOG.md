@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.11](https://github.com/markaspot/markaspot/compare/11.9.10...11.9.11) (2026-03-17)
+
+### Features
+
+* add markaspot_geocoder to profile with ENV-based provider switching ([84770cd](https://github.com/markaspot/markaspot/commit/84770cda3fe2071e76bb503115813db836688e3a)), closes [markaspot/markaspot-ui#146](https://github.com/markaspot/markaspot-ui/issues/146)
+* **fastmap:** store AI system prompt from workspace creation ([b66336f](https://github.com/markaspot/markaspot/commit/b66336f8972cd3bce51517a9c09d171fe30c23f8))
+* move setup scripts from markaspot-cloud to profile ([cff3013](https://github.com/markaspot/markaspot/commit/cff30134501249d01f94646f06499741549ea446))
+
+### Bug Fixes
+
+* add create field_address and field_e_mail to authenticated role ([55cbad6](https://github.com/markaspot/markaspot/commit/55cbad6839596580881b36d37ef5909cd315524e))
+* **fastmap:** use correct variable names for circle boundary fallback ([47971d0](https://github.com/markaspot/markaspot/commit/47971d0d1a02da0df38097e97c26c96851cc0e88))
+* resolve site:install dependency errors ([cfc4d92](https://github.com/markaspot/markaspot/commit/cfc4d92156f1c8c2c4d5d54841ae957b3bc97e64))
+* set Gin as admin theme during site:install ([92aef4a](https://github.com/markaspot/markaspot/commit/92aef4ab96832d901d915ee37c07f1340284b39d))
+* **vision:** validate jurisdiction group bundle type ([654ed02](https://github.com/markaspot/markaspot/commit/654ed028485188ebf97eea3c915a2cb89faf9f3e))
+
 ## [11.9.10](https://github.com/markaspot/markaspot/compare/11.9.9...11.9.10) (2026-03-16)
 
 ### Features
