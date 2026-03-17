@@ -508,34 +508,88 @@ EOF
     step "Enabling missing profile modules:$MISSING_MODULES"
     # Install gin theme first (some modules depend on it)
     $DRUSH_CMD $DRUSH_URI theme:install gin -y 2>/dev/null || true
-    # Delete orphaned configs from partial profile install.
-    # site:install creates some module configs but doesn't enable all modules.
-    # These orphaned configs block subsequent drush en with PreExistingConfigException.
-    $DRUSH_CMD $DRUSH_URI php:eval "
-      \$factory = \Drupal::configFactory();
-      \$keep = ['core.extension', 'system.', 'user.role.', 'user.settings', 'language.'];
-      \$deleted = 0;
-      foreach (\$factory->listAll() as \$name) {
-        \$dominated = false;
-        foreach (\$keep as \$prefix) {
-          if (str_starts_with(\$name, \$prefix)) { \$dominated = true; break; }
-        }
-        if (!\$dominated) {
-          \$factory->getEditable(\$name)->delete();
-          \$deleted++;
-        }
-      }
-      echo \"Cleaned \$deleted orphaned configs\\n\";
-    " 2>/dev/null || true
     $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
-    $DRUSH_CMD $DRUSH_URI en $MISSING_MODULES -y 2>/dev/null || warn "Some modules could not be enabled"
+
+    # Try enabling modules directly. If PreExistingConfigException occurs,
+    # parse the conflicting config names from the error, delete only those
+    # specific configs, and retry. This preserves all other configs (permissions,
+    # field definitions, form displays, ECA rules, etc.) that the nuclear
+    # cleanup previously destroyed.
+    EN_OUTPUT=$($DRUSH_CMD $DRUSH_URI en $MISSING_MODULES -y 2>&1) || true
+    EN_EXIT=$?
+
+    if echo "$EN_OUTPUT" | grep -qi "PreExistingConfigException\|already exists as active configuration"; then
+      step "Resolving config conflicts for module installation..."
+      # Extract conflicting config names from the error message.
+      # PreExistingConfigException lists them like: config_name1, config_name2
+      CONFLICTING=$($DRUSH_CMD $DRUSH_URI php:eval "
+        \$modules = explode(' ', trim('$MISSING_MODULES'));
+        \$config_factory = \Drupal::configFactory();
+        \$extension_list = \Drupal::service('extension.list.module');
+        \$conflicts = [];
+        foreach (\$modules as \$module) {
+          if (\Drupal::moduleHandler()->moduleExists(\$module)) {
+            continue;
+          }
+          // Check config/install and config/optional directories for this module
+          try {
+            \$path = \$extension_list->getPath(\$module);
+          } catch (\Exception \$e) {
+            continue;
+          }
+          foreach (['config/install', 'config/optional'] as \$subdir) {
+            \$dir = \$path . '/' . \$subdir;
+            if (!is_dir(\$dir)) continue;
+            foreach (glob(\$dir . '/*.yml') as \$file) {
+              \$name = basename(\$file, '.yml');
+              // Skip schema files
+              if (str_ends_with(\$name, '.schema')) continue;
+              // Check if this config already exists in active storage
+              if (!\$config_factory->get(\$name)->isNew()) {
+                \$conflicts[] = \$name;
+              }
+            }
+          }
+        }
+        echo implode(\"\\n\", array_unique(\$conflicts));
+      " 2>/dev/null)
+
+      if [ -n "$CONFLICTING" ]; then
+        CONFLICT_COUNT=$(echo "$CONFLICTING" | grep -c '^' || echo "0")
+        info "Deleting $CONFLICT_COUNT conflicting configs..."
+        $DRUSH_CMD $DRUSH_URI php:eval "
+          \$factory = \Drupal::configFactory();
+          \$names = explode(\"\\n\", trim('$(echo "$CONFLICTING" | tr '\n' '\n')'));
+          \$deleted = 0;
+          foreach (\$names as \$name) {
+            \$name = trim(\$name);
+            if (\$name !== '' && !\$factory->get(\$name)->isNew()) {
+              \$factory->getEditable(\$name)->delete();
+              \$deleted++;
+            }
+          }
+          echo \"Deleted \$deleted conflicting configs\\n\";
+        " 2>/dev/null || true
+        $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
+      fi
+
+      # Retry module installation after removing only the conflicting configs
+      $DRUSH_CMD $DRUSH_URI en $MISSING_MODULES -y 2>/dev/null || warn "Some modules could not be enabled"
+    elif [ $EN_EXIT -ne 0 ]; then
+      warn "Module installation returned non-zero exit ($EN_EXIT)"
+      info "Retrying one module at a time..."
+      for mod in $MISSING_MODULES; do
+        $DRUSH_CMD $DRUSH_URI en "$mod" -y 2>/dev/null || warn "Could not enable $mod"
+      done
+    fi
+
     $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
     success "Profile modules enabled"
   fi
 
   # Re-import role permissions from profile config/optional.
-  # site:install + config cleanup can lose permissions that the profile ships
-  # in config/optional/user.role.anonymous.yml and user.role.authenticated.yml.
+  # Even with targeted cleanup, profile optional role configs may not be
+  # auto-imported by drush en. Ensure all profile-shipped permissions are granted.
   step "Restoring role permissions from profile..."
   PROFILE_CONFIG="$WEB_ROOT/profiles/contrib/markaspot/config/optional"
   if [ -d "$PROFILE_CONFIG" ]; then
@@ -546,38 +600,23 @@ EOF
         \$yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents('$role_file'));
         \$role = \Drupal::entityTypeManager()->getStorage('user_role')->load('$role_name');
         if (\$role && !empty(\$yaml['permissions'])) {
+          \$added = 0;
           foreach (\$yaml['permissions'] as \$perm) {
-            \$role->grantPermission(\$perm);
+            if (!\$role->hasPermission(\$perm)) {
+              \$role->grantPermission(\$perm);
+              \$added++;
+            }
           }
-          \$role->save();
-          echo 'Restored ' . count(\$yaml['permissions']) . \" permissions for $role_name\\n\";
+          if (\$added > 0) {
+            \$role->save();
+            echo \"Added \$added permissions for $role_name\\n\";
+          }
         }
       " 2>/dev/null || true
     done
-    success "Role permissions restored"
-
-    # Re-import form displays from profile config/optional.
-    # site:install + config cleanup loses form display components.
-    step "Restoring form displays from profile..."
-    for display_file in "$PROFILE_CONFIG"/core.entity_form_display.*.yml; do
-      [ -f "$display_file" ] || continue
-      config_name=$(basename "$display_file" .yml)
-      $DRUSH_CMD $DRUSH_URI php:eval "
-        \$yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents('$display_file'));
-        \$storage = \Drupal::entityTypeManager()->getStorage('entity_form_display');
-        \$existing = \$storage->load(\$yaml['id'] ?? '');
-        if (\$existing && !empty(\$yaml['content'])) {
-          foreach (\$yaml['content'] as \$field => \$component) {
-            \$existing->setComponent(\$field, \$component);
-          }
-          \$existing->save();
-          echo \"Restored form display: \$yaml[id]\\n\";
-        }
-      " 2>/dev/null || true
-    done
-    success "Form displays restored"
+    success "Role permissions verified"
   else
-    warn "Profile config/optional not found, skipping permission restore"
+    warn "Profile config/optional not found, skipping permission check"
   fi
 
   # Run config-update to set coordinates, validation, and country
@@ -658,7 +697,7 @@ EOF
   # Extract simple city name (first part before comma)
   SIMPLE_CITY_NAME=$(echo "$city" | cut -d',' -f1)
 
-  for form_mode in default management nuxt; do
+  for form_mode in default management; do
     $DRUSH_CMD $DRUSH_URI config:set "core.entity_form_display.node.service_request.$form_mode" content.field_geolocation.settings.center_lat -y -- "$latitude" >/dev/null 2>&1 || true
     $DRUSH_CMD $DRUSH_URI config:set "core.entity_form_display.node.service_request.$form_mode" content.field_geolocation.settings.center_lng -y -- "$longitude" >/dev/null 2>&1 || true
     $DRUSH_CMD $DRUSH_URI config:set "core.entity_form_display.node.service_request.$form_mode" content.field_geolocation.settings.limit_viewbox -y -- "$LIMIT_VIEWBOX" >/dev/null 2>&1 || true
@@ -798,6 +837,12 @@ EOF
 
   $DRUSH_CMD $DRUSH_URI config-set services_api_key_auth.api_key.nuxt key "$GEOREPORT_API_KEY" -y >/dev/null 2>&1
 
+  # Ensure API key auth module accepts keys via query parameter and POST body.
+  # The module defaults to header-only, but GeoReport clients (including
+  # georeport-client.sh) pass api_key as a query parameter or form field.
+  $DRUSH_CMD $DRUSH_URI config-set services_api_key_auth.settings api_key_get_parameter_name "api_key" -y >/dev/null 2>&1
+  $DRUSH_CMD $DRUSH_URI config-set services_api_key_auth.settings api_key_post_parameter_name "api_key" -y >/dev/null 2>&1
+
   # Set user_uuid for API key authentication (uses admin user as fallback)
   ADMIN_UUID=$(drush $DRUSH_URI php:eval "echo \Drupal\user\Entity\User::load(1)->uuid();" 2>/dev/null)
   if [ -n "$ADMIN_UUID" ]; then
@@ -912,6 +957,8 @@ EOF
         'map' => [
           'center' => ['lat' => $latitude, 'lng' => $longitude],
           'zoom' => 13,
+          'style' => 'https://tiles.openfreemap.org/styles/liberty',
+          'styleDark' => 'https://tiles.openfreemap.org/styles/dark',
           'loadMarkersOnInit' => true,
           'enableBoundsFiltering' => true
         ]
