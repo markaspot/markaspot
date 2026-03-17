@@ -220,6 +220,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $requestedLang = $data['language'] ?? '';
     $boundary = $data['boundary'] ?? NULL;
     $customStatuses = $data['statuses'] ?? NULL;
+    $aiSystemPrompt = isset($data['ai_system_prompt']) ? mb_substr(trim($data['ai_system_prompt']), 0, 2000) : '';
 
     // Validate.
     if (!$name || !$slug || !$email) {
@@ -276,6 +277,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'field_platform_name' => $name,
         'field_nuxt_config' => json_encode($nuxtConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
       ];
+      if ($aiSystemPrompt) {
+        $groupFields['field_ai_system_prompt'] = $aiSystemPrompt;
+      }
       if ($boundaryJson) {
         $groupFields['field_boundary'] = $boundaryJson;
       }
