@@ -278,7 +278,7 @@ content:
       set_address_field: '1'
       tileServerUrl: 'http://{s}.tile.osm.org/{z}/{x}/{y}.png'
       wmsLayer: ''
-      customAttribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      customAttribution: '&copy; <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>'
       mapboxToken: ''
       mapboxStyle: 'https://sgx.geodatenzentrum.de/gdz_basemapde_vektor/styles/bm_web_col.json'
       fullscreenControl: '1'

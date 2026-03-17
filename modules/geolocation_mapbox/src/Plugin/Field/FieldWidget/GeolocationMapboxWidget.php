@@ -39,7 +39,7 @@ class GeolocationMapboxWidget extends WidgetBase {
       'mapboxStyle' => '',
       'tileServerUrl' => 'http://{s}.tile.osm.org/{z}/{x}/{y}.png',
       'wmsLayer' => '',
-      'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
+      'customAttribution' => '&copy; <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>',
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,

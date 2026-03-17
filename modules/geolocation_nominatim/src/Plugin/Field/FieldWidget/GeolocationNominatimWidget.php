@@ -40,7 +40,7 @@ class GeolocationNominatimWidget extends WidgetBase {
       'mapboxStyle' => '',
       'mapboxToken' => '',
       'maplibre' => '',
-      'customAttribution' => '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, &copy; <a href="https://cartodb.com/attributions">CartoDB</a>',
+      'customAttribution' => '&copy; <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> <a href="https://www.openstreetmap.org/copyright" target="_blank">&copy; OpenStreetMap contributors</a>',
       'autoLocate' => FALSE,
       'fullscreenControl' => TRUE,
       'streetNumberFormat' => 0,

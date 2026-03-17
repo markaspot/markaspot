@@ -128,7 +128,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Fallback Style URL (Light Mode)'),
       '#default_value' => $config->get('fallback_style'),
-      '#description' => $this->t('Backup style URL (e.g., MapTiler or alternative provider)'),
+      '#description' => $this->t('Backup style URL (e.g., OpenFreeMap or alternative provider)'),
     ];
 
     $form['markaspot_nuxt']['map']['fallback']['fallback_style_dark'] = [
@@ -142,7 +142,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Fallback Service API Key'),
       '#default_value' => $config->get('fallback_api_key'),
-      '#description' => $this->t('API key for the fallback tile service (e.g., MapTiler API key)'),
+      '#description' => $this->t('API key for the fallback tile service (if required by provider)'),
     ];
 
     $form['markaspot_nuxt']['map']['fallback']['fallback_attribution'] = [
