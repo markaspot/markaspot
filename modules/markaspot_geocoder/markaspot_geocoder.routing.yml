@@ -1,0 +1,7 @@
+markaspot_geocoder.settings:
+  path: '/admin/structure/markaspot/geocoder/settings'
+  defaults:
+    _form: '\Drupal\markaspot_geocoder\Form\MarkaspotGeocoderSettingsForm'
+    _title: 'Mark-a-Spot Geocoder Settings'
+  requirements:
+    _permission: 'administer site configuration'

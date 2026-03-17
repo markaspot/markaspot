@@ -1,0 +1,11 @@
+services:
+  markaspot_geocoder.geocoder:
+    class: Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService
+    arguments:
+      - '@config.factory'
+      - '@http_client'
+      - '@logger.channel.markaspot_geocoder'
+
+  logger.channel.markaspot_geocoder:
+    parent: logger.channel_base
+    arguments: ['markaspot_geocoder']

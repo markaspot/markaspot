@@ -1,0 +1,7 @@
+name: Mark-a-Spot Geocoder
+description: Server-side geocoding for Mark-a-Spot service requests. Supports Nominatim and Mapbox providers with ENV-based switching.
+package: Mark-a-Spot
+type: module
+core_version_requirement: ^10.3 || ^11
+dependencies:
+  - drupal:address

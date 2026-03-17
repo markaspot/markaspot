@@ -1,0 +1,66 @@
+<?php
+
+/**
+ * @file
+ * Server-side geocoding for Mark-a-Spot service requests.
+ */
+
+use Drupal\Core\Entity\EntityInterface;
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for node entities.
+ *
+ * Geocode coordinates to address before saving.
+ */
+function markaspot_geocoder_node_presave(EntityInterface $node) {
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  try {
+    // Determine if this is a new node or if the geolocation has changed.
+    $isNew = $node->isNew();
+
+    if (!$node->hasField('field_geolocation') || $node->get('field_geolocation')->isEmpty()) {
+      return;
+    }
+
+    $lat = $node->get('field_geolocation')->lat;
+    $lng = $node->get('field_geolocation')->lng;
+
+    // Check if the geolocation fields have changed (only for existing nodes).
+    $geolocationChanged = FALSE;
+    if (!$isNew && isset($node->original)) {
+      $original_lat = $node->original->get('field_geolocation')->lat ?? NULL;
+      $original_lng = $node->original->get('field_geolocation')->lng ?? NULL;
+      $geolocationChanged = $lat !== $original_lat || $lng !== $original_lng;
+    }
+
+    // Check if address is missing.
+    $addressMissing = $node->hasField('field_address') &&
+      ($node->get('field_address')->isEmpty() ||
+       empty($node->get('field_address')->address_line1));
+
+    if (($isNew || $geolocationChanged || $addressMissing) && isset($lat, $lng)) {
+      /** @var \Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService $geocoder_service */
+      $geocoder_service = \Drupal::service('markaspot_geocoder.geocoder');
+      $address = $geocoder_service->getAddressFromCoordinates($lat, $lng);
+
+      if ($address) {
+        $node->field_address->country_code = $address['country_code'];
+        $node->field_address->locality = $address['locality'];
+        $node->field_address->address_line1 = $address['address_line1'];
+        $node->field_address->postal_code = $address['postal_code'];
+        \Drupal::logger('markaspot_geocoder')->info('Geocoded address for node #@id', ['@id' => $node->id()]);
+      }
+    } else {
+      \Drupal::logger('markaspot_geocoder')->info('Skipping geocoding for unchanged geolocation on node #@id', ['@id' => $node->id()]);
+    }
+  } catch (\Exception $e) {
+    \Drupal::logger('markaspot_geocoder')->error('Fatal error in geocoder: @message at @file:@line', [
+      '@message' => $e->getMessage(),
+      '@file' => $e->getFile(),
+      '@line' => $e->getLine(),
+    ]);
+  }
+}

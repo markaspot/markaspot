@@ -1,0 +1,13 @@
+markaspot_geocoder.settings:
+  type: config_object
+  label: 'Mark-a-Spot Geocoder settings'
+  mapping:
+    provider:
+      type: string
+      label: 'Geocoding provider'
+    language:
+      type: string
+      label: 'Language code'
+    mapbox_token:
+      type: string
+      label: 'Mapbox access token'
