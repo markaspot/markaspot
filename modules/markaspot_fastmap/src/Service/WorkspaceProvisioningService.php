@@ -283,10 +283,10 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       if ($boundaryJson) {
         $groupFields['field_boundary'] = $boundaryJson;
       }
-      elseif ($centerLat && $centerLng) {
+      elseif ($lat && $lng) {
         // Generate a 1km radius circle as default boundary.
         $groupFields['field_boundary'] = json_encode(
-          $this->generateCircleBoundary((float) $centerLat, (float) $centerLng, 1.0),
+          $this->generateCircleBoundary($lat, $lng, 1.0),
           JSON_UNESCAPED_UNICODE
         );
       }
