@@ -968,6 +968,9 @@ EOF
     success "FastMap module enabled"
   fi
 
+  # Final cache clear to purge any cached 404s from API requests during setup.
+  $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
+
   # =============================================================================
   # Installation Summary
   # =============================================================================
