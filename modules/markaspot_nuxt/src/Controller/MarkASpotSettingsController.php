@@ -158,6 +158,7 @@ class MarkASpotSettingsController extends ControllerBase {
     if ($jurisdiction_param) {
       // SECURITY: Numeric IDs are blocked to prevent trivial enumeration
       // (1,2,3...). Only slug-based access is allowed. See #133.
+      // Use NUXT_PUBLIC_JURISDICTION_ID=<slug> (not numeric ID) in ENV.
       if (is_numeric($jurisdiction_param)) {
         return new CacheableJsonResponse(['error' => 'Numeric jurisdiction IDs are not supported. Use the jurisdiction slug.'], 400);
       }
