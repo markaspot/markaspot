@@ -156,9 +156,8 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata->addCacheTags(['group_list']);
 
     if ($jurisdiction_param) {
-      // SECURITY: Numeric IDs are blocked to prevent trivial enumeration
-      // (1,2,3...). Only slug-based access is allowed. See #133.
-      // Use NUXT_PUBLIC_JURISDICTION_ID=<slug> (not numeric ID) in ENV.
+      // SECURITY: Numeric IDs stay blocked to prevent tenant enumeration.
+      // Use the jurisdiction slug for all public and SaaS-facing callers.
       if (is_numeric($jurisdiction_param)) {
         return new CacheableJsonResponse(['error' => 'Numeric jurisdiction IDs are not supported. Use the jurisdiction slug.'], 400);
       }
@@ -252,6 +251,19 @@ class MarkASpotSettingsController extends ControllerBase {
         // but jurisdictions store these inside the nested 'map' object.
         if (!empty($settings['map'])) {
           $map = $settings['map'];
+          // Sync nested style keys used by jurisdiction field_nuxt_config.
+          if (!empty($map['style'])) {
+            $settings['mapbox_style'] = $map['style'];
+            if (empty($settings['fallback_style'])) {
+              $settings['fallback_style'] = $map['style'];
+            }
+          }
+          if (!empty($map['styleDark'])) {
+            $settings['mapbox_style_dark'] = $map['styleDark'];
+            if (empty($settings['fallback_style_dark'])) {
+              $settings['fallback_style_dark'] = $map['styleDark'];
+            }
+          }
           // Handle center in various formats:
           // - Object: map.center = {lat: ..., lng: ...}
           // - Array: map.center = [lng, lat] (GeoJSON/MapLibre convention)

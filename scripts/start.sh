@@ -772,6 +772,10 @@ EOF
   $DRUSH_CMD $DRUSH_URI config:delete markaspot_open311.settings status_closed.4 -y >/dev/null 2>&1 || true
   $DRUSH_CMD $DRUSH_URI config:set markaspot_open311.settings status_closed.5 5 -y >/dev/null 2>&1
   $DRUSH_CMD $DRUSH_URI config:set markaspot_open311.settings status_closed.6 6 -y >/dev/null 2>&1
+  $DRUSH_CMD $DRUSH_URI config:set rest.resource.georeport_request_index_resource configuration.GET.supported_auth.0 cookie -y >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI config:set rest.resource.georeport_request_index_resource configuration.GET.supported_auth.1 api_key_auth -y >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI config:set rest.resource.georeport_request_resource configuration.GET.supported_auth.0 cookie -y >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI config:set rest.resource.georeport_request_resource configuration.GET.supported_auth.1 api_key_auth -y >/dev/null 2>&1 || true
 
   $DRUSH_CMD $DRUSH_URI php:eval '
     $config = \Drupal::service("config.factory")->getEditable("group.role.org-anonymous");
@@ -860,6 +864,13 @@ EOF
 
   export GEOREPORT_API_KEY
   success "API key configured"
+
+  step "Configuring frontend map styles..."
+  $DRUSH_CMD $DRUSH_URI config:set markaspot_nuxt.settings mapbox_style "https://tiles.openfreemap.org/styles/liberty" -y >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI config:set markaspot_nuxt.settings mapbox_style_dark "https://tiles.openfreemap.org/styles/dark" -y >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI config:set markaspot_nuxt.settings fallback_style "https://tiles.openfreemap.org/styles/liberty" -y >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI config:set markaspot_nuxt.settings fallback_style_dark "https://tiles.openfreemap.org/styles/dark" -y >/dev/null 2>&1 || true
+  success "Frontend map styles configured"
 
   step "Generating test session cookie..."
   if [ -f "$SCRIPT_DIR/get-drupal-session.sh" ]; then
@@ -967,6 +978,33 @@ EOF
       \$group->save();
     }
   " 2>/dev/null || true
+
+  step "Ensuring start page content..."
+  $DRUSH_CMD $DRUSH_URI php:eval "
+    \$storage = \Drupal::entityTypeManager()->getStorage('node');
+    \$existing = \$storage->loadByProperties(['type' => 'page', 'status' => 1, 'promote' => 1]);
+    if (empty(\$existing)) {
+      \$group = \Drupal::entityTypeManager()->getStorage('group')->load(1);
+      \$field_definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', 'page');
+      \$values = [
+        'type' => 'page',
+        'title' => 'Welcome',
+        'status' => 1,
+        'promote' => 1,
+        'sticky' => 1,
+        'body' => [
+          'value' => '<h2>Report an Issue</h2><p>Help keep your city clean and safe with Mark-a-Spot.</p>',
+          'format' => 'full_html',
+        ],
+      ];
+      if (isset(\$field_definitions['field_jurisdiction']) && \$group) {
+        \$values['field_jurisdiction'] = ['target_id' => (int) \$group->id()];
+      }
+      \$node = \Drupal\node\Entity\Node::create(\$values);
+      \$node->save();
+    }
+  " 2>/dev/null || true
+  success "Start page content ensured"
 
   $DRUSH_CMD $DRUSH_URI php:eval "
     \$user = \Drupal\user\Entity\User::load(1);

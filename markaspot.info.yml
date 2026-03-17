@@ -69,6 +69,9 @@ dependencies:
   - markaspot_group
   - markaspot_dashboard
   - markaspot_escalation
+  - markaspot_stats
+  - markaspot_feedback
+  - markaspot_vision
   - service_request
 themes:
   - gin
