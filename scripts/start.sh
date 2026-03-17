@@ -1057,6 +1057,77 @@ EOF
   $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
 
   # =============================================================================
+  # Smoke Tests
+  # =============================================================================
+  step "Running smoke tests..."
+  SMOKE_PASS=0
+  SMOKE_FAIL=0
+
+  # Test 1: Settings API returns jurisdiction
+  SETTINGS_RESPONSE=$(curl -sf "http://localhost/api/mark-a-spot-settings?exclude=boundary" 2>/dev/null || echo "FAIL")
+  if echo "$SETTINGS_RESPONSE" | grep -q '"jurisdiction"'; then
+    SMOKE_PASS=$((SMOKE_PASS + 1))
+    success "Settings API: jurisdiction found"
+  else
+    SMOKE_FAIL=$((SMOKE_FAIL + 1))
+    error "Settings API: jurisdiction missing or 404"
+  fi
+
+  # Test 2: Map style is set
+  if echo "$SETTINGS_RESPONSE" | grep -q 'openfreemap\|mapbox_style'; then
+    SMOKE_PASS=$((SMOKE_PASS + 1))
+    success "Settings API: map style configured"
+  else
+    SMOKE_FAIL=$((SMOKE_FAIL + 1))
+    error "Settings API: no map style found"
+  fi
+
+  # Test 3: Services available
+  SERVICES_RESPONSE=$(curl -sf "http://localhost/georeport/v2/services.json" 2>/dev/null || echo "[]")
+  SERVICE_COUNT=$(echo "$SERVICES_RESPONSE" | php -r 'echo count(json_decode(file_get_contents("php://stdin"), true) ?: []);')
+  if [ "$SERVICE_COUNT" -gt 0 ] 2>/dev/null; then
+    SMOKE_PASS=$((SMOKE_PASS + 1))
+    success "GeoReport Services: $SERVICE_COUNT categories"
+  else
+    SMOKE_FAIL=$((SMOKE_FAIL + 1))
+    error "GeoReport Services: none found"
+  fi
+
+  # Test 4: Requests via API key
+  REQUESTS_RESPONSE=$(curl -sf "http://localhost/georeport/v2/requests.json?api_key=$GEOREPORT_API_KEY&limit=1" 2>/dev/null || echo "FAIL")
+  if echo "$REQUESTS_RESPONSE" | grep -q 'service_request_id'; then
+    SMOKE_PASS=$((SMOKE_PASS + 1))
+    success "GeoReport Requests: API key auth works"
+  else
+    # Fallback: test anonymous
+    ANON_RESPONSE=$(curl -sf "http://localhost/georeport/v2/requests.json?limit=1" 2>/dev/null || echo "FAIL")
+    if echo "$ANON_RESPONSE" | grep -q 'service_request_id'; then
+      SMOKE_PASS=$((SMOKE_PASS + 1))
+      warn "GeoReport Requests: anonymous works, API key auth fails (group access issue)"
+    else
+      SMOKE_FAIL=$((SMOKE_FAIL + 1))
+      error "GeoReport Requests: no requests accessible"
+    fi
+  fi
+
+  # Test 5: Node count
+  NODE_COUNT=$($DRUSH_CMD $DRUSH_URI sql:query "SELECT COUNT(*) FROM node_field_data WHERE type='service_request' AND status=1" 2>/dev/null || echo "0")
+  if [ "$NODE_COUNT" -gt 0 ] 2>/dev/null; then
+    SMOKE_PASS=$((SMOKE_PASS + 1))
+    success "Database: $NODE_COUNT published service requests"
+  else
+    SMOKE_FAIL=$((SMOKE_FAIL + 1))
+    error "Database: no service requests found"
+  fi
+
+  printf "\n"
+  if [ "$SMOKE_FAIL" -eq 0 ]; then
+    success "All $SMOKE_PASS smoke tests passed"
+  else
+    warn "$SMOKE_PASS passed, $SMOKE_FAIL failed"
+  fi
+
+  # =============================================================================
   # Installation Summary
   # =============================================================================
   printf "\n"
