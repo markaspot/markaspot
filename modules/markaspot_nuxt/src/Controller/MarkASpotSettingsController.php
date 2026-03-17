@@ -151,7 +151,9 @@ class MarkASpotSettingsController extends ControllerBase {
     $group = NULL;
 
     // Add list cache tag for when groups are added/removed.
-    $cache_metadata->addCacheTags(['group_list:' . $jur_type]);
+    // Group entities invalidate 'group_list' (not bundle-specific 'group_list:jur'),
+    // so we must use the generic tag for proper cache invalidation.
+    $cache_metadata->addCacheTags(['group_list']);
 
     if ($jurisdiction_param) {
       // SECURITY: Numeric IDs are blocked to prevent trivial enumeration
@@ -881,7 +883,7 @@ class MarkASpotSettingsController extends ControllerBase {
     // Build cache metadata with tags from all loaded groups.
     $cache_metadata = new CacheableMetadata();
     // List cache tag for when groups are added/removed.
-    $cache_metadata->addCacheTags(['group_list:' . $jur_type]);
+    $cache_metadata->addCacheTags(['group_list']);
     $cache_metadata->addCacheTags(['config:markaspot_open311.settings']);
     // Set max-age for HTTP caching (1 hour).
     $cache_metadata->setCacheMaxAge(3600);
@@ -949,7 +951,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $host_mappings = [];
 
     $cache_metadata = new CacheableMetadata();
-    $cache_metadata->addCacheTags(['group_list:' . $jur_type]);
+    $cache_metadata->addCacheTags(['group_list']);
     $cache_metadata->setCacheMaxAge(300);
 
     foreach ($groups as $group) {
