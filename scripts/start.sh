@@ -1022,7 +1022,9 @@ EOF
     \$jur = \$group_storage->load(1);
     \$dept1 = \$group_storage->load(2);
     \$dept2 = \$group_storage->load(3);
-    foreach (['api_user', 'moderation_1', 'moderation_2'] as \$name) {
+    // api_user must NOT be a group member: members get jur-member role which
+    // lacks view access via entity query. As outsider, jur-outsider grants view.
+    foreach (['moderation_1', 'moderation_2'] as \$name) {
       \$users = \$user_storage->loadByProperties(['name' => \$name]);
       \$user = reset(\$users);
       if (\$user && \$jur && !\$jur->getMember(\$user)) {
