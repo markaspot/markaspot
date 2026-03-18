@@ -443,12 +443,12 @@ EOF
   if [ "$SITE_NAME" != "default" ] && [ "$MULTISITE_MODE" = "true" ]; then
     info "Multisite install with --existing-config"
     $DRUSH_CMD $DRUSH_URI site:install markaspot \
-      --account-name=admin --account-pass=admin --account-mail=admin@example.com \
+      --account-name=admin --account-pass="${DRUPAL_ADMIN_PASSWORD:-admin}" --account-mail=admin@example.com \
       --existing-config --locale="$locale" -y > markaspot_install.log 2>&1 &
   elif [ "$SITE_NAME" != "default" ] && [ "$CONFIG_NEEDS_COPY" = "true" ]; then
     info "Fresh multisite install (no --existing-config)"
     $DRUSH_CMD $DRUSH_URI site:install markaspot \
-      --account-name=admin --account-pass=admin --account-mail=admin@example.com \
+      --account-name=admin --account-pass="${DRUPAL_ADMIN_PASSWORD:-admin}" --account-mail=admin@example.com \
       --site-name="$city" --locale="$locale" -y > markaspot_install.log 2>&1 &
   else
     # Always use site:install without --existing-config.
@@ -456,7 +456,7 @@ EOF
     # config/sync is empty or has optional config dependency issues.
     # Config-update (coordinates, validation) runs separately after install.
     $DRUSH_CMD $DRUSH_URI site:install markaspot \
-      --account-name=admin --account-pass=admin --account-mail=admin@example.com \
+      --account-name=admin --account-pass="${DRUPAL_ADMIN_PASSWORD:-admin}" --account-mail=admin@example.com \
       --site-name="$city" -y > markaspot_install.log 2>&1 &
   fi
   install_pid=$!
@@ -703,7 +703,7 @@ EOF
   import_exit=$?
 
   # Verify groups were created
-  group_count=$(drush $DRUSH_URI sql:query "SELECT COUNT(*) FROM groups" 2>/dev/null || echo "0")
+  group_count=$($DRUSH_CMD $DRUSH_URI sql:query "SELECT COUNT(*) FROM groups" 2>/dev/null || echo "0")
   if [ "$group_count" -gt 0 ] 2>/dev/null; then
     success "Groups, categories, and terms created ($group_count groups)"
   else
@@ -830,7 +830,7 @@ EOF
   $DRUSH_CMD $DRUSH_URI config-set services_api_key_auth.settings api_key_post_parameter_name "api_key" -y >/dev/null 2>&1
 
   # Set user_uuid for API key authentication (uses admin user as fallback)
-  ADMIN_UUID=$(drush $DRUSH_URI php:eval "echo \Drupal\user\Entity\User::load(1)->uuid();" 2>/dev/null)
+  ADMIN_UUID=$($DRUSH_CMD $DRUSH_URI php:eval "echo \Drupal\user\Entity\User::load(1)->uuid();" 2>/dev/null)
   if [ -n "$ADMIN_UUID" ]; then
     $DRUSH_CMD $DRUSH_URI config-set services_api_key_auth.api_key.nuxt user_uuid "$ADMIN_UUID" -y >/dev/null 2>&1
   fi
@@ -894,7 +894,7 @@ EOF
       printf "]"
     }')
     # Use site default language
-    NUXT_DEFAULT_LANG=$(drush $DRUSH_URI php:eval "echo \Drupal::languageManager()->getDefaultLanguage()->getId();" 2>/dev/null)
+    NUXT_DEFAULT_LANG=$($DRUSH_CMD $DRUSH_URI php:eval "echo \Drupal::languageManager()->getDefaultLanguage()->getId();" 2>/dev/null)
     [ -z "$NUXT_DEFAULT_LANG" ] && NUXT_DEFAULT_LANG="en"
   else
     # Fallback to original logic
@@ -1064,11 +1064,12 @@ EOF
   # Smoke Tests
   # =============================================================================
   step "Running smoke tests..."
+  SMOKE_BASE_URL="${SMOKE_BASE_URL:-http://localhost}"
   SMOKE_PASS=0
   SMOKE_FAIL=0
 
   # Test 1: Settings API returns jurisdiction
-  SETTINGS_RESPONSE=$(curl -sf "http://localhost/api/mark-a-spot-settings?exclude=boundary" 2>/dev/null || echo "FAIL")
+  SETTINGS_RESPONSE=$(curl -sf "$SMOKE_BASE_URL/api/mark-a-spot-settings?exclude=boundary" 2>/dev/null || echo "FAIL")
   if echo "$SETTINGS_RESPONSE" | grep -q '"jurisdiction"'; then
     SMOKE_PASS=$((SMOKE_PASS + 1))
     success "Settings API: jurisdiction found"
@@ -1087,7 +1088,7 @@ EOF
   fi
 
   # Test 3: Services available
-  SERVICES_RESPONSE=$(curl -sf "http://localhost/georeport/v2/services.json" 2>/dev/null || echo "[]")
+  SERVICES_RESPONSE=$(curl -sf "$SMOKE_BASE_URL/georeport/v2/services.json" 2>/dev/null || echo "[]")
   SERVICE_COUNT=$(echo "$SERVICES_RESPONSE" | php -r 'echo count(json_decode(file_get_contents("php://stdin"), true) ?: []);')
   if [ "$SERVICE_COUNT" -gt 0 ] 2>/dev/null; then
     SMOKE_PASS=$((SMOKE_PASS + 1))
@@ -1098,13 +1099,13 @@ EOF
   fi
 
   # Test 4: Requests via API key
-  REQUESTS_RESPONSE=$(curl -sf "http://localhost/georeport/v2/requests.json?api_key=$GEOREPORT_API_KEY&limit=1" 2>/dev/null || echo "FAIL")
+  REQUESTS_RESPONSE=$(curl -sf "$SMOKE_BASE_URL/georeport/v2/requests.json?api_key=$GEOREPORT_API_KEY&limit=1" 2>/dev/null || echo "FAIL")
   if echo "$REQUESTS_RESPONSE" | grep -q 'service_request_id'; then
     SMOKE_PASS=$((SMOKE_PASS + 1))
     success "GeoReport Requests: API key auth works"
   else
     # Fallback: test anonymous
-    ANON_RESPONSE=$(curl -sf "http://localhost/georeport/v2/requests.json?limit=1" 2>/dev/null || echo "FAIL")
+    ANON_RESPONSE=$(curl -sf "$SMOKE_BASE_URL/georeport/v2/requests.json?limit=1" 2>/dev/null || echo "FAIL")
     if echo "$ANON_RESPONSE" | grep -q 'service_request_id'; then
       SMOKE_PASS=$((SMOKE_PASS + 1))
       warn "GeoReport Requests: anonymous works, API key auth fails (group access issue)"
@@ -1150,7 +1151,7 @@ EOF
   elif [ -n "$DDEV_HOSTNAME" ]; then
     printf "  %s\n" "$($DRUSH_CMD uli --uri="https://$DDEV_HOSTNAME" 2>/dev/null)"
   else
-    printf "  %s\n" "$($DRUSH_CMD uli --uri=http://localhost 2>/dev/null)"
+    printf "  %s\n" "$($DRUSH_CMD uli --uri=$SMOKE_BASE_URL 2>/dev/null)"
   fi
 
   printf "\n"
@@ -1161,6 +1162,6 @@ EOF
   elif [ -n "$DDEV_HOSTNAME" ]; then
     printf "  2. Access frontend: https://%s:8040\n\n" "$DDEV_HOSTNAME"
   else
-    printf "  2. Access frontend: http://localhost:3000\n\n"
+    printf "  2. Access frontend: ${SMOKE_BASE_URL}:3000\n\n"
   fi
 fi
