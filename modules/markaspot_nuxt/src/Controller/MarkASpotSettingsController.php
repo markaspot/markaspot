@@ -160,7 +160,9 @@ class MarkASpotSettingsController extends ControllerBase {
       // Use NUXT_PUBLIC_JURISDICTION_ID with the slug, not the numeric ID.
       // Without a jurisdiction param, the default (first published) is used.
       if (is_numeric($jurisdiction_param)) {
-        return new CacheableJsonResponse(['error' => 'Numeric jurisdiction IDs are not supported. Use the jurisdiction slug.'], 400);
+        $error_response = new CacheableJsonResponse(['error' => 'Numeric jurisdiction IDs are not supported. Use the jurisdiction slug.'], 400);
+        $error_response->addCacheableDependency($cache_metadata);
+        return $error_response;
       }
       // Slug lookup (validate format first).
       if (preg_match('/^[a-z0-9_-]{1,64}$/i', $jurisdiction_param)) {
@@ -179,7 +181,9 @@ class MarkASpotSettingsController extends ControllerBase {
     // If a specific jurisdiction was requested but not found, return 404.
     // Do NOT fall back to default (prevents tenant enumeration via ID brute-force).
     if ($group === NULL && $jurisdiction_param) {
-      return new CacheableJsonResponse(['error' => 'Jurisdiction not found'], 404);
+      $error_response = new CacheableJsonResponse(['error' => 'Jurisdiction not found'], 404);
+      $error_response->addCacheableDependency($cache_metadata);
+      return $error_response;
     }
 
     // Default to first published jurisdiction group only when NO param specified.

@@ -473,24 +473,6 @@ EOF
     exit 1
   fi
 
-  # Config handling based on mode:
-  # - MULTISITE_MODE=true: always config:import (config was copied before install)
-  # - CONFIG_NEEDS_COPY=true: config:export to establish baseline
-  # - Otherwise: config:import as usual
-  if [ "$MULTISITE_MODE" = "true" ]; then
-    step "Importing configuration..."
-    $DRUSH_CMD $DRUSH_URI config:import -y >/dev/null 2>&1 || true
-    success "Config imported"
-  elif [ "$SITE_NAME" != "default" ] && [ "$CONFIG_NEEDS_COPY" = "true" ]; then
-    step "Exporting config (fresh multisite baseline)..."
-    $DRUSH_CMD $DRUSH_URI config:export -y >/dev/null 2>&1
-    success "Config exported"
-  else
-    step "Importing configuration..."
-    $DRUSH_CMD $DRUSH_URI config:import -y 2>/dev/null || info "No configuration to import (fresh install)"
-    success "Config imported"
-  fi
-
   # Rebuild cache to ensure all classes are available for php:eval
   $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
 
@@ -1074,16 +1056,6 @@ EOF
   " 2>/dev/null || true
 
   success "Groups and memberships configured"
-
-  # Enable FastMap module if service key is configured
-  if [ -n "${FASTMAP_SERVICE_KEY:-}" ]; then
-    step "Enabling FastMap module..."
-    $DRUSH_CMD $DRUSH_URI en markaspot_fastmap -y 2>/dev/null || true
-    $DRUSH_CMD $DRUSH_URI updb -y 2>/dev/null || true
-    $DRUSH_CMD $DRUSH_URI cset markaspot_fastmap.settings service_key "$FASTMAP_SERVICE_KEY" -y 2>/dev/null || true
-    $DRUSH_CMD $DRUSH_URI cr 2>/dev/null || true
-    success "FastMap module enabled"
-  fi
 
   # Final cache clear to purge any cached 404s from API requests during setup.
   $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
