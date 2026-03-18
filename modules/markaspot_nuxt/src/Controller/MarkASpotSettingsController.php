@@ -1059,7 +1059,7 @@ class MarkASpotSettingsController extends ControllerBase {
 
     // Build cache metadata early so it can be attached even on error responses.
     $cache_metadata = new CacheableMetadata();
-    $cache_metadata->addCacheTags(['group_list:org', 'group_list:organisation']);
+    $cache_metadata->addCacheTags(['group_list']);
     $cache_metadata->addCacheTags(['config:markaspot_open311.settings']);
     $cache_metadata->addCacheContexts(['url.query_args:jurisdiction']);
     $cache_metadata->setCacheMaxAge(3600);

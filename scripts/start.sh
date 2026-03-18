@@ -677,7 +677,7 @@ EOF
   LIMIT_VIEWBOX="$BBOX_MIN_LNG,$BBOX_MIN_LAT,$BBOX_MAX_LNG,$BBOX_MAX_LAT"
 
   # Extract simple city name (first part before comma)
-  SIMPLE_CITY_NAME=$(echo "$city" | cut -d',' -f1)
+  SIMPLE_CITY_NAME=$(echo "$city" | cut -d',' -f1 | tr -d "'\"\`\\")
 
   for form_mode in default management; do
     $DRUSH_CMD $DRUSH_URI config:set "core.entity_form_display.node.service_request.$form_mode" content.field_geolocation.settings.center_lat -y -- "$latitude" >/dev/null 2>&1 || true

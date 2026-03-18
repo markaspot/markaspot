@@ -104,7 +104,6 @@ final class MarkaspotNominatim extends AbstractHttpProvider implements Provider
         $longitude = $coordinates->getLongitude();
         $latitude = $coordinates->getLatitude();
         $url = sprintf($this->getReverseEndpointUrl(), $latitude, $longitude, $query->getData('zoom', 18));
-        $url = $url . '&email=holger@markaspot.org';
         $content = $this->executeQuery($url, $query->getLocale());
 
         $doc = new \DOMDocument();

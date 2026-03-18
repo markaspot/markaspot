@@ -66,11 +66,11 @@ class MarkaspotGeocoderService {
       $address = $result->first();
 
       return [
-        'country_code' => $address->getCountry()->getCode() ?? 'DE',
+        'country_code' => $address->getCountry()?->getCode() ?? 'DE',
         'locality' => $address->getLocality() ?? '',
         'address_line1' => ($address->getStreetName() ?? '') . ' ' . ($address->getStreetNumber() ?? ''),
         'postal_code' => $address->getPostalCode() ?? '',
-        'admin_area' => $address->getAdminLevels()->first()->getName() ?? '',
+        'admin_area' => $address->getAdminLevels()?->first()?->getName() ?? '',
       ];
     }
     catch (OutOfBoundsException $ex) {
