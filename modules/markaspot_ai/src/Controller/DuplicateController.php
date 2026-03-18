@@ -7,6 +7,7 @@ namespace Drupal\markaspot_ai\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\markaspot_ai\Service\DuplicateDetectionService;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -21,6 +22,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * potential duplicate service requests.
  */
 class DuplicateController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The duplicate detection service.
@@ -311,17 +314,18 @@ class DuplicateController extends ControllerBase {
    *   The jurisdiction ID to filter by, or NULL for all (admin).
    */
   protected function resolveJurisdictionFilter(Request $request): ?int {
-    $jurisdictionId = $request->query->get('jurisdiction_id');
+    // Supports both numeric IDs and slugs (e.g. "amsterdam").
+    $resolved = $this->resolveJurisdictionId($request->query->get('jurisdiction_id'));
 
     // Admins can see all by omitting the parameter, or filter by choice.
     $currentUser = $this->currentUser();
     if ((int) $currentUser->id() === 1 || $currentUser->hasPermission('administer nodes')) {
-      return $jurisdictionId !== NULL ? (int) $jurisdictionId : NULL;
+      return $resolved;
     }
 
     // Non-admin users: require jurisdiction_id. Without it, return -1
     // to produce empty results (no group has id -1).
-    return $jurisdictionId !== NULL ? (int) $jurisdictionId : -1;
+    return $resolved ?? -1;
   }
 
 }

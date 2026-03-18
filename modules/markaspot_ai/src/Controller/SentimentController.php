@@ -7,6 +7,7 @@ namespace Drupal\markaspot_ai\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\markaspot_ai\Service\NodeAnalysisService;
 use Drupal\markaspot_ai\Service\SentimentService;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -20,6 +21,8 @@ use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
  * results for service requests.
  */
 class SentimentController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The sentiment service.
@@ -181,10 +184,10 @@ class SentimentController extends ControllerBase {
 
     $options = ['days' => $days];
 
-    // Pass jurisdiction filter if provided.
-    $jurisdictionId = $request->query->get('jurisdiction_id');
+    // Pass jurisdiction filter if provided (supports slugs).
+    $jurisdictionId = $this->resolveJurisdictionId($request->query->get('jurisdiction_id'));
     if ($jurisdictionId !== NULL) {
-      $options['jurisdiction_id'] = (int) $jurisdictionId;
+      $options['jurisdiction_id'] = $jurisdictionId;
     }
 
     $stats = $this->sentimentService->getStatistics($options);

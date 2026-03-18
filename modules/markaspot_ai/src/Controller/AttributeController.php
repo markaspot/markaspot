@@ -9,6 +9,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\markaspot_ai\Service\AttributeFillingService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -18,6 +19,8 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * Controller for AI attribute filling from the dashboard.
  */
 class AttributeController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * Constructs an AttributeController object.
@@ -55,8 +58,8 @@ class AttributeController extends ControllerBase {
    */
   public function getStatus(): JsonResponse {
     $request = $this->requestStackService->getCurrentRequest();
-    $jurisdiction_id = $request?->query->get('jurisdiction_id');
-    $node_ids = $jurisdiction_id ? $this->getNodeIdsForJurisdiction((int) $jurisdiction_id) : NULL;
+    $jurisdiction_id = $this->resolveJurisdictionId($request?->query->get('jurisdiction_id'));
+    $node_ids = $jurisdiction_id ? $this->getNodeIdsForJurisdiction($jurisdiction_id) : NULL;
 
     if ($node_ids !== NULL && empty($node_ids)) {
       return new JsonResponse([
@@ -353,11 +356,12 @@ class AttributeController extends ControllerBase {
     $content = json_decode($request->getContent(), TRUE) ?? [];
     $limit = min(1000, max(1, (int) ($content['limit'] ?? 100)));
 
-    // Optional jurisdiction scoping.
-    $jurisdiction_id = $content['jurisdiction_id']
-      ?? $request->query->get('jurisdiction_id');
+    // Optional jurisdiction scoping (supports slugs).
+    $jurisdiction_id = $this->resolveJurisdictionId(
+      $content['jurisdiction_id'] ?? $request->query->get('jurisdiction_id')
+    );
     $jurisdiction_node_ids = $jurisdiction_id
-      ? $this->getNodeIdsForJurisdiction((int) $jurisdiction_id)
+      ? $this->getNodeIdsForJurisdiction($jurisdiction_id)
       : NULL;
 
     try {

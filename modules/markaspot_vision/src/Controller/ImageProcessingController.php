@@ -9,12 +9,15 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 
 /**
  * Controller for processing images with AI vision services.
  */
 class ImageProcessingController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The Image Processing Service.
@@ -136,8 +139,8 @@ class ImageProcessingController extends ControllerBase {
       // Get user's language preference from request (frontend sends this).
       $langcode = $data['language'] ?? NULL;
 
-      // Get jurisdiction ID for filtering categories (multi-tenant mode).
-      $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
+      // Get jurisdiction ID for filtering categories (multi-tenant mode, supports slugs).
+      $jurisdictionId = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
 
       // Process images with ImageProcessingService.
       $ai_result = $this->imageProcessingService->processImages($file_uris, $langcode, $jurisdictionId);

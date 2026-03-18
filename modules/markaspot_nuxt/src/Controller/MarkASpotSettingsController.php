@@ -9,6 +9,7 @@ use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -21,6 +22,8 @@ use Drupal\field\Entity\FieldStorageConfig;
  * Controller for Mark-a-Spot settings API.
  */
 class MarkASpotSettingsController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The stream wrapper manager service.
@@ -1038,16 +1041,9 @@ class MarkASpotSettingsController extends ControllerBase {
 
     // Optional jurisdiction filter: only return orgs directly assigned to this jur.
     // Strict filtering: no hierarchy traversal, only exact match.
-    // Uses ctype_digit() instead of is_numeric() to reject floats, negatives,
-    // and exponential notation. Upper bound prevents PHP_INT_MAX wrapping.
+    // Supports both numeric IDs and slugs (e.g. "amsterdam").
     $jurisdiction_param = $request->query->get('jurisdiction');
-    $jurisdiction_id = NULL;
-    if ($jurisdiction_param !== NULL && ctype_digit((string) $jurisdiction_param)) {
-      $candidate = (int) $jurisdiction_param;
-      if ($candidate > 0 && $candidate < 2147483648) {
-        $jurisdiction_id = $candidate;
-      }
-    }
+    $jurisdiction_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
 
     // Validate jurisdiction: must be a published group of the correct jur type.
     // Prevents cross-tenant enumeration by rejecting unknown or invalid IDs.
@@ -1144,8 +1140,9 @@ class MarkASpotSettingsController extends ControllerBase {
     $jurisdiction_param = $request->query->get('jurisdiction');
     $group = NULL;
 
-    if ($jurisdiction_param && is_numeric($jurisdiction_param)) {
-      $loaded_group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_param);
+    $resolved_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
+    if ($resolved_id !== NULL) {
+      $loaded_group = $this->entityTypeManager->getStorage('group')->load($resolved_id);
       if ($loaded_group && $loaded_group->isPublished()) {
         $group = $loaded_group;
       }

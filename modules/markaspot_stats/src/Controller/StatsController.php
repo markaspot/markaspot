@@ -7,6 +7,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,6 +18,8 @@ use Symfony\Component\HttpFoundation\Request;
  * Provides REST endpoints for Mark-a-Spot statistics.
  */
 class StatsController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The database connection.
@@ -80,11 +83,9 @@ class StatsController extends ControllerBase {
    *   The jurisdiction group ID, or NULL if not specified.
    */
   protected function getJurisdictionId(Request $request): ?int {
-    $jurisdiction = $request->query->get('jurisdiction');
-    if ($jurisdiction && is_numeric($jurisdiction)) {
-      return (int) $jurisdiction;
-    }
-    return NULL;
+    $value = $request->query->get('jurisdiction')
+      ?? $request->query->get('jurisdiction_id');
+    return $this->resolveJurisdictionId($value);
   }
 
   /**

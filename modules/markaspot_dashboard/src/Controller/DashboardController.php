@@ -8,6 +8,7 @@ use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\markaspot_dashboard\Service\MetricsCalculatorService;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
@@ -24,6 +25,8 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * - Forwarding details (breakdown by organization and category)
  */
 class DashboardController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The metrics calculator service.
@@ -81,7 +84,7 @@ class DashboardController extends ControllerBase {
     $filters = [
       'start_date' => $request->query->get('start_date'),
       'end_date' => $request->query->get('end_date'),
-      'jurisdiction_id' => $request->query->get('jurisdiction_id'),
+      'jurisdiction_id' => $this->resolveJurisdictionId($request->query->get('jurisdiction_id')),
       'organization_id' => $request->query->get('organization_id'),
       'category_id' => $request->query->get('category_id'),
       'status_id' => $request->query->get('status_id'),
@@ -144,7 +147,7 @@ class DashboardController extends ControllerBase {
       'start_date' => $request->query->get('start_date'),
       'end_date' => $request->query->get('end_date'),
       'granularity' => $request->query->get('granularity', 'day'),
-      'jurisdiction_id' => $request->query->get('jurisdiction_id'),
+      'jurisdiction_id' => $this->resolveJurisdictionId($request->query->get('jurisdiction_id')),
       'category_id' => $request->query->get('category_id'),
       'status_id' => $request->query->get('status_id'),
     ];
@@ -185,7 +188,7 @@ class DashboardController extends ControllerBase {
       'start_date' => $request->query->get('start_date'),
       'end_date' => $request->query->get('end_date'),
       'granularity' => $request->query->get('granularity', 'day'),
-      'jurisdiction_id' => $request->query->get('jurisdiction_id'),
+      'jurisdiction_id' => $this->resolveJurisdictionId($request->query->get('jurisdiction_id')),
       'category_id' => $request->query->get('category_id'),
       'status_id' => $request->query->get('status_id'),
     ];
@@ -223,7 +226,7 @@ class DashboardController extends ControllerBase {
     $filters = [
       'start_date' => $request->query->get('start_date'),
       'end_date' => $request->query->get('end_date'),
-      'jurisdiction_id' => $request->query->get('jurisdiction_id'),
+      'jurisdiction_id' => $this->resolveJurisdictionId($request->query->get('jurisdiction_id')),
     ];
 
     $filters = array_filter($filters, fn($value) => $value !== NULL && $value !== '');
@@ -304,7 +307,7 @@ class DashboardController extends ControllerBase {
     $filters = [
       'start_date' => $request->query->get('start_date'),
       'end_date' => $request->query->get('end_date'),
-      'jurisdiction_id' => $request->query->get('jurisdiction_id'),
+      'jurisdiction_id' => $this->resolveJurisdictionId($request->query->get('jurisdiction_id')),
       'organization_id' => $request->query->get('organization_id'),
       'category_id' => $request->query->get('category_id'),
       'status_id' => $request->query->get('status_id'),

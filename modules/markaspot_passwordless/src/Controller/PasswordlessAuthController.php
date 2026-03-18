@@ -9,6 +9,7 @@ use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -19,6 +20,8 @@ use Symfony\Component\HttpFoundation\Response;
  * Provides JSON API endpoints for passwordless OTP authentication.
  */
 class PasswordlessAuthController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The OTP service.
@@ -161,7 +164,7 @@ class PasswordlessAuthController extends ControllerBase {
 
     // Optional: language and jurisdiction from request body.
     $langcode = !empty($data['langcode']) ? trim($data['langcode']) : '';
-    $jurisdiction_id = !empty($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : 0;
+    $jurisdiction_id = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL) ?? 0;
 
     try {
       // Request OTP code.

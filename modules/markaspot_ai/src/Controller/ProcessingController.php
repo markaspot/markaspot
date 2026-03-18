@@ -10,6 +10,7 @@ use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Queue\QueueWorkerManagerInterface;
 use Drupal\markaspot_ai\Service\EmbeddingService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -19,6 +20,8 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * Controller for AI processing management from dashboard.
  */
 class ProcessingController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * Constructs a ProcessingController object.
@@ -58,8 +61,8 @@ class ProcessingController extends ControllerBase {
    */
   public function getStatus(): JsonResponse {
     $request = $this->requestStackService->getCurrentRequest();
-    $jurisdiction_id = $request?->query->get('jurisdiction_id');
-    $node_ids = $jurisdiction_id ? $this->getNodeIdsForJurisdiction((int) $jurisdiction_id) : NULL;
+    $jurisdiction_id = $this->resolveJurisdictionId($request?->query->get('jurisdiction_id'));
+    $node_ids = $jurisdiction_id ? $this->getNodeIdsForJurisdiction($jurisdiction_id) : NULL;
 
     if ($node_ids !== NULL && empty($node_ids)) {
       // Jurisdiction specified but no nodes in it.
@@ -149,11 +152,12 @@ class ProcessingController extends ControllerBase {
     // Validate and clamp limit to reasonable bounds.
     $limit = min(1000, max(1, (int) ($content['limit'] ?? 100)));
 
-    // Optional jurisdiction scoping.
-    $jurisdiction_id = $content['jurisdiction_id']
-      ?? $request->query->get('jurisdiction_id');
+    // Optional jurisdiction scoping (supports slugs).
+    $jurisdiction_id = $this->resolveJurisdictionId(
+      $content['jurisdiction_id'] ?? $request->query->get('jurisdiction_id')
+    );
     $jurisdiction_node_ids = $jurisdiction_id
-      ? $this->getNodeIdsForJurisdiction((int) $jurisdiction_id)
+      ? $this->getNodeIdsForJurisdiction($jurisdiction_id)
       : NULL;
 
     try {

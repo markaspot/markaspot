@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Component\Utility\UrlHelper;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\rest\Plugin\ResourceBase;
@@ -13,6 +14,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\markaspot_open311\Traits\LanguageNegotiationTrait;
 
@@ -32,6 +34,7 @@ use Drupal\markaspot_open311\Traits\LanguageNegotiationTrait;
  */
 class GeoreportServiceIndexResource extends ResourceBase {
 
+  use JurisdictionIdResolverTrait;
   use LanguageNegotiationTrait;
 
   /**
@@ -70,6 +73,13 @@ class GeoreportServiceIndexResource extends ResourceBase {
   protected $languageManager;
 
   /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -92,6 +102,8 @@ class GeoreportServiceIndexResource extends ResourceBase {
    *   The processor service.
    * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
    *   The request stack.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
    */
   public function __construct(
     array $configuration,
@@ -104,6 +116,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
     ConfigFactoryInterface $config,
     GeoreportProcessorService $georeport_processor,
     RequestStack $request_stack,
+    EntityTypeManagerInterface $entity_type_manager,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->config = $config->getEditable('markaspot_open311.settings');
@@ -111,6 +124,7 @@ class GeoreportServiceIndexResource extends ResourceBase {
     $this->georeportProcessor = $georeport_processor;
     $this->languageManager = $language_manager;
     $this->requestStack = $request_stack;
+    $this->entityTypeManager = $entity_type_manager;
 
   }
 
@@ -128,7 +142,8 @@ class GeoreportServiceIndexResource extends ResourceBase {
       $container->get('language_manager'),
       $container->get('config.factory'),
       $container->get('markaspot_open311.processor'),
-      $container->get('request_stack')
+      $container->get('request_stack'),
+      $container->get('entity_type.manager')
     );
   }
 
@@ -226,8 +241,8 @@ class GeoreportServiceIndexResource extends ResourceBase {
     // Get language code with priority: query param > Accept-Language header > site default.
     $langcode = $this->resolveLanguageCode($parameters);
 
-    // Optional jurisdiction filter for multi-tenant setups.
-    $jurisdictionId = isset($parameters['jurisdiction_id']) ? (int) $parameters['jurisdiction_id'] : NULL;
+    // Optional jurisdiction filter for multi-tenant setups (supports slugs).
+    $jurisdictionId = $this->resolveJurisdictionId($parameters['jurisdiction_id'] ?? NULL);
 
     $services = $this->georeportProcessor->getTaxonomyTree('service_category', $langcode, 0, NULL, $jurisdictionId);
 

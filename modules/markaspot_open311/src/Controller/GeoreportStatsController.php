@@ -8,6 +8,7 @@ use Drupal\group\Entity\GroupMembership;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -20,6 +21,8 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * Returns counts of service requests grouped by status taxonomy terms.
  */
 class GeoreportStatsController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The database connection.
@@ -350,13 +353,15 @@ class GeoreportStatsController extends ControllerBase {
   /**
    * Resolves jurisdiction_id from request with backward compat for 'gid'.
    *
+   * Supports both numeric IDs and slugs via JurisdictionIdResolverTrait.
+   *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The current request.
    *
-   * @return string|null
-   *   The jurisdiction ID value or NULL if not specified.
+   * @return int|null
+   *   The resolved numeric group ID, or NULL if not specified/found.
    */
-  private function resolveJurisdictionIdFromRequest(Request $request): ?string {
+  private function resolveJurisdictionIdFromRequest(Request $request): ?int {
     $value = $request->query->get('jurisdiction_id')
       ?? $request->query->get('gid');
     if ($request->query->has('gid') && !$request->query->has('jurisdiction_id')) {
@@ -364,13 +369,7 @@ class GeoreportStatsController extends ControllerBase {
         'Deprecated API parameter "gid" on stats endpoint. Use "jurisdiction_id".'
       );
     }
-    // Only accept numeric values. The stats controller does not support
-    // slug resolution (unlike GeoreportProcessorService). Non-numeric values
-    // like 'bonn' would silently cast to 0, causing empty/incorrect results.
-    if ($value !== NULL && !is_numeric($value)) {
-      return NULL;
-    }
-    return $value;
+    return $this->resolveJurisdictionId($value);
   }
 
   /**

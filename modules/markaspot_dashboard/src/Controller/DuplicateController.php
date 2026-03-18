@@ -6,6 +6,7 @@ namespace Drupal\markaspot_dashboard\Controller;
 
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -27,6 +28,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * - Fetching all pending duplicates system-wide.
  */
 class DuplicateController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The database connection.
@@ -142,17 +145,17 @@ class DuplicateController extends ControllerBase {
     $offset = $request->query->get('offset', 0);
 
     // Jurisdiction filter: admins (uid=1 or 'administer nodes') see all.
-    $jurisdictionId = NULL;
-    $requestedJurisdiction = $request->query->get('jurisdiction_id');
+    // Supports both numeric IDs and slugs (e.g. "amsterdam").
+    $resolvedJurisdiction = $this->resolveJurisdictionId($request->query->get('jurisdiction_id'));
     $currentUser = $this->currentUser;
     if ((int) $currentUser->id() === 1 || $currentUser->hasPermission('administer nodes')) {
       // Admins can see all by omitting the parameter, or filter by choice.
-      $jurisdictionId = $requestedJurisdiction !== NULL ? (int) $requestedJurisdiction : NULL;
+      $jurisdictionId = $resolvedJurisdiction;
     }
     else {
       // Non-admin users: require jurisdiction_id. Without it, return -1
       // to produce empty results (no group has id -1).
-      $jurisdictionId = $requestedJurisdiction !== NULL ? (int) $requestedJurisdiction : -1;
+      $jurisdictionId = $resolvedJurisdiction ?? -1;
     }
 
     // Get total counts by status.
