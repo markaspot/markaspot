@@ -447,6 +447,31 @@ class MarkASpotSettingsController extends ControllerBase {
         }
         $settings['theme']['fonts'] = array_merge($settings['theme']['fonts'], $fonts);
       }
+
+      // Add operator data for legal pages (Impressum, Privacy).
+      // TMG §5 requires this data to be publicly accessible.
+      $operator = [];
+      if ($group->hasField('field_platform_name') && !$group->get('field_platform_name')->isEmpty()) {
+        $operator['name'] = $group->get('field_platform_name')->value;
+      }
+      if ($group->hasField('field_jurisdiction_e_mail') && !$group->get('field_jurisdiction_e_mail')->isEmpty()) {
+        $operator['email'] = $group->get('field_jurisdiction_e_mail')->value;
+      }
+      if ($group->hasField('field_jurisdiction_address') && !$group->get('field_jurisdiction_address')->isEmpty()) {
+        $address = $group->get('field_jurisdiction_address')->first();
+        if ($address) {
+          $operator['address'] = [
+            'organization' => $address->organization ?? '',
+            'address_line1' => $address->address_line1 ?? '',
+            'locality' => $address->locality ?? '',
+            'postal_code' => $address->postal_code ?? '',
+            'country_code' => $address->country_code ?? '',
+          ];
+        }
+      }
+      if (!empty($operator)) {
+        $settings['operator'] = $operator;
+      }
     }
 
     // Add boundary GeoJSON from group's field_boundary if available.
