@@ -156,8 +156,9 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata->addCacheTags(['group_list']);
 
     if ($jurisdiction_param) {
-      // SECURITY: Numeric IDs stay blocked to prevent tenant enumeration.
-      // Use the jurisdiction slug for all public and SaaS-facing callers.
+      // Numeric IDs blocked to prevent tenant enumeration (1,2,3...).
+      // Use NUXT_PUBLIC_JURISDICTION_ID with the slug, not the numeric ID.
+      // Without a jurisdiction param, the default (first published) is used.
       if (is_numeric($jurisdiction_param)) {
         return new CacheableJsonResponse(['error' => 'Numeric jurisdiction IDs are not supported. Use the jurisdiction slug.'], 400);
       }
@@ -169,6 +170,9 @@ class MarkASpotSettingsController extends ControllerBase {
           'status' => 1,
         ]);
         $group = reset($groups) ?: NULL;
+        if ($group) {
+          $cache_metadata->addCacheTags(['group:' . $group->id()]);
+        }
       }
     }
 
