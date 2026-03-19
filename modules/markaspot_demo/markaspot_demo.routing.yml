@@ -1,0 +1,7 @@
+markaspot_demo.settings:
+  path: '/admin/config/services/markaspot-demo'
+  defaults:
+    _form: '\Drupal\markaspot_demo\Form\DemoSettingsForm'
+    _title: 'Mark-a-Spot Demo Settings'
+  requirements:
+    _permission: 'administer site configuration'

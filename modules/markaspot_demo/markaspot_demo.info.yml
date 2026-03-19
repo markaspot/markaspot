@@ -1,0 +1,7 @@
+name: 'Mark-a-Spot Demo'
+type: module
+description: 'Demo mode with fixed OTP codes for demo users. DO NOT enable in production!'
+package: 'Mark-a-Spot'
+core_version_requirement: ^10.3 || ^11
+dependencies:
+  - markaspot_passwordless:markaspot_passwordless

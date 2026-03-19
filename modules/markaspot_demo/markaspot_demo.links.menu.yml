@@ -1,0 +1,6 @@
+markaspot_demo.settings:
+  title: 'Demo Settings'
+  description: 'Configure demo mode authentication with fixed OTP codes.'
+  parent: system.admin_config_services
+  route_name: markaspot_demo.settings
+  weight: 50

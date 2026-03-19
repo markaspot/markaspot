@@ -1,0 +1,7 @@
+# Demo user emails that can use the fixed code 123456.
+# These are the default users created by start.sh / georeport-client.sh.
+# If empty, auto-detection based on roles is used.
+demo_emails:
+  - admin@example.com
+  - moderation_1@example.com
+  - moderation_2@example.com
