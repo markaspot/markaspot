@@ -1070,6 +1070,627 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests createCustomStatusTerms() adds translations for each language/status.
+   *
+   * When status_translations are provided with multiple languages, each
+   * translatable status term should receive addTranslation() calls for
+   * every non-default language.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testCustomStatusTermsWithTranslations(): void {
+    // Group storage: slug not taken.
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    // Group entity mock.
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    // Track addTranslation() calls on status terms.
+    $translationCalls = [];
+    $termIdCounter = 0;
+    $this->termStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$translationCalls) {
+        $termIdCounter++;
+        $currentId = $termIdCounter;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn($currentId);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(TRUE);
+
+        // Track translation calls with the term name context.
+        $term->method('addTranslation')
+          ->willReturnCallback(function (string $lang, array $data) use ($currentId, $values, &$translationCalls) {
+            $translationCalls[] = [
+              'term_id' => $currentId,
+              'original_name' => $values['name'],
+              'lang' => $lang,
+              'translated_name' => $data['name'],
+            ];
+            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans->method('save')->willReturn(1);
+            return $trans;
+          });
+
+        return $term;
+      });
+
+    // User storage.
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    // Node storage.
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function () {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        $node->method('isTranslatable')->willReturn(FALSE);
+        return $node;
+      });
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => [
+        'en' => ['Road Damage', 'Flood'],
+        'de' => ['Strassenschaden', 'Hochwasser'],
+      ],
+      'language' => 'en',
+      'statuses' => [
+        ['name' => 'Open', 'hex' => '#FF0000', 'icon' => 'i-lucide-circle', 'mapping' => 'initial'],
+        ['name' => 'In Progress', 'hex' => '#FFA500', 'icon' => 'i-lucide-clock', 'mapping' => 'open'],
+        ['name' => 'Closed', 'hex' => '#00FF00', 'icon' => 'i-lucide-check', 'mapping' => 'closed'],
+      ],
+      'status_translations' => [
+        'de' => ['Offen', 'In Bearbeitung', 'Geschlossen'],
+      ],
+    ]));
+
+    // Filter to only status term translations (term IDs 1-3 are statuses).
+    $statusTranslations = array_filter($translationCalls, fn($c) => $c['term_id'] <= 3);
+
+    // Expect 3 German translations for the 3 custom statuses.
+    $this->assertCount(3, $statusTranslations);
+
+    $deTranslations = array_column($statusTranslations, 'translated_name');
+    $this->assertContains('Offen', $deTranslations);
+    $this->assertContains('In Bearbeitung', $deTranslations);
+    $this->assertContains('Geschlossen', $deTranslations);
+  }
+
+  /**
+   * Tests that skipped statuses (empty name) still increment the index.
+   *
+   * When a status has an empty name, it is skipped but the index for
+   * translation lookup should still advance to keep translations aligned.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testCustomStatusTermsSkippedStatusIncrementsIndex(): void {
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    $translationCalls = [];
+    $termIdCounter = 0;
+    $this->termStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$translationCalls) {
+        $termIdCounter++;
+        $currentId = $termIdCounter;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn($currentId);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(TRUE);
+        $term->method('addTranslation')
+          ->willReturnCallback(function (string $lang, array $data) use ($values, &$translationCalls) {
+            $translationCalls[] = [
+              'original_name' => $values['name'],
+              'lang' => $lang,
+              'translated_name' => $data['name'],
+            ];
+            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans->method('save')->willReturn(1);
+            return $trans;
+          });
+        return $term;
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function () {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        $node->method('isTranslatable')->willReturn(FALSE);
+        return $node;
+      });
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    // Status at index 1 has empty name and should be skipped,
+    // but index 2 ("Closed") should pick up translation at index 2.
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => [
+        'en' => ['Road Damage'],
+        'de' => ['Strassenschaden'],
+      ],
+      'language' => 'en',
+      'statuses' => [
+        ['name' => 'Open', 'hex' => '#FF0000', 'icon' => 'i-lucide-circle', 'mapping' => 'initial'],
+        ['name' => '', 'hex' => '#FFA500', 'icon' => 'i-lucide-clock', 'mapping' => 'open'],
+        ['name' => 'Closed', 'hex' => '#00FF00', 'icon' => 'i-lucide-check', 'mapping' => 'closed'],
+      ],
+      'status_translations' => [
+        'de' => ['Offen', 'SKIPPED', 'Geschlossen'],
+      ],
+    ]));
+
+    // Only 2 status terms are created (index 0 and 2), each with a German translation.
+    $statusTranslations = array_filter($translationCalls, fn($c) => in_array($c['original_name'], ['Open', 'Closed']));
+    $this->assertCount(2, $statusTranslations);
+
+    $deNames = array_column($statusTranslations, 'translated_name');
+    $this->assertContains('Offen', $deNames);
+    // Index 2 must map to 'Geschlossen', NOT 'SKIPPED'.
+    $this->assertContains('Geschlossen', $deNames);
+    $this->assertNotContains('SKIPPED', $deNames);
+  }
+
+  /**
+   * Tests that availableLanguages guard prevents translations for non-installed languages.
+   *
+   * When status_translations include a language not in the workspace's
+   * available languages, addTranslation() should not be called for that language.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testCustomStatusTermsLanguageGuardFiltersUnknownLanguages(): void {
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    $translationCalls = [];
+    $termIdCounter = 0;
+    $this->termStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$translationCalls) {
+        $termIdCounter++;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn($termIdCounter);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(TRUE);
+        $term->method('addTranslation')
+          ->willReturnCallback(function (string $lang, array $data) use (&$translationCalls) {
+            $translationCalls[] = ['lang' => $lang, 'name' => $data['name']];
+            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans->method('save')->willReturn(1);
+            return $trans;
+          });
+        return $term;
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function () {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        $node->method('isTranslatable')->willReturn(FALSE);
+        return $node;
+      });
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    // Categories only define 'en' and 'de', so availableLanguages = ['en', 'de'].
+    // Translations include 'fr' which is NOT in availableLanguages.
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => [
+        'en' => ['Road Damage'],
+        'de' => ['Strassenschaden'],
+      ],
+      'language' => 'en',
+      'statuses' => [
+        ['name' => 'Open', 'hex' => '#FF0000', 'icon' => 'i-lucide-circle', 'mapping' => 'initial'],
+        ['name' => 'In Progress', 'hex' => '#FFA500', 'icon' => 'i-lucide-clock', 'mapping' => 'open'],
+        ['name' => 'Closed', 'hex' => '#00FF00', 'icon' => 'i-lucide-check', 'mapping' => 'closed'],
+      ],
+      'status_translations' => [
+        'de' => ['Offen', 'In Bearbeitung', 'Geschlossen'],
+        'fr' => ['Ouvert', 'En cours', 'Ferme'],
+      ],
+    ]));
+
+    // Only 'de' translations should be created, 'fr' should be blocked.
+    $langs = array_unique(array_column($translationCalls, 'lang'));
+    $this->assertContains('de', $langs);
+    $this->assertNotContains('fr', $langs);
+  }
+
+  /**
+   * Tests createStartPage() with AI-generated translations per language.
+   *
+   * When start_page_translations are provided, addTranslation() should be
+   * called for each language with the correct title and body.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testStartPageWithTranslations(): void {
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    $this->termStorage->method('create')
+      ->willReturnCallback(function () {
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(1);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    // Track node translations.
+    $nodeTranslations = [];
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$nodeTranslations) {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        $node->method('isTranslatable')->willReturn(TRUE);
+        $node->method('addTranslation')
+          ->willReturnCallback(function (string $lang, array $data) use (&$nodeTranslations) {
+            $nodeTranslations[] = [
+              'lang' => $lang,
+              'title' => $data['title'],
+              'body' => $data['body']['value'] ?? $data['body'],
+            ];
+            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans->method('save')->willReturn(1);
+            return $trans;
+          });
+        return $node;
+      });
+
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => [
+        'en' => ['Road Damage'],
+        'de' => ['Strassenschaden'],
+      ],
+      'language' => 'en',
+      'start_page' => [
+        'title' => 'Welcome to Test',
+        'body' => '<p>This is the English start page.</p>',
+      ],
+      'start_page_translations' => [
+        'de' => [
+          'title' => 'Willkommen bei Test',
+          'body' => '<p>Dies ist die deutsche Startseite.</p>',
+        ],
+      ],
+    ]));
+
+    // Find the German page translation (not demo request translations).
+    $dePages = array_filter($nodeTranslations, fn($t) => $t['lang'] === 'de');
+    $this->assertNotEmpty($dePages, 'Expected a German translation for the start page.');
+
+    $dePage = reset($dePages);
+    $this->assertEquals('Willkommen bei Test', $dePage['title']);
+    $this->assertStringContainsString('deutsche Startseite', $dePage['body']);
+  }
+
+  /**
+   * Tests that start page uses template fallback for untranslated languages.
+   *
+   * When AI translations are provided for some languages but not all,
+   * the missing languages should fall back to static templates.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testStartPageTemplateFallbackForMissingTranslation(): void {
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    $this->termStorage->method('create')
+      ->willReturnCallback(function () {
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(1);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    $nodeTranslations = [];
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$nodeTranslations) {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        $node->method('isTranslatable')->willReturn(TRUE);
+        $node->method('addTranslation')
+          ->willReturnCallback(function (string $lang, array $data) use (&$nodeTranslations) {
+            $nodeTranslations[] = [
+              'lang' => $lang,
+              'title' => $data['title'],
+              'body' => $data['body']['value'] ?? $data['body'],
+            ];
+            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans->method('save')->willReturn(1);
+            return $trans;
+          });
+        return $node;
+      });
+
+    // Default language is 'en', categories provide 'en', 'de', 'fr'.
+    // AI translation only for 'de'. French should fall back to template.
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => [
+        'en' => ['Road Damage'],
+        'de' => ['Strassenschaden'],
+        'fr' => ['Dommage routier'],
+      ],
+      'language' => 'en',
+      'start_page' => [
+        'title' => 'Welcome to Test WS',
+        'body' => '<p>English content.</p>',
+      ],
+      'start_page_translations' => [
+        'de' => [
+          'title' => 'AI-generiert: Willkommen',
+          'body' => '<p>AI-generierter Inhalt.</p>',
+        ],
+        // 'fr' is NOT provided, should fall back to template.
+      ],
+    ]));
+
+    // Find page translations by language.
+    $dePages = array_filter($nodeTranslations, fn($t) => $t['lang'] === 'de');
+    $frPages = array_filter($nodeTranslations, fn($t) => $t['lang'] === 'fr');
+
+    $this->assertNotEmpty($dePages, 'Expected a German translation.');
+    $this->assertNotEmpty($frPages, 'Expected a French fallback translation.');
+
+    $dePage = reset($dePages);
+    $this->assertStringContainsString('AI-generiert', $dePage['title']);
+
+    // French should use the template with %name replaced.
+    $frPage = reset($frPages);
+    $this->assertStringContainsString('Bienvenue', $frPage['title']);
+    $this->assertStringContainsString('Test Workspace', $frPage['title']);
+  }
+
+  /**
+   * Tests that start page availableLanguages guard blocks non-workspace languages.
+   *
+   * When start_page_translations include a language not in the workspace's
+   * available languages, addTranslation() should not be called for it.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testStartPageLanguageGuardBlocksNonWorkspaceLanguages(): void {
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    $this->termStorage->method('create')
+      ->willReturnCallback(function () {
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(1);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    $nodeTranslations = [];
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$nodeTranslations) {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        $node->method('isTranslatable')->willReturn(TRUE);
+        $node->method('addTranslation')
+          ->willReturnCallback(function (string $lang, array $data) use (&$nodeTranslations) {
+            $nodeTranslations[] = ['lang' => $lang];
+            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans->method('save')->willReturn(1);
+            return $trans;
+          });
+        return $node;
+      });
+
+    // Only 'en' in categories, so availableLanguages = ['en'].
+    // start_page_translations includes 'de' which is NOT available.
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => ['Road Damage'],
+      'language' => 'en',
+      'start_page' => [
+        'title' => 'Welcome',
+        'body' => '<p>English only.</p>',
+      ],
+      'start_page_translations' => [
+        'de' => [
+          'title' => 'Willkommen',
+          'body' => '<p>Deutsch.</p>',
+        ],
+      ],
+    ]));
+
+    // No translations should be created since only 'en' is in availableLanguages.
+    $langs = array_unique(array_column($nodeTranslations, 'lang'));
+    $this->assertNotContains('de', $langs, 'German translation should be blocked by availableLanguages guard.');
+  }
+
+  /**
+   * Tests that start page title is truncated to 255 and body to 2000 chars.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testStartPageTruncation(): void {
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    $this->termStorage->method('create')
+      ->willReturnCallback(function () {
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(1);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    $createdPages = [];
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$createdPages) {
+        if ($values['type'] === 'page') {
+          $createdPages[] = $values;
+        }
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        $node->method('isTranslatable')->willReturn(FALSE);
+        return $node;
+      });
+
+    $longTitle = str_repeat('T', 500);
+    $longBody = str_repeat('B', 5000);
+
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => ['Road Damage'],
+      'start_page' => [
+        'title' => $longTitle,
+        'body' => $longBody,
+      ],
+    ]));
+
+    $this->assertCount(1, $createdPages, 'Expected 1 start page.');
+    $this->assertEquals(255, mb_strlen($createdPages[0]['title']), 'Title should be truncated to 255.');
+    $this->assertEquals(2000, mb_strlen($createdPages[0]['body']['value']), 'Body should be truncated to 2000.');
+  }
+
+  /**
    * Creates a Transaction stub that avoids readonly property issues.
    *
    * The Drupal Transaction class uses readonly promoted constructor properties,

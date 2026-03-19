@@ -1150,6 +1150,216 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals(401, $response2->getStatusCode());
   }
 
+  // =========================================================================
+  // Input validation tests (XSS, language allowlist, status_translations)
+  // =========================================================================
+
+  /**
+   * Tests that Xss::filter() is applied to start_page.body.
+   *
+   * Script tags and other dangerous HTML should be stripped from the
+   * start_page body before it is stored in the pending record.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceXssFilterOnStartPageBody(): void {
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
+
+    // Capture the inserted workspace_data JSON.
+    $insertedData = NULL;
+    $insert = $this->createMock(Insert::class);
+    $insert->method('fields')
+      ->willReturnCallback(function (array $fields) use (&$insertedData, $insert) {
+        $insertedData = $fields;
+        return $insert;
+      });
+    $insert->method('execute')->willReturn('1');
+
+    // We need to re-mock the database to capture insert data.
+    // The setupSuccessfulPending() already set up select/delete, so we
+    // override insert specifically.
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchField')->willReturn(FALSE);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('where')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(0);
+
+    $database = $this->createMock(Connection::class);
+    $transactionStub = new class { public function rollBack(): void {} };
+    $database->method('startTransaction')->willReturn($transactionStub);
+    $database->method('select')->willReturn($select);
+    $database->method('insert')->willReturn($insert);
+    $database->method('delete')->willReturn($delete);
+
+    $container = \Drupal::getContainer();
+    $container->set('database', $database);
+    $controller = FastMapWorkspaceController::create($container);
+
+    $request = $this->createJsonRequest($this->validRequestData([
+      'start_page' => [
+        'title' => 'Welcome',
+        'body' => '<p>Safe content</p><script>alert("xss")</script><img onerror="evil()">',
+      ],
+    ]));
+
+    $response = $controller->createWorkspace($request);
+    $this->assertEquals(202, $response->getStatusCode());
+
+    // Verify the stored body has XSS stripped.
+    $this->assertNotNull($insertedData);
+    $stored = json_decode($insertedData['workspace_data'], TRUE);
+    $this->assertArrayHasKey('start_page', $stored);
+    $body = $stored['start_page']['body'];
+    $this->assertStringNotContainsString('<script>', $body);
+    $this->assertStringNotContainsString('onerror', $body);
+    $this->assertStringContainsString('Safe content', $body);
+  }
+
+  /**
+   * Tests that language allowlist rejects invalid language codes.
+   *
+   * The controller should silently drop status_translations and
+   * start_page_translations for language codes not in ALLOWED_LANGS.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceLanguageAllowlistRejectsInvalidCodes(): void {
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
+
+    $insertedData = NULL;
+    $insert = $this->createMock(Insert::class);
+    $insert->method('fields')
+      ->willReturnCallback(function (array $fields) use (&$insertedData, $insert) {
+        $insertedData = $fields;
+        return $insert;
+      });
+    $insert->method('execute')->willReturn('1');
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchField')->willReturn(FALSE);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('where')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(0);
+
+    $database = $this->createMock(Connection::class);
+    $transactionStub = new class { public function rollBack(): void {} };
+    $database->method('startTransaction')->willReturn($transactionStub);
+    $database->method('select')->willReturn($select);
+    $database->method('insert')->willReturn($insert);
+    $database->method('delete')->willReturn($delete);
+
+    $container = \Drupal::getContainer();
+    $container->set('database', $database);
+    $controller = FastMapWorkspaceController::create($container);
+
+    $request = $this->createJsonRequest($this->validRequestData([
+      'status_translations' => [
+        'de' => ['Offen', 'Geschlossen'],
+        'xx-evil' => ['Hack', 'Attack'],
+        'zh' => ['Open', 'Closed'],
+      ],
+      'start_page_translations' => [
+        'de' => ['title' => 'Willkommen', 'body' => '<p>Hallo</p>'],
+        'xx-evil' => ['title' => 'Hack', 'body' => '<p>Attack</p>'],
+        'zh' => ['title' => 'Test', 'body' => '<p>Test</p>'],
+      ],
+    ]));
+
+    $response = $controller->createWorkspace($request);
+    $this->assertEquals(202, $response->getStatusCode());
+
+    $stored = json_decode($insertedData['workspace_data'], TRUE);
+
+    // status_translations: 'de' is valid, 'xx-evil' and 'zh' are not in allowlist.
+    $statusTransLangs = array_keys($stored['status_translations'] ?? []);
+    $this->assertContains('de', $statusTransLangs);
+    $this->assertNotContains('xx-evil', $statusTransLangs);
+    $this->assertNotContains('zh', $statusTransLangs);
+
+    // start_page_translations: same filter.
+    $pageTransLangs = array_keys($stored['start_page_translations'] ?? []);
+    $this->assertContains('de', $pageTransLangs);
+    $this->assertNotContains('xx-evil', $pageTransLangs);
+    $this->assertNotContains('zh', $pageTransLangs);
+  }
+
+  /**
+   * Tests that status_translations with non-array values are filtered.
+   *
+   * If a language key maps to a non-array value (e.g. a string or number),
+   * it should be silently dropped during validation.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceStatusTranslationsNonArrayFiltered(): void {
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
+
+    $insertedData = NULL;
+    $insert = $this->createMock(Insert::class);
+    $insert->method('fields')
+      ->willReturnCallback(function (array $fields) use (&$insertedData, $insert) {
+        $insertedData = $fields;
+        return $insert;
+      });
+    $insert->method('execute')->willReturn('1');
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchField')->willReturn(FALSE);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('where')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(0);
+
+    $database = $this->createMock(Connection::class);
+    $transactionStub = new class { public function rollBack(): void {} };
+    $database->method('startTransaction')->willReturn($transactionStub);
+    $database->method('select')->willReturn($select);
+    $database->method('insert')->willReturn($insert);
+    $database->method('delete')->willReturn($delete);
+
+    $container = \Drupal::getContainer();
+    $container->set('database', $database);
+    $controller = FastMapWorkspaceController::create($container);
+
+    $request = $this->createJsonRequest($this->validRequestData([
+      'status_translations' => [
+        'de' => ['Offen', 'Geschlossen'],
+        'fr' => 'not-an-array',
+        'es' => 42,
+        'nl' => NULL,
+      ],
+    ]));
+
+    $response = $controller->createWorkspace($request);
+    $this->assertEquals(202, $response->getStatusCode());
+
+    $stored = json_decode($insertedData['workspace_data'], TRUE);
+    $statusTransLangs = array_keys($stored['status_translations'] ?? []);
+
+    // Only 'de' should survive (the rest are non-array values).
+    $this->assertContains('de', $statusTransLangs);
+    $this->assertNotContains('fr', $statusTransLangs);
+    $this->assertNotContains('es', $statusTransLangs);
+    $this->assertNotContains('nl', $statusTransLangs);
+  }
+
   /**
    * Tests that a blocked user returns 403.
    *
