@@ -864,6 +864,11 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   /**
    * Tests demo requests use coordinates within boundary bbox.
    *
+   * The boundary is stored in field_boundary (FeatureCollection) and the
+   * map center is stored in field_nuxt_config. The provisioning service
+   * reads both from the group entity rather than from $data, so the mock
+   * must expose these fields.
+   *
    * @covers ::provisionWorkspace
    */
   public function testDemoRequestsUseBoundaryBbox(): void {
@@ -878,6 +883,46 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $membership->method('save')->willReturn(1);
     $group->method('addRelationship')->willReturn($membership);
     $this->groupStorage->method('create')->willReturn($group);
+
+    // Boundary polygon covering lat 10-11, lng 20-21.
+    $boundaryGeometry = [
+      'type' => 'Polygon',
+      'coordinates' => [[[20, 10], [21, 10], [21, 11], [20, 11], [20, 10]]],
+    ];
+
+    // Mock field_nuxt_config: center at [lng=20.5, lat=10.5] (inside boundary).
+    $nuxtConfigJson = json_encode([
+      'map' => ['center' => [20.5, 10.5], 'zoomInitial' => 13],
+    ]);
+    $nuxtConfigField = $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class);
+    $nuxtConfigField->method('isEmpty')->willReturn(FALSE);
+    $nuxtConfigField->method('__get')->with('value')->willReturn($nuxtConfigJson);
+
+    // Mock field_boundary: FeatureCollection wrapping the boundary polygon.
+    $boundaryJson = json_encode([
+      'type' => 'FeatureCollection',
+      'features' => [
+        [
+          'type' => 'Feature',
+          'properties' => ['name' => 'Test'],
+          'geometry' => $boundaryGeometry,
+        ],
+      ],
+    ]);
+    $boundaryField = $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class);
+    $boundaryField->method('isEmpty')->willReturn(FALSE);
+    $boundaryField->method('__get')->with('value')->willReturn($boundaryJson);
+
+    $group->method('hasField')->willReturn(TRUE);
+    $group->method('get')->willReturnCallback(
+      function (string $fieldName) use ($nuxtConfigField, $boundaryField) {
+        return match ($fieldName) {
+          'field_nuxt_config' => $nuxtConfigField,
+          'field_boundary' => $boundaryField,
+          default => $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class),
+        };
+      }
+    );
 
     // Terms.
     $this->termStorage->method('create')
@@ -912,14 +957,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         return $node;
       });
 
-    // Boundary: a box from [10,20] to [11,21] (lat range 10-11, lng range 20-21).
-    $boundary = [
-      'type' => 'Polygon',
-      'coordinates' => [[[20, 10], [21, 10], [21, 11], [20, 11], [20, 10]]],
-    ];
-
     $this->service->provisionWorkspace($this->validData([
-      'boundary' => $boundary,
+      'boundary' => $boundaryGeometry,
     ]));
 
     $this->assertCount(5, $coords);

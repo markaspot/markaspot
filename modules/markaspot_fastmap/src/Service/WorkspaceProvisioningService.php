@@ -80,18 +80,18 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     'ramp' => 'i-lucide-accessibility',
     'elevator' => 'i-lucide-arrow-up-down',
     'curb' => 'i-lucide-minus',
-    'obstacle' => 'i-lucide-alert-triangle',
+    'obstacle' => 'i-lucide-triangle-alert',
     'tactile' => 'i-lucide-hand',
     'building' => 'i-lucide-building-2',
     'heat' => 'i-lucide-thermometer-sun',
     'shade' => 'i-lucide-tree-pine',
     'fountain' => 'i-lucide-cup-soda',
     'surface' => 'i-lucide-square',
-    'roof' => 'i-lucide-home',
+    'roof' => 'i-lucide-house',
     'tree' => 'i-lucide-tree-deciduous',
     'erosion' => 'i-lucide-mountain',
     'sign' => 'i-lucide-signpost',
-    'bridge' => 'i-lucide-bridge',
+    'bridge' => 'i-lucide-cable-car',
     'litter' => 'i-lucide-trash-2',
     'trail' => 'i-lucide-map-pin',
     'crack' => 'i-lucide-split',
@@ -111,7 +111,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     'dump' => 'i-lucide-trash',
     'species' => 'i-lucide-leaf',
     'amphibian' => 'i-lucide-bug',
-    'roadkill' => 'i-lucide-alert-circle',
+    'roadkill' => 'i-lucide-circle-alert',
   ];
 
   /**
@@ -747,9 +747,11 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $statusMap = $this->resolveStatusTermIds($termStorage, $groupId);
 
     // Determine coordinate generation strategy.
-    $boundary = $data['boundary'] ?? NULL;
-    $centerLat = (float) ($data['lat'] ?? 0);
-    $centerLng = (float) ($data['lng'] ?? 0);
+    // Read the authoritative map center from the group's stored nuxt_config
+    // rather than from $data, which may contain stale or geocoded coordinates
+    // that differ from the intended workspace center.
+    [$centerLng, $centerLat] = $this->extractMapCenter($group);
+    $boundary = $this->extractBoundaryGeometry($group);
     $bbox = $this->extractBbox($boundary, $centerLat, $centerLng);
 
     // Get localized templates (fall back to English).
@@ -834,6 +836,64 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     }
 
     return $statusMap;
+  }
+
+  /**
+   * Extracts the map center [lng, lat] from a group's stored nuxt_config.
+   *
+   * Falls back to [0.0, 0.0] if nuxt_config is missing or malformed.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The provisioned group entity.
+   *
+   * @return array{float, float}
+   *   Map center as [lng, lat].
+   */
+  private function extractMapCenter(GroupInterface $group): array {
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $json = $group->get('field_nuxt_config')->value;
+      $config = json_decode($json, TRUE);
+      $center = $config['map']['center'] ?? NULL;
+      if (is_array($center) && isset($center[0], $center[1]) && is_numeric($center[0]) && is_numeric($center[1])) {
+        return [(float) $center[0], (float) $center[1]];
+      }
+    }
+    return [0.0, 0.0];
+  }
+
+  /**
+   * Extracts the boundary geometry array from a group's stored field_boundary.
+   *
+   * Unwraps the GeoJSON FeatureCollection wrapper and returns the raw
+   * Polygon/MultiPolygon geometry, or NULL if unavailable.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The provisioned group entity.
+   *
+   * @return array|null
+   *   GeoJSON geometry array or NULL.
+   */
+  private function extractBoundaryGeometry(GroupInterface $group): ?array {
+    if (!$group->hasField('field_boundary') || $group->get('field_boundary')->isEmpty()) {
+      return NULL;
+    }
+    $json = $group->get('field_boundary')->value;
+    $decoded = json_decode($json, TRUE);
+    if (!is_array($decoded)) {
+      return NULL;
+    }
+    // Unwrap FeatureCollection → first feature geometry.
+    if (($decoded['type'] ?? '') === 'FeatureCollection') {
+      $geometry = $decoded['features'][0]['geometry'] ?? NULL;
+      if (is_array($geometry) && in_array($geometry['type'] ?? '', ['Polygon', 'MultiPolygon'], TRUE)) {
+        return $geometry;
+      }
+    }
+    // Accept bare Polygon/MultiPolygon geometry directly.
+    if (in_array($decoded['type'] ?? '', ['Polygon', 'MultiPolygon'], TRUE)) {
+      return $decoded;
+    }
+    return NULL;
   }
 
   /**
