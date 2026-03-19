@@ -8,3 +8,4 @@ dependencies:
   - drupal:media
   - inline_entity_form
   - field_formatter_class
+  - service_request

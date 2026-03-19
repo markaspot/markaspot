@@ -11,3 +11,4 @@ dependencies:
   - drupal:user
   - drupal:node
   - markaspot_validation
+  - service_request

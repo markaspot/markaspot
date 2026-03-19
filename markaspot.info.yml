@@ -59,20 +59,20 @@ dependencies:
   - user
   - views
   - jsonapi
+  - service_request
+  - markaspot_validation
+  - markaspot_group
   - markaspot_open311
   - markaspot_bbox_cache
-  - markaspot_nuxt
   - markaspot_media
+  - markaspot_nuxt
   - markaspot_token
   - markaspot_request_id
-  - markaspot_validation
   - markaspot_icons
-  - markaspot_group
   - markaspot_dashboard
   - markaspot_escalation
   - markaspot_stats
   - markaspot_feedback
   - markaspot_vision
-  - service_request
 themes:
   - gin
