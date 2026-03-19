@@ -402,3 +402,41 @@ function markaspot_fastmap_update_11905(): void {
     $form_display->save();
   }
 }
+
+/**
+ * Create jur-tenant_admin group role for workspace provisioning.
+ *
+ * Previously lived in markaspot_tenant_admin module which has unmet
+ * dependencies (content_translation, markaspot_ai, toolbar). Moved here
+ * since markaspot_fastmap requires this role for workspace creation.
+ */
+function markaspot_fastmap_update_11907(): void {
+  $storage = \Drupal::entityTypeManager()->getStorage('group_role');
+  if ($storage->load('jur-tenant_admin')) {
+    return;
+  }
+
+  $storage->create([
+    'id' => 'jur-tenant_admin',
+    'label' => 'Tenant Admin',
+    'weight' => -1,
+    'admin' => FALSE,
+    'scope' => 'individual',
+    'global_role' => NULL,
+    'group_type' => 'jur',
+    'permissions' => [
+      'administer members',
+      'create group_node:service_request entity',
+      'create group_node:service_request relationship',
+      'update any group_node:service_request entity',
+      'update own group_node:service_request entity',
+      'view group',
+      'view group_node:service_request entity',
+      'view group_node:service_request relationship',
+      'view own unpublished group_node:service_request entity',
+      'view unpublished group_node:service_request entity',
+    ],
+  ])->save();
+
+  \Drupal::logger('markaspot_fastmap')->info('Created jur-tenant_admin group role.');
+}
