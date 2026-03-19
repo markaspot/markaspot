@@ -220,8 +220,10 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $requestedLang = $data['language'] ?? '';
     $boundary = $data['boundary'] ?? NULL;
     $customStatuses = $data['statuses'] ?? NULL;
+    $statusTranslations = $data['status_translations'] ?? [];
     $aiSystemPrompt = isset($data['ai_system_prompt']) ? mb_substr(trim($data['ai_system_prompt']), 0, 2000) : '';
     $startPageContent = $data['start_page'] ?? NULL;
+    $startPageTranslations = $data['start_page_translations'] ?? [];
 
     // Validate.
     if (!$name || !$slug || !$email) {
@@ -305,7 +307,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
       // 2. Create status terms (custom or default).
       if (is_array($customStatuses) && !empty($customStatuses)) {
-        $this->createCustomStatusTerms($termStorage, $groupId, $defaultLang, $customStatuses);
+        $this->createCustomStatusTerms($termStorage, $groupId, $defaultLang, $customStatuses, $statusTranslations);
       }
       else {
         $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages);
@@ -328,7 +330,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang);
 
       // 8. Create welcome start page.
-      $this->createStartPage($group, $name, $defaultLang, $startPageContent);
+      $this->createStartPage($group, $name, $defaultLang, $startPageContent, $startPageTranslations, $availableLanguages);
 
       return [
         'group_id' => $groupId,
@@ -567,9 +569,14 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    *   The default language code.
    * @param array $statuses
    *   Array of status definitions with name, hex, icon, mapping.
+   * @param array $statusTranslations
+   *   Optional translations keyed by language code, each containing an array
+   *   of translated status names in the same order as $statuses.
+   *   Example: ['de' => ['Erstellt', 'Offen', 'Erledigt']].
    */
-  private function createCustomStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $statuses): void {
+  private function createCustomStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $statuses, array $statusTranslations = []): void {
     $weight = 0;
+    $index = 0;
     foreach ($statuses as $status) {
       $name = mb_substr(trim($status['name'] ?? ''), 0, 255);
       $hex = $status['hex'] ?? '#808080';
@@ -577,6 +584,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $mapping = $status['mapping'] ?? 'open';
 
       if (!$name) {
+        $index++;
         continue;
       }
 
@@ -591,6 +599,22 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'field_jurisdiction' => ['target_id' => $groupId],
       ]);
       $term->save();
+
+      // Add translations for this status term.
+      if (!empty($statusTranslations)) {
+        foreach ($statusTranslations as $lang => $translatedNames) {
+          if ($lang === $defaultLang) {
+            continue;
+          }
+          $translatedName = $translatedNames[$index] ?? NULL;
+          if ($translatedName && $term->isTranslatable()) {
+            $translation = $term->addTranslation($lang, ['name' => $translatedName]);
+            $translation->save();
+          }
+        }
+      }
+
+      $index++;
     }
   }
 
@@ -854,8 +878,14 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    * @param array|null $startPageContent
    *   Optional AI-generated content with 'title' and 'body' keys.
    *   Falls back to static templates if not provided.
+   * @param array $startPageTranslations
+   *   Optional translations keyed by language code, each containing
+   *   'title' and 'body' keys. Example:
+   *   ['de' => ['title' => '...', 'body' => '...']].
+   * @param array $availableLanguages
+   *   All workspace language codes, used for template fallback.
    */
-  private function createStartPage(GroupInterface $group, string $name, string $defaultLang, ?array $startPageContent = NULL): void {
+  private function createStartPage(GroupInterface $group, string $name, string $defaultLang, ?array $startPageContent = NULL, array $startPageTranslations = [], array $availableLanguages = []): void {
     $nodeStorage = $this->entityTypeManager->getStorage('node');
     $groupId = (int) $group->id();
 
@@ -886,6 +916,41 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       'field_jurisdiction' => ['target_id' => $groupId],
     ]);
     $node->save();
+
+    // Add AI-generated translations for the start page.
+    if (!empty($startPageTranslations)) {
+      foreach ($startPageTranslations as $lang => $translation) {
+        if ($lang === $defaultLang || !$node->isTranslatable()) {
+          continue;
+        }
+        $transTitle = mb_substr($translation['title'] ?? '', 0, 255);
+        $transBody = mb_substr($translation['body'] ?? '', 0, 2000);
+        if ($transTitle && $transBody) {
+          $nodeTranslation = $node->addTranslation($lang, [
+            'title' => $transTitle,
+            'body' => ['value' => $transBody, 'format' => 'basic_html'],
+          ]);
+          $nodeTranslation->save();
+        }
+      }
+    }
+
+    // Fallback to generic templates for untranslated languages.
+    foreach ($availableLanguages as $lang) {
+      if ($lang === $defaultLang || isset($startPageTranslations[$lang])) {
+        continue;
+      }
+      $template = self::START_PAGE_TEMPLATES[$lang] ?? NULL;
+      if ($template && $node->isTranslatable()) {
+        $fallbackTitle = str_replace('%name', $name, $template['title']);
+        $fallbackBody = str_replace('%name', $name, $template['body']);
+        $nodeTranslation = $node->addTranslation($lang, [
+          'title' => $fallbackTitle,
+          'body' => ['value' => $fallbackBody, 'format' => 'basic_html'],
+        ]);
+        $nodeTranslation->save();
+      }
+    }
 
     // Add group relationship if the plugin is installed.
     try {

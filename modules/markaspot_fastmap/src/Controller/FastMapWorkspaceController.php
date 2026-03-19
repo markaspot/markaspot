@@ -186,6 +186,43 @@ class FastMapWorkspaceController extends ControllerBase {
       }
     }
 
+    // Validate optional status translations: Record<lang, string[]>.
+    $statusTranslations = [];
+    if (isset($data['status_translations']) && is_array($data['status_translations'])) {
+      foreach ($data['status_translations'] as $lang => $names) {
+        if (!is_string($lang) || !preg_match('/^[a-z]{2}(-[a-z]{2})?$/', $lang) || !is_array($names)) {
+          continue;
+        }
+        $sanitized = [];
+        foreach ($names as $statusName) {
+          if (is_string($statusName)) {
+            $sanitized[] = mb_substr(strip_tags(trim($statusName)), 0, 255);
+          }
+        }
+        if (!empty($sanitized)) {
+          $statusTranslations[$lang] = $sanitized;
+        }
+      }
+    }
+
+    // Validate optional start page translations: Record<lang, {title, body}>.
+    $startPageTranslations = [];
+    if (isset($data['start_page_translations']) && is_array($data['start_page_translations'])) {
+      foreach ($data['start_page_translations'] as $lang => $content) {
+        if (!is_string($lang) || !preg_match('/^[a-z]{2}(-[a-z]{2})?$/', $lang) || !is_array($content)) {
+          continue;
+        }
+        $transTitle = mb_substr(strip_tags(trim((string) ($content['title'] ?? ''))), 0, 255);
+        $transBody = mb_substr(trim((string) ($content['body'] ?? '')), 0, 2000);
+        if ($transTitle && $transBody) {
+          $startPageTranslations[$lang] = [
+            'title' => $transTitle,
+            'body' => $transBody,
+          ];
+        }
+      }
+    }
+
     // Store all workspace data for later provisioning.
     $workspaceData = [
       'name' => $name,
@@ -199,12 +236,14 @@ class FastMapWorkspaceController extends ControllerBase {
       'language' => $data['language'] ?? '',
       'boundary' => $this->validateBoundarySize($data['boundary'] ?? NULL),
       'statuses' => $statuses,
+      'status_translations' => $statusTranslations ?: NULL,
       'start_page' => isset($data['start_page']) && is_array($data['start_page'])
         ? [
           'title' => mb_substr((string) ($data['start_page']['title'] ?? ''), 0, 255),
           'body' => mb_substr((string) ($data['start_page']['body'] ?? ''), 0, 2000),
         ]
         : NULL,
+      'start_page_translations' => $startPageTranslations ?: NULL,
       'demo' => !empty($data['demo']),
     ];
 
