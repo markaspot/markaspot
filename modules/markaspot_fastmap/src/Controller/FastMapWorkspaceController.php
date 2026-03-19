@@ -199,6 +199,12 @@ class FastMapWorkspaceController extends ControllerBase {
       'language' => $data['language'] ?? '',
       'boundary' => $this->validateBoundarySize($data['boundary'] ?? NULL),
       'statuses' => $statuses,
+      'start_page' => isset($data['start_page']) && is_array($data['start_page'])
+        ? [
+          'title' => mb_substr((string) ($data['start_page']['title'] ?? ''), 0, 255),
+          'body' => mb_substr((string) ($data['start_page']['body'] ?? ''), 0, 2000),
+        ]
+        : NULL,
     ];
 
     try {

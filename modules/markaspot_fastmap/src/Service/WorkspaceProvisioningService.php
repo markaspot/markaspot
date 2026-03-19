@@ -221,6 +221,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $boundary = $data['boundary'] ?? NULL;
     $customStatuses = $data['statuses'] ?? NULL;
     $aiSystemPrompt = isset($data['ai_system_prompt']) ? mb_substr(trim($data['ai_system_prompt']), 0, 2000) : '';
+    $startPageContent = $data['start_page'] ?? NULL;
 
     // Validate.
     if (!$name || !$slug || !$email) {
@@ -318,6 +319,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
       // 7. Create demo service requests.
       $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang);
+
+      // 8. Create welcome start page.
+      $this->createStartPage($group, $name, $defaultLang, $startPageContent);
 
       return [
         'group_id' => $groupId,
@@ -715,6 +719,163 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $membership = $group->addRelationship($user, 'group_membership');
     $membership->set('group_roles', ['jur-tenant_admin']);
     $membership->save();
+  }
+
+  /**
+   * Welcome page templates per language.
+   */
+  private const START_PAGE_TEMPLATES = [
+    'en' => [
+      'title' => 'Welcome to %name',
+      'body' => '<p>Welcome to <strong>%name</strong>, your citizen reporting platform.</p>'
+        . '<p>Use the map to browse existing reports or create a new one. '
+        . 'Select a category, pin the location, and describe the issue. '
+        . 'Your report helps make %name better for everyone.</p>',
+    ],
+    'de' => [
+      'title' => 'Willkommen bei %name',
+      'body' => '<p>Willkommen bei <strong>%name</strong>, Ihrer Plattform für Bürgeranliegen.</p>'
+        . '<p>Nutzen Sie die Karte, um bestehende Meldungen zu sehen oder eine neue zu erstellen. '
+        . 'Wählen Sie eine Kategorie, markieren Sie den Standort und beschreiben Sie das Anliegen. '
+        . 'Ihre Meldung hilft, %name für alle zu verbessern.</p>',
+    ],
+    'fr' => [
+      'title' => 'Bienvenue sur %name',
+      'body' => '<p>Bienvenue sur <strong>%name</strong>, votre plateforme de signalement citoyen.</p>'
+        . '<p>Utilisez la carte pour consulter les signalements existants ou en créer un nouveau. '
+        . 'Choisissez une catégorie, indiquez l\'emplacement et décrivez le problème. '
+        . 'Votre signalement contribue à améliorer %name pour tous.</p>',
+    ],
+    'es' => [
+      'title' => 'Bienvenido a %name',
+      'body' => '<p>Bienvenido a <strong>%name</strong>, su plataforma de reportes ciudadanos.</p>'
+        . '<p>Use el mapa para ver reportes existentes o crear uno nuevo. '
+        . 'Seleccione una categoría, marque la ubicación y describa el problema. '
+        . 'Su reporte ayuda a mejorar %name para todos.</p>',
+    ],
+    'nl' => [
+      'title' => 'Welkom bij %name',
+      'body' => '<p>Welkom bij <strong>%name</strong>, uw platform voor burgermeldingen.</p>'
+        . '<p>Gebruik de kaart om bestaande meldingen te bekijken of een nieuwe aan te maken. '
+        . 'Kies een categorie, markeer de locatie en beschrijf het probleem. '
+        . 'Uw melding helpt om %name voor iedereen te verbeteren.</p>',
+    ],
+    'it' => [
+      'title' => 'Benvenuti su %name',
+      'body' => '<p>Benvenuti su <strong>%name</strong>, la vostra piattaforma per le segnalazioni dei cittadini.</p>'
+        . '<p>Usate la mappa per consultare le segnalazioni esistenti o crearne una nuova. '
+        . 'Scegliete una categoria, indicate la posizione e descrivete il problema. '
+        . 'La vostra segnalazione contribuisce a migliorare %name per tutti.</p>',
+    ],
+    'pt' => [
+      'title' => 'Bem-vindo ao %name',
+      'body' => '<p>Bem-vindo ao <strong>%name</strong>, a sua plataforma de participação cidadã.</p>'
+        . '<p>Use o mapa para consultar ocorrências existentes ou criar uma nova. '
+        . 'Selecione uma categoria, marque a localização e descreva o problema. '
+        . 'A sua ocorrência ajuda a melhorar %name para todos.</p>',
+    ],
+    'pl' => [
+      'title' => 'Witamy w %name',
+      'body' => '<p>Witamy w <strong>%name</strong>, platformie zgłoszeń obywatelskich.</p>'
+        . '<p>Użyj mapy, aby przeglądać istniejące zgłoszenia lub utworzyć nowe. '
+        . 'Wybierz kategorię, zaznacz lokalizację i opisz problem. '
+        . 'Twoje zgłoszenie pomaga ulepszać %name dla wszystkich.</p>',
+    ],
+    'da' => [
+      'title' => 'Velkommen til %name',
+      'body' => '<p>Velkommen til <strong>%name</strong>, din platform for borgerhenvendelser.</p>'
+        . '<p>Brug kortet til at se eksisterende henvendelser eller oprette en ny. '
+        . 'Vælg en kategori, markér stedet og beskriv problemet. '
+        . 'Din henvendelse er med til at gøre %name bedre for alle.</p>',
+    ],
+    'tr' => [
+      'title' => '%name platformuna hoş geldiniz',
+      'body' => '<p><strong>%name</strong> vatandaş bildirim platformuna hoş geldiniz.</p>'
+        . '<p>Haritayı kullanarak mevcut bildirimleri inceleyin veya yeni bir bildirim oluşturun. '
+        . 'Bir kategori seçin, konumu işaretleyin ve sorunu açıklayın. '
+        . 'Bildiriminiz %name platformunu herkes için daha iyi hale getirmeye yardımcı olur.</p>',
+    ],
+    'uk' => [
+      'title' => 'Ласкаво просимо до %name',
+      'body' => '<p>Ласкаво просимо до <strong>%name</strong>, вашої платформи для повідомлень громадян.</p>'
+        . '<p>Використовуйте карту, щоб переглянути існуючі повідомлення або створити нове. '
+        . 'Оберіть категорію, вкажіть місце та опишіть проблему. '
+        . 'Ваше повідомлення допомагає покращити %name для всіх.</p>',
+    ],
+    'ar' => [
+      'title' => 'مرحباً بكم في %name',
+      'body' => '<p>مرحباً بكم في <strong>%name</strong>، منصتكم للبلاغات المدنية.</p>'
+        . '<p>استخدموا الخريطة لتصفح البلاغات الحالية أو إنشاء بلاغ جديد. '
+        . 'اختاروا فئة، حددوا الموقع وصفوا المشكلة. '
+        . 'بلاغكم يساعد في تحسين %name للجميع.</p>',
+    ],
+    'de-ls' => [
+      'title' => 'Willkommen bei %name',
+      'body' => '<p>Willkommen bei <strong>%name</strong>. Hier können Sie Meldungen machen.</p>'
+        . '<p>Schauen Sie auf der Karte, was andere gemeldet haben. '
+        . 'Oder machen Sie eine neue Meldung. '
+        . 'Wählen Sie ein Thema, zeigen Sie den Ort und beschreiben Sie das Problem. '
+        . 'Ihre Meldung hilft, %name für alle besser zu machen.</p>',
+    ],
+  ];
+
+  /**
+   * Creates a promoted welcome page for a new workspace.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The jurisdiction group.
+   * @param string $name
+   *   The workspace name.
+   * @param string $defaultLang
+   *   The default language code.
+   * @param array|null $startPageContent
+   *   Optional AI-generated content with 'title' and 'body' keys.
+   *   Falls back to static templates if not provided.
+   */
+  private function createStartPage(GroupInterface $group, string $name, string $defaultLang, ?array $startPageContent = NULL): void {
+    $nodeStorage = $this->entityTypeManager->getStorage('node');
+    $groupId = (int) $group->id();
+
+    // Prefer AI-generated content from the onboarding chat.
+    if (!empty($startPageContent['title']) && !empty($startPageContent['body'])) {
+      $title = mb_substr($startPageContent['title'], 0, 255);
+      $body = mb_substr($startPageContent['body'], 0, 2000);
+    }
+    else {
+      $template = self::START_PAGE_TEMPLATES[$defaultLang]
+        ?? self::START_PAGE_TEMPLATES['en'];
+      $title = str_replace('%name', $name, $template['title']);
+      $body = str_replace('%name', $name, $template['body']);
+    }
+
+    $node = $nodeStorage->create([
+      'type' => 'page',
+      'langcode' => $defaultLang,
+      'title' => $title,
+      'body' => [
+        'value' => $body,
+        'format' => 'basic_html',
+      ],
+      'uid' => 1,
+      'promote' => TRUE,
+      'sticky' => TRUE,
+      'status' => TRUE,
+      'field_jurisdiction' => ['target_id' => $groupId],
+    ]);
+    $node->save();
+
+    // Add group relationship if the plugin is installed.
+    try {
+      $group->addRelationship($node, 'group_node:page');
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Could not add page group relationship: @msg', ['@msg' => $e->getMessage()]);
+    }
+
+    $this->logger->info('Created start page for workspace @name (group @id).', [
+      '@name' => $name,
+      '@id' => $groupId,
+    ]);
   }
 
   /**
