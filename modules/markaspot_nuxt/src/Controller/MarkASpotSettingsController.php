@@ -494,8 +494,16 @@ class MarkASpotSettingsController extends ControllerBase {
         elseif (isset($boundary_data['type']) && $boundary_data['type'] === 'FeatureCollection') {
           $settings['boundary'] = $boundary_data;
         }
-        else {
-          $settings['boundary'] = $boundary_data;
+        elseif (isset($boundary_data['type']) && in_array($boundary_data['type'], ['Polygon', 'MultiPolygon'], TRUE)) {
+          // Wrap raw geometry in FeatureCollection for frontend compatibility.
+          $settings['boundary'] = [
+            'type' => 'FeatureCollection',
+            'features' => [[
+              'type' => 'Feature',
+              'properties' => [],
+              'geometry' => $boundary_data,
+            ]],
+          ];
         }
       }
     }
