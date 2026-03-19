@@ -1926,3 +1926,72 @@ function markaspot_group_update_11909(): void {
     }
   }
 }
+
+/**
+ * Add field_service_categories to jur group type.
+ *
+ * update_11903 created this field on the org bundle. The jur instance was
+ * added to config/install later, so existing sites never received it.
+ * Causes 409 on workspace creation ("Field field_service_categories unknown").
+ */
+function markaspot_group_update_11910(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+
+  // 1. Ensure field storage exists.
+  $storage_id = 'group.field_service_categories';
+  $field_storage = $etm->getStorage('field_storage_config')->load($storage_id);
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_service_categories',
+      'entity_type' => 'group',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'taxonomy_term'],
+      'cardinality' => -1,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage group.field_service_categories.');
+  }
+
+  // 2. Create field instance on jur, if missing.
+  $field_id = 'group.jur.field_service_categories';
+  if ($etm->getStorage('field_config')->load($field_id)) {
+    return;
+  }
+
+  $etm->getStorage('field_config')->create([
+    'field_storage' => $field_storage,
+    'bundle' => 'jur',
+    'label' => 'Service Categories',
+    'description' => 'Optional: Restrict visible categories for this child jurisdiction. Leave empty to inherit all from the parent.',
+    'required' => FALSE,
+    'translatable' => TRUE,
+    'settings' => [
+      'handler' => 'default:taxonomy_term',
+      'handler_settings' => [
+        'target_bundles' => ['service_category' => 'service_category'],
+        'sort' => ['field' => 'name', 'direction' => 'ASC'],
+        'auto_create' => FALSE,
+      ],
+    ],
+  ])->save();
+  $logger->info('Created field instance @id.', ['@id' => $field_id]);
+
+  // 3. Add to jur form display.
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('group.jur.default');
+  if ($form_display && !$form_display->getComponent('field_service_categories')) {
+    $form_display->setComponent('field_service_categories', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 15,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+    $form_display->save();
+  }
+}
