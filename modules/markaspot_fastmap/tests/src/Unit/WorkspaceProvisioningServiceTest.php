@@ -838,15 +838,23 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $this->relationshipStorage->method('loadByProperties')->willReturn([]);
 
-    // Node storage: expect exactly 5 demo nodes to be created.
-    $nodeCreateCount = 0;
+    // Node storage: expect 5 demo nodes + 1 start page to be created.
+    $demoCount = 0;
+    $pageCount = 0;
     $this->nodeStorage->method('create')
-      ->willReturnCallback(function (array $values) use (&$nodeCreateCount) {
-        $nodeCreateCount++;
-        $this->assertEquals('service_request', $values['type']);
-        $this->assertArrayHasKey('field_category', $values);
-        $this->assertArrayHasKey('field_geolocation', $values);
-        $this->assertStringContainsString('[demo-content]', $values['body']['value']);
+      ->willReturnCallback(function (array $values) use (&$demoCount, &$pageCount) {
+        if ($values['type'] === 'service_request') {
+          $demoCount++;
+          $this->assertArrayHasKey('field_category', $values);
+          $this->assertArrayHasKey('field_geolocation', $values);
+          $this->assertStringContainsString('[demo-content]', $values['body']['value']);
+        }
+        elseif ($values['type'] === 'page') {
+          $pageCount++;
+          $this->assertTrue($values['promote']);
+          $this->assertTrue($values['sticky']);
+          $this->assertArrayHasKey('field_jurisdiction', $values);
+        }
 
         $node = $this->createMock(NodeInterface::class);
         $node->method('save')->willReturn(1);
@@ -858,7 +866,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       'lng' => 6.9,
     ]));
 
-    $this->assertEquals(5, $nodeCreateCount, 'Expected 5 demo requests to be created.');
+    $this->assertEquals(5, $demoCount, 'Expected 5 demo requests to be created.');
+    $this->assertEquals(1, $pageCount, 'Expected 1 start page to be created.');
   }
 
   /**
@@ -947,11 +956,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->userStorage->method('create')->willReturn($user);
     $this->relationshipStorage->method('loadByProperties')->willReturn([]);
 
-    // Track coordinates from created nodes.
+    // Track coordinates from created demo nodes (skip page node).
     $coords = [];
     $this->nodeStorage->method('create')
       ->willReturnCallback(function (array $values) use (&$coords) {
-        $coords[] = $values['field_geolocation'];
+        if ($values['type'] === 'service_request') {
+          $coords[] = $values['field_geolocation'];
+        }
         $node = $this->createMock(NodeInterface::class);
         $node->method('save')->willReturn(1);
         return $node;
@@ -1013,12 +1024,14 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->userStorage->method('create')->willReturn($user);
     $this->relationshipStorage->method('loadByProperties')->willReturn([]);
 
-    // Node storage: track created titles and langcodes.
+    // Node storage: track created demo titles and langcodes (skip page).
     $titles = [];
     $this->nodeStorage->method('create')
       ->willReturnCallback(function (array $values) use (&$titles) {
-        $titles[] = $values['title'];
-        $this->assertEquals('de', $values['langcode']);
+        if ($values['type'] === 'service_request') {
+          $titles[] = $values['title'];
+          $this->assertEquals('de', $values['langcode']);
+        }
         $node = $this->createMock(NodeInterface::class);
         $node->method('save')->willReturn(1);
         return $node;
