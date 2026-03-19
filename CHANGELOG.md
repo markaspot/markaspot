@@ -1,5 +1,32 @@
 # Changelog
 
+## [11.9.12](https://github.com/markaspot/markaspot/compare/11.9.11...11.9.12) (2026-03-19)
+
+### Features
+
+* accept jurisdiction slugs on all API endpoints ([6a8509e](https://github.com/markaspot/markaspot/commit/6a8509e400afdd27ec61d33aba543ea415d7aef7))
+* add smoke tests to start.sh ([2a7000b](https://github.com/markaspot/markaspot/commit/2a7000baa2e1760e307c6c5c0f11652b0b059d76))
+* expose operator data in Settings API for legal pages ([545a811](https://github.com/markaspot/markaspot/commit/545a8116cf290ad775c31403ae95168b35652986))
+
+### Bug Fixes
+
+* add all jur fields to group form display ([785e522](https://github.com/markaspot/markaspot/commit/785e52284a938552157e0963fc8fd2503a9f9d38))
+* add cache metadata to error responses, clean up start.sh ([5d3ceb3](https://github.com/markaspot/markaspot/commit/5d3ceb324a9980b92ac54b25103a1b5b77c93145))
+* add field_service_categories to jur group type via update hook ([f4a2b49](https://github.com/markaspot/markaspot/commit/f4a2b49fcef80abf05c8692a8c040b5039e8f269))
+* add jsonapi to profile deps, set jurisdiction on pages ([02e22ea](https://github.com/markaspot/markaspot/commit/02e22ea8ed34ebcec00c7af95dd8409a9c27c3fa))
+* add OpenFreeMap styles to default jurisdiction config ([6db813a](https://github.com/markaspot/markaspot/commit/6db813a67a708c3bcf56d007c93c359fa479881d))
+* complete taxonomy form displays for category and status ([195715c](https://github.com/markaspot/markaspot/commit/195715cd2fef3dc1bb85e6c25c581f7dd60cf0a5))
+* do not add api_user to jurisdiction group ([4175054](https://github.com/markaspot/markaspot/commit/4175054c75ababc3eab17f53670ceebb340f2a27))
+* fresh install experience (map styles, API auth, features, start page) ([987a579](https://github.com/markaspot/markaspot/commit/987a5799b446c7d220049506bc41f5e6d904e9ec))
+* handle center object format in settings controller, final cache clear ([7f78e83](https://github.com/markaspot/markaspot/commit/7f78e830d5f35d9dbaa865ca320914238150dfad))
+* harden start.sh (admin password, drush cmd, smoke test URLs) ([fc58c14](https://github.com/markaspot/markaspot/commit/fc58c143388f8b0ef329bcec6f7f724589482601))
+* keep numeric IDs blocked, add group cache tag on slug lookup ([ea588ee](https://github.com/markaspot/markaspot/commit/ea588ee050a6e119b7344a16065f7d3528fe2e13))
+* restore form displays from profile config/optional after install ([1a5d514](https://github.com/markaspot/markaspot/commit/1a5d514bff7b7a274809ab7b1b7541f599d1cf6c))
+* security review fixes (injection, null deref, cache, PII) ([0143d12](https://github.com/markaspot/markaspot/commit/0143d121e3b55f46f6b63cd246cfda579ceb2a9c))
+* set fallback_style in start.sh, restore numeric jurisdiction ID support ([51dda05](https://github.com/markaspot/markaspot/commit/51dda05080be504fbbc27ad2d35a81bb3100fa00))
+* update customAttribution from CartoDB/MapTiler to OpenFreeMap ([6cd8c6a](https://github.com/markaspot/markaspot/commit/6cd8c6ae6f58dd9a2d8354bab217e88ee8a83086)), closes [markaspot/markaspot-ui#143](https://github.com/markaspot/markaspot-ui/issues/143)
+* use correct cache tag for group list invalidation ([76b8a26](https://github.com/markaspot/markaspot/commit/76b8a26bec7e90d2976ef83e7145e9afb8ab3dea))
+
 ## [11.9.11](https://github.com/markaspot/markaspot/compare/11.9.10...11.9.11) (2026-03-17)
 
 ### Features
