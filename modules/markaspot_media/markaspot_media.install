@@ -4,3 +4,41 @@
  * @file
  * Install, update and uninstall functions for the markaspot_media module.
  */
+
+/**
+ * Add field_request_media to service_request default form display.
+ *
+ * The field existed but was missing from the form display config/install.
+ * Uses inline_entity_form_simple widget matching the template project config.
+ */
+function markaspot_media_update_11901(): void {
+  $display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.default');
+
+  if (!$display) {
+    return;
+  }
+
+  if ($display->getComponent('field_request_media')) {
+    return;
+  }
+
+  $display->setComponent('field_request_media', [
+    'type' => 'inline_entity_form_simple',
+    'weight' => 0,
+    'region' => 'content',
+    'settings' => [
+      'form_mode' => 'default',
+      'override_labels' => FALSE,
+      'label_singular' => '',
+      'label_plural' => '',
+      'collapsible' => FALSE,
+      'collapsed' => FALSE,
+      'revision' => FALSE,
+    ],
+  ]);
+  $display->save();
+
+  \Drupal::logger('markaspot_media')->info('Added field_request_media to service_request default form display.');
+}
