@@ -436,7 +436,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'photoReporting' => TRUE,
         'classicReporting' => TRUE,
         'search' => ['enabled' => TRUE, 'mode' => 'fuzzy', 'minLength' => 2],
-        'boundaries' => ['enabled' => TRUE],
+        'boundaries' => ['enabled' => TRUE, 'showBoundaryOnMap' => TRUE],
         'privacyNotice' => ['enabled' => TRUE, 'modal' => TRUE],
         'formFirst' => ['mobileLayout' => 'bottomSheet', 'defaultTab' => 'photo'],
       ],
