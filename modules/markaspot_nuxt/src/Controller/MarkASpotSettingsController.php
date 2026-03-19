@@ -159,24 +159,16 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata->addCacheTags(['group_list']);
 
     if ($jurisdiction_param) {
-      // Numeric IDs blocked to prevent tenant enumeration (1,2,3...).
-      // Use NUXT_PUBLIC_JURISDICTION_ID with the slug, not the numeric ID.
-      // Without a jurisdiction param, the default (first published) is used.
-      if (is_numeric($jurisdiction_param)) {
-        $error_response = new CacheableJsonResponse(['error' => 'Numeric jurisdiction IDs are not supported. Use the jurisdiction slug.'], 400);
-        $error_response->addCacheableDependency($cache_metadata);
-        return $error_response;
-      }
-      // Slug lookup (validate format first).
-      if (preg_match('/^[a-z0-9_-]{1,64}$/i', $jurisdiction_param)) {
-        $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
-          'type' => $jur_type,
-          'field_slug' => $jurisdiction_param,
-          'status' => 1,
-        ]);
-        $group = reset($groups) ?: NULL;
-        if ($group) {
+      // Accept both slugs and numeric IDs for backwards compatibility
+      // (embed URLs, ENV vars). Uses the same resolver as getFontsCss()
+      // and getOrganisations().
+      $resolved_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
+      if ($resolved_id !== NULL) {
+        $group = $this->entityTypeManager->getStorage('group')->load($resolved_id);
+        if ($group && $group->isPublished()) {
           $cache_metadata->addCacheTags(['group:' . $group->id()]);
+        } else {
+          $group = NULL;
         }
       }
     }
