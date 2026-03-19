@@ -440,3 +440,52 @@ function markaspot_fastmap_update_11907(): void {
 
   \Drupal::logger('markaspot_fastmap')->info('Created jur-tenant_admin group role.');
 }
+
+/**
+ * Add field_expiry_date to jur group type for demo workspace auto-delete.
+ */
+function markaspot_fastmap_update_11908(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_fastmap');
+  $fsc = $etm->getStorage('field_storage_config');
+  $fc = $etm->getStorage('field_config');
+
+  // Create field storage.
+  if (!$fsc->load('group.field_expiry_date')) {
+    $fsc->create([
+      'field_name' => 'field_expiry_date',
+      'entity_type' => 'group',
+      'type' => 'timestamp',
+      'module' => 'core',
+      'cardinality' => 1,
+      'settings' => [],
+    ])->save();
+    $logger->info('Created field storage: group.field_expiry_date');
+  }
+
+  // Create field instance on jur bundle.
+  if (!$fc->load('group.jur.field_expiry_date')) {
+    $storage = $fsc->load('group.field_expiry_date');
+    if ($storage) {
+      $fc->create([
+        'field_storage' => $storage,
+        'bundle' => 'jur',
+        'entity_type' => 'group',
+        'field_name' => 'field_expiry_date',
+        'label' => 'Expiry Date',
+        'description' => 'Unix timestamp when this demo workspace expires and will be auto-deleted.',
+        'required' => FALSE,
+        'translatable' => FALSE,
+        'default_value' => [],
+      ])->save();
+      $logger->info('Created field instance: group.jur.field_expiry_date');
+    }
+  }
+
+  // Add demo_expiry_days config if not present.
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
+  if (!$config->get('demo_expiry_days')) {
+    $config->set('demo_expiry_days', 5)->save();
+    $logger->info('Set default demo_expiry_days config.');
+  }
+}

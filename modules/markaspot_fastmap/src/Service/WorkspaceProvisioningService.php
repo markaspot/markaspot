@@ -294,6 +294,13 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $group = $groupStorage->create($groupFields);
       $group->save();
 
+      // Set expiry date for demo workspaces.
+      if (!empty($data['demo'])) {
+        $demoExpiryDays = \Drupal::config('markaspot_fastmap.settings')->get('demo_expiry_days') ?? 5;
+        $group->set('field_expiry_date', \Drupal::time()->getRequestTime() + ($demoExpiryDays * 86400));
+        $group->save();
+      }
+
       $groupId = (int) $group->id();
 
       // 2. Create status terms (custom or default).
@@ -356,7 +363,23 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
       $userStorage = $this->entityTypeManager->getStorage('user');
 
-      // 1. Collect members before deleting relationships.
+      // 1. Delete nodes belonging to this jurisdiction.
+      $nodeStorage = $this->entityTypeManager->getStorage('node');
+      foreach (['service_request', 'page'] as $bundle) {
+        $nids = $nodeStorage->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('type', $bundle)
+          ->condition('field_jurisdiction', $groupId)
+          ->execute();
+        if (!empty($nids)) {
+          $chunks = array_chunk($nids, 50);
+          foreach ($chunks as $chunk) {
+            $nodeStorage->delete($nodeStorage->loadMultiple($chunk));
+          }
+        }
+      }
+
+      // 2. Collect members before deleting relationships.
       $memberUserIds = [];
       $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');
       $memberships = $relationshipStorage->loadByProperties([
@@ -368,7 +391,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         $membership->delete();
       }
 
-      // 2. Delete taxonomy terms belonging to this group.
+      // 3. Delete taxonomy terms belonging to this group.
       foreach (['service_category', 'service_status'] as $vid) {
         $termIds = $termStorage->getQuery()
           ->accessCheck(FALSE)
@@ -381,7 +404,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         }
       }
 
-      // 3. Delete users that have no other group memberships.
+      // 4. Delete users that have no other group memberships.
       foreach ($memberUserIds as $uid) {
         if ($uid <= 1) {
           continue;
@@ -405,7 +428,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         }
       }
 
-      // 4. Delete group entity.
+      // 5. Delete group entity.
       $group->delete();
 
       $this->logger->info('Workspace torn down: group @id', ['@id' => $groupId]);

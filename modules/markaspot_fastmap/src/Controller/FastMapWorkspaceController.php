@@ -205,6 +205,7 @@ class FastMapWorkspaceController extends ControllerBase {
           'body' => mb_substr((string) ($data['start_page']['body'] ?? ''), 0, 2000),
         ]
         : NULL,
+      'demo' => !empty($data['demo']),
     ];
 
     try {

@@ -17,6 +17,9 @@ markaspot_fastmap.settings:
     mail_from:
       type: string
       label: 'From address for verification emails'
+    demo_expiry_days:
+      type: integer
+      label: 'Days after which demo workspaces are auto-deleted'
     tier_limits:
       type: sequence
       label: 'Request limits per tier'

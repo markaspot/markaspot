@@ -102,31 +102,39 @@ function markaspot_fastmap_node_access(NodeInterface $node, string $op, AccountI
  * Implements hook_mail().
  */
 function markaspot_fastmap_mail(string $key, array &$message, array $params): void {
-  if ($key !== 'workspace_verification') {
-    return;
+  if ($key === 'workspace_verification') {
+    $langcode = $message['langcode'] ?? 'en';
+
+    // Load mail config in the message's language.
+    $mail_config = \Drupal::languageManager()
+      ->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail')
+      ->get($key);
+
+    // Fallback to default language if translation doesn't exist.
+    if (empty($mail_config)) {
+      $mail_config = \Drupal::config('markaspot_fastmap.mail')->get($key);
+    }
+
+    $replacements = [
+      '@site_name' => $params['site_name'] ?? 'FastMap',
+      '@workspace_name' => $params['workspace_name'] ?? '',
+      '@verify_url' => $params['verify_url'] ?? '',
+      '@cleanup_days' => $params['cleanup_days'] ?? '7',
+    ];
+
+    $message['subject'] = strtr($mail_config['subject'], $replacements);
+    $message['body'][] = strtr($mail_config['body'], $replacements);
   }
-
-  $langcode = $message['langcode'] ?? 'en';
-
-  // Load mail config in the message's language.
-  $mail_config = \Drupal::languageManager()
-    ->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail')
-    ->get($key);
-
-  // Fallback to default language if translation doesn't exist.
-  if (empty($mail_config)) {
-    $mail_config = \Drupal::config('markaspot_fastmap.mail')->get($key);
+  elseif ($key === 'demo_expiry_reminder') {
+    $message['subject'] = t('Your demo workspace "@name" expires soon', [
+      '@name' => $params['workspace_name'] ?? '',
+    ]);
+    $message['body'][] = t('Your demo workspace "@name" will be automatically removed on @date.', [
+      '@name' => $params['workspace_name'] ?? '',
+      '@date' => $params['expiry_date'] ?? '',
+    ]);
+    $message['body'][] = t('Create a permanent workspace anytime at https://civicspot.io');
   }
-
-  $replacements = [
-    '@site_name' => $params['site_name'] ?? 'FastMap',
-    '@workspace_name' => $params['workspace_name'] ?? '',
-    '@verify_url' => $params['verify_url'] ?? '',
-    '@cleanup_days' => $params['cleanup_days'] ?? '7',
-  ];
-
-  $message['subject'] = strtr($mail_config['subject'], $replacements);
-  $message['body'][] = strtr($mail_config['body'], $replacements);
 }
 
 /**
@@ -278,110 +286,167 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
   else {
     $settings['jurisdiction']['visibility'] = 'public';
   }
+
+  // Demo workspace expiry timestamp.
+  if ($group && $group->hasField('field_expiry_date') && !$group->get('field_expiry_date')->isEmpty()) {
+    $settings['jurisdiction']['demo_expiry'] = (int) $group->get('field_expiry_date')->value;
+  }
 }
 
 /**
  * Implements hook_cron().
  *
- * Enforces tier published-report limits retroactively. When a jurisdiction is
- * downgraded (e.g. Pro to Free), existing published nodes may exceed the new
- * limit. This cron job unpublishes the oldest excess reports (FIFO).
+ * Two hourly tasks:
+ * 1. Enforces tier published-report limits retroactively (FIFO unpublish).
+ * 2. Sends expiry reminders and deletes expired demo workspaces.
  *
- * Runs at most once per hour to avoid unnecessary processing.
+ * Each task tracks its own last-run timestamp independently.
  */
 function markaspot_fastmap_cron(): void {
   $state = \Drupal::state();
-  $lastRun = (int) $state->get('markaspot_fastmap.last_limit_check', 0);
   $now = \Drupal::time()->getRequestTime();
-
-  // Run at most once per hour.
-  if (($now - $lastRun) < 3600) {
-    return;
-  }
-
-  $state->set('markaspot_fastmap.last_limit_check', $now);
-
   $entityTypeManager = \Drupal::entityTypeManager();
   $logger = \Drupal::logger('markaspot_fastmap');
 
-  /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
-  $tierConfig = \Drupal::service('markaspot_fastmap.tier_config');
+  // --- Tier limit enforcement (once per hour). ---
+  $lastLimitCheck = (int) $state->get('markaspot_fastmap.last_limit_check', 0);
+  if (($now - $lastLimitCheck) >= 3600) {
+    $state->set('markaspot_fastmap.last_limit_check', $now);
 
-  // Load all jurisdiction groups that have a field_tier.
-  $groupIds = $entityTypeManager->getStorage('group')->getQuery()
-    ->accessCheck(FALSE)
-    ->condition('type', 'jur')
-    ->exists('field_tier')
-    ->execute();
+    /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
+    $tierConfig = \Drupal::service('markaspot_fastmap.tier_config');
 
-  if (empty($groupIds)) {
-    return;
-  }
-
-  $groups = $entityTypeManager->getStorage('group')->loadMultiple($groupIds);
-
-  foreach ($groups as $group) {
-    $tier = !$group->get('field_tier')->isEmpty()
-      ? $group->get('field_tier')->value
-      : 'free';
-
-    $tierLimits = $tierConfig->getLimits($tier);
-
-    // Skip unlimited tiers or missing config.
-    if ($tierLimits === NULL || !empty($tierLimits['unlimited'])) {
-      continue;
-    }
-
-    // Only enforce for published-count period.
-    if ($tierLimits['period'] !== 'published') {
-      continue;
-    }
-
-    $groupId = (int) $group->id();
-    $limit = $tierLimits['limit'];
-    $count = $tierConfig->countRequests($groupId, 'published');
-
-    if ($count <= $limit) {
-      continue;
-    }
-
-    $excess = $count - $limit;
-
-    // Query the oldest excess published nodes.
-    $nids = $entityTypeManager->getStorage('node')->getQuery()
+    $groupIds = $entityTypeManager->getStorage('group')->getQuery()
       ->accessCheck(FALSE)
-      ->condition('type', 'service_request')
-      ->condition('status', 1)
-      ->condition('field_jurisdiction', $groupId)
-      ->sort('created', 'ASC')
-      ->range(0, $excess)
+      ->condition('type', 'jur')
+      ->exists('field_tier')
       ->execute();
 
-    if (empty($nids)) {
-      continue;
+    if (!empty($groupIds)) {
+      $groups = $entityTypeManager->getStorage('group')->loadMultiple($groupIds);
+
+      foreach ($groups as $group) {
+        $tier = !$group->get('field_tier')->isEmpty()
+          ? $group->get('field_tier')->value
+          : 'free';
+
+        $tierLimits = $tierConfig->getLimits($tier);
+
+        if ($tierLimits === NULL || !empty($tierLimits['unlimited'])) {
+          continue;
+        }
+
+        if ($tierLimits['period'] !== 'published') {
+          continue;
+        }
+
+        $gid = (int) $group->id();
+        $limit = $tierLimits['limit'];
+        $count = $tierConfig->countRequests($gid, 'published');
+
+        if ($count <= $limit) {
+          continue;
+        }
+
+        $excess = $count - $limit;
+
+        $nids = $entityTypeManager->getStorage('node')->getQuery()
+          ->accessCheck(FALSE)
+          ->condition('type', 'service_request')
+          ->condition('status', 1)
+          ->condition('field_jurisdiction', $gid)
+          ->sort('created', 'ASC')
+          ->range(0, $excess)
+          ->execute();
+
+        if (empty($nids)) {
+          continue;
+        }
+
+        $nodes = $entityTypeManager->getStorage('node')->loadMultiple($nids);
+        $unpublished = 0;
+
+        foreach ($nodes as $node) {
+          $node->setUnpublished();
+          $node->save();
+          $unpublished++;
+        }
+
+        \Drupal::service('cache_tags.invalidator')
+          ->invalidateTags(['group:' . $gid]);
+
+        $logger->notice(
+          'Cron: unpublished @unpublished excess reports for jurisdiction @jid (@count/@limit published).',
+          [
+            '@unpublished' => $unpublished,
+            '@jid' => $gid,
+            '@count' => $count,
+            '@limit' => $limit,
+          ]
+        );
+      }
+    }
+  }
+
+  // --- Demo workspace cleanup (once per hour). ---
+  $demoLastRun = (int) $state->get('markaspot_fastmap.last_demo_cleanup', 0);
+  if (($now - $demoLastRun) >= 3600) {
+    $state->set('markaspot_fastmap.last_demo_cleanup', $now);
+
+    $groupStorage = $entityTypeManager->getStorage('group');
+
+    // Send reminder emails for workspaces expiring within 24 hours.
+    $reminderThreshold = $now + 86400;
+    $reminderIds = $groupStorage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'jur')
+      ->condition('field_expiry_date', $now, '>')
+      ->condition('field_expiry_date', $reminderThreshold, '<=')
+      ->execute();
+
+    foreach ($groupStorage->loadMultiple($reminderIds) as $group) {
+      $stateKey = 'markaspot_fastmap.demo_reminder_sent.' . $group->id();
+      if (!$state->get($stateKey)) {
+        // Send reminder to group owner.
+        $members = $group->getMembers();
+        foreach ($members as $member) {
+          $user = $member->getUser();
+          if ($user && $user->getEmail()) {
+            \Drupal::service('plugin.manager.mail')->mail(
+              'markaspot_fastmap',
+              'demo_expiry_reminder',
+              $user->getEmail(),
+              $user->getPreferredLangcode(),
+              [
+                'workspace_name' => $group->label(),
+                'expiry_date' => \Drupal::service('date.formatter')->format(
+                  (int) $group->get('field_expiry_date')->value,
+                  'medium'
+                ),
+              ]
+            );
+            // Only email the first member (owner).
+            break;
+          }
+        }
+        $state->set($stateKey, TRUE);
+      }
     }
 
-    $nodes = $entityTypeManager->getStorage('node')->loadMultiple($nids);
-    $unpublished = 0;
+    // Delete expired workspaces.
+    $expiredIds = $groupStorage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'jur')
+      ->condition('field_expiry_date', $now, '<=')
+      ->execute();
 
-    foreach ($nodes as $node) {
-      $node->setUnpublished();
-      $node->save();
-      $unpublished++;
+    if (!empty($expiredIds)) {
+      $provisioning = \Drupal::service('markaspot_fastmap.workspace_provisioning');
+      foreach ($expiredIds as $expiredGroupId) {
+        $logger->notice('Auto-deleting expired demo workspace @id.', ['@id' => $expiredGroupId]);
+        $state->delete('markaspot_fastmap.demo_reminder_sent.' . $expiredGroupId);
+        $provisioning->teardownWorkspace((int) $expiredGroupId);
+      }
     }
-
-    // Invalidate cache tags for the affected jurisdiction.
-    \Drupal::service('cache_tags.invalidator')
-      ->invalidateTags(['group:' . $groupId]);
-
-    $logger->notice(
-      'Cron: unpublished @unpublished excess reports for jurisdiction @jid (@count/@limit published).',
-      [
-        '@unpublished' => $unpublished,
-        '@jid' => $groupId,
-        '@count' => $count,
-        '@limit' => $limit,
-      ]
-    );
   }
 }

@@ -599,6 +599,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         return [];
       });
 
+    // Query for nodes to delete.
+    $nodeQuery = $this->createMock(QueryInterface::class);
+    $nodeQuery->method('accessCheck')->willReturnSelf();
+    $nodeQuery->method('condition')->willReturnSelf();
+    $nodeQuery->method('execute')->willReturn([]);
+    $this->nodeStorage->method('getQuery')->willReturn($nodeQuery);
+
     // Query for terms to delete.
     $query = $this->createMock(QueryInterface::class);
     $query->method('accessCheck')->willReturnSelf();
@@ -663,6 +670,12 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         return [];
       });
 
+    $nodeQuery = $this->createMock(QueryInterface::class);
+    $nodeQuery->method('accessCheck')->willReturnSelf();
+    $nodeQuery->method('condition')->willReturnSelf();
+    $nodeQuery->method('execute')->willReturn([]);
+    $this->nodeStorage->method('getQuery')->willReturn($nodeQuery);
+
     $query = $this->createMock(QueryInterface::class);
     $query->method('accessCheck')->willReturnSelf();
     $query->method('condition')->willReturnSelf();
@@ -689,6 +702,12 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     // Empty memberships so we get to group->delete().
     $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    $nodeQuery = $this->createMock(QueryInterface::class);
+    $nodeQuery->method('accessCheck')->willReturnSelf();
+    $nodeQuery->method('condition')->willReturnSelf();
+    $nodeQuery->method('execute')->willReturn([]);
+    $this->nodeStorage->method('getQuery')->willReturn($nodeQuery);
 
     $query = $this->createMock(QueryInterface::class);
     $query->method('accessCheck')->willReturnSelf();
