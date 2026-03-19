@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_privacy_policy
+    - group.type.jur
+id: group.jur.field_privacy_policy
+field_name: field_privacy_policy
+entity_type: group
+bundle: jur
+label: 'Privacy Policy'
+description: 'Jurisdiction-specific privacy policy text. Displayed alongside the platform privacy policy.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

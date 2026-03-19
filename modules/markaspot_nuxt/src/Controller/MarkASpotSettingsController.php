@@ -461,6 +461,12 @@ class MarkASpotSettingsController extends ControllerBase {
           ];
         }
       }
+      if ($group->hasField('field_legal_notice') && !$group->get('field_legal_notice')->isEmpty()) {
+        $operator['legalNotice'] = $group->get('field_legal_notice')->value;
+      }
+      if ($group->hasField('field_privacy_policy') && !$group->get('field_privacy_policy')->isEmpty()) {
+        $operator['privacyPolicy'] = $group->get('field_privacy_policy')->value;
+      }
       if (!empty($operator)) {
         $settings['operator'] = $operator;
       }

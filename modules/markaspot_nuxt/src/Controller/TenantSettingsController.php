@@ -39,6 +39,8 @@ class TenantSettingsController extends ControllerBase {
     'field_email_footer',
     'field_jurisdiction_address',
     'field_visibility',
+    'field_legal_notice',
+    'field_privacy_policy',
   ];
 
   /**
@@ -461,6 +463,12 @@ class TenantSettingsController extends ControllerBase {
         ? $group->get('field_visibility')->value
         : 'public',
       'field_jurisdiction_address' => $address,
+      'field_legal_notice' => $group->hasField('field_legal_notice') && !$group->get('field_legal_notice')->isEmpty()
+        ? $group->get('field_legal_notice')->value
+        : '',
+      'field_privacy_policy' => $group->hasField('field_privacy_policy') && !$group->get('field_privacy_policy')->isEmpty()
+        ? $group->get('field_privacy_policy')->value
+        : '',
       'available_countries' => $countries,
     ]);
   }
@@ -631,6 +639,17 @@ class TenantSettingsController extends ControllerBase {
         $allowed = ['public', 'submission_only', 'authenticated'];
         if (!in_array($value, $allowed, TRUE)) {
           return 'field_visibility must be one of: ' . implode(', ', $allowed) . '.';
+        }
+        return NULL;
+
+      case 'field_legal_notice':
+      case 'field_privacy_policy':
+        if (!is_string($value)) {
+          return "$fieldName must be a string.";
+        }
+        // text_long fields: allow HTML content but cap at a reasonable size.
+        if (strlen($value) > 50000) {
+          return "$fieldName must not exceed 50000 characters.";
         }
         return NULL;
 

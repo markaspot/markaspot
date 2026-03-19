@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_legal_notice
+    - group.type.jur
+id: group.jur.field_legal_notice
+field_name: field_legal_notice
+entity_type: group
+bundle: jur
+label: 'Legal Notice'
+description: 'Additional legal information for this jurisdiction (supervisory authority, VAT ID, registration number, etc.)'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

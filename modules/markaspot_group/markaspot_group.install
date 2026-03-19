@@ -1995,3 +1995,93 @@ function markaspot_group_update_11910(): void {
     $form_display->save();
   }
 }
+
+/**
+ * Add field_legal_notice and field_privacy_policy to jur group type.
+ *
+ * These text_long fields store jurisdiction-specific legal content:
+ * - field_legal_notice: Additional legal info (supervisory authority, VAT ID, etc.)
+ * - field_privacy_policy: Jurisdiction-specific privacy policy text.
+ *
+ * Both are translatable and optional, exposed to the frontend via the
+ * settings API operator section.
+ */
+function markaspot_group_update_11911(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+
+  $fields_to_create = [
+    'field_legal_notice' => [
+      'label' => 'Legal Notice',
+      'description' => 'Additional legal information for this jurisdiction (supervisory authority, VAT ID, registration number, etc.)',
+    ],
+    'field_privacy_policy' => [
+      'label' => 'Privacy Policy',
+      'description' => 'Jurisdiction-specific privacy policy text. Displayed alongside the platform privacy policy.',
+    ],
+  ];
+
+  foreach ($fields_to_create as $field_name => $field_def) {
+    // 1. Create field storage if it does not exist.
+    $storage_id = 'group.' . $field_name;
+    $field_storage = $etm->getStorage('field_storage_config')->load($storage_id);
+    if (!$field_storage) {
+      $field_storage = $etm->getStorage('field_storage_config')->create([
+        'field_name' => $field_name,
+        'entity_type' => 'group',
+        'type' => 'text_long',
+        'module' => 'text',
+        'cardinality' => 1,
+      ]);
+      $field_storage->save();
+      $logger->info('Created field storage group.@name.', ['@name' => $field_name]);
+    }
+
+    // 2. Create field instance on jur bundle.
+    $field_id = 'group.jur.' . $field_name;
+    if (!$etm->getStorage('field_config')->load($field_id)) {
+      $etm->getStorage('field_config')->create([
+        'field_storage' => $field_storage,
+        'bundle' => 'jur',
+        'label' => $field_def['label'],
+        'description' => $field_def['description'],
+        'required' => FALSE,
+        'translatable' => TRUE,
+        'settings' => [
+          'allowed_formats' => [],
+        ],
+      ])->save();
+      $logger->info('Created field instance @id.', ['@id' => $field_id]);
+    }
+  }
+
+  // 3. Add fields to jur form display.
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('group.jur.default');
+  if ($form_display) {
+    if (!$form_display->getComponent('field_legal_notice')) {
+      $form_display->setComponent('field_legal_notice', [
+        'type' => 'text_textarea',
+        'weight' => 24,
+        'region' => 'content',
+        'settings' => [
+          'rows' => 5,
+          'placeholder' => '',
+        ],
+      ]);
+    }
+    if (!$form_display->getComponent('field_privacy_policy')) {
+      $form_display->setComponent('field_privacy_policy', [
+        'type' => 'text_textarea',
+        'weight' => 25,
+        'region' => 'content',
+        'settings' => [
+          'rows' => 5,
+          'placeholder' => '',
+        ],
+      ]);
+    }
+    $form_display->save();
+    $logger->info('Added field_legal_notice and field_privacy_policy to jur form display.');
+  }
+}
