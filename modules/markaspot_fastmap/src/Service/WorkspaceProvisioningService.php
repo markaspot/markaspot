@@ -307,7 +307,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
       // 2. Create status terms (custom or default).
       if (is_array($customStatuses) && !empty($customStatuses)) {
-        $this->createCustomStatusTerms($termStorage, $groupId, $defaultLang, $customStatuses, $statusTranslations);
+        $this->createCustomStatusTerms($termStorage, $groupId, $defaultLang, $customStatuses, $statusTranslations, $availableLanguages);
       }
       else {
         $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages);
@@ -574,7 +574,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    *   of translated status names in the same order as $statuses.
    *   Example: ['de' => ['Erstellt', 'Offen', 'Erledigt']].
    */
-  private function createCustomStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $statuses, array $statusTranslations = []): void {
+  private function createCustomStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $statuses, array $statusTranslations = [], array $availableLanguages = []): void {
     $weight = 0;
     $index = 0;
     foreach ($statuses as $status) {
@@ -604,6 +604,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       if (!empty($statusTranslations)) {
         foreach ($statusTranslations as $lang => $translatedNames) {
           if ($lang === $defaultLang) {
+            continue;
+          }
+          if (!empty($availableLanguages) && !in_array($lang, $availableLanguages, TRUE)) {
             continue;
           }
           $translatedName = $translatedNames[$index] ?? NULL;
@@ -921,6 +924,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     if (!empty($startPageTranslations)) {
       foreach ($startPageTranslations as $lang => $translation) {
         if ($lang === $defaultLang || !$node->isTranslatable()) {
+          continue;
+        }
+        if (!empty($availableLanguages) && !in_array($lang, $availableLanguages, TRUE)) {
           continue;
         }
         $transTitle = mb_substr($translation['title'] ?? '', 0, 255);

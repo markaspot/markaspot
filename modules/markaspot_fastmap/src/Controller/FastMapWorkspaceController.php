@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_fastmap\Controller;
 
+use Drupal\Component\Utility\Xss;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Flood\FloodInterface;
@@ -28,6 +29,16 @@ class FastMapWorkspaceController extends ControllerBase {
    * Verification token time-to-live in seconds (48 hours).
    */
   private const VERIFICATION_TTL = 172800;
+
+  /**
+   * Allowed language codes matching the frontend allowlist.
+   */
+  private const ALLOWED_LANGS = ['en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'it', 'pl', 'pt', 'tr', 'uk'];
+
+  /**
+   * HTML tags permitted in body fields after XSS filtering.
+   */
+  private const BODY_ALLOWED_TAGS = ['p', 'strong', 'em', 'a', 'br', 'ul', 'ol', 'li'];
 
   /**
    * The database connection.
@@ -190,7 +201,7 @@ class FastMapWorkspaceController extends ControllerBase {
     $statusTranslations = [];
     if (isset($data['status_translations']) && is_array($data['status_translations'])) {
       foreach ($data['status_translations'] as $lang => $names) {
-        if (!is_string($lang) || !preg_match('/^[a-z]{2}(-[a-z]{2})?$/', $lang) || !is_array($names)) {
+        if (!in_array($lang, self::ALLOWED_LANGS, TRUE) || !is_array($names)) {
           continue;
         }
         $sanitized = [];
@@ -209,11 +220,14 @@ class FastMapWorkspaceController extends ControllerBase {
     $startPageTranslations = [];
     if (isset($data['start_page_translations']) && is_array($data['start_page_translations'])) {
       foreach ($data['start_page_translations'] as $lang => $content) {
-        if (!is_string($lang) || !preg_match('/^[a-z]{2}(-[a-z]{2})?$/', $lang) || !is_array($content)) {
+        if (!in_array($lang, self::ALLOWED_LANGS, TRUE) || !is_array($content)) {
           continue;
         }
         $transTitle = mb_substr(strip_tags(trim((string) ($content['title'] ?? ''))), 0, 255);
-        $transBody = mb_substr(trim((string) ($content['body'] ?? '')), 0, 2000);
+        $transBody = Xss::filter(
+          mb_substr(trim((string) ($content['body'] ?? '')), 0, 2000),
+          self::BODY_ALLOWED_TAGS
+        );
         if ($transTitle && $transBody) {
           $startPageTranslations[$lang] = [
             'title' => $transTitle,
@@ -240,7 +254,10 @@ class FastMapWorkspaceController extends ControllerBase {
       'start_page' => isset($data['start_page']) && is_array($data['start_page'])
         ? [
           'title' => mb_substr((string) ($data['start_page']['title'] ?? ''), 0, 255),
-          'body' => mb_substr((string) ($data['start_page']['body'] ?? ''), 0, 2000),
+          'body' => Xss::filter(
+            mb_substr((string) ($data['start_page']['body'] ?? ''), 0, 2000),
+            self::BODY_ALLOWED_TAGS
+          ),
         ]
         : NULL,
       'start_page_translations' => $startPageTranslations ?: NULL,
