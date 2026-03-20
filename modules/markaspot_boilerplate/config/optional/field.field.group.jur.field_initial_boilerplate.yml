@@ -1,0 +1,28 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_initial_boilerplate
+    - group.type.jur
+    - node.type.boilerplate
+id: group.jur.field_initial_boilerplate
+field_name: field_initial_boilerplate
+entity_type: group
+bundle: jur
+label: 'Initial Boilerplate'
+description: 'Boilerplate text automatically used as the initial status note when a service request is created in this jurisdiction.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:node'
+  handler_settings:
+    target_bundles:
+      boilerplate: boilerplate
+    sort:
+      field: title
+      direction: ASC
+    auto_create: false
+    auto_create_bundle: ''
+field_type: entity_reference

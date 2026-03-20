@@ -112,7 +112,7 @@ class StatusNoteController extends ControllerBase {
     // Create paragraph via central factory.
     $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
       'status_term_id' => $statusTermId,
-      'note' => $data['note'] ?? NULL,
+      'note' => isset($data['note']) ? strip_tags($data['note']) : NULL,
       'boilerplate_id' => $boilerplateId,
       'author_id' => $this->currentUser->id(),
     ], $node->language()->getId());

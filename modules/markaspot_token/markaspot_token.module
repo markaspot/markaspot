@@ -5,6 +5,7 @@
  * Contains markaspot_token.module.
  */
 
+use Drupal\Component\Utility\Html;
 use Drupal\node\Entity\NodeType;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Render\BubbleableMetadata;
@@ -47,6 +48,10 @@ function markaspot_token_token_info() {
     'description' => t('The Request ID of 311 Service requests.'),
     // Return them.
   ];
+  $node['initial_status_note'] = [
+    'name' => t("Initial Status Note"),
+    'description' => t('The text of the first status note on the service request.'),
+  ];
 
   return [
     'types' => ['node' => $type],
@@ -81,6 +86,18 @@ function markaspot_token_tokens(
 
         case 'request_id':
           $replacements[$original] = $node->request_id->value;
+          break;
+
+        case 'initial_status_note':
+          if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
+            $first = $node->get('field_status_notes')->first()->entity;
+            if ($first && $first->hasField('field_status_note') && !$first->get('field_status_note')->isEmpty()) {
+              $replacements[$original] = Html::escape($first->get('field_status_note')->value);
+              $bubbleable_metadata->addCacheableDependency($first);
+              break;
+            }
+          }
+          $replacements[$original] = '';
           break;
       }
     }

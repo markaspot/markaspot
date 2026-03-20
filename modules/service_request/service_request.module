@@ -82,11 +82,23 @@ function _service_request_handle_creation(EntityInterface $node, $config, bool $
   $processor = \Drupal::service('markaspot_open311.processor');
   $langcode = $node->language()->getId();
 
-  // Note is omitted so the factory uses the status term's description.
-  // Falls back to t() string if term description is empty.
-  $paragraph = $processor->createStatusNoteParagraph([
-    'status_term_id' => $actual_status_tid,
-  ], $langcode);
+  // Resolve jurisdiction from category for boilerplate lookup.
+  $boilerplate_id = NULL;
+  if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+    $category_term = $node->get('field_category')->entity;
+    if ($category_term && $category_term->hasField('field_jurisdiction')
+        && !$category_term->get('field_jurisdiction')->isEmpty()) {
+      $jur_id = (int) $category_term->get('field_jurisdiction')->target_id;
+      $boilerplate_id = $processor->getInitialBoilerplateId($jur_id);
+    }
+  }
+
+  $fields = ['status_term_id' => $actual_status_tid];
+  if ($boilerplate_id) {
+    $fields['boilerplate_id'] = $boilerplate_id;
+  }
+  // Falls back to status term description, then t() string if all empty.
+  $paragraph = $processor->createStatusNoteParagraph($fields, $langcode);
   if ($paragraph->get('field_status_note')->isEmpty()) {
     $paragraph->set('field_status_note', [
       'value' => t('The service request has been created.', [], ['langcode' => $langcode]),

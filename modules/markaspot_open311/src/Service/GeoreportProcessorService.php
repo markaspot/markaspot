@@ -1834,6 +1834,24 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   }
 
   /**
+   * {@inheritdoc}
+   */
+  public function getInitialBoilerplateId(?int $jurisdictionId = NULL): ?int {
+    if (!$jurisdictionId || !$this->hierarchyResolver) {
+      return NULL;
+    }
+    if (!$this->moduleHandler->moduleExists('markaspot_boilerplate')) {
+      return NULL;
+    }
+    $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+    $group = $this->entityTypeManager->getStorage('group')->load($effectiveId);
+    if (!$group || !$group->hasField('field_initial_boilerplate') || $group->get('field_initial_boilerplate')->isEmpty()) {
+      return NULL;
+    }
+    return (int) $group->get('field_initial_boilerplate')->target_id;
+  }
+
+  /**
    * Validates that the authenticated user has access to the given jurisdiction.
    *
    * Checks that the user (resolved from API key or session) is a member of
@@ -2101,8 +2119,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $paragraph->set('field_status_term', $fields['status_term_id']);
     }
 
-    // Resolve note text: explicit note > status term description > empty.
+    // Resolve note text: explicit note > boilerplate > status term description > empty.
     $noteText = $fields['note'] ?? '';
+    if (empty($noteText) && !empty($fields['boilerplate_id'])) {
+      $noteText = $this->getBoilerplateBody((int) $fields['boilerplate_id'], $langcode);
+    }
     if (empty($noteText) && !empty($fields['status_term_id'])) {
       $noteText = $this->getStatusTermDescription((int) $fields['status_term_id'], $langcode);
     }
@@ -2110,7 +2131,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     if (!empty($noteText)) {
       $paragraph->set('field_status_note', [
         'value' => $noteText,
-        'format' => $fields['format'] ?? 'plain_text',
+        'format' => 'plain_text',
       ]);
     }
 
@@ -2142,11 +2163,42 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     if (!$term) {
       return '';
     }
+    // Normalize 'und' (undetermined) to site default language.
+    if ($langcode === 'und') {
+      $langcode = $this->languageManager->getDefaultLanguage()->getId();
+    }
     if ($term->hasTranslation($langcode)) {
       $term = $term->getTranslation($langcode);
     }
     $description = $term->getDescription();
     return $description ? strip_tags($description) : '';
+  }
+
+  /**
+   * Gets the translated body text of a boilerplate node.
+   *
+   * @param int $boilerplateId
+   *   The boilerplate node ID.
+   * @param string $langcode
+   *   The language code.
+   *
+   * @return string
+   *   The boilerplate body text (plain text), or empty string if not available.
+   */
+  private function getBoilerplateBody(int $boilerplateId, string $langcode): string {
+    $node = $this->entityTypeManager->getStorage('node')->load($boilerplateId);
+    if (!$node || $node->bundle() !== 'boilerplate' || !$node->isPublished()) {
+      return '';
+    }
+    // If langcode is 'und' (undetermined), use site default language.
+    if ($langcode === 'und') {
+      $langcode = $this->languageManager->getDefaultLanguage()->getId();
+    }
+    if ($node->hasTranslation($langcode)) {
+      $node = $node->getTranslation($langcode);
+    }
+    $body = $node->body->value ?? '';
+    return $body ? strip_tags($body) : '';
   }
 
   /**

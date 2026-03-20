@@ -1,0 +1,204 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the markaspot_boilerplate module.
+ */
+
+/**
+ * Add field_initial_boilerplate to jurisdiction groups and create default node.
+ */
+function markaspot_boilerplate_update_11001(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_boilerplate');
+
+  // 1. Create field storage if it does not exist.
+  $storage_id = 'group.field_initial_boilerplate';
+  $field_storage = $etm->getStorage('field_storage_config')->load($storage_id);
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_initial_boilerplate',
+      'entity_type' => 'group',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'node',
+      ],
+      'module' => 'core',
+      'cardinality' => 1,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage group.field_initial_boilerplate.');
+  }
+
+  // 2. Create field instance on jur bundle.
+  $field_id = 'group.jur.field_initial_boilerplate';
+  if (!$etm->getStorage('field_config')->load($field_id)) {
+    $etm->getStorage('field_config')->create([
+      'field_storage' => $field_storage,
+      'bundle' => 'jur',
+      'label' => 'Initial Boilerplate',
+      'description' => 'Boilerplate text automatically used as the initial status note when a service request is created in this jurisdiction.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [
+        'handler' => 'default:node',
+        'handler_settings' => [
+          'target_bundles' => [
+            'boilerplate' => 'boilerplate',
+          ],
+          'sort' => [
+            'field' => 'title',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+          'auto_create_bundle' => '',
+        ],
+      ],
+    ])->save();
+    $logger->info('Created field instance @id.', ['@id' => $field_id]);
+  }
+
+  // 3. Add to form display.
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('group.jur.default');
+  if ($form_display && !$form_display->getComponent('field_initial_boilerplate')) {
+    $form_display->setComponent('field_initial_boilerplate', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 26,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+    $form_display->save();
+    $logger->info('Added field_initial_boilerplate to jur form display.');
+  }
+
+  // 4. Create default "000 Received" boilerplate node with translations.
+  $node_storage = $etm->getStorage('node');
+  $existing = $node_storage->loadByProperties([
+    'type' => 'boilerplate',
+    'title' => '000 Received',
+  ]);
+
+  if (empty($existing)) {
+    $translations = [
+      'en' => [
+        'title' => '000 Received',
+        'body' => 'Your report has been received. Thank you.',
+      ],
+      'de' => [
+        'title' => '000 Eingegangen',
+        'body' => 'Ihre Meldung ist eingegangen. Vielen Dank.',
+      ],
+      'nl' => [
+        'title' => '000 Ontvangen',
+        'body' => 'Uw melding is ontvangen. Dank u.',
+      ],
+      'fr' => [
+        'title' => '000 Recu',
+        'body' => 'Votre signalement a bien ete recu. Merci.',
+      ],
+      'es' => [
+        'title' => '000 Recibido',
+        'body' => 'Su reporte ha sido recibido. Gracias.',
+      ],
+      'ar' => [
+        'title' => '000 تم الاستلام',
+        'body' => 'تم استلام بلاغكم. شكراً لكم.',
+      ],
+      'da' => [
+        'title' => '000 Modtaget',
+        'body' => 'Din anmeldelse er modtaget. Tak.',
+      ],
+      'it' => [
+        'title' => '000 Ricevuto',
+        'body' => 'La sua segnalazione e stata ricevuta. Grazie.',
+      ],
+      'pl' => [
+        'title' => '000 Przyjeto',
+        'body' => 'Twoje zgloszenie zostalo przyjete. Dziekujemy.',
+      ],
+      'pt' => [
+        'title' => '000 Recebido',
+        'body' => 'O seu relato foi recebido. Obrigado.',
+      ],
+      'tr' => [
+        'title' => '000 Alindi',
+        'body' => 'Bildiriminiz alindi. Tesekkurler.',
+      ],
+      'uk' => [
+        'title' => '000 Отримано',
+        'body' => 'Ваше повідомлення отримано. Дякуємо.',
+      ],
+    ];
+
+    $language_manager = \Drupal::languageManager();
+    $installed_languages = array_keys($language_manager->getLanguages());
+
+    // Create the node in the default language (English).
+    $node = $node_storage->create([
+      'type' => 'boilerplate',
+      'title' => $translations['en']['title'],
+      'body' => [
+        'value' => $translations['en']['body'],
+        'format' => 'plain_text',
+      ],
+      'langcode' => 'en',
+      'status' => 1,
+    ]);
+    $node->save();
+    $logger->info('Created default "000 Received" boilerplate node (nid=@nid).', [
+      '@nid' => $node->id(),
+    ]);
+
+    // Add translations for all installed languages.
+    foreach ($translations as $langcode => $data) {
+      if ($langcode === 'en') {
+        continue;
+      }
+      if (!in_array($langcode, $installed_languages)) {
+        continue;
+      }
+      if ($node->hasTranslation($langcode)) {
+        continue;
+      }
+      $translation = $node->addTranslation($langcode, [
+        'title' => $data['title'],
+        'body' => [
+          'value' => $data['body'],
+          'format' => 'plain_text',
+        ],
+      ]);
+      $translation->save();
+      $logger->info('Added @lang translation for boilerplate node @nid.', [
+        '@lang' => $langcode,
+        '@nid' => $node->id(),
+      ]);
+    }
+
+    // 5. Assign the boilerplate to all existing jur groups that don't have one.
+    if (\Drupal::moduleHandler()->moduleExists('group')) {
+      $group_storage = $etm->getStorage('group');
+      $group_ids = $group_storage->getQuery()
+        ->condition('type', 'jur')
+        ->accessCheck(FALSE)
+        ->execute();
+
+      foreach ($group_storage->loadMultiple($group_ids) as $group) {
+        if ($group->hasField('field_initial_boilerplate')
+            && $group->get('field_initial_boilerplate')->isEmpty()) {
+          $group->set('field_initial_boilerplate', $node->id());
+          $group->save();
+          $logger->info('Assigned initial boilerplate to jurisdiction @label (id=@id).', [
+            '@label' => $group->label(),
+            '@id' => $group->id(),
+          ]);
+        }
+      }
+    }
+  }
+}

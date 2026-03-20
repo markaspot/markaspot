@@ -215,6 +215,20 @@ interface GeoreportProcessorServiceInterface {
   public function getInitialStatusTid(?int $jurisdictionId = NULL): ?int;
 
   /**
+   * Gets the initial boilerplate node ID for a jurisdiction.
+   *
+   * Resolves to the root jurisdiction and checks for a configured
+   * field_initial_boilerplate on the group entity.
+   *
+   * @param int|null $jurisdictionId
+   *   The jurisdiction group ID, or NULL to skip lookup.
+   *
+   * @return int|null
+   *   The boilerplate node ID, or NULL if not configured.
+   */
+  public function getInitialBoilerplateId(?int $jurisdictionId = NULL): ?int;
+
+  /**
    * Validates that the authenticated user has access to a jurisdiction.
    *
    * @param int|null $jurisdictionId
