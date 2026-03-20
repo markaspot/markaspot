@@ -126,3 +126,27 @@ markaspot_nuxt.tenant_settings_languages_patch:
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
+
+markaspot_nuxt.tenant_settings_branding_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/branding'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::getBrandingSettings'
+    _title: 'Get Tenant Branding Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_branding_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/branding'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::updateBrandingSettings'
+    _title: 'Update Tenant Branding Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'

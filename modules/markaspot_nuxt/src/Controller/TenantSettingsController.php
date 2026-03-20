@@ -78,6 +78,19 @@ class TenantSettingsController extends ControllerBase {
   ];
 
   /**
+   * Valid Tailwind CSS color palette names.
+   *
+   * Used to validate theme color values that are not HEX codes.
+   */
+  const VALID_TAILWIND_PALETTES = [
+    'slate', 'gray', 'zinc', 'neutral', 'stone',
+    'red', 'orange', 'amber', 'yellow', 'lime',
+    'green', 'emerald', 'teal', 'cyan', 'sky',
+    'blue', 'indigo', 'violet', 'purple', 'fuchsia',
+    'pink', 'rose',
+  ];
+
+  /**
    * Fields exposed by the general settings endpoints.
    *
    * Only these fields may be read or written via GET/PATCH general settings.
@@ -808,6 +821,228 @@ class TenantSettingsController extends ControllerBase {
 
     // Return the current state (same shape as GET).
     return $this->getLanguageSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns branding settings for a jurisdiction group.
+   *
+   * Reads theme colors (primary, secondary, neutral) from the field_nuxt_config
+   * JSON blob and custom CSS from the field_custom_css standalone field.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with current branding settings, or an error response.
+   */
+  public function getBrandingSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    // Read the full nuxt config JSON blob.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    $theme = $config['theme'] ?? [];
+
+    // Read custom CSS from the standalone field.
+    $customCss = '';
+    if ($group->hasField('field_custom_css') && !$group->get('field_custom_css')->isEmpty()) {
+      $customCss = $group->get('field_custom_css')->value;
+    }
+
+    return new JsonResponse([
+      'jurisdiction_id' => (int) $group->id(),
+      'theme' => [
+        'primary' => $theme['primary'] ?? '',
+        'secondary' => $theme['secondary'] ?? '',
+        'neutral' => $theme['neutral'] ?? '',
+      ],
+      'custom_css' => $customCss,
+    ]);
+  }
+
+  /**
+   * Updates branding settings for a jurisdiction group.
+   *
+   * Accepts a JSON body with theme colors and/or custom CSS. Theme colors are
+   * written into the field_nuxt_config JSON blob (read-modify-write), while
+   * custom CSS is written to the field_custom_css standalone field.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request carrying a JSON body.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with updated branding settings, or an error response.
+   */
+  public function updateBrandingSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $body = $request->getContent();
+    $data = json_decode($body, TRUE);
+
+    if (!is_array($data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    $hasTheme = isset($data['theme']) && is_array($data['theme']);
+    $hasCss = array_key_exists('custom_css', $data);
+
+    if (!$hasTheme && !$hasCss) {
+      return new JsonResponse(['error' => 'No valid fields provided. Supply theme and/or custom_css.'], 400);
+    }
+
+    // Validate theme color values.
+    if ($hasTheme) {
+      $colorKeys = ['primary', 'secondary', 'neutral'];
+      foreach ($colorKeys as $key) {
+        if (isset($data['theme'][$key])) {
+          $error = $this->validateColorValue($data['theme'][$key]);
+          if ($error !== NULL) {
+            return new JsonResponse(['error' => "theme.$key: $error"], 422);
+          }
+        }
+      }
+    }
+
+    // Validate custom CSS.
+    if ($hasCss) {
+      if (!is_string($data['custom_css'])) {
+        return new JsonResponse(['error' => 'custom_css must be a string.'], 422);
+      }
+      $cssError = $this->validateCustomCss($data['custom_css']);
+      if ($cssError !== NULL) {
+        return new JsonResponse(['error' => "custom_css: $cssError"], 422);
+      }
+    }
+
+    // Read-modify-write: load existing config, update only theme colors.
+    if ($hasTheme) {
+      $config = [];
+      if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+        $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+        if (is_array($decoded)) {
+          $config = $decoded;
+        }
+      }
+
+      if (!isset($config['theme'])) {
+        $config['theme'] = [];
+      }
+
+      $colorKeys = ['primary', 'secondary', 'neutral'];
+      foreach ($colorKeys as $key) {
+        if (isset($data['theme'][$key])) {
+          $config['theme'][$key] = $data['theme'][$key];
+        }
+      }
+
+      $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    // Write custom CSS to the standalone field.
+    if ($hasCss && $group->hasField('field_custom_css')) {
+      $group->set('field_custom_css', $data['custom_css']);
+    }
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save branding settings for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save branding settings.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user updated branding settings for jurisdiction @id',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+      ]
+    );
+
+    // Return the current state (same shape as GET).
+    return $this->getBrandingSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Validates a color value as a Tailwind palette name or HEX code.
+   *
+   * @param string $value
+   *   The color value to validate.
+   *
+   * @return string|null
+   *   An error message if invalid, NULL if valid.
+   */
+  private function validateColorValue(string $value): ?string {
+    // Allow Tailwind palette names.
+    if (in_array($value, self::VALID_TAILWIND_PALETTES, TRUE)) {
+      return NULL;
+    }
+
+    // Allow HEX color codes (#RGB or #RRGGBB).
+    if (preg_match('/^#([A-Fa-f0-9]{3}){1,2}$/', $value)) {
+      return NULL;
+    }
+
+    return 'Must be a valid Tailwind palette name (' . implode(', ', self::VALID_TAILWIND_PALETTES) . ') or a HEX color code (e.g. #FF5733).';
+  }
+
+  /**
+   * Validates custom CSS for dangerous patterns.
+   *
+   * Blocks known CSS injection vectors such as @import, javascript: URIs,
+   * expression(), behavior:, -moz-binding, script tags, and external url().
+   *
+   * @param string $css
+   *   The CSS string to validate.
+   *
+   * @return string|null
+   *   An error message if dangerous content is found, NULL if safe.
+   */
+  private function validateCustomCss(string $css): ?string {
+    $lower = strtolower($css);
+
+    if (str_contains($lower, '@import')) {
+      return 'CSS must not contain @import directives.';
+    }
+    if (str_contains($lower, 'javascript:')) {
+      return 'CSS must not contain javascript: URIs.';
+    }
+    if (str_contains($lower, 'expression(')) {
+      return 'CSS must not contain expression() functions.';
+    }
+    if (str_contains($lower, 'behavior:')) {
+      return 'CSS must not contain behavior: properties.';
+    }
+    if (str_contains($lower, '-moz-binding')) {
+      return 'CSS must not contain -moz-binding properties.';
+    }
+    if (preg_match('/<\s*script/i', $css)) {
+      return 'CSS must not contain script tags.';
+    }
+    if (preg_match('/url\s*\(\s*["\']?\s*https?:/i', $css)) {
+      return 'CSS must not contain external url() references.';
+    }
+
+    return NULL;
   }
 
   /**
