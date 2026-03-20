@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Install, update and uninstall functions for the markaspot installation profile.
+ * Install, update and uninstall functions for the markaspot profile.
  */
 
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
@@ -1096,6 +1096,49 @@ function markaspot_update_11904(): void {
     }
   }
   \Drupal::logger('markaspot')->notice('Granted unpublished view permissions to dashboard roles.');
+}
+
+/**
+ * Configure jurisdiction address field for organizational use.
+ *
+ * Hides givenName/familyName (jurisdictions are organizations, not persons)
+ * and makes postalCode/addressLine1 optional to avoid validation errors
+ * when saving partial address data from the dashboard.
+ */
+function markaspot_update_11905(): void {
+  $field_config = \Drupal::configFactory()->getEditable('field.field.group.jur.field_jurisdiction_address');
+  if ($field_config->isNew()) {
+    \Drupal::logger('markaspot')->warning('field_jurisdiction_address config not found, skipping update.');
+    return;
+  }
+
+  $field_config->set('settings.field_overrides', [
+    'givenName' => ['override' => 'hidden'],
+    'familyName' => ['override' => 'hidden'],
+    'additionalName' => ['override' => 'hidden'],
+    'postalCode' => ['override' => 'optional'],
+    'addressLine1' => ['override' => 'optional'],
+    'addressLine2' => ['override' => 'hidden'],
+    'sortingCode' => ['override' => 'hidden'],
+    'dependentLocality' => ['override' => 'hidden'],
+  ]);
+  $field_config->save();
+
+  // Clean existing data: hidden fields must be empty
+  // or entity validation fails.
+  $database = \Drupal::database();
+  foreach (['group__field_jurisdiction_address', 'group_revision__field_jurisdiction_address'] as $table) {
+    if ($database->schema()->tableExists($table)) {
+      $database->update($table)
+        ->fields([
+          'field_jurisdiction_address_given_name' => '',
+          'field_jurisdiction_address_family_name' => '',
+        ])
+        ->execute();
+    }
+  }
+
+  \Drupal::logger('markaspot')->notice('Configured jurisdiction address field: hidden name fields, optional postal/street. Cleared existing name data.');
 }
 
 /**

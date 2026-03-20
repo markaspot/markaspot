@@ -43,11 +43,8 @@ markaspot_fastmap.billing_get:
   methods: [GET]
   requirements:
     _custom_access: '\Drupal\markaspot_fastmap\Controller\BillingController::access'
-    group: \d+
+    group: '[a-z0-9_-]+'
   options:
-    parameters:
-      group:
-        type: entity:group
     no_cache: 'TRUE'
 
 markaspot_fastmap.billing_update:
@@ -59,11 +56,8 @@ markaspot_fastmap.billing_update:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_fastmap\Controller\BillingController::access'
-    group: \d+
+    group: '[a-z0-9_-]+'
   options:
-    parameters:
-      group:
-        type: entity:group
     no_cache: 'TRUE'
 
 markaspot_fastmap.workspace_usage:
@@ -75,8 +69,4 @@ markaspot_fastmap.workspace_usage:
   methods: [GET]
   requirements:
     _custom_access: '\Drupal\markaspot_fastmap\Controller\WorkspaceUsageController::access'
-    group: \d+
-  options:
-    parameters:
-      group:
-        type: entity:group
+    group: '[a-z0-9_-]+'

@@ -10,15 +10,20 @@ use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
 /**
  * Returns workspace usage data for dashboard display.
+ *
+ * Accepts both numeric group IDs and URL slugs via the {group}
+ * path parameter.
  */
 class WorkspaceUsageController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The tier configuration service.
@@ -37,65 +42,116 @@ class WorkspaceUsageController extends ControllerBase {
   }
 
   /**
-   * Access check: user must have permission AND the group must be a jur.
+   * Loads a jurisdiction group from a slug or numeric ID.
    *
-   * Prevents cross-tenant usage enumeration by verifying group bundle and
-   * requiring either group membership or admin permission.
+   * @param string $identifier
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Drupal\group\Entity\GroupInterface|null
+   *   The group entity, or NULL if not found.
    */
-  public function access(GroupInterface $group, AccountInterface $account): AccessResultInterface {
-    // Only jur groups have tier usage data.
-    if ($group->bundle() !== 'jur') {
-      return AccessResult::forbidden('Not a jurisdiction group.')
-        ->addCacheableDependency($group);
+  private function loadJurisdictionGroup(string $identifier) {
+    $resolved_id = $this->resolveJurisdictionId($identifier);
+    if ($resolved_id === NULL) {
+      return NULL;
+    }
+
+    $group = $this->entityTypeManager()
+      ->getStorage('group')
+      ->load($resolved_id);
+    if (!$group || $group->bundle() !== 'jur') {
+      return NULL;
+    }
+
+    return $group;
+  }
+
+  /**
+   * Access check: validates group exists and user has permission.
+   *
+   * Prevents cross-tenant usage enumeration by verifying group
+   * bundle and requiring group membership or admin permission.
+   *
+   * @param string $group
+   *   The jurisdiction identifier (numeric ID or slug).
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The user account to check.
+   *
+   * @return \Drupal\Core\Access\AccessResultInterface
+   *   Access result.
+   */
+  public function access(string $group, AccountInterface $account): AccessResultInterface {
+    $entity = $this->loadJurisdictionGroup($group);
+    if (!$entity) {
+      return AccessResult::forbidden('Jurisdiction not found.')
+        ->addCacheContexts(['url.path']);
     }
 
     // Admins can view any workspace usage.
     if ($account->hasPermission('administer nodes')) {
       return AccessResult::allowed()
         ->cachePerPermissions()
-        ->addCacheableDependency($group);
+        ->addCacheableDependency($entity);
     }
 
     // Check basic permission.
-    $hasPermission = AccessResult::allowedIfHasPermission($account, 'access workspace usage');
+    $hasPermission = AccessResult::allowedIfHasPermission(
+      $account,
+      'access workspace usage'
+    );
     if (!$hasPermission->isAllowed()) {
       return $hasPermission;
     }
 
-    // Non-admins must be a member of this group to prevent cross-tenant
-    // usage enumeration (tier + report counts are business-sensitive).
-    $membership = $group->getMember($account);
+    // Non-admins must be a member of this group to prevent
+    // cross-tenant usage enumeration.
+    $membership = $entity->getMember($account);
     $isMember = AccessResult::allowedIf($membership !== FALSE)
       ->cachePerUser()
-      ->addCacheableDependency($group);
+      ->addCacheableDependency($entity);
 
     return $hasPermission->andIf($isMember);
   }
 
   /**
    * Returns usage data for a jurisdiction.
+   *
+   * @param string $group
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with tier, limit, count, and usage data.
    */
-  public function usage(GroupInterface $group): JsonResponse {
+  public function usage(string $group): JsonResponse {
+    $entity = $this->loadJurisdictionGroup($group);
+    if (!$entity) {
+      return new JsonResponse(
+        ['error' => 'Jurisdiction not found'],
+        404
+      );
+    }
+
     $tier = 'free';
-    if ($group->hasField('field_tier') && !$group->get('field_tier')->isEmpty()) {
-      $tier = $group->get('field_tier')->value;
+    if ($entity->hasField('field_tier') && !$entity->get('field_tier')->isEmpty()) {
+      $tier = $entity->get('field_tier')->value;
     }
 
     $cache = new CacheableMetadata();
     $cache->setCacheMaxAge(60);
     $cache->addCacheTags([
       'node_list:service_request',
-      'group:' . $group->id(),
+      'group:' . $entity->id(),
       'config:markaspot_fastmap.settings',
     ]);
 
     $tierLimits = $this->tierConfig->getLimits($tier);
 
     if ($tierLimits === NULL || !empty($tierLimits['unlimited'])) {
-      // No config or explicitly unlimited tier. Still count for informational
-      // display, but report no limit.
       $count = $tierLimits !== NULL
-        ? $this->tierConfig->countRequests((int) $group->id(), $tierLimits['period'])
+        ? $this->tierConfig->countRequests(
+          (int) $entity->id(),
+          $tierLimits['period']
+        )
         : NULL;
 
       $response = new CacheableJsonResponse([
@@ -109,7 +165,10 @@ class WorkspaceUsageController extends ControllerBase {
       return $response;
     }
 
-    $count = $this->tierConfig->countRequests((int) $group->id(), $tierLimits['period']);
+    $count = $this->tierConfig->countRequests(
+      (int) $entity->id(),
+      $tierLimits['period']
+    );
 
     $response_data = [
       'tier' => $tier,
@@ -118,7 +177,10 @@ class WorkspaceUsageController extends ControllerBase {
       'period' => $tierLimits['period'],
       'unlimited' => FALSE,
       'remaining' => max(0, $tierLimits['limit'] - $count),
-      'percentage' => min(100, (int) round(($count / $tierLimits['limit']) * 100)),
+      'percentage' => min(
+        100,
+        (int) round(($count / $tierLimits['limit']) * 100)
+      ),
     ];
 
     $response = new CacheableJsonResponse($response_data);

@@ -14,7 +14,10 @@ use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\file\FileRepositoryInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
+use Drupal\Component\Utility\EmailValidator;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -22,11 +25,57 @@ use Symfony\Component\HttpFoundation\Request;
 /**
  * Controller for tenant settings API endpoints.
  *
- * Provides endpoints to manage logos and general settings for jurisdiction
- * groups. General settings cover the platform name, contact email, email
- * footer text, and postal address.
+ * Provides endpoints to manage logos, general settings, and language settings
+ * for jurisdiction groups. General settings cover the platform name, contact
+ * email, email footer text, and postal address. Language settings manage the
+ * available and default locales stored in the field_nuxt_config JSON blob.
+ *
+ * All endpoints accept both numeric group IDs and URL slugs as the
+ * jurisdiction_id parameter via JurisdictionIdResolverTrait.
  */
 class TenantSettingsController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
+
+  /**
+   * Supported locales with display names.
+   *
+   * Must match the frontend config/locales.ts definitions.
+   */
+  const SUPPORTED_LOCALES = [
+    'de' => 'Deutsch',
+    'en' => 'English',
+    'de-ls' => 'Einfache Sprache',
+    'es' => 'Español',
+    'fr' => 'Français',
+    'it' => 'Italiano',
+    'pt' => 'Português',
+    'tr' => 'Türkçe',
+    'pl' => 'Polski',
+    'nl' => 'Nederlands',
+    'da' => 'Dansk',
+    'uk' => 'Українська',
+    'ar' => 'العربية',
+  ];
+
+  /**
+   * Mapping of locale codes to ISO 639-1/3166 codes.
+   */
+  const LOCALE_ISO_CODES = [
+    'de' => 'de-DE',
+    'en' => 'en-US',
+    'de-ls' => 'de-DE',
+    'es' => 'es-ES',
+    'fr' => 'fr-FR',
+    'it' => 'it-IT',
+    'pt' => 'pt-PT',
+    'tr' => 'tr-TR',
+    'pl' => 'pl-PL',
+    'nl' => 'nl-NL',
+    'da' => 'da-DK',
+    'uk' => 'uk-UA',
+    'ar' => 'ar-SA',
+  ];
 
   /**
    * Fields exposed by the general settings endpoints.
@@ -79,22 +128,21 @@ class TenantSettingsController extends ControllerBase {
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
-   * Constructs a TenantSettingsController.
+   * The email validator.
    *
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
-   *   The entity type manager.
-   * @param \Drupal\group\GroupMembershipLoaderInterface $membership_loader
-   *   The group membership loader.
-   * @param \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface $stream_wrapper_manager
-   *   The stream wrapper manager.
-   * @param \Drupal\Core\File\FileSystemInterface $file_system
-   *   The file system service.
-   * @param \Drupal\file\FileRepositoryInterface $file_repository
-   *   The file repository service.
-   * @param \Drupal\Core\Session\AccountInterface $current_user
-   *   The current user.
-   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy_resolver
-   *   The jurisdiction hierarchy resolver.
+   * @var \Drupal\Component\Utility\EmailValidator
+   */
+  protected EmailValidator $emailValidator;
+
+  /**
+   * The country repository (optional, from address module).
+   *
+   * @var \CommerceGuys\Addressing\Country\CountryRepositoryInterface|null
+   */
+  protected ?CountryRepositoryInterface $countryRepository;
+
+  /**
+   * Constructs a TenantSettingsController.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -104,6 +152,8 @@ class TenantSettingsController extends ControllerBase {
     FileRepositoryInterface $file_repository,
     AccountInterface $current_user,
     JurisdictionHierarchyResolverInterface $hierarchy_resolver,
+    EmailValidator $email_validator,
+    ?CountryRepositoryInterface $country_repository,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->membershipLoader = $membership_loader;
@@ -112,6 +162,8 @@ class TenantSettingsController extends ControllerBase {
     $this->fileRepository = $file_repository;
     $this->currentUser = $current_user;
     $this->hierarchyResolver = $hierarchy_resolver;
+    $this->emailValidator = $email_validator;
+    $this->countryRepository = $country_repository;
   }
 
   /**
@@ -126,6 +178,10 @@ class TenantSettingsController extends ControllerBase {
       $container->get('file.repository'),
       $container->get('current_user'),
       $container->get('markaspot_group.hierarchy_resolver'),
+      $container->get('email.validator'),
+      $container->has('address.country_repository')
+        ? $container->get('address.country_repository')
+        : NULL,
     );
   }
 
@@ -137,13 +193,20 @@ class TenantSettingsController extends ControllerBase {
    *
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The user account to check.
-   * @param int $jurisdiction_id
-   *   The jurisdiction group ID from the route.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier from the route (numeric ID or slug).
    *
    * @return \Drupal\Core\Access\AccessResultInterface
    *   The access result.
    */
-  public function accessCheck(AccountInterface $account, int $jurisdiction_id): AccessResultInterface {
+  public function accessCheck(AccountInterface $account, string $jurisdiction_id): AccessResultInterface {
+    // Resolve slug to numeric ID.
+    $resolved_id = $this->resolveJurisdictionId($jurisdiction_id);
+    if ($resolved_id === NULL) {
+      return AccessResult::forbidden('Jurisdiction not found.')
+        ->addCacheContexts(['url.path']);
+    }
+
     // User 1 (superadmin) always has access — bypasses all checks.
     if ((int) $account->id() === 1) {
       return AccessResult::allowed()->addCacheContexts(['user']);
@@ -162,7 +225,7 @@ class TenantSettingsController extends ControllerBase {
       foreach ($memberships as $membership) {
         $managedJurId = (int) $membership->getGroup()->id();
         $scopeIds = $this->hierarchyResolver->getDescendantIds($managedJurId);
-        if (in_array($jurisdiction_id, $scopeIds, TRUE)) {
+        if (in_array($resolved_id, $scopeIds, TRUE)) {
           return AccessResult::allowed()->addCacheContexts(['user']);
         }
       }
@@ -170,6 +233,29 @@ class TenantSettingsController extends ControllerBase {
 
     return AccessResult::forbidden('User is not an administrator or tenant admin for this jurisdiction.')
       ->addCacheContexts(['user', 'user.roles']);
+  }
+
+  /**
+   * Loads a jurisdiction group entity from a slug or numeric ID.
+   *
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Drupal\group\Entity\GroupInterface|null
+   *   The loaded group entity, or NULL if not found or wrong bundle.
+   */
+  private function loadJurisdictionGroup(string $jurisdiction_id) {
+    $resolved_id = $this->resolveJurisdictionId($jurisdiction_id);
+    if ($resolved_id === NULL) {
+      return NULL;
+    }
+
+    $group = $this->entityTypeManager()->getStorage('group')->load($resolved_id);
+    if (!$group || $group->bundle() !== 'jur') {
+      return NULL;
+    }
+
+    return $group;
   }
 
   /**
@@ -181,24 +267,16 @@ class TenantSettingsController extends ControllerBase {
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request with uploaded file(s).
-   * @param int $jurisdiction_id
-   *   The group entity ID for the jurisdiction.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON with updated logo URLs on success, or error message.
    */
-  public function uploadLogo(Request $request, int $jurisdiction_id): JsonResponse {
-    // Load and validate the group entity.
-    $groupStorage = $this->entityTypeManager()->getStorage('group');
-    /** @var \Drupal\group\Entity\GroupInterface|null $group */
-    $group = $groupStorage->load($jurisdiction_id);
-
+  public function uploadLogo(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
     if (!$group) {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
-    }
-
-    if ($group->bundle() !== 'jur') {
-      return new JsonResponse(['error' => 'The specified entity is not a jurisdiction group.'], 400);
     }
 
     // Validate that at least one file was uploaded.
@@ -243,7 +321,7 @@ class TenantSettingsController extends ControllerBase {
       catch (\Exception $e) {
         $this->getLogger('markaspot_nuxt')->error(
           'Failed to save group @id after logo upload: @message',
-          ['@id' => $jurisdiction_id, '@message' => $e->getMessage()]
+          ['@id' => $group->id(), '@message' => $e->getMessage()]
         );
         return new JsonResponse(['error' => 'Failed to save logo to group entity.'], 500);
       }
@@ -255,7 +333,7 @@ class TenantSettingsController extends ControllerBase {
 
     $response = [
       'status' => 'ok',
-      'jurisdiction_id' => $jurisdiction_id,
+      'jurisdiction_id' => (int) $group->id(),
       'logos' => $logos,
     ];
 
@@ -267,7 +345,7 @@ class TenantSettingsController extends ControllerBase {
       'User @user uploaded logo(s) for jurisdiction @id: @logos',
       [
         '@user' => $this->currentUser->getDisplayName(),
-        '@id' => $jurisdiction_id,
+        '@id' => $group->id(),
         '@logos' => implode(', ', array_keys($logos)),
       ]
     );
@@ -382,7 +460,8 @@ class TenantSettingsController extends ControllerBase {
     // Assign the file to the group field.
     $group->set($fieldName, ['target_id' => $file->id()]);
 
-    // Build the URL for the response (relative path, same pattern as getMarkASpotSettings).
+    // Build the URL for the response (relative path,
+    // same pattern as getMarkASpotSettings).
     $uri = $file->getFileUri();
     $scheme = $this->streamWrapperManager->getScheme($uri);
     if ($scheme === 'public') {
@@ -409,23 +488,16 @@ class TenantSettingsController extends ControllerBase {
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request.
-   * @param int $jurisdiction_id
-   *   The group entity ID for the jurisdiction.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON with current general settings, or an error response.
    */
-  public function getGeneralSettings(Request $request, int $jurisdiction_id): JsonResponse {
-    $groupStorage = $this->entityTypeManager()->getStorage('group');
-    /** @var \Drupal\group\Entity\GroupInterface|null $group */
-    $group = $groupStorage->load($jurisdiction_id);
-
+  public function getGeneralSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
     if (!$group) {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
-    }
-
-    if ($group->bundle() !== 'jur') {
-      return new JsonResponse(['error' => 'The specified entity is not a jurisdiction group.'], 400);
     }
 
     $address = NULL;
@@ -443,13 +515,12 @@ class TenantSettingsController extends ControllerBase {
     // Provide available countries from the address module so the frontend
     // does not need a hardcoded list.
     $countries = [];
-    if (\Drupal::hasService('address.country_repository')) {
-      $countryRepository = \Drupal::service('address.country_repository');
-      $countries = $countryRepository->getList();
+    if ($this->countryRepository) {
+      $countries = $this->countryRepository->getList();
     }
 
     return new JsonResponse([
-      'jurisdiction_id' => $jurisdiction_id,
+      'jurisdiction_id' => (int) $group->id(),
       'field_platform_name' => $group->hasField('field_platform_name') && !$group->get('field_platform_name')->isEmpty()
         ? $group->get('field_platform_name')->value
         : '',
@@ -482,23 +553,16 @@ class TenantSettingsController extends ControllerBase {
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request carrying a JSON body.
-   * @param int $jurisdiction_id
-   *   The group entity ID for the jurisdiction.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON with updated general settings, or an error response.
    */
-  public function updateGeneralSettings(Request $request, int $jurisdiction_id): JsonResponse {
-    $groupStorage = $this->entityTypeManager()->getStorage('group');
-    /** @var \Drupal\group\Entity\GroupInterface|null $group */
-    $group = $groupStorage->load($jurisdiction_id);
-
+  public function updateGeneralSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
     if (!$group) {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
-    }
-
-    if ($group->bundle() !== 'jur') {
-      return new JsonResponse(['error' => 'The specified entity is not a jurisdiction group.'], 400);
     }
 
     $body = $request->getContent();
@@ -531,14 +595,21 @@ class TenantSettingsController extends ControllerBase {
       $group->set($fieldName, $value);
     }
 
-    // Run Drupal entity-level validation before saving.
-    $violations = $group->validate();
-    if ($violations->count() > 0) {
-      $messages = [];
-      foreach ($violations as $violation) {
-        $messages[] = $violation->getPropertyPath() . ': ' . $violation->getMessage();
+    // Validate only the fields that were actually changed, not the entire
+    // entity. Full entity validation would fail on unrelated fields (e.g.
+    // address module constraints on country-specific formats).
+    $validationErrors = [];
+    foreach (array_keys($data) as $fieldName) {
+      if (!$group->hasField($fieldName)) {
+        continue;
       }
-      return new JsonResponse(['error' => 'Validation failed.', 'details' => $messages], 422);
+      $fieldViolations = $group->get($fieldName)->validate();
+      foreach ($fieldViolations as $violation) {
+        $validationErrors[] = $fieldName . '.' . $violation->getPropertyPath() . ': ' . $violation->getMessage();
+      }
+    }
+    if (!empty($validationErrors)) {
+      return new JsonResponse(['error' => 'Validation failed.', 'details' => $validationErrors], 422);
     }
 
     try {
@@ -547,7 +618,7 @@ class TenantSettingsController extends ControllerBase {
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->error(
         'Failed to save general settings for jurisdiction @id: @message',
-        ['@id' => $jurisdiction_id, '@message' => $e->getMessage()]
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
       );
       return new JsonResponse(['error' => 'Failed to save general settings.'], 500);
     }
@@ -556,13 +627,187 @@ class TenantSettingsController extends ControllerBase {
       'User @user updated general settings for jurisdiction @id (fields: @fields)',
       [
         '@user' => $this->currentUser->getDisplayName(),
-        '@id' => $jurisdiction_id,
+        '@id' => $group->id(),
         '@fields' => implode(', ', array_keys($data)),
       ]
     );
 
-    // Return the current state of all general settings fields (same shape as GET).
+    // Return current general settings (same shape as GET).
     return $this->getGeneralSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns language settings for a jurisdiction group.
+   *
+   * Reads the languages key from the field_nuxt_config JSON blob on the group
+   * entity and returns it along with the full list of supported locales.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with current language settings and supported locales.
+   */
+  public function getLanguageSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    // Read the full nuxt config JSON blob.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    // Extract languages with sensible defaults.
+    $languages = $config['languages'] ?? [
+      'default' => 'de',
+      'available' => ['de'],
+    ];
+
+    // Build the supported_locales list for the frontend.
+    $supportedLocales = [];
+    foreach (self::SUPPORTED_LOCALES as $code => $name) {
+      $supportedLocales[] = [
+        'code' => $code,
+        'name' => $name,
+      ];
+    }
+
+    return new JsonResponse([
+      'jurisdiction_id' => (int) $group->id(),
+      'languages' => $languages,
+      'supported_locales' => $supportedLocales,
+    ]);
+  }
+
+  /**
+   * Updates language settings for a jurisdiction group.
+   *
+   * Accepts a JSON body with default and available locale codes. Validates
+   * all codes against SUPPORTED_LOCALES, then updates only the languages key
+   * inside the field_nuxt_config JSON blob.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request carrying a JSON body.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with updated language settings, or an error response.
+   */
+  public function updateLanguageSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $body = $request->getContent();
+    $data = json_decode($body, TRUE);
+
+    if (!is_array($data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    // Validate required keys.
+    if (!isset($data['available']) || !is_array($data['available']) || empty($data['available'])) {
+      return new JsonResponse(['error' => 'available must be a non-empty array of locale codes.'], 422);
+    }
+
+    if (!isset($data['default']) || !is_string($data['default'])) {
+      return new JsonResponse(['error' => 'default must be a string locale code.'], 422);
+    }
+
+    // Validate all locale codes against supported locales.
+    $validCodes = array_keys(self::SUPPORTED_LOCALES);
+    foreach ($data['available'] as $code) {
+      if (!is_string($code) || !in_array($code, $validCodes, TRUE)) {
+        return new JsonResponse([
+          'error' => "Unsupported locale code: $code. Supported: " . implode(', ', $validCodes) . '.',
+        ], 422);
+      }
+    }
+
+    // Default must be in the available list.
+    if (!in_array($data['default'], $data['available'], TRUE)) {
+      return new JsonResponse(['error' => 'default locale must be present in available list.'], 422);
+    }
+
+    // Read-modify-write: load existing config, update only the languages key.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    // Build the locales sub-key with name and ISO code
+    // for each available locale.
+    $locales = [];
+    foreach ($data['available'] as $code) {
+      $locales[] = [
+        'code' => $code,
+        'name' => self::SUPPORTED_LOCALES[$code],
+        'iso' => self::LOCALE_ISO_CODES[$code] ?? $code,
+      ];
+    }
+
+    $config['languages'] = [
+      'default' => $data['default'],
+      'available' => array_values($data['available']),
+      'locales' => $locales,
+    ];
+
+    // Write back the full config JSON.
+    $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    // Validate only the fields that were actually changed, not the entire
+    // entity. Full entity validation would fail on unrelated fields (e.g.
+    // address module constraints on country-specific formats).
+    $validationErrors = [];
+    foreach (array_keys($data) as $fieldName) {
+      if (!$group->hasField($fieldName)) {
+        continue;
+      }
+      $fieldViolations = $group->get($fieldName)->validate();
+      foreach ($fieldViolations as $violation) {
+        $validationErrors[] = $fieldName . '.' . $violation->getPropertyPath() . ': ' . $violation->getMessage();
+      }
+    }
+    if (!empty($validationErrors)) {
+      return new JsonResponse(['error' => 'Validation failed.', 'details' => $validationErrors], 422);
+    }
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save language settings for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save language settings.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user updated language settings for jurisdiction @id (default: @default, available: @available)',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+        '@default' => $data['default'],
+        '@available' => implode(', ', $data['available']),
+      ]
+    );
+
+    // Return the current state (same shape as GET).
+    return $this->getLanguageSettings($request, $jurisdiction_id);
   }
 
   /**
@@ -594,9 +839,7 @@ class TenantSettingsController extends ControllerBase {
         if (!is_string($value)) {
           return 'field_jurisdiction_e_mail must be a string.';
         }
-        /** @var \Drupal\Component\Utility\EmailValidatorInterface $emailValidator */
-        $emailValidator = \Drupal::service('email.validator');
-        if ($value !== '' && !$emailValidator->isValid($value)) {
+        if ($value !== '' && !$this->emailValidator->isValid($value)) {
           return 'field_jurisdiction_e_mail must be a valid email address.';
         }
         return NULL;

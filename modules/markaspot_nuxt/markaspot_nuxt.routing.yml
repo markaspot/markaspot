@@ -75,7 +75,7 @@ markaspot_nuxt.tenant_settings_logo:
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
     _csrf_token: 'TRUE'
-    jurisdiction_id: \d+
+    jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
 
@@ -87,7 +87,7 @@ markaspot_nuxt.tenant_settings_general_get:
   methods: [GET]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
-    jurisdiction_id: \d+
+    jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
 
@@ -99,6 +99,30 @@ markaspot_nuxt.tenant_settings_general_patch:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
-    jurisdiction_id: \d+
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_languages_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/languages'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::getLanguageSettings'
+    _title: 'Get Tenant Language Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_languages_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/languages'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::updateLanguageSettings'
+    _title: 'Update Tenant Language Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
