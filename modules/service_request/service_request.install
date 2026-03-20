@@ -337,18 +337,15 @@ function service_request_update_11005() {
     'LocationIQToken' => '',
   ];
 
-  // Check all service_request form displays.
-  $form_display_ids = [
-    'node.service_request.default',
-    'node.service_request.nuxt',
-    'node.service_request.management',
-  ];
+  // Find all service_request form displays dynamically (covers custom modes).
+  $form_displays = $etm->getStorage('entity_form_display')
+    ->loadByProperties([
+      'targetEntityType' => 'node',
+      'bundle' => 'service_request',
+    ]);
 
-  foreach ($form_display_ids as $display_id) {
-    $form_display = $etm->getStorage('entity_form_display')->load($display_id);
-    if (!$form_display) {
-      continue;
-    }
+  foreach ($form_displays as $form_display) {
+    $display_id = $form_display->id();
 
     $component = $form_display->getComponent('field_geolocation');
     if (!$component || ($component['type'] ?? '') !== 'geolocation_mapbox_widget') {
@@ -368,19 +365,7 @@ function service_request_update_11005() {
     $component['settings'] = $settings;
 
     $form_display->setComponent('field_geolocation', $component);
-
-    // Fix module dependencies: replace geolocation_mapbox with nominatim.
-    $dependencies = $form_display->getDependencies();
-    if (isset($dependencies['module'])) {
-      $modules = $dependencies['module'];
-      $modules = array_diff($modules, ['geolocation_mapbox']);
-      if (!in_array('geolocation_nominatim', $modules)) {
-        $modules[] = 'geolocation_nominatim';
-      }
-      sort($modules);
-      $form_display->set('dependencies', array_merge($dependencies, ['module' => $modules]));
-    }
-
+    // Dependencies are recalculated automatically by save().
     $form_display->save();
     $messages[] = "Migrated $display_id from geolocation_mapbox_widget to geolocation_nominatim_widget.";
   }
