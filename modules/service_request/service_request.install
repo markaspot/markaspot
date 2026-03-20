@@ -303,3 +303,87 @@ function service_request_update_11004() {
 
   return implode("\n", $messages);
 }
+
+/**
+ * Fix geolocation widget compatibility across form displays.
+ *
+ * The nuxt form display may reference geolocation_mapbox_widget even when only
+ * geolocation_nominatim is installed. This causes fatal errors when update
+ * hooks trigger form display re-validation.
+ *
+ * This hook switches all service_request form displays from
+ * geolocation_mapbox_widget to geolocation_nominatim_widget when the
+ * geolocation_mapbox module is not installed.
+ */
+function service_request_update_11005() {
+  $module_handler = \Drupal::moduleHandler();
+
+  // Only fix if mapbox is NOT installed and nominatim IS installed.
+  if ($module_handler->moduleExists('geolocation_mapbox')) {
+    return 'geolocation_mapbox is installed, no widget migration needed.';
+  }
+  if (!$module_handler->moduleExists('geolocation_nominatim')) {
+    return 'geolocation_nominatim is not installed, cannot migrate widget.';
+  }
+
+  $messages = [];
+  $etm = \Drupal::entityTypeManager();
+
+  // Settings that nominatim supports but mapbox does not.
+  $nominatim_defaults = [
+    'maplibre' => '1',
+    'addressFormat' => '${address.house_number}, ${address.road}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.city}, ${address.county}, ${address.postcode}',
+    'serviceUrl' => 'https://nominatim.openstreetmap.org/',
+    'LocationIQToken' => '',
+  ];
+
+  // Check all service_request form displays.
+  $form_display_ids = [
+    'node.service_request.default',
+    'node.service_request.nuxt',
+    'node.service_request.management',
+  ];
+
+  foreach ($form_display_ids as $display_id) {
+    $form_display = $etm->getStorage('entity_form_display')->load($display_id);
+    if (!$form_display) {
+      continue;
+    }
+
+    $component = $form_display->getComponent('field_geolocation');
+    if (!$component || ($component['type'] ?? '') !== 'geolocation_mapbox_widget') {
+      continue;
+    }
+
+    // Switch widget type.
+    $component['type'] = 'geolocation_nominatim_widget';
+
+    // Add nominatim-specific settings with defaults.
+    $settings = $component['settings'] ?? [];
+    foreach ($nominatim_defaults as $key => $default) {
+      if (!isset($settings[$key])) {
+        $settings[$key] = $default;
+      }
+    }
+    $component['settings'] = $settings;
+
+    $form_display->setComponent('field_geolocation', $component);
+
+    // Fix module dependencies: replace geolocation_mapbox with nominatim.
+    $dependencies = $form_display->getDependencies();
+    if (isset($dependencies['module'])) {
+      $modules = $dependencies['module'];
+      $modules = array_diff($modules, ['geolocation_mapbox']);
+      if (!in_array('geolocation_nominatim', $modules)) {
+        $modules[] = 'geolocation_nominatim';
+      }
+      sort($modules);
+      $form_display->set('dependencies', array_merge($dependencies, ['module' => $modules]));
+    }
+
+    $form_display->save();
+    $messages[] = "Migrated $display_id from geolocation_mapbox_widget to geolocation_nominatim_widget.";
+  }
+
+  return empty($messages) ? 'No form displays needed migration.' : implode("\n", $messages);
+}
