@@ -71,10 +71,9 @@ markaspot_nuxt.tenant_settings_logo:
   defaults:
     _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::uploadLogo'
     _title: 'Upload Tenant Logo'
-  methods: [PATCH]
+  methods: [POST]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
-    _csrf_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'

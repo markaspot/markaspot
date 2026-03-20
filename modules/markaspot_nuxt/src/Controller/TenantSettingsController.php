@@ -391,7 +391,17 @@ class TenantSettingsController extends ControllerBase {
     $allowedMimeTypes = ['image/svg+xml', 'image/png'];
     $allowedExtensions = ['svg', 'png'];
     $mimeType = $uploadedFile->getMimeType();
+    $clientMimeType = $uploadedFile->getClientMimeType();
     $extension = strtolower($uploadedFile->getClientOriginalExtension());
+
+    // SVG files are often detected as application/octet-stream or text/xml
+    // by finfo on temp files. Fall back to client-reported MIME type for SVG
+    // when the extension matches, as an additional safety check.
+    if (!in_array($mimeType, $allowedMimeTypes, TRUE)
+      && in_array($clientMimeType, $allowedMimeTypes, TRUE)
+      && in_array($extension, $allowedExtensions, TRUE)) {
+      $mimeType = $clientMimeType;
+    }
 
     if (!in_array($mimeType, $allowedMimeTypes, TRUE) || !in_array($extension, $allowedExtensions, TRUE)) {
       return [
