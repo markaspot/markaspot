@@ -1,5 +1,35 @@
 # Changelog
 
+## [11.9.13](https://github.com/markaspot/markaspot/compare/11.9.12...11.9.13) (2026-03-21)
+
+### Features
+
+* add branding settings API endpoint for theme colors and custom CSS ([2d8dc50](https://github.com/markaspot/markaspot/commit/2d8dc50748b2ce2ee1a722911dc9bf9ee0dc8679))
+* add field_legal_notice and field_privacy_policy to jurisdiction group type ([6e600a7](https://github.com/markaspot/markaspot/commit/6e600a7f6a40e95f4175eb599f17a00828ced632))
+* add language settings API + slug-based tenant routes ([2e61f7b](https://github.com/markaspot/markaspot/commit/2e61f7b8232f01f1bee4f3a4a15070ca7f17e895))
+* add multilingual support for custom statuses and welcome pages ([93da6d3](https://github.com/markaspot/markaspot/commit/93da6d3f50b08f0914474b236901382ebad38a6e))
+* auto-create initial status note with configurable boilerplate ([#172](https://github.com/markaspot/markaspot/issues/172)) ([92683ac](https://github.com/markaspot/markaspot/commit/92683acee5de6ac87c6c8252bcd813673938621b))
+* create promoted start page during workspace provisioning ([aad4365](https://github.com/markaspot/markaspot/commit/aad4365185e91efa0875eb711cd12eafb5e22514)), closes [markaspot/markaspot-ui#158](https://github.com/markaspot/markaspot-ui/issues/158)
+* demo workspace auto-delete with expiry date and cron cleanup ([c081ee5](https://github.com/markaspot/markaspot/commit/c081ee5f75280468cedc054b26f45af87230d963)), closes [markaspot/markaspot-ui#109](https://github.com/markaspot/markaspot-ui/issues/109)
+* move markaspot_demo module into profile ([9afb8d3](https://github.com/markaspot/markaspot/commit/9afb8d367fec54bd927af7952993b479f66ea2c3))
+
+### Bug Fixes
+
+* accept numeric jurisdiction IDs in Settings API for embed compatibility ([bcd6d7b](https://github.com/markaspot/markaspot/commit/bcd6d7b3df369afa6b1838974f29a0488de732a5)), closes [markaspot/markaspot-ui#151](https://github.com/markaspot/markaspot-ui/issues/151)
+* add field_request_media to default and management form displays ([cd512b6](https://github.com/markaspot/markaspot/commit/cd512b6652466a1148359f61c057406075afd56b)), closes [markaspot/markaspot-ui#158](https://github.com/markaspot/markaspot-ui/issues/158)
+* add missing service_request dependency to group, media, stats modules ([f8ac58c](https://github.com/markaspot/markaspot/commit/f8ac58c61f415a6870947bec07852a2ab355e981))
+* demo requests use workspace coordinates, correct category icons ([be93a92](https://github.com/markaspot/markaspot/commit/be93a92852115df341057675c3ec79c05c05ad72)), closes [markaspot/markaspot-ui#158](https://github.com/markaspot/markaspot-ui/issues/158)
+* enable filter_html_nofollow on basic_html text format ([bdd367e](https://github.com/markaspot/markaspot/commit/bdd367e0c51bb5cf163d9c95602e907ea31c1f8d))
+* enable showBoundaryOnMap in workspace nuxt_config defaults ([67fde03](https://github.com/markaspot/markaspot/commit/67fde03e13e4a0b644a2ced8d1bfc7bfb6a49fd7))
+* logo upload - use POST instead of PATCH and fix SVG mime detection ([a35d75d](https://github.com/markaspot/markaspot/commit/a35d75d232af395874260853d7dbdf9950586370))
+* migrate geolocation widget from mapbox to nominatim when mapbox is missing ([#145](https://github.com/markaspot/markaspot/issues/145)) ([665d6d0](https://github.com/markaspot/markaspot/commit/665d6d0cf31040fdbc2fa6889df8212a19ae6ca5))
+* move jur-tenant_admin group role to markaspot_fastmap ([4c51d4a](https://github.com/markaspot/markaspot/commit/4c51d4a27c6e9d6d464d714967809356c9aefbac))
+* revert field_request_media from config/install to prevent circular deps ([f082bc9](https://github.com/markaspot/markaspot/commit/f082bc9fde5edf2529473962c1ec207727b34e4b)), closes [markaspot/markaspot-ui#158](https://github.com/markaspot/markaspot-ui/issues/158)
+* **security:** add Xss::filter, language guards and allowlist validation ([f607b6e](https://github.com/markaspot/markaspot/commit/f607b6e9a07628f1c1676d1d470322009f378722))
+* set OpenFreeMap defaults for fallback_style in config/install ([ede88b4](https://github.com/markaspot/markaspot/commit/ede88b40acd137024d836220d8b2a90e04751793)), closes [markaspot/markaspot-ui#158](https://github.com/markaspot/markaspot-ui/issues/158)
+* use dynamic form display lookup and remove dead dependency code ([c973b7f](https://github.com/markaspot/markaspot/commit/c973b7fc95af11eb1a2c0d7cacab43f83b533ce6))
+* wrap raw Polygon/MultiPolygon in FeatureCollection in Settings API ([2f700a6](https://github.com/markaspot/markaspot/commit/2f700a657e44e0f50158297838ecf924bd05e86c))
+
 ## [11.9.12](https://github.com/markaspot/markaspot/compare/11.9.11...11.9.12) (2026-03-19)
 
 ### Features
