@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_fastmap\Service;
 
+use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -206,6 +208,8 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     protected readonly Connection $database,
     protected readonly LoggerInterface $logger,
     protected readonly LanguageManagerInterface $languageManager,
+    protected readonly ConfigFactoryInterface $configFactory,
+    protected readonly TimeInterface $time,
   ) {}
 
   /**
@@ -299,12 +303,19 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $group = $groupStorage->create($groupFields);
       $group->save();
 
-      // Set expiry date for demo workspaces.
-      if (!empty($data['demo'])) {
-        $demoExpiryDays = \Drupal::config('markaspot_fastmap.settings')->get('demo_expiry_days') ?? 5;
-        $group->set('field_expiry_date', \Drupal::time()->getRequestTime() + ($demoExpiryDays * 86400));
-        $group->save();
+      // All new workspaces start with an expiry date. The expiry is cleared
+      // later when the Stripe webhook confirms successful payment.
+      $config = $this->configFactory->get('markaspot_fastmap.settings');
+      if (!empty($data['selected_tier'])) {
+        // User selected a tier from pricing: longer grace period for checkout.
+        $graceDays = (int) ($config->get('checkout_grace_days') ?? 14);
       }
+      else {
+        // Demo/test ride: shorter expiry.
+        $graceDays = (int) ($config->get('demo_expiry_days') ?? 5);
+      }
+      $group->set('field_expiry_date', $this->time->getRequestTime() + ($graceDays * 86400));
+      $group->save();
 
       $groupId = (int) $group->id();
 

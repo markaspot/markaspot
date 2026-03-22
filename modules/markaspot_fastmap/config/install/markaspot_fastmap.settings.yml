@@ -8,15 +8,16 @@ tier_limits:
     limit: 50
     period: published
   starter:
-    limit: null
-    period: published
+    limit: 500
+    period: monthly
   pro:
-    limit: null
-    period: published
+    limit: 2000
+    period: monthly
   heart:
     limit: null
     period: published
 demo_expiry_days: 5
+checkout_grace_days: 14
 member_limits:
   free: 1
   starter: 5
@@ -24,7 +25,7 @@ member_limits:
   heart: 5
 ai_budgets:
   free: 50
-  starter: 100
+  starter: 200
   pro: 500
   heart: 100
   partner: 0

@@ -8,11 +8,6 @@
 declare(strict_types=1);
 
 /**
- * @file
- * Install, update and uninstall functions for markaspot_fastmap.
- */
-
-/**
  * Implements hook_schema().
  */
 function markaspot_fastmap_schema(): array {
@@ -529,6 +524,16 @@ function markaspot_fastmap_update_11908(): void {
   if (!$config->get('demo_expiry_days')) {
     $config->set('demo_expiry_days', 5)->save();
     $logger->info('Set default demo_expiry_days config.');
+  }
+}
+
+/**
+ * Add checkout_grace_days config for tier-based workspace expiry.
+ */
+function markaspot_fastmap_update_11910(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
+  if ($config->get('checkout_grace_days') === NULL) {
+    $config->set('checkout_grace_days', 14)->save();
   }
 }
 

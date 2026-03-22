@@ -20,6 +20,9 @@ markaspot_fastmap.settings:
     demo_expiry_days:
       type: integer
       label: 'Days after which demo workspaces are auto-deleted'
+    checkout_grace_days:
+      type: integer
+      label: 'Checkout grace period in days'
     tier_limits:
       type: sequence
       label: 'Request limits per tier'

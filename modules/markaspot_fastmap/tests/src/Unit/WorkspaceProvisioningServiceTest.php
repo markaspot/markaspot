@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_fastmap\Unit;
 
+use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Transaction;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
@@ -152,11 +156,35 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->languageManager->method('getLanguages')
       ->willReturn($allLangs);
 
+    // Set up a minimal Drupal container for static calls in the service.
+    $container = new ContainerBuilder();
+
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $immutableConfig = $this->createMock(ImmutableConfig::class);
+    $immutableConfig->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'checkout_grace_days' => 14,
+        'demo_expiry_days' => 5,
+        default => NULL,
+      });
+    $configFactory->method('get')
+      ->with('markaspot_fastmap.settings')
+      ->willReturn($immutableConfig);
+    $container->set('config.factory', $configFactory);
+
+    $time = $this->createMock(TimeInterface::class);
+    $time->method('getRequestTime')->willReturn(1700000000);
+    $container->set('datetime.time', $time);
+
+    \Drupal::setContainer($container);
+
     $this->service = new WorkspaceProvisioningService(
       $this->entityTypeManager,
       $this->database,
       $this->logger,
       $this->languageManager,
+      $configFactory,
+      $time,
     );
   }
 

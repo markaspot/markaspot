@@ -17,7 +17,7 @@ use Symfony\Component\HttpFoundation\Request;
  * Handles billing data (Stripe fields) for jurisdiction groups.
  *
  * Authentication is via service_key from markaspot_fastmap.settings,
- * matching the pattern used by FastMapWorkspaceController.
+ * provided as X-Service-Key header or in the JSON body.
  * Accepts both numeric group IDs and URL slugs via the {group}
  * path parameter.
  */
@@ -54,9 +54,17 @@ class BillingController extends ControllerBase {
     $entity = $this->loadJurisdictionGroup($group);
     if (!$entity) {
       return AccessResult::forbidden('Jurisdiction not found.')
-        ->addCacheContexts(['url.path']);
+        ->addCacheContexts(['url.path'])
+        ->setCacheMaxAge(0);
     }
-    return AccessResult::allowed();
+
+    $request = \Drupal::request();
+    if (!$this->validateServiceKey($request)) {
+      return AccessResult::forbidden('Invalid service key.')
+        ->setCacheMaxAge(0);
+    }
+
+    return AccessResult::allowed()->setCacheMaxAge(0);
   }
 
   /**
@@ -87,8 +95,8 @@ class BillingController extends ControllerBase {
   /**
    * Validates the service_key from the request against config.
    *
-   * Accepts the key from the X-Service-Key header (preferred),
-   * JSON body, or query parameter (deprecated).
+   * Accepts the key from the X-Service-Key header (preferred)
+   * or JSON body.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The incoming request.
@@ -100,13 +108,11 @@ class BillingController extends ControllerBase {
     $config = $this->config('markaspot_fastmap.settings');
     $expectedKey = $config->get('service_key');
 
-    // Accept from custom header (preferred), JSON body,
-    // or query param (deprecated).
+    // Accept from custom header (preferred) or JSON body only.
     $apiKey = $request->headers->get('X-Service-Key');
     if (!$apiKey) {
       $data = json_decode($request->getContent(), TRUE);
-      $apiKey = $data['service_key']
-        ?? $request->query->get('service_key');
+      $apiKey = $data['service_key'] ?? NULL;
     }
 
     return $expectedKey
@@ -139,6 +145,7 @@ class BillingController extends ControllerBase {
       'tier' => 'free',
       'stripe_customer_id' => NULL,
       'stripe_subscription_id' => NULL,
+      'expiry_date' => NULL,
     ];
 
     if ($entity->hasField('field_tier') && !$entity->get('field_tier')->isEmpty()) {
@@ -149,6 +156,9 @@ class BillingController extends ControllerBase {
     }
     if ($entity->hasField('field_stripe_subscription_id') && !$entity->get('field_stripe_subscription_id')->isEmpty()) {
       $data['stripe_subscription_id'] = $entity->get('field_stripe_subscription_id')->value;
+    }
+    if ($entity->hasField('field_expiry_date') && !$entity->get('field_expiry_date')->isEmpty()) {
+      $data['expiry_date'] = (int) $entity->get('field_expiry_date')->value;
     }
 
     return new JsonResponse($data);
@@ -187,6 +197,7 @@ class BillingController extends ControllerBase {
       'tier' => 'field_tier',
       'stripe_customer_id' => 'field_stripe_customer_id',
       'stripe_subscription_id' => 'field_stripe_subscription_id',
+      'expiry_date' => 'field_expiry_date',
     ];
 
     $validTiers = ['free', 'starter', 'pro', 'heart'];
@@ -212,9 +223,13 @@ class BillingController extends ControllerBase {
         }
       }
 
-      // Allow null to clear Stripe fields.
+      // Allow null to clear fields (e.g. expiry_date after Stripe payment).
       if ($value === NULL) {
         $entity->set($fieldName, NULL);
+      }
+      elseif ($key === 'expiry_date') {
+        // Timestamp field: store as integer.
+        $entity->set($fieldName, (int) $value);
       }
       else {
         $value = mb_substr(trim((string) $value), 0, 255);

@@ -65,8 +65,8 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $this->tierConfig->method('getLimits')
       ->willReturnCallback(fn(string $tier) => match ($tier) {
         'free' => ['limit' => 50, 'period' => 'published'],
-        'starter' => ['limit' => NULL, 'period' => 'published', 'unlimited' => TRUE],
-        'pro' => ['limit' => NULL, 'period' => 'published', 'unlimited' => TRUE],
+        'starter' => ['limit' => 500, 'period' => 'monthly'],
+        'pro' => ['limit' => 2000, 'period' => 'monthly'],
         'heart' => ['limit' => NULL, 'period' => 'published', 'unlimited' => TRUE],
         default => NULL,
       });
@@ -201,7 +201,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   }
 
   // ---------------------------------------------------------------
-  // Unlimited tiers (starter, pro, heart).
+  // Unlimited tiers (heart only).
   // ---------------------------------------------------------------
 
   /**
@@ -210,7 +210,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
    * @covers ::validate
    */
   public function testUnlimitedTierSkipsValidation(): void {
-    $node = $this->createPublishTransitionNode(1, 'starter');
+    $node = $this->createPublishTransitionNode(1, 'heart');
 
     $this->tierConfig->expects($this->never())
       ->method('countRequests');
@@ -221,13 +221,95 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $this->createValidator()->validate($node, $this->constraint);
   }
 
+  // ---------------------------------------------------------------
+  // Starter/Pro monthly limits.
+  // ---------------------------------------------------------------
+
   /**
-   * Tests that pro tier (unlimited) allows everything.
+   * Tests that starter tier blocks at 500 monthly limit.
    *
    * @covers ::validate
    */
-  public function testProUnlimitedAllows(): void {
-    $node = $this->createPublishTransitionNode(1, 'pro');
+  public function testStarterBlocksAtMonthlyLimit(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('starter')
+      ->willReturn(['limit' => 500, 'period' => 'monthly']);
+    $this->tierConfig->method('countRequests')
+      ->willReturn(500);
+
+    $node = $this->createNode('service_request', TRUE, 1, 'starter');
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->monthlyLimitMessage,
+        ['@limit' => 500]
+      );
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that starter tier allows under 500 monthly limit.
+   *
+   * @covers ::validate
+   */
+  public function testStarterAllowsUnderMonthlyLimit(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('starter')
+      ->willReturn(['limit' => 500, 'period' => 'monthly']);
+    $this->tierConfig->method('countRequests')
+      ->willReturn(200);
+
+    $node = $this->createNode('service_request', TRUE, 1, 'starter');
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that pro tier blocks at 2000 monthly limit.
+   *
+   * @covers ::validate
+   */
+  public function testProBlocksAtMonthlyLimit(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('pro')
+      ->willReturn(['limit' => 2000, 'period' => 'monthly']);
+    $this->tierConfig->method('countRequests')
+      ->willReturn(2000);
+
+    $node = $this->createNode('service_request', TRUE, 1, 'pro');
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->monthlyLimitMessage,
+        ['@limit' => 2000]
+      );
+
+    $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that pro tier allows under 2000 monthly limit.
+   *
+   * @covers ::validate
+   */
+  public function testProAllowsUnderMonthlyLimit(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('pro')
+      ->willReturn(['limit' => 2000, 'period' => 'monthly']);
+    $this->tierConfig->method('countRequests')
+      ->willReturn(500);
+
+    $node = $this->createNode('service_request', TRUE, 1, 'pro');
 
     $this->executionContext->expects($this->never())
       ->method('addViolation');

@@ -7,11 +7,6 @@
 
 declare(strict_types=1);
 
-/**
- * @file
- * Hook implementations for markaspot_fastmap.
- */
-
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Field\FieldDefinitionInterface;
@@ -287,9 +282,14 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
     $settings['jurisdiction']['visibility'] = 'public';
   }
 
-  // Demo workspace expiry timestamp.
+  // Whether the workspace completed Stripe checkout (= permanent, no expiry).
+  if ($group) {
+    $settings['jurisdiction']['is_permanent'] = $group->hasField('field_stripe_customer_id') && !$group->get('field_stripe_customer_id')->isEmpty();
+  }
+
+  // Workspace expiry timestamp (demo or checkout grace period).
   if ($group && $group->hasField('field_expiry_date') && !$group->get('field_expiry_date')->isEmpty()) {
-    $settings['jurisdiction']['demo_expiry'] = (int) $group->get('field_expiry_date')->value;
+    $settings['jurisdiction']['expiry_date'] = (int) $group->get('field_expiry_date')->value;
   }
 
   // AI budget: expose limit, used, and remaining to the frontend.

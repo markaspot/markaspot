@@ -29,7 +29,7 @@ class TierConfigService {
    * Falls back to 'free' tier limits for unknown/misconfigured tiers and logs
    * a warning. Returns NULL only if no tier_limits config exists at all.
    *
-   * A tier with `limit: null` is explicitly unlimited (starter, pro, heart).
+   * A tier with `limit: null` is explicitly unlimited (heart).
    * This is distinct from a missing or corrupted tier config, which falls back
    * to the free tier (fail-closed).
    *
@@ -201,7 +201,8 @@ class TierConfigService {
 
     return match ($tier) {
       'free' => 50,
-      'starter', 'heart' => 100,
+      'starter' => 200,
+      'heart' => 100,
       'pro' => 500,
       'partner' => 0,
       default => 50,

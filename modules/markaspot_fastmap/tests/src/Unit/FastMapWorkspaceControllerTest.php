@@ -571,14 +571,14 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests that service key from query parameter is accepted.
+   * Tests that service key from query parameter is rejected.
+   *
+   * Query parameter authentication was removed for security reasons.
+   * Only X-Service-Key header and JSON body are accepted.
    *
    * @covers ::createWorkspace
    */
-  public function testCreateWorkspaceServiceKeyFromQuery(): void {
-    $this->setupSuccessfulPending();
-    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
-
+  public function testCreateWorkspaceServiceKeyFromQueryRejected(): void {
     $bodyData = $this->validRequestData();
     unset($bodyData['service_key']);
 
@@ -593,7 +593,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     );
 
     $response = $this->controller->createWorkspace($request);
-    $this->assertEquals(202, $response->getStatusCode());
+    $this->assertEquals(403, $response->getStatusCode());
   }
 
   /**
