@@ -54,6 +54,9 @@ class TenantSettingsController extends ControllerBase {
     'pl' => 'Polski',
     'nl' => 'Nederlands',
     'da' => 'Dansk',
+    'sv' => 'Svenska',
+    'nb' => 'Norsk bokmål',
+    'fi' => 'Suomi',
     'uk' => 'Українська',
     'ar' => 'العربية',
   ];
@@ -73,6 +76,9 @@ class TenantSettingsController extends ControllerBase {
     'pl' => 'pl-PL',
     'nl' => 'nl-NL',
     'da' => 'da-DK',
+    'sv' => 'sv-SE',
+    'nb' => 'nb-NO',
+    'fi' => 'fi-FI',
     'uk' => 'uk-UA',
     'ar' => 'ar-SA',
   ];
