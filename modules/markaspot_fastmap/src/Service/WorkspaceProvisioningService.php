@@ -245,7 +245,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       throw new \RuntimeException('categories must be provided');
     }
 
-    $multilingualCategories = $this->normalizeCategories($categories);
+    $multilingualCategories = $this->normalizeCategories($categories, $requestedLang);
     if (empty($multilingualCategories)) {
       throw new \RuntimeException('categories must contain at least one non-empty string');
     }
@@ -690,12 +690,15 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    * @return array<string, string[]>
    *   Normalized multilingual categories keyed by language code.
    */
-  private function normalizeCategories(array $categories): array {
+  private function normalizeCategories(array $categories, string $requestedLang = ''): array {
     $firstValue = reset($categories);
     if (is_string($firstValue)) {
       $valid = array_filter($categories, fn($c) => is_string($c) && trim($c) !== '');
       $valid = array_map(fn($c) => mb_substr(trim($c), 0, 255), $valid);
-      return $valid ? ['en' => array_values($valid)] : [];
+      $lang = (is_string($requestedLang) && in_array($requestedLang, self::ALLOWED_LANGS, TRUE))
+        ? $requestedLang
+        : 'en';
+      return $valid ? [$lang => array_values($valid)] : [];
     }
 
     $result = [];
