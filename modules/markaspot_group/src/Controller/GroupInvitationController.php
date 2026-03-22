@@ -744,9 +744,20 @@ class GroupInvitationController extends ControllerBase {
     }
 
     if ($group->bundle() === 'org') {
+      // Check via jurisdiction reference first.
       if ($group->hasField('field_jurisdiction') && !$group->get('field_jurisdiction')->isEmpty()) {
         $orgJurId = (int) $group->get('field_jurisdiction')->target_id;
-        return in_array($orgJurId, $adminJurIds, TRUE);
+        if (in_array($orgJurId, $adminJurIds, TRUE)) {
+          return TRUE;
+        }
+      }
+
+      // Fallback: check direct org-tenant_admin membership.
+      $orgMemberships = $this->membershipLoader->loadByUser($account, ['org-tenant_admin']);
+      foreach ($orgMemberships as $membership) {
+        if ((int) $membership->getGroup()->id() === (int) $group->id()) {
+          return TRUE;
+        }
       }
     }
 
