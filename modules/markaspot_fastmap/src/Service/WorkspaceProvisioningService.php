@@ -181,7 +181,10 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    */
   private const DEMO_STATUS_MAPPINGS = ['initial', 'initial', 'initial', 'open', 'closed'];
 
-  private const ALLOWED_LANGS = ['en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'it', 'pl', 'pt', 'tr', 'uk'];
+  private const ALLOWED_LANGS = [
+    'en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
+    'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
+  ];
 
   /**
    * Theme presets by template name.
