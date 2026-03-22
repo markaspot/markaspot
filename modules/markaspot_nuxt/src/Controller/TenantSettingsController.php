@@ -503,6 +503,106 @@ class TenantSettingsController extends ControllerBase {
   }
 
   /**
+   * Deletes logo(s) from a jurisdiction group entity.
+   *
+   * Accepts a query parameter 'variant' to specify which logo to delete:
+   * 'logo_light', 'logo_dark', or 'both' (default). Removes the file reference
+   * from the group entity and deletes the underlying file entity.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with deletion status, or error message.
+   */
+  public function deleteLogo(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $variant = $request->query->get('variant');
+    $validVariants = ['logo_light', 'logo_dark', 'both'];
+    if (!$variant || !in_array($variant, $validVariants, TRUE)) {
+      return new JsonResponse([
+        'error' => 'Missing or invalid variant parameter. Use logo_light, logo_dark, or both.',
+      ], 400);
+    }
+
+    $fieldsToDelete = [];
+    if ($variant === 'both') {
+      $fieldsToDelete = ['field_logo_light', 'field_logo_dark'];
+    }
+    else {
+      $fieldsToDelete = ['field_' . $variant];
+    }
+
+    $deleted = [];
+    $filesToDelete = [];
+    $fileStorage = $this->entityTypeManager()->getStorage('file');
+
+    foreach ($fieldsToDelete as $fieldName) {
+      if (!$group->hasField($fieldName)) {
+        continue;
+      }
+
+      $fieldValue = $group->get($fieldName)->getValue();
+      if (!empty($fieldValue[0]['target_id'])) {
+        // Collect file entities for deletion after successful save.
+        $file = $fileStorage->load($fieldValue[0]['target_id']);
+        if ($file) {
+          $filesToDelete[] = $file;
+        }
+      }
+
+      // Clear the field on the group entity.
+      $group->set($fieldName, NULL);
+      $deleted[] = str_replace('field_', '', $fieldName);
+    }
+
+    if (empty($deleted)) {
+      return new JsonResponse([
+        'status' => 'ok',
+        'message' => 'No logos to delete.',
+        'jurisdiction_id' => (int) $group->id(),
+      ]);
+    }
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save group @id after logo deletion: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save group entity after logo deletion.'], 500);
+    }
+
+    // Delete file entities only after successful group save.
+    foreach ($filesToDelete as $file) {
+      $file->delete();
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user deleted logo(s) for jurisdiction @id: @logos',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+        '@logos' => implode(', ', $deleted),
+      ]
+    );
+
+    return new JsonResponse([
+      'status' => 'ok',
+      'jurisdiction_id' => (int) $group->id(),
+      'deleted' => $deleted,
+    ]);
+  }
+
+  /**
    * Returns general settings for a jurisdiction group.
    *
    * Reads field_platform_name, field_jurisdiction_e_mail, field_email_footer,

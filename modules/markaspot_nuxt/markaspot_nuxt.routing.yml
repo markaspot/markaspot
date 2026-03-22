@@ -78,6 +78,18 @@ markaspot_nuxt.tenant_settings_logo:
   options:
     _format: 'json'
 
+markaspot_nuxt.tenant_settings_logo_delete:
+  path: '/api/tenant-settings/{jurisdiction_id}/logo'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::deleteLogo'
+    _title: 'Delete Tenant Logo'
+  methods: [DELETE]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
 markaspot_nuxt.tenant_settings_general_get:
   path: '/api/tenant-settings/{jurisdiction_id}/general'
   defaults:
