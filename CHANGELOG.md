@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.14](https://github.com/markaspot/markaspot/compare/11.9.13...11.9.14) (2026-03-22)
+
+### Features
+
+* add AI analysis budget per tier ([#181](https://github.com/markaspot/markaspot/issues/181)) ([292f93c](https://github.com/markaspot/markaspot/commit/292f93c40cd7029a8f21775c579fd1b631ad2212))
+* Stripe-gated tier onboarding with demo workspace lifecycle ([ab65c42](https://github.com/markaspot/markaspot/commit/ab65c426db8e36717102a6d7ba2e3c868f98afde)), closes [markaspot/markaspot-ui#137](https://github.com/markaspot/markaspot-ui/issues/137) [markaspot/markaspot-ui#185](https://github.com/markaspot/markaspot-ui/issues/185) [markaspot/markaspot-ui#186](https://github.com/markaspot/markaspot-ui/issues/186)
+
+### Bug Fixes
+
+* add DELETE route for logo removal via tenant-settings API ([2472fbc](https://github.com/markaspot/markaspot/commit/2472fbc48c7358a7df7b587f675ab063ede7cdd2))
+* add sv, fi, nb to ALLOWED_LANGS in FastMap onboarding pipeline ([cf5c8c7](https://github.com/markaspot/markaspot/commit/cf5c8c7730d78c096535f5cf81fa6a186dd7708e))
+
 ## [11.9.13](https://github.com/markaspot/markaspot/compare/11.9.12...11.9.13) (2026-03-21)
 
 ### Features
