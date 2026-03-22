@@ -146,6 +146,14 @@ class BillingController extends ControllerBase {
       'stripe_customer_id' => NULL,
       'stripe_subscription_id' => NULL,
       'expiry_date' => NULL,
+      'billing_name' => NULL,
+      'billing_email' => NULL,
+      'billing_address_line1' => NULL,
+      'billing_address_line2' => NULL,
+      'billing_city' => NULL,
+      'billing_postal_code' => NULL,
+      'billing_country' => NULL,
+      'billing_tax_id' => NULL,
     ];
 
     if ($entity->hasField('field_tier') && !$entity->get('field_tier')->isEmpty()) {
@@ -159,6 +167,22 @@ class BillingController extends ControllerBase {
     }
     if ($entity->hasField('field_expiry_date') && !$entity->get('field_expiry_date')->isEmpty()) {
       $data['expiry_date'] = (int) $entity->get('field_expiry_date')->value;
+    }
+
+    $billingStringFields = [
+      'billing_name' => 'field_billing_name',
+      'billing_email' => 'field_billing_email',
+      'billing_address_line1' => 'field_billing_address_line1',
+      'billing_address_line2' => 'field_billing_address_line2',
+      'billing_city' => 'field_billing_city',
+      'billing_postal_code' => 'field_billing_postal_code',
+      'billing_country' => 'field_billing_country',
+      'billing_tax_id' => 'field_billing_tax_id',
+    ];
+    foreach ($billingStringFields as $key => $fieldName) {
+      if ($entity->hasField($fieldName) && !$entity->get($fieldName)->isEmpty()) {
+        $data[$key] = $entity->get($fieldName)->value;
+      }
     }
 
     return new JsonResponse($data);
@@ -198,6 +222,21 @@ class BillingController extends ControllerBase {
       'stripe_customer_id' => 'field_stripe_customer_id',
       'stripe_subscription_id' => 'field_stripe_subscription_id',
       'expiry_date' => 'field_expiry_date',
+      'billing_name' => 'field_billing_name',
+      'billing_email' => 'field_billing_email',
+      'billing_address_line1' => 'field_billing_address_line1',
+      'billing_address_line2' => 'field_billing_address_line2',
+      'billing_city' => 'field_billing_city',
+      'billing_postal_code' => 'field_billing_postal_code',
+      'billing_country' => 'field_billing_country',
+      'billing_tax_id' => 'field_billing_tax_id',
+    ];
+
+    // Maximum lengths matching field storage definitions.
+    $fieldMaxLengths = [
+      'billing_postal_code' => 20,
+      'billing_country' => 2,
+      'billing_tax_id' => 50,
     ];
 
     $validTiers = ['free', 'starter', 'pro', 'heart'];
@@ -232,7 +271,8 @@ class BillingController extends ControllerBase {
         $entity->set($fieldName, (int) $value);
       }
       else {
-        $value = mb_substr(trim((string) $value), 0, 255);
+        $maxLength = $fieldMaxLengths[$key] ?? 255;
+        $value = mb_substr(trim((string) $value), 0, $maxLength);
         $entity->set($fieldName, $value);
       }
       $updated[] = $key;
