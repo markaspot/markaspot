@@ -103,14 +103,23 @@ class WorkspaceUsageController extends ControllerBase {
       return $hasPermission;
     }
 
-    // Non-admins must be a member of this group to prevent
-    // cross-tenant usage enumeration.
+    // Non-admins must be a tenant_admin of this group. Regular members
+    // (invited moderators) must not access billing or usage data.
     $membership = $entity->getMember($account);
-    $isMember = AccessResult::allowedIf($membership !== FALSE)
+    $isTenantAdmin = FALSE;
+    if ($membership) {
+      foreach ($membership->getRoles() as $role) {
+        if ($role->id() === 'jur-tenant_admin') {
+          $isTenantAdmin = TRUE;
+          break;
+        }
+      }
+    }
+    $isOwner = AccessResult::allowedIf($isTenantAdmin)
       ->cachePerUser()
       ->addCacheableDependency($entity);
 
-    return $hasPermission->andIf($isMember);
+    return $hasPermission->andIf($isOwner);
   }
 
   /**

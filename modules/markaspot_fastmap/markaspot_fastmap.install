@@ -561,3 +561,20 @@ function markaspot_fastmap_update_11909(): void {
     \Drupal::logger('markaspot_fastmap')->info('Added ai_budgets config.');
   }
 }
+
+/**
+ * Grant 'access workspace usage' to authenticated role.
+ *
+ * In FastMap SaaS, workspace owners only have the 'authenticated' global role.
+ * The WorkspaceUsageController::access() check still requires group membership,
+ * so cross-tenant access is prevented. The global permission is a first gate
+ * that must pass before the membership check runs.
+ */
+function markaspot_fastmap_update_11911(): void {
+  $role = \Drupal\user\Entity\Role::load('authenticated');
+  if ($role && !$role->hasPermission('access workspace usage')) {
+    $role->grantPermission('access workspace usage');
+    $role->save();
+    \Drupal::logger('markaspot_fastmap')->info('Granted "access workspace usage" to authenticated role.');
+  }
+}
