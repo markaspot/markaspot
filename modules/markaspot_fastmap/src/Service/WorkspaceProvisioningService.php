@@ -344,7 +344,16 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang);
 
       // 8. Create welcome start page.
-      $this->createStartPage($group, $name, $defaultLang, $startPageContent, $startPageTranslations, $availableLanguages);
+      try {
+        $this->createStartPage($group, $name, $defaultLang, $startPageContent, $startPageTranslations, $availableLanguages);
+      }
+      catch (\Exception $e) {
+        $this->logger->error('Failed to create start page for @name: @msg', [
+          '@name' => $name,
+          '@msg' => $e->getMessage(),
+        ]);
+        // Don't rethrow - workspace is still usable without a start page.
+      }
 
       return [
         'group_id' => $groupId,

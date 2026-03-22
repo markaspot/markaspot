@@ -7,6 +7,8 @@
 
 declare(strict_types=1);
 
+use Drupal\user\Entity\Role;
+
 /**
  * Implements hook_schema().
  */
@@ -309,7 +311,7 @@ function markaspot_fastmap_update_11901(): void {
 function markaspot_fastmap_update_11902(): void {
   $logger = \Drupal::logger('markaspot_fastmap');
   foreach (['api_user', 'tenant_admin', 'moderator', 'editorial_board'] as $role_id) {
-    $role = \Drupal\user\Entity\Role::load($role_id);
+    $role = Role::load($role_id);
     if ($role && !$role->hasPermission('access workspace usage')) {
       $role->grantPermission('access workspace usage');
       $role->save();
@@ -571,7 +573,7 @@ function markaspot_fastmap_update_11909(): void {
  * that must pass before the membership check runs.
  */
 function markaspot_fastmap_update_11911(): void {
-  $role = \Drupal\user\Entity\Role::load('authenticated');
+  $role = Role::load('authenticated');
   if ($role && !$role->hasPermission('access workspace usage')) {
     $role->grantPermission('access workspace usage');
     $role->save();
@@ -687,4 +689,121 @@ function markaspot_fastmap_update_11912(): void {
     }
     $form_display->save();
   }
+}
+
+/**
+ * Backfill missing start pages for existing workspaces.
+ *
+ * Some workspaces were created before createStartPage() existed, or the
+ * creation silently failed. This hook finds all jur groups without a
+ * promoted+sticky page node and creates a fallback start page using the
+ * same template mechanism as WorkspaceProvisioningService::createStartPage().
+ */
+function markaspot_fastmap_update_11913(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_fastmap');
+  $groupStorage = $etm->getStorage('group');
+  $nodeStorage = $etm->getStorage('node');
+
+  // Only en/de provided for backfill; other languages fall back to en.
+  // Full template set lives in WorkspaceProvisioningService::START_PAGE_TEMPLATES.
+  $templates = [
+    'en' => [
+      'title' => 'Welcome to %name',
+      'body' => '<p>Welcome to <strong>%name</strong>, your citizen reporting platform.</p>'
+      . '<p>Use the map to browse existing reports or create a new one. '
+      . 'Select a category, pin the location, and describe the issue. '
+      . 'Your report helps make %name better for everyone.</p>',
+    ],
+    'de' => [
+      'title' => 'Willkommen bei %name',
+      'body' => '<p>Willkommen bei <strong>%name</strong>, Ihrer Plattform für Bürgeranliegen.</p>'
+      . '<p>Nutzen Sie die Karte, um bestehende Meldungen zu sehen oder eine neue zu erstellen. '
+      . 'Wählen Sie eine Kategorie, markieren Sie den Standort und beschreiben Sie das Anliegen. '
+      . 'Ihre Meldung hilft, %name für alle zu verbessern.</p>',
+    ],
+  ];
+
+  // Find all jur groups.
+  $groupIds = $groupStorage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->execute();
+
+  if (empty($groupIds)) {
+    $logger->info('No jur groups found. Nothing to backfill.');
+    return;
+  }
+
+  $backfilled = 0;
+
+  foreach ($groupStorage->loadMultiple($groupIds) as $group) {
+    $groupId = (int) $group->id();
+    $name = $group->label() ?: ('Workspace ' . $groupId);
+
+    // Check if this group already has a promoted+sticky page node.
+    $existing = $nodeStorage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'page')
+      ->condition('field_jurisdiction', $groupId)
+      ->condition('promote', 1)
+      ->condition('sticky', 1)
+      ->range(0, 1)
+      ->execute();
+
+    if (!empty($existing)) {
+      continue;
+    }
+
+    // Determine language from the group entity's langcode.
+    $langcode = $group->get('langcode')->value ?: 'en';
+    $template = $templates[$langcode] ?? $templates['en'];
+    $title = str_replace('%name', $name, $template['title']);
+    $body = str_replace('%name', $name, $template['body']);
+
+    try {
+      $node = $nodeStorage->create([
+        'type' => 'page',
+        'langcode' => $langcode,
+        'title' => $title,
+        'body' => [
+          'value' => $body,
+          'format' => 'basic_html',
+        ],
+        'uid' => 1,
+        'promote' => TRUE,
+        'sticky' => TRUE,
+        'status' => TRUE,
+        'field_jurisdiction' => ['target_id' => $groupId],
+      ]);
+      $node->save();
+
+      // Add group relationship if the plugin is installed.
+      try {
+        $group->addRelationship($node, 'group_node:page');
+      }
+      catch (\Exception $e) {
+        $logger->warning('Could not add page group relationship for group @id: @msg', [
+          '@id' => $groupId,
+          '@msg' => $e->getMessage(),
+        ]);
+      }
+
+      $backfilled++;
+      $logger->info('Backfilled start page for workspace @name (group @id).', [
+        '@name' => $name,
+        '@id' => $groupId,
+      ]);
+    }
+    catch (\Exception $e) {
+      $logger->error('Failed to backfill start page for group @id: @msg', [
+        '@id' => $groupId,
+        '@msg' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  $logger->info('Start page backfill complete: @count pages created.', [
+    '@count' => $backfilled,
+  ]);
 }
