@@ -6,6 +6,7 @@ namespace Drupal\markaspot_fastmap\Service;
 
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Psr\Log\LoggerInterface;
 
@@ -19,6 +20,7 @@ class TierConfigService {
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly TimeInterface $time,
     protected readonly LoggerInterface $logger,
+    protected readonly Connection $database,
   ) {}
 
   /**
@@ -178,6 +180,128 @@ class TierConfigService {
       ->condition('type', $membershipType);
 
     return (int) $query->count()->execute();
+  }
+
+  /**
+   * Gets the monthly AI analysis budget for a tier.
+   *
+   * @param string $tier
+   *   The tier machine name.
+   *
+   * @return int
+   *   Monthly AI analysis limit. 0 means unlimited.
+   */
+  public function getAIBudget(string $tier): int {
+    $config = $this->configFactory->get('markaspot_fastmap.settings');
+    $budgets = $config->get('ai_budgets');
+
+    if (!empty($budgets) && array_key_exists($tier, $budgets)) {
+      return (int) $budgets[$tier];
+    }
+
+    return match ($tier) {
+      'free' => 50,
+      'starter', 'heart' => 100,
+      'pro' => 500,
+      'partner' => 0,
+      default => 50,
+    };
+  }
+
+  /**
+   * Counts AI analyses for a jurisdiction in the current calendar month.
+   *
+   * Uses a month-scoped cache to avoid a DB query on every settings API call.
+   * Cache is invalidated by recordAIAnalysis() after each new analysis.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return int
+   *   Number of AI analyses this calendar month.
+   */
+  public function countAIAnalyses(int $groupId): int {
+    $now = $this->time->getRequestTime();
+    $monthKey = date('Y-m', $now);
+    $cid = 'markaspot_ai_usage:' . $groupId . ':' . $monthKey;
+
+    $cached = \Drupal::cache()->get($cid);
+    if ($cached !== FALSE) {
+      return (int) $cached->data;
+    }
+
+    $firstOfMonth = (int) strtotime(date('Y-m-01 00:00:00', $now));
+    $count = (int) $this->database->select('markaspot_ai_usage', 'u')
+      ->condition('u.group_id', $groupId)
+      ->condition('u.created', $firstOfMonth, '>=')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+
+    // Cache until first of next month.
+    $nextMonth = (int) strtotime('first day of next month 00:00:00', $now);
+    \Drupal::cache()->set($cid, $count, $nextMonth);
+
+    return $count;
+  }
+
+  /**
+   * Records an AI analysis for a jurisdiction.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param int|null $nid
+   *   The service request node ID (optional).
+   * @param int $tokensUsed
+   *   Tokens consumed (for future cost tracking).
+   */
+  public function recordAIAnalysis(int $groupId, ?int $nid = NULL, int $tokensUsed = 0): void {
+    $this->database->insert('markaspot_ai_usage')
+      ->fields([
+        'group_id' => $groupId,
+        'nid' => $nid,
+        'created' => $this->time->getRequestTime(),
+        'tokens_used' => $tokensUsed,
+      ])
+      ->execute();
+
+    // Invalidate the cached count for this jurisdiction/month.
+    $monthKey = date('Y-m', $this->time->getRequestTime());
+    \Drupal::cache()->delete('markaspot_ai_usage:' . $groupId . ':' . $monthKey);
+  }
+
+  /**
+   * Checks whether the AI budget for a jurisdiction/tier is exhausted.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param string $tier
+   *   The tier machine name.
+   *
+   * @return bool
+   *   TRUE if the budget is exhausted. Always FALSE for unlimited (0) budgets.
+   */
+  public function isAIBudgetExhausted(int $groupId, string $tier): bool {
+    $budget = $this->getAIBudget($tier);
+    if ($budget === 0) {
+      return FALSE;
+    }
+    return $this->countAIAnalyses($groupId) >= $budget;
+  }
+
+  /**
+   * Deletes AI usage records older than the given timestamp.
+   *
+   * @param int $olderThan
+   *   Unix timestamp. Records with created < $olderThan are deleted.
+   *
+   * @return int
+   *   Number of deleted records.
+   */
+  public function pruneAIUsage(int $olderThan): int {
+    return (int) $this->database->delete('markaspot_ai_usage')
+      ->condition('created', $olderThan, '<')
+      ->execute();
   }
 
   /**

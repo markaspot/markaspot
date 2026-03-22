@@ -10,6 +10,7 @@ services:
       - '@entity_type.manager'
       - '@datetime.time'
       - '@logger.channel.markaspot_fastmap'
+      - '@database'
 
   markaspot_fastmap.workspace_provisioning:
     class: Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService

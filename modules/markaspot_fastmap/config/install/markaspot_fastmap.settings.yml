@@ -22,3 +22,9 @@ member_limits:
   starter: 5
   pro: 20
   heart: 5
+ai_budgets:
+  free: 50
+  starter: 100
+  pro: 500
+  heart: 100
+  partner: 0

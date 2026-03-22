@@ -40,6 +40,12 @@ markaspot_fastmap.settings:
       sequence:
         type: integer
         label: 'Maximum number of group members'
+    ai_budgets:
+      type: sequence
+      label: 'Monthly AI analysis budgets per tier'
+      sequence:
+        type: integer
+        label: 'Monthly AI analysis limit (0 = unlimited)'
 
 markaspot_fastmap.mail:
   type: config_object

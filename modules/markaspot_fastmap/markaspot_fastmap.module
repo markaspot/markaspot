@@ -291,6 +291,25 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
   if ($group && $group->hasField('field_expiry_date') && !$group->get('field_expiry_date')->isEmpty()) {
     $settings['jurisdiction']['demo_expiry'] = (int) $group->get('field_expiry_date')->value;
   }
+
+  // AI budget: expose limit, used, and remaining to the frontend.
+  if ($group && $group->hasField('field_tier')) {
+    $tier = !$group->get('field_tier')->isEmpty()
+      ? $group->get('field_tier')->value
+      : 'free';
+
+    /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
+    $tierConfig = \Drupal::service('markaspot_fastmap.tier_config');
+    $aiBudget = $tierConfig->getAIBudget($tier);
+    $aiUsage = $tierConfig->countAIAnalyses((int) $group->id());
+
+    $settings['jurisdiction']['ai_budget'] = [
+      'limit' => $aiBudget,
+      'used' => $aiUsage,
+      // -1 signals unlimited to the frontend.
+      'remaining' => $aiBudget === 0 ? -1 : max(0, $aiBudget - $aiUsage),
+    ];
+  }
 }
 
 /**
@@ -447,6 +466,23 @@ function markaspot_fastmap_cron(): void {
         $state->delete('markaspot_fastmap.demo_reminder_sent.' . $expiredGroupId);
         $provisioning->teardownWorkspace((int) $expiredGroupId);
       }
+    }
+  }
+
+  // --- AI usage cleanup: delete records older than 2 months (once daily). ---
+  $aiCleanupLastRun = (int) $state->get('markaspot_fastmap.last_ai_usage_cleanup', 0);
+  if (($now - $aiCleanupLastRun) >= 86400) {
+    $state->set('markaspot_fastmap.last_ai_usage_cleanup', $now);
+
+    $twoMonthsAgo = (int) strtotime('first day of -2 months 00:00:00', $now);
+    /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
+    $aiTierConfig = \Drupal::service('markaspot_fastmap.tier_config');
+    $deleted = $aiTierConfig->pruneAIUsage($twoMonthsAgo);
+
+    if ($deleted > 0) {
+      $logger->notice('AI usage cleanup: removed @count records older than 2 months.', [
+        '@count' => $deleted,
+      ]);
     }
   }
 }

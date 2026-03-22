@@ -88,6 +88,48 @@ function markaspot_fastmap_schema(): array {
     ],
   ];
 
+  $schema['markaspot_ai_usage'] = [
+    'description' => 'Tracks AI analysis calls per jurisdiction for budget enforcement.',
+    'fields' => [
+      'id' => [
+        'description' => 'Primary Key.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'group_id' => [
+        'description' => 'Jurisdiction group ID.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'nid' => [
+        'description' => 'Service request node ID (nullable).',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'default' => NULL,
+      ],
+      'created' => [
+        'description' => 'Unix timestamp of analysis.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'tokens_used' => [
+        'description' => 'Tokens consumed (for future cost tracking).',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'indexes' => [
+      'group_created' => ['group_id', 'created'],
+    ],
+  ];
+
   return $schema;
 }
 
@@ -487,5 +529,30 @@ function markaspot_fastmap_update_11908(): void {
   if (!$config->get('demo_expiry_days')) {
     $config->set('demo_expiry_days', 5)->save();
     $logger->info('Set default demo_expiry_days config.');
+  }
+}
+
+/**
+ * Create markaspot_ai_usage table and add ai_budgets config.
+ */
+function markaspot_fastmap_update_11909(): void {
+  $db = \Drupal::database();
+  $schema = markaspot_fastmap_schema();
+
+  if (!$db->schema()->tableExists('markaspot_ai_usage')) {
+    $db->schema()->createTable('markaspot_ai_usage', $schema['markaspot_ai_usage']);
+    \Drupal::logger('markaspot_fastmap')->info('Created markaspot_ai_usage table.');
+  }
+
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
+  if (!$config->get('ai_budgets')) {
+    $config->set('ai_budgets', [
+      'free' => 50,
+      'starter' => 100,
+      'pro' => 500,
+      'heart' => 100,
+      'partner' => 0,
+    ])->save();
+    \Drupal::logger('markaspot_fastmap')->info('Added ai_budgets config.');
   }
 }

@@ -9,6 +9,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
+use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 
@@ -41,6 +42,13 @@ class ImageProcessingController extends ControllerBase {
   protected FloodInterface $flood;
 
   /**
+   * The tier config service.
+   *
+   * @var \Drupal\markaspot_fastmap\Service\TierConfigService|null
+   */
+  protected ?TierConfigService $tierConfig;
+
+  /**
    * Constructs a new ImageProcessingController object.
    *
    * @param \Drupal\markaspot_vision\Service\ImageProcessingService $image_processing_service
@@ -49,15 +57,19 @@ class ImageProcessingController extends ControllerBase {
    *   The logger factory.
    * @param \Drupal\Core\Flood\FloodInterface $flood
    *   The flood service.
+   * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
+   *   The tier config service (optional, only on SaaS).
    */
   public function __construct(
     ImageProcessingService $image_processing_service,
     LoggerChannelFactoryInterface $logger_factory,
     FloodInterface $flood,
+    ?TierConfigService $tier_config = NULL,
   ) {
     $this->imageProcessingService = $image_processing_service;
     $this->logger = $logger_factory->get('markaspot_vision');
     $this->flood = $flood;
+    $this->tierConfig = $tier_config;
   }
 
   /**
@@ -67,7 +79,10 @@ class ImageProcessingController extends ControllerBase {
     return new static(
       $container->get('markaspot_vision.image_processing'),
       $container->get('logger.factory'),
-      $container->get('flood')
+      $container->get('flood'),
+      $container->has('markaspot_fastmap.tier_config')
+        ? $container->get('markaspot_fastmap.tier_config')
+        : NULL,
     );
   }
 
@@ -91,9 +106,42 @@ class ImageProcessingController extends ControllerBase {
     }
     $this->flood->register('markaspot_vision.analyze', 3600, $ip);
 
+    // Decode request body once for all subsequent checks.
+    $data = json_decode($request->getContent(), TRUE);
+    if (!is_array($data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    // AI budget check (only on SaaS with markaspot_fastmap installed).
+    $resolvedJurisdictionId = NULL;
+    if ($this->tierConfig) {
+      $resolvedJurisdictionId = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
+
+      if (!$resolvedJurisdictionId) {
+        return new JsonResponse(['error' => 'jurisdiction_id is required.'], 400);
+      }
+
+      $group = $this->entityTypeManager()->getStorage('group')->load($resolvedJurisdictionId);
+      if (!$group || !$group->hasField('field_tier')) {
+        return new JsonResponse(['error' => 'Invalid jurisdiction.'], 400);
+      }
+
+      $tier = !$group->get('field_tier')->isEmpty()
+        ? $group->get('field_tier')->value
+        : 'free';
+      if ($this->tierConfig->isAIBudgetExhausted((int) $resolvedJurisdictionId, $tier)) {
+        $this->logger->notice('AI budget exhausted for jurisdiction @jid (tier: @tier).', [
+          '@jid' => $resolvedJurisdictionId,
+          '@tier' => $tier,
+        ]);
+        return new JsonResponse([
+          'status' => 'budget_exhausted',
+          'message' => 'Monthly AI analysis budget exhausted.',
+        ], 429);
+      }
+    }
+
     try {
-      // Decode incoming request content.
-      $data = json_decode($request->getContent(), TRUE);
       if (empty($data['media_ids']) || !is_array($data['media_ids'])) {
         return new JsonResponse([
           'error' => $this->t('Invalid input: "media_ids" is required and should be an array.'),
@@ -238,6 +286,11 @@ class ImageProcessingController extends ControllerBase {
             ]);
           }
         }
+      }
+
+      // Record AI analysis for budget tracking.
+      if ($this->tierConfig && $resolvedJurisdictionId) {
+        $this->tierConfig->recordAIAnalysis((int) $resolvedJurisdictionId);
       }
 
       // Return only the AI result for frontend compatibility.
