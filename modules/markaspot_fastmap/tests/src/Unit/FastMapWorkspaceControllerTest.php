@@ -1404,4 +1404,176 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertStringContainsString('not available', $data['error']);
   }
 
+  /**
+   * Tests that ai_system_prompt is stored in workspace data when provided.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceAiSystemPromptStored(): void {
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
+
+    // Capture the inserted workspace_data JSON.
+    $insertedData = NULL;
+    $insert = $this->createMock(Insert::class);
+    $insert->method('fields')
+      ->willReturnCallback(function (array $fields) use (&$insertedData, $insert) {
+        $insertedData = $fields;
+        return $insert;
+      });
+    $insert->method('execute')->willReturn('1');
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchField')->willReturn(FALSE);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('where')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(0);
+
+    $database = $this->createMock(Connection::class);
+    $transactionStub = new class {
+
+      public function rollBack(): void {}
+
+    };
+    $database->method('startTransaction')->willReturn($transactionStub);
+    $database->method('select')->willReturn($select);
+    $database->method('insert')->willReturn($insert);
+    $database->method('delete')->willReturn($delete);
+
+    $container = \Drupal::getContainer();
+    $container->set('database', $database);
+    $controller = FastMapWorkspaceController::create($container);
+
+    $prompt = 'You analyze photos of trail conditions. Focus on erosion and fallen trees.';
+    $request = $this->createJsonRequest($this->validRequestData([
+      'ai_system_prompt' => $prompt,
+    ]));
+
+    $response = $controller->createWorkspace($request);
+    $this->assertEquals(202, $response->getStatusCode());
+
+    $this->assertNotNull($insertedData);
+    $stored = json_decode($insertedData['workspace_data'], TRUE);
+    $this->assertArrayHasKey('ai_system_prompt', $stored);
+    $this->assertEquals($prompt, $stored['ai_system_prompt']);
+  }
+
+  /**
+   * Tests that ai_system_prompt defaults to empty when not provided.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceAiSystemPromptDefaultEmpty(): void {
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
+
+    $insertedData = NULL;
+    $insert = $this->createMock(Insert::class);
+    $insert->method('fields')
+      ->willReturnCallback(function (array $fields) use (&$insertedData, $insert) {
+        $insertedData = $fields;
+        return $insert;
+      });
+    $insert->method('execute')->willReturn('1');
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchField')->willReturn(FALSE);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('where')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(0);
+
+    $database = $this->createMock(Connection::class);
+    $transactionStub = new class {
+
+      public function rollBack(): void {}
+
+    };
+    $database->method('startTransaction')->willReturn($transactionStub);
+    $database->method('select')->willReturn($select);
+    $database->method('insert')->willReturn($insert);
+    $database->method('delete')->willReturn($delete);
+
+    $container = \Drupal::getContainer();
+    $container->set('database', $database);
+    $controller = FastMapWorkspaceController::create($container);
+
+    // No ai_system_prompt in request.
+    $request = $this->createJsonRequest($this->validRequestData());
+
+    $response = $controller->createWorkspace($request);
+    $this->assertEquals(202, $response->getStatusCode());
+
+    $this->assertNotNull($insertedData);
+    $stored = json_decode($insertedData['workspace_data'], TRUE);
+    $this->assertArrayHasKey('ai_system_prompt', $stored);
+    $this->assertEmpty($stored['ai_system_prompt']);
+  }
+
+  /**
+   * Tests that ai_system_prompt is truncated at 2000 characters.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceAiSystemPromptTruncated(): void {
+    $this->setupSuccessfulPending();
+    $this->mailManager->method('mail')->willReturn(['result' => TRUE]);
+
+    $insertedData = NULL;
+    $insert = $this->createMock(Insert::class);
+    $insert->method('fields')
+      ->willReturnCallback(function (array $fields) use (&$insertedData, $insert) {
+        $insertedData = $fields;
+        return $insert;
+      });
+    $insert->method('execute')->willReturn('1');
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchField')->willReturn(FALSE);
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('where')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(0);
+
+    $database = $this->createMock(Connection::class);
+    $transactionStub = new class {
+
+      public function rollBack(): void {}
+
+    };
+    $database->method('startTransaction')->willReturn($transactionStub);
+    $database->method('select')->willReturn($select);
+    $database->method('insert')->willReturn($insert);
+    $database->method('delete')->willReturn($delete);
+
+    $container = \Drupal::getContainer();
+    $container->set('database', $database);
+    $controller = FastMapWorkspaceController::create($container);
+
+    $longPrompt = str_repeat('A', 2500);
+    $request = $this->createJsonRequest($this->validRequestData([
+      'ai_system_prompt' => $longPrompt,
+    ]));
+
+    $response = $controller->createWorkspace($request);
+    $this->assertEquals(202, $response->getStatusCode());
+
+    $this->assertNotNull($insertedData);
+    $stored = json_decode($insertedData['workspace_data'], TRUE);
+    $this->assertEquals(2000, mb_strlen($stored['ai_system_prompt']));
+  }
+
 }
