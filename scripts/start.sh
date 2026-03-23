@@ -569,6 +569,12 @@ EOF
     success "Profile modules enabled"
   fi
 
+  # Run pending update hooks (ensures install/update hooks from all modules run).
+  step "Running database updates..."
+  $DRUSH_CMD $DRUSH_URI updb -y 2>/dev/null || warn "Database updates returned warnings"
+  $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
+  success "Database updates complete"
+
   # Re-import role permissions from profile config/optional.
   # Even with targeted cleanup, profile optional role configs may not be
   # auto-imported by drush en. Ensure all profile-shipped permissions are granted.

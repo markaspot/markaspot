@@ -6,6 +6,17 @@
  */
 
 /**
+ * Implements hook_install().
+ *
+ * Adds field_request_media to the service_request form display on fresh
+ * installs. The form display is owned by the service_request module and still
+ * ships the deprecated field_request_image; this hook replaces it.
+ */
+function markaspot_media_install(): void {
+  _markaspot_media_ensure_form_display();
+}
+
+/**
  * Add field_request_media to service_request default form display.
  *
  * The field existed but was missing from the form display config/install.
@@ -41,4 +52,53 @@ function markaspot_media_update_11901(): void {
   $display->save();
 
   \Drupal::logger('markaspot_media')->info('Added field_request_media to service_request default form display.');
+}
+
+/**
+ * Shared helper: ensure field_request_media is on the form display.
+ *
+ * Used by both hook_install() (fresh installs) and update_11901 (existing
+ * sites). Also removes the deprecated field_request_image if present.
+ */
+function _markaspot_media_ensure_form_display(): void {
+  $display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.default');
+
+  if (!$display) {
+    return;
+  }
+
+  $changed = FALSE;
+
+  // Remove deprecated field_request_image.
+  if ($display->getComponent('field_request_image')) {
+    $display->removeComponent('field_request_image');
+    $changed = TRUE;
+    \Drupal::logger('markaspot_media')->info('Removed deprecated field_request_image from service_request form display.');
+  }
+
+  // Add field_request_media if missing.
+  if (!$display->getComponent('field_request_media')) {
+    $display->setComponent('field_request_media', [
+      'type' => 'inline_entity_form_simple',
+      'weight' => 0,
+      'region' => 'content',
+      'settings' => [
+        'form_mode' => 'default',
+        'override_labels' => FALSE,
+        'label_singular' => '',
+        'label_plural' => '',
+        'collapsible' => FALSE,
+        'collapsed' => FALSE,
+        'revision' => FALSE,
+      ],
+    ]);
+    $changed = TRUE;
+    \Drupal::logger('markaspot_media')->info('Added field_request_media to service_request default form display.');
+  }
+
+  if ($changed) {
+    $display->save();
+  }
 }
