@@ -106,12 +106,16 @@ class AiClientServiceTest extends UnitTestCase {
       ->with('markaspot_ai')
       ->willReturn($this->logger);
 
-    $this->service = new AiClientService(
-      $this->httpClient,
-      $configFactory,
-      $loggerFactory,
-      $this->tokenTracking,
-    );
+    $this->service = $this->getMockBuilder(AiClientService::class)
+      ->setConstructorArgs([
+        $this->httpClient,
+        $configFactory,
+        $loggerFactory,
+        $this->tokenTracking,
+      ])
+      ->onlyMethods(['wait'])
+      ->getMock();
+    $this->service->method('wait')->willReturnCallback(function () {});
   }
 
   /**
