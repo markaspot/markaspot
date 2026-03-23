@@ -202,3 +202,95 @@ function markaspot_boilerplate_update_11001(): void {
     }
   }
 }
+
+/**
+ * Add Group Relationship for boilerplate nodes and tenant_admin permissions.
+ */
+function markaspot_boilerplate_update_11002(): void {
+  $logger = \Drupal::logger('markaspot_boilerplate');
+  $etm = \Drupal::entityTypeManager();
+
+  // Steps 1 and 2 require the group module.
+  if (\Drupal::moduleHandler()->moduleExists('group')) {
+
+    // 1. Install the Group Relationship type if it does not exist.
+    $relationship_id = 'jur-group_node-boilerplate';
+    $existing = $etm->getStorage('group_relationship_type')
+      ->load($relationship_id);
+    if (!$existing) {
+      $etm->getStorage('group_relationship_type')->create([
+        'id' => $relationship_id,
+        'label' => 'Jurisdiction (Boilerplate)',
+        'group_type' => 'jur',
+        'content_plugin' => 'group_node:boilerplate',
+        'plugin_config' => [
+          'group_cardinality' => 0,
+          'entity_cardinality' => 0,
+          'use_creation_wizard' => FALSE,
+        ],
+      ])->save();
+      $logger->info('Created Group Relationship type jur-group_node-boilerplate.');
+    }
+
+    // 2. Add field_jurisdiction to boilerplate nodes if it does not exist.
+    $field_id = 'node.boilerplate.field_jurisdiction';
+    if (!$etm->getStorage('field_config')->load($field_id)) {
+      $field_storage = $etm->getStorage('field_storage_config')
+        ->load('node.field_jurisdiction');
+      if ($field_storage) {
+        $etm->getStorage('field_config')->create([
+          'field_storage' => $field_storage,
+          'bundle' => 'boilerplate',
+          'label' => 'Jurisdiction',
+          'description' => 'The jurisdiction this boilerplate belongs to.',
+          'required' => FALSE,
+          'translatable' => FALSE,
+          'settings' => [
+            'handler' => 'default:group',
+            'handler_settings' => [
+              'target_bundles' => [
+                'jur' => 'jur',
+              ],
+              'sort' => [
+                'field' => 'label',
+                'direction' => 'ASC',
+              ],
+              'auto_create' => FALSE,
+            ],
+          ],
+        ])->save();
+        $logger->info('Created field_jurisdiction instance on boilerplate nodes.');
+      }
+      else {
+        $logger->warning('field.storage.node.field_jurisdiction not found. Skipping field_jurisdiction on boilerplate.');
+      }
+    }
+  }
+
+  // 3. Add boilerplate permissions to tenant_admin role.
+  $role = \Drupal\user\Entity\Role::load('tenant_admin');
+  if ($role) {
+    $new_permissions = [
+      'create boilerplate content',
+      'create field_boilerplate',
+      'delete any boilerplate content',
+      'delete own boilerplate content',
+      'edit any boilerplate content',
+      'edit field_boilerplate',
+      'edit own boilerplate content',
+      'edit own field_boilerplate',
+      'view own field_boilerplate',
+    ];
+    $changed = FALSE;
+    foreach ($new_permissions as $permission) {
+      if (!$role->hasPermission($permission)) {
+        $role->grantPermission($permission);
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $role->save();
+      $logger->info('Added boilerplate permissions to tenant_admin role.');
+    }
+  }
+}

@@ -1,0 +1,16 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+    - node.type.boilerplate
+  module:
+    - gnode
+    - node
+id: jur-group_node-boilerplate
+group_type: jur
+content_plugin: 'group_node:boilerplate'
+plugin_config:
+  group_cardinality: 0
+  entity_cardinality: 0
+  use_creation_wizard: false

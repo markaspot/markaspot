@@ -4,6 +4,7 @@ status: true
 dependencies:
   config:
     - media.type.request_image
+    - node.type.boilerplate
     - node.type.page
     - node.type.service_request
     - rest.resource.georeport_request_index_resource
@@ -47,10 +48,12 @@ permissions:
   - 'administer tenant taxonomy'
   - 'bypass mas validation'
   - 'bypass node access'
+  - 'create boilerplate content'
   - 'create content translations'
   - 'create field_address'
   - 'create field_approved'
   - 'create field_attachment'
+  - 'create field_boilerplate'
   - 'create field_e_mail'
   - 'create field_escalation'
   - 'create field_internal_remark'
@@ -66,15 +69,19 @@ permissions:
   - 'create terms in service_category'
   - 'create terms in service_status'
   - 'delegate service requests'
+  - 'delete any boilerplate content'
   - 'delete content translations'
+  - 'delete own boilerplate content'
   - 'delete terms in service_category'
   - 'delete terms in service_status'
+  - 'edit any boilerplate content'
   - 'edit any page content'
   - 'edit any request_image media'
   - 'edit any service_request content'
   - 'edit field_address'
   - 'edit field_approved'
   - 'edit field_attachment'
+  - 'edit field_boilerplate'
   - 'edit field_e_mail'
   - 'edit field_escalation'
   - 'edit field_internal_remark'
@@ -86,9 +93,11 @@ permissions:
   - 'edit field_status'
   - 'edit field_status_note'
   - 'edit field_status_notes'
+  - 'edit own boilerplate content'
   - 'edit own field_address'
   - 'edit own field_approved'
   - 'edit own field_attachment'
+  - 'edit own field_boilerplate'
   - 'edit own field_e_mail'
   - 'edit own field_escalation'
   - 'edit own field_internal_remark'
@@ -129,6 +138,7 @@ permissions:
   - 'view field_status'
   - 'view field_status_note'
   - 'view field_status_notes'
+  - 'view own field_boilerplate'
   - 'view own field_address'
   - 'view own field_approved'
   - 'view own field_attachment'

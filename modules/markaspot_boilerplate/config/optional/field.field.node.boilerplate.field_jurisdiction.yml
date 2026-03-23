@@ -1,0 +1,27 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_jurisdiction
+    - group.type.jur
+    - node.type.boilerplate
+id: node.boilerplate.field_jurisdiction
+field_name: field_jurisdiction
+entity_type: node
+bundle: boilerplate
+label: Jurisdiction
+description: 'The jurisdiction this boilerplate belongs to.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:group'
+  handler_settings:
+    target_bundles:
+      jur: jur
+    sort:
+      field: label
+      direction: ASC
+    auto_create: false
+field_type: entity_reference
