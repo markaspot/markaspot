@@ -269,7 +269,7 @@ class AiClientService {
             '@wait' => $waitTime,
           ]);
 
-          sleep($waitTime);
+          $this->wait($waitTime);
           continue;
         }
 
@@ -288,6 +288,18 @@ class AiClientService {
       0,
       $lastException
     );
+  }
+
+  /**
+   * Waits for the specified number of seconds.
+   *
+   * Extracted to allow overriding in tests.
+   *
+   * @param int $seconds
+   *   The number of seconds to wait.
+   */
+  protected function wait(int $seconds): void {
+    sleep($seconds);
   }
 
   /**
