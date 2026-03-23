@@ -236,9 +236,9 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->with('group')
       ->willReturn(TRUE);
 
+    // Only uid 1 bypasses jurisdiction checks (not bypass node access).
     $admin = $this->createMock(AccountProxyInterface::class);
-    $admin->method('hasPermission')
-      ->willReturnCallback(fn($perm) => $perm === 'bypass node access');
+    $admin->method('hasPermission')->willReturn(FALSE);
     $admin->method('id')->willReturn(1);
 
     $this->processor->validateJurisdictionAccess(42, $admin);
@@ -544,14 +544,14 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       });
     $query->method('condition')->willReturnSelf();
 
+    // Only uid 1 bypasses access checks (not bypass node access).
     $admin = $this->createMock(AccountProxyInterface::class);
-    $admin->method('hasPermission')
-      ->willReturnCallback(fn($perm) => $perm === 'bypass node access');
+    $admin->method('hasPermission')->willReturn(FALSE);
     $admin->method('id')->willReturn(1);
     $admin->method('isAnonymous')->willReturn(FALSE);
 
     $this->processor->createNodeQuery([], $admin);
-    $this->assertFalse($accessCheckValue, 'Admin query has accessCheck(FALSE)');
+    $this->assertFalse($accessCheckValue, 'Admin (uid 1) query has accessCheck(FALSE)');
   }
 
   /**
@@ -576,6 +576,35 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
 
     $this->processor->createNodeQuery([], $user);
     $this->assertTrue($accessCheckValue, 'Authenticated query has accessCheck(TRUE)');
+  }
+
+  /**
+   * @covers ::createNodeQuery
+   */
+  public function testCreateNodeQueryBypassPermissionDoesNotBypassForNonUid1(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $this->nodeStorage->method('getQuery')->willReturn($query);
+
+    $accessCheckValue = NULL;
+    $query->method('accessCheck')
+      ->willReturnCallback(function ($value) use ($query, &$accessCheckValue) {
+        $accessCheckValue = $value;
+        return $query;
+      });
+    $query->method('condition')->willReturnSelf();
+
+    // A tenant_admin (uid != 1) with bypass node access must NOT bypass.
+    $tenantAdmin = $this->createMock(AccountProxyInterface::class);
+    $tenantAdmin->method('hasPermission')
+      ->willReturnCallback(fn($perm) => $perm === 'bypass node access');
+    $tenantAdmin->method('id')->willReturn(42);
+    $tenantAdmin->method('isAnonymous')->willReturn(FALSE);
+
+    $this->processor->createNodeQuery([], $tenantAdmin);
+    $this->assertTrue(
+      $accessCheckValue,
+      'User with bypass node access but uid != 1 must use accessCheck(TRUE)'
+    );
   }
 
   // =========================================================================

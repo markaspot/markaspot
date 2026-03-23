@@ -450,9 +450,8 @@ function _markaspot_escalation_add_jurisdiction_fields_to_display() {
 /**
  * Grants escalation and delegation permissions to management roles.
  *
- * Also grants 'bypass node access' to tenant_admin. This is a global
- * permission; application-level filtering ensures tenant admins only
- * interact with requests in their jurisdiction context.
+ * Grants escalation and delegation permissions to moderator,
+ * editorial_board, and tenant_admin roles.
  */
 function _markaspot_escalation_grant_permissions() {
   $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
@@ -482,16 +481,6 @@ function _markaspot_escalation_grant_permissions() {
       }
     }
 
-    // Tenant admins need bypass node access to manage all requests.
-    // Note: This is a global permission (not scoped to jurisdictions).
-    // Application-level filtering in the frontend ensures tenant admins
-    // only see and edit requests within their jurisdiction context.
-    if ($role_id === 'tenant_admin' && !$role->hasPermission('bypass node access')) {
-      $role->grantPermission('bypass node access');
-      $changed = TRUE;
-      \Drupal::logger('markaspot_escalation')->notice('Granted "bypass node access" to tenant_admin.');
-    }
-
     if ($changed) {
       $role->save();
       \Drupal::logger('markaspot_escalation')->notice('Granted escalation permissions to @role.', ['@role' => $role_id]);
@@ -503,12 +492,11 @@ function _markaspot_escalation_grant_permissions() {
  * Grant escalation/delegation permissions to management roles.
  *
  * Ensures moderator, editorial_board, and tenant_admin have escalation
- * and delegation permissions. Also grants 'bypass node access' to
- * tenant_admin for full service request management.
+ * and delegation permissions.
  */
 function markaspot_escalation_update_10001() {
   _markaspot_escalation_grant_permissions();
-  return t('Granted escalation/delegation permissions to management roles and bypass node access to tenant_admin.');
+  return t('Granted escalation/delegation permissions to management roles.');
 }
 
 /**

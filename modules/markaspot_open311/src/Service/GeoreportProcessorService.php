@@ -738,19 +738,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Load nodes - for privileged users we need to bypass entity access.
     $storage = $this->entityTypeManager->getStorage('node');
-    $bypass_access = $user->hasPermission('bypass node access') || $user->id() == 1;
+    $bypass_access = $user->id() == 1;
 
     if ($bypass_access) {
       // Switch to root user account to bypass all access checks during node loading.
       $account_switcher = \Drupal::service('account_switcher');
       $root_user = User::load(1);
       $account_switcher->switchTo($root_user);
-
-      // Load nodes as root user (bypasses access control)
-      $nodes = $storage->loadMultiple($nids);
-
-      // Switch back to original user.
-      $account_switcher->switchBack();
+      try {
+        $nodes = $storage->loadMultiple($nids);
+      }
+      finally {
+        $account_switcher->switchBack();
+      }
     }
     else {
       // For regular users, load with normal access checks.
@@ -759,11 +759,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       if (!$user->isAnonymous()) {
         foreach ($nids as $nid) {
           if (!isset($nodes[$nid])) {
-            // Temporarily switch to check if this is user's own content.
             $account_switcher = \Drupal::service('account_switcher');
             $account_switcher->switchTo(User::load(1));
-            $node = $storage->load($nid);
-            $account_switcher->switchBack();
+            try {
+              $node = $storage->load($nid);
+            }
+            finally {
+              $account_switcher->switchBack();
+            }
 
             if ($node && !$node->isPublished() && $node->getOwnerId() == $user->id()) {
               $nodes[$nid] = $node;
@@ -879,8 +882,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $use_group_filter = $config->get('group_filter_enabled') ?? FALSE;
     }
 
-    // User 1 and users with bypass node access can see everything.
-    if ($user->hasPermission('bypass node access') || $user->id() == 1) {
+    // Only super-admin (uid 1) bypasses all access checks.
+    // Tenant admins rely on Group module for jurisdiction-scoped access.
+    if ($user->id() == 1) {
       $query->accessCheck(FALSE);
     }
     // When group filtering is active, let Group module handle access control.
@@ -1142,64 +1146,6 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return array_unique($node_ids);
-  }
-
-  /**
-   * Checks if a user can edit a node.
-   *
-   * This method avoids using $node->access('update') which triggers
-   * Group module's buggy node access handler with missing group_roles field.
-   *
-   * @param object $node
-   *   The node object.
-   * @param \Drupal\Core\Session\AccountProxyInterface $user
-   *   The user to check access for.
-   *
-   * @return bool
-   *   TRUE if the user can edit the node, FALSE otherwise.
-   */
-  protected function checkNodeEditability(object $node, $user): bool {
-    // Admin and users with bypass permission can edit anything.
-    if ($user->hasPermission('bypass node access') || $user->id() == 1) {
-      return TRUE;
-    }
-
-    // Anonymous users cannot edit.
-    if ($user->isAnonymous()) {
-      return FALSE;
-    }
-
-    // Check if user owns the node.
-    if ($node->getOwnerId() == $user->id()) {
-      return TRUE;
-    }
-
-    // Check if user has general 'edit any service_request content' permission.
-    if ($user->hasPermission('edit any service_request content')) {
-      return TRUE;
-    }
-
-    // If Group module is enabled, check group membership permissions.
-    if ($this->moduleHandler->moduleExists('group')) {
-      return $this->checkGroupEditPermission($node, $user);
-    }
-
-    return FALSE;
-  }
-
-  /**
-   * Checks if user has edit permission via Group module membership.
-   *
-   * @param object $node
-   *   The node object.
-   * @param \Drupal\Core\Session\AccountProxyInterface $user
-   *   The user to check.
-   *
-   * @return bool
-   *   TRUE if user can edit via group membership.
-   */
-  protected function checkGroupEditPermission(object $node, $user): bool {
-    return $this->checkGroupPermission($node, $user, 'update');
   }
 
   /**
@@ -1879,8 +1825,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     $account = $account ?? $this->currentUser;
 
-    // Admin users bypass jurisdiction checks.
-    if ($account->hasPermission('bypass node access') || $account->id() == 1) {
+    // Only super-admin (uid 1) bypasses jurisdiction checks.
+    if ($account->id() == 1) {
       return;
     }
 

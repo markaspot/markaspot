@@ -37,6 +37,28 @@ function markaspot_tenant_admin_update_10001(): void {
 }
 
 /**
+ * Remove 'bypass node access' from tenant_admin role.
+ *
+ * This permission bypassed Group module access control, causing a
+ * cross-tenant data leak where tenant admins could view unpublished
+ * service requests from other jurisdictions.
+ */
+function markaspot_tenant_admin_update_10002(): void {
+  $role = Role::load('tenant_admin');
+  if (!$role) {
+    return;
+  }
+
+  if ($role->hasPermission('bypass node access')) {
+    $role->revokePermission('bypass node access');
+    $role->save();
+    \Drupal::logger('markaspot_tenant_admin')->notice(
+      'Revoked "bypass node access" from tenant_admin role (cross-tenant security fix).'
+    );
+  }
+}
+
+/**
  * Implements hook_install().
  *
  * Scans existing jur-admin memberships and retroactively grants the

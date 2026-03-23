@@ -47,7 +47,6 @@ permissions:
   - 'access workspace usage'
   - 'administer tenant taxonomy'
   - 'bypass mas validation'
-  - 'bypass node access'
   - 'create boilerplate content'
   - 'create content translations'
   - 'create field_address'

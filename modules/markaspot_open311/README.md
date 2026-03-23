@@ -87,7 +87,7 @@ GET /georeport/v2/requests.json?group_filter=1
 | Anonymous | Parameter ignored, returns public requests |
 | Authenticated (no groups) | Returns empty result |
 | Authenticated (member of orgs) | Returns requests in user's organisations |
-| Admin / bypass node access | Returns all requests in user's organisations |
+| Super-admin (uid 1) | Returns all requests across all organisations |
 
 ### Permission Model
 
