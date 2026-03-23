@@ -1,5 +1,29 @@
 # Changelog
 
+## [11.9.15](https://github.com/markaspot/markaspot/compare/11.9.14...11.9.15) (2026-03-23)
+
+### Features
+
+* **#172:** add ECA confirmation email with jurisdiction footer ([af19783](https://github.com/markaspot/markaspot/commit/af197831431f4e54cc538e222db0cecf496c524a)), closes [#172](https://github.com/markaspot/markaspot/issues/172)
+* billing address fields on jurisdiction, synced from Stripe ([6cc6444](https://github.com/markaspot/markaspot/commit/6cc64449998b5c08640868ea916ad002d3059b0e))
+
+### Bug Fixes
+
+* **#172:** add missing dependencies and use custom status note token ([b366bc4](https://github.com/markaspot/markaspot/commit/b366bc4b649d46f3a492d248b02666bddec0cc20)), closes [#172](https://github.com/markaspot/markaspot/issues/172)
+* **#194:** pass ai_system_prompt from controller to workspace data ([c8a78fd](https://github.com/markaspot/markaspot/commit/c8a78fd26499b045097ff9ec48886013d3f2ffcf)), closes [#194](https://github.com/markaspot/markaspot/issues/194)
+* **#207:** allow tenant admin to invite members to org groups ([9a97909](https://github.com/markaspot/markaspot/commit/9a979097087624f3225f14caca433fbb08d1a507)), closes [#207](https://github.com/markaspot/markaspot/issues/207)
+* add sv, nb, fi to dashboard language settings ([#183](https://github.com/markaspot/markaspot/issues/183)) ([748d20d](https://github.com/markaspot/markaspot/commit/748d20db2f7e8cf0833098b62661bbc18bc87a7f))
+* defensive error handling and backfill for missing start pages ([#197](https://github.com/markaspot/markaspot/issues/197)) ([e0259f9](https://github.com/markaspot/markaspot/commit/e0259f9df1d686af73fe1a9486ccce75fc7e7f48))
+* restrict workspace usage to tenant_admin group role ([ee20b86](https://github.com/markaspot/markaspot/commit/ee20b86773e057777ba17359dd05609e29f59657))
+* **test:** add functional test setup signatures for PHP 8.4 ([922bfa4](https://github.com/markaspot/markaspot/commit/922bfa426fab10712361a90d1d5e5be2b91c046a))
+* **test:** mock wait() in AiClientServiceTest to avoid real sleep ([372f43e](https://github.com/markaspot/markaspot/commit/372f43e6fd63b07e5a87ae0fd82ef656338130e7))
+* use requested language in normalizeCategories fallback ([d6ed2fb](https://github.com/markaspot/markaspot/commit/d6ed2fbbb8f6f045f28e51a2da9f608af01165f4))
+
+### Refactoring
+
+* **#196:** move jurisdiction address/email fields to markaspot_group ([47daf62](https://github.com/markaspot/markaspot/commit/47daf62864534b24b5acb0503cb91494b7d6265a)), closes [#196](https://github.com/markaspot/markaspot/issues/196)
+* **ai:** extract wait() method from retry loop for testability ([6245c90](https://github.com/markaspot/markaspot/commit/6245c90191876f89c7a2e7313f832a0e19e8b055))
+
 ## [11.9.14](https://github.com/markaspot/markaspot/compare/11.9.13...11.9.14) (2026-03-22)
 
 ### Features
