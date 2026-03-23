@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.16](https://github.com/markaspot/markaspot/compare/11.9.15...11.9.16) (2026-03-23)
+
+### Features
+
+* **#216:** jurisdiction-specific boilerplates via Group Content ([404d468](https://github.com/markaspot/markaspot/commit/404d46883963f41d8e118ded0f07a3d3a911075f)), closes [#216](https://github.com/markaspot/markaspot/issues/216)
+
+### Bug Fixes
+
+* **#214:** add field_request_media to form display on fresh install ([45b59ec](https://github.com/markaspot/markaspot/commit/45b59ec77c90dc30ff1278ed6f3d0e9d18d461f3)), closes [#214](https://github.com/markaspot/markaspot/issues/214)
+* **#214:** remove deprecated field_request_image from management form display ([4468748](https://github.com/markaspot/markaspot/commit/44687484629955c07f28c5d3edfea8ebd9c4d19c)), closes [#214](https://github.com/markaspot/markaspot/issues/214)
+* **security:** close cross-tenant data leak for tenant_admin role ([f1e1405](https://github.com/markaspot/markaspot/commit/f1e1405d3bda2e8bc159a0207ff88830097538bd))
+
 ## [11.9.15](https://github.com/markaspot/markaspot/compare/11.9.14...11.9.15) (2026-03-23)
 
 ### Features
