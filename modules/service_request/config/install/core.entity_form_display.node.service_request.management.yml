@@ -8,10 +8,8 @@ dependencies:
     - field.field.node.service_request.field_category
     - field.field.node.service_request.field_e_mail
     - field.field.node.service_request.field_geolocation
-    - field.field.node.service_request.field_request_image
     - field.field.node.service_request.field_status
     - field.field.node.service_request.field_status_notes
-    - image.style.medium
     - node.type.service_request
   enforced:
     module:
@@ -20,7 +18,6 @@ dependencies:
     - address
     - field_group
     - geolocation_nominatim
-    - image
     - paragraphs
     - text
 third_party_settings:
@@ -42,7 +39,6 @@ third_party_settings:
         - field_category
         - body
         - field_e_mail
-        - field_request_image
         - field_geolocation
         - field_address
       parent_name: group_edit_service_request
@@ -111,22 +107,6 @@ content:
       placeholder: ''
     third_party_settings: {  }
     type: email_default
-    region: content
-  field_image:
-    type: image_image
-    weight: 6
-    settings:
-      progress_indicator: throbber
-      preview_image_style: thumbnail
-    third_party_settings: {  }
-    region: content
-  field_request_image:
-    type: image_image
-    weight: 5
-    settings:
-      preview_image_style: medium
-      progress_indicator: throbber
-    third_party_settings: {  }
     region: content
   field_status:
     weight: 17

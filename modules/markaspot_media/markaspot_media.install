@@ -57,8 +57,8 @@ function markaspot_media_update_11901(): void {
 /**
  * Shared helper: ensure field_request_media is on the form display.
  *
- * Used by both hook_install() (fresh installs) and update_11901 (existing
- * sites). Also removes the deprecated field_request_image if present.
+ * Used by hook_install() on fresh installs.
+ * Also removes the deprecated field_request_image if present.
  */
 function _markaspot_media_ensure_form_display(): void {
   $display = \Drupal::entityTypeManager()
