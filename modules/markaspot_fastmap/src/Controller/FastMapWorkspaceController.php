@@ -265,6 +265,9 @@ class FastMapWorkspaceController extends ControllerBase {
         : NULL,
       'start_page_translations' => $startPageTranslations ?: NULL,
       'demo' => !empty($data['demo']),
+      'ai_system_prompt' => isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt'])
+        ? mb_substr(trim($data['ai_system_prompt']), 0, 2000)
+        : '',
     ];
 
     try {
