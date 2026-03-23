@@ -2085,3 +2085,113 @@ function markaspot_group_update_11911(): void {
     $logger->info('Added field_legal_notice and field_privacy_policy to jur form display.');
   }
 }
+
+/**
+ * Move jurisdiction address and email fields from markaspot_escalation.
+ *
+ * These fields belong on the group entity regardless of whether escalation
+ * is enabled. On existing installations they were already created by
+ * markaspot_escalation; this hook ensures they exist for sites that install
+ * markaspot_group without markaspot_escalation.
+ */
+function markaspot_group_update_11912(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+
+  // --- field_jurisdiction_e_mail (email, unlimited cardinality) ---
+  $email_storage = $etm->getStorage('field_storage_config')
+    ->load('group.field_jurisdiction_e_mail');
+  if ($email_storage) {
+    $logger->info('Field storage group.field_jurisdiction_e_mail already exists, no action needed.');
+  }
+  else {
+    $email_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_jurisdiction_e_mail',
+      'entity_type' => 'group',
+      'type' => 'email',
+      'module' => 'core',
+      'cardinality' => -1,
+    ]);
+    $email_storage->save();
+    $logger->info('Created field storage group.field_jurisdiction_e_mail.');
+  }
+
+  if (!$etm->getStorage('field_config')->load('group.jur.field_jurisdiction_e_mail')) {
+    $etm->getStorage('field_config')->create([
+      'field_storage' => $email_storage,
+      'bundle' => 'jur',
+      'label' => 'Jurisdiction Email',
+      'description' => 'Contact email address(es) for this jurisdiction. Used for escalation notifications and correspondence.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+    ])->save();
+    $logger->info('Created field instance group.jur.field_jurisdiction_e_mail.');
+  }
+
+  // --- field_jurisdiction_address (address, cardinality 1) ---
+  $address_storage = $etm->getStorage('field_storage_config')
+    ->load('group.field_jurisdiction_address');
+  if ($address_storage) {
+    $logger->info('Field storage group.field_jurisdiction_address already exists, no action needed.');
+  }
+  else {
+    $address_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_jurisdiction_address',
+      'entity_type' => 'group',
+      'type' => 'address',
+      'module' => 'address',
+      'cardinality' => 1,
+    ]);
+    $address_storage->save();
+    $logger->info('Created field storage group.field_jurisdiction_address.');
+  }
+
+  if (!$etm->getStorage('field_config')->load('group.jur.field_jurisdiction_address')) {
+    $etm->getStorage('field_config')->create([
+      'field_storage' => $address_storage,
+      'bundle' => 'jur',
+      'label' => 'Jurisdiction Address',
+      'description' => 'Official address for this jurisdiction. Used in email signatures and correspondence.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [
+        'available_countries' => [],
+        'langcode_override' => '',
+        'field_overrides' => [],
+      ],
+    ])->save();
+    $logger->info('Created field instance group.jur.field_jurisdiction_address.');
+  }
+
+  // Add fields to jur form display if not already present.
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('group.jur.default');
+  if ($form_display) {
+    $changed = FALSE;
+    if (!$form_display->getComponent('field_jurisdiction_e_mail')) {
+      $form_display->setComponent('field_jurisdiction_e_mail', [
+        'type' => 'email_default',
+        'weight' => 20,
+        'region' => 'content',
+        'settings' => [
+          'size' => 60,
+          'placeholder' => '',
+        ],
+      ]);
+      $changed = TRUE;
+    }
+    if (!$form_display->getComponent('field_jurisdiction_address')) {
+      $form_display->setComponent('field_jurisdiction_address', [
+        'type' => 'address_default',
+        'weight' => 21,
+        'region' => 'content',
+        'settings' => [],
+      ]);
+      $changed = TRUE;
+    }
+    if ($changed) {
+      $form_display->save();
+      $logger->info('Added jurisdiction fields to jur form display.');
+    }
+  }
+}

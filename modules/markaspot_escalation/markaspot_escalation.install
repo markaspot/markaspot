@@ -55,7 +55,7 @@ function markaspot_escalation_uninstall() {
   // This follows Drupal best practices: fields are content/data and should be
   // preserved when modules are uninstalled. Site administrators can manually
   // delete them via the UI if desired.
-  \Drupal::logger('markaspot_escalation')->notice('Module uninstalled. Fields (field_internal_remark, field_internal_remark_text, field_escalation, field_escalation_target, field_escalation_days, field_jurisdiction_e_mail, field_jurisdiction_address) and the internal_remark paragraph type have been preserved.');
+  \Drupal::logger('markaspot_escalation')->notice('Module uninstalled. Fields (field_internal_remark, field_internal_remark_text, field_escalation, field_escalation_target, field_escalation_days) and the internal_remark paragraph type have been preserved. Jurisdiction fields (field_jurisdiction_e_mail, field_jurisdiction_address) are managed by markaspot_group.');
 
   \Drupal::messenger()->addStatus(t('Mark-a-Spot Escalation module uninstalled. All fields and the internal_remark paragraph type have been preserved. To remove fields, use the Field UI or drush field:delete commands.'));
 }
@@ -89,19 +89,21 @@ function markaspot_escalation_requirements($phase) {
     }
 
     // Check for field_jurisdiction_e_mail on jur group.
+    // This field is now owned by markaspot_group but still required by
+    // escalation for sending notifications.
     $field_jur_email = $field_storage->load('group.field_jurisdiction_e_mail');
     if (!$field_jur_email) {
       $requirements['markaspot_escalation_jur_email'] = [
         'title' => t('Jurisdiction Email Field'),
         'value' => t('Missing'),
-        'description' => t('The field_jurisdiction_e_mail field is required on jur group entities but not installed. Please reinstall the module or manually create the field.'),
+        'description' => t('The field_jurisdiction_e_mail field is required on jur group entities but not installed. This field is provided by markaspot_group. Ensure markaspot_group is up to date.'),
         'severity' => REQUIREMENT_ERROR,
       ];
     }
     else {
       $requirements['markaspot_escalation_jur_email'] = [
         'title' => t('Jurisdiction Email Field'),
-        'value' => t('Configured correctly'),
+        'value' => t('Configured correctly (provided by markaspot_group)'),
         'severity' => REQUIREMENT_OK,
       ];
     }
