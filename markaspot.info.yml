@@ -72,6 +72,7 @@ dependencies:
   - markaspot_dashboard
   - markaspot_escalation
   - markaspot_stats
+  - markaspot_boilerplate
   - markaspot_feedback
   - markaspot_vision
 themes:
