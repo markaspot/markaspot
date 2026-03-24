@@ -575,37 +575,51 @@ EOF
   $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
   success "Database updates complete"
 
-  # Re-import role permissions from profile config/optional.
+  # Ensure tenant_admin role exists (may not be created by config/optional if deps missing).
+  step "Ensuring tenant_admin role..."
+  $DRUSH_CMD $DRUSH_URI php:eval "
+    \$role = \Drupal\user\Entity\Role::load('tenant_admin');
+    if (!\$role) {
+      \$role = \Drupal\user\Entity\Role::create(['id' => 'tenant_admin', 'label' => 'Tenant Admin', 'weight' => 4]);
+      \$role->save();
+      echo \"Created tenant_admin role\n\";
+    } else {
+      echo \"tenant_admin role exists\n\";
+    }
+  " 2>/dev/null || true
+
+  # Re-import role permissions from profile config/install and config/optional.
   # Even with targeted cleanup, profile optional role configs may not be
   # auto-imported by drush en. Ensure all profile-shipped permissions are granted.
   step "Restoring role permissions from profile..."
-  PROFILE_CONFIG="$WEB_ROOT/profiles/contrib/markaspot/config/optional"
-  if [ -d "$PROFILE_CONFIG" ]; then
-    for role_file in "$PROFILE_CONFIG"/user.role.*.yml; do
-      [ -f "$role_file" ] || continue
-      role_name=$(basename "$role_file" .yml | sed 's/^user\.role\.//')
-      $DRUSH_CMD $DRUSH_URI php:eval "
-        \$yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents('$role_file'));
-        \$role = \Drupal::entityTypeManager()->getStorage('user_role')->load('$role_name');
-        if (\$role && !empty(\$yaml['permissions'])) {
-          \$added = 0;
-          foreach (\$yaml['permissions'] as \$perm) {
-            if (!\$role->hasPermission(\$perm)) {
-              \$role->grantPermission(\$perm);
-              \$added++;
+  for PROFILE_CONFIG in "$WEB_ROOT/profiles/contrib/markaspot/config/install" "$WEB_ROOT/profiles/contrib/markaspot/config/optional"; do
+    if [ -d "$PROFILE_CONFIG" ]; then
+      for role_file in "$PROFILE_CONFIG"/user.role.*.yml; do
+        [ -f "$role_file" ] || continue
+        role_name=$(basename "$role_file" .yml | sed 's/^user\.role\.//')
+        $DRUSH_CMD $DRUSH_URI php:eval "
+          \$yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents('$role_file'));
+          \$role = \Drupal::entityTypeManager()->getStorage('user_role')->load('$role_name');
+          if (\$role && !empty(\$yaml['permissions'])) {
+            \$handler = \Drupal::service('user.permissions');
+            \$valid = array_keys(\$handler->getPermissions());
+            \$added = 0;
+            foreach (\$yaml['permissions'] as \$perm) {
+              if (in_array(\$perm, \$valid) && !\$role->hasPermission(\$perm)) {
+                \$role->grantPermission(\$perm);
+                \$added++;
+              }
+            }
+            if (\$added > 0) {
+              \$role->save();
+              echo \"Added \$added permissions for $role_name\\n\";
             }
           }
-          if (\$added > 0) {
-            \$role->save();
-            echo \"Added \$added permissions for $role_name\\n\";
-          }
-        }
-      " 2>/dev/null || true
-    done
-    success "Role permissions verified"
-  else
-    warn "Profile config/optional not found, skipping permission check"
-  fi
+        " 2>/dev/null || true
+      done
+    fi
+  done
+  success "Role permissions verified"
 
   # Run config-update to set coordinates, validation, and country
   country=$(echo "$locale" | cut -d '_' -f2)

@@ -55,6 +55,18 @@ function markaspot_media_update_11901(): void {
 }
 
 /**
+ * Increase field_request_media cardinality from 1 to 3.
+ */
+function markaspot_media_update_11902(): void {
+  $storage = \Drupal\field\Entity\FieldStorageConfig::load('node.field_request_media');
+  if ($storage && $storage->getCardinality() < 3) {
+    $storage->setCardinality(3);
+    $storage->save();
+    \Drupal::logger('markaspot_media')->info('Increased field_request_media cardinality to 3.');
+  }
+}
+
+/**
  * Shared helper: ensure field_request_media is on the form display.
  *
  * Used by hook_install() on fresh installs.

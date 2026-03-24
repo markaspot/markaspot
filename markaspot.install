@@ -1142,6 +1142,92 @@ function markaspot_update_11905(): void {
 }
 
 /**
+ * Enable JSON:API write operations (read_only: false).
+ *
+ * The dashboard needs JSON:API PATCH/POST/DELETE for editing requests,
+ * managing status notes, and other write operations. Drupal's default
+ * is read_only: true which blocks all mutations.
+ */
+function markaspot_update_11906(): void {
+  $config = \Drupal::configFactory()->getEditable('jsonapi.settings');
+  if ($config->get('read_only') !== FALSE) {
+    $config->set('read_only', FALSE)->save();
+    \Drupal::logger('markaspot')->notice('Set jsonapi.settings read_only to false.');
+  }
+}
+
+/**
+ * Create tenant_admin role and grant core permissions.
+ *
+ * On fresh installs via start.sh, config/optional may be skipped when
+ * optional module dependencies are missing. This ensures the tenant_admin
+ * role exists with all permissions that only require always-present modules.
+ */
+function markaspot_update_11907(): void {
+  $role = \Drupal\user\Entity\Role::load('tenant_admin');
+  if (!$role) {
+    $role = \Drupal\user\Entity\Role::create([
+      'id' => 'tenant_admin',
+      'label' => 'Tenant Admin',
+      'weight' => 4,
+    ]);
+    $role->save();
+    \Drupal::logger('markaspot')->notice('Created tenant_admin role.');
+  }
+
+  // Grant all valid permissions from profile config.
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $config_file = $profile_path . '/config/install/user.role.tenant_admin.yml';
+  if (file_exists($config_file)) {
+    $yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents($config_file));
+    $permission_handler = \Drupal::service('user.permissions');
+    $valid_permissions = array_keys($permission_handler->getPermissions());
+    $added = 0;
+    foreach ($yaml['permissions'] ?? [] as $perm) {
+      if (in_array($perm, $valid_permissions) && !$role->hasPermission($perm)) {
+        $role->grantPermission($perm);
+        $added++;
+      }
+    }
+    if ($added > 0) {
+      $role->save();
+      \Drupal::logger('markaspot')->notice('Added @count permissions to tenant_admin role.', ['@count' => $added]);
+    }
+  }
+}
+
+/**
+ * Grant additional permissions to authenticated role.
+ *
+ * Adds edit own field_e_mail and edit terms in service_category
+ * for authenticated users.
+ */
+function markaspot_update_11908(): void {
+  $role = \Drupal\user\Entity\Role::load('authenticated');
+  if (!$role) {
+    return;
+  }
+
+  $perms_to_add = [
+    'edit own field_e_mail',
+    'edit terms in service_category',
+  ];
+  $permission_handler = \Drupal::service('user.permissions');
+  $valid_permissions = array_keys($permission_handler->getPermissions());
+  $added = 0;
+  foreach ($perms_to_add as $perm) {
+    if (in_array($perm, $valid_permissions) && !$role->hasPermission($perm)) {
+      $role->grantPermission($perm);
+      $added++;
+    }
+  }
+  if ($added > 0) {
+    $role->save();
+    \Drupal::logger('markaspot')->notice('Added @count permissions to authenticated role.', ['@count' => $added]);
+  }
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {
