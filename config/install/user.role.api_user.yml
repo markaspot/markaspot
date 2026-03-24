@@ -1,13 +1,8 @@
 langcode: en
 status: true
 dependencies:
-  config:
-    - rest.resource.georeport_request_index_resource
-    - rest.resource.georeport_request_resource
-    - rest.resource.georeport_service_index_resource
   module:
     - field_permissions
-    - rest
 id: api_user
 label: 'API User'
 weight: -3

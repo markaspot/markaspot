@@ -2,19 +2,9 @@ uuid: e28450a5-3f2c-4847-ae5a-e3ddd3af3157
 langcode: en
 status: true
 dependencies:
-  config:
-    - filter.format.basic_html
-    - node.type.service_request
-    - rest.resource.georeport_discovery_resource
-    - rest.resource.georeport_request_index_resource
-    - rest.resource.georeport_request_resource
   module:
     - field_permissions
-    - filter
-    - markaspot_open311
-    - media
     - node
-    - rest
     - system
     - taxonomy
 _core:

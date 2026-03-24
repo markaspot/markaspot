@@ -1,23 +1,11 @@
 langcode: en
 status: true
 dependencies:
-  config:
-    - node.type.page
-    - node.type.service_request
-    - rest.resource.georeport_request_index_resource
-    - rest.resource.georeport_request_resource
-    - rest.resource.georeport_service_index_resource
-    - taxonomy.vocabulary.service_category
-    - taxonomy.vocabulary.service_status
   module:
     - field_permissions
-    - markaspot_group
-    - markaspot_open311
-    - media
     - node
-    - paragraphs
-    - rest
     - system
+    - taxonomy
     - taxonomy
 id: tenant_admin
 label: 'Tenant Admin'
