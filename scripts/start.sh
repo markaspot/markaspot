@@ -601,6 +601,18 @@ EOF
       \$config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
       \$config->set('api_key', getenv('OPENAI_API_KEY'));
       \$config->save();
+      // Remove AVIF conversion from wide image style (Drupal 11 core default).
+      // OpenAI Vision API does not support AVIF. Keep scale-only.
+      \$style = \Drupal::entityTypeManager()->getStorage('image_style')->load('wide');
+      if (\$style) {
+        foreach (\$style->getEffects() as \$effect) {
+          if (\$effect->getPluginId() === 'image_convert_avif') {
+            \$style->deleteImageEffect(\$effect);
+            \$style->save();
+            break;
+          }
+        }
+      }
     " 2>/dev/null
     success "AI modules configured (vision + analysis)"
   fi
