@@ -807,3 +807,77 @@ function markaspot_fastmap_update_11913(): void {
     '@count' => $backfilled,
   ]);
 }
+
+/**
+ * Install workspace verification mail translations for existing sites.
+ *
+ * The config/install/language/* YAML files are only used on fresh installs.
+ * This hook backfills translations for sites that already have the module.
+ */
+function markaspot_fastmap_update_11914(): void {
+  $language_manager = \Drupal::languageManager();
+  $installed = 0;
+
+  $translations = [
+    'de' => [
+      'subject' => '@site_name: Workspace "@workspace_name" bestätigen',
+      'body' => "Sie haben einen neuen Workspace angefordert: @workspace_name\n\nKlicken Sie auf den folgenden Link, um Ihren Workspace zu bestätigen und zu aktivieren:\n@verify_url\n\nDieser Link ist @cleanup_days Tage gültig.\n\nFalls Sie dies nicht angefordert haben, ignorieren Sie bitte diese E-Mail.\n",
+    ],
+    'nl' => [
+      'subject' => '@site_name: Bevestig je werkruimte "@workspace_name"',
+      'body' => "Je hebt een nieuwe werkruimte aangevraagd: @workspace_name\n\nKlik op de onderstaande link om je werkruimte te bevestigen en te activeren:\n@verify_url\n\nDeze link verloopt over @cleanup_days dagen.\n\nAls je dit niet hebt aangevraagd, kun je deze e-mail negeren.\n",
+    ],
+    'fr' => [
+      'subject' => '@site_name: Confirmez votre espace de travail "@workspace_name"',
+      'body' => "Vous avez demandé un nouvel espace de travail : @workspace_name\n\nCliquez sur le lien ci-dessous pour confirmer et activer votre espace de travail :\n@verify_url\n\nCe lien expirera dans @cleanup_days jours.\n\nSi vous n'avez pas fait cette demande, veuillez ignorer cet e-mail.\n",
+    ],
+    'es' => [
+      'subject' => '@site_name: Confirma tu espacio de trabajo "@workspace_name"',
+      'body' => "Has solicitado un nuevo espacio de trabajo: @workspace_name\n\nHaz clic en el siguiente enlace para confirmar y activar tu espacio de trabajo:\n@verify_url\n\nEste enlace caducará en @cleanup_days días.\n\nSi no has solicitado esto, ignora este correo electrónico.\n",
+    ],
+    'pt-br' => [
+      'subject' => '@site_name: Confirme seu espaço de trabalho "@workspace_name"',
+      'body' => "Você solicitou um novo espaço de trabalho: @workspace_name\n\nClique no link abaixo para confirmar e ativar seu espaço de trabalho:\n@verify_url\n\nEste link expirará em @cleanup_days dias.\n\nSe você não solicitou isso, ignore este e-mail.\n",
+    ],
+    'pl' => [
+      'subject' => '@site_name: Potwierdź swoją przestrzeń roboczą "@workspace_name"',
+      'body' => "Wysłałeś prośbę o nową przestrzeń roboczą: @workspace_name\n\nKliknij poniższy link, aby potwierdzić i aktywować swoją przestrzeń roboczą:\n@verify_url\n\nTen link wygaśnie za @cleanup_days dni.\n\nJeśli nie składałeś tej prośby, zignoruj tego e-maila.\n",
+    ],
+    'tr' => [
+      'subject' => '@site_name: "@workspace_name" çalışma alanınızı doğrulayın',
+      'body' => "Yeni bir çalışma alanı talep ettiniz: @workspace_name\n\nÇalışma alanınızı doğrulamak ve etkinleştirmek için aşağıdaki bağlantıya tıklayın:\n@verify_url\n\nBu bağlantının süresi @cleanup_days gün içinde dolacaktır.\n\nBu talebi siz yapmadıysanız, lütfen bu e-postayı dikkate almayın.\n",
+    ],
+    'ar' => [
+      'subject' => '@site_name: قم بتأكيد مساحة العمل الخاصة بك "@workspace_name"',
+      'body' => "لقد طلبت مساحة عمل جديدة: @workspace_name\n\nانقر على الرابط أدناه لتأكيد وتفعيل مساحة العمل الخاصة بك:\n@verify_url\n\nستنتهي صلاحية هذا الرابط خلال @cleanup_days أيام.\n\nإذا لم تقم بهذا الطلب، يرجى تجاهل هذا البريد الإلكتروني.\n",
+    ],
+    'da' => [
+      'subject' => '@site_name: Bekræft dit arbejdsområde "@workspace_name"',
+      'body' => "Du har anmodet om et nyt arbejdsområde: @workspace_name\n\nKlik på linket nedenfor for at bekræfte og aktivere dit arbejdsområde:\n@verify_url\n\nDette link udløber om @cleanup_days dage.\n\nHvis du ikke har anmodet om dette, kan du ignorere denne e-mail.\n",
+    ],
+    'uk' => [
+      'subject' => '@site_name: Підтвердіть ваш робочий простір "@workspace_name"',
+      'body' => "Ви запросили новий робочий простір: @workspace_name\n\nНатисніть на посилання нижче, щоб підтвердити та активувати ваш робочий простір:\n@verify_url\n\nТермін дії цього посилання закінчиться через @cleanup_days днів.\n\nЯкщо ви не надсилали цей запит, будь ласка, проігноруйте цей лист.\n",
+    ],
+    'it' => [
+      'subject' => '@site_name: Conferma il tuo spazio di lavoro "@workspace_name"',
+      'body' => "Hai richiesto un nuovo spazio di lavoro: @workspace_name\n\nClicca sul link qui sotto per confermare e attivare il tuo spazio di lavoro:\n@verify_url\n\nQuesto link scadrà tra @cleanup_days giorni.\n\nSe non hai effettuato questa richiesta, ignora questa e-mail.\n",
+    ],
+  ];
+
+  foreach ($translations as $langcode => $mail) {
+    if (!$language_manager->getLanguage($langcode)) {
+      continue;
+    }
+    $override = $language_manager->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail');
+    if (!$override->isNew()) {
+      continue;
+    }
+    $override->set('workspace_verification', $mail)->save();
+    $installed++;
+  }
+
+  \Drupal::logger('markaspot_fastmap')->info('Installed @count fastmap mail translation(s).', [
+    '@count' => $installed,
+  ]);
+}

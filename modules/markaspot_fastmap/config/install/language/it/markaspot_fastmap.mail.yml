@@ -7,6 +7,6 @@ workspace_verification:
     Clicca sul link qui sotto per confermare e attivare il tuo spazio di lavoro:
     @verify_url
 
-    Questo link scadra tra @cleanup_days giorni.
+    Questo link scadrà tra @cleanup_days giorni.
 
     Se non hai effettuato questa richiesta, ignora questa e-mail.
