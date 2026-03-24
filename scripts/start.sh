@@ -478,7 +478,7 @@ EOF
 
   # Ensure all profile modules are enabled (Docker site:install may skip some
   # due to config dependency issues during installation)
-  PROFILE_MODULES="language markaspot_group markaspot_nuxt markaspot_bbox_cache markaspot_media markaspot_token markaspot_request_id markaspot_icons markaspot_dashboard markaspot_escalation markaspot_open311 pathauto search_api search_api_db diff restui"
+  PROFILE_MODULES="language toolbar markaspot_group markaspot_nuxt markaspot_bbox_cache markaspot_media markaspot_token markaspot_request_id markaspot_icons markaspot_dashboard markaspot_escalation markaspot_open311 pathauto search_api search_api_db diff restui"
   MISSING_MODULES=""
   for mod in $PROFILE_MODULES; do
     if ! $DRUSH_CMD $DRUSH_URI php:eval "echo \Drupal::moduleHandler()->moduleExists('$mod') ? '1' : '0';" 2>/dev/null | grep -q "1"; then
@@ -639,6 +639,8 @@ EOF
 
   step "Configuring admin user..."
   $DRUSH_CMD $DRUSH_URI user:role:add "administrator" --uid=1 >/dev/null 2>&1
+  $DRUSH_CMD $DRUSH_URI user:role:add "tenant_admin" --uid=1 >/dev/null 2>&1
+  $DRUSH_CMD $DRUSH_URI user:role:add "moderator" --uid=1 >/dev/null 2>&1
   # Fix admin username and email (may be "placeholder-for-uid-1" after --existing-config install)
   $DRUSH_CMD $DRUSH_URI php:eval "
     \$user = \Drupal\user\Entity\User::load(1);
