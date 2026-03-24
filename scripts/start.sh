@@ -569,6 +569,14 @@ EOF
     success "Profile modules enabled"
   fi
 
+  # Enable FastMap/SaaS modules if NUXT_FASTMAP is set.
+  if [ "${NUXT_FASTMAP:-}" = "true" ]; then
+    step "Enabling FastMap SaaS modules..."
+    $DRUSH_CMD $DRUSH_URI en markaspot_fastmap -y 2>/dev/null || warn "Failed to enable markaspot_fastmap"
+    $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
+    success "FastMap modules enabled (markaspot_fastmap, markaspot_passwordless)"
+  fi
+
   # Run pending update hooks (ensures install/update hooks from all modules run).
   step "Running database updates..."
   $DRUSH_CMD $DRUSH_URI updb -y 2>/dev/null || warn "Database updates returned warnings"
