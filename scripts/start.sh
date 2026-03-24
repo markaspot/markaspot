@@ -595,14 +595,14 @@ EOF
 
   # Configure AI vision (photo analysis) if OpenAI key is available.
   if [ -n "${OPENAI_API_KEY:-}" ]; then
-    step "Configuring AI vision..."
-    $DRUSH_CMD $DRUSH_URI en markaspot_vision -y 2>/dev/null || true
+    step "Configuring AI modules..."
+    $DRUSH_CMD $DRUSH_URI en markaspot_vision markaspot_ai -y 2>/dev/null || true
     $DRUSH_CMD $DRUSH_URI php:eval "
       \$config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
       \$config->set('api_key', getenv('OPENAI_API_KEY'));
       \$config->save();
     " 2>/dev/null
-    success "AI vision configured"
+    success "AI modules configured (vision + analysis)"
   fi
 
   # Run pending update hooks (ensures install/update hooks from all modules run).
