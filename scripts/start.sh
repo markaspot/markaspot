@@ -998,6 +998,8 @@ EOF
         'features' => [
           'statistics' => true,
           'photoReporting' => true,
+          'classicReporting' => !\$is_fastmap,
+          'aiAnalysis' => !empty(getenv('OPENAI_API_KEY')),
           'dashboard' => \$is_fastmap,
           'passwordless' => \$is_fastmap,
           'voting' => false,
