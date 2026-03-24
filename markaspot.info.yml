@@ -71,6 +71,7 @@ dependencies:
   - markaspot_icons
   - markaspot_dashboard
   - markaspot_escalation
+  - markaspot_moderation
   - markaspot_stats
   - markaspot_boilerplate
   - markaspot_feedback
