@@ -372,3 +372,76 @@ function service_request_update_11005() {
 
   return empty($messages) ? 'No form displays needed migration.' : implode("\n", $messages);
 }
+
+/**
+ * Add group_contact fieldset to management form display.
+ *
+ * Moves field_e_mail from group_citizen_input into a new group_contact
+ * fieldset nested under group_citizen_input. This aligns the Drupal form
+ * display with the frontend DashboardEditForm expectations.
+ *
+ * @see https://github.com/markaspot/markaspot/issues/224
+ */
+function service_request_update_11006() {
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if (!$form_display) {
+    return 'Management form display not found.';
+  }
+
+  $field_groups = $form_display->getThirdPartySettings('field_group');
+
+  // Skip if group_contact already exists.
+  if (isset($field_groups['group_contact'])) {
+    return 'group_contact already exists in management form display.';
+  }
+
+  // Verify group_citizen_input exists.
+  if (!isset($field_groups['group_citizen_input'])) {
+    return 'group_citizen_input not found in management form display.';
+  }
+
+  // Verify field_e_mail is a component of the form display.
+  $components = $form_display->getComponents();
+  if (!isset($components['field_e_mail'])) {
+    return 'field_e_mail is not a component of management form display. Skipping.';
+  }
+
+  // Remove field_e_mail from group_citizen_input children.
+  $citizen_children = $field_groups['group_citizen_input']['children'] ?? [];
+  $citizen_children = array_values(array_filter($citizen_children, function ($child) {
+    return $child !== 'field_e_mail';
+  }));
+
+  // Add group_contact as a child of group_citizen_input.
+  $citizen_children[] = 'group_contact';
+  $field_groups['group_citizen_input']['children'] = $citizen_children;
+
+  // Create the group_contact fieldset.
+  $field_groups['group_contact'] = [
+    'children' => ['field_e_mail'],
+    'label' => 'Contact',
+    'region' => 'content',
+    'parent_name' => 'group_citizen_input',
+    'weight' => 20,
+    'format_type' => 'fieldset',
+    'format_settings' => [
+      'classes' => '',
+      'id' => '',
+      'label_as_html' => FALSE,
+      'description' => '',
+      'required_fields' => TRUE,
+    ],
+  ];
+
+  // Save all field_group settings back.
+  foreach ($field_groups as $group_name => $group_settings) {
+    $form_display->setThirdPartySetting('field_group', $group_name, $group_settings);
+  }
+
+  $form_display->save();
+
+  return 'Added group_contact fieldset to management form display and moved field_e_mail into it.';
+}

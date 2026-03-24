@@ -38,9 +38,9 @@ third_party_settings:
       children:
         - field_category
         - body
-        - field_e_mail
         - field_geolocation
         - field_address
+        - group_contact
       parent_name: group_edit_service_request
       weight: 16
       format_type: tab
@@ -51,6 +51,20 @@ third_party_settings:
         description: ''
         required_fields: true
       label: 'Citizen Input'
+    group_contact:
+      children:
+        - field_e_mail
+      label: Contact
+      region: content
+      parent_name: group_citizen_input
+      weight: 20
+      format_type: fieldset
+      format_settings:
+        classes: ''
+        id: ''
+        label_as_html: false
+        description: ''
+        required_fields: true
     group_administration:
       children:
         - field_status
