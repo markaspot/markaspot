@@ -1117,13 +1117,40 @@ function _markaspot_group_assign_root_jurisdiction(NodeInterface $node): void {
       $root_jur = $group_storage->load(reset($root_ids));
     }
     elseif (count($root_ids) > 1) {
-      // Multiple root jurisdictions without org context. Cannot determine which
-      // one to use. Log a warning and skip assignment.
-      \Drupal::logger('markaspot_group')->warning(
-        'Cannot auto-assign root jurisdiction for node @nid: @count root jurisdictions exist but node has no organisation set.',
-        ['@nid' => $node->id(), '@count' => count($root_ids)]
-      );
-      return;
+      // Multiple root jurisdictions without org context. Try the configured
+      // default jurisdiction before giving up.
+      $default_jur_id = (int) \Drupal::config('markaspot_group.settings')
+        ->get('default_jurisdiction_id');
+
+      if ($default_jur_id > 0) {
+        $default_jur = $group_storage->load($default_jur_id);
+        if ($default_jur && $default_jur->bundle() === 'jur' && $default_jur->get('field_parent_jurisdiction')->isEmpty()) {
+          $root_jur = $default_jur;
+          \Drupal::logger('markaspot_group')->notice(
+            'Using default jurisdiction "@group" (id=@gid) for node @nid (multiple roots, no org context).',
+            [
+              '@group' => $root_jur->label(),
+              '@gid' => $root_jur->id(),
+              '@nid' => $node->id(),
+            ]
+          );
+        }
+        else {
+          \Drupal::logger('markaspot_group')->warning(
+            'Configured default_jurisdiction_id @id is invalid, not a jur group, or not a root jurisdiction. Skipping assignment for node @nid.',
+            ['@id' => $default_jur_id, '@nid' => $node->id()]
+          );
+          return;
+        }
+      }
+      else {
+        // No default configured. Log warning and skip assignment.
+        \Drupal::logger('markaspot_group')->warning(
+          'Cannot auto-assign root jurisdiction for node @nid: @count root jurisdictions exist but node has no organisation set. Configure default_jurisdiction_id in markaspot_group.settings to set a fallback.',
+          ['@nid' => $node->id(), '@count' => count($root_ids)]
+        );
+        return;
+      }
     }
     else {
       return;

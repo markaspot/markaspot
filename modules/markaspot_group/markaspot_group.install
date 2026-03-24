@@ -2204,6 +2204,20 @@ function markaspot_group_update_11912(): void {
  * The access control hooks (role sync, query filter, term access) are now
  * in markaspot_group.
  */
+/**
+ * Add default_jurisdiction_id config key for multi-tenant fallback.
+ */
+function markaspot_group_update_11914(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_group.settings');
+  if ($config->get('default_jurisdiction_id') === NULL && !array_key_exists('default_jurisdiction_id', $config->getRawData())) {
+    $config->set('default_jurisdiction_id', NULL)->save();
+  }
+  return 'Added default_jurisdiction_id config key for multi-tenant jurisdiction fallback.';
+}
+
+/**
+ * Uninstall markaspot_tenant_admin, revoke obsolete permission.
+ */
 function markaspot_group_update_11913(): void {
   $module_handler = \Drupal::moduleHandler();
 

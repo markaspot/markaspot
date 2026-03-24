@@ -5,6 +5,10 @@ markaspot_group.settings:
     jurisdiction_field_strategy:
       type: string
       label: 'Jurisdiction field strategy'
+    default_jurisdiction_id:
+      type: integer
+      label: 'Default jurisdiction ID'
+      nullable: true
 
 markaspot_group.mail:
   type: config_object

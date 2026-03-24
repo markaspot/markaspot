@@ -663,7 +663,22 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
     try {
       // Validate jurisdiction access for authenticated API users.
-      $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
+      // Support deprecated aliases (jurisdiction, gid) for backward compat.
+      $jurisdictionId = isset($request_data['jurisdiction_id'])
+        ? (int) $request_data['jurisdiction_id']
+        : (isset($request_data['jurisdiction'])
+          ? (int) $request_data['jurisdiction']
+          : (isset($request_data['gid'])
+            ? (int) $request_data['gid']
+            : NULL));
+
+      // Require jurisdiction_id when multiple root jurisdictions exist
+      // (multi-tenant setup). Without it, the request would become orphaned
+      // because group assignment cannot determine which jurisdiction to use.
+      if (empty($jurisdictionId)) {
+        $this->validateMultiTenantJurisdiction();
+      }
+
       $this->georeportProcessor->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
 
       // Workspace visibility enforcement: block anonymous POST for authenticated-only workspaces.
@@ -778,6 +793,50 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
     else {
       return TRUE;
+    }
+  }
+
+  /**
+   * Validates that jurisdiction_id is provided when multiple roots exist.
+   *
+   * In a multi-tenant setup (multiple root jurisdiction groups), requests
+   * without a jurisdiction_id cannot be assigned to a group and become
+   * orphaned. This method detects that condition and rejects the request
+   * early with a clear error message.
+   *
+   * Single-tenant instances (0 or 1 root jurisdiction) are not affected.
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Throws 400 Bad Request when jurisdiction_id is missing in multi-tenant.
+   */
+  protected function validateMultiTenantJurisdiction(): void {
+    $jurType = $this->config->get('jurisdiction_group_type') ?? 'jur';
+
+    try {
+      // accessCheck(FALSE) is intentional: we check platform topology
+      // (how many root groups exist), not returning group data to the
+      // caller. The result is used as a boolean gate only.
+      $rootIds = $this->entityTypeManager->getStorage('group')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $jurType)
+        ->notExists('field_parent_jurisdiction')
+        ->execute();
+    }
+    catch (\Exception $e) {
+      // Group module not installed or field missing. Skip gracefully.
+      return;
+    }
+
+    // Only the count matters. Discard IDs to prevent accidental exposure.
+    $isMultiTenant = count($rootIds) > 1;
+    unset($rootIds);
+
+    if ($isMultiTenant) {
+      throw new GeoreportException(
+        'jurisdiction_id is required.',
+        400
+      );
     }
   }
 
