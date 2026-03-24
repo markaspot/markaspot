@@ -575,6 +575,20 @@ EOF
     step "Enabling FastMap modules..."
     $DRUSH_CMD $DRUSH_URI en markaspot_fastmap -y 2>/dev/null || warn "Failed to enable markaspot_fastmap"
     $DRUSH_CMD $DRUSH_URI cset markaspot_fastmap.settings service_key "$FASTMAP_SERVICE_KEY" -y 2>/dev/null
+
+    # Set verify_base_url for workspace verification emails.
+    # Docker prod: use FRONTEND_BASE_URL ENV. DDEV: use hostname:3001.
+    if [ -n "${FRONTEND_BASE_URL:-}" ]; then
+      VERIFY_URL="$FRONTEND_BASE_URL"
+    elif [ -n "$DDEV_HOSTNAME" ]; then
+      VERIFY_URL="https://$DDEV_HOSTNAME:3001"
+    else
+      VERIFY_URL=""
+    fi
+    if [ -n "$VERIFY_URL" ]; then
+      $DRUSH_CMD $DRUSH_URI cset markaspot_fastmap.settings verify_base_url "$VERIFY_URL" -y 2>/dev/null
+    fi
+
     $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
     success "FastMap modules enabled (service_key configured)"
   fi

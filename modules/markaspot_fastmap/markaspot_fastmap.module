@@ -282,9 +282,13 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
     $settings['jurisdiction']['visibility'] = 'public';
   }
 
-  // Whether the workspace completed Stripe checkout (= permanent, no expiry).
+  // Whether the workspace is permanent (not a demo with expiry).
+  // Permanent if: Stripe customer exists, OR no expiry date is set.
+  // Only workspaces with an explicit expiry_date are considered demo.
   if ($group) {
-    $settings['jurisdiction']['is_permanent'] = $group->hasField('field_stripe_customer_id') && !$group->get('field_stripe_customer_id')->isEmpty();
+    $has_stripe = $group->hasField('field_stripe_customer_id') && !$group->get('field_stripe_customer_id')->isEmpty();
+    $has_expiry = $group->hasField('field_expiry_date') && !$group->get('field_expiry_date')->isEmpty();
+    $settings['jurisdiction']['is_permanent'] = $has_stripe || !$has_expiry;
   }
 
   // Workspace expiry timestamp (demo or checkout grace period).
