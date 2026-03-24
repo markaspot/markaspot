@@ -161,3 +161,75 @@ markaspot_nuxt.tenant_settings_branding_patch:
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
+
+markaspot_nuxt.tenant_settings_features_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/features'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::getFeatureSettings'
+    _title: 'Get Tenant Feature Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_features_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/features'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::updateFeatureSettings'
+    _title: 'Update Tenant Feature Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_map_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/map'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::getMapSettings'
+    _title: 'Get Tenant Map Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_map_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/map'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::updateMapSettings'
+    _title: 'Update Tenant Map Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_navigation_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/navigation'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::getNavigationSettings'
+    _title: 'Get Tenant Navigation Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_navigation_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/navigation'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::updateNavigationSettings'
+    _title: 'Update Tenant Navigation Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'

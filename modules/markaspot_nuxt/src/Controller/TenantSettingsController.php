@@ -25,10 +25,11 @@ use Symfony\Component\HttpFoundation\Request;
 /**
  * Controller for tenant settings API endpoints.
  *
- * Provides endpoints to manage logos, general settings, and language settings
- * for jurisdiction groups. General settings cover the platform name, contact
- * email, email footer text, and postal address. Language settings manage the
- * available and default locales stored in the field_nuxt_config JSON blob.
+ * Provides endpoints to manage logos, general settings, language settings,
+ * branding, features, map configuration, and navigation for jurisdiction
+ * groups. General settings cover the platform name, contact email, email
+ * footer text, and postal address. Language, feature, map, and navigation
+ * settings are stored in the field_nuxt_config JSON blob.
  *
  * All endpoints accept both numeric group IDs and URL slugs as the
  * jurisdiction_id parameter via JurisdictionIdResolverTrait.
@@ -36,6 +37,53 @@ use Symfony\Component\HttpFoundation\Request;
 class TenantSettingsController extends ControllerBase {
 
   use JurisdictionIdResolverTrait;
+
+  /**
+   * Feature flags that hold a simple boolean value.
+   *
+   * Used to validate incoming PATCH data for the features endpoint.
+   */
+  const SIMPLE_FEATURE_FLAGS = [
+    'photoReporting',
+    'classicReporting',
+    'voting',
+    'statistics',
+    'following',
+    'passwordless',
+    'aiAnalysis',
+    'privacyBlur',
+    'feedback',
+    'pwaInstallPrompt',
+    'objectId',
+    'party',
+    'formFirst',
+    'dashboard',
+    'contactForm',
+  ];
+
+  /**
+   * Feature flags that hold a nested object with an 'enabled' boolean.
+   *
+   * Used to validate incoming PATCH data for the features endpoint.
+   */
+  const NESTED_FEATURE_FLAGS = [
+    'emergency',
+    'funFacts',
+    'search',
+    'boundaries',
+    'privacyNotice',
+  ];
+
+  /**
+   * Map settings keys that hold a boolean value.
+   *
+   * Used to validate incoming PATCH data for the map endpoint.
+   */
+  const MAP_BOOLEAN_KEYS = [
+    'loadMarkersOnInit',
+    'enableBoundsFiltering',
+    'deferredMap',
+  ];
 
   /**
    * Supported locales with display names.
@@ -983,6 +1031,10 @@ class TenantSettingsController extends ControllerBase {
         'secondary' => $theme['secondary'] ?? '',
         'neutral' => $theme['neutral'] ?? '',
       ],
+      'fonts' => [
+        'heading' => $theme['fonts']['heading'] ?? '',
+        'body' => $theme['fonts']['body'] ?? '',
+      ],
       'custom_css' => $customCss,
     ]);
   }
@@ -1017,9 +1069,10 @@ class TenantSettingsController extends ControllerBase {
 
     $hasTheme = isset($data['theme']) && is_array($data['theme']);
     $hasCss = array_key_exists('custom_css', $data);
+    $hasFonts = isset($data['fonts']) && is_array($data['fonts']);
 
-    if (!$hasTheme && !$hasCss) {
-      return new JsonResponse(['error' => 'No valid fields provided. Supply theme and/or custom_css.'], 400);
+    if (!$hasTheme && !$hasCss && !$hasFonts) {
+      return new JsonResponse(['error' => 'No valid fields provided. Supply theme, fonts, and/or custom_css.'], 400);
     }
 
     // Validate theme color values.
@@ -1046,8 +1099,23 @@ class TenantSettingsController extends ControllerBase {
       }
     }
 
+    // Validate font values: alphanumeric, spaces, hyphens, commas only.
+    if ($hasFonts) {
+      $fontPattern = '/^[a-zA-Z0-9\s\-,]*$/';
+      foreach (['heading', 'body'] as $fontKey) {
+        if (isset($data['fonts'][$fontKey])) {
+          if (!is_string($data['fonts'][$fontKey])) {
+            return new JsonResponse(['error' => "fonts.$fontKey must be a string."], 422);
+          }
+          if (!preg_match($fontPattern, $data['fonts'][$fontKey])) {
+            return new JsonResponse(['error' => "fonts.$fontKey may only contain alphanumeric characters, spaces, hyphens, and commas."], 422);
+          }
+        }
+      }
+    }
+
     // Read-modify-write: load existing config, update only theme colors.
-    if ($hasTheme) {
+    if ($hasTheme || $hasFonts) {
       $config = [];
       if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
         $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
@@ -1060,10 +1128,23 @@ class TenantSettingsController extends ControllerBase {
         $config['theme'] = [];
       }
 
-      $colorKeys = ['primary', 'secondary', 'neutral'];
-      foreach ($colorKeys as $key) {
-        if (isset($data['theme'][$key])) {
-          $config['theme'][$key] = $data['theme'][$key];
+      if ($hasTheme) {
+        $colorKeys = ['primary', 'secondary', 'neutral'];
+        foreach ($colorKeys as $key) {
+          if (isset($data['theme'][$key])) {
+            $config['theme'][$key] = $data['theme'][$key];
+          }
+        }
+      }
+
+      if ($hasFonts) {
+        if (!isset($config['theme']['fonts'])) {
+          $config['theme']['fonts'] = [];
+        }
+        foreach (['heading', 'body'] as $fontKey) {
+          if (isset($data['fonts'][$fontKey])) {
+            $config['theme']['fonts'][$fontKey] = $data['fonts'][$fontKey];
+          }
         }
       }
 
@@ -1096,6 +1177,526 @@ class TenantSettingsController extends ControllerBase {
 
     // Return the current state (same shape as GET).
     return $this->getBrandingSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns feature settings for a jurisdiction group.
+   *
+   * Reads the features key from the field_nuxt_config JSON blob on the group
+   * entity and returns it with sensible defaults for all known feature flags.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with current feature settings, or an error response.
+   */
+  public function getFeatureSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    // Read the full nuxt config JSON blob.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    $features = $config['features'] ?? [];
+
+    return new JsonResponse([
+      'jurisdiction_id' => (int) $group->id(),
+      'features' => [
+        'photoReporting' => $features['photoReporting'] ?? TRUE,
+        'classicReporting' => $features['classicReporting'] ?? FALSE,
+        'voting' => $features['voting'] ?? FALSE,
+        'statistics' => $features['statistics'] ?? FALSE,
+        'following' => $features['following'] ?? FALSE,
+        'passwordless' => $features['passwordless'] ?? FALSE,
+        'aiAnalysis' => $features['aiAnalysis'] ?? FALSE,
+        'privacyBlur' => $features['privacyBlur'] ?? FALSE,
+        'feedback' => $features['feedback'] ?? FALSE,
+        'pwaInstallPrompt' => $features['pwaInstallPrompt'] ?? FALSE,
+        'objectId' => $features['objectId'] ?? FALSE,
+        'party' => $features['party'] ?? FALSE,
+        'formFirst' => $features['formFirst'] ?? FALSE,
+        'dashboard' => $features['dashboard'] ?? TRUE,
+        'contactForm' => $features['contactForm'] ?? FALSE,
+        'emergency' => ['enabled' => $features['emergency']['enabled'] ?? FALSE],
+        'funFacts' => ['enabled' => $features['funFacts']['enabled'] ?? FALSE],
+        'search' => ['enabled' => $features['search']['enabled'] ?? TRUE],
+        'boundaries' => ['enabled' => $features['boundaries']['enabled'] ?? FALSE],
+        'privacyNotice' => ['enabled' => $features['privacyNotice']['enabled'] ?? FALSE],
+      ],
+    ]);
+  }
+
+  /**
+   * Updates feature settings for a jurisdiction group.
+   *
+   * Accepts a JSON body with feature flag values. Validates all values against
+   * the known feature flag constants, then updates only the features key inside
+   * the field_nuxt_config JSON blob. Keys not in the allowlist are preserved
+   * (e.g. analytics, geocoding).
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request carrying a JSON body.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with updated feature settings, or an error response.
+   */
+  public function updateFeatureSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $body = $request->getContent();
+    $data = json_decode($body, TRUE);
+
+    if (!is_array($data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    // Validate simple boolean feature flags.
+    foreach (self::SIMPLE_FEATURE_FLAGS as $flag) {
+      if (array_key_exists($flag, $data) && !is_bool($data[$flag])) {
+        return new JsonResponse(['error' => "$flag must be a boolean."], 422);
+      }
+    }
+
+    // Validate nested feature flags (object with 'enabled' boolean).
+    foreach (self::NESTED_FEATURE_FLAGS as $flag) {
+      if (array_key_exists($flag, $data)) {
+        if (!is_array($data[$flag]) || !array_key_exists('enabled', $data[$flag])) {
+          return new JsonResponse(['error' => "$flag must be an object with an 'enabled' boolean."], 422);
+        }
+        if (!is_bool($data[$flag]['enabled'])) {
+          return new JsonResponse(['error' => "$flag.enabled must be a boolean."], 422);
+        }
+      }
+    }
+
+    // Read-modify-write: load existing config, update only the features key.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    if (!isset($config['features'])) {
+      $config['features'] = [];
+    }
+
+    // Apply only known feature flags from the request, preserving all others.
+    $allKnownFlags = array_merge(self::SIMPLE_FEATURE_FLAGS, self::NESTED_FEATURE_FLAGS);
+    foreach ($data as $key => $value) {
+      if (in_array($key, $allKnownFlags, TRUE)) {
+        $config['features'][$key] = $value;
+      }
+    }
+
+    // Write back the full config JSON.
+    $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save feature settings for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save feature settings.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user updated feature settings for jurisdiction @id (flags: @flags)',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+        '@flags' => implode(', ', array_keys($data)),
+      ]
+    );
+
+    // Return the current state (same shape as GET).
+    return $this->getFeatureSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns map settings for a jurisdiction group.
+   *
+   * Reads the map key from the field_nuxt_config JSON blob on the group
+   * entity and returns it with sensible defaults.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with current map settings, or an error response.
+   */
+  public function getMapSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    // Read the full nuxt config JSON blob.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    $map = $config['map'] ?? [];
+
+    return new JsonResponse([
+      'jurisdiction_id' => (int) $group->id(),
+      'map' => [
+        'center' => $map['center'] ?? [0, 0],
+        'zoom' => (int) ($map['zoom'] ?? 13),
+        'maxBounds' => $map['maxBounds'] ?? NULL,
+        'loadMarkersOnInit' => $map['loadMarkersOnInit'] ?? TRUE,
+        'enableBoundsFiltering' => $map['enableBoundsFiltering'] ?? TRUE,
+        'deferredMap' => $map['deferredMap'] ?? FALSE,
+        'layers' => $map['layers'] ?? new \stdClass(),
+        'controls' => $map['controls'] ?? new \stdClass(),
+      ],
+    ]);
+  }
+
+  /**
+   * Updates map settings for a jurisdiction group.
+   *
+   * Accepts a JSON body with map configuration values. Validates all values
+   * against an allowlist, then updates only the map key inside the
+   * field_nuxt_config JSON blob. Infrastructure keys like mapbox_style,
+   * mapbox_token, and fallback_style are rejected as admin-only.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request carrying a JSON body.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with updated map settings, or an error response.
+   */
+  public function updateMapSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $body = $request->getContent();
+    $data = json_decode($body, TRUE);
+
+    if (!is_array($data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    // Block admin-only infrastructure keys.
+    $infraKeys = [
+      'mapbox_style', 'mapbox_token', 'fallback_style',
+      'style', 'token', 'apiKey',
+    ];
+    foreach ($infraKeys as $key) {
+      if (array_key_exists($key, $data)) {
+        return new JsonResponse(['error' => "$key is an admin-only setting and cannot be changed via this endpoint."], 403);
+      }
+    }
+
+    // Allowlist of keys this endpoint accepts.
+    $allowedKeys = [
+      'center', 'zoom', 'maxBounds',
+      'loadMarkersOnInit', 'enableBoundsFiltering', 'deferredMap',
+      'layers', 'controls',
+    ];
+
+    // Strip any keys not in the allowlist.
+    $data = array_intersect_key($data, array_flip($allowedKeys));
+
+    if (empty($data)) {
+      return new JsonResponse(['error' => 'No valid map settings provided.'], 400);
+    }
+
+    // Validate center: array of exactly 2 numbers.
+    if (array_key_exists('center', $data)) {
+      if (!is_array($data['center']) || count($data['center']) !== 2
+        || !is_numeric($data['center'][0]) || !is_numeric($data['center'][1])) {
+        return new JsonResponse(['error' => 'center must be an array of exactly 2 numbers [lng, lat].'], 422);
+      }
+      $data['center'] = [(float) $data['center'][0], (float) $data['center'][1]];
+    }
+
+    // Validate zoom: integer between 1 and 22.
+    if (array_key_exists('zoom', $data)) {
+      if (!is_int($data['zoom']) || $data['zoom'] < 1 || $data['zoom'] > 22) {
+        return new JsonResponse(['error' => 'zoom must be an integer between 1 and 22.'], 422);
+      }
+    }
+
+    // Validate maxBounds: null or array of 2 arrays each with 2 numbers.
+    if (array_key_exists('maxBounds', $data)) {
+      if ($data['maxBounds'] !== NULL) {
+        if (!is_array($data['maxBounds']) || count($data['maxBounds']) !== 2
+          || !is_array($data['maxBounds'][0]) || count($data['maxBounds'][0]) !== 2
+          || !is_array($data['maxBounds'][1]) || count($data['maxBounds'][1]) !== 2
+          || !is_numeric($data['maxBounds'][0][0]) || !is_numeric($data['maxBounds'][0][1])
+          || !is_numeric($data['maxBounds'][1][0]) || !is_numeric($data['maxBounds'][1][1])) {
+          return new JsonResponse(['error' => 'maxBounds must be null or [[sw_lng, sw_lat], [ne_lng, ne_lat]].'], 422);
+        }
+      }
+    }
+
+    // Validate boolean keys.
+    foreach (self::MAP_BOOLEAN_KEYS as $key) {
+      if (array_key_exists($key, $data) && !is_bool($data[$key])) {
+        return new JsonResponse(['error' => "$key must be a boolean."], 422);
+      }
+    }
+
+    // Validate controls: allowlist known sub-keys, values must be boolean or object with enabled boolean.
+    $validControls = ['zoom', 'tilt', 'theme', 'geolocation', 'heatmap', 'reports', 'attribution'];
+    if (array_key_exists('controls', $data)) {
+      if (!is_array($data['controls'])) {
+        return new JsonResponse(['error' => 'controls must be an object.'], 422);
+      }
+      // Only allow known control keys.
+      $data['controls'] = array_intersect_key($data['controls'], array_flip($validControls));
+    }
+
+    // Validate layers: allowlist known sub-keys.
+    $validLayers = ['heatmap', 'clusters', 'markers'];
+    if (array_key_exists('layers', $data)) {
+      if (!is_array($data['layers'])) {
+        return new JsonResponse(['error' => 'layers must be an object.'], 422);
+      }
+      $data['layers'] = array_intersect_key($data['layers'], array_flip($validLayers));
+    }
+
+    // Read-modify-write: load existing config, update only the map key.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    if (!isset($config['map'])) {
+      $config['map'] = [];
+    }
+
+    // Apply only allowed keys, preserving all other map config.
+    foreach ($data as $key => $value) {
+      $config['map'][$key] = $value;
+    }
+
+    // Write back the full config JSON.
+    $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save map settings for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save map settings.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user updated map settings for jurisdiction @id (keys: @keys)',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+        '@keys' => implode(', ', array_keys($data)),
+      ]
+    );
+
+    // Return the current state (same shape as GET).
+    return $this->getMapSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns navigation settings for a jurisdiction group.
+   *
+   * Reads the navigation key from the field_nuxt_config JSON blob on the
+   * group entity and returns it as an array of navigation items.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with current navigation settings, or an error response.
+   */
+  public function getNavigationSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    // Read the full nuxt config JSON blob.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    return new JsonResponse([
+      'jurisdiction_id' => (int) $group->id(),
+      'navigation' => $config['navigation'] ?? [],
+    ]);
+  }
+
+  /**
+   * Updates navigation settings for a jurisdiction group.
+   *
+   * Accepts a JSON body with a navigation array. Each item must have a label
+   * and link, with optional target and icon. Maximum 10 items. Replaces the
+   * entire navigation key in the field_nuxt_config JSON blob.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request carrying a JSON body.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with updated navigation settings, or an error response.
+   */
+  public function updateNavigationSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $body = $request->getContent();
+    $data = json_decode($body, TRUE);
+
+    if (!is_array($data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    if (!isset($data['navigation']) || !is_array($data['navigation'])) {
+      return new JsonResponse(['error' => 'navigation must be an array.'], 422);
+    }
+
+    $items = $data['navigation'];
+
+    // Enforce maximum item count.
+    if (count($items) > 10) {
+      return new JsonResponse(['error' => 'navigation must not exceed 10 items.'], 422);
+    }
+
+    $validTargets = ['_self', '_blank'];
+    $sanitized = [];
+
+    foreach ($items as $index => $item) {
+      if (!is_array($item)) {
+        return new JsonResponse(['error' => "navigation[$index] must be an object."], 422);
+      }
+
+      // label: required, non-empty string.
+      if (!isset($item['label']) || !is_string($item['label']) || trim($item['label']) === '') {
+        return new JsonResponse(['error' => "navigation[$index].label is required and must be a non-empty string."], 422);
+      }
+
+      // link: required string.
+      if (!isset($item['link']) || !is_string($item['link'])) {
+        return new JsonResponse(['error' => "navigation[$index].link is required and must be a string."], 422);
+      }
+
+      // Sanitize label against XSS.
+      $label = strip_tags(trim($item['label']));
+      if (empty($label)) {
+        return new JsonResponse(['error' => "navigation[$index].label must contain text (HTML tags are stripped)."], 422);
+      }
+
+      // Validate link: only relative paths and https:// URLs allowed.
+      $link = trim($item['link']);
+      if (preg_match('/^(javascript|data|vbscript):/i', $link)) {
+        return new JsonResponse(['error' => "navigation[$index].link contains a disallowed scheme."], 422);
+      }
+
+      $entry = [
+        'label' => $label,
+        'link' => $link,
+      ];
+
+      // target: optional, must be _self or _blank.
+      if (isset($item['target'])) {
+        if (!is_string($item['target']) || !in_array($item['target'], $validTargets, TRUE)) {
+          return new JsonResponse(['error' => "navigation[$index].target must be '_self' or '_blank'."], 422);
+        }
+        $entry['target'] = $item['target'];
+      }
+
+      // icon: optional string, restricted to valid icon identifiers.
+      if (isset($item['icon'])) {
+        if (!is_string($item['icon']) || !preg_match('/^[a-zA-Z0-9:\-]+$/', $item['icon'])) {
+          return new JsonResponse(['error' => "navigation[$index].icon must contain only letters, numbers, hyphens, and colons."], 422);
+        }
+        $entry['icon'] = $item['icon'];
+      }
+
+      $sanitized[] = $entry;
+    }
+
+    // Read-modify-write: load existing config, replace the navigation key.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    $config['navigation'] = $sanitized;
+
+    // Write back the full config JSON.
+    $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save navigation settings for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save navigation settings.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user updated navigation settings for jurisdiction @id (@count items)',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+        '@count' => count($sanitized),
+      ]
+    );
+
+    // Return the current state (same shape as GET).
+    return $this->getNavigationSettings($request, $jurisdiction_id);
   }
 
   /**
