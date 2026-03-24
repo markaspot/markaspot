@@ -1,0 +1,9 @@
+name: 'Mark-a-Spot Moderation'
+type: module
+description: 'Content moderation and flag management for citizen reports. DSA Article 16 compliant notice-and-action mechanism.'
+package: 'Mark-a-Spot'
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:node
+  - markaspot_group:markaspot_group
+  - markaspot_tenant_admin:markaspot_tenant_admin

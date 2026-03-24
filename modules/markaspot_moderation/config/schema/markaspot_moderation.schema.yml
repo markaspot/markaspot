@@ -1,0 +1,13 @@
+markaspot_moderation.settings:
+  type: config_object
+  label: 'Mark-a-Spot Moderation settings'
+  mapping:
+    flag_threshold:
+      type: integer
+      label: 'Flag threshold for auto-hide'
+    immediate_notify_reasons:
+      type: sequence
+      label: 'Reasons triggering immediate notification'
+      sequence:
+        type: string
+        label: 'Reason'

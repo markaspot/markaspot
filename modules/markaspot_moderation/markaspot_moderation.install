@@ -1,0 +1,94 @@
+<?php
+
+/**
+ * @file
+ * Install, update, and uninstall functions for the markaspot_moderation module.
+ */
+
+/**
+ * Implements hook_schema().
+ */
+function markaspot_moderation_schema(): array {
+  $schema['markaspot_moderation_flags'] = [
+    'description' => 'Stores content flags for citizen report moderation.',
+    'fields' => [
+      'fid' => [
+        'type' => 'serial',
+        'not null' => TRUE,
+        'description' => 'Primary key: Flag ID.',
+      ],
+      'nid' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'The service request node ID.',
+      ],
+      'service_request_id' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'description' => 'The Open311 service request ID.',
+      ],
+      'jurisdiction_id' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'The group ID of the jurisdiction.',
+      ],
+      'reason' => [
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'description' => 'Flag reason: spam, offensive, personal, location, other.',
+      ],
+      'details' => [
+        'type' => 'text',
+        'size' => 'normal',
+        'description' => 'Optional details provided by the reporter (max 500 chars).',
+      ],
+      'ip_hash' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'description' => 'SHA-256 hash of the reporter IP address.',
+      ],
+      'session_hash' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'description' => 'SHA-256 hash of the reporter session ID.',
+      ],
+      'created' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'description' => 'UNIX timestamp when the flag was created.',
+      ],
+      'dismissed' => [
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => '0 = active, 1 = dismissed.',
+      ],
+      'dismissed_by' => [
+        'type' => 'int',
+        'description' => 'UID of the moderator who dismissed the flag.',
+      ],
+      'dismissed_at' => [
+        'type' => 'int',
+        'description' => 'UNIX timestamp when the flag was dismissed.',
+      ],
+    ],
+    'primary key' => ['fid'],
+    'indexes' => [
+      'nid' => ['nid'],
+      'service_request_id' => ['service_request_id'],
+      'jurisdiction_id' => ['jurisdiction_id'],
+      'nid_dismissed' => ['nid', 'dismissed'],
+      'jurisdiction_dismissed' => ['jurisdiction_id', 'dismissed'],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_moderation_install(): void {
+  \Drupal::logger('markaspot_moderation')->notice('Mark-a-Spot Moderation module installed.');
+}

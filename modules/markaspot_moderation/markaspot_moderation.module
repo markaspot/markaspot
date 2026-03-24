@@ -1,0 +1,19 @@
+<?php
+
+/**
+ * @file
+ * Contains hook implementations for the markaspot_moderation module.
+ *
+ * Provides content moderation and flag management for citizen reports
+ * with DSA Article 16 compliant notice-and-action mechanism.
+ */
+
+/**
+ * Implements hook_mail().
+ */
+function markaspot_moderation_mail(string $key, array &$message, array $params): void {
+  if (in_array($key, ['flag_threshold', 'flag_immediate'])) {
+    $message['subject'] = $params['subject'];
+    $message['body'][] = $params['body'];
+  }
+}

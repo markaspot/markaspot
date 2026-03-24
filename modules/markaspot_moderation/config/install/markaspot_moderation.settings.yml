@@ -1,0 +1,4 @@
+flag_threshold: 3
+immediate_notify_reasons:
+  - offensive
+  - personal

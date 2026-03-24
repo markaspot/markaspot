@@ -1,0 +1,80 @@
+markaspot_moderation.submit_flag:
+  path: '/api/moderation/flags'
+  defaults:
+    _controller: '\Drupal\markaspot_moderation\Controller\ModerationController::submitFlag'
+    _title: 'Submit Flag'
+  methods: [POST]
+  requirements:
+    _permission: 'submit flags'
+  options:
+    _format: 'json'
+
+markaspot_moderation.flagged_requests:
+  path: '/api/moderation/flagged-requests'
+  defaults:
+    _controller: '\Drupal\markaspot_moderation\Controller\ModerationController::getFlaggedRequests'
+    _title: 'Flagged Requests'
+  methods: [GET]
+  requirements:
+    _permission: 'administer flags'
+  options:
+    _format: 'json'
+
+markaspot_moderation.flagged_count:
+  path: '/api/moderation/flagged-requests/count'
+  defaults:
+    _controller: '\Drupal\markaspot_moderation\Controller\ModerationController::getFlaggedCount'
+    _title: 'Flagged Request Count'
+  methods: [GET]
+  requirements:
+    _permission: 'administer flags'
+  options:
+    _format: 'json'
+
+markaspot_moderation.flags_for_request:
+  path: '/api/moderation/flags/{nid}'
+  defaults:
+    _controller: '\Drupal\markaspot_moderation\Controller\ModerationController::getFlagsForRequest'
+    _title: 'Flags for Request'
+  methods: [GET]
+  requirements:
+    _permission: 'administer flags'
+    nid: \d+
+  options:
+    _format: 'json'
+
+markaspot_moderation.dismiss_flags:
+  path: '/api/moderation/flags/{nid}/dismiss'
+  defaults:
+    _controller: '\Drupal\markaspot_moderation\Controller\ModerationController::dismissFlags'
+    _title: 'Dismiss Flags'
+  methods: [POST]
+  requirements:
+    _permission: 'administer flags'
+    nid: \d+
+  options:
+    _format: 'json'
+
+markaspot_moderation.hide_request:
+  path: '/api/moderation/flags/{nid}/hide'
+  defaults:
+    _controller: '\Drupal\markaspot_moderation\Controller\ModerationController::hideRequest'
+    _title: 'Hide Request'
+  methods: [POST]
+  requirements:
+    _permission: 'administer flags'
+    nid: \d+
+  options:
+    _format: 'json'
+
+markaspot_moderation.delete_request:
+  path: '/api/moderation/flags/{nid}'
+  defaults:
+    _controller: '\Drupal\markaspot_moderation\Controller\ModerationController::deleteRequest'
+    _title: 'Delete Request'
+  methods: [DELETE]
+  requirements:
+    _permission: 'administer all flags'
+    nid: \d+
+  options:
+    _format: 'json'

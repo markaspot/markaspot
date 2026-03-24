@@ -1,0 +1,15 @@
+services:
+  markaspot_moderation.service:
+    class: Drupal\markaspot_moderation\Service\ModerationService
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@plugin.manager.mail'
+      - '@logger.channel.markaspot_moderation'
+      - '@datetime.time'
+      - '@current_user'
+
+  logger.channel.markaspot_moderation:
+    parent: logger.channel_base
+    arguments: ['markaspot_moderation']

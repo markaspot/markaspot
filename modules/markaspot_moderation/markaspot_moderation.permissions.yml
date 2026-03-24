@@ -1,0 +1,11 @@
+submit flags:
+  title: 'Submit content flags via API'
+  description: 'Allows users to flag citizen reports for moderation review.'
+
+administer flags:
+  title: 'Manage flagged content for own jurisdiction'
+  description: 'View and manage flagged content within jurisdictions the user administers.'
+
+administer all flags:
+  title: 'Manage flagged content across all jurisdictions'
+  description: 'View and manage flagged content across all jurisdictions. Includes the ability to permanently delete flagged requests.'
