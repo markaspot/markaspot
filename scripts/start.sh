@@ -569,12 +569,14 @@ EOF
     success "Profile modules enabled"
   fi
 
-  # Enable FastMap/SaaS modules if NUXT_FASTMAP is set.
-  if [ "${NUXT_FASTMAP:-}" = "true" ]; then
-    step "Enabling FastMap SaaS modules..."
+  # Enable FastMap + passwordless modules if FASTMAP_SERVICE_KEY is set.
+  # The key must match between Drupal config and the frontend ENV.
+  if [ -n "${FASTMAP_SERVICE_KEY:-}" ]; then
+    step "Enabling FastMap modules..."
     $DRUSH_CMD $DRUSH_URI en markaspot_fastmap -y 2>/dev/null || warn "Failed to enable markaspot_fastmap"
+    $DRUSH_CMD $DRUSH_URI cset markaspot_fastmap.settings service_key "$FASTMAP_SERVICE_KEY" -y 2>/dev/null
     $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
-    success "FastMap modules enabled (markaspot_fastmap, markaspot_passwordless)"
+    success "FastMap modules enabled (service_key configured)"
   fi
 
   # Run pending update hooks (ensures install/update hooks from all modules run).
