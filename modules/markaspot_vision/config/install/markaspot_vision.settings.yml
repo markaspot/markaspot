@@ -2,7 +2,7 @@ multiple_uploads: 1
 auth_type: 'bearer'
 api_key: ''
 api_url: 'https://api.openai.com/v1/chat/completions'
-ai_model: 'gpt-4o'
+ai_model: 'gpt-4.1-mini'
 system_prompt: ''
 image_prompt: |
   Analyze the provided image(s) for a citizen reporting platform.
