@@ -2468,9 +2468,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
         if ($fieldAccess->isAllowed()) {
           if (method_exists($field, 'referencedEntities')) {
-            $value = $field->referencedEntities();
+            $entities = $field->referencedEntities();
+            // Serialize entities to arrays for JSON compatibility.
+            $value = array_map(fn($entity) => $entity->toArray(), $entities);
             // Normalize single-value arrays.
-            if (is_array($value) && count($value) === 1) {
+            if (count($value) === 1) {
               $value = reset($value);
             }
           }
