@@ -3,8 +3,24 @@
 # GeoReport Client Script
 # Creates users, sets up API key, and generates test service requests
 #
+# Usage: georeport-client.sh [-n COUNT] [-j JURISDICTION_ID]
+#   -n COUNT           Number of requests to create (default: 50)
+#   -j JURISDICTION_ID Jurisdiction ID for multi-tenant (optional)
+#
+# ENV overrides: JURISDICTION_ID, API_HOST, GEOREPORT_API_KEY
+#
 
 set -e
+
+# Parse arguments
+REQUEST_COUNT=50
+while getopts "n:j:" opt; do
+  case $opt in
+    n) REQUEST_COUNT="$OPTARG" ;;
+    j) JURISDICTION_ID="$OPTARG" ;;
+    *) echo "Usage: $0 [-n count] [-j jurisdiction_id]"; exit 1 ;;
+  esac
+done
 
 # Use DRUSH_CMD if set by start.sh, otherwise detect
 if [ -n "$DRUSH_CMD" ]; then
@@ -23,7 +39,10 @@ fi
 DRUSH_ARGS="$DRUSH_URI"
 
 # Determine API endpoint (DDEV uses 'web', legacy Docker uses VIRTUAL_HOST)
-if [ -n "$DDEV_HOSTNAME" ] || [ -f "/.dockerenv" ]; then
+# Can be overridden via API_HOST env var for Docker Compose stacks.
+if [ -n "$API_HOST" ]; then
+  : # already set
+elif [ -n "$DDEV_HOSTNAME" ] || [ -f "/.dockerenv" ]; then
   API_HOST="http://web"
 elif [ -n "$VIRTUAL_HOST" ]; then
   API_HOST="http://$VIRTUAL_HOST"
@@ -73,9 +92,18 @@ RADIUS=15
 # Calculate the radius in degrees (1 degree ~ 111.32 km)
 RADIUS_IN_DEGREES=$(awk "BEGIN {print ($RADIUS / 111.32)}")
 
+# Build jurisdiction query parameter
+JUR_PARAM=""
+if [ -n "$JURISDICTION_ID" ]; then
+  JUR_PARAM="jurisdiction_id=${JURISDICTION_ID}"
+  printf "  Jurisdiction ID: %s\n" "$JURISDICTION_ID"
+fi
+
 # Retrieve the services list from the server
 printf "\e[36mRetrieving services from %s...\e[0m\n" "$API_HOST"
-services_json=$(curl -s -w '\n%{http_code}\n' "${API_HOST}/georeport/v2/services.json")
+SERVICES_URL="${API_HOST}/georeport/v2/services.json"
+[ -n "$JUR_PARAM" ] && SERVICES_URL="${SERVICES_URL}?${JUR_PARAM}"
+services_json=$(curl -s -w '\n%{http_code}\n' "$SERVICES_URL")
 # Check for errors in the response
 response_code=$(echo "$services_json" | tail -n 1)
 if [ "$response_code" != "200" ]; then
@@ -91,7 +119,7 @@ printf "%-10s %-30s %-15s %-15s %-12s %-15s %-8s\n" "Request #" "Email" "Latitud
 echo "------------------------------------------------------------------------------------------------------------------"
 
 
-for i in $(seq 1 50); do
+for i in $(seq 1 $REQUEST_COUNT); do
   # Generate random coordinates within radius of center
   RANDOM_ANGLE=$(awk -v seed="$RANDOM$((i * 10))" 'BEGIN {srand(seed); print rand() * 2 * 3.141592653589793;}')
   RANDOM_RADIUS=$(awk -v seed="$RANDOM$((i * 10))" -v max="$RADIUS_IN_DEGREES" 'BEGIN {srand(seed); print sqrt(rand()) * max;}')
@@ -116,7 +144,9 @@ for i in $(seq 1 50); do
   MEDIA_URL="https://markaspot.de/demo-images/image_${RANDOM_NUMBER}.jpg"
 
   REQUEST_START=$(date +%s 2>/dev/null || echo 0)
-  RESPONSE=$(curl -s --location "${API_HOST}/georeport/v2/requests.json?api_key=${API_KEY}" \
+  REQUEST_URL="${API_HOST}/georeport/v2/requests.json?api_key=${API_KEY}"
+  [ -n "$JUR_PARAM" ] && REQUEST_URL="${REQUEST_URL}&${JUR_PARAM}"
+  RESPONSE=$(curl -s --location "$REQUEST_URL" \
     --header 'Content-Type: application/x-www-form-urlencoded' \
     --data-urlencode 'service_code='"$RANDOM_SERVICE_CODE"'' \
     --data-urlencode 'description='"$DESCRIPTION"'' \
@@ -137,7 +167,7 @@ echo "--------------------------------------------------------------------------
 printf "\n\e[32m Setup Complete!\e[0m\n\n"
 printf "  Users: api_user, moderation_1, moderation_2\n"
 printf "  API Key: %s\n" "$API_KEY"
-printf "  Test requests: 50\n\n"
+printf "  Test requests: %s\n\n" "$REQUEST_COUNT"
 
 # Find project root for DDEV config update
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
