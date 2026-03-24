@@ -593,6 +593,18 @@ EOF
     success "FastMap modules enabled (service_key configured)"
   fi
 
+  # Configure AI vision (photo analysis) if OpenAI key is available.
+  if [ -n "${OPENAI_API_KEY:-}" ]; then
+    step "Configuring AI vision..."
+    $DRUSH_CMD $DRUSH_URI en markaspot_vision -y 2>/dev/null || true
+    $DRUSH_CMD $DRUSH_URI php:eval "
+      \$config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
+      \$config->set('api_key', getenv('OPENAI_API_KEY'));
+      \$config->save();
+    " 2>/dev/null
+    success "AI vision configured"
+  fi
+
   # Run pending update hooks (ensures install/update hooks from all modules run).
   step "Running database updates..."
   $DRUSH_CMD $DRUSH_URI updb -y 2>/dev/null || warn "Database updates returned warnings"
