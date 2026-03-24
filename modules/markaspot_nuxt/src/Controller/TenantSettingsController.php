@@ -1225,7 +1225,7 @@ class TenantSettingsController extends ControllerBase {
         'pwaInstallPrompt' => $features['pwaInstallPrompt'] ?? FALSE,
         'objectId' => $features['objectId'] ?? FALSE,
         'party' => $features['party'] ?? FALSE,
-        'formFirst' => $features['formFirst'] ?? FALSE,
+        'formFirst' => !empty($features['formFirst']),
         'dashboard' => $features['dashboard'] ?? TRUE,
         'contactForm' => $features['contactForm'] ?? FALSE,
         'emergency' => ['enabled' => $features['emergency']['enabled'] ?? FALSE],
@@ -1299,9 +1299,15 @@ class TenantSettingsController extends ControllerBase {
     }
 
     // Apply only known feature flags from the request, preserving all others.
+    // Special case: formFirst can be an object with config options. When the
+    // dashboard sends true, preserve the existing object (don't flatten to bool).
     $allKnownFlags = array_merge(self::SIMPLE_FEATURE_FLAGS, self::NESTED_FEATURE_FLAGS);
     foreach ($data as $key => $value) {
       if (in_array($key, $allKnownFlags, TRUE)) {
+        if ($key === 'formFirst' && $value === TRUE && is_array($config['features']['formFirst'] ?? NULL)) {
+          // Preserve existing formFirst config object when enabling.
+          continue;
+        }
         $config['features'][$key] = $value;
       }
     }
@@ -1372,7 +1378,7 @@ class TenantSettingsController extends ControllerBase {
         'maxBounds' => $map['maxBounds'] ?? NULL,
         'loadMarkersOnInit' => $map['loadMarkersOnInit'] ?? TRUE,
         'enableBoundsFiltering' => $map['enableBoundsFiltering'] ?? TRUE,
-        'deferredMap' => $map['deferredMap'] ?? FALSE,
+        'deferredMap' => !empty($map['deferredMap']),
         'layers' => $map['layers'] ?? new \stdClass(),
         'controls' => $map['controls'] ?? new \stdClass(),
       ],
@@ -1502,7 +1508,12 @@ class TenantSettingsController extends ControllerBase {
     }
 
     // Apply only allowed keys, preserving all other map config.
+    // Special case: deferredMap can be an object with config options.
+    // When the dashboard sends true, preserve the existing object.
     foreach ($data as $key => $value) {
+      if ($key === 'deferredMap' && $value === TRUE && is_array($config['map']['deferredMap'] ?? NULL)) {
+        continue;
+      }
       $config['map'][$key] = $value;
     }
 
