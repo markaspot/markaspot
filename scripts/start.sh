@@ -1176,11 +1176,15 @@ EOF
 
   printf "\n"
   step "Next Steps:"
-  printf "  1. Run 'ddev restart' to apply API key to frontend\n"
+  if [ "$IS_DOCKER_PROD" = "true" ]; then
+    printf "  1. Site is ready.\n"
+  else
+    printf "  1. Run 'ddev restart' to apply API key to frontend\n"
+  fi
   if [ -n "$SITE_URI" ]; then
     printf "  2. Access site: https://%s\n\n" "$SITE_URI"
   elif [ -n "$DDEV_HOSTNAME" ]; then
-    printf "  2. Access frontend: https://%s:8040\n\n" "$DDEV_HOSTNAME"
+    printf "  2. Access frontend: https://%s:3001\n\n" "$DDEV_HOSTNAME"
   else
     printf "  2. Access frontend: ${SMOKE_BASE_URL}:3000\n\n"
   fi
