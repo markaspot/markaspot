@@ -945,6 +945,7 @@ EOF
   fi
 
   $DRUSH_CMD $DRUSH_URI php:eval "
+    \$is_fastmap = \Drupal::moduleHandler()->moduleExists('markaspot_fastmap');
     \$group = \Drupal::entityTypeManager()->getStorage('group')->load(1);
     if (\$group && \$group->getGroupType()->id() === 'jur') {
       \$group->set('label', '$SIMPLE_CITY_NAME');
@@ -971,7 +972,8 @@ EOF
         'features' => [
           'statistics' => true,
           'photoReporting' => true,
-          'dashboard' => false,
+          'dashboard' => \$is_fastmap,
+          'passwordless' => \$is_fastmap,
           'voting' => false,
           'feedback' => true
         ],
