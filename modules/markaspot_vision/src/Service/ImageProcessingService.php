@@ -103,7 +103,7 @@ class ImageProcessingService {
 
     try {
       // Process all images together.
-      $image_contents = [];
+      $image_data = [];
       foreach ($file_uris as $file_uri) {
         $styled_file_path = $this->getStyledImagePath($file_uri);
         $contents = file_get_contents($styled_file_path);
@@ -111,7 +111,13 @@ class ImageProcessingService {
           $this->logger->warning('Failed to read image file: @path', ['@path' => $styled_file_path]);
           continue;
         }
-        $image_contents[] = base64_encode($contents);
+        // Detect actual MIME type (image style may convert format).
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mime = $finfo->buffer($contents) ?: 'image/jpeg';
+        $image_data[] = [
+          'base64' => base64_encode($contents),
+          'mime' => $mime,
+        ];
       }
 
       $categories = $this->getAllCategoriesHierarchical($jurisdictionId, $langcode);
@@ -190,10 +196,10 @@ class ImageProcessingService {
       ];
 
       // Add all images to the same message.
-      foreach ($image_contents as $content) {
+      foreach ($image_data as $img) {
         $user_message['content'][] = [
           'type' => 'image_url',
-          'image_url' => ['url' => "data:image/jpeg;base64,$content"],
+          'image_url' => ['url' => "data:{$img['mime']};base64,{$img['base64']}"],
         ];
       }
 
