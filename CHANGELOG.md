@@ -1,5 +1,37 @@
 # Changelog
 
+## [11.9.17](https://github.com/markaspot/markaspot/compare/11.9.16...11.9.17) (2026-03-24)
+
+### Features
+
+* **#220:** add mail template translations for passwordless OTP emails ([79b4acf](https://github.com/markaspot/markaspot/commit/79b4acfcd229c7a10314e6664ea367eede1f72d0)), closes [#220](https://github.com/markaspot/markaspot/issues/220)
+* **#223:** auto-enable markaspot_fastmap when NUXT_FASTMAP=true ([45ed86e](https://github.com/markaspot/markaspot/commit/45ed86e3e5e45372bc99598f8dcdf04aa2349e36)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* enable markaspot_boilerplate module by default ([c210371](https://github.com/markaspot/markaspot/commit/c210371e2b7bb4ddfa0a44afbd25fc1a00fac502))
+
+### Bug Fixes
+
+* **#223:** add aiAnalysis + classicReporting to default feature flags ([bb1909c](https://github.com/markaspot/markaspot/commit/bb1909c15199e8171d8f728039f7511fb1d8a44f)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* **#223:** add toolbar module + tenant_admin/moderator roles for uid 1 ([3826b70](https://github.com/markaspot/markaspot/commit/3826b705f8e666ddb84cbbace5b2a73b3af77fa2)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* **#223:** configure AI vision from OPENAI_API_KEY ENV on fresh install ([e29167c](https://github.com/markaspot/markaspot/commit/e29167c5586b576131c3eb939c567a7b89485a71)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* **#223:** enable dashboard + passwordless features by default ([bb63392](https://github.com/markaspot/markaspot/commit/bb6339261cbe8fc524920b32b57c15dfc5024a4d)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* **#223:** enable fastmap with service_key from ENV on fresh install ([b7a79dc](https://github.com/markaspot/markaspot/commit/b7a79dc1f88b8b2bb76b81c03698feee2f95ddc2)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* **#223:** enable markaspot_ai module when OPENAI_API_KEY is set ([eece7c9](https://github.com/markaspot/markaspot/commit/eece7c95ee6ce6fbef2180a80e874aee3085103f)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* **#223:** fresh install must be fully functional out of the box ([d797f79](https://github.com/markaspot/markaspot/commit/d797f79bfec50ae9366b4ff63def6cce5975dd50)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* **#223:** remove REST resource deps from role configs + media cardinality ([b0e4576](https://github.com/markaspot/markaspot/commit/b0e45766aa2877ce805fdb542c78d3d1f757107a)), closes [#223](https://github.com/markaspot/markaspot/issues/223)
+* **#223:** set verify_base_url + fix demo banner for non-SaaS installs ([5a1057a](https://github.com/markaspot/markaspot/commit/5a1057ad3d99eeef1bd5cdac5a6ba4f04916cae2))
+* **#224:** add group_contact to management form display ([fb11602](https://github.com/markaspot/markaspot/commit/fb116023a9b7545c9f4c64e6ab36d4de5f67f8a5)), closes [#224](https://github.com/markaspot/markaspot/issues/224)
+* add fastmap mail translation update hook and fix Italian typo ([00ec2f9](https://github.com/markaspot/markaspot/commit/00ec2f9f817f9ad11de5cf6c58811453a1923f1b))
+* address review findings in start.sh ([797bfbc](https://github.com/markaspot/markaspot/commit/797bfbcafdd9757f8e28068d3e4d1f8949d49666))
+* correct Next Steps output (port 3001, skip ddev hint in prod) ([734aaa8](https://github.com/markaspot/markaspot/commit/734aaa89383c5f2fbf6a28c5c6bbe0f91a5ea093))
+* detect actual MIME type for AI vision base64 encoding ([bb12afc](https://github.com/markaspot/markaspot/commit/bb12afcad8b426493e9879a416a5c8ff4a1b9a49))
+* disable classicReporting by default for FastMap workspaces ([6de6a3f](https://github.com/markaspot/markaspot/commit/6de6a3f56bb6cac1b785f1601eba810ddffdcd0c))
+* **open311:** serialize entity references in getFieldValues() for JSON output ([174b00f](https://github.com/markaspot/markaspot/commit/174b00fb1aeae30daa242f2ff8d01726d59ac0ce))
+* remove AVIF conversion from wide image style for AI vision ([2c28d73](https://github.com/markaspot/markaspot/commit/2c28d73bcae1a2b1db6030b3dd840aa68940d440))
+
+### Refactoring
+
+* dissolve markaspot_tenant_admin into markaspot_group ([a05087f](https://github.com/markaspot/markaspot/commit/a05087fece7cf7e4b4181df446a40128819c4174))
+
 ## [11.9.16](https://github.com/markaspot/markaspot/compare/11.9.15...11.9.16) (2026-03-23)
 
 ### Features
