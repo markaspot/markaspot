@@ -10,7 +10,7 @@
  * Works with any number of jurisdictions and any city data.
  */
 
-use Drupal\markaspot_tenant_admin\TenantAdminHelper;
+use Drupal\markaspot_group\Service\TenantAdminHelper;
 
 // ---------------------------------------------------------------------------
 // Test framework
@@ -920,10 +920,10 @@ else {
 
 test_group('13. Tenant Admin');
 
-// Check if markaspot_tenant_admin module is enabled.
-$ta_enabled = \Drupal::moduleHandler()->moduleExists('markaspot_tenant_admin');
+// Check if markaspot_group module is enabled (tenant admin hooks are now here).
+$ta_enabled = \Drupal::moduleHandler()->moduleExists('markaspot_group');
 if (!$ta_enabled) {
-  skip_test('markaspot_tenant_admin module not enabled');
+  skip_test('markaspot_group module not enabled');
 }
 else {
   // Find test user with jur-tenant_admin membership.
@@ -1017,10 +1017,6 @@ else {
       assert_true(
         in_array('edit terms in service_category', $perms, TRUE),
         'tenant_admin has edit terms in service_category'
-      );
-      assert_true(
-        in_array('administer tenant taxonomy', $perms, TRUE),
-        'tenant_admin has administer tenant taxonomy'
       );
       assert_true(
         in_array('translate service_category taxonomy_term', $perms, TRUE),

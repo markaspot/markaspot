@@ -2195,3 +2195,33 @@ function markaspot_group_update_11912(): void {
     }
   }
 }
+
+/**
+ * Uninstall markaspot_tenant_admin, move functionality into markaspot_group.
+ *
+ * The tenant admin module's UI (taxonomy overview at /admin/tenant) is
+ * obsolete because the Nuxt dashboard handles category/status management.
+ * The access control hooks (role sync, query filter, term access) are now
+ * in markaspot_group.
+ */
+function markaspot_group_update_11913(): void {
+  $module_handler = \Drupal::moduleHandler();
+
+  // Uninstall the tenant_admin module if still present.
+  if ($module_handler->moduleExists('markaspot_tenant_admin')) {
+    \Drupal::service('module_installer')->uninstall(['markaspot_tenant_admin']);
+    \Drupal::logger('markaspot_group')->notice(
+      'Uninstalled markaspot_tenant_admin: functionality merged into markaspot_group.'
+    );
+  }
+
+  // Remove the obsolete permission from tenant_admin role.
+  $role = \Drupal\user\Entity\Role::load('tenant_admin');
+  if ($role && $role->hasPermission('administer tenant taxonomy')) {
+    $role->revokePermission('administer tenant taxonomy');
+    $role->save();
+    \Drupal::logger('markaspot_group')->notice(
+      'Revoked obsolete "administer tenant taxonomy" permission from tenant_admin role.'
+    );
+  }
+}

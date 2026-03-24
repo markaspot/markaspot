@@ -20,7 +20,7 @@ dependencies:
     - markaspot_escalation
     - markaspot_fastmap
     - markaspot_open311
-    - markaspot_tenant_admin
+    - markaspot_group
     - markaspot_validation
     - media
     - node
@@ -45,7 +45,6 @@ permissions:
   - 'access taxonomy overview'
   - 'access toolbar'
   - 'access workspace usage'
-  - 'administer tenant taxonomy'
   - 'bypass mas validation'
   - 'create boilerplate content'
   - 'create content translations'

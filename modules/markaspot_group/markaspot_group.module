@@ -11,14 +11,19 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Entity\EntityInterface;
-use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\markaspot_group\Service\TenantAdminHelper;
+use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
+use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 
 /**
@@ -678,19 +683,32 @@ function markaspot_group_node_update(NodeInterface $node): void {
  * Implements hook_ENTITY_TYPE_insert() for group_relationship entities.
  *
  * Syncs group relationship to field_organisation when a service_request
- * is added to an org group.
+ * is added to an org group. Also syncs jur-tenant_admin group role to
+ * the tenant_admin Drupal role.
  */
 function markaspot_group_group_relationship_insert(GroupRelationshipInterface $relationship): void {
   _markaspot_group_sync_relationship_to_field($relationship, 'insert');
+  _markaspot_group_tenant_admin_sync_role($relationship, 'insert');
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for group_relationship entities.
+ *
+ * When a membership's group roles change, sync tenant_admin accordingly.
+ */
+function markaspot_group_group_relationship_update(GroupRelationshipInterface $relationship): void {
+  _markaspot_group_tenant_admin_sync_role($relationship, 'update');
 }
 
 /**
  * Implements hook_ENTITY_TYPE_delete() for group_relationship entities.
  *
  * Clears field_organisation when a service_request is removed from an org group.
+ * Also removes tenant_admin Drupal role if no jur-tenant_admin memberships remain.
  */
 function markaspot_group_group_relationship_delete(GroupRelationshipInterface $relationship): void {
   _markaspot_group_sync_relationship_to_field($relationship, 'delete');
+  _markaspot_group_tenant_admin_sync_role($relationship, 'delete');
 }
 
 /**
@@ -1380,4 +1398,189 @@ function _markaspot_group_set_jurisdiction_field(NodeInterface $node, int|false 
   );
 
   return TRUE;
+}
+
+/**
+ * Syncs the jur-tenant_admin group role to the tenant_admin Drupal role.
+ *
+ * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
+ *   The group relationship entity.
+ * @param string $operation
+ *   One of 'insert', 'update', or 'delete'.
+ */
+function _markaspot_group_tenant_admin_sync_role(GroupRelationshipInterface $relationship, string $operation): void {
+  // Only process membership relationships in jur groups.
+  if ($relationship->getPluginId() !== 'group_membership') {
+    return;
+  }
+  if ($relationship->getGroup()->bundle() !== 'jur') {
+    return;
+  }
+
+  $user_entity = $relationship->getEntity();
+  if (!$user_entity instanceof UserInterface) {
+    return;
+  }
+
+  // Reload the user to ensure fresh role state.
+  $user = User::load($user_entity->id());
+  if (!$user) {
+    return;
+  }
+
+  // Check if this membership has the jur-tenant_admin role.
+  $group_roles = array_column(
+    $relationship->get('group_roles')->getValue(),
+    'target_id'
+  );
+  $has_jur_admin = in_array(TenantAdminHelper::GROUP_ROLE_ID, $group_roles, TRUE);
+
+  if ($operation === 'delete' || ($operation === 'update' && !$has_jur_admin)) {
+    // Membership removed or jur-admin role removed from membership.
+    // Check if user still has jur-admin in any other jur group.
+    $exclude_id = ($operation === 'delete') ? (int) $relationship->id() : NULL;
+    $still_has_admin = TenantAdminHelper::userHasJurAdminInAnyGroup($user, $exclude_id);
+
+    if (!$still_has_admin && $user->hasRole('tenant_admin')) {
+      $user->removeRole('tenant_admin');
+      $user->save();
+      \Drupal::logger('markaspot_group')->notice(
+        'Removed tenant_admin role from user @name (no remaining jur-tenant_admin memberships).',
+        ['@name' => $user->getAccountName()]
+      );
+    }
+  }
+  elseif ($has_jur_admin && !$user->hasRole('tenant_admin')) {
+    $user->addRole('tenant_admin');
+    $user->save();
+    \Drupal::logger('markaspot_group')->notice(
+      'Granted tenant_admin role to user @name (jur-tenant_admin in @group).',
+      [
+        '@name' => $user->getAccountName(),
+        '@group' => $relationship->getGroup()->label(),
+      ]
+    );
+  }
+}
+
+/**
+ * Implements hook_query_TAG_alter() for taxonomy_term_access.
+ *
+ * Filters taxonomy term queries to show only terms belonging to the current
+ * user's jurisdictions. Full Drupal admins are unaffected.
+ *
+ * Child jurisdictions inherit taxonomy terms from their root parent, so the
+ * filter resolves each direct jurisdiction to its full ancestor tree via
+ * JurisdictionHierarchyResolver::getTermJurisdictionIds().
+ */
+function markaspot_group_query_taxonomy_term_access_alter(AlterableInterface $query): void {
+  // Avoid double-altering during migration when the old module is still active.
+  if (\Drupal::moduleHandler()->moduleExists('markaspot_tenant_admin')) {
+    return;
+  }
+
+  $current_user = \Drupal::currentUser();
+
+  // Full admins see everything.
+  if ($current_user->hasPermission('administer taxonomy')) {
+    return;
+  }
+
+  // Only filter for tenant_admin users.
+  if (!in_array('tenant_admin', $current_user->getRoles(), TRUE)) {
+    return;
+  }
+
+  $jur_ids = TenantAdminHelper::getUserJurisdictionIds($current_user);
+  if (empty($jur_ids)) {
+    // No jurisdictions: add an impossible condition to show nothing.
+    $query->where('1 = 0');
+    return;
+  }
+
+  // Resolve each direct jurisdiction to include the full tree (root + all
+  // descendants). Child jurisdictions inherit their root parent's taxonomy
+  // terms, so a Queens Park Ward admin (id=10) also needs to see BCP
+  // Council's terms (id=8).
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $all_jur_ids = [];
+  foreach ($jur_ids as $jur_id) {
+    $all_jur_ids = array_merge($all_jur_ids, $resolver->getTermJurisdictionIds($jur_id));
+  }
+  $jur_ids = array_unique($all_jur_ids);
+
+  // Find the base table alias dynamically. TermStorage::loadTree() uses 't',
+  // but getNodeTerms() uses 'td' and Views may use other aliases.
+  $tables = $query->getTables();
+  $base_alias = NULL;
+  foreach ($tables as $alias => $info) {
+    if ($info['table'] === 'taxonomy_term_field_data') {
+      $base_alias = $alias;
+      break;
+    }
+  }
+  if (!$base_alias) {
+    // Cannot safely alter this query (e.g., no taxonomy_term_field_data table).
+    return;
+  }
+
+  // Join field_jurisdiction and filter to user's jurisdictions.
+  $query->leftJoin(
+    'taxonomy_term__field_jurisdiction',
+    'fj',
+    "[$base_alias].[tid] = [fj].[entity_id]"
+  );
+
+  // Show terms belonging to user's jurisdictions OR unassigned terms.
+  $or = $query->orConditionGroup()
+    ->condition('fj.field_jurisdiction_target_id', $jur_ids, 'IN')
+    ->isNull('fj.field_jurisdiction_target_id');
+  $query->condition($or);
+}
+
+/**
+ * Implements hook_taxonomy_term_access().
+ *
+ * Grants tenant admins view access to unpublished terms in managed
+ * vocabularies (service_category, service_status). Without this, Drupal's
+ * TermAccessControlHandler denies view access to unpublished terms for
+ * non-admins, which blocks the content_translation "Translate" operation
+ * link from appearing.
+ */
+function markaspot_group_taxonomy_term_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  // Only handle the 'view' operation for managed vocabularies.
+  if ($operation !== 'view') {
+    return AccessResult::neutral();
+  }
+
+  $managed_vocabs = ['service_category', 'service_status'];
+  if (!in_array($entity->bundle(), $managed_vocabs, TRUE)) {
+    return AccessResult::neutral();
+  }
+
+  // Only apply to tenant_admin users.
+  if (!in_array('tenant_admin', $account->getRoles(), TRUE)) {
+    return AccessResult::neutral();
+  }
+
+  // Grant view access to unpublished terms so the taxonomy overview and
+  // translation operations work correctly. Only grant access if the term
+  // belongs to the user's jurisdiction or is unassigned (shared).
+  if (!$entity->isPublished()) {
+    $jur_ids = TenantAdminHelper::getUserJurisdictionIds($account);
+    $term_jur = $entity->hasField('field_jurisdiction') && !$entity->get('field_jurisdiction')->isEmpty()
+      ? (int) $entity->get('field_jurisdiction')->target_id
+      : NULL;
+
+    // Allow if term is unassigned (shared across jurisdictions) or belongs
+    // to one of the user's jurisdictions.
+    if ($term_jur === NULL || in_array($term_jur, $jur_ids, TRUE)) {
+      return AccessResult::allowed()
+        ->addCacheableDependency($entity)
+        ->cachePerPermissions()
+        ->addCacheContexts(['user.roles']);
+    }
+  }
+
+  return AccessResult::neutral();
 }
