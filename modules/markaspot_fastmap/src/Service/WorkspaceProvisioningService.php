@@ -482,7 +482,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       'theme' => $themeColors,
       'features' => [
         'photoReporting' => TRUE,
-        'classicReporting' => TRUE,
+        'classicReporting' => FALSE,
         'search' => ['enabled' => TRUE, 'mode' => 'fuzzy', 'minLength' => 2],
         'boundaries' => ['enabled' => TRUE, 'showBoundaryOnMap' => TRUE],
         'privacyNotice' => ['enabled' => TRUE, 'modal' => TRUE],
