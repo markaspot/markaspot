@@ -596,22 +596,28 @@ EOF
   # Configure AI vision (photo analysis) if OpenAI key is available.
   if [ -n "${OPENAI_API_KEY:-}" ]; then
     step "Configuring AI modules..."
-    $DRUSH_CMD $DRUSH_URI en markaspot_vision markaspot_ai -y 2>/dev/null || true
+    $DRUSH_CMD $DRUSH_URI en markaspot_vision markaspot_ai -y 2>/dev/null || warn "Failed to enable AI modules"
     $DRUSH_CMD $DRUSH_URI php:eval "
       \$config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
-      \$config->set('api_key', getenv('OPENAI_API_KEY'));
+      \$config->set('api_key', '$OPENAI_API_KEY');
       \$config->save();
-      // Remove AVIF conversion from wide image style (Drupal 11 core default).
-      // OpenAI Vision API does not support AVIF. Keep scale-only.
-      \$style = \Drupal::entityTypeManager()->getStorage('image_style')->load('wide');
-      if (\$style) {
-        foreach (\$style->getEffects() as \$effect) {
-          if (\$effect->getPluginId() === 'image_convert_avif') {
-            \$style->deleteImageEffect(\$effect);
-            \$style->save();
-            break;
+    " 2>/dev/null
+    # Remove AVIF conversion from wide image style once (Drupal 11 core default).
+    # OpenAI Vision API does not support AVIF. Only needed on first install.
+    $DRUSH_CMD $DRUSH_URI php:eval "
+      \$state = \Drupal::state();
+      if (!\$state->get('markaspot_vision.avif_removed')) {
+        \$style = \Drupal::entityTypeManager()->getStorage('image_style')->load('wide');
+        if (\$style) {
+          foreach (\$style->getEffects() as \$effect) {
+            if (\$effect->getPluginId() === 'image_convert_avif') {
+              \$style->deleteImageEffect(\$effect);
+              \$style->save();
+              break;
+            }
           }
         }
+        \$state->set('markaspot_vision.avif_removed', TRUE);
       }
     " 2>/dev/null
     success "AI modules configured (vision + analysis)"
@@ -1011,7 +1017,7 @@ EOF
           'statistics' => true,
           'photoReporting' => true,
           'classicReporting' => !\$is_fastmap,
-          'aiAnalysis' => !empty(getenv('OPENAI_API_KEY')),
+          'aiAnalysis' => !empty('$OPENAI_API_KEY'),
           'dashboard' => \$is_fastmap,
           'passwordless' => \$is_fastmap,
           'voting' => false,
