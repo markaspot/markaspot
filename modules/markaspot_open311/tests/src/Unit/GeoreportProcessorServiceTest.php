@@ -625,6 +625,11 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       public int $targetId = 42;
 
       /**
+       * The target entity ID (Drupal field item property name).
+       */
+      public int $target_id = 42;
+
+      /**
        * Checks if the field is empty.
        */
       public function isEmpty(): bool {
@@ -632,8 +637,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       }
 
     };
-    // Map target_id property for compatibility.
-    $jurisdictionField->target_id = 42;
 
     $categoryTerm = new class($jurisdictionField) {
 

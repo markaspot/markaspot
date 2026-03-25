@@ -113,6 +113,11 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
         public int $targetId;
 
         /**
+         * The target entity ID (Drupal field item property name).
+         */
+        public int $target_id;
+
+        /**
          * Whether the iterator is still valid.
          */
         private bool $valid = TRUE;

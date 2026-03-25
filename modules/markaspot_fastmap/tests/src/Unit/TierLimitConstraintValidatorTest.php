@@ -683,8 +683,9 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->with('field_jurisdiction')
       ->willReturn($jurisdictionField);
 
-    // Set the original property via reflection (it's a public property).
-    $node->original = $original;
+    // PHP 8.4 deprecation: dynamic property on mock. Acceptable in test code
+    // until PHPUnit mocks support declared properties natively.
+    @$node->original = $original;
 
     return $node;
   }
@@ -717,7 +718,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->with('field_jurisdiction')
       ->willReturn($jurisdictionField);
 
-    $node->original = $original;
+    @$node->original = $original;
 
     return $node;
   }
@@ -749,7 +750,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->with('field_jurisdiction')
       ->willReturn($jurisdictionField);
 
-    $node->original = $original;
+    @$node->original = $original;
 
     return $node;
   }
