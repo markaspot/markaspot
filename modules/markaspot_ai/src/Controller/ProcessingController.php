@@ -129,6 +129,7 @@ class ProcessingController extends ControllerBase {
       'sentiment' => [
         'count' => $sentiment,
         'percentage' => $total > 0 ? round(($sentiment / $total) * 100) : 0,
+        'missing' => $total - $sentiment,
         'breakdown' => $sentimentCounts,
       ],
       'queues' => [
@@ -170,7 +171,16 @@ class ProcessingController extends ControllerBase {
         $jurisdiction_node_ids
       );
 
-      if (empty($missing)) {
+      // Also find nodes that have embeddings but no sentiment analysis.
+      // The embedding queue worker handles this idempotently: it skips
+      // embedding generation (hash match) but still runs analyzeSentiment().
+      $missingSentiment = $this->findMissingSentiment($limit, $jurisdiction_node_ids);
+      // Exclude nodes already in the embedding-missing list to avoid duplicates.
+      $missingSentiment = array_diff($missingSentiment, $missing);
+
+      $allMissing = array_merge($missing, $missingSentiment);
+
+      if (empty($allMissing)) {
         return new JsonResponse([
           'success' => TRUE,
           'message' => 'No missing items to queue.',
@@ -182,7 +192,7 @@ class ProcessingController extends ControllerBase {
       $queue = $this->queueFactory->get('markaspot_ai_embedding');
       $count = 0;
 
-      foreach ($missing as $nid) {
+      foreach ($allMissing as $nid) {
         $queue->createItem([
           'nid' => $nid,
           'is_new' => FALSE,
@@ -373,6 +383,38 @@ class ProcessingController extends ControllerBase {
   }
 
   /**
+   * Finds nodes that have embeddings but no sentiment analysis.
+   *
+   * @param int $limit
+   *   Maximum number of results.
+   * @param array|null $node_ids
+   *   Optional array of node IDs to scope the query (jurisdiction).
+   *
+   * @return array<int>
+   *   Array of node IDs missing sentiment.
+   */
+  protected function findMissingSentiment(int $limit, ?array $node_ids = NULL): array {
+    $query = $this->database->select('markaspot_ai_embeddings', 'e');
+    $query->addField('e', 'entity_id');
+    $query->condition('e.entity_type', 'node');
+    $query->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+    $query->leftJoin('markaspot_ai_sentiment', 's', 'e.entity_id = s.entity_id');
+    $query->isNull('s.id');
+
+    if ($node_ids !== NULL) {
+      if (empty($node_ids)) {
+        return [];
+      }
+      $query->condition('n.nid', $node_ids, 'IN');
+    }
+
+    $query->range(0, $limit);
+    $query->orderBy('n.created', 'DESC');
+
+    return array_map('intval', $query->execute()->fetchCol());
+  }
+
+  /**
    * Builds an empty status response structure.
    *
    * @return array
@@ -389,6 +431,7 @@ class ProcessingController extends ControllerBase {
       'sentiment' => [
         'count' => 0,
         'percentage' => 0,
+        'missing' => 0,
         'breakdown' => [
           'frustrated' => 0,
           'neutral' => 0,
