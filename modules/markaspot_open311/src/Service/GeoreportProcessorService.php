@@ -2469,6 +2469,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         if ($fieldAccess->isAllowed()) {
           if (method_exists($field, 'referencedEntities')) {
             $entities = $field->referencedEntities();
+            // Skip empty entity references entirely.
+            if (empty($entities)) {
+              continue;
+            }
             // Serialize entities to arrays for JSON compatibility.
             $value = array_map(fn($entity) => $entity->toArray(), $entities);
             // Normalize single-value arrays.
@@ -2478,6 +2482,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
           }
           else {
             $value = $field->getValue();
+            // Convert integer field values from string to int.
+            $fieldDefinition = $field->getFieldDefinition();
+            $fieldType = $fieldDefinition->getType();
+            if ($fieldType === 'integer' || $fieldType === 'list_integer') {
+              foreach ($value as &$item) {
+                if (isset($item['value']) && is_numeric($item['value'])) {
+                  $item['value'] = (int) $item['value'];
+                }
+              }
+            }
           }
           $fieldValues[$fieldName] = $value;
         }
