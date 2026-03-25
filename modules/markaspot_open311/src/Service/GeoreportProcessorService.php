@@ -2528,6 +2528,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $fieldAccess = $field->access('view', NULL, TRUE);
 
       if ($fieldAccess->isAllowed()) {
+        // Skip empty fields: clean API responses omit absent data.
+        if ($field->isEmpty()) {
+          continue;
+        }
         $fieldValues[$fieldName] = $field->value;
       }
     }
