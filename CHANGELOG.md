@@ -1,5 +1,20 @@
 # Changelog
 
+## [11.9.18](https://github.com/markaspot/markaspot/compare/11.9.17...11.9.18) (2026-03-25)
+
+### Features
+
+* add jurisdiction_id and count params to georeport-client.sh ([8506ceb](https://github.com/markaspot/markaspot/commit/8506ceb04379adb71a1b905199c95804883511c5))
+* add markaspot_moderation module for content flag management ([#217](https://github.com/markaspot/markaspot/issues/217)) ([4750c2d](https://github.com/markaspot/markaspot/commit/4750c2d9d7d9b364c91646097cfdc96da6856805))
+* add markaspot_moderation to profile dependencies ([aa55f82](https://github.com/markaspot/markaspot/commit/aa55f82c5c2b38181a2bd58a4a84fddfdbae47ff))
+* add tenant-settings endpoints for features, map, navigation ([#180](https://github.com/markaspot/markaspot/issues/180)) ([58fe9a2](https://github.com/markaspot/markaspot/commit/58fe9a2bff461780eeebe4fd65afd00c7dcd7c78))
+
+### Bug Fixes
+
+* **ai:** queue sentiment-missing nodes and expose sentiment.missing in status ([f1edff9](https://github.com/markaspot/markaspot/commit/f1edff9e1db4d6d2ea337f571cc5ff6cb0ef1337))
+* normalize formFirst and deferredMap to boolean in settings GET ([22575d4](https://github.com/markaspot/markaspot/commit/22575d4959c9196365d23d47e76d136d29619835))
+* require jurisdiction_id on multi-tenant and add default fallback ([243f3dd](https://github.com/markaspot/markaspot/commit/243f3dd86e29bf70c3181744d5e69baed6cac2d9))
+
 ## [11.9.17](https://github.com/markaspot/markaspot/compare/11.9.16...11.9.17) (2026-03-24)
 
 ### Features
