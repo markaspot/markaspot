@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.19](https://github.com/markaspot/markaspot/compare/11.9.18...11.9.19) (2026-03-25)
+
+### Features
+
+* **nuxt:** add content translation REST endpoint ([15a2e36](https://github.com/markaspot/markaspot/commit/15a2e365eecb3123218c0e4828815995cdf83ae2))
+
+### Bug Fixes
+
+* add missing GroupInterface use import in TenantSettingsController ([a94c56d](https://github.com/markaspot/markaspot/commit/a94c56d3ab17a6743fc7410de559c9c2d17ca768))
+* **open311:** omit empty fields from getAllFieldValues() API response ([7a587d6](https://github.com/markaspot/markaspot/commit/7a587d6a33dccd0d41635ea1825078188b800afa))
+* resolve PHP 8.4 dynamic property deprecations in unit tests ([34dd6fb](https://github.com/markaspot/markaspot/commit/34dd6fb078a672fdbf6109e61dfb1fa384716c3b))
+* skip empty entity references and cast integers in field serialization ([f58ebc2](https://github.com/markaspot/markaspot/commit/f58ebc276ef8312ffa111584ecdbef1d78191975))
+
 ## [11.9.18](https://github.com/markaspot/markaspot/compare/11.9.17...11.9.18) (2026-03-25)
 
 ### Features
