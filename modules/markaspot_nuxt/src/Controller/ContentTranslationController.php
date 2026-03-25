@@ -163,8 +163,8 @@ class ContentTranslationController extends ControllerBase {
     $values = $this->mapAttributesToFieldValues($entity, $attributes);
 
     try {
-      $translation = $entity->addTranslation($langcode, $values);
-      $translation->save();
+      $entity->addTranslation($langcode, $values);
+      $entity->save();
 
       $this->logger->info('Created @langcode translation for @type @uuid.', [
         '@langcode' => $langcode,
@@ -172,7 +172,8 @@ class ContentTranslationController extends ControllerBase {
         '@uuid' => $uuid,
       ]);
 
-      // Build the response data.
+      // Build the response data from the saved translation.
+      $translation = $entity->getTranslation($langcode);
       $response_data = $this->buildResponseData($translation, $entity_type, $uuid, $langcode);
 
       return new JsonResponse($response_data, Response::HTTP_CREATED);
@@ -187,7 +188,7 @@ class ContentTranslationController extends ControllerBase {
 
       return new JsonResponse([
         'error' => 'Translation creation failed.',
-        'message' => $e->getMessage(),
+        'message' => 'An unexpected error occurred. Check the server logs for details.',
       ], Response::HTTP_INTERNAL_SERVER_ERROR);
     }
   }
@@ -227,8 +228,7 @@ class ContentTranslationController extends ControllerBase {
     $entity = reset($entities);
 
     if (!$entity || !($entity instanceof ContentEntityInterface)) {
-      // Let the controller return a proper 404.
-      return AccessResult::allowed()
+      return AccessResult::forbidden('Entity not found.')
         ->addCacheContexts(['url.path']);
     }
 
@@ -256,9 +256,25 @@ class ContentTranslationController extends ControllerBase {
    *   An array of field name => value pairs suitable for addTranslation().
    */
   protected function mapAttributesToFieldValues(ContentEntityInterface $entity, array $attributes): array {
+    // Blocklist of base fields that are technically translatable but should
+    // never be set via this endpoint (security: prevent status manipulation,
+    // ownership changes, or revision metadata injection).
+    $blocked_fields = [
+      'status', 'uid', 'created', 'changed',
+      'revision_uid', 'revision_log', 'revision_timestamp',
+      'content_translation_source', 'content_translation_outdated',
+      'content_translation_uid', 'content_translation_created',
+      'default_langcode',
+    ];
+
     $values = [];
 
     foreach ($attributes as $field_name => $field_value) {
+      // Block dangerous base fields.
+      if (in_array($field_name, $blocked_fields, TRUE)) {
+        continue;
+      }
+
       // Only set values for fields that exist on the entity.
       if (!$entity->hasField($field_name)) {
         continue;
@@ -268,6 +284,11 @@ class ContentTranslationController extends ControllerBase {
 
       // Skip non-translatable fields.
       if (!$field_definition->isTranslatable()) {
+        continue;
+      }
+
+      // Check field-level edit access for the current user.
+      if (!$entity->get($field_name)->access('edit', $this->currentUser())) {
         continue;
       }
 

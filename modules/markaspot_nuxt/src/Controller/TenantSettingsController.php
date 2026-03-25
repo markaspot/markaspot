@@ -13,6 +13,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\file\FileRepositoryInterface;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\Component\Utility\EmailValidator;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -323,6 +324,31 @@ class TenantSettingsController extends ControllerBase {
     }
 
     return $group;
+  }
+
+  /**
+   * Reads the field_nuxt_config JSON from the default translation.
+   *
+   * field_nuxt_config is non-translatable config data that is only saved on
+   * the entity's original language. When the entity is loaded in a non-default
+   * translation, this field may be empty. This helper always reads from the
+   * default translation to ensure the config is never missing.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The group entity (any translation).
+   *
+   * @return array
+   *   The decoded JSON config, or an empty array if not set.
+   */
+  private function getNuxtConfig(GroupInterface $group): array {
+    $source = $group->isDefaultTranslation() ? $group : $group->getUntranslated();
+    if ($source->hasField('field_nuxt_config') && !$source->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($source->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        return $decoded;
+      }
+    }
+    return [];
   }
 
   /**
@@ -833,14 +859,7 @@ class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
     }
 
-    // Read the full nuxt config JSON blob.
-    $config = [];
-    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
-      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
-      if (is_array($decoded)) {
-        $config = $decoded;
-      }
-    }
+    $config = $this->getNuxtConfig($group);
 
     // Extract languages with sensible defaults.
     $languages = $config['languages'] ?? [
@@ -1007,14 +1026,7 @@ class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
     }
 
-    // Read the full nuxt config JSON blob.
-    $config = [];
-    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
-      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
-      if (is_array($decoded)) {
-        $config = $decoded;
-      }
-    }
+    $config = $this->getNuxtConfig($group);
 
     $theme = $config['theme'] ?? [];
 
@@ -1199,14 +1211,7 @@ class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
     }
 
-    // Read the full nuxt config JSON blob.
-    $config = [];
-    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
-      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
-      if (is_array($decoded)) {
-        $config = $decoded;
-      }
-    }
+    $config = $this->getNuxtConfig($group);
 
     $features = $config['features'] ?? [];
 
@@ -1359,14 +1364,7 @@ class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
     }
 
-    // Read the full nuxt config JSON blob.
-    $config = [];
-    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
-      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
-      if (is_array($decoded)) {
-        $config = $decoded;
-      }
-    }
+    $config = $this->getNuxtConfig($group);
 
     $map = $config['map'] ?? [];
 
@@ -1564,14 +1562,7 @@ class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
     }
 
-    // Read the full nuxt config JSON blob.
-    $config = [];
-    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
-      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
-      if (is_array($decoded)) {
-        $config = $decoded;
-      }
-    }
+    $config = $this->getNuxtConfig($group);
 
     return new JsonResponse([
       'jurisdiction_id' => (int) $group->id(),
