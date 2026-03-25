@@ -233,3 +233,18 @@ markaspot_nuxt.tenant_settings_navigation_patch:
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
+
+markaspot_nuxt.content_translation_create:
+  path: '/api/content-translation/{entity_type}/{uuid}/{langcode}'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\ContentTranslationController::createTranslation'
+    _title: 'Create Content Translation'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\ContentTranslationController::accessCheck'
+    entity_type: '[a-z_]+'
+    uuid: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    langcode: '[a-z]{2}(-[A-Z]{2})?'
+  options:
+    _auth: ['cookie', 'basic_auth', 'api_key_auth']
+    _format: 'json'

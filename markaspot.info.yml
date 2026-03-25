@@ -40,6 +40,7 @@ dependencies:
   - history
   - image
   - image_effects
+  - content_translation
   - language
   - menu_link_content
   - menu_ui
