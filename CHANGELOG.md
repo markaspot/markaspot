@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.20](https://github.com/markaspot/markaspot/compare/11.9.19...11.9.20) (2026-03-26)
+
+### Features
+
+* **#108:** add ToS acceptance endpoints and field_tos_accepted_at on user entity ([e0c4eb1](https://github.com/markaspot/markaspot/commit/e0c4eb15f3479845d66027d6f298191092831322)), closes [#108](https://github.com/markaspot/markaspot/issues/108)
+
 ## [11.9.19](https://github.com/markaspot/markaspot/compare/11.9.18...11.9.19) (2026-03-25)
 
 ### Features
