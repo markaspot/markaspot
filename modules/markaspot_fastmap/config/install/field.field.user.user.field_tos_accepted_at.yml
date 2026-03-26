@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.user.field_tos_accepted_at
+  module:
+    - user
+id: user.user.field_tos_accepted_at
+field_name: field_tos_accepted_at
+entity_type: user
+bundle: user
+label: 'ToS Accepted At'
+description: 'Timestamp when the user accepted the Terms of Service.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: timestamp

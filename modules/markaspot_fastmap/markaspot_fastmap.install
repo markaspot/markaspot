@@ -881,3 +881,44 @@ function markaspot_fastmap_update_11914(): void {
     '@count' => $installed,
   ]);
 }
+
+/**
+ * Add field_tos_accepted_at (timestamp) to user entity for ToS tracking.
+ */
+function markaspot_fastmap_update_11915(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_fastmap');
+
+  // 1. Create field storage if it does not exist.
+  $storage_id = 'user.field_tos_accepted_at';
+  $field_storage = $etm->getStorage('field_storage_config')->load($storage_id);
+
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_tos_accepted_at',
+      'entity_type' => 'user',
+      'type' => 'timestamp',
+      'settings' => [],
+      'cardinality' => 1,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage user.field_tos_accepted_at.');
+  }
+
+  // 2. Create field instance on user bundle.
+  $field_id = 'user.user.field_tos_accepted_at';
+  $field_config = $etm->getStorage('field_config')->load($field_id);
+
+  if (!$field_config) {
+    $field_config = $etm->getStorage('field_config')->create([
+      'field_storage' => $field_storage,
+      'bundle' => 'user',
+      'label' => 'ToS Accepted At',
+      'description' => 'Timestamp when the user accepted the Terms of Service.',
+      'required' => FALSE,
+      'settings' => [],
+    ]);
+    $field_config->save();
+    $logger->info('Created field instance user.user.field_tos_accepted_at.');
+  }
+}
