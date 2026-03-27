@@ -22,6 +22,15 @@ class OtpService {
   const CODE_LENGTH = 6;
 
   /**
+   * Pre-computed bcrypt hash for timing-safe dummy verification.
+   *
+   * Uses cost factor 12 (PHP 8.x PASSWORD_BCRYPT default) to match
+   * the timing of real password_verify() calls and prevent email
+   * enumeration via response time differences.
+   */
+  private const DUMMY_HASH = '$2y$12$Swf5KJU7Onq1XGRI0n8hdeWHWEiR033nChaJ6yHLG7mpvl/xa32aG';
+
+  /**
    * The database connection.
    *
    * @var \Drupal\Core\Database\Connection
@@ -240,7 +249,7 @@ class OtpService {
       if (empty($records)) {
         // Perform a dummy bcrypt verify to equalize timing and prevent
         // email enumeration via response time measurement.
-        password_verify('000000', '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234');
+        password_verify('000000', self::DUMMY_HASH);
         return [
           'success' => FALSE,
           'error' => 'Invalid verification code',
@@ -290,13 +299,26 @@ class OtpService {
 
       // Code is valid. Mark as verified atomically within the transaction.
       // Use atomic increment and condition on verified=0 to prevent
-      // double-claim race conditions.
-      $this->database->update('markaspot_passwordless_codes')
+      // double-claim race conditions. Check affected rows to detect
+      // concurrent verification attempts.
+      $affected = $this->database->update('markaspot_passwordless_codes')
         ->expression('attempts', 'attempts + 1')
         ->fields(['verified' => 1])
         ->condition('id', $matched_record->id)
         ->condition('verified', 0)
         ->execute();
+
+      if ($affected === 0) {
+        // Another request already verified this code (race condition).
+        $this->logger->warning('Double-claim attempt detected for OTP code id @id, email @email.', [
+          '@id' => $matched_record->id,
+          '@email' => $email,
+        ]);
+        return [
+          'success' => FALSE,
+          'error' => 'Verification code has already been used',
+        ];
+      }
 
       // Authenticate the user.
       $user = $this->authenticateUser($email);
