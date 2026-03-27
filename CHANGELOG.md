@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.24](https://github.com/markaspot/markaspot/compare/11.9.23...11.9.24) (2026-03-27)
+
+### Bug Fixes
+
+* PHPCS violations, OTP moduleHandler DI, and add update_11904 for email_verified index ([c2df624](https://github.com/markaspot/markaspot/commit/c2df624b79b9cd0e81c21099820782c0e2759394))
+
 ## [11.9.23](https://github.com/markaspot/markaspot/compare/11.9.22...11.9.23) (2026-03-27)
 
 ### Bug Fixes
