@@ -17,7 +17,6 @@ markaspot_group.member_update:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
-    _csrf_token: 'TRUE'
     uid: \d+
   options:
     _format: 'json'
@@ -42,7 +41,6 @@ markaspot_group.member_profile_update:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
-    _csrf_token: 'TRUE'
     uid: \d+
   options:
     _format: 'json'
@@ -55,7 +53,6 @@ markaspot_group.invitation_send:
   methods: [POST]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
-    _csrf_token: 'TRUE'
   options:
     _format: 'json'
     _auth: ['cookie', 'api_key_auth']
@@ -78,7 +75,6 @@ markaspot_group.invitation_revoke:
   methods: [DELETE]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
-    _csrf_token: 'TRUE'
     invitation_id: \d+
   options:
     _format: 'json'
