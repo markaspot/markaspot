@@ -628,14 +628,25 @@ class GroupInvitationController extends ControllerBase {
     // to prevent open redirect / phishing via attacker-controlled URLs).
     $frontendBase = $this->config('markaspot_nuxt.settings')->get('frontend_base_url') ?: '';
     if (!$frontendBase) {
-      // Fall back to the X-Forwarded-Host or request origin.
-      $forwardedHost = $request->headers->get('X-Forwarded-Host');
-      if ($forwardedHost) {
-        $scheme = $request->headers->get('X-Forwarded-Proto', 'https');
-        $frontendBase = $scheme . '://' . $forwardedHost;
+      // Fall back to the Origin or Referer header (set by the browser),
+      // which reliably contain the frontend URL including port.
+      // X-Forwarded-Host/Proto can be duplicated by reverse proxies.
+      $origin = $request->headers->get('Origin');
+      if ($origin) {
+        $frontendBase = rtrim($origin, '/');
       }
       else {
-        $frontendBase = $request->getSchemeAndHttpHost();
+        $referer = $request->headers->get('Referer');
+        if ($referer) {
+          $parsed = parse_url($referer);
+          $frontendBase = ($parsed['scheme'] ?? 'https') . '://' . ($parsed['host'] ?? '');
+          if (!empty($parsed['port'])) {
+            $frontendBase .= ':' . $parsed['port'];
+          }
+        }
+        else {
+          $frontendBase = $request->getSchemeAndHttpHost();
+        }
       }
     }
 
