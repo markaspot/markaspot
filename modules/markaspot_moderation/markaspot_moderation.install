@@ -90,5 +90,29 @@ function markaspot_moderation_schema(): array {
  * Implements hook_install().
  */
 function markaspot_moderation_install(): void {
-  \Drupal::logger('markaspot_moderation')->notice('Mark-a-Spot Moderation module installed.');
+  $logger = \Drupal::logger('markaspot_moderation');
+
+  // Grant submit flags to anonymous and authenticated.
+  $submit_roles = ['anonymous', 'authenticated'];
+  foreach ($submit_roles as $role_id) {
+    $role = \Drupal\user\Entity\Role::load($role_id);
+    if ($role && !$role->hasPermission('submit flags')) {
+      $role->grantPermission('submit flags');
+      $role->save();
+      $logger->info('Granted "submit flags" to @role role.', ['@role' => $role_id]);
+    }
+  }
+
+  // Grant administer flags to tenant_admin and moderator.
+  $admin_roles = ['tenant_admin', 'moderator'];
+  foreach ($admin_roles as $role_id) {
+    $role = \Drupal\user\Entity\Role::load($role_id);
+    if ($role && !$role->hasPermission('administer flags')) {
+      $role->grantPermission('administer flags');
+      $role->save();
+      $logger->info('Granted "administer flags" to @role role.', ['@role' => $role_id]);
+    }
+  }
+
+  $logger->notice('Mark-a-Spot Moderation module installed.');
 }
