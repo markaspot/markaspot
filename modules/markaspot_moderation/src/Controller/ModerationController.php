@@ -7,7 +7,7 @@ namespace Drupal\markaspot_moderation\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Site\Settings;
 use Drupal\markaspot_moderation\Service\ModerationServiceInterface;
-use Drupal\markaspot_tenant_admin\TenantAdminHelper;
+use Drupal\markaspot_group\Service\TenantAdminHelper;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
