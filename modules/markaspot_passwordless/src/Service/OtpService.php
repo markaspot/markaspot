@@ -238,6 +238,9 @@ class OtpService {
         ->fetchAll();
 
       if (empty($records)) {
+        // Perform a dummy bcrypt verify to equalize timing and prevent
+        // email enumeration via response time measurement.
+        password_verify('000000', '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234');
         return [
           'success' => FALSE,
           'error' => 'Invalid verification code',
@@ -254,11 +257,12 @@ class OtpService {
       }
 
       if ($matched_record === NULL) {
-        // No matching hash found. Increment attempts on the most recent
-        // pending record to track brute force attempts.
+        // No matching hash found. Use atomic SQL increment to prevent
+        // race conditions where parallel requests all read the same
+        // attempt count and only increment by 1 instead of N.
         $latest = reset($records);
         $this->database->update('markaspot_passwordless_codes')
-          ->fields(['attempts' => $latest->attempts + 1])
+          ->expression('attempts', 'attempts + 1')
           ->condition('id', $latest->id)
           ->execute();
 
@@ -285,12 +289,13 @@ class OtpService {
       }
 
       // Code is valid. Mark as verified atomically within the transaction.
+      // Use atomic increment and condition on verified=0 to prevent
+      // double-claim race conditions.
       $this->database->update('markaspot_passwordless_codes')
-        ->fields([
-          'attempts' => $matched_record->attempts + 1,
-          'verified' => 1,
-        ])
+        ->expression('attempts', 'attempts + 1')
+        ->fields(['verified' => 1])
         ->condition('id', $matched_record->id)
+        ->condition('verified', 0)
         ->execute();
 
       // Authenticate the user.
