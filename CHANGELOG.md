@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.21](https://github.com/markaspot/markaspot/compare/11.9.20...11.9.21) (2026-03-27)
+
+### Bug Fixes
+
+* add hook_install to grant workspace usage permissions ([774f952](https://github.com/markaspot/markaspot/commit/774f952695a6dea6ac21937fbc467e0d1fcb8eff)), closes [markaspot/markaspot-ui#239](https://github.com/markaspot/markaspot-ui/issues/239)
+* grant moderation permissions in hook_install ([5855b5c](https://github.com/markaspot/markaspot/commit/5855b5cf302b7971a433b5eea1d0e6896cfafae5)), closes [markaspot/markaspot-ui#236](https://github.com/markaspot/markaspot-ui/issues/236)
+* hash OTP codes with bcrypt instead of plaintext storage ([d633295](https://github.com/markaspot/markaspot/commit/d633295d13a3bb60ec21ccd680e5ba0993a02055))
+* include tenant_admin in demo OTP auto-detection ([b391f88](https://github.com/markaspot/markaspot/commit/b391f883f7d4a1d77b3e0fb1595d680060153744))
+* remove incompatible _csrf_token from headless group-members routes ([1a198bd](https://github.com/markaspot/markaspot/commit/1a198bd9ff5d3f26636f267629fcbe45daef27d3)), closes [markaspot/markaspot-ui#237](https://github.com/markaspot/markaspot-ui/issues/237)
+* use Component\Datetime\TimeInterface in TosController ([7d6ac5a](https://github.com/markaspot/markaspot/commit/7d6ac5a30bc91cb6189bbcdbe9fb25101d4bd823)), closes [markaspot/markaspot-ui#238](https://github.com/markaspot/markaspot-ui/issues/238)
+* use Origin header for invitation email URLs ([e3442bf](https://github.com/markaspot/markaspot/commit/e3442bfe74576c4a19bb6ddf1646a7a78ad133aa))
+* use TenantAdminHelper from markaspot_group in ModerationController ([2810bcb](https://github.com/markaspot/markaspot/commit/2810bcb81c6d1a78d3105c0e88e6192e46535d37))
+
 ## [11.9.20](https://github.com/markaspot/markaspot/compare/11.9.19...11.9.20) (2026-03-26)
 
 ### Features
