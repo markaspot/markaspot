@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.23](https://github.com/markaspot/markaspot/compare/11.9.22...11.9.23) (2026-03-27)
+
+### Bug Fixes
+
+* revert TimeInterface to Component namespace (TypeError on property assignment) ([aebe9f6](https://github.com/markaspot/markaspot/commit/aebe9f61b44219b7a90d221ae80dd150d7843913))
+
 ## [11.9.22](https://github.com/markaspot/markaspot/compare/11.9.21...11.9.22) (2026-03-27)
 
 ### Bug Fixes
