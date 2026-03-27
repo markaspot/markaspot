@@ -184,7 +184,7 @@ class DemoOtpService extends OtpService {
    */
   protected function getAutoDetectedDemoEmails(): array {
     $demo_emails = [];
-    $demo_roles = ['administrator', 'moderator', 'api_user'];
+    $demo_roles = ['administrator', 'moderator', 'api_user', 'tenant_admin'];
 
     try {
       $user_storage = $this->entityTypeManager->getStorage('user');
