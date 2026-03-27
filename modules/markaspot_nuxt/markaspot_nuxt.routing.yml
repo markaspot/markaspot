@@ -249,29 +249,3 @@ markaspot_nuxt.content_translation_create:
     _auth: ['cookie', 'basic_auth', 'api_key_auth']
     _format: 'json'
 
-markaspot_nuxt.accept_tos:
-  path: '/api/accept-tos'
-  defaults:
-    _controller: '\Drupal\markaspot_nuxt\Controller\TosController::accept'
-    _title: 'Accept Terms of Service'
-  methods: [POST]
-  requirements:
-    _user_is_logged_in: 'TRUE'
-    _csrf_request_header_token: 'TRUE'
-    _format: 'json'
-  options:
-    _auth: ['cookie']
-    no_cache: 'TRUE'
-
-markaspot_nuxt.tos_status:
-  path: '/api/tos-status'
-  defaults:
-    _controller: '\Drupal\markaspot_nuxt\Controller\TosController::status'
-    _title: 'ToS Acceptance Status'
-  methods: [GET]
-  requirements:
-    _user_is_logged_in: 'TRUE'
-    _format: 'json'
-  options:
-    _auth: ['cookie']
-    no_cache: 'TRUE'

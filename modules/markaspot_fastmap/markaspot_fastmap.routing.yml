@@ -70,3 +70,30 @@ markaspot_fastmap.workspace_usage:
   requirements:
     _custom_access: '\Drupal\markaspot_fastmap\Controller\WorkspaceUsageController::access'
     group: '[a-z0-9_-]+'
+
+markaspot_fastmap.accept_tos:
+  path: '/api/accept-tos'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\TosController::accept'
+    _title: 'Accept Terms of Service'
+  methods: [POST]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _csrf_request_header_token: 'TRUE'
+    _format: 'json'
+  options:
+    _auth: ['cookie']
+    no_cache: 'TRUE'
+
+markaspot_fastmap.tos_status:
+  path: '/api/tos-status'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\TosController::status'
+    _title: 'ToS Acceptance Status'
+  methods: [GET]
+  requirements:
+    _user_is_logged_in: 'TRUE'
+    _format: 'json'
+  options:
+    _auth: ['cookie']
+    no_cache: 'TRUE'
