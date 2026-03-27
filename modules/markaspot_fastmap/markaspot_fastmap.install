@@ -131,6 +131,24 @@ function markaspot_fastmap_schema(): array {
 }
 
 /**
+ * Implements hook_install().
+ */
+function markaspot_fastmap_install(): void {
+  $logger = \Drupal::logger('markaspot_fastmap');
+
+  // Grant 'access workspace usage' to all relevant roles.
+  $roles = ['authenticated', 'api_user', 'tenant_admin', 'moderator', 'editorial_board'];
+  foreach ($roles as $role_id) {
+    $role = Role::load($role_id);
+    if ($role && !$role->hasPermission('access workspace usage')) {
+      $role->grantPermission('access workspace usage');
+      $role->save();
+      $logger->info('Granted "access workspace usage" to @role role.', ['@role' => $role_id]);
+    }
+  }
+}
+
+/**
  * Add field_tier to jur group type for subscription management.
  */
 function markaspot_fastmap_update_11900(): void {
