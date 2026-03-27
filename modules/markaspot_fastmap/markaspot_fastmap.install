@@ -215,7 +215,8 @@ function markaspot_fastmap_update_11900(): void {
     $form_display->save();
   }
 
-  // Ensure tier_limits config exists (for sites updating from before TierConfigService).
+  // Ensure tier_limits config exists
+  // (for sites updating from before TierConfigService).
   $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
   if (!$config->get('tier_limits')) {
     $config->set('tier_limits', [
@@ -724,7 +725,7 @@ function markaspot_fastmap_update_11913(): void {
   $nodeStorage = $etm->getStorage('node');
 
   // Only en/de provided for backfill; other languages fall back to en.
-  // Full template set lives in WorkspaceProvisioningService::START_PAGE_TEMPLATES.
+  // Full template set: WorkspaceProvisioningService::START_PAGE_TEMPLATES.
   $templates = [
     'en' => [
       'title' => 'Welcome to %name',

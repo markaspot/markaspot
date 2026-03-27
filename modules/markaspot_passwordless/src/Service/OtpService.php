@@ -5,6 +5,7 @@ namespace Drupal\markaspot_passwordless\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -80,6 +81,13 @@ class OtpService {
   protected $languageManager;
 
   /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
+  protected $moduleHandler;
+
+  /**
    * Constructs an OtpService object.
    *
    * @param \Drupal\Core\Database\Connection $database
@@ -96,6 +104,8 @@ class OtpService {
    *   The entity type manager.
    * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
    *   The language manager.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   *   The module handler.
    */
   public function __construct(
     Connection $database,
@@ -105,6 +115,7 @@ class OtpService {
     ConfigFactoryInterface $config_factory,
     EntityTypeManagerInterface $entity_type_manager,
     LanguageManagerInterface $language_manager,
+    ModuleHandlerInterface $module_handler,
   ) {
     $this->database = $database;
     $this->mailManager = $mail_manager;
@@ -113,6 +124,7 @@ class OtpService {
     $this->configFactory = $config_factory;
     $this->entityTypeManager = $entity_type_manager;
     $this->languageManager = $language_manager;
+    $this->moduleHandler = $module_handler;
   }
 
   /**
@@ -519,7 +531,7 @@ class OtpService {
     $groups = [];
 
     // Check if Group module is available.
-    if (!\Drupal::moduleHandler()->moduleExists('group')) {
+    if (!$this->moduleHandler->moduleExists('group')) {
       return $groups;
     }
 

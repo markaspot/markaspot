@@ -5,6 +5,8 @@
  * Install, update, and uninstall functions for the markaspot_moderation module.
  */
 
+use Drupal\user\Entity\Role;
+
 /**
  * Implements hook_schema().
  */
@@ -95,7 +97,7 @@ function markaspot_moderation_install(): void {
   // Grant submit flags to anonymous and authenticated.
   $submit_roles = ['anonymous', 'authenticated'];
   foreach ($submit_roles as $role_id) {
-    $role = \Drupal\user\Entity\Role::load($role_id);
+    $role = Role::load($role_id);
     if ($role && !$role->hasPermission('submit flags')) {
       $role->grantPermission('submit flags');
       $role->save();
@@ -106,7 +108,7 @@ function markaspot_moderation_install(): void {
   // Grant administer flags to tenant_admin and moderator.
   $admin_roles = ['tenant_admin', 'moderator'];
   foreach ($admin_roles as $role_id) {
-    $role = \Drupal\user\Entity\Role::load($role_id);
+    $role = Role::load($role_id);
     if ($role && !$role->hasPermission('administer flags')) {
       $role->grantPermission('administer flags');
       $role->save();

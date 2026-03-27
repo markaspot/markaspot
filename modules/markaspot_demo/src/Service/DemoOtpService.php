@@ -83,6 +83,10 @@ class DemoOtpService extends OtpService {
    *
    * @param string $email
    *   The email address.
+   * @param string $langcode
+   *   The language code for the OTP email.
+   * @param int $jurisdiction_id
+   *   The jurisdiction ID for scoping the OTP.
    *
    * @return array
    *   Result array with status and message.

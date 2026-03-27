@@ -54,7 +54,8 @@ class ModerationController extends ControllerBase {
    * Expects JSON body with:
    * - service_request_id (required): The Open311 service request ID.
    * - reason (required): One of spam, offensive, personal, location, other.
-   * - details (optional): Additional details, max 500 chars. Required for "other".
+   * - details (optional): Additional details, max 500 chars.
+   *   Required for "other".
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The HTTP request.
@@ -309,6 +310,8 @@ class ModerationController extends ControllerBase {
    *
    * @param int $nid
    *   The node ID.
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse
    *   JSON response indicating success.
