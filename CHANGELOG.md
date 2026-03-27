@@ -1,5 +1,19 @@
 # Changelog
 
+## [11.9.22](https://github.com/markaspot/markaspot/compare/11.9.21...11.9.22) (2026-03-27)
+
+### Bug Fixes
+
+* add missing email_verified index in update_11903 ([a8b8f17](https://github.com/markaspot/markaspot/commit/a8b8f17317626d50da4b24ca3077d2cfab2606e3))
+* atomic OTP attempt counter and timing side channel protection ([855fffa](https://github.com/markaspot/markaspot/commit/855fffa17239b836656bd7f430d53abbf2b5617e))
+* OTP timing side-channel and double-claim prevention ([aabcd68](https://github.com/markaspot/markaspot/commit/aabcd6811b0c0db3da59885b1e14e00c88589489))
+* remove stale markaspot_tenant_admin dependency from moderation module ([314e987](https://github.com/markaspot/markaspot/commit/314e987abf3ffea66b4d2ce282bb48c720e94485))
+* use Drupal host as sole fallback for invitation email URLs ([c6b2d8e](https://github.com/markaspot/markaspot/commit/c6b2d8e1687a67e7ff27c835fb7e575e761755df))
+
+### Refactoring
+
+* move TosController from markaspot_nuxt to markaspot_fastmap ([1ae6f8a](https://github.com/markaspot/markaspot/commit/1ae6f8a026573a64104f18e49486f76d22fef801))
+
 ## [11.9.21](https://github.com/markaspot/markaspot/compare/11.9.20...11.9.21) (2026-03-27)
 
 ### Bug Fixes
