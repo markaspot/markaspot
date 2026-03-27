@@ -157,12 +157,16 @@ class OtpService {
     $now = time();
     $expires = $now + $code_lifetime;
 
-    // Store code in database.
+    // Hash the code before storing it. This prevents plaintext OTP
+    // exposure if the database is compromised.
+    $code_hash = password_hash($code, PASSWORD_BCRYPT);
+
+    // Store hashed code in database.
     try {
       $this->database->insert('markaspot_passwordless_codes')
         ->fields([
           'email' => $email,
-          'code' => $code,
+          'code' => $code_hash,
           'attempts' => 0,
           'created' => $now,
           'expires' => $expires,
@@ -200,6 +204,10 @@ class OtpService {
   /**
    * Verify an OTP code.
    *
+   * The entire verification process runs inside a database transaction
+   * to prevent race condition brute force attacks where parallel requests
+   * could bypass the attempt counter.
+   *
    * @param string $email
    *   The email address.
    * @param string $code
@@ -213,73 +221,108 @@ class OtpService {
     $config = $this->configFactory->get('markaspot_passwordless.settings');
     $max_attempts = $config->get('max_attempts') ?? 3;
 
-    // Look up the code.
-    $record = $this->database->select('markaspot_passwordless_codes', 'c')
-      ->fields('c')
-      ->condition('email', $email)
-      ->condition('code', $code)
-      ->condition('verified', 0)
-      ->orderBy('created', 'DESC')
-      ->range(0, 1)
-      ->execute()
-      ->fetchAssoc();
+    // Wrap the entire verification in a transaction to prevent race
+    // conditions where parallel requests could bypass attempt limits.
+    $transaction = $this->database->startTransaction('otp_verify');
 
-    if (!$record) {
+    try {
+      // Look up pending codes for this email. Since codes are hashed,
+      // we cannot filter by code in the query. We fetch all pending
+      // codes for this email and verify against each hash.
+      $records = $this->database->select('markaspot_passwordless_codes', 'c')
+        ->fields('c')
+        ->condition('email', $email)
+        ->condition('verified', 0)
+        ->orderBy('created', 'DESC')
+        ->execute()
+        ->fetchAll();
+
+      if (empty($records)) {
+        return [
+          'success' => FALSE,
+          'error' => 'Invalid verification code',
+        ];
+      }
+
+      // Find the record whose hash matches the provided code.
+      $matched_record = NULL;
+      foreach ($records as $record) {
+        if (password_verify($code, $record->code)) {
+          $matched_record = $record;
+          break;
+        }
+      }
+
+      if ($matched_record === NULL) {
+        // No matching hash found. Increment attempts on the most recent
+        // pending record to track brute force attempts.
+        $latest = reset($records);
+        $this->database->update('markaspot_passwordless_codes')
+          ->fields(['attempts' => $latest->attempts + 1])
+          ->condition('id', $latest->id)
+          ->execute();
+
+        return [
+          'success' => FALSE,
+          'error' => 'Invalid verification code',
+        ];
+      }
+
+      // Check if expired.
+      if ($matched_record->expires < time()) {
+        return [
+          'success' => FALSE,
+          'error' => 'Verification code has expired',
+        ];
+      }
+
+      // Check attempts.
+      if ($matched_record->attempts >= $max_attempts) {
+        return [
+          'success' => FALSE,
+          'error' => 'Too many attempts. Please request a new code.',
+        ];
+      }
+
+      // Code is valid. Mark as verified atomically within the transaction.
+      $this->database->update('markaspot_passwordless_codes')
+        ->fields([
+          'attempts' => $matched_record->attempts + 1,
+          'verified' => 1,
+        ])
+        ->condition('id', $matched_record->id)
+        ->execute();
+
+      // Authenticate the user.
+      $user = $this->authenticateUser($email);
+
+      if ($user) {
+        return [
+          'success' => TRUE,
+          'message' => 'Authentication successful',
+          'user' => [
+            'uid' => $user->id(),
+            'name' => $user->getAccountName(),
+            'email' => $user->getEmail(),
+            'roles' => $user->getRoles(),
+            'groups' => $this->getUserGroups($user),
+          ],
+        ];
+      }
+
       return [
         'success' => FALSE,
-        'error' => 'Invalid verification code',
+        'error' => 'Failed to authenticate user',
       ];
     }
-
-    // Check if expired.
-    if ($record['expires'] < time()) {
-      return [
-        'success' => FALSE,
-        'error' => 'Verification code has expired',
-      ];
+    catch (\Exception $e) {
+      // Roll back the transaction on any exception.
+      $transaction->rollBack();
+      $this->logger->error('OTP verification failed with exception: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      throw $e;
     }
-
-    // Check attempts.
-    if ($record['attempts'] >= $max_attempts) {
-      return [
-        'success' => FALSE,
-        'error' => 'Too many attempts. Please request a new code.',
-      ];
-    }
-
-    // Increment attempts.
-    $this->database->update('markaspot_passwordless_codes')
-      ->fields(['attempts' => $record['attempts'] + 1])
-      ->condition('id', $record['id'])
-      ->execute();
-
-    // Code is valid - mark as verified.
-    $this->database->update('markaspot_passwordless_codes')
-      ->fields(['verified' => 1])
-      ->condition('id', $record['id'])
-      ->execute();
-
-    // Authenticate the user.
-    $user = $this->authenticateUser($email);
-
-    if ($user) {
-      return [
-        'success' => TRUE,
-        'message' => 'Authentication successful',
-        'user' => [
-          'uid' => $user->id(),
-          'name' => $user->getAccountName(),
-          'email' => $user->getEmail(),
-          'roles' => $user->getRoles(),
-          'groups' => $this->getUserGroups($user),
-        ],
-      ];
-    }
-
-    return [
-      'success' => FALSE,
-      'error' => 'Failed to authenticate user',
-    ];
   }
 
   /**
@@ -428,8 +471,9 @@ class OtpService {
    * Clean up expired OTP codes.
    *
    * Removes codes that have expired more than 1 hour ago.
+   * This is called internally and also via cron (hook_cron).
    */
-  protected function cleanupExpiredCodes(): void {
+  public function cleanupExpiredCodes(): void {
     $this->database->delete('markaspot_passwordless_codes')
       ->condition('expires', time() - 3600, '<')
       ->execute();
