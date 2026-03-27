@@ -628,26 +628,16 @@ class GroupInvitationController extends ControllerBase {
     // to prevent open redirect / phishing via attacker-controlled URLs).
     $frontendBase = $this->config('markaspot_nuxt.settings')->get('frontend_base_url') ?: '';
     if (!$frontendBase) {
-      // Fall back to the Origin or Referer header (set by the browser),
-      // which reliably contain the frontend URL including port.
-      // X-Forwarded-Host/Proto can be duplicated by reverse proxies.
-      $origin = $request->headers->get('Origin');
-      if ($origin) {
-        $frontendBase = rtrim($origin, '/');
-      }
-      else {
-        $referer = $request->headers->get('Referer');
-        if ($referer) {
-          $parsed = parse_url($referer);
-          $frontendBase = ($parsed['scheme'] ?? 'https') . '://' . ($parsed['host'] ?? '');
-          if (!empty($parsed['port'])) {
-            $frontendBase .= ':' . $parsed['port'];
-          }
-        }
-        else {
-          $frontendBase = $request->getSchemeAndHttpHost();
-        }
-      }
+      // Never derive the base URL from request headers (Origin/Referer/
+      // X-Forwarded-Host are all attacker-controllable and could inject
+      // a malicious domain into invitation emails). Fall back to the
+      // Drupal host only. Set markaspot_nuxt.settings:frontend_base_url
+      // for production deployments where the frontend URL differs.
+      $frontendBase = $request->getSchemeAndHttpHost();
+      $this->logger->warning(
+        'No frontend_base_url configured. Falling back to Drupal host @host for invitation email. Set frontend_base_url in markaspot_nuxt.settings.',
+        ['@host' => $frontendBase]
+      );
     }
 
     $claimUrl = rtrim($frontendBase, '/') . '/auth/invite?token=' . $token;
