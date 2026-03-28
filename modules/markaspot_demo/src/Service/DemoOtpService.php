@@ -5,6 +5,7 @@ namespace Drupal\markaspot_demo\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -53,6 +54,8 @@ class DemoOtpService extends OtpService {
    *   The entity type manager.
    * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
    *   The language manager.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   *   The module handler.
    */
   public function __construct(
     OtpService $inner,
@@ -63,6 +66,7 @@ class DemoOtpService extends OtpService {
     ConfigFactoryInterface $config_factory,
     EntityTypeManagerInterface $entity_type_manager,
     LanguageManagerInterface $language_manager,
+    ModuleHandlerInterface $module_handler,
   ) {
     parent::__construct(
       $database,
@@ -71,7 +75,8 @@ class DemoOtpService extends OtpService {
       $logger,
       $config_factory,
       $entity_type_manager,
-      $language_manager
+      $language_manager,
+      $module_handler,
     );
     $this->inner = $inner;
   }
