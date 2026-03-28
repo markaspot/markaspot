@@ -223,9 +223,9 @@ class ImageProcessingController extends ControllerBase {
           $media->set('field_ai_hazard_level', $decoded_result['hazard_level'] ?? 0);
           $media->set('field_ai_hazard_category', $decoded_result['hazard_category'] ?? NULL);
 
-          // Store blurred image if blur preprocessing produced a result.
+          // Replace original with blurred version if faces/plates were detected.
           $media_uri = $media_uri_map[$media->id()] ?? NULL;
-          if ($media_uri && !empty($blur_results[$media_uri]['blurred']) && $media->hasField('field_media_image_blurred')) {
+          if ($media_uri && !empty($blur_results[$media_uri]['blurred'])) {
             $this->imageProcessingService->saveBlurredImage(
               $media,
               $blur_results[$media_uri]['contents'],

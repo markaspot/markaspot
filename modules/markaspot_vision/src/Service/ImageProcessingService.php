@@ -147,7 +147,7 @@ class ImageProcessingService {
       $response = $this->httpClient->post($blur_url, [
         'multipart' => [
           [
-            'name' => 'image',
+            'name' => 'file',
             'contents' => $contents,
             'filename' => 'upload.' . $ext,
             'headers' => ['Content-Type' => $mimeType],
@@ -198,12 +198,12 @@ class ImageProcessingService {
   /**
    * Saves a blurred image as a managed file on a media entity.
    *
-   * Creates a new file entity with the blurred image contents and
-   * attaches it to the field_media_image_blurred field. Does not
-   * call $media->save() so the caller can batch field changes.
+   * Replaces the original image on field_media_image with the blurred
+   * version. Does not call $media->save() so the caller can batch
+   * field changes.
    *
    * @param \Drupal\media\MediaInterface $media
-   *   The media entity to attach the blurred image to.
+   *   The media entity to update.
    * @param string $contents
    *   The blurred image bytes.
    * @param string $originalUri
@@ -211,37 +211,16 @@ class ImageProcessingService {
    */
   public function saveBlurredImage(MediaInterface $media, string $contents, string $originalUri): void {
     try {
-      $originalFilename = $this->fileSystem->basename($originalUri);
-      $directory = 'public://blurred/' . date('Y-m');
-      $this->fileSystem->prepareDirectory(
-        $directory,
-        FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS
+      // Overwrite the original file with the blurred version.
+      $this->fileSystem->saveData($contents, $originalUri, FileSystemInterface::EXISTS_REPLACE);
+
+      // Flush image style derivatives so they regenerate from the blurred source.
+      image_path_flush($originalUri);
+
+      $this->logger->notice(
+        'Original image replaced with blurred version for media @id.',
+        ['@id' => $media->id()]
       );
-
-      $destination = $directory . '/blurred_' . $originalFilename;
-      $blurredFile = $this->fileRepository->writeData(
-        $contents,
-        $destination,
-        FileSystemInterface::EXISTS_RENAME
-      );
-
-      if ($blurredFile) {
-        // Copy alt text from the original image field.
-        $alt = '';
-        $originalImage = $media->get('field_media_image');
-        if ($originalImage && !$originalImage->isEmpty()) {
-          $alt = $originalImage->alt ?? '';
-        }
-
-        $media->set('field_media_image_blurred', [
-          'target_id' => $blurredFile->id(),
-          'alt' => $alt,
-        ]);
-        $this->logger->notice(
-          'Blurred image saved for media @id as file @fid.',
-          ['@id' => $media->id(), '@fid' => $blurredFile->id()]
-        );
-      }
     }
     catch (\Exception $e) {
       $this->logger->error(
