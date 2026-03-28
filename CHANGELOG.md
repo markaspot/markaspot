@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.25](https://github.com/markaspot/markaspot/compare/11.9.24...11.9.25) (2026-03-28)
+
+### Features
+
+* **vision:** add optional blur preprocessing for face and license plate privacy ([9cf8089](https://github.com/markaspot/markaspot/commit/9cf8089b6a1ec9ee6dfb565f68778ff2586a6559)), closes [markaspot/markaspot-ui#242](https://github.com/markaspot/markaspot-ui/issues/242)
+
+### Bug Fixes
+
+* backfill field_jurisdiction on orphaned entities (update_11915) ([6fe78bf](https://github.com/markaspot/markaspot/commit/6fe78bf0ec7db9a1efea6526183a8836780db0f7))
+* **demo:** pass module_handler to DemoOtpService parent constructor ([683234c](https://github.com/markaspot/markaspot/commit/683234c92940056e3a964750c9553874fe620334))
+
 ## [11.9.24](https://github.com/markaspot/markaspot/compare/11.9.23...11.9.24) (2026-03-27)
 
 ### Bug Fixes
