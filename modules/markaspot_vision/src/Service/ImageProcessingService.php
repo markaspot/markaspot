@@ -7,6 +7,8 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\file\FileRepositoryInterface;
+use Drupal\media\MediaInterface;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 
@@ -47,6 +49,13 @@ class ImageProcessingService {
   protected FileSystemInterface $fileSystem;
 
   /**
+   * The file repository service.
+   *
+   * @var \Drupal\file\FileRepositoryInterface
+   */
+  protected FileRepositoryInterface $fileRepository;
+
+  /**
    * The logger channel.
    *
    * @var \Psr\Log\LoggerInterface
@@ -66,6 +75,8 @@ class ImageProcessingService {
    *   The file system service.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger factory.
+   * @param \Drupal\file\FileRepositoryInterface|null $file_repository
+   *   The file repository service.
    */
   public function __construct(
     ClientInterface $http_client,
@@ -73,12 +84,171 @@ class ImageProcessingService {
     EntityTypeManagerInterface $entity_type_manager,
     FileSystemInterface $file_system,
     LoggerChannelFactoryInterface $logger_factory,
+    ?FileRepositoryInterface $file_repository = NULL,
   ) {
     $this->httpClient = $http_client;
     $this->configFactory = $config_factory;
     $this->entityTypeManager = $entity_type_manager;
     $this->fileSystem = $file_system;
     $this->logger = $logger_factory->get('markaspot_vision');
+    // Optional for backward compatibility with existing service definitions.
+    $this->fileRepository = $file_repository ?? \Drupal::service('file.repository');
+  }
+
+  /**
+   * Blurs sensitive areas (faces, license plates) in an image.
+   *
+   * Sends the image to the blur microservice and returns the result.
+   * Gracefully falls back to the original image if the service is
+   * unavailable or not configured.
+   *
+   * @param string $contents
+   *   The raw image bytes.
+   * @param string $mimeType
+   *   The MIME type of the image (e.g., 'image/jpeg').
+   *
+   * @return array
+   *   Array with keys:
+   *   - 'contents': The (possibly blurred) image bytes.
+   *   - 'blurred': Whether blurring was applied.
+   *   - 'faces': Number of detected faces.
+   *   - 'plates': Number of detected license plates.
+   */
+  public function blurSensitiveAreas(string $contents, string $mimeType): array {
+    $config = $this->configFactory->get('markaspot_vision.settings');
+    $fallback = [
+      'contents' => $contents,
+      'blurred' => FALSE,
+      'faces' => 0,
+      'plates' => 0,
+    ];
+
+    // Check if blur preprocessing is enabled.
+    if (empty($config->get('enable_blur_preprocessing'))) {
+      return $fallback;
+    }
+
+    // Resolve blur service URL: config > ENV > default.
+    $blur_url = $config->get('blur_service_url');
+    if (empty($blur_url)) {
+      $blur_url = getenv('VISION_BLUR_URL') ?: 'http://markaspot-vision:8200/blur';
+    }
+
+    // Map MIME type to file extension for the multipart filename.
+    $extensions = [
+      'image/jpeg' => 'jpg',
+      'image/png' => 'png',
+      'image/gif' => 'gif',
+      'image/webp' => 'webp',
+    ];
+    $ext = $extensions[$mimeType] ?? 'jpg';
+
+    try {
+      $response = $this->httpClient->post($blur_url, [
+        'multipart' => [
+          [
+            'name' => 'image',
+            'contents' => $contents,
+            'filename' => 'upload.' . $ext,
+            'headers' => ['Content-Type' => $mimeType],
+          ],
+        ],
+        'timeout' => 10,
+        'connect_timeout' => 5,
+        'http_errors' => FALSE,
+      ]);
+
+      $statusCode = $response->getStatusCode();
+      if ($statusCode !== 200) {
+        $this->logger->warning('Blur service returned status @code from @url.', [
+          '@code' => $statusCode,
+          '@url' => $blur_url,
+        ]);
+        return $fallback;
+      }
+
+      $faces = (int) ($response->getHeaderLine('X-Detections-Faces') ?: 0);
+      $plates = (int) ($response->getHeaderLine('X-Detections-Plates') ?: 0);
+      $blurred = strtolower($response->getHeaderLine('X-Image-Blurred')) === 'true';
+      $blurredContents = (string) $response->getBody();
+
+      if ($blurred) {
+        $this->logger->notice('Blur service detected @faces face(s), @plates plate(s). Image was blurred.', [
+          '@faces' => $faces,
+          '@plates' => $plates,
+        ]);
+      }
+
+      return [
+        'contents' => $blurredContents,
+        'blurred' => $blurred,
+        'faces' => $faces,
+        'plates' => $plates,
+      ];
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('Blur service unreachable at @url: @error', [
+        '@url' => $blur_url,
+        '@error' => $e->getMessage(),
+      ]);
+      return $fallback;
+    }
+  }
+
+  /**
+   * Saves a blurred image as a managed file on a media entity.
+   *
+   * Creates a new file entity with the blurred image contents and
+   * attaches it to the field_media_image_blurred field. Does not
+   * call $media->save() so the caller can batch field changes.
+   *
+   * @param \Drupal\media\MediaInterface $media
+   *   The media entity to attach the blurred image to.
+   * @param string $contents
+   *   The blurred image bytes.
+   * @param string $originalUri
+   *   The URI of the original file, used for deriving the filename.
+   */
+  public function saveBlurredImage(MediaInterface $media, string $contents, string $originalUri): void {
+    try {
+      $originalFilename = $this->fileSystem->basename($originalUri);
+      $directory = 'public://blurred/' . date('Y-m');
+      $this->fileSystem->prepareDirectory(
+        $directory,
+        FileSystemInterface::CREATE_DIRECTORY | FileSystemInterface::MODIFY_PERMISSIONS
+      );
+
+      $destination = $directory . '/blurred_' . $originalFilename;
+      $blurredFile = $this->fileRepository->writeData(
+        $contents,
+        $destination,
+        FileSystemInterface::EXISTS_RENAME
+      );
+
+      if ($blurredFile) {
+        // Copy alt text from the original image field.
+        $alt = '';
+        $originalImage = $media->get('field_media_image');
+        if ($originalImage && !$originalImage->isEmpty()) {
+          $alt = $originalImage->alt ?? '';
+        }
+
+        $media->set('field_media_image_blurred', [
+          'target_id' => $blurredFile->id(),
+          'alt' => $alt,
+        ]);
+        $this->logger->notice(
+          'Blurred image saved for media @id as file @fid.',
+          ['@id' => $media->id(), '@fid' => $blurredFile->id()]
+        );
+      }
+    }
+    catch (\Exception $e) {
+      $this->logger->error(
+        'Failed to save blurred image for media @id: @error',
+        ['@id' => $media->id(), '@error' => $e->getMessage()]
+      );
+    }
   }
 
   /**
@@ -104,6 +274,7 @@ class ImageProcessingService {
     try {
       // Process all images together.
       $image_data = [];
+      $blur_results = [];
       foreach ($file_uris as $file_uri) {
         $styled_file_path = $this->getStyledImagePath($file_uri);
         $contents = file_get_contents($styled_file_path);
@@ -114,8 +285,13 @@ class ImageProcessingService {
         // Detect actual MIME type (image style may convert format).
         $finfo = new \finfo(FILEINFO_MIME_TYPE);
         $mime = $finfo->buffer($contents) ?: 'image/jpeg';
+
+        // Blur sensitive areas (faces, license plates) before AI analysis.
+        $blur_result = $this->blurSensitiveAreas($contents, $mime);
+        $blur_results[$file_uri] = $blur_result;
+
         $image_data[] = [
-          'base64' => base64_encode($contents),
+          'base64' => base64_encode($blur_result['contents']),
           'mime' => $mime,
         ];
       }
@@ -219,6 +395,7 @@ class ImageProcessingService {
 
       return [
         'ai_result' => $ai_result_content,
+        'blur_results' => $blur_results,
       ];
 
     }

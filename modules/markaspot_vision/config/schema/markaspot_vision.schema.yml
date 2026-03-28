@@ -35,3 +35,9 @@ markaspot_vision.settings:
     require_ai_screening:
       type: boolean
       label: 'Require AI screening before publishing media'
+    enable_blur_preprocessing:
+      type: boolean
+      label: 'Enable blur preprocessing'
+    blur_service_url:
+      type: string
+      label: 'Blur Service URL'

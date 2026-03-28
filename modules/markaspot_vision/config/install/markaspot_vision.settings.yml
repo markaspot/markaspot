@@ -1,4 +1,6 @@
 multiple_uploads: 1
+enable_blur_preprocessing: false
+blur_service_url: 'http://markaspot-vision:8200/blur'
 auth_type: 'bearer'
 api_key: ''
 api_url: 'https://api.openai.com/v1/chat/completions'

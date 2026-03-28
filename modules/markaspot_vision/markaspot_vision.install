@@ -84,6 +84,83 @@ function markaspot_vision_update_11801(): string {
 }
 
 /**
+ * Install blur preprocessing config and field_media_image_blurred field.
+ *
+ * Adds the enable_blur_preprocessing and blur_service_url settings,
+ * and creates the field_media_image_blurred image field on the
+ * request_image media type for storing privacy-safe blurred versions.
+ */
+function markaspot_vision_update_11803(): string {
+  // Add blur config defaults to existing settings.
+  $config = \Drupal::configFactory()->getEditable('markaspot_vision.settings');
+  if ($config->get('enable_blur_preprocessing') === NULL) {
+    $config->set('enable_blur_preprocessing', FALSE);
+    $config->set('blur_service_url', 'http://markaspot-vision:8200/blur');
+    $config->save();
+  }
+
+  // Install field storage + field instance for blurred image.
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $config_factory = \Drupal::configFactory();
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_vision');
+  $config_path = $module_path . '/config/optional';
+  $source = new FileStorage($config_path);
+
+  $configs = [
+    'field.storage.media.field_media_image_blurred',
+    'field.field.media.request_image.field_media_image_blurred',
+  ];
+
+  $imported = [];
+  $skipped = [];
+
+  foreach ($configs as $config_name) {
+    if ($config_factory->get($config_name)->get('id')) {
+      $skipped[] = $config_name;
+      continue;
+    }
+
+    $config_data = $source->read($config_name);
+    if (empty($config_data)) {
+      \Drupal::logger('markaspot_vision')->warning('Config file not found: @name', ['@name' => $config_name]);
+      continue;
+    }
+
+    if (str_starts_with($config_name, 'field.storage.')) {
+      $entity_type = 'field_storage_config';
+    }
+    elseif (str_starts_with($config_name, 'field.field.')) {
+      $entity_type = 'field_config';
+    }
+    else {
+      continue;
+    }
+
+    try {
+      $entity_type_manager->getStorage($entity_type)->create($config_data)->save();
+      $imported[] = $config_name;
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_vision')->error('Failed to import @name: @error', [
+        '@name' => $config_name,
+        '@error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  $message = ['Blur preprocessing config added.'];
+  if (!empty($imported)) {
+    $message[] = 'Imported: ' . implode(', ', $imported);
+  }
+  if (!empty($skipped)) {
+    $message[] = 'Skipped (already exists): ' . implode(', ', $skipped);
+  }
+
+  return implode(' ', $message);
+}
+
+/**
  * Install per-jurisdiction AI system prompt field for group entities.
  *
  * Adds field_ai_system_prompt (text_long) to the jur group type,

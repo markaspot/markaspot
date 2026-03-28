@@ -51,6 +51,32 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('require_ai_screening') ?? TRUE,
     ];
 
+    $form['blur'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Blur Preprocessing'),
+      '#description' => $this->t('Automatically detect and blur faces and license plates before AI analysis and public display.'),
+    ];
+
+    $form['blur']['enable_blur_preprocessing'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable blur preprocessing'),
+      '#description' => $this->t('When enabled, images are sent to the blur microservice to detect and blur faces and license plates before further processing.'),
+      '#default_value' => $config->get('enable_blur_preprocessing') ?? FALSE,
+    ];
+
+    $default_blur_url = getenv('VISION_BLUR_URL') ?: 'http://markaspot-vision:8200/blur';
+    $form['blur']['blur_service_url'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Blur Service URL'),
+      '#default_value' => $config->get('blur_service_url') ?? $default_blur_url,
+      '#description' => $this->t('The URL of the blur microservice endpoint. Default: <code>@default</code>. Can also be set via the <code>VISION_BLUR_URL</code> environment variable.', ['@default' => $default_blur_url]),
+      '#states' => [
+        'visible' => [
+          ':input[name="enable_blur_preprocessing"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     $form['service'] = [
       '#type' => 'fieldset',
       '#title' => $this->t('AI Vision Service Settings'),
@@ -246,12 +272,20 @@ class MarkaspotVisionSettingsForm extends ConfigFormBase {
     $config
       ->set('multiple_uploads', $form_state->getValue('multiple_uploads'))
       ->set('require_ai_screening', $form_state->getValue('require_ai_screening'))
+      ->set('enable_blur_preprocessing', (bool) $form_state->getValue('enable_blur_preprocessing'))
+      ->set('blur_service_url', $form_state->getValue('blur_service_url'))
       ->set('auth_type', $form_state->getValue('auth_type'))
-      ->set('api_key', $form_state->getValue('api_key'))
       ->set('api_url', $form_state->getValue('api_url'))
       ->set('ai_model', $form_state->getValue('ai_model'))
       ->set('system_prompt', $form_state->getValue('system_prompt'))
       ->set('image_prompt', $form_state->getValue('image_prompt'));
+
+    // Only persist the API key when no ENV override is active.
+    // When an ENV var is set, the form shows a masked value that
+    // must not overwrite the real key in config.
+    if (!getenv('MARKASPOT_VISION_API_KEY') && !getenv('OPENAI_API_KEY')) {
+      $config->set('api_key', $form_state->getValue('api_key'));
+    }
 
     // Handle AI parameters - explicitly clear if empty.
     foreach (['temperature', 'top_p', 'max_tokens'] as $key) {

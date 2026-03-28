@@ -169,14 +169,17 @@ class ImageProcessingController extends ControllerBase {
         throw new \Exception('No valid media entities found for the provided media_ids.');
       }
 
-      // Collect file URIs.
+      // Collect file URIs, keyed by media ID for blur result mapping.
       $file_uris = [];
+      $media_uri_map = [];
       foreach ($media_entities as $media) {
         $field_media_image = $media->get('field_media_image');
         if ($field_media_image && !$field_media_image->isEmpty()) {
           $file = $field_media_image->entity;
           if ($file) {
-            $file_uris[] = $file->getFileUri();
+            $uri = $file->getFileUri();
+            $file_uris[] = $uri;
+            $media_uri_map[$media->id()] = $uri;
           }
         }
       }
@@ -201,6 +204,9 @@ class ImageProcessingController extends ControllerBase {
         throw new \Exception('Failed to decode AI service response: ' . json_last_error_msg());
       }
 
+      // Extract blur results from the AI processing response.
+      $blur_results = $ai_result['blur_results'] ?? [];
+
       $media_index = 0;
       foreach ($media_entities as $media) {
         try {
@@ -216,6 +222,16 @@ class ImageProcessingController extends ControllerBase {
           $media->set('field_ai_hazard_issues', implode(', ', (array) $hazard_issues));
           $media->set('field_ai_hazard_level', $decoded_result['hazard_level'] ?? 0);
           $media->set('field_ai_hazard_category', $decoded_result['hazard_category'] ?? NULL);
+
+          // Store blurred image if blur preprocessing produced a result.
+          $media_uri = $media_uri_map[$media->id()] ?? NULL;
+          if ($media_uri && !empty($blur_results[$media_uri]['blurred']) && $media->hasField('field_media_image_blurred')) {
+            $this->imageProcessingService->saveBlurredImage(
+              $media,
+              $blur_results[$media_uri]['contents'],
+              $media_uri,
+            );
+          }
 
           // Populate alt text with AI-generated description for accessibility.
           if (!empty($decoded_result['alt_text']) && is_array($decoded_result['alt_text'])) {
