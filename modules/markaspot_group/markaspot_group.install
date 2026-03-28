@@ -2207,6 +2207,181 @@ function markaspot_group_update_11912(): void {
 /**
  * Add default_jurisdiction_id config key for multi-tenant fallback.
  */
+/**
+ * Backfill field_jurisdiction on orphaned entities.
+ *
+ * Assigns the root jurisdiction to taxonomy terms (service_category,
+ * service_status), org groups, and nodes (page, boilerplate) that are
+ * missing field_jurisdiction. Uses two strategies:
+ *   1. Explicit: field_service_categories on groups maps categories.
+ *   2. Fallback: orphaned entities go to the first root jurisdiction.
+ *
+ * Fixes fresh installs where the default content migration created
+ * entities without jurisdiction references.
+ */
+function markaspot_group_update_11915(): string {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+  $config = \Drupal::config('markaspot_open311.settings');
+  $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
+
+  // Load all jurisdiction groups.
+  $groups = $etm->getStorage('group')->loadByProperties(['type' => $jur_type]);
+  if (empty($groups)) {
+    return 'No jurisdiction groups found. Nothing to backfill.';
+  }
+
+  // Determine the root jurisdiction (lowest ID without a parent).
+  $root_group = NULL;
+  foreach ($groups as $group) {
+    $has_parent = $group->hasField('field_parent_jurisdiction')
+      && !$group->get('field_parent_jurisdiction')->isEmpty();
+    if (!$has_parent) {
+      $root_group = $group;
+      break;
+    }
+  }
+  if (!$root_group) {
+    $root_group = reset($groups);
+  }
+  $root_id = $root_group->id();
+
+  $counts = [
+    'categories' => 0,
+    'statuses' => 0,
+    'pages' => 0,
+    'boilerplates' => 0,
+    'orgs' => 0,
+  ];
+
+  // --- 1. Backfill service_category terms via field_service_categories ---
+  foreach ($groups as $group) {
+    if ($group->hasField('field_service_categories') && !$group->get('field_service_categories')->isEmpty()) {
+      foreach ($group->get('field_service_categories') as $item) {
+        $term = $etm->getStorage('taxonomy_term')->load($item->target_id);
+        if ($term && $term->hasField('field_jurisdiction') && $term->get('field_jurisdiction')->isEmpty()) {
+          $term->set('field_jurisdiction', ['target_id' => $group->id()]);
+          $term->save();
+          $counts['categories']++;
+          $logger->info('Set field_jurisdiction=%gid on category %tid (%name) via field_service_categories.', [
+            '%gid' => $group->id(),
+            '%tid' => $term->id(),
+            '%name' => $term->label(),
+          ]);
+        }
+      }
+    }
+  }
+
+  // --- 2. Orphaned category terms -> root jurisdiction ---
+  $orphan_cat_tids = $etm->getStorage('taxonomy_term')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('vid', 'service_category')
+    ->notExists('field_jurisdiction')
+    ->execute();
+  if (!empty($orphan_cat_tids)) {
+    foreach ($etm->getStorage('taxonomy_term')->loadMultiple($orphan_cat_tids) as $term) {
+      if ($term->hasField('field_jurisdiction')) {
+        $term->set('field_jurisdiction', ['target_id' => $root_id]);
+        $term->save();
+        $counts['categories']++;
+        $logger->info('Set field_jurisdiction=%gid on orphan category %tid (%name).', [
+          '%gid' => $root_id,
+          '%tid' => $term->id(),
+          '%name' => $term->label(),
+        ]);
+      }
+    }
+  }
+
+  // --- 3. Orphaned status terms -> root jurisdiction ---
+  $orphan_status_tids = $etm->getStorage('taxonomy_term')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('vid', 'service_status')
+    ->notExists('field_jurisdiction')
+    ->execute();
+  if (!empty($orphan_status_tids)) {
+    foreach ($etm->getStorage('taxonomy_term')->loadMultiple($orphan_status_tids) as $term) {
+      if ($term->hasField('field_jurisdiction')) {
+        $term->set('field_jurisdiction', ['target_id' => $root_id]);
+        $term->save();
+        $counts['statuses']++;
+        $logger->info('Set field_jurisdiction=%gid on orphan status %tid (%name).', [
+          '%gid' => $root_id,
+          '%tid' => $term->id(),
+          '%name' => $term->label(),
+        ]);
+      }
+    }
+  }
+
+  // --- 4. Orphaned page nodes -> root jurisdiction ---
+  $orphan_page_nids = $etm->getStorage('node')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'page')
+    ->notExists('field_jurisdiction')
+    ->execute();
+  if (!empty($orphan_page_nids)) {
+    foreach ($etm->getStorage('node')->loadMultiple($orphan_page_nids) as $node) {
+      if ($node->hasField('field_jurisdiction')) {
+        $node->set('field_jurisdiction', ['target_id' => $root_id]);
+        $node->save();
+        $counts['pages']++;
+        $logger->info('Set field_jurisdiction=%gid on orphan page %nid (%title).', [
+          '%gid' => $root_id,
+          '%nid' => $node->id(),
+          '%title' => $node->label(),
+        ]);
+      }
+    }
+  }
+
+  // --- 5. Orphaned boilerplate nodes -> root jurisdiction ---
+  $orphan_bp_nids = $etm->getStorage('node')->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'boilerplate')
+    ->notExists('field_jurisdiction')
+    ->execute();
+  if (!empty($orphan_bp_nids)) {
+    foreach ($etm->getStorage('node')->loadMultiple($orphan_bp_nids) as $node) {
+      if ($node->hasField('field_jurisdiction')) {
+        $node->set('field_jurisdiction', ['target_id' => $root_id]);
+        $node->save();
+        $counts['boilerplates']++;
+        $logger->info('Set field_jurisdiction=%gid on orphan boilerplate %nid (%title).', [
+          '%gid' => $root_id,
+          '%nid' => $node->id(),
+          '%title' => $node->label(),
+        ]);
+      }
+    }
+  }
+
+  // --- 6. Orphaned org groups -> root jurisdiction ---
+  $org_type = $config->get('organisation_group_type') ?? 'org';
+  $org_groups = $etm->getStorage('group')->loadByProperties(['type' => $org_type]);
+  foreach ($org_groups as $org) {
+    if ($org->hasField('field_jurisdiction') && $org->get('field_jurisdiction')->isEmpty()) {
+      $org->set('field_jurisdiction', ['target_id' => $root_id]);
+      $org->save();
+      $counts['orgs']++;
+      $logger->info('Set field_jurisdiction=%gid on orphan org group %gid2 (%label).', [
+        '%gid' => $root_id,
+        '%gid2' => $org->id(),
+        '%label' => $org->label(),
+      ]);
+    }
+  }
+
+  return sprintf(
+    'Backfilled field_jurisdiction (root=%d): %d categories, %d statuses, %d pages, %d boilerplates, %d orgs.',
+    $root_id, $counts['categories'], $counts['statuses'], $counts['pages'], $counts['boilerplates'], $counts['orgs']
+  );
+}
+
+/**
+ * Add default_jurisdiction_id config key for multi-tenant fallback.
+ */
 function markaspot_group_update_11914(): string {
   $config = \Drupal::configFactory()->getEditable('markaspot_group.settings');
   if ($config->get('default_jurisdiction_id') === NULL && !array_key_exists('default_jurisdiction_id', $config->getRawData())) {
