@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.26](https://github.com/markaspot/markaspot/compare/11.9.25...11.9.26) (2026-03-29)
+
+### Bug Fixes
+
+* mock FileRepositoryInterface in ImageProcessingServiceTest ([79bd65f](https://github.com/markaspot/markaspot/commit/79bd65f9bc2dc81640075c807be9a35efcb6f3d0))
+
+### Refactoring
+
+* **vision:** replace original image with blurred version instead of separate field ([51a20c5](https://github.com/markaspot/markaspot/commit/51a20c5bfe6505fe6fc7ad98d7156eecbe4dfae3))
+
 ## [11.9.25](https://github.com/markaspot/markaspot/compare/11.9.24...11.9.25) (2026-03-28)
 
 ### Features
