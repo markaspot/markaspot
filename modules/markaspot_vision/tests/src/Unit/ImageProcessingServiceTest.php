@@ -9,6 +9,7 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\file\FileRepositoryInterface;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\Tests\UnitTestCase;
 use GuzzleHttp\ClientInterface;
@@ -81,12 +82,15 @@ class ImageProcessingServiceTest extends UnitTestCase {
       ->with('markaspot_vision')
       ->willReturn($this->logger);
 
+    $fileRepository = $this->createMock(FileRepositoryInterface::class);
+
     return new ImageProcessingService(
       $httpClient,
       $configFactory,
       $entityTypeManager,
       $fileSystem,
       $loggerFactory,
+      $fileRepository,
     );
   }
 
