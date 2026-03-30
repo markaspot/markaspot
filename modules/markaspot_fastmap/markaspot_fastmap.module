@@ -17,13 +17,23 @@ use Drupal\node\NodeInterface;
 /**
  * Implements hook_entity_field_access().
  *
- * Allows editing the 'status' (published) field on service_request nodes
- * for users who have the Group-level 'update' permission on that node's
- * jurisdiction. This bypasses Drupal Core's 'administer node published status'
- * requirement while keeping access scoped to Group membership.
+ * Bypasses core's 'administer nodes' requirement for specific base fields
+ * on service_request and page nodes, scoped to Group membership:
+ *
+ * - 'status': allows toggling published/unpublished (core requires
+ *   'administer nodes' or 'administer node published status').
+ * - 'promote': allows "Promote to info panel" (core requires
+ *   'administer nodes').
+ * - 'sticky': allows "Start page" toggle (core requires
+ *   'administer nodes').
+ *
+ * Access is granted when the user has the Group-level 'update any' or
+ * 'update own' permission for the node's bundle within its jurisdiction.
  */
 function markaspot_fastmap_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
-  if ($operation !== 'edit' || $field_definition->getName() !== 'status') {
+  // Only act on edit operations for specific base fields.
+  $gated_fields = ['status', 'promote', 'sticky'];
+  if ($operation !== 'edit' || !in_array($field_definition->getName(), $gated_fields, TRUE)) {
     return AccessResult::neutral();
   }
 
@@ -32,7 +42,14 @@ function markaspot_fastmap_entity_field_access(string $operation, FieldDefinitio
   }
 
   $entity = $items->getEntity();
-  if (!$entity instanceof NodeInterface || $entity->bundle() !== 'service_request') {
+  if (!$entity instanceof NodeInterface) {
+    return AccessResult::neutral();
+  }
+
+  // Only apply to bundles that are jurisdiction-scoped.
+  $bundle = $entity->bundle();
+  $supported_bundles = ['service_request', 'page'];
+  if (!in_array($bundle, $supported_bundles, TRUE)) {
     return AccessResult::neutral();
   }
 
@@ -50,8 +67,10 @@ function markaspot_fastmap_entity_field_access(string $operation, FieldDefinitio
     return AccessResult::neutral()->cachePerUser()->addCacheableDependency($group);
   }
 
-  $hasPermission = $member->hasPermission('update any group_node:service_request entity')
-    || $member->hasPermission('update own group_node:service_request entity');
+  $hasPermission = $member->hasPermission("update any group_node:{$bundle} entity")
+    || ($member->hasPermission("update own group_node:{$bundle} entity")
+      && $entity instanceof \Drupal\user\EntityOwnerInterface
+      && (int) $entity->getOwnerId() === (int) $account->id());
 
   return $hasPermission
     ? AccessResult::allowed()->cachePerUser()->addCacheableDependency($group)->addCacheableDependency($entity)
