@@ -809,7 +809,7 @@ class ServiceProviderController extends ControllerBase {
     $timestamp = $this->dateFormatter->format(time(), 'custom', 'd.m.Y - H:i', 'Europe/Berlin');
 
     $metadata_footer = "\n\n---\n" .
-        $this->t('Abgeschlossen von: @email', ['@email' => $email]) . "\n" .
+        $this->t('Abgeschlossen von: @email', ['@email' => $email ?? '']) . "\n" .
         $this->t('Abgeschlossen am: @timestamp', ['@timestamp' => $timestamp]) . "\n" .
         $this->t('Dienstleister: @name', ['@name' => $service_provider_name ?: $this->t('Unbekannt')]);
 
