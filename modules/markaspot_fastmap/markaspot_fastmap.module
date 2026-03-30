@@ -13,6 +13,7 @@ use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\node\NodeInterface;
+use Drupal\user\EntityOwnerInterface;
 
 /**
  * Implements hook_entity_field_access().
@@ -69,7 +70,7 @@ function markaspot_fastmap_entity_field_access(string $operation, FieldDefinitio
 
   $hasPermission = $member->hasPermission("update any group_node:{$bundle} entity")
     || ($member->hasPermission("update own group_node:{$bundle} entity")
-      && $entity instanceof \Drupal\user\EntityOwnerInterface
+      && $entity instanceof EntityOwnerInterface
       && (int) $entity->getOwnerId() === (int) $account->id());
 
   return $hasPermission
