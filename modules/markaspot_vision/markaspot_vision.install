@@ -180,3 +180,40 @@ function markaspot_vision_update_11802(): string {
 
   return implode('. ', $message) ?: 'No changes made.';
 }
+
+/**
+ * Remove orphaned field_media_image_blurred config (#250).
+ *
+ * The vision blur refactor (commit 51a20c5) replaced the separate
+ * field_media_image_blurred with in-place file overwrite. This hook
+ * cleans up the now-unused field config from existing sites.
+ */
+function markaspot_vision_update_11804(): string {
+  $deleted = [];
+
+  // Delete the field instance first (depends on storage).
+  $field_config = \Drupal::configFactory()
+    ->getEditable('field.field.media.request_image.field_media_image_blurred');
+  if (!$field_config->isNew()) {
+    $field_config->delete();
+    $deleted[] = 'field.field.media.request_image.field_media_image_blurred';
+  }
+
+  // Then delete the field storage.
+  $storage_config = \Drupal::configFactory()
+    ->getEditable('field.storage.media.field_media_image_blurred');
+  if (!$storage_config->isNew()) {
+    $storage_config->delete();
+    $deleted[] = 'field.storage.media.field_media_image_blurred';
+  }
+
+  if (!empty($deleted)) {
+    \Drupal::logger('markaspot_vision')->notice(
+      'Removed orphaned blur field config: @configs',
+      ['@configs' => implode(', ', $deleted)]
+    );
+    return 'Deleted orphaned config: ' . implode(', ', $deleted);
+  }
+
+  return 'No orphaned blur field config found. Nothing to clean up.';
+}
