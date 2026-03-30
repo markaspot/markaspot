@@ -2231,6 +2231,15 @@ function markaspot_group_update_11915(): string {
     return 'No jurisdiction groups found. Nothing to backfill.';
   }
 
+  // Safety: skip automatic backfill on multi-tenant instances to prevent
+  // cross-tenant data reassignment. Manual review required instead.
+  if (count($groups) > 1) {
+    $logger->warning('update_11915: Multiple jurisdictions detected (@count). Skipping automatic backfill to prevent cross-tenant data reassignment. Run manual backfill per jurisdiction.', [
+      '@count' => count($groups),
+    ]);
+    return 'Skipped: ' . count($groups) . ' jurisdictions found. Manual backfill required for multi-tenant environments.';
+  }
+
   // Determine the root jurisdiction (lowest ID without a parent).
   $root_group = NULL;
   foreach ($groups as $group) {
