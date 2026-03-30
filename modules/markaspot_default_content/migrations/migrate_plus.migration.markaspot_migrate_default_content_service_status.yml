@@ -18,7 +18,13 @@ process:
   uuid: uuid
   field_status_hex: field_status_hex
   field_status_icon: field_status_icon
+  field_jurisdiction:
+    plugin: migration_lookup
+    migration: markaspot_migrate_default_content_group_jurisdiction
+    source: jurisdiction_uuid
 destination:
   plugin: 'entity:taxonomy_term'
   default_bundle: service_status
-migration_dependencies: {}
+migration_dependencies:
+  required:
+    - markaspot_migrate_default_content_group_jurisdiction

@@ -16,7 +16,13 @@ process:
   body/format:
     plugin: default_value
     default_value: full_html
+  field_jurisdiction:
+    plugin: migration_lookup
+    migration: markaspot_migrate_default_content_group_jurisdiction
+    source: jurisdiction_uuid
 destination:
   plugin: 'entity:node'
   default_bundle: boilerplate
-migration_dependencies: {} # Add this line
+migration_dependencies:
+  required:
+    - markaspot_migrate_default_content_group_jurisdiction

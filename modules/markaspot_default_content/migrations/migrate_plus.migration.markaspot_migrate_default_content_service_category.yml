@@ -20,7 +20,13 @@ process:
   field_category_hex: field_category_hex
   field_category_icon: field_category_icon
   field_service_code: field_service_code
+  field_jurisdiction:
+    plugin: migration_lookup
+    migration: markaspot_migrate_default_content_group_jurisdiction
+    source: jurisdiction_uuid
 destination:
   plugin: 'entity:taxonomy_term'
   default_bundle: service_category
-migration_dependencies: {}
+migration_dependencies:
+  required:
+    - markaspot_migrate_default_content_group_jurisdiction

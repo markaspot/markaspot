@@ -12,7 +12,13 @@ process:
   type: type
   label: label
   field_head_organisation_e_mail: field_head_organisation_e_mail
+  field_jurisdiction:
+    plugin: migration_lookup
+    migration: markaspot_migrate_default_content_group_jurisdiction
+    source: jurisdiction_uuid
 destination:
   plugin: 'entity:group'
   default_bundle: organisation
-migration_dependencies: {}
+migration_dependencies:
+  required:
+    - markaspot_migrate_default_content_group_jurisdiction
