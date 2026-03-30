@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_billing_postal_code
+    - group.type.jur
+id: group.jur.field_billing_postal_code
+field_name: field_billing_postal_code
+entity_type: group
+bundle: jur
+label: 'Billing Postal Code'
+description: 'Postal/ZIP code. Synced from Stripe.'
+required: false
+translatable: false
+default_value: []
+default_value_callback: ''
+settings: {  }
+field_type: string

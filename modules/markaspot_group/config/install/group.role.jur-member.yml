@@ -12,3 +12,4 @@ global_role: null
 group_type: jur
 permissions:
   - 'view group'
+  - 'view group_node:page entity'

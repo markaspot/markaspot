@@ -6,6 +6,19 @@
  */
 
 /**
+ * Implements hook_install().
+ */
+function markaspot_open311_install(): void {
+  // Grant anonymous the create permission for field_request_attributes.
+  // Authenticated gets this via profile config YAML, but anonymous does not.
+  $role = \Drupal::entityTypeManager()->getStorage('user_role')->load('anonymous');
+  if ($role && !$role->hasPermission('create field_request_attributes')) {
+    $role->grantPermission('create field_request_attributes');
+    $role->save();
+  }
+}
+
+/**
  * Add response_visibility config for configurable jurisdiction/organisation.
  */
 function markaspot_open311_update_11801() {

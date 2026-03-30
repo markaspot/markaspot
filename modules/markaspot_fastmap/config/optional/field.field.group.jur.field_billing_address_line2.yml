@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_billing_address_line2
+    - group.type.jur
+id: group.jur.field_billing_address_line2
+field_name: field_billing_address_line2
+entity_type: group
+bundle: jur
+label: 'Billing Address Line 2'
+description: 'Apartment, suite, etc. Synced from Stripe.'
+required: false
+translatable: false
+default_value: []
+default_value_callback: ''
+settings: {  }
+field_type: string

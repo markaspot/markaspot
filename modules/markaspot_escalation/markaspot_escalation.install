@@ -37,6 +37,12 @@ function markaspot_escalation_install() {
   // Grant escalation/delegation permissions to management roles.
   _markaspot_escalation_grant_permissions();
 
+  // Grant service_provider and boilerplate field permissions to tenant_admin.
+  _markaspot_escalation_grant_tenant_admin_field_permissions();
+
+  // Create field_author on internal_remark paragraph type.
+  _markaspot_escalation_ensure_field_author();
+
   \Drupal::logger('markaspot_escalation')->notice('Mark-a-Spot Escalation module installed successfully.');
   \Drupal::messenger()->addStatus(t('Mark-a-Spot Escalation module installed successfully. All fields and displays have been configured.'));
 }
@@ -489,51 +495,19 @@ function _markaspot_escalation_grant_permissions() {
 }
 
 /**
- * Grant escalation/delegation permissions to management roles.
+ * Grants service_provider and boilerplate field permissions to tenant_admin.
  *
- * Ensures moderator, editorial_board, and tenant_admin have escalation
- * and delegation permissions.
+ * These field permissions are not covered by config YAML and must be granted
+ * programmatically. Idempotent: safe to call multiple times.
  */
-function markaspot_escalation_update_10001() {
-  _markaspot_escalation_grant_permissions();
-  return t('Granted escalation/delegation permissions to management roles.');
-}
-
-/**
- * Grant missing base permissions to tenant_admin role.
- *
- * The tenant_admin role was created without foundational permissions needed
- * for JSON:API entity resolution (access content), GeoReport API access,
- * and content management. Without 'access content', JSON:API returns UUIDs
- * instead of entity labels for included relationships.
- */
-function markaspot_escalation_update_10002() {
+function _markaspot_escalation_grant_tenant_admin_field_permissions() {
   $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
   $role = $role_storage->load('tenant_admin');
   if (!$role) {
-    return t('tenant_admin role not found.');
+    return;
   }
 
   $permissions = [
-    // Entity access: required for JSON:API to resolve taxonomy terms,
-    // nodes, and other entities. Without this, included relationships
-    // show UUIDs instead of labels.
-    'access content',
-    'access open311 extension',
-    // Content management.
-    'edit any service_request content',
-    'edit any request_image media',
-    'edit own service_request content',
-    'view own unpublished content',
-    'view unpublished paragraphs',
-    'bypass mas validation',
-    // GeoReport API access.
-    'restful get georeport_request_index_resource',
-    'restful get georeport_request_resource',
-    'restful get georeport_service_index_resource',
-    'restful post georeport_request_index_resource',
-    'restful post georeport_request_resource',
-    // Field permissions for service provider management.
     'view field_service_provider',
     'view field_service_provider_notes',
     'view field_sp_attachment',
@@ -554,20 +528,20 @@ function markaspot_escalation_update_10002() {
 
   if ($changed) {
     $role->save();
-    \Drupal::logger('markaspot_escalation')->notice('Granted missing base permissions to tenant_admin.');
+    \Drupal::logger('markaspot_escalation')->notice('Granted service_provider and boilerplate field permissions to tenant_admin.');
   }
-
-  return t('Granted missing base permissions (access content, GeoReport API, field access) to tenant_admin.');
 }
 
 /**
- * Add field_author on internal_remark paragraph type.
+ * Ensures field_author exists on the internal_remark paragraph type.
  *
- * InternalRemarkController sets field_author on paragraph creation. Reuses
- * the shared field storage from markaspot_dashboard if it exists.
+ * Creates paragraph.field_author storage (entity_reference to user,
+ * cardinality 1) and the paragraph.internal_remark.field_author instance
+ * if they do not exist. Reuses the shared field storage from
+ * markaspot_dashboard if that helper is available. Idempotent.
  */
-function markaspot_escalation_update_10003(): void {
-  // Reuse the dashboard helper if available, otherwise create inline.
+function _markaspot_escalation_ensure_field_author() {
+  // Reuse the dashboard helper if available.
   if (function_exists('_markaspot_dashboard_ensure_field_author')) {
     _markaspot_dashboard_ensure_field_author('internal_remark');
     return;
@@ -611,4 +585,81 @@ function markaspot_escalation_update_10003(): void {
     ])->save();
     $logger->info('Created field instance paragraph.internal_remark.field_author.');
   }
+}
+
+/**
+ * Grant escalation/delegation permissions to management roles.
+ *
+ * Ensures moderator, editorial_board, and tenant_admin have escalation
+ * and delegation permissions.
+ */
+function markaspot_escalation_update_10001() {
+  _markaspot_escalation_grant_permissions();
+  return t('Granted escalation/delegation permissions to management roles.');
+}
+
+/**
+ * Grant missing base permissions to tenant_admin role.
+ *
+ * The tenant_admin role was created without foundational permissions needed
+ * for JSON:API entity resolution (access content), GeoReport API access,
+ * and content management. Without 'access content', JSON:API returns UUIDs
+ * instead of entity labels for included relationships.
+ */
+function markaspot_escalation_update_10002() {
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  $role = $role_storage->load('tenant_admin');
+  if (!$role) {
+    return t('tenant_admin role not found.');
+  }
+
+  // Full list for existing sites that may be missing any of these.
+  $permissions = [
+    // Entity access: required for JSON:API to resolve taxonomy terms,
+    // nodes, and other entities. Without this, included relationships
+    // show UUIDs instead of labels.
+    'access content',
+    'access open311 extension',
+    // Content management.
+    'edit any service_request content',
+    'edit any request_image media',
+    'edit own service_request content',
+    'view own unpublished content',
+    'view unpublished paragraphs',
+    'bypass mas validation',
+    // GeoReport API access.
+    'restful get georeport_request_index_resource',
+    'restful get georeport_request_resource',
+    'restful get georeport_service_index_resource',
+    'restful post georeport_request_index_resource',
+    'restful post georeport_request_resource',
+  ];
+
+  $changed = FALSE;
+  foreach ($permissions as $permission) {
+    if (!$role->hasPermission($permission)) {
+      $role->grantPermission($permission);
+      $changed = TRUE;
+    }
+  }
+
+  if ($changed) {
+    $role->save();
+    \Drupal::logger('markaspot_escalation')->notice('Granted missing base permissions to tenant_admin.');
+  }
+
+  // Grant service_provider and boilerplate field permissions via helper.
+  _markaspot_escalation_grant_tenant_admin_field_permissions();
+
+  return t('Granted missing base permissions (access content, GeoReport API, field access) to tenant_admin.');
+}
+
+/**
+ * Add field_author on internal_remark paragraph type.
+ *
+ * InternalRemarkController sets field_author on paragraph creation. Reuses
+ * the shared field storage from markaspot_dashboard if it exists.
+ */
+function markaspot_escalation_update_10003(): void {
+  _markaspot_escalation_ensure_field_author();
 }
