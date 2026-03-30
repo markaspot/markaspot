@@ -198,6 +198,31 @@ class ImageProcessingService {
    */
   public function saveBlurredImage(MediaInterface $media, string $contents, string $originalUri): void {
     try {
+      // GDPR safeguard: only allow overwriting files in the public filesystem.
+      $scheme = parse_url($originalUri, PHP_URL_SCHEME);
+      if ($scheme !== 'public') {
+        $this->logger->error(
+          'GDPR blur refused: URI scheme "@scheme" is not allowed for media @id. Only public:// URIs may be overwritten.',
+          ['@scheme' => $scheme, '@id' => $media->id()]
+        );
+        return;
+      }
+
+      // GDPR Article 5(2) audit trail: record original file fingerprint
+      // before overwriting so the transformation is accountable.
+      $realPath = $this->fileSystem->realpath($originalUri);
+      $originalHash = $realPath && file_exists($realPath) ? md5_file($realPath) : 'unreadable';
+
+      $this->logger->notice(
+        'GDPR audit: blur overwrite for media @id | uri=@uri | original_md5=@hash | timestamp=@time',
+        [
+          '@id' => $media->id(),
+          '@uri' => $originalUri,
+          '@hash' => $originalHash,
+          '@time' => gmdate('c'),
+        ]
+      );
+
       // Overwrite the original file with the blurred version.
       $this->fileSystem->saveData($contents, $originalUri, FileSystemInterface::EXISTS_REPLACE);
 
