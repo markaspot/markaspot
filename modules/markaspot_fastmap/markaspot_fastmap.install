@@ -493,6 +493,12 @@ function markaspot_fastmap_update_11907(): void {
       'view group_node:service_request relationship',
       'view own unpublished group_node:service_request entity',
       'view unpublished group_node:service_request entity',
+      'create group_node:page entity',
+      'create group_node:page relationship',
+      'update any group_node:page entity',
+      'view group_node:page entity',
+      'view group_node:page relationship',
+      'delete any group_node:page entity',
     ],
   ])->save();
 
@@ -939,5 +945,52 @@ function markaspot_fastmap_update_11915(): void {
     ]);
     $field_config->save();
     $logger->info('Created field instance user.user.field_tos_accepted_at.');
+  }
+}
+
+/**
+ * Grant page permissions to jur-tenant_admin group role.
+ *
+ * Tenant admins need full page management (create, view, update, delete)
+ * to manage info panel and start pages in the dashboard. Pages are created
+ * by the system (uid=1), so "update any" is required, not just "update own".
+ */
+function markaspot_fastmap_update_11916(): void {
+  $logger = \Drupal::logger('markaspot_fastmap');
+  $role = \Drupal::entityTypeManager()->getStorage('group_role')->load('jur-tenant_admin');
+
+  if (!$role) {
+    $logger->warning('Group role jur-tenant_admin not found, skipping.');
+    return;
+  }
+
+  $permissions = $role->getPermissions();
+  $page_permissions = [
+    'create group_node:page entity',
+    'create group_node:page relationship',
+    'update any group_node:page entity',
+    'view group_node:page entity',
+    'view group_node:page relationship',
+    'delete any group_node:page entity',
+  ];
+
+  $added = [];
+  foreach ($page_permissions as $perm) {
+    if (!in_array($perm, $permissions, TRUE)) {
+      $permissions[] = $perm;
+      $added[] = $perm;
+    }
+  }
+
+  if ($added) {
+    $role->set('permissions', $permissions);
+    $role->save();
+    $logger->info('Granted @count page permissions to jur-tenant_admin: @perms', [
+      '@count' => count($added),
+      '@perms' => implode(', ', $added),
+    ]);
+  }
+  else {
+    $logger->info('jur-tenant_admin already has all page permissions.');
   }
 }
