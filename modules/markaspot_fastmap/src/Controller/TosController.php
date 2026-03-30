@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_fastmap\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\Component\Datetime\TimeInterface;
+use Drupal\Core\Datetime\TimeInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -21,7 +21,7 @@ class TosController extends ControllerBase {
   /**
    * The time service.
    *
-   * @var \Drupal\Component\Datetime\TimeInterface
+   * @var \Drupal\Core\Datetime\TimeInterface
    */
   protected TimeInterface $time;
 
