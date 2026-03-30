@@ -5,10 +5,12 @@
  * Install, update and uninstall functions for the markaspot profile.
  */
 
+use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\node\Entity\Node;
+use Drupal\user\Entity\Role;
 
 /**
  * Enables the twig_tweak and markaspot_trend modules.
@@ -1164,9 +1166,9 @@ function markaspot_update_11906(): void {
  * role exists with all permissions that only require always-present modules.
  */
 function markaspot_update_11907(): void {
-  $role = \Drupal\user\Entity\Role::load('tenant_admin');
+  $role = Role::load('tenant_admin');
   if (!$role) {
-    $role = \Drupal\user\Entity\Role::create([
+    $role = Role::create([
       'id' => 'tenant_admin',
       'label' => 'Tenant Admin',
       'weight' => 4,
@@ -1179,7 +1181,7 @@ function markaspot_update_11907(): void {
   $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
   $config_file = $profile_path . '/config/install/user.role.tenant_admin.yml';
   if (file_exists($config_file)) {
-    $yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents($config_file));
+    $yaml = Yaml::decode(file_get_contents($config_file));
     $permission_handler = \Drupal::service('user.permissions');
     $valid_permissions = array_keys($permission_handler->getPermissions());
     $added = 0;
@@ -1203,7 +1205,7 @@ function markaspot_update_11907(): void {
  * for authenticated users.
  */
 function markaspot_update_11908(): void {
-  $role = \Drupal\user\Entity\Role::load('authenticated');
+  $role = Role::load('authenticated');
   if (!$role) {
     return;
   }
@@ -1225,6 +1227,114 @@ function markaspot_update_11908(): void {
     $role->save();
     \Drupal::logger('markaspot')->notice('Added @count permissions to authenticated role.', ['@count' => $added]);
   }
+}
+
+/**
+ * Implements hook_install() for the markaspot profile.
+ *
+ * Runs after all modules are installed and their config is imported. Repairs
+ * field_permissions-based permissions that Drupal strips during install because
+ * field_permissions registers its dynamic permissions from field_storage_config
+ * entities, which are not yet loaded when role config is first imported.
+ */
+function markaspot_install() {
+  _markaspot_repair_field_permissions();
+}
+
+/**
+ * Repair field_permissions stripped during site install.
+ *
+ * During drush site:install, role config YAMLs are imported before
+ * field_permissions has registered its dynamic permissions (which depend on
+ * field_storage_config entities). Drupal validates permissions during role
+ * import and strips any it considers "non-existent". This function re-reads
+ * the intended permissions from config YAML files and re-grants them.
+ *
+ * This function is idempotent: it only grants permissions that are both
+ * defined in the YAML files and currently valid in the permission system.
+ */
+function _markaspot_repair_field_permissions(): void {
+  // Rebuild permission cache so field_permissions registers its dynamic
+  // permissions from the now-loaded field_storage_config entities.
+  \Drupal::service('plugin.manager.field.field_type')->clearCachedDefinitions();
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  drupal_flush_all_caches();
+
+  $permission_handler = \Drupal::service('user.permissions');
+  $valid_permissions = array_keys($permission_handler->getPermissions());
+
+  // Field permission pattern: (create|edit|edit own|view|view own) field_*.
+  $field_perm_pattern = '/^(create|edit|edit own|view|view own) field_/';
+
+  // Collect intended field permissions from both config/install and
+  // config/optional YAML files.
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $role_files = [];
+  foreach (['config/install', 'config/optional'] as $dir) {
+    $path = $profile_path . '/' . $dir;
+    if (is_dir($path)) {
+      $files = glob($path . '/user.role.*.yml');
+      foreach ($files as $file) {
+        // Extract role ID from filename.
+        $basename = basename($file, '.yml');
+        $role_id = preg_replace('/^user\.role\./', '', $basename);
+        // config/optional overrides config/install for the same role.
+        $role_files[$role_id] = $file;
+      }
+    }
+  }
+
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  $repaired = [];
+
+  foreach ($role_files as $role_id => $file) {
+    $yaml = Yaml::decode(file_get_contents($file));
+    if (empty($yaml['permissions'])) {
+      continue;
+    }
+
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      continue;
+    }
+
+    $granted = 0;
+    foreach ($yaml['permissions'] as $perm) {
+      // Only process field_permissions-style permissions.
+      if (!preg_match($field_perm_pattern, $perm)) {
+        continue;
+      }
+      // Only grant if valid and not already present.
+      if (in_array($perm, $valid_permissions, TRUE) && !$role->hasPermission($perm)) {
+        $role->grantPermission($perm);
+        $granted++;
+      }
+    }
+
+    if ($granted > 0) {
+      $role->save();
+      $repaired[] = "$role_id (+$granted)";
+    }
+  }
+
+  if (!empty($repaired)) {
+    \Drupal::logger('markaspot')->notice(
+      'Repaired field permissions stripped during install: @roles',
+      ['@roles' => implode(', ', $repaired)]
+    );
+  }
+}
+
+/**
+ * Repair field_permissions stripped during site install.
+ *
+ * Re-applies field_permissions-based permissions that were removed from roles
+ * during site:install due to the install-order race condition where
+ * field_permissions dynamic permissions are not yet registered when role
+ * config is imported. Safe to run on existing sites (idempotent).
+ */
+function markaspot_update_11909(): void {
+  _markaspot_repair_field_permissions();
 }
 
 /**
