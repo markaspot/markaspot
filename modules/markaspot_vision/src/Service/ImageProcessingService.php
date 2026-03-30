@@ -7,7 +7,6 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\file\FileRepositoryInterface;
 use Drupal\media\MediaInterface;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
@@ -49,13 +48,6 @@ class ImageProcessingService {
   protected FileSystemInterface $fileSystem;
 
   /**
-   * The file repository service.
-   *
-   * @var \Drupal\file\FileRepositoryInterface
-   */
-  protected FileRepositoryInterface $fileRepository;
-
-  /**
    * The logger channel.
    *
    * @var \Psr\Log\LoggerInterface
@@ -75,8 +67,6 @@ class ImageProcessingService {
    *   The file system service.
    * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger_factory
    *   The logger factory.
-   * @param \Drupal\file\FileRepositoryInterface|null $file_repository
-   *   The file repository service.
    */
   public function __construct(
     ClientInterface $http_client,
@@ -84,15 +74,12 @@ class ImageProcessingService {
     EntityTypeManagerInterface $entity_type_manager,
     FileSystemInterface $file_system,
     LoggerChannelFactoryInterface $logger_factory,
-    ?FileRepositoryInterface $file_repository = NULL,
   ) {
     $this->httpClient = $http_client;
     $this->configFactory = $config_factory;
     $this->entityTypeManager = $entity_type_manager;
     $this->fileSystem = $file_system;
     $this->logger = $logger_factory->get('markaspot_vision');
-    // Optional for backward compatibility with existing service definitions.
-    $this->fileRepository = $file_repository ?? \Drupal::service('file.repository');
   }
 
   /**
