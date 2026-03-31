@@ -5,6 +5,8 @@
  * Install, update and uninstall functions for markaspot_group module.
  */
 
+use Drupal\user\Entity\Role;
+
 /**
  * Implements hook_schema().
  */
@@ -1867,6 +1869,7 @@ function markaspot_group_update_11907(): void {
 /**
  * Create the markaspot_group_invitations table for member invitations.
  */
+
 /**
  * Create markaspot_group_invitations table.
  */
@@ -1930,7 +1933,7 @@ function markaspot_group_update_11909(): void {
 /**
  * Add field_service_categories to jur group type.
  *
- * update_11903 created this field on the org bundle. The jur instance was
+ * Update_11903 created this field on the org bundle. The jur instance was
  * added to config/install later, so existing sites never received it.
  * Causes 409 on workspace creation ("Field field_service_categories unknown").
  */
@@ -2207,6 +2210,7 @@ function markaspot_group_update_11912(): void {
 /**
  * Add default_jurisdiction_id config key for multi-tenant fallback.
  */
+
 /**
  * Backfill field_jurisdiction on orphaned entities.
  *
@@ -2414,7 +2418,7 @@ function markaspot_group_update_11913(): void {
   }
 
   // Remove the obsolete permission from tenant_admin role.
-  $role = \Drupal\user\Entity\Role::load('tenant_admin');
+  $role = Role::load('tenant_admin');
   if ($role && $role->hasPermission('administer tenant taxonomy')) {
     $role->revokePermission('administer tenant taxonomy');
     $role->save();
