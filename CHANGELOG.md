@@ -1,5 +1,26 @@
 # Changelog
 
+## [11.9.27](https://github.com/markaspot/markaspot/compare/11.9.26...11.9.27) (2026-03-31)
+
+### Bug Fixes
+
+* add missing hex_opacity process mappings to category and status migrations ([fd35590](https://github.com/markaspot/markaspot/commit/fd35590b1528e8920c692f65163011deeae62a32))
+* allow tenant admins to promote/sticky pages without administer nodes ([125ab2f](https://github.com/markaspot/markaspot/commit/125ab2fb7c5bba271ed3263f9aae1ebb8ecc6116))
+* close hook_install vs hook_update_N gaps on fresh installs (fixes [#247](https://github.com/markaspot/markaspot/issues/247)) ([4620698](https://github.com/markaspot/markaspot/commit/46206983bf1a8a968dbf0986242173c7b108aaf3))
+* grant page permissions to jur-tenant_admin group role ([255b97d](https://github.com/markaspot/markaspot/commit/255b97dfe05d835b05398a36b6a8c22bbe58f2ba))
+* guard update_11915 backfill against multi-tenant environments ([ee2ace4](https://github.com/markaspot/markaspot/commit/ee2ace49a3b212cc4d5dd1f3578c4b913e91568c))
+* null-safe email parameter in SP completion metadata (PHP 8.3) ([0845702](https://github.com/markaspot/markaspot/commit/0845702d7073cd7d468ddac3dcda9bc55b3a7e90))
+* repair field permissions stripped during fresh install ([4dc7380](https://github.com/markaspot/markaspot/commit/4dc7380dd023a005eed6a3057ec8f8aa126f9d96))
+* set field_jurisdiction in all default content migrations (fixes [#246](https://github.com/markaspot/markaspot/issues/246) task 2) ([a6cb44f](https://github.com/markaspot/markaspot/commit/a6cb44f243030f8e35f9e5fb487e2daef73abdbe))
+* sync group relationships when field_jurisdiction changes ([af5f7ad](https://github.com/markaspot/markaspot/commit/af5f7ad65ac6df7a752158ab7d0488af960cf34b))
+* use Core TimeInterface in FastMap TosController (fixes [#238](https://github.com/markaspot/markaspot/issues/238)) ([e5acbf5](https://github.com/markaspot/markaspot/commit/e5acbf5de930cb413b9a7aabc4dedc2fae353ea0))
+* use EntityOwnerInterface import instead of inline FQCN ([03e06c7](https://github.com/markaspot/markaspot/commit/03e06c7d3f348be49e2ecc48a9833d1b8148aae0))
+* **vision:** add GDPR audit log and URI validation for blur overwrite (fixes [#251](https://github.com/markaspot/markaspot/issues/251)) ([2c16fee](https://github.com/markaspot/markaspot/commit/2c16fee61b8495fc153e4877fd401e986261202d))
+
+### Refactoring
+
+* **vision:** remove dead FileRepositoryInterface dependency ([319c119](https://github.com/markaspot/markaspot/commit/319c1194eeba7638893ce104a9b05e9a4d9ff61b))
+
 ## [11.9.26](https://github.com/markaspot/markaspot/compare/11.9.25...11.9.26) (2026-03-29)
 
 ### Bug Fixes
