@@ -523,14 +523,31 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   // 1. Correct initial status for jurisdiction-aware multi-tenant setups.
   _markaspot_group_presave_service_request_status($node);
 
-  // Check if field_organisation exists on this node.
-  if (!$node->hasField('field_organisation')) {
-    return;
-  }
-
   // Check if we're already syncing from relationship to field.
   // This prevents infinite loops.
   if (_markaspot_group_is_syncing()) {
+    return;
+  }
+
+  // 2. Detect field_jurisdiction changes and schedule jur relationship sync.
+  if (!$node->isNew() && $node->hasField('field_jurisdiction')) {
+    $new_jur_id = !$node->get('field_jurisdiction')->isEmpty()
+      ? (int) $node->get('field_jurisdiction')->target_id
+      : NULL;
+    $original_jur_id = NULL;
+    if (isset($node->original) && $node->original->hasField('field_jurisdiction') && !$node->original->get('field_jurisdiction')->isEmpty()) {
+      $original_jur_id = (int) $node->original->get('field_jurisdiction')->target_id;
+    }
+
+    if ($new_jur_id !== $original_jur_id && $new_jur_id !== NULL && $new_jur_id > 0) {
+      $node->_markaspot_group_jur_sync_needed = TRUE;
+      $node->_markaspot_group_new_jur_id = $new_jur_id;
+      $node->_markaspot_group_original_jur_id = $original_jur_id;
+    }
+  }
+
+  // 3. Detect field_organisation changes and schedule org relationship sync.
+  if (!$node->hasField('field_organisation')) {
     return;
   }
 
@@ -653,17 +670,12 @@ function markaspot_group_node_insert(NodeInterface $node): void {
 /**
  * Implements hook_node_update().
  *
- * Updates group relationship when field_organisation changes on a
- * service_request node.
+ * Updates group relationships when field_organisation or field_jurisdiction
+ * changes on a service_request node.
  */
 function markaspot_group_node_update(NodeInterface $node): void {
   // Only process service_request nodes.
   if ($node->bundle() !== 'service_request') {
-    return;
-  }
-
-  // Check if sync was flagged in presave.
-  if (empty($node->_markaspot_group_sync_needed)) {
     return;
   }
 
@@ -672,11 +684,21 @@ function markaspot_group_node_update(NodeInterface $node): void {
     return;
   }
 
-  $new_group_id = $node->_markaspot_group_new_group_id ?? NULL;
-  $original_group_id = $node->_markaspot_group_original_group_id ?? NULL;
+  // 1. Sync jurisdiction group relationship if field_jurisdiction changed.
+  if (!empty($node->_markaspot_group_jur_sync_needed)) {
+    _markaspot_group_sync_jurisdiction_relationship(
+      $node,
+      $node->_markaspot_group_new_jur_id ?? NULL,
+      $node->_markaspot_group_original_jur_id ?? NULL,
+    );
+  }
 
-  // Perform the sync.
-  _markaspot_group_sync_field_to_relationship($node, $new_group_id, $original_group_id);
+  // 2. Sync organisation group relationship if field_organisation changed.
+  if (!empty($node->_markaspot_group_sync_needed)) {
+    $new_group_id = $node->_markaspot_group_new_group_id ?? NULL;
+    $original_group_id = $node->_markaspot_group_original_group_id ?? NULL;
+    _markaspot_group_sync_field_to_relationship($node, $new_group_id, $original_group_id);
+  }
 }
 
 /**
@@ -786,6 +808,88 @@ function _markaspot_group_sync_field_to_relationship(NodeInterface $node, ?int $
   }
   finally {
     // Always reset syncing flag.
+    _markaspot_group_set_syncing(FALSE);
+  }
+}
+
+/**
+ * Syncs the jurisdiction group relationship when field_jurisdiction changes.
+ *
+ * Removes the old jur group relationship and creates a new one pointing to
+ * the jurisdiction referenced by field_jurisdiction. This prevents drift
+ * between field_jurisdiction and the group_relationship_field_data table.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service_request node.
+ * @param int|null $new_jur_id
+ *   The new jurisdiction group ID.
+ * @param int|null $original_jur_id
+ *   The previous jurisdiction group ID, or NULL if none was set.
+ */
+function _markaspot_group_sync_jurisdiction_relationship(NodeInterface $node, ?int $new_jur_id, ?int $original_jur_id): void {
+  _markaspot_group_set_syncing(TRUE);
+
+  try {
+    $etm = \Drupal::entityTypeManager();
+    $group_storage = $etm->getStorage('group');
+    $relationship_storage = $etm->getStorage('group_relationship');
+    $plugin_id = 'group_node:service_request';
+
+    // Remove the old jurisdiction relationship if it exists.
+    if ($original_jur_id !== NULL) {
+      $old_relationships = $relationship_storage->loadByProperties([
+        'entity_id' => $node->id(),
+        'gid' => $original_jur_id,
+        'plugin_id' => $plugin_id,
+      ]);
+      foreach ($old_relationships as $relationship) {
+        // Only delete if the group is a jur group (not an org relationship).
+        $group = $relationship->getGroup();
+        if ($group && $group->bundle() === 'jur') {
+          $relationship->delete();
+        }
+      }
+    }
+
+    // Create the new jurisdiction relationship.
+    if ($new_jur_id !== NULL) {
+      $new_group = $group_storage->load($new_jur_id);
+      if (!$new_group || $new_group->bundle() !== 'jur') {
+        \Drupal::logger('markaspot_group')->warning(
+          'Cannot sync jurisdiction relationship for node @nid: group @gid does not exist or is not type jur.',
+          ['@nid' => $node->id(), '@gid' => $new_jur_id]
+        );
+        return;
+      }
+
+      // Check if relationship already exists (idempotent).
+      $existing = $relationship_storage->loadByProperties([
+        'entity_id' => $node->id(),
+        'gid' => $new_jur_id,
+        'plugin_id' => $plugin_id,
+      ]);
+
+      if (empty($existing)) {
+        $new_group->addRelationship($node, $plugin_id);
+        \Drupal::logger('markaspot_group')->notice(
+          'Synced jurisdiction relationship for node @nid: moved from group @old to group @new (@label).',
+          [
+            '@nid' => $node->id(),
+            '@old' => $original_jur_id ?? 'none',
+            '@new' => $new_jur_id,
+            '@label' => $new_group->label(),
+          ]
+        );
+      }
+    }
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot_group')->error(
+      'Failed to sync jurisdiction relationship for node @nid: @error',
+      ['@nid' => $node->id(), '@error' => $e->getMessage()]
+    );
+  }
+  finally {
     _markaspot_group_set_syncing(FALSE);
   }
 }

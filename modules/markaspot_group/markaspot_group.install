@@ -2423,3 +2423,116 @@ function markaspot_group_update_11913(): void {
     );
   }
 }
+
+/**
+ * Fix drifted jurisdiction group relationships on service_request nodes.
+ *
+ * Finds nodes where field_jurisdiction.target_id does not match the gid in
+ * group_relationship_field_data and corrects the group relationship to point
+ * to the jurisdiction referenced by field_jurisdiction.
+ *
+ * This is idempotent: re-running it on an already-fixed database is a no-op.
+ */
+function markaspot_group_update_11916(): string {
+  $database = \Drupal::database();
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+  $plugin_id = 'group_node:service_request';
+
+  // Find all service_request nodes that have a jur group relationship
+  // where the gid does NOT match field_jurisdiction.target_id.
+  // We join node__field_jurisdiction with group_relationship_field_data
+  // and filter for mismatches. Only consider jur groups (not org groups).
+  $query = $database->select('node__field_jurisdiction', 'fj');
+  $query->join('group_relationship_field_data', 'gr', 'gr.entity_id = fj.entity_id');
+  $query->join('groups_field_data', 'g', 'g.id = gr.gid');
+  $query->fields('fj', ['entity_id', 'field_jurisdiction_target_id']);
+  $query->fields('gr', ['id', 'gid']);
+  $query->condition('fj.bundle', 'service_request');
+  $query->condition('gr.plugin_id', $plugin_id);
+  $query->condition('g.type', 'jur');
+  $query->where('[fj].[field_jurisdiction_target_id] <> [gr].[gid]');
+  // Exclude nodes where field_jurisdiction is 0 (unset): those need manual
+  // review, not automatic reassignment.
+  $query->condition('fj.field_jurisdiction_target_id', 0, '>');
+
+  $mismatches = $query->execute()->fetchAll();
+
+  if (empty($mismatches)) {
+    return 'No jurisdiction group relationship mismatches found. Nothing to fix.';
+  }
+
+  $group_storage = $etm->getStorage('group');
+  $relationship_storage = $etm->getStorage('group_relationship');
+  $fixed = 0;
+  $skipped = 0;
+
+  foreach ($mismatches as $row) {
+    $nid = (int) $row->entity_id;
+    $wrong_gid = (int) $row->gid;
+    $correct_gid = (int) $row->field_jurisdiction_target_id;
+    $relationship_id = (int) $row->id;
+
+    // Validate the correct jurisdiction group exists and is type jur.
+    $correct_group = $group_storage->load($correct_gid);
+    if (!$correct_group || $correct_group->bundle() !== 'jur') {
+      $logger->warning(
+        'update_11916: Node @nid has field_jurisdiction=@jid but group @jid does not exist or is not type jur. Skipping.',
+        ['@nid' => $nid, '@jid' => $correct_gid]
+      );
+      $skipped++;
+      continue;
+    }
+
+    // Load the node for addRelationship().
+    $node = $etm->getStorage('node')->load($nid);
+    if (!$node) {
+      $logger->warning(
+        'update_11916: Node @nid no longer exists. Skipping.',
+        ['@nid' => $nid]
+      );
+      $skipped++;
+      continue;
+    }
+
+    // Delete the wrong relationship.
+    $wrong_relationship = $relationship_storage->load($relationship_id);
+    if ($wrong_relationship) {
+      $wrong_relationship->delete();
+    }
+
+    // Check if correct relationship already exists (idempotent).
+    $existing = $relationship_storage->loadByProperties([
+      'entity_id' => $nid,
+      'gid' => $correct_gid,
+      'plugin_id' => $plugin_id,
+    ]);
+
+    if (empty($existing)) {
+      try {
+        $correct_group->addRelationship($node, $plugin_id);
+      }
+      catch (\Exception $e) {
+        $logger->error(
+          'update_11916: Failed to create relationship for node @nid to group @gid: @error',
+          ['@nid' => $nid, '@gid' => $correct_gid, '@error' => $e->getMessage()]
+        );
+        $skipped++;
+        continue;
+      }
+    }
+
+    $logger->notice(
+      'update_11916: Fixed node @nid: moved from group @old to group @new (@label).',
+      [
+        '@nid' => $nid,
+        '@old' => $wrong_gid,
+        '@new' => $correct_gid,
+        '@label' => $correct_group->label(),
+      ]
+    );
+    $fixed++;
+  }
+
+  return "Fixed $fixed jurisdiction group relationships ($skipped skipped) out of " . count($mismatches) . " mismatches found.";
+}
