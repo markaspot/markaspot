@@ -12,6 +12,12 @@ global_role: null
 group_type: jur
 permissions:
   - 'administer members'
+  - 'create group_node:boilerplate entity'
+  - 'create group_node:boilerplate relationship'
+  - 'delete any group_node:boilerplate entity'
+  - 'update any group_node:boilerplate entity'
+  - 'view group_node:boilerplate entity'
+  - 'view group_node:boilerplate relationship'
   - 'create group_node:page entity'
   - 'create group_node:page relationship'
   - 'create group_node:service_request entity'

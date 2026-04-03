@@ -59,11 +59,11 @@ function markaspot_tenant_admin_update_10002(): void {
 }
 
 /**
- * Remove global 'edit any page/service_request content' from tenant_admin.
+ * Remove global node edit/delete permissions from tenant_admin.
  *
- * These core permissions bypass Group module access control, allowing
- * cross-tenant node editing. Group permissions (update any group_node:*)
- * correctly scope access to the user's jurisdiction.
+ * Core permissions like 'edit any X content' bypass Group module access
+ * control, allowing cross-tenant node editing. Group permissions
+ * (update/delete any group_node:*) correctly scope access per jurisdiction.
  */
 function markaspot_tenant_admin_update_10003(): void {
   $role = Role::load('tenant_admin');
@@ -75,6 +75,11 @@ function markaspot_tenant_admin_update_10003(): void {
   $dangerous_permissions = [
     'edit any page content',
     'edit any service_request content',
+    'edit own service_request content',
+    'edit any boilerplate content',
+    'edit own boilerplate content',
+    'delete any boilerplate content',
+    'delete own boilerplate content',
   ];
 
   foreach ($dangerous_permissions as $permission) {

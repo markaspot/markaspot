@@ -56,7 +56,6 @@ permissions:
   - 'edit own field_status'
   - 'edit own field_status_note'
   - 'edit own field_status_notes'
-  - 'edit own service_request content'
   - 'edit terms in service_category'
   - 'edit terms in service_status'
   - 'restful get georeport_request_index_resource'
