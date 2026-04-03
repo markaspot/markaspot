@@ -788,7 +788,13 @@ EOF
   step "Fetching city boundary..."
   # Only attempt boundary fetch if groups exist
   if [ "$group_count" -gt 0 ] 2>/dev/null; then
-    boundary_output=$($DRUSH_CMD $DRUSH_URI markaspot:fetch-boundary --city="$city" --group=1 -y 2>&1)
+    # Find the first jur group dynamically (ID is not guaranteed to be 1)
+    GROUP_ID=$($DRUSH_CMD $DRUSH_URI php:eval "
+      \$ids = \Drupal::entityTypeManager()->getStorage('group')->getQuery()->accessCheck(FALSE)->condition('type', 'jur')->range(0, 1)->execute();
+      echo \$ids ? reset(\$ids) : '';
+    " 2>/dev/null)
+    [ -z "$GROUP_ID" ] && GROUP_ID="1"
+    boundary_output=$($DRUSH_CMD $DRUSH_URI markaspot:fetch-boundary --city="$city" --group=$GROUP_ID -y 2>&1)
     boundary_exit=$?
     if [ $boundary_exit -eq 0 ]; then
       success "City boundary stored"
@@ -797,7 +803,7 @@ EOF
       echo -e "${RED}$boundary_output${NC}"
       echo ""
       info "This may cause frontend errors. Try manually:"
-      info "  ddev drush markaspot:fetch-boundary --city=\"$city, $country\" --group=1 -y"
+      info "  ddev drush markaspot:fetch-boundary --city=\"$city, $country\" --group=$GROUP_ID -y"
     fi
   else
     warn "Skipping boundary fetch - no groups exist"
@@ -988,63 +994,68 @@ EOF
 
   $DRUSH_CMD $DRUSH_URI php:eval "
     \$is_fastmap = \Drupal::moduleHandler()->moduleExists('markaspot_fastmap');
-    \$group = \Drupal::entityTypeManager()->getStorage('group')->load(1);
-    if (\$group && \$group->getGroupType()->id() === 'jur') {
-      \$group->set('label', '$SIMPLE_CITY_NAME');
-      // Set slug from city name (lowercase, ascii-safe)
-      \$slug = strtolower(trim('$SIMPLE_CITY_NAME'));
-      \$slug = preg_replace('/[^a-z0-9-]/', '-', \$slug);
-      \$slug = preg_replace('/-+/', '-', trim(\$slug, '-'));
-      if (\$group->hasField('field_slug')) {
-        \$group->set('field_slug', \$slug);
-      }
-      if (\$group->hasField('field_platform_name')) {
-        \$group->set('field_platform_name', '$SIMPLE_CITY_NAME');
-      }
-      \$config = [
-        'client' => [
-          'name' => '$SIMPLE_CITY_NAME',
-          'shortName' => '$SIMPLE_CITY_NAME'
-        ],
-        'theme' => [
-          'primary' => 'blue',
-          'secondary' => 'sky',
-          'neutral' => 'slate'
-        ],
-        'features' => [
-          'statistics' => true,
-          'photoReporting' => true,
-          'classicReporting' => !\$is_fastmap,
-          'aiAnalysis' => !empty('$OPENAI_API_KEY'),
-          'dashboard' => \$is_fastmap,
-          'passwordless' => \$is_fastmap,
-          'voting' => false,
-          'feedback' => true
-        ],
-        'languages' => [
-          'default' => '$NUXT_DEFAULT_LANG',
-          'available' => json_decode('$NUXT_AVAILABLE_LANGS', true)
-        ],
-        'map' => [
-          'center' => ['lat' => $latitude, 'lng' => $longitude],
-          'zoom' => 13,
-          'style' => 'https://tiles.openfreemap.org/styles/liberty',
-          'styleDark' => 'https://tiles.openfreemap.org/styles/dark',
-          'loadMarkersOnInit' => true,
-          'enableBoundsFiltering' => true
-        ]
-      ];
-      \$group->set('field_nuxt_config', json_encode(\$config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-      \$group->save();
+    \$storage = \Drupal::entityTypeManager()->getStorage('group');
+    \$ids = \$storage->getQuery()->accessCheck(FALSE)->condition('type', 'jur')->range(0, 1)->execute();
+    \$group = \$ids ? \$storage->load(reset(\$ids)) : NULL;
+    if (!\$group) {
+      // Create group if migration did not produce one (e.g. --existing-config).
+      \$group = \$storage->create(['type' => 'jur', 'langcode' => 'en']);
     }
-  " 2>/dev/null || true
+    \$group->set('label', '$SIMPLE_CITY_NAME');
+    // Set slug from city name (lowercase, ascii-safe)
+    \$slug = strtolower(trim('$SIMPLE_CITY_NAME'));
+    \$slug = preg_replace('/[^a-z0-9-]/', '-', \$slug);
+    \$slug = preg_replace('/-+/', '-', trim(\$slug, '-'));
+    if (\$group->hasField('field_slug')) {
+      \$group->set('field_slug', \$slug);
+    }
+    if (\$group->hasField('field_platform_name')) {
+      \$group->set('field_platform_name', '$SIMPLE_CITY_NAME');
+    }
+    \$config = [
+      'client' => [
+        'name' => '$SIMPLE_CITY_NAME',
+        'shortName' => '$SIMPLE_CITY_NAME'
+      ],
+      'theme' => [
+        'primary' => 'blue',
+        'secondary' => 'sky',
+        'neutral' => 'slate'
+      ],
+      'features' => [
+        'statistics' => true,
+        'photoReporting' => true,
+        'classicReporting' => !\$is_fastmap,
+        'aiAnalysis' => !empty('$OPENAI_API_KEY'),
+        'dashboard' => \$is_fastmap,
+        'passwordless' => \$is_fastmap,
+        'voting' => false,
+        'feedback' => true
+      ],
+      'languages' => [
+        'default' => '$NUXT_DEFAULT_LANG',
+        'available' => json_decode('$NUXT_AVAILABLE_LANGS', true)
+      ],
+      'map' => [
+        'center' => ['lat' => $latitude, 'lng' => $longitude],
+        'zoom' => 13,
+        'style' => 'https://tiles.openfreemap.org/styles/liberty',
+        'styleDark' => 'https://tiles.openfreemap.org/styles/dark',
+        'loadMarkersOnInit' => true,
+        'enableBoundsFiltering' => true
+      ]
+    ];
+    \$group->set('field_nuxt_config', json_encode(\$config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    \$group->save();
+  " || warn "Failed to configure group entity"
 
   step "Ensuring start page content..."
   $DRUSH_CMD $DRUSH_URI php:eval "
     \$storage = \Drupal::entityTypeManager()->getStorage('node');
     \$existing = \$storage->loadByProperties(['type' => 'page', 'status' => 1, 'promote' => 1]);
     if (empty(\$existing)) {
-      \$group = \Drupal::entityTypeManager()->getStorage('group')->load(1);
+      \$grp_ids = \Drupal::entityTypeManager()->getStorage('group')->getQuery()->accessCheck(FALSE)->condition('type', 'jur')->range(0, 1)->execute();
+      \$group = \$grp_ids ? \Drupal::entityTypeManager()->getStorage('group')->load(reset(\$grp_ids)) : NULL;
       \$field_definitions = \Drupal::service('entity_field.manager')->getFieldDefinitions('node', 'page');
       \$values = [
         'type' => 'page',
@@ -1084,12 +1095,16 @@ EOF
         ]);
         \$field->save();
       }
-      // Set jurisdiction=1 on all pages that lack it
-      \$nodes = \Drupal::entityTypeManager()->getStorage('node')->loadByProperties(['type' => 'page']);
-      foreach (\$nodes as \$node) {
-        if (\$node->get('field_jurisdiction')->isEmpty()) {
-          \$node->set('field_jurisdiction', 1);
-          \$node->save();
+      // Set jurisdiction on all pages that lack it (find first jur group dynamically)
+      \$jur_ids = \Drupal::entityTypeManager()->getStorage('group')->getQuery()->accessCheck(FALSE)->condition('type', 'jur')->range(0, 1)->execute();
+      \$jur_id = \$jur_ids ? reset(\$jur_ids) : NULL;
+      if (\$jur_id) {
+        \$nodes = \Drupal::entityTypeManager()->getStorage('node')->loadByProperties(['type' => 'page']);
+        foreach (\$nodes as \$node) {
+          if (\$node->get('field_jurisdiction')->isEmpty()) {
+            \$node->set('field_jurisdiction', \$jur_id);
+            \$node->save();
+          }
         }
       }
     }
@@ -1109,9 +1124,12 @@ EOF
   $DRUSH_CMD $DRUSH_URI php:eval "
     \$group_storage = \Drupal::entityTypeManager()->getStorage('group');
     \$user_storage = \Drupal::entityTypeManager()->getStorage('user');
-    \$jur = \$group_storage->load(1);
-    \$dept1 = \$group_storage->load(2);
-    \$dept2 = \$group_storage->load(3);
+    \$jur_ids = \$group_storage->getQuery()->accessCheck(FALSE)->condition('type', 'jur')->range(0, 1)->execute();
+    \$jur = \$jur_ids ? \$group_storage->load(reset(\$jur_ids)) : NULL;
+    \$dept_ids = \$group_storage->getQuery()->accessCheck(FALSE)->condition('type', 'dep')->sort('id')->execute();
+    \$dept_ids = array_values(\$dept_ids);
+    \$dept1 = isset(\$dept_ids[0]) ? \$group_storage->load(\$dept_ids[0]) : NULL;
+    \$dept2 = isset(\$dept_ids[1]) ? \$group_storage->load(\$dept_ids[1]) : NULL;
     // api_user must NOT be a group member: members get jur-member role which
     // lacks view access via entity query. As outsider, jur-outsider grants view.
     foreach (['moderation_1', 'moderation_2'] as \$name) {
