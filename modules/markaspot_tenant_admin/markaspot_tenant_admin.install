@@ -59,6 +59,41 @@ function markaspot_tenant_admin_update_10002(): void {
 }
 
 /**
+ * Remove global 'edit any page/service_request content' from tenant_admin.
+ *
+ * These core permissions bypass Group module access control, allowing
+ * cross-tenant node editing. Group permissions (update any group_node:*)
+ * correctly scope access to the user's jurisdiction.
+ */
+function markaspot_tenant_admin_update_10003(): void {
+  $role = Role::load('tenant_admin');
+  if (!$role) {
+    return;
+  }
+
+  $revoked = [];
+  $dangerous_permissions = [
+    'edit any page content',
+    'edit any service_request content',
+  ];
+
+  foreach ($dangerous_permissions as $permission) {
+    if ($role->hasPermission($permission)) {
+      $role->revokePermission($permission);
+      $revoked[] = $permission;
+    }
+  }
+
+  if (!empty($revoked)) {
+    $role->save();
+    \Drupal::logger('markaspot_tenant_admin')->warning(
+      'Revoked cross-tenant permissions from tenant_admin: @perms',
+      ['@perms' => implode(', ', $revoked)]
+    );
+  }
+}
+
+/**
  * Implements hook_install().
  *
  * Scans existing jur-admin memberships and retroactively grants the
