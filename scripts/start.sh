@@ -486,9 +486,6 @@ EOF
     fi
   done
 
-  # Ensure gin theme is installed (profile may skip it during site:install)
-  $DRUSH_CMD $DRUSH_URI theme:install gin -y 2>/dev/null || true
-
   if [ -n "$MISSING_MODULES" ]; then
     step "Enabling missing profile modules:$MISSING_MODULES"
     $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
@@ -1212,6 +1209,15 @@ EOF
   else
     warn "$SMOKE_PASS passed, $SMOKE_FAIL failed"
   fi
+
+  # =============================================================================
+  # Ensure admin UI is available (runs on all install paths)
+  # =============================================================================
+  step "Enabling admin UI modules..."
+  $DRUSH_CMD $DRUSH_URI theme:install gin -y >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI en toolbar gin_toolbar markaspot_ui -y >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
+  success "Admin UI modules enabled"
 
   # =============================================================================
   # Installation Summary
