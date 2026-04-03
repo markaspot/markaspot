@@ -669,7 +669,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       if ($key === 'field_service_definition') {
         continue;
       }
-      $service['extended_attributes'][$key] = $value->value;
+      $fieldType = $value->getFieldDefinition()->getType();
+      $service['extended_attributes'][$key] = ($fieldType === 'color_field_type') ? $value->color : $value->value;
     }
 
     return $service;
