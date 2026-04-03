@@ -1,0 +1,5 @@
+markaspot_dashboard.admin:
+  title: 'Mark-a-Spot Dashboard'
+  route_name: markaspot_dashboard.admin
+  base_route: system.admin_reports
+  weight: 10

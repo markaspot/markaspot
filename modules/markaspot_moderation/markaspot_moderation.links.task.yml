@@ -1,0 +1,5 @@
+markaspot_moderation.admin:
+  title: 'Flagged Content'
+  route_name: markaspot_moderation.admin
+  base_route: system.admin_content
+  weight: 20
