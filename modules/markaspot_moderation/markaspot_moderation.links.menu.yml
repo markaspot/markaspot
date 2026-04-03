@@ -1,0 +1,13 @@
+markaspot_moderation.settings:
+  title: 'Moderation'
+  description: 'Configure content moderation settings'
+  parent: markaspot_ui.settings
+  route_name: markaspot_moderation.settings
+  weight: 10
+
+markaspot_moderation.admin:
+  title: 'Flagged Content'
+  description: 'Review and manage flagged citizen reports'
+  parent: system.admin_content
+  route_name: markaspot_moderation.admin
+  weight: 15

@@ -117,3 +117,14 @@ markaspot_dashboard.internal_remark_delete:
   methods: [DELETE]
   requirements:
     _permission: 'manage dashboard notes'
+
+# Admin report page
+markaspot_dashboard.admin:
+  path: '/admin/reports/markaspot-dashboard'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\DashboardAdminController::report'
+    _title: 'Mark-a-Spot Dashboard'
+  requirements:
+    _permission: 'access dashboard kpis'
+  options:
+    _admin_route: TRUE

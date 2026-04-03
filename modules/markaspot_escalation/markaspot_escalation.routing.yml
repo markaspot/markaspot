@@ -17,3 +17,39 @@ markaspot_escalation.delegate:
   requirements:
     _permission: 'delegate service requests'
     _csrf_request_header_token: 'TRUE'
+
+markaspot_escalation.settings:
+  path: '/admin/config/markaspot/escalation'
+  defaults:
+    _form: '\Drupal\markaspot_escalation\Form\EscalationSettingsForm'
+    _title: 'Escalation Settings'
+  requirements:
+    _permission: 'administer site configuration'
+  options:
+    _admin_route: TRUE
+
+markaspot_escalation.admin_escalate:
+  path: '/admin/content/service-request/{node}/escalate'
+  defaults:
+    _form: '\Drupal\markaspot_escalation\Form\EscalateConfirmForm'
+    _title: 'Escalate Request'
+  requirements:
+    _permission: 'escalate service requests'
+  options:
+    _admin_route: TRUE
+    parameters:
+      node:
+        type: entity:node
+
+markaspot_escalation.admin_delegate:
+  path: '/admin/content/service-request/{node}/delegate'
+  defaults:
+    _form: '\Drupal\markaspot_escalation\Form\DelegateForm'
+    _title: 'Delegate Request'
+  requirements:
+    _permission: 'delegate service requests'
+  options:
+    _admin_route: TRUE
+    parameters:
+      node:
+        type: entity:node

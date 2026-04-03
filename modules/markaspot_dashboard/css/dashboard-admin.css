@@ -1,0 +1,55 @@
+/**
+ * @file
+ * Styles for the Mark-a-Spot dashboard admin report page.
+ */
+
+.dashboard-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.dashboard-kpi-card {
+  flex: 1 1 180px;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 1.25rem;
+  border: 1px solid #d4d4d8;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.dashboard-kpi-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #18181b;
+}
+
+.dashboard-kpi-label {
+  font-size: 0.875rem;
+  color: #71717a;
+  margin-top: 0.25rem;
+}
+
+.dashboard-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-status-table {
+  max-width: 480px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+}

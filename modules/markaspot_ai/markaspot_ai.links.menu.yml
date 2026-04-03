@@ -4,3 +4,10 @@ markaspot_ai.settings:
   parent: system.admin_config_services
   route_name: markaspot_ai.settings
   weight: 15
+
+markaspot_ai.admin_processing_status:
+  title: 'AI Processing Status'
+  description: 'View AI processing status, queue management, and duplicate match overview'
+  parent: markaspot_ai.settings
+  route_name: markaspot_ai.admin_processing_status
+  weight: 0

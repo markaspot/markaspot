@@ -1,0 +1,6 @@
+markaspot_dashboard.admin:
+  title: 'Mark-a-Spot Dashboard'
+  description: 'View KPI metrics and reports.'
+  parent: system.admin_reports
+  route_name: markaspot_dashboard.admin
+  weight: 10

@@ -8,6 +8,9 @@
  * jurisdictions and organisations within the Mark-a-Spot group hierarchy.
  */
 
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Url;
+
 /**
  * Implements hook_mail().
  */
@@ -90,5 +93,52 @@ function markaspot_escalation_markaspot_open311_request_alter(array &$request, $
       $escalationService->canEscalate($node, $currentUser);
     $request['extended_attributes']['markaspot']['permissions']['delegate'] =
       $escalationService->canDelegate($node, $currentUser);
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for node_service_request_edit_form.
+ *
+ * Adds escalation and delegation action buttons to the service request edit
+ * form when the current user has the appropriate permissions.
+ */
+function markaspot_escalation_form_node_service_request_edit_form_alter(array &$form, FormStateInterface $form_state, string $form_id): void {
+  $node = $form_state->getFormObject()->getEntity();
+
+  // Only show buttons for existing nodes.
+  if ($node->isNew()) {
+    return;
+  }
+
+  /** @var \Drupal\markaspot_escalation\Service\EscalationServiceInterface $escalationService */
+  $escalationService = \Drupal::service('markaspot_escalation.service');
+  $currentUser = \Drupal::currentUser();
+
+  if ($escalationService->canEscalate($node, $currentUser)) {
+    $form['actions']['escalate'] = [
+      '#type' => 'link',
+      '#title' => t('Escalate'),
+      '#url' => Url::fromRoute('markaspot_escalation.admin_escalate', [
+        'node' => $node->id(),
+      ]),
+      '#attributes' => [
+        'class' => ['button', 'button--danger'],
+      ],
+      '#weight' => 100,
+    ];
+  }
+
+  if ($escalationService->canDelegate($node, $currentUser)) {
+    $form['actions']['delegate'] = [
+      '#type' => 'link',
+      '#title' => t('Delegate'),
+      '#url' => Url::fromRoute('markaspot_escalation.admin_delegate', [
+        'node' => $node->id(),
+      ]),
+      '#attributes' => [
+        'class' => ['button'],
+      ],
+      '#weight' => 101,
+    ];
   }
 }

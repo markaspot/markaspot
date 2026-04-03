@@ -241,3 +241,47 @@ markaspot_ai.attributes.describe:
   options:
     _auth: ['cookie', 'api_key_auth']
     _format: 'json'
+
+# Admin UI Routes
+markaspot_ai.admin_processing_status:
+  path: '/admin/config/services/markaspot-ai/processing'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\AiAdminController::processingStatus'
+    _title: 'AI Processing Status'
+  requirements:
+    _permission: 'administer markaspot ai'
+  options:
+    _admin_route: TRUE
+
+markaspot_ai.admin_queue_missing:
+  path: '/admin/config/services/markaspot-ai/processing/queue-missing'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\AiAdminController::queueMissing'
+    _title: 'Queue Missing Items'
+  requirements:
+    _permission: 'administer markaspot ai'
+    _csrf_token: 'TRUE'
+  options:
+    _admin_route: TRUE
+
+markaspot_ai.admin_process_queue:
+  path: '/admin/config/services/markaspot-ai/processing/process-queue'
+  defaults:
+    _controller: '\Drupal\markaspot_ai\Controller\AiAdminController::processQueue'
+    _title: 'Process Queue'
+  requirements:
+    _permission: 'administer markaspot ai'
+    _csrf_token: 'TRUE'
+  options:
+    _admin_route: TRUE
+
+markaspot_ai.admin_duplicate_review:
+  path: '/admin/config/services/markaspot-ai/duplicate/{match}/review'
+  defaults:
+    _form: '\Drupal\markaspot_ai\Form\DuplicateReviewForm'
+    _title: 'Review Duplicate Match'
+  requirements:
+    _permission: 'review ai duplicates'
+    match: \d+
+  options:
+    _admin_route: TRUE

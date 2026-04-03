@@ -1,0 +1,6 @@
+markaspot_escalation.settings:
+  title: 'Escalation'
+  description: 'Configure escalation and delegation settings'
+  parent: markaspot_ui.settings
+  route_name: markaspot_escalation.settings
+  weight: 15

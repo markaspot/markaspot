@@ -78,3 +78,56 @@ markaspot_moderation.delete_request:
     nid: \d+
   options:
     _format: 'json'
+
+markaspot_moderation.settings:
+  path: '/admin/config/markaspot/moderation'
+  defaults:
+    _form: '\Drupal\markaspot_moderation\Form\ModerationSettingsForm'
+    _title: 'Moderation Settings'
+  requirements:
+    _permission: 'administer all flags'
+  options:
+    _admin_route: TRUE
+
+markaspot_moderation.admin:
+  path: '/admin/content/moderation-flags'
+  defaults:
+    _controller: '\Drupal\markaspot_moderation\Controller\ModerationAdminController::adminOverview'
+    _title: 'Flagged Content'
+  requirements:
+    _permission: 'administer flags'
+  options:
+    _admin_route: TRUE
+
+markaspot_moderation.admin_dismiss:
+  path: '/admin/content/moderation-flags/{nid}/dismiss'
+  defaults:
+    _form: '\Drupal\markaspot_moderation\Form\DismissFlagsConfirmForm'
+    _title: 'Dismiss Flags'
+  requirements:
+    _permission: 'administer flags'
+    nid: \d+
+  options:
+    _admin_route: TRUE
+
+markaspot_moderation.admin_hide:
+  path: '/admin/content/moderation-flags/{nid}/hide'
+  defaults:
+    _form: '\Drupal\markaspot_moderation\Form\HideRequestConfirmForm'
+    _title: 'Hide Request'
+  requirements:
+    _permission: 'administer flags'
+    nid: \d+
+  options:
+    _admin_route: TRUE
+
+markaspot_moderation.admin_delete:
+  path: '/admin/content/moderation-flags/{nid}/delete'
+  defaults:
+    _form: '\Drupal\markaspot_moderation\Form\DeleteRequestConfirmForm'
+    _title: 'Delete Request'
+  requirements:
+    _permission: 'administer all flags'
+    nid: \d+
+  options:
+    _admin_route: TRUE
