@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.29](https://github.com/markaspot/markaspot/compare/11.9.28...11.9.29) (2026-04-03)
+
+### Bug Fixes
+
+* grant tenant_admin status field access scoped to jurisdiction (fixes [#261](https://github.com/markaspot/markaspot/issues/261)) ([e130cd9](https://github.com/markaspot/markaspot/commit/e130cd980d4cec817c3592d788ddec517127da1c))
+* remove global boilerplate/service_request permissions, add Group-scoped boilerplate access ([a54e954](https://github.com/markaspot/markaspot/commit/a54e9541f7e33fda0efc28897e1d287cbf88a677))
+* remove global edit permissions from tenant_admin role (fixes [#268](https://github.com/markaspot/markaspot/issues/268)) ([dab60d1](https://github.com/markaspot/markaspot/commit/dab60d1a5045b5b41f949481303d7f3912b7cd87))
+
 ## [11.9.28](https://github.com/markaspot/markaspot/compare/11.9.27...11.9.28) (2026-04-03)
 
 ### Features
