@@ -186,7 +186,14 @@ class MetricsCalculatorService {
       ];
     }
 
-    $placeholders = implode(',', array_fill(0, count($node_ids), '?'));
+    $named_placeholders = [];
+    $args = [];
+    foreach ($node_ids as $i => $nid) {
+      $key = ':nid_' . $i;
+      $named_placeholders[] = $key;
+      $args[$key] = (int) $nid;
+    }
+    $placeholder_string = implode(',', $named_placeholders);
 
     // Count nodes where organisation changed between revisions.
     // We compare each revision with the previous one and check if organisation differs.
@@ -194,7 +201,7 @@ class MetricsCalculatorService {
       SELECT COUNT(DISTINCT nfo.entity_id) as forwarded_count
       FROM {node_revision__field_organisation} nfo
       INNER JOIN {node_revision} nr ON nfo.revision_id = nr.vid
-      WHERE nfo.entity_id IN ($placeholders)
+      WHERE nfo.entity_id IN ($placeholder_string)
         AND nfo.deleted = 0
         AND EXISTS (
           SELECT 1
@@ -205,7 +212,7 @@ class MetricsCalculatorService {
             AND nr2.vid < nr.vid
             AND nfo2.field_organisation_target_id != nfo.field_organisation_target_id
         )
-    ", $node_ids);
+    ", $args);
 
     $forwarded_count = (int) $forwarded_query->fetchField();
     $total_count = count($node_ids);
@@ -240,7 +247,14 @@ class MetricsCalculatorService {
       ];
     }
 
-    $placeholders = implode(',', array_fill(0, count($node_ids), '?'));
+    $named_placeholders = [];
+    $args = [];
+    foreach ($node_ids as $i => $nid) {
+      $key = ':nid_' . $i;
+      $named_placeholders[] = $key;
+      $args[$key] = (int) $nid;
+    }
+    $placeholder_string = implode(',', $named_placeholders);
 
     // Get the "Closed" status term ID.
     $closed_tid = $this->getClosedStatusTid();
@@ -258,6 +272,8 @@ class MetricsCalculatorService {
     // 1. Have exactly 2 status_notes paragraphs
     // 2. Are currently closed (have a paragraph with closed status)
     // 3. Have no organisation changes.
+    $fcr_args = $args;
+    $fcr_args[':closed_tid'] = $closed_tid;
     $fcr_query = $this->database->query("
       SELECT n.nid
       FROM {node_field_data} n
@@ -272,9 +288,9 @@ class MetricsCalculatorService {
       -- Check for closed status paragraph
       INNER JOIN {node__field_status_notes} fsn ON n.nid = fsn.entity_id AND fsn.deleted = 0
       INNER JOIN {paragraph__field_status_term} pst ON fsn.field_status_notes_target_id = pst.entity_id AND pst.deleted = 0
-      WHERE n.nid IN ($placeholders)
+      WHERE n.nid IN ($placeholder_string)
         AND n.type = 'service_request'
-        AND pst.field_status_term_target_id = ?
+        AND pst.field_status_term_target_id = :closed_tid
         -- No organisation change check
         AND NOT EXISTS (
           SELECT 1
@@ -289,20 +305,22 @@ class MetricsCalculatorService {
             AND nfo2.field_organisation_target_id != nfo1.field_organisation_target_id
         )
       GROUP BY n.nid
-    ", array_merge($node_ids, [$closed_tid]));
+    ", $fcr_args);
 
     $fcr_nodes = $fcr_query->fetchCol();
     $fcr_count = count($fcr_nodes);
 
     // Eligible are closed requests only.
+    $eligible_args = $args;
+    $eligible_args[':closed_tid'] = $closed_tid;
     $eligible_query = $this->database->query("
       SELECT COUNT(DISTINCT n.nid) as count
       FROM {node_field_data} n
       INNER JOIN {node__field_status} fs ON n.nid = fs.entity_id AND fs.deleted = 0
-      WHERE n.nid IN ($placeholders)
+      WHERE n.nid IN ($placeholder_string)
         AND n.type = 'service_request'
-        AND fs.field_status_target_id = ?
-    ", array_merge($node_ids, [$closed_tid]));
+        AND fs.field_status_target_id = :closed_tid
+    ", $eligible_args);
 
     $eligible_count = (int) $eligible_query->fetchField();
     $rate = $eligible_count > 0 ? round(($fcr_count / $eligible_count) * 100, 2) : 0.0;
@@ -339,7 +357,14 @@ class MetricsCalculatorService {
       ];
     }
 
-    $placeholders = implode(',', array_fill(0, count($node_ids), '?'));
+    $named_placeholders = [];
+    $args = [];
+    foreach ($node_ids as $i => $nid) {
+      $key = ':nid_' . $i;
+      $named_placeholders[] = $key;
+      $args[$key] = (int) $nid;
+    }
+    $placeholder_string = implode(',', $named_placeholders);
     $closed_tid = $this->getClosedStatusTid();
 
     if (!$closed_tid) {
@@ -357,6 +382,7 @@ class MetricsCalculatorService {
 
     // Calculate processing time for each closed request.
     // First paragraph created -> Last paragraph with closed status.
+    $args[':closed_tid'] = $closed_tid;
     $query = $this->database->query("
       SELECT
         n.nid,
@@ -370,12 +396,12 @@ class MetricsCalculatorService {
       INNER JOIN {node__field_status_notes} fsn_closed ON n.nid = fsn_closed.entity_id AND fsn_closed.deleted = 0
       INNER JOIN {paragraphs_item_field_data} p_closed ON fsn_closed.field_status_notes_target_id = p_closed.id
       INNER JOIN {paragraph__field_status_term} pst ON p_closed.id = pst.entity_id AND pst.deleted = 0
-      WHERE n.nid IN ($placeholders)
+      WHERE n.nid IN ($placeholder_string)
         AND n.type = 'service_request'
-        AND pst.field_status_term_target_id = ?
+        AND pst.field_status_term_target_id = :closed_tid
       GROUP BY n.nid
       HAVING MIN(p_first.created) IS NOT NULL AND MAX(p_closed.created) IS NOT NULL
-    ", array_merge($node_ids, [$closed_tid]));
+    ", $args);
 
     $results = $query->fetchAll();
     $total_time = 0;
@@ -450,7 +476,14 @@ class MetricsCalculatorService {
       return $output;
     }
 
-    $placeholders = implode(',', array_fill(0, count($node_ids), '?'));
+    $named_placeholders = [];
+    $args = [];
+    foreach ($node_ids as $i => $nid) {
+      $key = ':nid_' . $i;
+      $named_placeholders[] = $key;
+      $args[$key] = (int) $nid;
+    }
+    $placeholder_string = implode(',', $named_placeholders);
 
     $query = $this->database->query("
       SELECT
@@ -462,11 +495,11 @@ class MetricsCalculatorService {
       FROM {taxonomy_term_field_data} t
       LEFT JOIN {taxonomy_term__field_status_hex} h ON t.tid = h.entity_id AND h.deleted = 0
       LEFT JOIN {node__field_status} fs ON t.tid = fs.field_status_target_id AND fs.deleted = 0
-      LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholders)
+      LEFT JOIN {node_field_data} n ON fs.entity_id = n.nid AND n.type = 'service_request' AND n.nid IN ($placeholder_string)
       WHERE t.vid = 'service_status' AND t.default_langcode = 1
       GROUP BY t.tid, t.name, h.field_status_hex_color, t.weight
       ORDER BY t.weight ASC
-    ", $node_ids);
+    ", $args);
 
     $results = $query->fetchAll();
     $output = [];
@@ -809,7 +842,14 @@ class MetricsCalculatorService {
       ];
     }
 
-    $placeholders = implode(',', array_fill(0, count($node_ids), '?'));
+    $named_placeholders = [];
+    $args = [];
+    foreach ($node_ids as $i => $nid) {
+      $key = ':nid_' . $i;
+      $named_placeholders[] = $key;
+      $args[$key] = (int) $nid;
+    }
+    $placeholder_string = implode(',', $named_placeholders);
 
     // Get forwarding details by source organization.
     // Track which org forwarded to which org.
@@ -832,7 +872,7 @@ class MetricsCalculatorService {
       INNER JOIN {group_relationship_field_data} gr_target ON nfo_next.field_organisation_target_id = gr_target.entity_id
         AND gr_target.plugin_id LIKE 'group_node:%'
       INNER JOIN {groups_field_data} g_target ON gr_target.gid = g_target.id AND g_target.default_langcode = 1
-      WHERE nfo_prev.entity_id IN ($placeholders)
+      WHERE nfo_prev.entity_id IN ($placeholder_string)
         AND nfo_prev.deleted = 0
         AND nfo_next.deleted = 0
         AND nr_next.vid > nr_prev.vid
@@ -845,11 +885,11 @@ class MetricsCalculatorService {
             AND nr_between.vid > nr_prev.vid
             AND nr_between.vid < nr_next.vid
         )
-        AND g_source.type = 'organisation'
-        AND g_target.type = 'organisation'
+        AND g_source.type = 'org'
+        AND g_target.type = 'org'
       GROUP BY g_source.id, g_source.label, g_target.id, g_target.label
       ORDER BY forward_count DESC
-    ", $node_ids);
+    ", $args);
 
     $by_source = [];
     foreach ($by_source_query->fetchAll() as $row) {
@@ -878,11 +918,11 @@ class MetricsCalculatorService {
         COUNT(DISTINCT fc.entity_id) as total_count
       FROM {node__field_category} fc
       INNER JOIN {taxonomy_term_field_data} t ON fc.field_category_target_id = t.tid AND t.default_langcode = 1
-      WHERE fc.entity_id IN ($placeholders)
+      WHERE fc.entity_id IN ($placeholder_string)
         AND fc.deleted = 0
       GROUP BY t.tid, t.name
       ORDER BY total_count DESC
-    ", $node_ids);
+    ", $args);
 
     // Build a map of total counts per category.
     $category_totals = [];
@@ -907,14 +947,14 @@ class MetricsCalculatorService {
       INNER JOIN {node_revision} nr_next ON nfo_next.revision_id = nr_next.vid
       INNER JOIN {node__field_category} fc ON nfo_prev.entity_id = fc.entity_id AND fc.deleted = 0
       INNER JOIN {taxonomy_term_field_data} t ON fc.field_category_target_id = t.tid AND t.default_langcode = 1
-      WHERE nfo_prev.entity_id IN ($placeholders)
+      WHERE nfo_prev.entity_id IN ($placeholder_string)
         AND nfo_prev.deleted = 0
         AND nfo_next.deleted = 0
         AND nr_next.vid > nr_prev.vid
         AND nfo_next.field_organisation_target_id != nfo_prev.field_organisation_target_id
       GROUP BY t.tid, t.name
       ORDER BY forwarded_count DESC
-    ", $node_ids);
+    ", $args);
 
     // Update forwarded counts in the category map.
     foreach ($by_category_query->fetchAll() as $row) {
@@ -1140,7 +1180,14 @@ class MetricsCalculatorService {
       ];
     }
 
-    $placeholders = implode(',', array_fill(0, count($node_ids), '?'));
+    $named_placeholders = [];
+    $args = [];
+    foreach ($node_ids as $i => $nid) {
+      $key = ':nid_' . $i;
+      $named_placeholders[] = $key;
+      $args[$key] = (int) $nid;
+    }
+    $placeholder_string = implode(',', $named_placeholders);
 
     // Get hazard level distribution.
     $query = $this->database->query("
@@ -1149,11 +1196,11 @@ class MetricsCalculatorService {
         COUNT(DISTINCT n.nid) as count
       FROM {node_field_data} n
       LEFT JOIN {node__field_hazard_level} fhl ON n.nid = fhl.entity_id AND fhl.deleted = 0
-      WHERE n.nid IN ($placeholders)
+      WHERE n.nid IN ($placeholder_string)
         AND n.type = 'service_request'
       GROUP BY COALESCE(fhl.field_hazard_level_value, 0)
       ORDER BY hazard_level ASC
-    ", $node_ids);
+    ", $args);
 
     $results = $query->fetchAllKeyed();
 
@@ -1205,13 +1252,13 @@ class MetricsCalculatorService {
         FROM {node_field_data} n
         INNER JOIN {node__field_request_media} frm ON n.nid = frm.entity_id AND frm.deleted = 0
         INNER JOIN {media__field_ai_hazard_category} m ON frm.field_request_media_target_id = m.entity_id AND m.deleted = 0
-        WHERE n.nid IN ($placeholders)
+        WHERE n.nid IN ($placeholder_string)
           AND n.type = 'service_request'
           AND m.field_ai_hazard_category_value IS NOT NULL
           AND m.field_ai_hazard_category_value != ''
         GROUP BY m.field_ai_hazard_category_value
         ORDER BY count DESC
-      ", $node_ids);
+      ", $args);
 
       foreach ($category_query->fetchAll() as $row) {
         $by_category[] = [

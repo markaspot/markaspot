@@ -1338,6 +1338,420 @@ function markaspot_update_11909(): void {
 }
 
 /**
+ * Migrate legacy 'organisation' group type to 'org'.
+ *
+ * Legacy Mark-a-Spot installations use the group type 'organisation'. The
+ * current codebase (GroupMembersController, GroupInvitationController, etc.)
+ * hardcodes 'org'. This hook migrates all database rows, config entities, and
+ * key_value entries from 'organisation' to 'org' so every installation uses
+ * the same short type name.
+ *
+ * Prerequisites: group.type.org must already exist (created by Phase 4b of
+ * migrate-to-cloud.sh or by markaspot_group module install).
+ *
+ * Idempotent: safe to re-run. Skips if no 'organisation' group type exists.
+ */
+function markaspot_update_11910(): string {
+  $state = \Drupal::state();
+  if ($state->get('markaspot_update_11910.completed')) {
+    return 'Migration already completed. Skipping.';
+  }
+
+  $database = \Drupal::database();
+  $config_factory = \Drupal::configFactory();
+  $messages = [];
+
+  // -------------------------------------------------------------------
+  // Guard: skip if 'organisation' group type does not exist in the DB.
+  // We check the database directly because Entity API may not be reliable
+  // during update hooks.
+  // -------------------------------------------------------------------
+  $has_organisation = (bool) $database->select('config', 'c')
+    ->fields('c', ['name'])
+    ->condition('name', 'group.type.organisation')
+    ->execute()
+    ->fetchField();
+
+  if (!$has_organisation) {
+    return 'No legacy "organisation" group type found. Skipping migration.';
+  }
+
+  // -------------------------------------------------------------------
+  // Warn if the site is not in maintenance mode.
+  // -------------------------------------------------------------------
+  if (!$state->get('system.maintenance_mode')) {
+    \Drupal::logger('markaspot')->warning('markaspot_update_11910: Running group type migration without maintenance mode. Ensure no concurrent group operations.');
+  }
+
+  // -------------------------------------------------------------------
+  // 1-2. Migrate database tables inside a transaction.
+  // -------------------------------------------------------------------
+  $transaction = $database->startTransaction('update_11910');
+  try {
+    // 1. Migrate database tables: groups + groups_field_data.
+    foreach (['groups', 'groups_field_data'] as $table) {
+      if ($database->schema()->tableExists($table)) {
+        $updated = $database->update($table)
+          ->fields(['type' => 'org'])
+          ->condition('type', 'organisation')
+          ->execute();
+        if ($updated) {
+          $messages[] = "$table: updated $updated rows (type organisation -> org)";
+        }
+      }
+    }
+
+    // 2. Migrate database tables: group_relationship + _field_data.
+    //    - group_type column: 'organisation' -> 'org'
+    //    - type column: 'organisation-*' prefix -> 'org-*'
+    foreach (['group_relationship', 'group_relationship_field_data'] as $table) {
+      if (!$database->schema()->tableExists($table)) {
+        continue;
+      }
+
+      // 2a. group_type column.
+      $updated = $database->update($table)
+        ->fields(['group_type' => 'org'])
+        ->condition('group_type', 'organisation')
+        ->execute();
+      if ($updated) {
+        $messages[] = "$table.group_type: updated $updated rows";
+      }
+
+      // 2b. type column: replace 'organisation-' prefix with 'org-'.
+      // Fetch distinct type values that start with 'organisation-'.
+      $types = $database->select($table, 't')
+        ->fields('t', ['type'])
+        ->condition('type', 'organisation-%', 'LIKE')
+        ->distinct()
+        ->execute()
+        ->fetchCol();
+
+      foreach ($types as $old_type) {
+        $new_type = 'org-' . substr($old_type, strlen('organisation-'));
+        $updated = $database->update($table)
+          ->fields(['type' => $new_type])
+          ->condition('type', $old_type)
+          ->execute();
+        if ($updated) {
+          $messages[] = "$table.type: $old_type -> $new_type ($updated rows)";
+        }
+      }
+    }
+  }
+  catch (\Exception $e) {
+    // Transaction auto-rolls back when $transaction is destroyed.
+    throw $e;
+  }
+  unset($transaction);
+
+  // -------------------------------------------------------------------
+  // 3. Migrate config entities.
+  //    We work directly on the config table because ConfigFactory may
+  //    fail on partially migrated config during updb.
+  // -------------------------------------------------------------------
+  // 3a. Delete group.type.organisation (group.type.org already exists).
+  // Guard: ensure group.type.org exists before deleting organisation.
+  $org_exists = (bool) $database->select('config', 'c')
+    ->fields('c', ['name'])
+    ->condition('name', 'group.type.org')
+    ->execute()
+    ->fetchField();
+
+  if (!$org_exists) {
+    throw new \Exception('markaspot_update_11910: group.type.org config does not exist. Cannot safely delete group.type.organisation. Aborting.');
+  }
+
+  $config_factory->getEditable('group.type.organisation')->delete();
+  $messages[] = 'Deleted config: group.type.organisation';
+
+  // 3b. Collect all config names that contain 'organisation'.
+  $all_names = $database->select('config', 'c')
+    ->fields('c', ['name'])
+    ->condition('name', '%organisation%', 'LIKE')
+    ->execute()
+    ->fetchCol();
+
+  foreach ($all_names as $old_name) {
+    // Build new config name with targeted replacement. Only replace
+    // 'organisation' when it appears as a bundle segment, not when it
+    // is part of a field name (e.g., 'field_organisation').
+    $new_name = _markaspot_update_11910_fix_config_name($old_name);
+
+    // Skip if old = new (shouldn't happen, but be safe).
+    if ($new_name === $old_name) {
+      continue;
+    }
+
+    // Read old config data.
+    $old_config = $config_factory->get($old_name);
+    $data = $old_config->getRawData();
+    if (empty($data)) {
+      continue;
+    }
+
+    // Check if target config already exists.
+    $target_exists = $config_factory->get($new_name)->isNew() === FALSE;
+    if ($target_exists) {
+      // Target already exists. Just delete the old one.
+      $config_factory->getEditable($old_name)->delete();
+      $messages[] = "Config $old_name -> deleted (target $new_name already exists)";
+      continue;
+    }
+
+    // 4. Fix references inside config data.
+    $data = _markaspot_update_11910_fix_config_data($data);
+
+    // Write new config.
+    $new_config = $config_factory->getEditable($new_name);
+    $new_config->setData($data);
+    $new_config->save();
+
+    // Delete old config.
+    $config_factory->getEditable($old_name)->delete();
+    $messages[] = "Config renamed: $old_name -> $new_name";
+  }
+
+  // -------------------------------------------------------------------
+  // 5. Fix remaining config objects that reference 'organisation'
+  //    internally but do not have it in their config name (e.g. config
+  //    with dependencies listing 'group.type.organisation').
+  // -------------------------------------------------------------------
+  $remaining = $database->select('config', 'c')
+    ->fields('c', ['name', 'data'])
+    ->condition('data', '%organisation%', 'LIKE')
+    ->execute()
+    ->fetchAllKeyed();
+
+  foreach ($remaining as $name => $raw_data) {
+    $data = unserialize($raw_data, ['allowed_classes' => FALSE]);
+    if (!is_array($data)) {
+      continue;
+    }
+    $fixed = _markaspot_update_11910_fix_config_data($data);
+    if ($fixed !== $data) {
+      $config_factory->getEditable($name)->setData($fixed)->save();
+      $messages[] = "Fixed internal references in config: $name";
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // 6. Clean up markaspot_open311.settings: remove group_filter_type
+  //    if set to 'organisation' (code now defaults to 'org').
+  // -------------------------------------------------------------------
+  $open311_config = $config_factory->getEditable('markaspot_open311.settings');
+  if (!$open311_config->isNew()) {
+    $group_filter = $open311_config->get('group_filter_type');
+    if ($group_filter === 'organisation') {
+      $open311_config->clear('group_filter_type');
+      $open311_config->save();
+      $messages[] = 'Removed group_filter_type=organisation from markaspot_open311.settings';
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // 7. Fix key_value store: entity.definitions.installed may contain
+  //    bundle info referencing 'organisation-*' plugin IDs.
+  // -------------------------------------------------------------------
+  $kv = \Drupal::keyValue('entity.definitions.installed');
+  $gr_bundles = $kv->get('group_relationship.entity_type');
+  if ($gr_bundles) {
+    $fixed_value = _markaspot_update_11910_fix_config_data($gr_bundles);
+    if ($fixed_value !== $gr_bundles) {
+      $kv->set('group_relationship.entity_type', $fixed_value);
+      $messages[] = 'Fixed group_relationship entity type definition in key_value store';
+    }
+  }
+
+  // Also fix field_storage_definitions for group_relationship.
+  $gr_fields = $kv->get('group_relationship.field_storage_definitions');
+  if ($gr_fields) {
+    $fixed_value = _markaspot_update_11910_fix_config_data($gr_fields);
+    if ($fixed_value !== $gr_fields) {
+      $kv->set('group_relationship.field_storage_definitions', $fixed_value);
+      $messages[] = 'Fixed group_relationship field_storage_definitions in key_value store';
+    }
+  }
+
+  // -------------------------------------------------------------------
+  // 8. Clear all caches so Drupal picks up the changes.
+  // -------------------------------------------------------------------
+  drupal_flush_all_caches();
+  $messages[] = 'Flushed all caches';
+
+  $state->set('markaspot_update_11910.completed', TRUE);
+
+  return implode("\n", $messages);
+}
+
+/**
+ * Recursively fix 'organisation' references inside config data arrays.
+ *
+ * Only replaces 'organisation' in structural positions where it represents
+ * the group type bundle name. Preserves field names like 'field_organisation'
+ * and 'field_head_organisation_e_mail' untouched.
+ *
+ * Targeted replacements:
+ * - String values equal to 'organisation' exactly (bundle/type references).
+ * - Plugin ID prefixes: 'organisation-*' -> 'org-*'.
+ * - Config entity name patterns: 'group.type.organisation',
+ *   'group.content_type.organisation-*', etc.
+ * - Dependency strings referencing 'group.type.organisation'.
+ * - Array keys equal to 'organisation' exactly (e.g., target_bundles keys).
+ *
+ * @param mixed $data
+ *   The config data (array or scalar).
+ *
+ * @return mixed
+ *   The fixed data with bundle-level 'organisation' replaced by 'org'.
+ */
+function _markaspot_update_11910_fix_config_data(mixed $data): mixed {
+  if (is_string($data)) {
+    return _markaspot_update_11910_fix_string($data);
+  }
+
+  if (!is_array($data)) {
+    return $data;
+  }
+
+  $result = [];
+  foreach ($data as $key => $value) {
+    // Only replace array keys that are exactly 'organisation' (bundle keys
+    // in target_bundles, etc.). Never replace keys containing 'organisation'
+    // as a substring (e.g., 'field_organisation').
+    $new_key = ($key === 'organisation') ? 'org' : $key;
+    $result[$new_key] = _markaspot_update_11910_fix_config_data($value);
+  }
+
+  return $result;
+}
+
+/**
+ * Fix a single string value, replacing 'organisation' only in bundle contexts.
+ *
+ * @param string $value
+ *   The string to fix.
+ *
+ * @return string
+ *   The fixed string.
+ */
+function _markaspot_update_11910_fix_string(string $value): string {
+  // Exact match: the entire string IS the bundle name.
+  if ($value === 'organisation') {
+    return 'org';
+  }
+
+  // Plugin ID prefix: 'organisation-group_membership' -> 'org-group_membership'
+  // but NOT 'field_organisation-something'.
+  if (str_starts_with($value, 'organisation-')) {
+    return 'org-' . substr($value, strlen('organisation-'));
+  }
+
+  // Config entity name patterns where 'organisation' is a bundle segment.
+  // Matches patterns like:
+  //   group.type.organisation
+  //   group.content_type.organisation-*
+  //   field.field.group.organisation.*
+  //   core.entity_form_display.group.organisation.*
+  //   core.entity_view_display.group.organisation.*
+  // Does NOT match:
+  //   field.storage.group.field_organisation
+  //   field.field.group.org.field_organisation
+  $patterns = [
+    // 'group.type.organisation' at end of string or before a dot.
+    '/\bgroup\.type\.organisation\b/' => 'group.type.org',
+    // 'group.content_type.organisation-' prefix in config names.
+    '/\bgroup\.content_type\.organisation-/' => 'group.content_type.org-',
+    // Bundle segment after entity type: '*.group.organisation.' or
+    // '*.group.organisation' at end. Only when preceded by a known prefix
+    // (field.field, core.entity_form_display, core.entity_view_display).
+    '/\b(field\.field\.group|core\.entity_form_display\.group|core\.entity_view_display\.group)\.organisation\b/' => '$1.org',
+  ];
+
+  $result = $value;
+  foreach ($patterns as $pattern => $replacement) {
+    $result = preg_replace($pattern, $replacement, $result);
+  }
+
+  // Dependency references: 'group.type.organisation' anywhere in a string
+  // that may contain a config dependency name.
+  // This catches dependency arrays like ['group.type.organisation'].
+  // Already handled by the first pattern above if standalone, but also catches
+  // compound strings or serialized references.
+
+  return $result;
+}
+
+/**
+ * Fix a config name, replacing 'organisation' only in bundle-position segments.
+ *
+ * Config name patterns where 'organisation' is the bundle:
+ *   group.type.organisation -> group.type.org
+ *   group.content_type.organisation-* -> group.content_type.org-*
+ *   field.field.group.organisation.* -> field.field.group.org.*
+ *   core.entity_form_display.group.organisation.* -> ...group.org.*
+ *   core.entity_view_display.group.organisation.* -> ...group.org.*
+ *
+ * Config names where 'organisation' must NOT be replaced:
+ *   field.storage.group.field_organisation (field name, not bundle)
+ *   field.field.group.org.field_organisation (field name on org bundle)
+ *
+ * @param string $name
+ *   The config name.
+ *
+ * @return string
+ *   The fixed config name.
+ */
+function _markaspot_update_11910_fix_config_name(string $name): string {
+  // Split config name into segments for precise replacement.
+  $parts = explode('.', $name);
+
+  // Pattern: group.type.organisation
+  if (count($parts) >= 3 && $parts[0] === 'group' && $parts[1] === 'type' && $parts[2] === 'organisation') {
+    $parts[2] = 'org';
+    return implode('.', $parts);
+  }
+
+  // Pattern: group.content_type.organisation-*
+  if (count($parts) >= 3 && $parts[0] === 'group' && $parts[1] === 'content_type' && str_starts_with($parts[2], 'organisation-')) {
+    $parts[2] = 'org-' . substr($parts[2], strlen('organisation-'));
+    return implode('.', $parts);
+  }
+
+  // Patterns where bundle is at index 3:
+  // field.field.group.organisation.*
+  // core.entity_form_display.group.organisation.*
+  // core.entity_view_display.group.organisation.*
+  $bundle_at_3_prefixes = [
+    ['field', 'field', 'group'],
+    ['core', 'entity_form_display', 'group'],
+    ['core', 'entity_view_display', 'group'],
+  ];
+  if (count($parts) >= 4) {
+    foreach ($bundle_at_3_prefixes as $prefix) {
+      if ($parts[0] === $prefix[0] && $parts[1] === $prefix[1] && $parts[2] === $prefix[2]) {
+        // Only replace if the bundle segment is exactly 'organisation',
+        // not 'field_organisation' or similar.
+        if ($parts[3] === 'organisation') {
+          $parts[3] = 'org';
+          return implode('.', $parts);
+        }
+        break;
+      }
+    }
+  }
+
+  // Pattern: group_relationship type configs where 'organisation' appears
+  // as part of a relationship type ID with a dash (e.g., in nested config
+  // names). Handle via the string-level fix for safety.
+  if (str_contains($name, 'organisation')) {
+    return _markaspot_update_11910_fix_string($name);
+  }
+
+  return $name;
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {
