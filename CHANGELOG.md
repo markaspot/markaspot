@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.30](https://github.com/markaspot/markaspot/compare/11.9.29...11.9.30) (2026-04-03)
+
+### Bug Fixes
+
+* harden group type migration hook and SQL parameterization ([#271](https://github.com/markaspot/markaspot/issues/271)) ([18be85e](https://github.com/markaspot/markaspot/commit/18be85e909f1bf921f85de01f3e5349ba2569e35))
+
 ## [11.9.29](https://github.com/markaspot/markaspot/compare/11.9.28...11.9.29) (2026-04-03)
 
 ### Bug Fixes
