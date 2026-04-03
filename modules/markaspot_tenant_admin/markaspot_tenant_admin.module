@@ -326,6 +326,70 @@ function _markaspot_tenant_admin_validate_jurisdiction(array &$form, FormStateIn
 }
 
 /**
+ * Implements hook_entity_field_access().
+ *
+ * Grants tenant admins write access to the node 'status' field (published)
+ * on page nodes that belong to their jurisdiction. Without this, JSON:API
+ * rejects POST/PATCH requests that include the status field because
+ * 'administer node published status' is not granted globally (which would
+ * be a cross-tenant security risk).
+ */
+function markaspot_tenant_admin_entity_field_access(string $operation, \Drupal\Core\Field\FieldDefinitionInterface $field_definition, AccountInterface $account, ?\Drupal\Core\Field\FieldItemListInterface $items = NULL): AccessResult {
+  // Only handle edit operations on the status field.
+  if ($operation !== 'edit' || $field_definition->getName() !== 'status') {
+    return AccessResult::neutral();
+  }
+
+  // Only for node entities of type 'page'.
+  if ($field_definition->getTargetEntityTypeId() !== 'node' || $field_definition->getTargetBundle() !== 'page') {
+    return AccessResult::neutral();
+  }
+
+  // Only for tenant_admin users.
+  if (!in_array('tenant_admin', $account->getRoles(), TRUE)) {
+    return AccessResult::neutral();
+  }
+
+  // For new nodes (POST), allow status if user has 'create page content'.
+  // Cross-jurisdiction creation is prevented at node access level by the
+  // Group module ('create group_node:page entity' permission).
+  if ($items === NULL || $items->getEntity()->isNew()) {
+    return AccessResult::allowedIf($account->hasPermission('create page content'))
+      ->cachePerPermissions()
+      ->addCacheContexts(['user.group_memberships']);
+  }
+
+  // For existing nodes (PATCH), check jurisdiction membership.
+  // Use the original (persisted) entity to prevent a TOCTOU bypass where
+  // an attacker PATCHes field_jurisdiction + status in a single request.
+  $node = $items->getEntity();
+  $check_node = $node->original ?? $node;
+  if ($check_node->hasField('field_jurisdiction') && !$check_node->get('field_jurisdiction')->isEmpty()) {
+    $node_jur_id = (int) $check_node->get('field_jurisdiction')->target_id;
+    $user_jur_ids = TenantAdminHelper::getUserJurisdictionIds($account);
+
+    if (in_array($node_jur_id, $user_jur_ids, TRUE)) {
+      return AccessResult::allowed()
+        ->addCacheableDependency($check_node)
+        ->cachePerPermissions()
+        ->addCacheContexts(['user.group_memberships']);
+    }
+
+    // Node belongs to a different jurisdiction: deny explicitly.
+    return AccessResult::forbidden('Node belongs to a different jurisdiction.')
+      ->addCacheableDependency($check_node)
+      ->cachePerPermissions()
+      ->addCacheContexts(['user.group_memberships']);
+  }
+
+  // Node has no jurisdiction: deny. Unassigned pages are shared/system
+  // content; only site admins may change their published status.
+  return AccessResult::forbidden('Page has no jurisdiction; only site admins may change status.')
+    ->cachePerPermissions()
+    ->addCacheContexts(['user.group_memberships']);
+}
+
+/**
  * Implements hook_taxonomy_term_access().
  *
  * Grants tenant admins view access to unpublished terms in managed

@@ -29,9 +29,15 @@ class TenantAdminHelper {
    *   Array of group entity IDs.
    */
   public static function getUserJurisdictionIds(AccountInterface $account): array {
-    $user = User::load($account->id());
+    $cache = &drupal_static(__METHOD__, []);
+    $uid = (int) $account->id();
+    if (isset($cache[$uid])) {
+      return $cache[$uid];
+    }
+
+    $user = User::load($uid);
     if (!$user) {
-      return [];
+      return $cache[$uid] = [];
     }
 
     // loadByUser with roles filter queries group_roles field directly.
@@ -45,7 +51,7 @@ class TenantAdminHelper {
       }
     }
 
-    return $jur_ids;
+    return $cache[$uid] = $jur_ids;
   }
 
   /**
