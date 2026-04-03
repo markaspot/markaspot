@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.28](https://github.com/markaspot/markaspot/compare/11.9.27...11.9.28) (2026-04-03)
+
+### Features
+
+* add Drupal Gin admin UI for API-only modules ([314c3f9](https://github.com/markaspot/markaspot/commit/314c3f95b0a2f4dee92e4f1f90772a743d3ecc41))
+* add local task tabs for admin content and reports ([b96b79e](https://github.com/markaspot/markaspot/commit/b96b79eaf7b5e03d32285c316a1e954e95196420))
+* **vision:** improve CAP hazard detection prompt ([7235544](https://github.com/markaspot/markaspot/commit/7235544a908028d27f7f27ee0f463baee034c646))
+
+### Bug Fixes
+
+* enable toolbar and gin_toolbar on fresh install ([65c4a13](https://github.com/markaspot/markaspot/commit/65c4a13f69b066aa6f3460722f4100c5261a48f3))
+* ensure gin theme is installed on every fresh install ([2bd2cf7](https://github.com/markaspot/markaspot/commit/2bd2cf79ff69fa28fd1523ce5ff0e2c0afca2ae8))
+* replace hardcoded group entity IDs with dynamic queries in start.sh (fixes [#266](https://github.com/markaspot/markaspot/issues/266)) ([02378ff](https://github.com/markaspot/markaspot/commit/02378ff8ae89ec656c49d188896834a75234f837))
+* replace removed user_role_names() with Role entity API ([7f62280](https://github.com/markaspot/markaspot/commit/7f622802fb36ad2b2c46a7664a62b9d693237f6d))
+* use color property for color_field_type in extended_attributes ([5d9b091](https://github.com/markaspot/markaspot/commit/5d9b0919f76f426e5af12a75d0d99f03d0397648))
+
 ## [11.9.27](https://github.com/markaspot/markaspot/compare/11.9.26...11.9.27) (2026-03-31)
 
 ### Bug Fixes
