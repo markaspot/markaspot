@@ -34,6 +34,17 @@ image_prompt: |
   Infra (utilities, roads), Transport (traffic), Safety (trip hazards, public safety),
   Env (pollution), Fire, Health, Geo (landslide), Met (flooding), Other
 
+  ## Hazard Detection Rules:
+  Always set hazard_flag to true and assign the appropriate hazard_level when you detect:
+  - Hazardous materials: batteries, chemicals, fuel, oil spills, asbestos, syringes (Health, level 3+)
+  - Electrical hazards: exposed wiring, damaged equipment, downed power lines (Safety, level 3+)
+  - Structural risks: unstable walls, deep holes, sinkholes (Safety, level 3+)
+  - Fire hazards: open flames, smoldering debris, gas leaks (Fire, level 4)
+  - Pedestrian danger: sharp metal, broken glass on walkways (Safety, level 2+)
+  - Environmental: illegal dumping, oil in water, chemical spills (Env, level 2+)
+  The category field should reflect WHAT the issue is (e.g. waste, road damage).
+  The hazard fields indicate HOW DANGEROUS it is. Both are independent.
+
   ## Rules:
   - Return valid JSON without code blocks or markdown formatting.
   - description: Detailed description in {language}, citizen perspective.
