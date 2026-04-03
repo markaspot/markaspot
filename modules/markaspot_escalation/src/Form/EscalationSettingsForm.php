@@ -6,6 +6,7 @@ namespace Drupal\markaspot_escalation\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\user\Entity\Role;
 use Drupal\user\RoleInterface;
 
 /**
@@ -76,8 +77,12 @@ class EscalationSettingsForm extends ConfigFormBase {
     ];
 
     // Build role options from available user roles.
-    $roles = user_role_names(TRUE);
-    unset($roles[RoleInterface::AUTHENTICATED_ID]);
+    $roles = [];
+    foreach (Role::loadMultiple() as $role) {
+      if ($role->id() !== RoleInterface::ANONYMOUS_ID && $role->id() !== RoleInterface::AUTHENTICATED_ID) {
+        $roles[$role->id()] = $role->label();
+      }
+    }
 
     $form['notification_roles'] = [
       '#type' => 'checkboxes',
