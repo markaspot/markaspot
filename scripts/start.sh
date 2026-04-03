@@ -486,10 +486,11 @@ EOF
     fi
   done
 
+  # Ensure gin theme is installed (profile may skip it during site:install)
+  $DRUSH_CMD $DRUSH_URI theme:install gin -y 2>/dev/null || true
+
   if [ -n "$MISSING_MODULES" ]; then
     step "Enabling missing profile modules:$MISSING_MODULES"
-    # Install gin theme first (some modules depend on it)
-    $DRUSH_CMD $DRUSH_URI theme:install gin -y 2>/dev/null || true
     $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
 
     # Try enabling modules directly. If PreExistingConfigException occurs,
