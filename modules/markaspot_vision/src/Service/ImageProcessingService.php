@@ -474,9 +474,10 @@ class ImageProcessingService {
    *   The API configuration array containing url, model, and headers.
    */
   protected function getApiConfig(ImmutableConfig $config): array {
-    $auth_type = $config->get('auth_type') ?? 'bearer';
+    $auth_type = getenv('MARKASPOT_VISION_AUTH_TYPE') ?: $config->get('auth_type') ?? 'bearer';
     $api_key = $this->resolveApiKey($config);
-    $api_url = trim($config->get('api_url') ?? '');
+    // ENV takes priority over config (allows per-instance override without config changes).
+    $api_url = trim(getenv('MARKASPOT_VISION_API_URL') ?: $config->get('api_url') ?? '');
 
     $headers = [
       'Content-Type' => 'application/json',
