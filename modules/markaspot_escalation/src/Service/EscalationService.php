@@ -423,17 +423,17 @@ class EscalationService implements EscalationServiceInterface {
       return $this->isGroupMember($jurGroupId, $account);
     }
 
-    // Not escalated: user must be a member of a parent jur of the org's
-    // jurisdiction.
+    // Not escalated: user must be a member of a parent jur of ANY org's
+    // jurisdiction (multi-org support).
     if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
-      $orgGroup = $node->get('field_organisation')->entity;
-      if ($orgGroup
-          && $orgGroup->hasField('field_jurisdiction')
-          && !$orgGroup->get('field_jurisdiction')->isEmpty()) {
-        $orgJurId = (int) $orgGroup->get('field_jurisdiction')->target_id;
-        $parentJurId = $this->getParentJurisdictionId($orgJurId);
-        if ($parentJurId !== NULL) {
-          return $this->isGroupMember($parentJurId, $account);
+      foreach ($node->get('field_organisation')->referencedEntities() as $orgGroup) {
+        if ($orgGroup->hasField('field_jurisdiction')
+            && !$orgGroup->get('field_jurisdiction')->isEmpty()) {
+          $orgJurId = (int) $orgGroup->get('field_jurisdiction')->target_id;
+          $parentJurId = $this->getParentJurisdictionId($orgJurId);
+          if ($parentJurId !== NULL && $this->isGroupMember($parentJurId, $account)) {
+            return TRUE;
+          }
         }
       }
     }
@@ -581,12 +581,14 @@ class EscalationService implements EscalationServiceInterface {
     // Org groups (e.g. Department 1) have field_jurisdiction pointing to
     // their parent jur. This may resolve to root when the org is defined
     // at root level, so it's less specific than group_relationships.
+    // With multi-org, return the first valid jurisdiction found.
     if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
-      $orgGroup = $node->get('field_organisation')->entity;
-      if ($orgGroup && $orgGroup->bundle() === 'org'
-          && $orgGroup->hasField('field_jurisdiction')
-          && !$orgGroup->get('field_jurisdiction')->isEmpty()) {
-        return (int) $orgGroup->get('field_jurisdiction')->target_id;
+      foreach ($node->get('field_organisation')->referencedEntities() as $orgGroup) {
+        if ($orgGroup->bundle() === 'org'
+            && $orgGroup->hasField('field_jurisdiction')
+            && !$orgGroup->get('field_jurisdiction')->isEmpty()) {
+          return (int) $orgGroup->get('field_jurisdiction')->target_id;
+        }
       }
     }
 

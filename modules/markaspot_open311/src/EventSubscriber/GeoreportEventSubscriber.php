@@ -75,20 +75,22 @@ class GeoreportEventSubscriber implements EventSubscriberInterface {
           $violation = $violations->get($i);
           $geoReportErrorCode = $violation->getConstraint()->geoReportErrorCode ?? NULL;
 
-          switch ($violation->getPropertyPath()) {
-            case 'field_category':
+          $propertyPath = $violation->getPropertyPath();
+
+          switch (TRUE) {
+            case $propertyPath === 'field_category':
               $error['code'] = '103 - service_code';
               break;
 
-            case 'field_category.0.target_id':
+            case $propertyPath === 'field_category.0.target_id':
               $error['code'] = '104 - service_code not valid';
               break;
 
-            case 'field_status.0.target_id':
+            case $propertyPath === 'field_status.0.target_id':
               $error['code'] = '105 - Status not valid';
               break;
 
-            case 'field_organisation.0.target_id':
+            case str_starts_with($propertyPath, 'field_organisation.'):
               $error['code'] = '106 - Organisation not valid';
               break;
 

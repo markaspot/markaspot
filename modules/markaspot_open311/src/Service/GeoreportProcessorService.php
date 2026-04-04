@@ -1390,14 +1390,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     $showOrganisation = $extendedRole === 'manager' || !empty($visibilityConfig['public_organisation']);
     if ($showOrganisation && $node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
-      $organisationEntity = $node->get('field_organisation')->entity;
-      if ($organisationEntity) {
-        $request['organisation'] = [
+      $organisations = [];
+      foreach ($node->get('field_organisation')->referencedEntities() as $organisationEntity) {
+        $organisations[] = [
           'id' => (string) $organisationEntity->id(),
           'uuid' => $organisationEntity->uuid(),
           'label' => $organisationEntity->label(),
           'name' => $organisationEntity->label(),
         ];
+      }
+      if (!empty($organisations)) {
+        // Backward compatibility: single-value key uses the first org.
+        $request['organisation'] = $organisations[0];
+        $request['organisations'] = $organisations;
       }
     }
 
