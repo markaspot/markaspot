@@ -409,7 +409,8 @@ class EscalationServiceTest extends UnitTestCase {
       };
     }
 
-    // field_organisation.
+    // field_organisation (supports both single-entity legacy and
+    // multi-org referencedEntities() access).
     if (isset($config['field_organisation'])) {
       $fields['field_organisation'] = new class($config['field_organisation']) {
 
@@ -434,6 +435,13 @@ class EscalationServiceTest extends UnitTestCase {
           return FALSE;
         }
 
+        /**
+         * Returns all referenced entities (multi-org support).
+         */
+        public function referencedEntities(): array {
+          return [$this->entity];
+        }
+
       };
     }
     else {
@@ -444,6 +452,13 @@ class EscalationServiceTest extends UnitTestCase {
          */
         public function isEmpty(): bool {
           return TRUE;
+        }
+
+        /**
+         * Returns all referenced entities (multi-org support).
+         */
+        public function referencedEntities(): array {
+          return [];
         }
 
       };
