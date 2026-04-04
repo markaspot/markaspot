@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.31](https://github.com/markaspot/markaspot/compare/11.9.30...11.9.31) (2026-04-04)
+
+### Features
+
+* **open311:** support multi-organisation assignment (fixes markaspot/markaspot-ui[#273](https://github.com/markaspot/markaspot/issues/273)) ([1fee419](https://github.com/markaspot/markaspot/commit/1fee4192a5e2e1336b6584afc601262802afa028))
+
+### Bug Fixes
+
+* **group:** cross-tenant guard, dedup IDs, multi-org delegation fixes (markaspot/markaspot-ui[#273](https://github.com/markaspot/markaspot/issues/273)) ([2065e13](https://github.com/markaspot/markaspot/commit/2065e13a66e2a9c093c161840f6a84f4a22644ce))
+* **install:** harden update_11910 for schema variants, reset static in tests ([7472481](https://github.com/markaspot/markaspot/commit/7472481b9565c9820fb2da32a1cd542bd884f297))
+
 ## [11.9.30](https://github.com/markaspot/markaspot/compare/11.9.29...11.9.30) (2026-04-03)
 
 ### Bug Fixes
