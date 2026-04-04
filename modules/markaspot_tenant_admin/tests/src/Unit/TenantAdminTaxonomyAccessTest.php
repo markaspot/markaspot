@@ -35,6 +35,9 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
   protected function setUp(): void {
     parent::setUp();
     require_once __DIR__ . '/../../../markaspot_tenant_admin.module';
+    // Reset drupal_static cache to prevent test ordering dependencies.
+    // TenantAdminHelper::getUserJurisdictionIds() uses drupal_static().
+    drupal_static_reset();
   }
 
   /**
