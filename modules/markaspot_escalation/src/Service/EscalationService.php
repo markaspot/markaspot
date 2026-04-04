@@ -305,8 +305,10 @@ class EscalationService implements EscalationServiceInterface {
     // Append to the node's field_internal_remark.
     $this->appendInternalRemark($node, $paragraph);
 
-    // Set the new organisation. The bidirectional sync in
-    // markaspot_group_node_presave() handles group_relationship changes.
+    // Delegation is a deliberate reassignment: replaces ALL current orgs
+    // with the single target org. This is by design, not a multi-value
+    // oversight. The bidirectional sync in markaspot_group_node_presave()
+    // handles group_relationship changes.
     $node->set('field_organisation', ['target_id' => $targetOrgId]);
 
     // Clear escalation state if it was set, since the request is now
@@ -581,14 +583,25 @@ class EscalationService implements EscalationServiceInterface {
     // Org groups (e.g. Department 1) have field_jurisdiction pointing to
     // their parent jur. This may resolve to root when the org is defined
     // at root level, so it's less specific than group_relationships.
-    // With multi-org, return the first valid jurisdiction found.
+    // With multi-org, collect all jurisdiction IDs and warn on conflicts.
     if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+      $orgJurIds = [];
       foreach ($node->get('field_organisation')->referencedEntities() as $orgGroup) {
         if ($orgGroup->bundle() === 'org'
             && $orgGroup->hasField('field_jurisdiction')
             && !$orgGroup->get('field_jurisdiction')->isEmpty()) {
-          return (int) $orgGroup->get('field_jurisdiction')->target_id;
+          $orgJurIds[] = (int) $orgGroup->get('field_jurisdiction')->target_id;
         }
+      }
+      $orgJurIds = array_unique($orgJurIds);
+      if (count($orgJurIds) > 1) {
+        $this->logger->warning('Node @nid has organisations spanning multiple jurisdictions: @jur_ids. Using first.', [
+          '@nid' => $node->id(),
+          '@jur_ids' => implode(', ', $orgJurIds),
+        ]);
+      }
+      if (!empty($orgJurIds)) {
+        return reset($orgJurIds);
       }
     }
 

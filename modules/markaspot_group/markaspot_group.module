@@ -553,7 +553,10 @@ function markaspot_group_node_presave(NodeInterface $node): void {
 
   // Get ALL new organisation group IDs from the multi-value field.
   // Cast to int as JSON:API may pass string values.
-  $new_group_ids = array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'));
+  // Deduplicate to prevent redundant relationship operations.
+  $new_group_ids = array_unique(array_filter(
+    array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'))
+  ));
 
   // For new nodes, we can't sync yet - need to wait until after save.
   // The relationships will be created in hook_node_insert.
@@ -567,7 +570,9 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   // Cast to int as JSON:API may pass string values.
   $original_group_ids = [];
   if (isset($node->original) && $node->original->hasField('field_organisation') && !$node->original->get('field_organisation')->isEmpty()) {
-    $original_group_ids = array_map('intval', array_column($node->original->get('field_organisation')->getValue(), 'target_id'));
+    $original_group_ids = array_unique(array_filter(
+      array_map('intval', array_column($node->original->get('field_organisation')->getValue(), 'target_id'))
+    ));
   }
 
   // If nothing changed, skip sync.
@@ -781,6 +786,26 @@ function _markaspot_group_sync_field_to_relationship(NodeInterface $node, ?int $
       $group = $entity_type_manager->getStorage('group')->load($new_group_id);
 
       if ($group && $group->bundle() === $group_type) {
+        // Cross-tenant guard: verify the org belongs to the same jurisdiction
+        // as the node. Prevents accidental assignment across tenants.
+        if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()
+            && $group->hasField('field_jurisdiction') && !$group->get('field_jurisdiction')->isEmpty()) {
+          $node_jur_id = (int) $node->get('field_jurisdiction')->target_id;
+          $org_jur_id = (int) $group->get('field_jurisdiction')->target_id;
+          if ($node_jur_id !== $org_jur_id) {
+            \Drupal::logger('markaspot_group')->warning(
+              'Cross-tenant mismatch: node @nid (jur=@node_jur) assigned to org @gid (jur=@org_jur). Skipping relationship.',
+              [
+                '@nid' => $node->id(),
+                '@node_jur' => $node_jur_id,
+                '@gid' => $new_group_id,
+                '@org_jur' => $org_jur_id,
+              ]
+            );
+            return;
+          }
+        }
+
         // Check if relationship already exists.
         $existing = $relationship_storage->loadByProperties([
           'entity_id' => $node->id(),

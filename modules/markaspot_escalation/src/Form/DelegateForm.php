@@ -115,11 +115,12 @@ class DelegateForm extends FormBase {
       $this->messenger()->addWarning($this->t('No organisations are available for delegation within this jurisdiction.'));
     }
 
-    // Exclude the current organisation from the options.
-    $currentOrgId = NULL;
+    // Exclude all currently assigned organisations from the options.
     if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
-      $currentOrgId = (int) $node->get('field_organisation')->target_id;
-      unset($options[$currentOrgId]);
+      $currentOrgIds = array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'));
+      foreach ($currentOrgIds as $id) {
+        unset($options[$id]);
+      }
     }
 
     $form['target_organisation'] = [
