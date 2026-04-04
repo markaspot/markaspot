@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.32](https://github.com/markaspot/markaspot/compare/11.9.31...11.9.32) (2026-04-04)
+
+### Features
+
+* **vision:** support API URL and auth type via ENV variables ([d02385b](https://github.com/markaspot/markaspot/commit/d02385b2bea317246f5715f4c219046a2188b805))
+
 ## [11.9.31](https://github.com/markaspot/markaspot/compare/11.9.30...11.9.31) (2026-04-04)
 
 ### Features
