@@ -333,7 +333,7 @@ function _markaspot_create_default_jurisdiction($group_type, $group_storage) {
     $center_lng = $nuxt_config->get('center_lng');
     $zoom = $nuxt_config->get('zoom_initial');
 
-    if ($center_lat && $center_lng) {
+    if ($center_lat !== NULL && $center_lng !== NULL) {
       $nuxt_json['map'] = [
         'center' => [$center_lng, $center_lat],
         'zoom' => $zoom ?: 13,
