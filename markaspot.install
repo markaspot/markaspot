@@ -197,7 +197,13 @@ function markaspot_update_11799() {
  *
  * This update must run before 11801 to ensure the json_form_widget module
  * is available. Sites upgrading from 11.7.x may not have it installed yet,
- * as it was previously a hard dependency of markaspot_nuxt.
+ * as markaspot_nuxt uses it as a soft dependency (conditional service
+ * registration via MarkaspotNuxtServiceProvider).
+ *
+ * Note: This hook can be removed once all clients have passed schema
+ * version 11800. Both upstream patches (#3563296, #3564474) are merged
+ * in json_form_widget 1.0.0-alpha2. The dev/composer.json patches and
+ * 1.x-dev pin can be dropped in favor of ^1.
  */
 function markaspot_update_11800() {
   $module_handler = \Drupal::moduleHandler();
@@ -1856,6 +1862,44 @@ function _markaspot_update_11910_fix_config_name(string $name): string {
   //   - field.storage.group.field_organisation (field name, not bundle)
   //   - field.field.group.org.field_organisation (field name on org bundle)
   return $name;
+}
+
+/**
+ * Uninstall legacy modules: markaspot_front, markaspot_privacy, markaspot_trend.
+ *
+ * These modules are no longer used. markaspot_front depends on Drupal 8 era
+ * panels/page_manager. markaspot_privacy functionality has been replaced by
+ * jurisdiction group entity fields. markaspot_trend was only used by
+ * markaspot_front.
+ */
+function markaspot_update_11911(): string {
+  $module_installer = \Drupal::service('module_installer');
+  $module_handler = \Drupal::moduleHandler();
+  $uninstalled = [];
+
+  $legacy_modules = ['markaspot_front', 'markaspot_privacy', 'markaspot_trend'];
+  foreach ($legacy_modules as $module) {
+    if ($module_handler->moduleExists($module)) {
+      try {
+        $module_installer->uninstall([$module]);
+        $uninstalled[] = $module;
+        \Drupal::logger('markaspot')->notice('Uninstalled legacy module: @module', [
+          '@module' => $module,
+        ]);
+      }
+      catch (\Exception $e) {
+        \Drupal::logger('markaspot')->warning('Failed to uninstall @module: @error', [
+          '@module' => $module,
+          '@error' => $e->getMessage(),
+        ]);
+      }
+    }
+  }
+
+  if (empty($uninstalled)) {
+    return 'No legacy modules found to uninstall.';
+  }
+  return 'Uninstalled legacy modules: ' . implode(', ', $uninstalled);
 }
 
 /**

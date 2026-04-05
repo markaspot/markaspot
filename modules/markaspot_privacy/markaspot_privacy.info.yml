@@ -1,3 +1,6 @@
+# DEPRECATED: This module is no longer used and will be uninstalled by
+# markaspot_update_11911(). It will be removed from the profile in a
+# future release.
 name: 'Mark-a-Spot Privacy'
 type: module
 description: 'Privacy term checkbox field and term page'

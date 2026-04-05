@@ -88,7 +88,7 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $this->moduleInstaller = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['install'])
+      ->addMethods(['install', 'uninstall'])
       ->getMock();
     $this->transliteration = $this->createMock(TransliterationInterface::class);
     $this->keyValueFactory = $this->createMock(KeyValueFactoryInterface::class);
@@ -759,6 +759,67 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $container->set('user.permissions', $permissionHandler);
 
     markaspot_update_11908();
+  }
+
+  /**
+   * Tests that 11911 uninstalls all three legacy modules when enabled.
+   */
+  public function testUpdate11911UninstallsAllLegacyModules(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module) => match ($module) {
+        'markaspot_front', 'markaspot_privacy', 'markaspot_trend' => TRUE,
+        default => FALSE,
+      });
+
+    $uninstalled = [];
+    $this->moduleInstaller->expects($this->exactly(3))
+      ->method('uninstall')
+      ->willReturnCallback(function (array $modules) use (&$uninstalled) {
+        $uninstalled[] = $modules[0];
+      });
+
+    $result = markaspot_update_11911();
+
+    $this->assertSame(['markaspot_front', 'markaspot_privacy', 'markaspot_trend'], $uninstalled);
+    $this->assertStringContainsString('markaspot_front', $result);
+    $this->assertStringContainsString('markaspot_privacy', $result);
+    $this->assertStringContainsString('markaspot_trend', $result);
+  }
+
+  /**
+   * Tests that 11911 skips when no legacy modules are enabled.
+   */
+  public function testUpdate11911SkipsWhenNoLegacyModulesEnabled(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->willReturn(FALSE);
+
+    $this->moduleInstaller->expects($this->never())
+      ->method('uninstall');
+
+    $result = markaspot_update_11911();
+
+    $this->assertSame('No legacy modules found to uninstall.', $result);
+  }
+
+  /**
+   * Tests that 11911 uninstalls only the enabled legacy module.
+   */
+  public function testUpdate11911UninstallsOnlyEnabledModule(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module) => match ($module) {
+        'markaspot_privacy' => TRUE,
+        default => FALSE,
+      });
+
+    $this->moduleInstaller->expects($this->once())
+      ->method('uninstall')
+      ->with(['markaspot_privacy']);
+
+    $result = markaspot_update_11911();
+
+    $this->assertStringContainsString('markaspot_privacy', $result);
+    $this->assertStringNotContainsString('markaspot_front', $result);
+    $this->assertStringNotContainsString('markaspot_trend', $result);
   }
 
 }

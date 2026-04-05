@@ -1,3 +1,6 @@
+# DEPRECATED: This module is no longer used and will be uninstalled by
+# markaspot_update_11911(). It will be removed from the profile in a
+# future release.
 name: 'Mark-a-Spot Front'
 package: Mark-a-Spot
 core_version_requirement: ^10 || ^11
