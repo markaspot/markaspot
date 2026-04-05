@@ -64,7 +64,7 @@ markaspot_nuxt.organisations:
     _controller: '\Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController::getOrganisations'
     _format: 'json'
   requirements:
-    _permission: 'access content'
+    _user_is_logged_in: 'TRUE'
 
 markaspot_nuxt.tenant_settings_logo:
   path: '/api/tenant-settings/{jurisdiction_id}/logo'

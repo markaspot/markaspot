@@ -1067,7 +1067,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata = new CacheableMetadata();
     $cache_metadata->addCacheTags(['group_list']);
     $cache_metadata->addCacheTags(['config:markaspot_open311.settings']);
-    $cache_metadata->addCacheContexts(['url.query_args:jurisdiction']);
+    $cache_metadata->addCacheContexts(['url.query_args:jurisdiction', 'user']);
     $cache_metadata->setCacheMaxAge(3600);
 
     // Optional jurisdiction filter: only return orgs directly assigned to this jur.
@@ -1092,9 +1092,43 @@ class MarkASpotSettingsController extends ControllerBase {
       $cache_metadata->addCacheableDependency($jur_group);
     }
 
+    // Role-based filtering: privileged users see all orgs,
+    // regular users only see orgs they are a member of.
+    $account = $this->currentUser();
+    $privileged_roles = ['moderator', 'administrator', 'editorial_board'];
+    $is_privileged = !empty(array_intersect($privileged_roles, $account->getRoles()));
+
+    // Non-privileged users: restrict to their own org memberships.
+    if (!$is_privileged) {
+      $membership_storage = $this->entityTypeManager->getStorage('group_relationship');
+      $membership_ids = $membership_storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('entity_id', $account->id())
+        ->condition('type', $org_type . '-group_membership')
+        ->execute();
+
+      if (empty($membership_ids)) {
+        $response = new CacheableJsonResponse([
+          'organisations' => [],
+          'count' => 0,
+        ]);
+        $cache_metadata->addCacheContexts(['user']);
+        $response->addCacheableDependency($cache_metadata);
+        return $response;
+      }
+
+      $memberships = $membership_storage->loadMultiple($membership_ids);
+      $user_org_ids = [];
+      foreach ($memberships as $membership) {
+        $user_org_ids[] = $membership->getGroupId();
+      }
+      $user_org_ids = array_unique($user_org_ids);
+    }
+
     // EntityQuery with accessCheck(FALSE) is intentional here:
-    // Route-level permission ('access content') gates access, and the query
-    // is further scoped by type, status=1, and validated jurisdiction ID.
+    // Route-level '_user_is_logged_in' gates entry, role-based filtering
+    // is applied above, and the query is scoped by type, status, and
+    // validated jurisdiction ID.
     $query = $this->entityTypeManager->getStorage('group')
       ->getQuery()
       ->accessCheck(FALSE)
@@ -1104,6 +1138,11 @@ class MarkASpotSettingsController extends ControllerBase {
 
     if ($jurisdiction_id !== NULL) {
       $query->condition('field_jurisdiction', $jurisdiction_id);
+    }
+
+    // Apply user's org membership filter for non-privileged users.
+    if (!$is_privileged && !empty($user_org_ids)) {
+      $query->condition('id', $user_org_ids, 'IN');
     }
 
     $group_ids = $query->execute();
