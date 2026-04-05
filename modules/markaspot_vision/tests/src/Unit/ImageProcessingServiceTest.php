@@ -30,11 +30,49 @@ class ImageProcessingServiceTest extends UnitTestCase {
   protected $logger;
 
   /**
+   * Saved ENV variables to restore after each test.
+   *
+   * @var array<string, string|false>
+   */
+  protected array $savedEnv = [];
+
+  /**
+   * ENV variable names that override config in getApiConfig/resolveApiKey.
+   */
+  private const ENV_KEYS = [
+    'MARKASPOT_VISION_API_KEY',
+    'MARKASPOT_VISION_API_URL',
+    'MARKASPOT_VISION_AUTH_TYPE',
+    'OPENAI_API_KEY',
+  ];
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
     $this->logger = $this->createMock(LoggerInterface::class);
+    // Isolate tests from host ENV: save and clear vision-related variables.
+    foreach (self::ENV_KEYS as $key) {
+      $this->savedEnv[$key] = getenv($key);
+      putenv($key);
+    }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    // Restore original ENV variables.
+    foreach ($this->savedEnv as $key => $value) {
+      if ($value === FALSE) {
+        putenv($key);
+      }
+      else {
+        putenv("$key=$value");
+      }
+    }
+    parent::tearDown();
   }
 
   /**
