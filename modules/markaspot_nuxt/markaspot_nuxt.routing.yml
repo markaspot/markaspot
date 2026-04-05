@@ -234,6 +234,30 @@ markaspot_nuxt.tenant_settings_navigation_patch:
   options:
     _format: 'json'
 
+markaspot_nuxt.tenant_settings_dashboard_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/dashboard'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::getDashboardSettings'
+    _title: 'Get Tenant Dashboard Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_dashboard_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/dashboard'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::updateDashboardSettings'
+    _title: 'Update Tenant Dashboard Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
 markaspot_nuxt.content_translation_create:
   path: '/api/content-translation/{entity_type}/{uuid}/{langcode}'
   defaults:

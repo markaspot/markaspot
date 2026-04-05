@@ -76,6 +76,30 @@ class TenantSettingsController extends ControllerBase {
   ];
 
   /**
+   * Allowed dashboard column IDs.
+   *
+   * Used to validate incoming PATCH data for the dashboard endpoint.
+   */
+  const DASHBOARD_COLUMN_IDS = [
+    'service_request_id',
+    'category',
+    'status',
+    'visibility',
+    'hazard_level',
+    'hazard_category',
+    'sentiment',
+    'group',
+    'district',
+    'location',
+    'created',
+    'updated',
+    'nid',
+    'lat',
+    'lon',
+    'status_notes',
+  ];
+
+  /**
    * Map settings keys that hold a boolean value.
    *
    * Used to validate incoming PATCH data for the map endpoint.
@@ -1853,6 +1877,125 @@ class TenantSettingsController extends ControllerBase {
       default:
         return "Unknown field: $fieldName.";
     }
+  }
+
+  /**
+   * Returns dashboard settings for a jurisdiction group.
+   *
+   * Reads the dashboard.columns key from the field_nuxt_config JSON blob
+   * on the group entity and returns it. Defaults to an empty object when
+   * no dashboard configuration exists yet.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with current dashboard settings, or an error response.
+   */
+  public function getDashboardSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $config = $this->getNuxtConfig($group);
+
+    $columns = $config['dashboard']['columns'] ?? (object) [];
+
+    return new JsonResponse([
+      'jurisdiction_id' => (int) $group->id(),
+      'dashboard' => [
+        'columns' => $columns,
+      ],
+    ]);
+  }
+
+  /**
+   * Updates dashboard settings for a jurisdiction group.
+   *
+   * Accepts a JSON body with a columns object mapping column IDs to booleans.
+   * Validates all keys against the known DASHBOARD_COLUMN_IDS constant, then
+   * updates only the dashboard.columns key inside the field_nuxt_config JSON
+   * blob. Other config keys are preserved.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request carrying a JSON body.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with updated dashboard settings, or an error response.
+   */
+  public function updateDashboardSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $body = $request->getContent();
+    $data = json_decode($body, TRUE);
+
+    if (!is_array($data) || !array_key_exists('columns', $data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body. Expected object with "columns" key.'], 400);
+    }
+
+    $columns = $data['columns'];
+    if (!is_array($columns)) {
+      return new JsonResponse(['error' => '"columns" must be an object.'], 422);
+    }
+
+    // Validate each column key and value.
+    foreach ($columns as $key => $value) {
+      if (!in_array($key, self::DASHBOARD_COLUMN_IDS, TRUE)) {
+        return new JsonResponse(['error' => "Unknown column ID: $key."], 422);
+      }
+      if (!is_bool($value)) {
+        return new JsonResponse(['error' => "Column '$key' must be a boolean."], 422);
+      }
+    }
+
+    // Read-modify-write: load existing config, update only dashboard.columns.
+    $config = [];
+    if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode($group->get('field_nuxt_config')->value, TRUE);
+      if (is_array($decoded)) {
+        $config = $decoded;
+      }
+    }
+
+    if (!isset($config['dashboard'])) {
+      $config['dashboard'] = [];
+    }
+
+    $config['dashboard']['columns'] = $columns;
+
+    // Write back the full config JSON.
+    $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save dashboard settings for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save dashboard settings.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user updated dashboard column settings for jurisdiction @id (columns: @columns)',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+        '@columns' => implode(', ', array_keys($columns)),
+      ]
+    );
+
+    // Return the current state (same shape as GET).
+    return $this->getDashboardSettings($request, $jurisdiction_id);
   }
 
 }
