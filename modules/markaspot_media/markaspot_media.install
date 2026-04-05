@@ -124,6 +124,13 @@ function _markaspot_media_ensure_form_display(): void {
 function markaspot_media_update_11903(): void {
   $entity_type_manager = \Drupal::entityTypeManager();
 
+  // Skip if catalog_image media type doesn't exist (not all instances use it).
+  $media_type = $entity_type_manager->getStorage('media_type')->load('catalog_image');
+  if (!$media_type) {
+    \Drupal::messenger()->addStatus('Media type catalog_image not found. Skipping field_definition_group setup.');
+    return;
+  }
+
   // Create field storage if it doesn't exist.
   if (!FieldStorageConfig::loadByName('media', 'field_definition_group')) {
     FieldStorageConfig::create([
