@@ -44,6 +44,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
     'MARKASPOT_VISION_API_URL',
     'MARKASPOT_VISION_AUTH_TYPE',
     'OPENAI_API_KEY',
+    'VISION_BLUR_URL',
   ];
 
   /**
