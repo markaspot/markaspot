@@ -1,5 +1,25 @@
 # Changelog
 
+## [11.9.34](https://github.com/markaspot/markaspot/compare/11.9.33...11.9.34) (2026-04-05)
+
+### Features
+
+* add dashboard column defaults to tenant settings ([#282](https://github.com/markaspot/markaspot/issues/282)) ([39626c8](https://github.com/markaspot/markaspot/commit/39626c866434f15995dd8cabcb17a823a1f365d3))
+* add update hook 11911 to uninstall legacy modules ([3d6d573](https://github.com/markaspot/markaspot/commit/3d6d573d3df7df0811c479d60ab7f0f04c1dedc8))
+
+### Bug Fixes
+
+* accept zero-value coordinates in settings controller ([a0eca31](https://github.com/markaspot/markaspot/commit/a0eca3179201c3454478042a873aa80b9f3f2e64))
+* coordinate truthy check in markaspot.install ([8f4903d](https://github.com/markaspot/markaspot/commit/8f4903d3c4448b9d37ac2107f1fe5bfc32ea5682))
+* skip catalog_image field setup when media type missing ([af10384](https://github.com/markaspot/markaspot/commit/af10384a41a5ecd5a32ed01b6ade1b4695186945))
+* **test:** add missing isDefaultTranslation mock to TenantSettings tests ([4bfdb59](https://github.com/markaspot/markaspot/commit/4bfdb5943686de540a06b862424904ab7573010d))
+* **test:** add VISION_BLUR_URL to vision test ENV isolation ([03709bf](https://github.com/markaspot/markaspot/commit/03709bfa5660f89c62abae0d7187355a86f0d6bf))
+* **test:** isolate vision tests from host ENV variables ([6d50c46](https://github.com/markaspot/markaspot/commit/6d50c46f493c34266d530ebc71c4f47da3e5789b))
+
+### Refactoring
+
+* consolidate organization to organisation naming in Dashboard API ([647e98e](https://github.com/markaspot/markaspot/commit/647e98e294ffe206973b207880084259cbd5870a))
+
 ## [11.9.33](https://github.com/markaspot/markaspot/compare/11.9.32...11.9.33) (2026-04-05)
 
 ### Features
