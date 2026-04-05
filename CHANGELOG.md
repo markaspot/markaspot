@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.33](https://github.com/markaspot/markaspot/compare/11.9.32...11.9.33) (2026-04-05)
+
+### Features
+
+* add media_group filter for imagelist service definition attributes ([0556051](https://github.com/markaspot/markaspot/commit/05560519b342d63441262cc14affcee04509760a)), closes [markaspot/markaspot-ui#278](https://github.com/markaspot/markaspot-ui/issues/278)
+
+### Bug Fixes
+
+* **security:** server-side role filtering on /api/organisations ([#279](https://github.com/markaspot/markaspot/issues/279)) ([21f8f2c](https://github.com/markaspot/markaspot/commit/21f8f2c236df7daf175fa537dd7a2a7301686f2d))
+
 ## [11.9.32](https://github.com/markaspot/markaspot/compare/11.9.31...11.9.32) (2026-04-04)
 
 ### Features
