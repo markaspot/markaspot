@@ -147,6 +147,8 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group->method('id')->willReturn((string) $id);
     $group->method('bundle')->willReturn('jur');
 
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+
     $group->method('hasField')
       ->willReturnCallback(fn(string $name) => array_key_exists($name, $fields));
 
@@ -828,6 +830,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')->willReturn(TRUE);
 
     $fieldItem = $this->createMock(FieldItemListInterface::class);
@@ -879,6 +882,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')->willReturn(TRUE);
 
     $fieldItem = $this->createMock(FieldItemListInterface::class);
