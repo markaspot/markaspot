@@ -5,6 +5,9 @@
  * Install, update and uninstall functions for the markaspot_media module.
  */
 
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\field\Entity\FieldConfig;
+
 /**
  * Implements hook_install().
  *
@@ -58,7 +61,7 @@ function markaspot_media_update_11901(): void {
  * Increase field_request_media cardinality from 1 to 3.
  */
 function markaspot_media_update_11902(): void {
-  $storage = \Drupal\field\Entity\FieldStorageConfig::load('node.field_request_media');
+  $storage = FieldStorageConfig::load('node.field_request_media');
   if ($storage && $storage->getCardinality() < 3) {
     $storage->setCardinality(3);
     $storage->save();
@@ -112,5 +115,54 @@ function _markaspot_media_ensure_form_display(): void {
 
   if ($changed) {
     $display->save();
+  }
+}
+
+/**
+ * Add field_definition_group to catalog_image media type.
+ */
+function markaspot_media_update_11903(): void {
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Create field storage if it doesn't exist.
+  if (!FieldStorageConfig::loadByName('media', 'field_definition_group')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_definition_group',
+      'entity_type' => 'media',
+      'type' => 'string',
+      'cardinality' => 1,
+      'settings' => [
+        'max_length' => 128,
+        'is_ascii' => TRUE,
+        'case_sensitive' => FALSE,
+      ],
+      'translatable' => FALSE,
+    ])->save();
+  }
+
+  // Create field instance on catalog_image if it doesn't exist.
+  if (!FieldConfig::loadByName('media', 'catalog_image', 'field_definition_group')) {
+    FieldConfig::create([
+      'field_name' => 'field_definition_group',
+      'entity_type' => 'media',
+      'bundle' => 'catalog_image',
+      'label' => 'Definition Group',
+      'description' => 'Group identifier for filtering in imagelist attributes (e.g. radbuegel_bautypen, lastenrad_stellplatz).',
+      'required' => FALSE,
+    ])->save();
+  }
+
+  // Add to form display.
+  $form_display = $entity_type_manager->getStorage('entity_form_display')
+    ->load('media.catalog_image.default');
+  if ($form_display && !$form_display->getComponent('field_definition_group')) {
+    $form_display->setComponent('field_definition_group', [
+      'type' => 'string_textfield',
+      'weight' => 5,
+      'settings' => [
+        'size' => 60,
+        'placeholder' => 'e.g. radbuegel_bautypen',
+      ],
+    ])->save();
   }
 }

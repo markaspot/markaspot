@@ -439,16 +439,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       return $attributes;
     }
 
-    // Build a map of imagelist attribute codes to their media types.
-    $imagelistTypes = [];
+    // Build a map of imagelist attribute codes to their media types and groups.
+    $imagelistAttrs = [];
     foreach ($definition['attributes'] as $attr) {
       if (($attr['datatype'] ?? '') === 'imagelist' && !empty($attr['media_type'])) {
-        $imagelistTypes[$attr['code']] = $attr['media_type'];
+        $imagelistAttrs[$attr['code']] = [
+          'media_type' => $attr['media_type'],
+          'media_group' => $attr['media_group'] ?? NULL,
+        ];
       }
     }
 
     // Validate each imagelist attribute value.
-    foreach ($imagelistTypes as $code => $mediaType) {
+    foreach ($imagelistAttrs as $code => $attrConfig) {
       if (empty($attributes[$code])) {
         continue;
       }
@@ -456,12 +459,17 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       // Support both single UUID and array of UUIDs.
       $submittedValues = (array) $attributes[$code];
 
+      $lookupProperties = [
+        'uuid' => $submittedValues,
+        'bundle' => $attrConfig['media_type'],
+        'status' => 1,
+      ];
+      if ($attrConfig['media_group'] !== NULL) {
+        $lookupProperties['field_definition_group'] = $attrConfig['media_group'];
+      }
+
       $mediaEntities = $this->entityTypeManager->getStorage('media')
-        ->loadByProperties([
-          'uuid' => $submittedValues,
-          'bundle' => $mediaType,
-          'status' => 1,
-        ]);
+        ->loadByProperties($lookupProperties);
 
       // Filter to only valid, published UUIDs.
       $validUuids = array_map(fn($entity) => $entity->uuid(), $mediaEntities);

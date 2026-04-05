@@ -79,6 +79,12 @@
             "description": "Drupal Media Type machine name. Required for imagelist datatype. The frontend loads all media entities of this type as selectable options.",
             "pattern": "^[a-z][a-z0-9_]*$"
           },
+          "media_group": {
+            "type": "string",
+            "title": "Media Group",
+            "description": "Optional filter: only show media entities whose field_definition_group matches this value. Allows one media type to serve multiple imagelist attributes with different image subsets.",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
           "datatype_description": {
             "type": "string",
             "title": "Helper Text",

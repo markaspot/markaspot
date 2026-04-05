@@ -62,6 +62,12 @@
           "description": "Machine name of a Drupal Media Type. Only for imagelist datatype."
         }
       },
+      "media_group": {
+        "ui:options": {
+          "placeholder": "e.g. radbuegel_bautypen",
+          "description": "Optional: filter images by their Definition Group field. Only for imagelist datatype."
+        }
+      },
       "datatype_description": {
         "ui:options": {
           "widget": "textarea",

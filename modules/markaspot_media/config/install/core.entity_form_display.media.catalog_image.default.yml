@@ -1,0 +1,40 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.media.catalog_image.field_definition_group
+    - field.field.media.catalog_image.field_media_image
+    - media.type.catalog_image
+  module:
+    - image
+    - media
+id: media.catalog_image.default
+targetEntityType: media
+bundle: catalog_image
+mode: default
+content:
+  name:
+    type: string_textfield
+    weight: 0
+    region: content
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {}
+  field_media_image:
+    type: image_image
+    weight: 1
+    region: content
+    settings:
+      progress_indicator: throbber
+      preview_image_style: thumbnail
+    third_party_settings: {}
+  field_definition_group:
+    type: string_textfield
+    weight: 5
+    region: content
+    settings:
+      size: 60
+      placeholder: 'e.g. radbuegel_bautypen'
+    third_party_settings: {}
+hidden: {}

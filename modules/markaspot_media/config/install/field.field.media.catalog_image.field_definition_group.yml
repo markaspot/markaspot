@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.media.field_definition_group
+    - media.type.catalog_image
+  module:
+    - media
+id: media.catalog_image.field_definition_group
+field_name: field_definition_group
+entity_type: media
+bundle: catalog_image
+label: Definition Group
+description: 'Group identifier for filtering in imagelist attributes (e.g. radbuegel_bautypen, lastenrad_stellplatz).'
+required: false
+translatable: false
+default_value: []
+default_value_callback: ''
+settings: []
+field_type: string
