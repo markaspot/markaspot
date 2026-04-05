@@ -163,7 +163,7 @@ class MarkASpotSettingsController extends ControllerBase {
       // (embed URLs, ENV vars). Uses the same resolver as getFontsCss()
       // and getOrganisations().
       $resolved_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
-      if ($resolved_id !== NULL) {
+      if ($resolved_id !== null) {
         $group = $this->entityTypeManager->getStorage('group')->load($resolved_id);
         if ($group && $group->isPublished()) {
           $cache_metadata->addCacheTags(['group:' . $group->id()]);
@@ -282,10 +282,10 @@ class MarkASpotSettingsController extends ControllerBase {
             }
           }
           // Handle separate key format: map.centerLat / map.centerLng.
-          if (!empty($map['centerLat'])) {
+          if (array_key_exists('centerLat', $map) && $map['centerLat'] !== null) {
             $settings['center_lat'] = $map['centerLat'];
           }
-          if (!empty($map['centerLng'])) {
+          if (array_key_exists('centerLng', $map) && $map['centerLng'] !== null) {
             $settings['center_lng'] = $map['centerLng'];
           }
           // Handle zoom overrides (multiple naming conventions).
@@ -557,7 +557,7 @@ class MarkASpotSettingsController extends ControllerBase {
     // Root jurisdictions and children without restrictions return NULL (show all).
     if ($group) {
       $allowedIds = $this->hierarchyResolver->getAllowedCategoryIds((int) $group->id());
-      if ($allowedIds !== NULL) {
+      if ($allowedIds !== null) {
         $allowedSet = array_flip($allowedIds);
         // Collect parent TIDs of allowed terms so hierarchy stays intact.
         $allowedParentTids = [];
@@ -1079,7 +1079,7 @@ class MarkASpotSettingsController extends ControllerBase {
 
     // Validate jurisdiction: must be a published group of the correct jur type.
     // Prevents cross-tenant enumeration by rejecting unknown or invalid IDs.
-    if ($jurisdiction_id !== NULL) {
+    if ($jurisdiction_id !== null) {
       $jur_group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
       if (!$jur_group || !$jur_group->isPublished() || $jur_group->bundle() !== $jur_type) {
         $response = new CacheableJsonResponse([
@@ -1137,7 +1137,7 @@ class MarkASpotSettingsController extends ControllerBase {
       ->condition('status', 1)
       ->sort('label', 'ASC');
 
-    if ($jurisdiction_id !== NULL) {
+    if ($jurisdiction_id !== null) {
       $query->condition('field_jurisdiction', $jurisdiction_id);
     }
 
@@ -1212,7 +1212,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $group = NULL;
 
     $resolved_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
-    if ($resolved_id !== NULL) {
+    if ($resolved_id !== null) {
       $loaded_group = $this->entityTypeManager->getStorage('group')->load($resolved_id);
       if ($loaded_group && $loaded_group->isPublished()) {
         $group = $loaded_group;
