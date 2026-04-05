@@ -22,7 +22,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * - Status distribution
  * - Time series volume (created/closed counts over time)
  * - Time series processing (processing time trends)
- * - Forwarding details (breakdown by organization and category)
+ * - Forwarding details (breakdown by organisation and category)
  */
 class DashboardController extends ControllerBase {
 
@@ -71,7 +71,7 @@ class DashboardController extends ControllerBase {
    * - start_date: Start date filter (Y-m-d or UNIX timestamp)
    * - end_date: End date filter (Y-m-d or UNIX timestamp)
    * - jurisdiction_id: Filter by jurisdiction group ID
-   * - organization_id: Filter by organization group ID
+   * - organisation_id: Filter by organisation group ID
    * - category_id: Filter by category taxonomy term ID.
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
@@ -85,7 +85,7 @@ class DashboardController extends ControllerBase {
       'start_date' => $request->query->get('start_date'),
       'end_date' => $request->query->get('end_date'),
       'jurisdiction_id' => $this->resolveJurisdictionId($request->query->get('jurisdiction_id')),
-      'organization_id' => $request->query->get('organization_id'),
+      'organisation_id' => $request->query->get('organisation_id'),
       'category_id' => $request->query->get('category_id'),
       'status_id' => $request->query->get('status_id'),
     ];
@@ -114,7 +114,7 @@ class DashboardController extends ControllerBase {
       'url.query_args:start_date',
       'url.query_args:end_date',
       'url.query_args:jurisdiction_id',
-      'url.query_args:organization_id',
+      'url.query_args:organisation_id',
       'url.query_args:category_id',
       'url.query_args:status_id',
     ]);
@@ -295,7 +295,7 @@ class DashboardController extends ControllerBase {
    * - start_date: Start date filter (Y-m-d or UNIX timestamp)
    * - end_date: End date filter (Y-m-d or UNIX timestamp)
    * - jurisdiction_id: Filter by jurisdiction group ID
-   * - organization_id: Filter by organization group ID
+   * - organisation_id: Filter by organisation group ID
    * - category_id: Filter by category taxonomy term ID
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
@@ -308,7 +308,7 @@ class DashboardController extends ControllerBase {
       'start_date' => $request->query->get('start_date'),
       'end_date' => $request->query->get('end_date'),
       'jurisdiction_id' => $this->resolveJurisdictionId($request->query->get('jurisdiction_id')),
-      'organization_id' => $request->query->get('organization_id'),
+      'organisation_id' => $request->query->get('organisation_id'),
       'category_id' => $request->query->get('category_id'),
       'status_id' => $request->query->get('status_id'),
     ];
@@ -331,7 +331,7 @@ class DashboardController extends ControllerBase {
       'url.query_args:start_date',
       'url.query_args:end_date',
       'url.query_args:jurisdiction_id',
-      'url.query_args:organization_id',
+      'url.query_args:organisation_id',
       'url.query_args:category_id',
       'url.query_args:status_id',
     ]);

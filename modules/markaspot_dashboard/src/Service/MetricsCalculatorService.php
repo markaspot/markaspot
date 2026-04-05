@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
  * Service for calculating dashboard KPI metrics.
  *
  * Provides real-time SQL-based calculations for:
- * - Forwarding rate (organization changes between revisions)
+ * - Forwarding rate (organisation changes between revisions)
  * - First-Contact-Resolution (FCR) rate
  * - Average processing time
  * - Status distribution.
@@ -83,7 +83,7 @@ class MetricsCalculatorService {
    *   - start_date: Start date (UNIX timestamp or Y-m-d format)
    *   - end_date: End date (UNIX timestamp or Y-m-d format)
    *   - jurisdiction_id: Filter by jurisdiction group ID
-   *   - organization_id: Filter by organization group ID
+   *   - organisation_id: Filter by organisation group ID
    *   - category_id: Filter by category taxonomy term ID.
    *
    * @return array
@@ -156,10 +156,10 @@ class MetricsCalculatorService {
       $query->condition('g.id', $jurisdictionIds, 'IN');
     }
 
-    // Organization filter.
-    if (!empty($filters['organization_id'])) {
+    // Organisation filter.
+    if (!empty($filters['organisation_id'])) {
       $query->innerJoin('node__field_organisation', 'fo', 'n.nid = fo.entity_id AND fo.deleted = 0');
-      $query->condition('fo.field_organisation_target_id', $filters['organization_id']);
+      $query->condition('fo.field_organisation_target_id', $filters['organisation_id']);
     }
 
     $result = $query->execute()->fetchCol();
@@ -835,7 +835,7 @@ class MetricsCalculatorService {
 
     if (empty($node_ids)) {
       return [
-        'by_source_organization' => [],
+        'by_source_organisation' => [],
         'by_category' => [],
         'total_forwards' => 0,
         'filters_applied' => $this->getAppliedFiltersInfo($filters),
@@ -851,7 +851,7 @@ class MetricsCalculatorService {
     }
     $placeholder_string = implode(',', $named_placeholders);
 
-    // Get forwarding details by source organization.
+    // Get forwarding details by source organisation.
     // Track which org forwarded to which org.
     $by_source_query = $this->database->query("
       SELECT
@@ -864,11 +864,11 @@ class MetricsCalculatorService {
       INNER JOIN {node_revision} nr_prev ON nfo_prev.revision_id = nr_prev.vid
       INNER JOIN {node_revision__field_organisation} nfo_next ON nfo_next.entity_id = nfo_prev.entity_id
       INNER JOIN {node_revision} nr_next ON nfo_next.revision_id = nr_next.vid
-      -- Source organization (group).
+      -- Source organisation (group).
       INNER JOIN {group_relationship_field_data} gr_source ON nfo_prev.field_organisation_target_id = gr_source.entity_id
         AND gr_source.plugin_id LIKE 'group_node:%'
       INNER JOIN {groups_field_data} g_source ON gr_source.gid = g_source.id AND g_source.default_langcode = 1
-      -- Target organization (group).
+      -- Target organisation (group).
       INNER JOIN {group_relationship_field_data} gr_target ON nfo_next.field_organisation_target_id = gr_target.entity_id
         AND gr_target.plugin_id LIKE 'group_node:%'
       INNER JOIN {groups_field_data} g_target ON gr_target.gid = g_target.id AND g_target.default_langcode = 1
@@ -896,8 +896,8 @@ class MetricsCalculatorService {
       $source_key = $row->source_org_id;
       if (!isset($by_source[$source_key])) {
         $by_source[$source_key] = [
-          'organization_id' => (int) $row->source_org_id,
-          'organization_name' => $row->source_org,
+          'organisation_id' => (int) $row->source_org_id,
+          'organisation_name' => $row->source_org,
           'total_forwards' => 0,
           'forwards_to' => [],
         ];
@@ -986,7 +986,7 @@ class MetricsCalculatorService {
     usort($by_category, fn($a, $b) => $b['forwarded_count'] <=> $a['forwarded_count']);
 
     return [
-      'by_source_organization' => array_values($by_source),
+      'by_source_organisation' => array_values($by_source),
       'by_category' => $by_category,
       'total_forwards' => $total_forwards,
       'filters_applied' => $this->getAppliedFiltersInfo($filters),
@@ -1124,8 +1124,8 @@ class MetricsCalculatorService {
       $info['jurisdiction_id'] = (int) $filters['jurisdiction_id'];
     }
 
-    if (!empty($filters['organization_id'])) {
-      $info['organization_id'] = (int) $filters['organization_id'];
+    if (!empty($filters['organisation_id'])) {
+      $info['organisation_id'] = (int) $filters['organisation_id'];
     }
 
     if (!empty($filters['category_id'])) {
@@ -1147,7 +1147,7 @@ class MetricsCalculatorService {
    *   - start_date: Start date (UNIX timestamp or Y-m-d format)
    *   - end_date: End date (UNIX timestamp or Y-m-d format)
    *   - jurisdiction_id: Filter by jurisdiction group ID
-   *   - organization_id: Filter by organization group ID
+   *   - organisation_id: Filter by organisation group ID
    *   - category_id: Filter by category taxonomy term ID.
    *
    * @return array
