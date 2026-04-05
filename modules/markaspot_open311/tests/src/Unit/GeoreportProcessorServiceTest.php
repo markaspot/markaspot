@@ -7,6 +7,7 @@ use Drupal\taxonomy\TermInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
@@ -111,6 +112,13 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   protected $termStorage;
 
   /**
+   * Mocked media storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $mediaStorage;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -127,12 +135,14 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
     $this->termStorage = $this->createMock(EntityStorageInterface::class);
+    $this->mediaStorage = $this->createMock(EntityStorageInterface::class);
 
     $this->entityTypeManager->method('getStorage')
       ->willReturnMap([
         ['node', $this->nodeStorage],
         ['group', $this->groupStorage],
         ['taxonomy_term', $this->termStorage],
+        ['media', $this->mediaStorage],
       ]);
 
     // Default config mock.
@@ -1012,6 +1022,298 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     ], 'create');
     // No location exception thrown, address was accepted.
     $this->assertIsArray($values);
+  }
+
+  // =========================================================================
+  // validateImagelistAttributes() tests
+  // =========================================================================
+
+  /**
+   * Tests that a valid UUID for an imagelist attribute is accepted.
+   */
+  public function testValidateImagelistAttributesAcceptsValidUuid(): void {
+    $serviceDefinition = json_encode([
+      'attributes' => [
+        [
+          'code' => 'bautyp',
+          'datatype' => 'imagelist',
+          'media_type' => 'catalog_image',
+          'description' => 'Rack type',
+          'required' => TRUE,
+          'variable' => TRUE,
+          'order' => 0,
+        ],
+      ],
+    ]);
+
+    $term = $this->createImagelistTerm($serviceDefinition);
+    $this->termStorage->method('loadByProperties')
+      ->with([
+        'vid' => 'service_category',
+        'field_service_code' => 'rack_001',
+      ])
+      ->willReturn([1 => $term]);
+
+    $mediaEntity = $this->createMock(ContentEntityInterface::class);
+    $mediaEntity->method('uuid')->willReturn('valid-uuid-1234');
+
+    $this->mediaStorage->method('loadByProperties')
+      ->with([
+        'uuid' => ['valid-uuid-1234'],
+        'bundle' => 'catalog_image',
+        'status' => 1,
+      ])
+      ->willReturn([10 => $mediaEntity]);
+
+    $attributes = ['bautyp' => 'valid-uuid-1234'];
+    $requestData = ['service_code' => 'rack_001'];
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'validateImagelistAttributes',
+      [$attributes, $requestData]
+    );
+
+    $this->assertEquals('valid-uuid-1234', $result['bautyp']);
+  }
+
+  /**
+   * Tests that an invalid (non-existent) UUID is rejected.
+   */
+  public function testValidateImagelistAttributesRejectsInvalidUuid(): void {
+    $serviceDefinition = json_encode([
+      'attributes' => [
+        [
+          'code' => 'bautyp',
+          'datatype' => 'imagelist',
+          'media_type' => 'catalog_image',
+          'description' => 'Rack type',
+          'required' => TRUE,
+          'variable' => TRUE,
+          'order' => 0,
+        ],
+      ],
+    ]);
+
+    $term = $this->createImagelistTerm($serviceDefinition);
+    $this->termStorage->method('loadByProperties')
+      ->with([
+        'vid' => 'service_category',
+        'field_service_code' => 'rack_001',
+      ])
+      ->willReturn([1 => $term]);
+
+    // Media storage returns empty: UUID does not exist.
+    $this->mediaStorage->method('loadByProperties')
+      ->willReturn([]);
+
+    $attributes = ['bautyp' => 'nonexistent-uuid'];
+    $requestData = ['service_code' => 'rack_001'];
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'validateImagelistAttributes',
+      [$attributes, $requestData]
+    );
+
+    $this->assertArrayNotHasKey('bautyp', $result);
+  }
+
+  /**
+   * Tests that media_group enforcement rejects a UUID with wrong group.
+   */
+  public function testValidateImagelistAttributesEnforcesMediaGroup(): void {
+    $serviceDefinition = json_encode([
+      'attributes' => [
+        [
+          'code' => 'bautyp',
+          'datatype' => 'imagelist',
+          'media_type' => 'catalog_image',
+          'media_group' => 'radbuegel_bautypen',
+          'description' => 'Rack type',
+          'required' => TRUE,
+          'variable' => TRUE,
+          'order' => 0,
+        ],
+      ],
+    ]);
+
+    $term = $this->createImagelistTerm($serviceDefinition);
+    $this->termStorage->method('loadByProperties')
+      ->with([
+        'vid' => 'service_category',
+        'field_service_code' => 'rack_001',
+      ])
+      ->willReturn([1 => $term]);
+
+    // Media storage returns empty because the UUID does not match the group.
+    $this->mediaStorage->method('loadByProperties')
+      ->with([
+        'uuid' => ['wrong-group-uuid'],
+        'bundle' => 'catalog_image',
+        'status' => 1,
+        'field_definition_group' => 'radbuegel_bautypen',
+      ])
+      ->willReturn([]);
+
+    $attributes = ['bautyp' => 'wrong-group-uuid'];
+    $requestData = ['service_code' => 'rack_001'];
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'validateImagelistAttributes',
+      [$attributes, $requestData]
+    );
+
+    $this->assertArrayNotHasKey('bautyp', $result);
+  }
+
+  /**
+   * Tests that a UUID matching both media_type and media_group is accepted.
+   */
+  public function testValidateImagelistAttributesAcceptsCorrectGroup(): void {
+    $serviceDefinition = json_encode([
+      'attributes' => [
+        [
+          'code' => 'bautyp',
+          'datatype' => 'imagelist',
+          'media_type' => 'catalog_image',
+          'media_group' => 'radbuegel_bautypen',
+          'description' => 'Rack type',
+          'required' => TRUE,
+          'variable' => TRUE,
+          'order' => 0,
+        ],
+      ],
+    ]);
+
+    $term = $this->createImagelistTerm($serviceDefinition);
+    $this->termStorage->method('loadByProperties')
+      ->with([
+        'vid' => 'service_category',
+        'field_service_code' => 'rack_001',
+      ])
+      ->willReturn([1 => $term]);
+
+    $mediaEntity = $this->createMock(ContentEntityInterface::class);
+    $mediaEntity->method('uuid')->willReturn('correct-group-uuid');
+
+    $this->mediaStorage->method('loadByProperties')
+      ->with([
+        'uuid' => ['correct-group-uuid'],
+        'bundle' => 'catalog_image',
+        'status' => 1,
+        'field_definition_group' => 'radbuegel_bautypen',
+      ])
+      ->willReturn([10 => $mediaEntity]);
+
+    $attributes = ['bautyp' => 'correct-group-uuid'];
+    $requestData = ['service_code' => 'rack_001'];
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'validateImagelistAttributes',
+      [$attributes, $requestData]
+    );
+
+    $this->assertEquals('correct-group-uuid', $result['bautyp']);
+  }
+
+  /**
+   * Tests backward compatibility when media_group is not set in the definition.
+   */
+  public function testValidateImagelistAttributesSkipsGroupWhenNotSet(): void {
+    $serviceDefinition = json_encode([
+      'attributes' => [
+        [
+          'code' => 'bautyp',
+          'datatype' => 'imagelist',
+          'media_type' => 'catalog_image',
+          'description' => 'Rack type',
+          'required' => TRUE,
+          'variable' => TRUE,
+          'order' => 0,
+        ],
+      ],
+    ]);
+
+    $term = $this->createImagelistTerm($serviceDefinition);
+    $this->termStorage->method('loadByProperties')
+      ->with([
+        'vid' => 'service_category',
+        'field_service_code' => 'rack_001',
+      ])
+      ->willReturn([1 => $term]);
+
+    $mediaEntity = $this->createMock(ContentEntityInterface::class);
+    $mediaEntity->method('uuid')->willReturn('no-group-uuid');
+
+    // Without media_group, the lookup should NOT include field_definition_group.
+    $this->mediaStorage->method('loadByProperties')
+      ->with([
+        'uuid' => ['no-group-uuid'],
+        'bundle' => 'catalog_image',
+        'status' => 1,
+      ])
+      ->willReturn([10 => $mediaEntity]);
+
+    $attributes = ['bautyp' => 'no-group-uuid'];
+    $requestData = ['service_code' => 'rack_001'];
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'validateImagelistAttributes',
+      [$attributes, $requestData]
+    );
+
+    $this->assertEquals('no-group-uuid', $result['bautyp']);
+  }
+
+  /**
+   * Creates a mock term with a field_service_definition containing JSON.
+   *
+   * Uses an anonymous class for the field item because PHPUnit mocks of
+   * interfaces do not support dynamic properties (like ->value) in PHP 8.2+.
+   *
+   * @param string $serviceDefinitionJson
+   *   The JSON-encoded service definition.
+   *
+   * @return \Drupal\Core\Entity\ContentEntityInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked term entity.
+   */
+  protected function createImagelistTerm(string $serviceDefinitionJson): ContentEntityInterface {
+    $fieldItem = new class($serviceDefinitionJson) {
+
+      /**
+       * The raw field value.
+       */
+      public string $value;
+
+      /**
+       * Constructs the field item stub.
+       */
+      public function __construct(string $value) {
+        $this->value = $value;
+      }
+
+      /**
+       * Checks if the field is empty.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $term = $this->createMock(ContentEntityInterface::class);
+    $term->method('hasField')
+      ->with('field_service_definition')
+      ->willReturn(TRUE);
+    $term->method('get')
+      ->with('field_service_definition')
+      ->willReturn($fieldItem);
+
+    return $term;
   }
 
   // =========================================================================
