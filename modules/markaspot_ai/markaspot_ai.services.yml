@@ -75,6 +75,13 @@ services:
       - '@markaspot_ai.risk_score_calculator'
       - '@database'
 
+  markaspot_ai.nlp_client:
+    class: Drupal\markaspot_ai\Service\NlpClientService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@logger.factory'
+
   logger.channel.markaspot_ai:
     parent: logger.channel_base
     arguments: ['markaspot_ai']
