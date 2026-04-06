@@ -130,20 +130,31 @@ class ImageProcessingService {
     ];
     $ext = $extensions[$mimeType] ?? 'jpg';
 
-    try {
-      $response = $this->httpClient->post($blur_url, [
-        'multipart' => [
-          [
-            'name' => 'file',
-            'contents' => $contents,
-            'filename' => 'upload.' . $ext,
-            'headers' => ['Content-Type' => $mimeType],
-          ],
+    // Build request options with optional Bearer auth for external blur service.
+    $request_options = [
+      'multipart' => [
+        [
+          'name' => 'file',
+          'contents' => $contents,
+          'filename' => 'upload.' . $ext,
+          'headers' => ['Content-Type' => $mimeType],
         ],
-        'timeout' => 10,
-        'connect_timeout' => 5,
-        'http_errors' => FALSE,
-      ]);
+      ],
+      'timeout' => 10,
+      'connect_timeout' => 5,
+      'http_errors' => FALSE,
+    ];
+
+    // Add Bearer auth if AI_API_KEY is set.
+    $ai_api_key = getenv('AI_API_KEY') ?: '';
+    if (!empty($ai_api_key)) {
+      $request_options['headers'] = [
+        'Authorization' => 'Bearer ' . $ai_api_key,
+      ];
+    }
+
+    try {
+      $response = $this->httpClient->post($blur_url, $request_options);
 
       $statusCode = $response->getStatusCode();
       if ($statusCode !== 200) {
