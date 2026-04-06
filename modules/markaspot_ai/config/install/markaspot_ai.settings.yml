@@ -13,6 +13,12 @@ providers:
     chat_model: 'gpt-4.1-mini'
     embedding_model: 'text-embedding-3-large'
     auth_type: 'api_key_header'
+  ionos:
+    api_key: ''
+    api_url: 'https://openai.inference.de-txl.ionos.com/v1'
+    chat_model: 'mistralai/Mistral-Nemo-Instruct-2407'
+    embedding_model: 'BAAI/bge-m3'
+    auth_type: 'bearer'
 duplicate_detection:
   enabled: true
   similarity_threshold: 0.85
@@ -26,3 +32,7 @@ token_tracking:
 sentiment_analysis:
   enabled: true
   model: 'gpt-4.1-mini'
+pii_redaction:
+  enabled: false
+  use_llm: false
+  provider: 'ionos'

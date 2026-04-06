@@ -50,6 +50,25 @@ markaspot_ai.settings:
             auth_type:
               type: string
               label: 'Authentication Type'
+        ionos:
+          type: mapping
+          label: 'IONOS AI Configuration'
+          mapping:
+            api_key:
+              type: string
+              label: 'API Key'
+            api_url:
+              type: uri
+              label: 'API URL'
+            chat_model:
+              type: string
+              label: 'Chat Model'
+            embedding_model:
+              type: string
+              label: 'Embedding Model'
+            auth_type:
+              type: string
+              label: 'Authentication Type'
     duplicate_detection:
       type: mapping
       label: 'Duplicate Detection Settings'
@@ -92,3 +111,16 @@ markaspot_ai.settings:
         model:
           type: string
           label: 'Model for Sentiment Analysis'
+    pii_redaction:
+      type: mapping
+      label: 'PII Redaction Settings'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Enable PII Redaction'
+        use_llm:
+          type: boolean
+          label: 'Use LLM for Name Detection'
+        provider:
+          type: string
+          label: 'AI Provider for PII Detection'

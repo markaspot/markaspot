@@ -482,6 +482,41 @@ function markaspot_ai_update_10003(): void {
 }
 
 /**
+ * Add IONOS AI provider configuration.
+ */
+function markaspot_ai_update_10004(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_ai.settings');
+
+  // Only add if not already present.
+  if ($config->get('providers.ionos') === NULL) {
+    $config->set('providers.ionos', [
+      'api_key' => '',
+      'api_url' => 'https://openai.inference.de-txl.ionos.com/v1',
+      'chat_model' => 'mistralai/Mistral-Nemo-Instruct-2407',
+      'embedding_model' => 'BAAI/bge-m3',
+      'auth_type' => 'bearer',
+    ]);
+    $config->save();
+  }
+}
+
+/**
+ * Add PII redaction configuration.
+ */
+function markaspot_ai_update_10005(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_ai.settings');
+
+  if ($config->get('pii_redaction') === NULL) {
+    $config->set('pii_redaction', [
+      'enabled' => FALSE,
+      'use_llm' => FALSE,
+      'provider' => 'ionos',
+    ]);
+    $config->save();
+  }
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {
@@ -514,6 +549,7 @@ function markaspot_ai_requirements(string $phase): array {
       $env_vars = match ($default_provider) {
         'azure' => ['AZURE_OPENAI_API_KEY', 'MARKASPOT_AI_AZURE_KEY'],
         'openai' => ['OPENAI_API_KEY', 'MARKASPOT_AI_OPENAI_KEY'],
+        'ionos' => ['IONOS_AI_API_KEY', 'MARKASPOT_AI_IONOS_KEY'],
         default => [],
       };
       foreach ($env_vars as $env_var) {

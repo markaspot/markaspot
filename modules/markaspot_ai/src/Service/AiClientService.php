@@ -488,6 +488,7 @@ class AiClientService {
       'openai' => ['OPENAI_API_KEY', 'MARKASPOT_AI_OPENAI_KEY'],
       'azure' => ['AZURE_OPENAI_API_KEY', 'MARKASPOT_AI_AZURE_KEY'],
       'anthropic' => ['ANTHROPIC_API_KEY', 'MARKASPOT_AI_ANTHROPIC_KEY'],
+      'ionos' => ['IONOS_AI_API_KEY', 'MARKASPOT_AI_IONOS_KEY'],
       default => ['MARKASPOT_AI_' . strtoupper($provider) . '_KEY'],
     };
 
