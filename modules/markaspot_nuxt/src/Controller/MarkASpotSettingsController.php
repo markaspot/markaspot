@@ -128,7 +128,7 @@ class MarkASpotSettingsController extends ControllerBase {
     // Build settings array from markaspot_nuxt.settings.
     // SECURITY: mapbox_token, fallback_api_key, and frontend config are
     // intentionally excluded. API keys must stay server-side (Nuxt ENV).
-    // See: markaspot/markaspot-ui#133
+    // See: markaspot/markaspot-ui#133.
     $settings = [
       // Map configuration - styles only, no keys.
       'mapbox_style' => $nuxt_config->get('mapbox_style'),
@@ -163,11 +163,12 @@ class MarkASpotSettingsController extends ControllerBase {
       // (embed URLs, ENV vars). Uses the same resolver as getFontsCss()
       // and getOrganisations().
       $resolved_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
-      if ($resolved_id !== null) {
+      if ($resolved_id !== NULL) {
         $group = $this->entityTypeManager->getStorage('group')->load($resolved_id);
         if ($group && $group->isPublished()) {
           $cache_metadata->addCacheTags(['group:' . $group->id()]);
-        } else {
+        }
+        else {
           $group = NULL;
         }
       }
@@ -282,10 +283,10 @@ class MarkASpotSettingsController extends ControllerBase {
             }
           }
           // Handle separate key format: map.centerLat / map.centerLng.
-          if (array_key_exists('centerLat', $map) && $map['centerLat'] !== null) {
+          if (array_key_exists('centerLat', $map) && $map['centerLat'] !== NULL) {
             $settings['center_lat'] = $map['centerLat'];
           }
-          if (array_key_exists('centerLng', $map) && $map['centerLng'] !== null) {
+          if (array_key_exists('centerLng', $map) && $map['centerLng'] !== NULL) {
             $settings['center_lng'] = $map['centerLng'];
           }
           // Handle zoom overrides (multiple naming conventions).
@@ -501,7 +502,8 @@ class MarkASpotSettingsController extends ControllerBase {
               'type' => 'Feature',
               'properties' => [],
               'geometry' => $boundary_data,
-            ]],
+            ],
+            ],
           ];
         }
       }
@@ -514,11 +516,19 @@ class MarkASpotSettingsController extends ControllerBase {
     // can further filter categories via field_service_categories.
     $settings['services'] = $this->loadServices($taxonomyJurisdictionId, $group);
     $settings['statuses'] = $this->loadStatuses($taxonomyJurisdictionId);
+    // Districts and sublocalities are loaded globally (not jurisdiction-filtered)
+    // because they represent geographic areas that are typically shared across
+    // all jurisdictions within an installation. Unlike categories and statuses
+    // which have field_jurisdiction, district terms have no jurisdiction reference.
+    $settings['districts'] = $this->loadTaxonomyOptions('district');
+    $settings['sublocalities'] = $this->loadTaxonomyOptions('sublocality');
 
     // Invalidate when taxonomy terms change (category or status edits).
     $cache_metadata->addCacheTags([
       'taxonomy_term_list:service_category',
       'taxonomy_term_list:service_status',
+      'taxonomy_term_list:district',
+      'taxonomy_term_list:sublocality',
     ]);
 
     // Allow other modules to alter the settings before response.
@@ -557,7 +567,7 @@ class MarkASpotSettingsController extends ControllerBase {
     // Root jurisdictions and children without restrictions return NULL (show all).
     if ($group) {
       $allowedIds = $this->hierarchyResolver->getAllowedCategoryIds((int) $group->id());
-      if ($allowedIds !== null) {
+      if ($allowedIds !== NULL) {
         $allowedSet = array_flip($allowedIds);
         // Collect parent TIDs of allowed terms so hierarchy stays intact.
         $allowedParentTids = [];
@@ -653,6 +663,49 @@ class MarkASpotSettingsController extends ControllerBase {
     usort($statuses, fn($a, $b) => $a['weight'] <=> $b['weight']);
 
     return $statuses;
+  }
+
+  /**
+   * Loads taxonomy term options for a vocabulary.
+   *
+   * Returns a simple list of term names and IDs for use as filter options
+   * in the frontend. Returns an empty array if the vocabulary doesn't exist.
+   *
+   * @param string $vocabulary
+   *   The vocabulary machine name.
+   *
+   * @return array
+   *   Array of term data with name, tid, and weight.
+   */
+  private function loadTaxonomyOptions(string $vocabulary): array {
+    $vocabStorage = $this->entityTypeManager->getStorage('taxonomy_vocabulary');
+    if (!$vocabStorage->load($vocabulary)) {
+      return [];
+    }
+
+    $langcode = $this->languageManager()->getCurrentLanguage()->getId();
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
+      ->loadByProperties(['vid' => $vocabulary, 'status' => 1]);
+
+    if (empty($terms)) {
+      return [];
+    }
+
+    $options = [];
+    foreach ($terms as $term) {
+      if ($term->hasTranslation($langcode)) {
+        $term = $term->getTranslation($langcode);
+      }
+      $options[] = [
+        'name' => $term->getName(),
+        'tid' => (int) $term->id(),
+        'weight' => (int) $term->getWeight(),
+      ];
+    }
+
+    usort($options, fn($a, $b) => $a['weight'] <=> $b['weight'] ?: strcmp($a['name'], $b['name']));
+
+    return $options;
   }
 
   /**
@@ -1079,7 +1132,7 @@ class MarkASpotSettingsController extends ControllerBase {
 
     // Validate jurisdiction: must be a published group of the correct jur type.
     // Prevents cross-tenant enumeration by rejecting unknown or invalid IDs.
-    if ($jurisdiction_id !== null) {
+    if ($jurisdiction_id !== NULL) {
       $jur_group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
       if (!$jur_group || !$jur_group->isPublished() || $jur_group->bundle() !== $jur_type) {
         $response = new CacheableJsonResponse([
@@ -1137,7 +1190,7 @@ class MarkASpotSettingsController extends ControllerBase {
       ->condition('status', 1)
       ->sort('label', 'ASC');
 
-    if ($jurisdiction_id !== null) {
+    if ($jurisdiction_id !== NULL) {
       $query->condition('field_jurisdiction', $jurisdiction_id);
     }
 
@@ -1212,7 +1265,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $group = NULL;
 
     $resolved_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
-    if ($resolved_id !== null) {
+    if ($resolved_id !== NULL) {
       $loaded_group = $this->entityTypeManager->getStorage('group')->load($resolved_id);
       if ($loaded_group && $loaded_group->isPublished()) {
         $group = $loaded_group;
