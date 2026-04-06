@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.36](https://github.com/markaspot/markaspot/compare/11.9.35...11.9.36) (2026-04-06)
+
+### Features
+
+* **ai:** add Azure OpenAI provider support ([27e0667](https://github.com/markaspot/markaspot/commit/27e0667adf36d11e7f9e6c7a1fd27ac5387ad3ca))
+
+### Bug Fixes
+
+* **ai:** security hardening for Azure provider ([a0f810e](https://github.com/markaspot/markaspot/commit/a0f810e8b6866e36d767e6cd1de38ac7b2cd93b4))
+
 ## [11.9.35](https://github.com/markaspot/markaspot/compare/11.9.34...11.9.35) (2026-04-06)
 
 ### Features
