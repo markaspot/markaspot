@@ -12,6 +12,195 @@ declare(strict_types=1);
 
 use Drupal\group\Entity\Group;
 use Drupal\node\NodeInterface;
+use Drupal\paragraphs\Entity\Paragraph;
+
+/**
+ * Implements hook_node_presave().
+ *
+ * Detects and redacts PII (personally identifiable information) from
+ * service request body text before saving. Uses a two-layer approach:
+ * 1. Regex for obvious patterns (phone, email, IBAN).
+ * 2. Optional LLM call for name detection.
+ *
+ * Original text is preserved in an internal remark paragraph.
+ */
+function markaspot_ai_node_presave(NodeInterface $node): void {
+  // Guard: only service requests.
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  // Guard: check feature flag.
+  $config = \Drupal::config('markaspot_ai.settings');
+  if (!$config->get('pii_redaction.enabled')) {
+    return;
+  }
+
+  // Guard: GDPR gate (jurisdiction-level AI opt-in).
+  if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+    return;
+  }
+
+  // Guard: prevent infinite loops via static variable.
+  static $pii_processing = [];
+  $node_key = $node->isNew() ? 'new:' . spl_object_id($node) : 'nid:' . $node->id();
+  if (isset($pii_processing[$node_key])) {
+    return;
+  }
+
+  // Guard: body field must exist and have content.
+  if (!$node->hasField('body') || $node->get('body')->isEmpty()) {
+    return;
+  }
+
+  $body_text = $node->get('body')->value;
+  if (empty(trim($body_text))) {
+    return;
+  }
+
+  // Layer 1: Regex-based PII detection.
+  $redacted_text = $body_text;
+  $pii_found = FALSE;
+
+  $patterns = [
+    // German phone numbers: +49/0049 followed by area code and number.
+    // Requires at least 7 digits total, allows multiple separators.
+    '/(\+49|0049)\s*[1-9][\d\s\/-]{6,15}\d/' => '[REDACTED phone]',
+    // German local phone numbers: 0 followed by area code (2-5 digits
+    // starting with non-zero) and subscriber number. Minimum 7 digits.
+    '/(?<!\d)0[1-9][\d\s\/-]{6,15}\d(?!\d)/' => '[REDACTED phone]',
+    // International phone numbers (non-German).
+    '/\+[1-48-9]\d{7,14}/' => '[REDACTED phone]',
+    // Email addresses.
+    '/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/' => '[REDACTED email]',
+    // IBAN (up to 34 chars, DE = 22 chars = 2 letters + 20 digits).
+    '/\b[A-Z]{2}\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{0,4}\b/' => '[REDACTED IBAN]',
+  ];
+
+  foreach ($patterns as $pattern => $replacement) {
+    $result = preg_replace($pattern, $replacement, $redacted_text, -1, $count);
+    if ($result === NULL) {
+      \Drupal::logger('markaspot_ai')->warning('Regex PII detection failed (malformed input) for node @key.', [
+        '@key' => $node_key,
+      ]);
+      continue;
+    }
+    $redacted_text = $result;
+    if ($count > 0) {
+      $pii_found = TRUE;
+    }
+  }
+
+  // Layer 2: LLM-based name detection (optional).
+  if ($config->get('pii_redaction.use_llm')) {
+    // Check API key before attempting network call.
+    $provider = $config->get('pii_redaction.provider') ?: $config->get('default_provider') ?: 'ionos';
+    $provider_config = $config->get('providers.' . $provider) ?? [];
+    $api_key = _markaspot_ai_resolve_provider_key($provider, $provider_config);
+
+    if (!empty($api_key)) {
+      try {
+        /** @var \Drupal\markaspot_ai\Service\AiClientService $ai_client */
+        $ai_client = \Drupal::service('markaspot_ai.client');
+
+        $system_prompt = <<<'PROMPT'
+You are a PII detection system. Analyze the text for personal names (first names, last names, full names). Do NOT flag place names, street names, company names, or generic titles.
+
+Respond with a JSON object:
+{"names_found": ["Name1", "Name2"]}
+
+If no personal names are found, respond:
+{"names_found": []}
+PROMPT;
+
+        $response = $ai_client->chat([
+          ['role' => 'system', 'content' => $system_prompt],
+          ['role' => 'user', 'content' => $redacted_text],
+        ], [
+          'temperature' => 0.1,
+          'max_tokens' => 300,
+          'provider' => $provider,
+        ]);
+
+        $content = $response['choices'][0]['message']['content'] ?? '';
+        // Extract JSON from response (find outermost braces).
+        if (preg_match('/\{.*"names_found"\s*:\s*\[.*?\].*\}/s', $content, $json_match)) {
+          $parsed = json_decode($json_match[0], TRUE);
+          if (json_last_error() === JSON_ERROR_NONE && !empty($parsed['names_found'])) {
+            // Guard against prompt injection: limit count and length.
+            $names = array_slice($parsed['names_found'], 0, 10);
+            foreach ($names as $name) {
+              $name = trim($name);
+              if (strlen($name) >= 2 && strlen($name) <= 50) {
+                $escaped = preg_quote($name, '/');
+                $result = preg_replace('/\b' . $escaped . '\b/u', '[REDACTED name]', $redacted_text, -1, $count);
+                if ($result !== NULL && $count > 0) {
+                  $redacted_text = $result;
+                  $pii_found = TRUE;
+                }
+              }
+            }
+          }
+        }
+      }
+      catch (\Exception $e) {
+        \Drupal::logger('markaspot_ai')->warning('PII LLM detection failed for node @key, regex results preserved: @message', [
+          '@key' => $node_key,
+          '@message' => $e->getMessage(),
+        ]);
+      }
+    }
+  }
+
+  // Apply redaction if PII was found.
+  if (!$pii_found) {
+    return;
+  }
+
+  // Mark as processing to prevent re-entry.
+  $pii_processing[$node_key] = TRUE;
+
+  // Store original text in internal remark paragraph.
+  if ($node->hasField('field_internal_remark')) {
+    $paragraph = Paragraph::create([
+      'type' => 'internal_remark',
+      'langcode' => $node->language()->getId(),
+    ]);
+
+    $paragraph->set('field_internal_remark_text', [
+      'value' => 'Original text (PII removed by system):' . "\n\n" . $body_text,
+      'format' => 'plain_text',
+    ]);
+
+    // System-generated remark: use current user if authenticated,
+    // otherwise uid 1 (field_author rejects uid 0).
+    $author_uid = \Drupal::currentUser()->id() ?: 1;
+    $paragraph->set('field_author', ['target_id' => $author_uid]);
+    $paragraph->save();
+
+    $current = $node->get('field_internal_remark')->getValue();
+    $current[] = [
+      'target_id' => $paragraph->id(),
+      'target_revision_id' => $paragraph->getRevisionId(),
+    ];
+    $node->set('field_internal_remark', $current);
+  }
+  else {
+    \Drupal::logger('markaspot_ai')->warning('PII redacted from node @key but field_internal_remark missing. Original text not preserved.', [
+      '@key' => $node_key,
+    ]);
+  }
+
+  // Replace body with redacted text.
+  $node->set('body', [
+    'value' => $redacted_text,
+    'format' => $node->get('body')->first()?->format ?? 'plain_text',
+  ]);
+
+  \Drupal::logger('markaspot_ai')->debug('PII redacted from service request @key.', [
+    '@key' => $node_key,
+  ]);
+}
 
 /**
  * Implements hook_node_insert().
@@ -29,13 +218,16 @@ function markaspot_ai_node_insert(NodeInterface $node): void {
     return;
   }
 
-  // Check if AI module is properly configured.
+  // Check if AI module is properly configured (any provider).
   $config = \Drupal::config('markaspot_ai.settings');
-  $api_key = $config->get('providers.openai.api_key');
+  $provider = $config->get('default_provider') ?: 'openai';
+  $provider_config = $config->get('providers.' . $provider) ?? [];
+  $api_key = _markaspot_ai_resolve_provider_key($provider, $provider_config);
 
   if (empty($api_key)) {
-    \Drupal::logger('markaspot_ai')->debug('Skipping embedding queue for node @nid - API key not configured.', [
+    \Drupal::logger('markaspot_ai')->debug('Skipping embedding queue for node @nid - API key not configured for provider @provider.', [
       '@nid' => $node->id(),
+      '@provider' => $provider,
     ]);
     return;
   }
@@ -76,9 +268,11 @@ function markaspot_ai_node_update(NodeInterface $node): void {
     return;
   }
 
-  // Check if AI module is properly configured.
+  // Check if AI module is properly configured (any provider).
   $config = \Drupal::config('markaspot_ai.settings');
-  $api_key = $config->get('providers.openai.api_key');
+  $provider = $config->get('default_provider') ?: 'openai';
+  $provider_config = $config->get('providers.' . $provider) ?? [];
+  $api_key = _markaspot_ai_resolve_provider_key($provider, $provider_config);
 
   if (empty($api_key)) {
     return;
@@ -195,8 +389,10 @@ function markaspot_ai_node_delete(NodeInterface $node): void {
  */
 function markaspot_ai_cron(): void {
   $config = \Drupal::config('markaspot_ai.settings');
-  // Check both config and environment variable for API key.
-  $api_key = $config->get('providers.openai.api_key') ?: getenv('OPENAI_API_KEY');
+  // Check configured provider's API key (ENV first, then config).
+  $provider = $config->get('default_provider') ?: 'openai';
+  $provider_config = $config->get('providers.' . $provider) ?? [];
+  $api_key = _markaspot_ai_resolve_provider_key($provider, $provider_config);
 
   // Skip if not configured.
   if (empty($api_key)) {
@@ -355,6 +551,38 @@ function _markaspot_ai_is_ai_enabled_for_node(NodeInterface $node): bool {
     ]);
     return TRUE;
   }
+}
+
+/**
+ * Resolves the API key for a provider (ENV first, then config).
+ *
+ * Lightweight helper for use in hooks where the full AiClientService
+ * is not needed. Mirrors AiClientService::resolveApiKey() logic.
+ *
+ * @param string $provider
+ *   The provider name (openai, azure, ionos).
+ * @param array $provider_config
+ *   The provider config array from markaspot_ai.settings.
+ *
+ * @return string
+ *   The API key, or empty string if not configured.
+ */
+function _markaspot_ai_resolve_provider_key(string $provider, array $provider_config): string {
+  $env_vars = match ($provider) {
+    'openai' => ['OPENAI_API_KEY', 'MARKASPOT_AI_OPENAI_KEY'],
+    'azure' => ['AZURE_OPENAI_API_KEY', 'MARKASPOT_AI_AZURE_KEY'],
+    'ionos' => ['IONOS_AI_API_KEY', 'MARKASPOT_AI_IONOS_KEY'],
+    default => ['MARKASPOT_AI_' . strtoupper($provider) . '_KEY'],
+  };
+
+  foreach ($env_vars as $env_var) {
+    $value = getenv($env_var);
+    if (!empty($value)) {
+      return $value;
+    }
+  }
+
+  return $provider_config['api_key'] ?? '';
 }
 
 /**
