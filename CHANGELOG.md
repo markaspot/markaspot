@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.35](https://github.com/markaspot/markaspot/compare/11.9.34...11.9.35) (2026-04-06)
+
+### Features
+
+* **geocoder:** add configurable district mapping from geocoder results ([dfb6b38](https://github.com/markaspot/markaspot/commit/dfb6b38bb0c1728ec17fb25b0567d44d8cb9c027)), closes [markaspot/markaspot-ui#277](https://github.com/markaspot/markaspot-ui/issues/277)
+* **nuxt:** add district and sublocality options to settings endpoint ([1c12f4f](https://github.com/markaspot/markaspot/commit/1c12f4fa5766bd3136ea90d1b43c0c75c3e9ad5f)), closes [markaspot/markaspot-ui#277](https://github.com/markaspot/markaspot-ui/issues/277)
+* **open311:** expose district and sublocality in API response ([090659c](https://github.com/markaspot/markaspot/commit/090659c16b8efcedb83d285ba37c05c6b6b48e7d)), closes [markaspot/markaspot-ui#277](https://github.com/markaspot/markaspot-ui/issues/277)
+* **service_request:** add field_sublocality vocabulary and field ([2c900e6](https://github.com/markaspot/markaspot/commit/2c900e68ccbb986534f7f29c48229654f4ec6157)), closes [markaspot/markaspot-ui#277](https://github.com/markaspot/markaspot-ui/issues/277)
+* **vision:** add Bearer auth support for blur service ([db83c97](https://github.com/markaspot/markaspot/commit/db83c9716d847e9134bd3b24659b10a63bd3de79))
+
 ## [11.9.34](https://github.com/markaspot/markaspot/compare/11.9.33...11.9.34) (2026-04-05)
 
 ### Features
