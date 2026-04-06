@@ -219,7 +219,7 @@ class AiClientService {
 
     if ($provider === 'azure') {
       $api_version = getenv('MARKASPOT_AI_API_VERSION') ?: $providerConfig['api_version'] ?? '2024-12-01-preview';
-      return $api_url . '/openai/deployments/' . $model . '/' . $operation . '?api-version=' . $api_version;
+      return $api_url . '/openai/deployments/' . rawurlencode($model) . '/' . $operation . '?api-version=' . urlencode($api_version);
     }
 
     return $api_url . '/' . $operation;

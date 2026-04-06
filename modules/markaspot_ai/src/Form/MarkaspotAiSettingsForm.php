@@ -395,8 +395,13 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     }
     elseif ($provider === 'azure') {
       $azure_url = $form_state->getValue('azure_api_url');
-      if (!empty($azure_url) && !filter_var($azure_url, FILTER_VALIDATE_URL)) {
-        $form_state->setErrorByName('azure_api_url', $this->t('Azure endpoint must be a valid URL.'));
+      if (!empty($azure_url)) {
+        $parsed = parse_url($azure_url);
+        $host = $parsed['host'] ?? '';
+        $scheme = $parsed['scheme'] ?? '';
+        if ($scheme !== 'https' || !str_ends_with($host, '.openai.azure.com')) {
+          $form_state->setErrorByName('azure_api_url', $this->t('Azure endpoint must be an HTTPS URL on the openai.azure.com domain.'));
+        }
       }
     }
   }
@@ -411,20 +416,27 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $config->set('default_provider', $form_state->getValue('default_provider'));
 
     // Save OpenAI configuration.
-    $new_api_key = $form_state->getValue('api_key');
-    if (!empty($new_api_key)) {
-      $config->set('providers.openai.api_key', $new_api_key);
+    // Only save API key when not loaded from environment variable.
+    $openai_env_key = getenv('OPENAI_API_KEY');
+    if (empty($openai_env_key)) {
+      $new_api_key = $form_state->getValue('api_key');
+      if (!empty($new_api_key)) {
+        $config->set('providers.openai.api_key', $new_api_key);
+      }
     }
-    // Keep existing key if field was empty.
     $config->set('providers.openai.api_url', $form_state->getValue('api_url'));
     $config->set('providers.openai.chat_model', $form_state->getValue('chat_model'));
     $config->set('providers.openai.embedding_model', $form_state->getValue('embedding_model'));
     $config->set('providers.openai.auth_type', $form_state->getValue('auth_type'));
 
     // Save Azure configuration.
-    $azure_api_key = $form_state->getValue('azure_api_key');
-    if (!empty($azure_api_key)) {
-      $config->set('providers.azure.api_key', $azure_api_key);
+    // Only save API key when not loaded from environment variable.
+    $azure_env_key = getenv('AZURE_OPENAI_API_KEY') ?: getenv('MARKASPOT_AI_AZURE_KEY');
+    if (empty($azure_env_key)) {
+      $azure_api_key = $form_state->getValue('azure_api_key');
+      if (!empty($azure_api_key)) {
+        $config->set('providers.azure.api_key', $azure_api_key);
+      }
     }
     $config->set('providers.azure.api_url', $form_state->getValue('azure_api_url') ?? '');
     $config->set('providers.azure.api_version', $form_state->getValue('azure_api_version'));
