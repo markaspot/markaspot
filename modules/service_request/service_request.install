@@ -445,3 +445,85 @@ function service_request_update_11006() {
 
   return 'Added group_contact fieldset to management form display and moved field_e_mail into it.';
 }
+
+/**
+ * Install field_sublocality and sublocality vocabulary on service_request.
+ *
+ * Adds a second geographic taxonomy reference field for finer-grained location
+ * classification. field_district handles coarse areas (e.g., Bezirke),
+ * field_sublocality handles fine-grained areas (e.g., Ortsteile/Stadtteile).
+ * Both are independently populated by the geocoder district mapping feature.
+ *
+ * @see https://github.com/markaspot/markaspot-ui/issues/277
+ */
+function service_request_update_11007() {
+  $messages = [];
+  $module_handler = \Drupal::moduleHandler();
+  $has_field_permissions = $module_handler->moduleExists('field_permissions');
+
+  // 1. Create sublocality vocabulary if missing.
+  $vocab_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_vocabulary');
+  if (!$vocab_storage->load('sublocality')) {
+    $vocab_storage->create([
+      'vid' => 'sublocality',
+      'name' => 'Sublocality',
+      'description' => 'Sublocalities for service requests',
+    ])->save();
+    $messages[] = 'Created vocabulary: sublocality';
+  }
+
+  // 2. Create field storage if missing.
+  if (!FieldStorageConfig::loadByName('node', 'field_sublocality')) {
+    $storage_config = [
+      'field_name' => 'field_sublocality',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'taxonomy_term',
+      ],
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ];
+
+    if ($has_field_permissions) {
+      $storage_config['third_party_settings'] = [
+        'field_permissions' => [
+          'permission_type' => 'public',
+        ],
+      ];
+    }
+
+    FieldStorageConfig::create($storage_config)->save();
+    $messages[] = 'Created field storage: node.field_sublocality';
+  }
+
+  // 3. Create field instance if missing.
+  if (!FieldConfig::loadByName('node', 'service_request', 'field_sublocality')) {
+    FieldConfig::create([
+      'field_name' => 'field_sublocality',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Sublocality',
+      'description' => '',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'settings' => [
+        'handler' => 'default:taxonomy_term',
+        'handler_settings' => [
+          'target_bundles' => [
+            'sublocality' => 'sublocality',
+          ],
+          'sort' => [
+            'field' => '_none',
+          ],
+          'auto_create' => FALSE,
+          'auto_create_bundle' => '',
+        ],
+      ],
+    ])->save();
+    $messages[] = 'Created field instance: node.service_request.field_sublocality';
+  }
+
+  return empty($messages) ? 'field_sublocality already exists.' : implode("\n", $messages);
+}

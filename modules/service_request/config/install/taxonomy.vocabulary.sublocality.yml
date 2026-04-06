@@ -1,0 +1,11 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - service_request
+name: Sublocality
+vid: sublocality
+description: 'Sublocalities for service requests'
+weight: 0
+new_revision: false
