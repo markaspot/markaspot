@@ -462,6 +462,26 @@ function markaspot_ai_update_10002(): void {
 }
 
 /**
+ * Add Azure OpenAI provider configuration.
+ */
+function markaspot_ai_update_10003(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_ai.settings');
+
+  // Only add if not already present.
+  if ($config->get('providers.azure') === NULL) {
+    $config->set('providers.azure', [
+      'api_key' => '',
+      'api_url' => '',
+      'api_version' => '2024-12-01-preview',
+      'chat_model' => 'gpt-4.1-mini',
+      'embedding_model' => 'text-embedding-3-large',
+      'auth_type' => 'api_key_header',
+    ]);
+    $config->save();
+  }
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {
@@ -488,6 +508,22 @@ function markaspot_ai_requirements(string $phase): array {
     $config = \Drupal::config('markaspot_ai.settings');
     $default_provider = $config->get('default_provider') ?? 'openai';
     $api_key = $config->get("providers.{$default_provider}.api_key") ?? '';
+
+    // Check environment variables for API key.
+    if (empty($api_key)) {
+      $env_vars = match ($default_provider) {
+        'azure' => ['AZURE_OPENAI_API_KEY', 'MARKASPOT_AI_AZURE_KEY'],
+        'openai' => ['OPENAI_API_KEY', 'MARKASPOT_AI_OPENAI_KEY'],
+        default => [],
+      };
+      foreach ($env_vars as $env_var) {
+        $env_value = getenv($env_var);
+        if (!empty($env_value)) {
+          $api_key = $env_value;
+          break;
+        }
+      }
+    }
 
     $requirements['markaspot_ai_config'] = [
       'title' => t('Mark-a-Spot AI Configuration'),

@@ -6,6 +6,13 @@ providers:
     chat_model: 'gpt-4.1-mini'
     embedding_model: 'text-embedding-3-large'
     auth_type: 'bearer'
+  azure:
+    api_key: ''
+    api_url: ''
+    api_version: '2024-12-01-preview'
+    chat_model: 'gpt-4.1-mini'
+    embedding_model: 'text-embedding-3-large'
+    auth_type: 'api_key_header'
 duplicate_detection:
   enabled: true
   similarity_threshold: 0.85

@@ -105,8 +105,8 @@ class AiClientService {
     $provider = $options['provider'] ?? $config->get('default_provider') ?? 'openai';
     $provider_config = $config->get("providers.{$provider}") ?? [];
 
-    $api_url = rtrim($provider_config['api_url'] ?? 'https://api.openai.com/v1', '/');
-    $endpoint = $api_url . '/chat/completions';
+    $model = $options['model'] ?? $provider_config['chat_model'] ?? 'gpt-4o';
+    $endpoint = $this->buildEndpoint($provider, $provider_config, $model, 'chat/completions');
 
     $headers = $this->buildAuthHeaders(
       $provider_config['auth_type'] ?? 'bearer',
@@ -114,7 +114,7 @@ class AiClientService {
     );
 
     $payload = [
-      'model' => $options['model'] ?? $provider_config['chat_model'] ?? 'gpt-4o',
+      'model' => $model,
       'messages' => $messages,
     ];
 
@@ -167,8 +167,8 @@ class AiClientService {
     $provider = $options['provider'] ?? $config->get('default_provider') ?? 'openai';
     $provider_config = $config->get("providers.{$provider}") ?? [];
 
-    $api_url = rtrim($provider_config['api_url'] ?? 'https://api.openai.com/v1', '/');
-    $endpoint = $api_url . '/embeddings';
+    $model = $options['model'] ?? $provider_config['embedding_model'] ?? 'text-embedding-3-large';
+    $endpoint = $this->buildEndpoint($provider, $provider_config, $model, 'embeddings');
 
     $headers = $this->buildAuthHeaders(
       $provider_config['auth_type'] ?? 'bearer',
@@ -176,7 +176,7 @@ class AiClientService {
     );
 
     $payload = [
-      'model' => $options['model'] ?? $provider_config['embedding_model'] ?? 'text-embedding-3-large',
+      'model' => $model,
       'input' => $text,
     ];
 
@@ -188,6 +188,41 @@ class AiClientService {
     return $this->executeWithRetry(function () use ($endpoint, $headers, $payload) {
       return $this->sendRequest('POST', $endpoint, $headers, $payload);
     });
+  }
+
+  /**
+   * Builds the API endpoint URL based on provider type.
+   *
+   * For Azure, constructs the deployment-specific URL:
+   * {base}/openai/deployments/{model}/{operation}?api-version={version}
+   *
+   * For OpenAI and others, appends the operation to the base URL:
+   * {base}/{operation}
+   *
+   * @param string $provider
+   *   The provider name ('openai', 'azure', etc.).
+   * @param array $providerConfig
+   *   The provider configuration array.
+   * @param string $model
+   *   The model/deployment name.
+   * @param string $operation
+   *   The API operation ('chat/completions' or 'embeddings').
+   *
+   * @return string
+   *   The fully constructed endpoint URL.
+   */
+  protected function buildEndpoint(string $provider, array $providerConfig, string $model, string $operation): string {
+    $api_url = rtrim(
+      getenv('MARKASPOT_AI_API_URL') ?: $providerConfig['api_url'] ?? 'https://api.openai.com/v1',
+      '/'
+    );
+
+    if ($provider === 'azure') {
+      $api_version = getenv('MARKASPOT_AI_API_VERSION') ?: $providerConfig['api_version'] ?? '2024-12-01-preview';
+      return $api_url . '/openai/deployments/' . $model . '/' . $operation . '?api-version=' . $api_version;
+    }
+
+    return $api_url . '/' . $operation;
   }
 
   /**

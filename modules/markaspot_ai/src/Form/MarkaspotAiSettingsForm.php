@@ -48,6 +48,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Select the AI provider to use for embeddings and chat completions.'),
       '#options' => [
         'openai' => $this->t('OpenAI'),
+        'azure' => $this->t('Azure OpenAI'),
       ],
       '#default_value' => $config->get('default_provider') ?? 'openai',
       '#required' => TRUE,
@@ -143,6 +144,74 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
         'none' => $this->t('No Authentication'),
       ],
       '#default_value' => $config->get('providers.openai.auth_type') ?? 'bearer',
+      '#required' => TRUE,
+    ];
+
+    // Azure OpenAI Configuration.
+    $form['provider']['azure'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Azure OpenAI Configuration'),
+      '#states' => [
+        'visible' => [
+          ':input[name="default_provider"]' => ['value' => 'azure'],
+        ],
+      ],
+    ];
+
+    $azure_env_key = getenv('AZURE_OPENAI_API_KEY') ?: getenv('MARKASPOT_AI_AZURE_KEY');
+    if (!empty($azure_env_key)) {
+      $form['provider']['azure']['azure_api_key_status'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="messages messages--status">' .
+        $this->t('<strong>API key loaded from environment variable.</strong> This is the recommended secure approach.') .
+        '</div>',
+        '#weight' => -1,
+      ];
+      $form['provider']['azure']['azure_api_key'] = [
+        '#type' => 'textfield',
+        '#title' => $this->t('API Key'),
+        '#default_value' => '••••••••' . substr($azure_env_key, -4),
+        '#disabled' => TRUE,
+      ];
+    }
+    else {
+      $form['provider']['azure']['azure_api_key'] = [
+        '#type' => 'password',
+        '#title' => $this->t('API Key'),
+        '#description' => $this->t('Set AZURE_OPENAI_API_KEY environment variable for better security.'),
+        '#default_value' => '',
+        '#attributes' => ['autocomplete' => 'off'],
+      ];
+    }
+
+    $form['provider']['azure']['azure_api_url'] = [
+      '#type' => 'url',
+      '#title' => $this->t('Endpoint URL'),
+      '#description' => $this->t('Azure OpenAI endpoint (e.g., https://your-resource.openai.azure.com/).'),
+      '#default_value' => $config->get('providers.azure.api_url') ?? '',
+    ];
+
+    $form['provider']['azure']['azure_api_version'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('API Version'),
+      '#description' => $this->t('Azure API version (e.g., 2024-12-01-preview).'),
+      '#default_value' => $config->get('providers.azure.api_version') ?? '2024-12-01-preview',
+      '#required' => TRUE,
+    ];
+
+    $form['provider']['azure']['azure_chat_model'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Chat Deployment Name'),
+      '#description' => $this->t('The deployment name for chat completions (e.g., gpt-4.1-mini).'),
+      '#default_value' => $config->get('providers.azure.chat_model') ?? 'gpt-4.1-mini',
+      '#required' => TRUE,
+    ];
+
+    $form['provider']['azure']['azure_embedding_model'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Embedding Deployment Name'),
+      '#description' => $this->t('The deployment name for embeddings (e.g., text-embedding-3-large).'),
+      '#default_value' => $config->get('providers.azure.embedding_model') ?? 'text-embedding-3-large',
       '#required' => TRUE,
     ];
 
@@ -316,10 +385,19 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $form_state->setErrorByName('alert_threshold', $this->t('Alert threshold must be between 0 and 1.'));
     }
 
-    // Validate API URL.
-    $api_url = $form_state->getValue('api_url');
-    if (!filter_var($api_url, FILTER_VALIDATE_URL)) {
-      $form_state->setErrorByName('api_url', $this->t('API URL must be a valid URL.'));
+    // Validate API URL based on active provider.
+    $provider = $form_state->getValue('default_provider');
+    if ($provider === 'openai') {
+      $api_url = $form_state->getValue('api_url');
+      if (!filter_var($api_url, FILTER_VALIDATE_URL)) {
+        $form_state->setErrorByName('api_url', $this->t('API URL must be a valid URL.'));
+      }
+    }
+    elseif ($provider === 'azure') {
+      $azure_url = $form_state->getValue('azure_api_url');
+      if (!empty($azure_url) && !filter_var($azure_url, FILTER_VALIDATE_URL)) {
+        $form_state->setErrorByName('azure_api_url', $this->t('Azure endpoint must be a valid URL.'));
+      }
     }
   }
 
@@ -342,6 +420,17 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $config->set('providers.openai.chat_model', $form_state->getValue('chat_model'));
     $config->set('providers.openai.embedding_model', $form_state->getValue('embedding_model'));
     $config->set('providers.openai.auth_type', $form_state->getValue('auth_type'));
+
+    // Save Azure configuration.
+    $azure_api_key = $form_state->getValue('azure_api_key');
+    if (!empty($azure_api_key)) {
+      $config->set('providers.azure.api_key', $azure_api_key);
+    }
+    $config->set('providers.azure.api_url', $form_state->getValue('azure_api_url') ?? '');
+    $config->set('providers.azure.api_version', $form_state->getValue('azure_api_version'));
+    $config->set('providers.azure.chat_model', $form_state->getValue('azure_chat_model'));
+    $config->set('providers.azure.embedding_model', $form_state->getValue('azure_embedding_model'));
+    $config->set('providers.azure.auth_type', 'api_key_header');
 
     // Save duplicate detection settings.
     $config->set('duplicate_detection.enabled', (bool) $form_state->getValue('enabled'));
