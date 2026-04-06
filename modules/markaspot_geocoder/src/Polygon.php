@@ -5,13 +5,10 @@ namespace Drupal\markaspot_geocoder;
 /**
  * Temporarily taken from weiyongsheng/polygon which can't be found on
  * some installations.
- *
  */
-
-class Polygon
-{
+class Polygon {
   /**
-   * @var []
+   * @var array
    */
   protected $points = [];
 
@@ -25,12 +22,12 @@ class Polygon
    *
    * @param array|null $points
    */
-  public function __construct(array $points = null)
-  {
+  public function __construct(?array $points = NULL) {
     if ($points) {
       $this->setPoints($points);
-    } else {
-      $this->valid = false;
+    }
+    else {
+      $this->valid = FALSE;
     }
   }
 
@@ -39,19 +36,19 @@ class Polygon
    *
    * @return $this
    */
-  public function setPoints(array $points)
-  {
-    $this->valid = false;
+  public function setPoints(array $points) {
+    $this->valid = FALSE;
     if (count($points) >= 3) {
-      $this->valid = true;
+      $this->valid = TRUE;
       foreach ($points as $point) {
         if (!$this->checkPoint($point)) {
-          $this->valid = false;
+          $this->valid = FALSE;
 
           return $this;
         }
       }
-    } else {
+    }
+    else {
       return $this;
     }
     $this->points = $points;
@@ -59,16 +56,12 @@ class Polygon
     return $this;
   }
 
-
-
-
   /**
    * Contain all points of min rectangle points.
    *
    * @return array
    */
-  public function rectanglePoints()
-  {
+  public function rectanglePoints() {
     $lats = array_column($this->points, 0);
     $lngs = array_column($this->points, 1);
     $min_lat = min($lats);
@@ -80,18 +73,16 @@ class Polygon
   }
 
   /**
-   * @return []
+   * @return array
    */
-  public function getPoints()
-  {
+  public function getPoints() {
     return $this->points;
   }
 
   /**
    * @return bool
    */
-  public function isValid()
-  {
+  public function isValid() {
     return $this->valid;
   }
 
@@ -101,8 +92,7 @@ class Polygon
    *
    * @return bool
    */
-  public function contain($lat, $lng)
-  {
+  public function contain($lat, $lng) {
     $count = 0;
     $points = $this->points;
     $points[] = reset($points);
@@ -117,9 +107,10 @@ class Polygon
         $tmp = $y1 + ($lat - $x1) / ($x2 - $x1) * ($y2 - $y1);
         if ($tmp < $lng) {
           $count++;
-        } elseif ($tmp == $lng) {
-          //in line
-          return true;
+        }
+        elseif ($tmp == $lng) {
+          // In line.
+          return TRUE;
         }
       }
       $point1 = $point2;
@@ -133,8 +124,8 @@ class Polygon
    *
    * @return bool
    */
-  private function checkPoint($point)
-  {
+  private function checkPoint($point) {
     return is_array($point) && count($point) <= 3 && is_numeric($point[0]) && is_numeric($point[1]);
   }
+
 }

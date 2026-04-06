@@ -14,177 +14,171 @@ namespace Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotMapbox\Model;
 
 use Geocoder\Model\Address;
 
-final class MarkaspotMapboxAddress extends Address
-{
-    /**
-     * @var string|null
-     */
-    private $id;
+/**
+ *
+ */
+final class MarkaspotMapboxAddress extends Address {
+  /**
+   * @var string|null
+   */
+  private $id;
 
-    /**
-     * @var string|int|null
-     */
-    private $streetNumber;
+  /**
+   * @var string|int|null
+   */
+  private $streetNumber;
 
-    /**
-     * @var string|null
-     */
-    private $streetName;
+  /**
+   * @var string|null
+   */
+  private $streetName;
 
-    /**
-     * @var array
-     */
-    private $resultType = [];
+  /**
+   * @var array
+   */
+  private $resultType = [];
 
-    /**
-     * @var string|null
-     */
-    private $formattedAddress;
+  /**
+   * @var string|null
+   */
+  private $formattedAddress;
 
-    /**
-     * @var string|null
-     */
-    private $neighborhood;
+  /**
+   * @var string|null
+   */
+  private $neighborhood;
 
   /**
    * @var string|null
    */
   private $sublocality;
-    /**
-     * @param string|null $id
-     *
-     * @return MarkaspotMapboxAddress
-     */
-    public function withId(string $id = null)
-    {
-        $new = clone $this;
-        $new->id = $id;
 
-        return $new;
-    }
+  /**
+   * @param string|null $id
+   *
+   * @return MarkaspotMapboxAddress
+   */
+  public function withId(?string $id = NULL) {
+    $new = clone $this;
+    $new->id = $id;
 
-    /**
-     * @see https://www.mapbox.com/api-documentation/?language=cURL#response-object
-     *
-     * @return string|null
-     */
-    public function getId()
-    {
-        return $this->id;
-    }
+    return $new;
+  }
 
-    /**
-     * @return string|null
-     */
-    public function getStreetName()
-    {
-        return $this->streetName;
-    }
+  /**
+   * @see https://www.mapbox.com/api-documentation/?language=cURL#response-object
+   *
+   * @return string|null
+   */
+  public function getId() {
+    return $this->id;
+  }
 
-    /**
-     * @param string|null $streetName
-     *
-     * @return MarkaspotMapboxAddress
-     */
-    public function withStreetName(string $streetName = null)
-    {
-        $new = clone $this;
-        $new->streetName = $streetName;
+  /**
+   * @return string|null
+   */
+  public function getStreetName() {
+    return $this->streetName;
+  }
 
-        return $new;
-    }
+  /**
+   * @param string|null $streetName
+   *
+   * @return MarkaspotMapboxAddress
+   */
+  public function withStreetName(?string $streetName = NULL) {
+    $new = clone $this;
+    $new->streetName = $streetName;
 
-    /**
-     * @return string|int|null
-     */
-    public function getStreetNumber()
-    {
-        return $this->streetNumber;
-    }
+    return $new;
+  }
 
-    /**
-     * @param string|null $streetNumber
-     *
-     * @return MarkaspotMapboxAddress
-     */
-    public function withStreetNumber(string $streetNumber = null)
-    {
-        $new = clone $this;
-        $new->streetNumber = $streetNumber;
+  /**
+   * @return string|int|null
+   */
+  public function getStreetNumber() {
+    return $this->streetNumber;
+  }
 
-        return $new;
-    }
+  /**
+   * @param string|null $streetNumber
+   *
+   * @return MarkaspotMapboxAddress
+   */
+  public function withStreetNumber(?string $streetNumber = NULL) {
+    $new = clone $this;
+    $new->streetNumber = $streetNumber;
 
-    /**
-     * @return array
-     */
-    public function getResultType(): array
-    {
-        return $this->resultType;
-    }
+    return $new;
+  }
 
-    /**
-     * @param array $resultType
-     *
-     * @return MarkaspotMapboxAddress
-     */
-    public function withResultType(array $resultType)
-    {
-        $new = clone $this;
-        $new->resultType = $resultType;
+  /**
+   * @return array
+   */
+  public function getResultType(): array {
+    return $this->resultType;
+  }
 
-        return $new;
-    }
+  /**
+   * @param array $resultType
+   *
+   * @return MarkaspotMapboxAddress
+   */
+  public function withResultType(array $resultType) {
+    $new = clone $this;
+    $new->resultType = $resultType;
 
-    /**
-     * @return string|null
-     */
-    public function getFormattedAddress()
-    {
-        return $this->formattedAddress;
-    }
+    return $new;
+  }
 
-    /**
-     * @param string|null $formattedAddress
-     *
-     * @return MarkaspotMapboxAddress
-     */
-    public function withFormattedAddress(string $formattedAddress = null)
-    {
-        $new = clone $this;
-        $new->formattedAddress = $formattedAddress;
+  /**
+   * @return string|null
+   */
+  public function getFormattedAddress() {
+    return $this->formattedAddress;
+  }
 
-        return $new;
-    }
+  /**
+   * @param string|null $formattedAddress
+   *
+   * @return MarkaspotMapboxAddress
+   */
+  public function withFormattedAddress(?string $formattedAddress = NULL) {
+    $new = clone $this;
+    $new->formattedAddress = $formattedAddress;
+
+    return $new;
+  }
 
   /**
    * Set the sublocality.
    *
    * @param string $sublocality
+   *
    * @return self
    */
   public function withSublocality(string $sublocality): self {
     $this->sublocality = $sublocality;
     return $this;
   }
-    /**
-     * @return string|null
-     */
-    public function getNeighborhood()
-    {
-        return $this->neighborhood;
-    }
 
-    /**
-     * @param string|null $neighborhood
-     *
-     * @return MarkaspotMapboxAddress
-     */
-    public function withNeighborhood(string $neighborhood = null)
-    {
-        $new = clone $this;
-        $new->neighborhood = $neighborhood;
+  /**
+   * @return string|null
+   */
+  public function getNeighborhood() {
+    return $this->neighborhood;
+  }
 
-        return $new;
-    }
+  /**
+   * @param string|null $neighborhood
+   *
+   * @return MarkaspotMapboxAddress
+   */
+  public function withNeighborhood(?string $neighborhood = NULL) {
+    $new = clone $this;
+    $new->neighborhood = $neighborhood;
+
+    return $new;
+  }
+
 }
