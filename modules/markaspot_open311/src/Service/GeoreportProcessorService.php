@@ -1431,6 +1431,21 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
     }
 
+    // Add district and sublocality taxonomy references.
+    $showDistrict = $extendedRole === 'manager' || !empty($visibilityConfig['public_district']);
+    if ($showDistrict) {
+      if ($node->hasField('field_district') && !$node->get('field_district')->isEmpty()) {
+        $districtTid = $node->get('field_district')->target_id;
+        $request['district'] = $this->getTranslatedTaxonomyTermField($districtTid, 'name', $langcode);
+        $request['district_id'] = (int) $districtTid;
+      }
+      if ($node->hasField('field_sublocality') && !$node->get('field_sublocality')->isEmpty()) {
+        $sublocalityTid = $node->get('field_sublocality')->target_id;
+        $request['sublocality'] = $this->getTranslatedTaxonomyTermField($sublocalityTid, 'name', $langcode);
+        $request['sublocality_id'] = (int) $sublocalityTid;
+      }
+    }
+
     // Add extended attributes if extensions parameter is set.
     if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
       $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $langcode);

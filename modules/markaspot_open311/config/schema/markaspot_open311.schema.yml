@@ -160,6 +160,12 @@ markaspot_open311.settings:
           # When enabled, the organisation (referenced via field_organisation)
           # is included in the response as a top-level "organisation" object
           # with id and label.
+        public_district:
+          type: boolean
+          label: 'Show district and sublocality to all users'
+          # When enabled, field_district and field_sublocality taxonomy
+          # references are included in the response as top-level "district"
+          # and "sublocality" fields with name and ID.
         jurisdiction_display:
           type: string
           label: 'Jurisdiction display mode (leaf or chain)'

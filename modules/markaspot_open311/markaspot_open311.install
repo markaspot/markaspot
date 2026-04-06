@@ -204,3 +204,21 @@ function markaspot_open311_update_11804() {
 
   return implode(' ', $messages) ?: t('field_request_attributes permissions already configured.');
 }
+
+/**
+ * Add public_district to response_visibility config.
+ *
+ * Enables district and sublocality fields in the GeoReport API response
+ * for all users by default.
+ */
+function markaspot_open311_update_11805() {
+  $config = \Drupal::configFactory()->getEditable('markaspot_open311.settings');
+
+  if ($config->get('response_visibility.public_district') === NULL) {
+    $config->set('response_visibility.public_district', TRUE);
+    $config->save();
+    return t('Added public_district to response_visibility configuration.');
+  }
+
+  return t('public_district configuration already exists.');
+}

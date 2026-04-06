@@ -41,4 +41,5 @@ jurisdiction_group_type: 'jur'
 response_visibility:
   public_jurisdiction: false
   public_organisation: false
+  public_district: true
   jurisdiction_display: 'leaf'
