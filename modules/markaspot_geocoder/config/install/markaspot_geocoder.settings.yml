@@ -1,3 +1,4 @@
 provider: 'nominatim'
 language: 'de'
 mapbox_token: ''
+district_mappings: []

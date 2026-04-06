@@ -11,3 +11,23 @@ markaspot_geocoder.settings:
     mapbox_token:
       type: string
       label: 'Mapbox access token'
+    district_mappings:
+      type: sequence
+      label: 'District taxonomy mappings'
+      sequence:
+        type: mapping
+        mapping:
+          geocoder_properties:
+            type: sequence
+            label: 'Geocoder property fallback chain'
+            sequence:
+              type: string
+          field:
+            type: string
+            label: 'Target entity reference field'
+          vocabulary:
+            type: string
+            label: 'Target taxonomy vocabulary'
+          auto_create:
+            type: boolean
+            label: 'Auto-create terms'

@@ -6,11 +6,13 @@
  */
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService;
+use Drupal\taxonomy\Entity\Term;
 
 /**
  * Implements hook_ENTITY_TYPE_presave() for node entities.
  *
- * Geocode coordinates to address before saving.
+ * Geocode coordinates to address before saving, then apply district mappings.
  */
 function markaspot_geocoder_node_presave(EntityInterface $node) {
   if ($node->bundle() !== 'service_request') {
@@ -18,7 +20,6 @@ function markaspot_geocoder_node_presave(EntityInterface $node) {
   }
 
   try {
-    // Determine if this is a new node or if the geolocation has changed.
     $isNew = $node->isNew();
 
     if (!$node->hasField('field_geolocation') || $node->get('field_geolocation')->isEmpty()) {
@@ -41,26 +42,193 @@ function markaspot_geocoder_node_presave(EntityInterface $node) {
       ($node->get('field_address')->isEmpty() ||
        empty($node->get('field_address')->address_line1));
 
-    if (($isNew || $geolocationChanged || $addressMissing) && isset($lat, $lng)) {
-      /** @var \Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService $geocoder_service */
-      $geocoder_service = \Drupal::service('markaspot_geocoder.geocoder');
+    // Check if any district mapping fields are empty.
+    /** @var \Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService $geocoder_service */
+    $geocoder_service = \Drupal::service('markaspot_geocoder.geocoder');
+    $districtFieldsEmpty = _markaspot_geocoder_has_empty_district_fields($node, $geocoder_service);
+
+    // Geocode when: new node, geolocation changed, address missing, or district fields empty.
+    if (($isNew || $geolocationChanged || $addressMissing || $districtFieldsEmpty) && isset($lat, $lng)) {
       $address = $geocoder_service->getAddressFromCoordinates($lat, $lng);
 
       if ($address) {
-        $node->field_address->country_code = $address['country_code'];
-        $node->field_address->locality = $address['locality'];
-        $node->field_address->address_line1 = $address['address_line1'];
-        $node->field_address->postal_code = $address['postal_code'];
-        \Drupal::logger('markaspot_geocoder')->info('Geocoded address for node #@id', ['@id' => $node->id()]);
+        // Only update address if it was missing or geolocation changed.
+        if ($isNew || $geolocationChanged || $addressMissing) {
+          $node->field_address->country_code = $address['country_code'];
+          $node->field_address->locality = $address['locality'];
+          $node->field_address->address_line1 = $address['address_line1'];
+          $node->field_address->postal_code = $address['postal_code'];
+        }
+
+        // Apply district taxonomy mappings (skips already-filled fields).
+        $districtProperties = $address['district_properties'] ?? [];
+        if (!empty($districtProperties)) {
+          _markaspot_geocoder_apply_district_mappings($node, $districtProperties, $geocoder_service);
+        }
+
+        \Drupal::logger('markaspot_geocoder')->info('Geocoded address for node #@id', ['@id' => $node->id() ?? 'new']);
       }
-    } else {
-      \Drupal::logger('markaspot_geocoder')->info('Skipping geocoding for unchanged geolocation on node #@id', ['@id' => $node->id()]);
     }
-  } catch (\Exception $e) {
+  }
+  catch (\Exception $e) {
     \Drupal::logger('markaspot_geocoder')->error('Fatal error in geocoder: @message at @file:@line', [
       '@message' => $e->getMessage(),
       '@file' => $e->getFile(),
       '@line' => $e->getLine(),
     ]);
   }
+}
+
+/**
+ * Checks if any configured district mapping fields are empty on the node.
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $node
+ *   The service request node.
+ * @param \Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService $geocoder_service
+ *   The geocoder service for accessing mapping config.
+ *
+ * @return bool
+ *   TRUE if at least one mapped field is empty.
+ */
+function _markaspot_geocoder_has_empty_district_fields(EntityInterface $node, MarkaspotGeocoderService $geocoder_service): bool {
+  $mappings = $geocoder_service->getDistrictMappings();
+  foreach ($mappings as $mapping) {
+    $fieldName = $mapping['field'] ?? '';
+    if ($fieldName && $node->hasField($fieldName) && $node->get($fieldName)->isEmpty()) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+/**
+ * Applies district mapping configuration to a service request node.
+ *
+ * Iterates over configured district mappings, matches geocoder response
+ * properties to taxonomy terms, and sets the corresponding entity reference
+ * fields on the node.
+ *
+ * @param \Drupal\Core\Entity\EntityInterface $node
+ *   The service request node.
+ * @param array $properties
+ *   Raw geocoder properties (e.g. suburb, quarter, city_district).
+ * @param \Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService $geocoder_service
+ *   The geocoder service for accessing mapping config.
+ */
+function _markaspot_geocoder_apply_district_mappings(EntityInterface $node, array $properties, MarkaspotGeocoderService $geocoder_service): void {
+  $mappings = $geocoder_service->getDistrictMappings();
+
+  if (empty($mappings)) {
+    return;
+  }
+
+  foreach ($mappings as $mapping) {
+    $fieldName = $mapping['field'] ?? '';
+    $vocabulary = $mapping['vocabulary'] ?? '';
+    $geocoderProperties = $mapping['geocoder_properties'] ?? [];
+    $autoCreate = $mapping['auto_create'] ?? FALSE;
+
+    if (empty($fieldName) || empty($vocabulary) || empty($geocoderProperties)) {
+      continue;
+    }
+
+    if (!$node->hasField($fieldName)) {
+      continue;
+    }
+
+    // Skip if the field already has a value (don't overwrite manual selections).
+    if (!$node->get($fieldName)->isEmpty()) {
+      continue;
+    }
+
+    // Walk the fallback chain to find a matching property value.
+    $matchedValue = NULL;
+    foreach ($geocoderProperties as $property) {
+      if (!empty($properties[$property])) {
+        $matchedValue = $properties[$property];
+        break;
+      }
+    }
+
+    if ($matchedValue === NULL) {
+      continue;
+    }
+
+    // Look up the taxonomy term by name in the target vocabulary.
+    $term = _markaspot_geocoder_find_or_create_term($matchedValue, $vocabulary, $autoCreate);
+
+    if ($term) {
+      $node->set($fieldName, ['target_id' => $term->id()]);
+      \Drupal::logger('markaspot_geocoder')->info('Mapped @property="@value" to @field (term @tid)', [
+        '@property' => implode('|', $geocoderProperties),
+        '@value' => $matchedValue,
+        '@field' => $fieldName,
+        '@tid' => $term->id(),
+      ]);
+    }
+  }
+}
+
+/**
+ * Finds a taxonomy term by name, optionally creating it.
+ *
+ * @param string $name
+ *   The term name to search for.
+ * @param string $vocabulary
+ *   The vocabulary machine name.
+ * @param bool $autoCreate
+ *   Whether to create the term if not found.
+ *
+ * @return \Drupal\taxonomy\Entity\Term|null
+ *   The matched or created term, or NULL.
+ */
+function _markaspot_geocoder_find_or_create_term(string $name, string $vocabulary, bool $autoCreate): ?Term {
+  // Truncate to Drupal's max term name length (255 chars).
+  $name = mb_substr(trim($name), 0, 255);
+  if ($name === '') {
+    return NULL;
+  }
+
+  // Try exact match first (efficient, no full vocabulary load).
+  $exact = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_term')
+    ->loadByProperties([
+      'vid' => $vocabulary,
+      'name' => $name,
+      'status' => 1,
+    ]);
+
+  if (!empty($exact)) {
+    return reset($exact);
+  }
+
+  // Fallback: case-insensitive lookup via database query.
+  $tids = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_term')
+    ->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('vid', $vocabulary)
+    ->condition('status', 1)
+    ->condition('name', $name, 'LIKE')
+    ->range(0, 1)
+    ->execute();
+
+  if (!empty($tids)) {
+    return Term::load(reset($tids));
+  }
+
+  if ($autoCreate) {
+    $term = Term::create([
+      'vid' => $vocabulary,
+      'name' => $name,
+    ]);
+    $term->save();
+    \Drupal::logger('markaspot_geocoder')->info('Auto-created term "@name" in vocabulary "@vocab"', [
+      '@name' => $name,
+      '@vocab' => $vocabulary,
+    ]);
+    return $term;
+  }
+
+  return NULL;
 }

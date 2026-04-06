@@ -36,10 +36,10 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
       $form['env_notice'] = [
         '#type' => 'markup',
         '#markup' => '<div class="messages messages--warning">'
-          . $this->t('ENV overrides active: @vars. These take precedence over the settings below.', [
-            '@vars' => implode(', ', $overrides),
-          ])
-          . '</div>',
+        . $this->t('ENV overrides active: @vars. These take precedence over the settings below.', [
+          '@vars' => implode(', ', $overrides),
+        ])
+        . '</div>',
       ];
     }
 
@@ -89,6 +89,93 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
       '#size' => 5,
     ];
 
+    // District mapping configuration.
+    $form['district_mapping'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('District Taxonomy Mapping'),
+      '#description' => $this->t('Map geocoder response properties to taxonomy vocabularies. Each mapping defines which geocoder property populates which taxonomy field on service requests. Available properties depend on the provider: Nominatim returns suburb, quarter, neighbourhood, city_district, borough. Mapbox returns neighbourhood (neighborhood), suburb (locality), city_district (district).'),
+    ];
+
+    $mappings = $config->get('district_mappings') ?: [];
+
+    // Provide sensible defaults for the form if no mappings exist.
+    if (empty($mappings)) {
+      $mappings = [
+        [
+          'geocoder_properties' => ['suburb', 'city_district', 'borough'],
+          'field' => 'field_district',
+          'vocabulary' => 'district',
+          'auto_create' => FALSE,
+        ],
+      ];
+    }
+
+    $form['district_mapping']['mappings'] = [
+      '#type' => 'table',
+      '#header' => [
+        $this->t('Geocoder properties (fallback chain)'),
+        $this->t('Field'),
+        $this->t('Vocabulary'),
+        $this->t('Auto-create'),
+        $this->t('Enabled'),
+      ],
+    ];
+
+    $availableFields = [
+      'field_district' => 'field_district (District)',
+      'field_sublocality' => 'field_sublocality (Sublocality)',
+    ];
+
+    $availableVocabs = [
+      'district' => 'district',
+      'sublocality' => 'sublocality',
+    ];
+
+    // Always show two rows: one for district, one for sublocality.
+    $rows = [
+      [
+        'geocoder_properties' => $mappings[0]['geocoder_properties'] ?? ['suburb', 'city_district', 'borough'],
+        'field' => $mappings[0]['field'] ?? 'field_district',
+        'vocabulary' => $mappings[0]['vocabulary'] ?? 'district',
+        'auto_create' => $mappings[0]['auto_create'] ?? FALSE,
+        'enabled' => !empty($mappings[0]),
+      ],
+      [
+        'geocoder_properties' => $mappings[1]['geocoder_properties'] ?? ['quarter', 'neighbourhood'],
+        'field' => $mappings[1]['field'] ?? 'field_sublocality',
+        'vocabulary' => $mappings[1]['vocabulary'] ?? 'sublocality',
+        'auto_create' => $mappings[1]['auto_create'] ?? FALSE,
+        'enabled' => !empty($mappings[1]),
+      ],
+    ];
+
+    foreach ($rows as $i => $row) {
+      $form['district_mapping']['mappings'][$i]['geocoder_properties'] = [
+        '#type' => 'textfield',
+        '#default_value' => implode(', ', $row['geocoder_properties']),
+        '#description' => $i === 0 ? $this->t('Comma-separated, first match wins.') : '',
+        '#size' => 40,
+      ];
+      $form['district_mapping']['mappings'][$i]['field'] = [
+        '#type' => 'select',
+        '#options' => $availableFields,
+        '#default_value' => $row['field'],
+      ];
+      $form['district_mapping']['mappings'][$i]['vocabulary'] = [
+        '#type' => 'select',
+        '#options' => $availableVocabs,
+        '#default_value' => $row['vocabulary'],
+      ];
+      $form['district_mapping']['mappings'][$i]['auto_create'] = [
+        '#type' => 'checkbox',
+        '#default_value' => $row['auto_create'],
+      ];
+      $form['district_mapping']['mappings'][$i]['enabled'] = [
+        '#type' => 'checkbox',
+        '#default_value' => $row['enabled'],
+      ];
+    }
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -110,10 +197,33 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state): void {
+    $mappingsInput = $form_state->getValue('mappings') ?: [];
+    $mappings = [];
+
+    foreach ($mappingsInput as $row) {
+      if (empty($row['enabled'])) {
+        continue;
+      }
+      $properties = array_map('trim', explode(',', $row['geocoder_properties']));
+      $properties = array_filter($properties);
+
+      if (empty($properties) || empty($row['field']) || empty($row['vocabulary'])) {
+        continue;
+      }
+
+      $mappings[] = [
+        'geocoder_properties' => array_values($properties),
+        'field' => $row['field'],
+        'vocabulary' => $row['vocabulary'],
+        'auto_create' => (bool) $row['auto_create'],
+      ];
+    }
+
     $this->config('markaspot_geocoder.settings')
       ->set('provider', $form_state->getValue('provider'))
       ->set('mapbox_token', $form_state->getValue('mapbox_token'))
       ->set('language', $form_state->getValue('language'))
+      ->set('district_mappings', $mappings)
       ->save();
 
     parent::submitForm($form, $form_state);

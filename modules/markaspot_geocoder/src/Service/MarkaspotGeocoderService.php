@@ -9,14 +9,22 @@ use Geocoder\Provider\Provider;
 use Geocoder\Query\ReverseQuery;
 use Geocoder\StatefulGeocoder;
 use GuzzleHttp\ClientInterface;
-use OutOfBoundsException;
+use Http\Adapter\Guzzle7\Client as GuzzleAdapter;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Server-side geocoding service for Mark-a-Spot.
+ */
 class MarkaspotGeocoderService {
 
   protected ConfigFactoryInterface $configFactory;
   protected ClientInterface $httpClient;
   protected LoggerInterface $logger;
+
+  /**
+   * The last created provider instance, for accessing raw properties.
+   */
+  protected MarkaspotMapbox|MarkaspotNominatim|null $lastProvider = NULL;
 
   public function __construct(
     ConfigFactoryInterface $config_factory,
@@ -39,10 +47,15 @@ class MarkaspotGeocoderService {
     $providerName = getenv('GEOCODER_PROVIDER') ?: $config->get('provider') ?: 'nominatim';
     $apiKey = getenv('GEOCODER_API_KEY') ?: $config->get('mapbox_token') ?: '';
 
-    return match ($providerName) {
-      'mapbox', 'mapbox_address' => new MarkaspotMapbox($this->httpClient, $apiKey),
-      default => new MarkaspotNominatim($this->httpClient, 'https://nominatim.openstreetmap.org'),
+    // Wrap GuzzleHttp\Client in PSR-18 adapter for geocoder providers.
+    $adapter = new GuzzleAdapter($this->httpClient);
+
+    $this->lastProvider = match ($providerName) {
+      'mapbox', 'mapbox_address' => new MarkaspotMapbox($adapter, $apiKey),
+      default => new MarkaspotNominatim($adapter, 'https://nominatim.openstreetmap.org'),
     };
+
+    return $this->lastProvider;
   }
 
   /**
@@ -56,6 +69,9 @@ class MarkaspotGeocoderService {
     return getenv('GEOCODER_LANGUAGE') ?: $config->get('language') ?: 'de';
   }
 
+  /**
+   *
+   */
   public function getAddressFromCoordinates($lat, $lng): ?array {
     $provider = $this->createProvider();
     $language = $this->getLanguage();
@@ -71,9 +87,10 @@ class MarkaspotGeocoderService {
         'address_line1' => ($address->getStreetName() ?? '') . ' ' . ($address->getStreetNumber() ?? ''),
         'postal_code' => $address->getPostalCode() ?? '',
         'admin_area' => $address->getAdminLevels()?->first()?->getName() ?? '',
+        'district_properties' => $this->lastProvider?->getLastRawProperties() ?? [],
       ];
     }
-    catch (OutOfBoundsException $ex) {
+    catch (\OutOfBoundsException $ex) {
       $this->logger->warning('No address found for coordinates: @lat, @lng', [
         '@lat' => $lat,
         '@lng' => $lng,
@@ -90,6 +107,21 @@ class MarkaspotGeocoderService {
       ]);
       return NULL;
     }
+  }
+
+  /**
+   * Returns the district mapping configuration.
+   *
+   * @return array
+   *   Array of mapping definitions, each with:
+   *   - geocoder_properties: Fallback chain of property names
+   *   - field: Target entity reference field name
+   *   - vocabulary: Target taxonomy vocabulary machine name
+   *   - auto_create: Whether to auto-create terms
+   */
+  public function getDistrictMappings(): array {
+    $config = $this->configFactory->get('markaspot_geocoder.settings');
+    return $config->get('district_mappings') ?: [];
   }
 
 }

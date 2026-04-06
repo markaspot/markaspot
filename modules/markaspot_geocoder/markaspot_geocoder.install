@@ -1,0 +1,158 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for markaspot_geocoder.
+ */
+
+use Drupal\field\Entity\FieldStorageConfig;
+
+/**
+ * Add district/sublocality fields to management form display.
+ *
+ * Adds field_district and field_sublocality as optional selects in a
+ * collapsed "Area" fieldset below the address field. The fields are
+ * auto-populated by the geocoder but can be manually corrected.
+ */
+function markaspot_geocoder_update_11001() {
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if (!$form_display) {
+    return 'Management form display not found.';
+  }
+
+  $messages = [];
+
+  // Add field_district component if not already visible.
+  if (!$form_display->getComponent('field_district')) {
+    $form_display->setComponent('field_district', [
+      'type' => 'options_select',
+      'weight' => 77,
+      'region' => 'content',
+      'settings' => [],
+    ]);
+    $messages[] = 'Added field_district to form display.';
+  }
+
+  // Add field_sublocality component if field exists and not already visible.
+  $sublocality_exists = FieldStorageConfig::loadByName('node', 'field_sublocality');
+  if ($sublocality_exists && !$form_display->getComponent('field_sublocality')) {
+    $form_display->setComponent('field_sublocality', [
+      'type' => 'options_select',
+      'weight' => 78,
+      'region' => 'content',
+      'settings' => [],
+    ]);
+    $messages[] = 'Added field_sublocality to form display.';
+  }
+
+  // Add collapsed fieldset group for district fields.
+  $field_groups = $form_display->getThirdPartySettings('field_group');
+
+  if (!isset($field_groups['group_area'])) {
+    // Find group_citizen_input to nest under it.
+    $parentGroup = 'group_citizen_input';
+
+    if (isset($field_groups[$parentGroup])) {
+      // Add group_area as child of group_citizen_input, after field_address.
+      $children = $field_groups[$parentGroup]['children'] ?? [];
+      $addressIndex = array_search('field_address', $children);
+      if ($addressIndex !== FALSE) {
+        array_splice($children, $addressIndex + 1, 0, ['group_area']);
+      }
+      else {
+        $children[] = 'group_area';
+      }
+
+      // Remove field_district/field_sublocality from parent if present.
+      $children = array_values(array_diff($children, ['field_district', 'field_sublocality']));
+      $field_groups[$parentGroup]['children'] = $children;
+    }
+
+    // Create the collapsed details group.
+    $area_children = ['field_district'];
+    if ($sublocality_exists) {
+      $area_children[] = 'field_sublocality';
+    }
+    $field_groups['group_area'] = [
+      'children' => $area_children,
+      'label' => 'Area',
+      'region' => 'content',
+      'parent_name' => $parentGroup,
+      'weight' => 77,
+      'format_type' => 'details',
+      'format_settings' => [
+        'classes' => '',
+        'id' => '',
+        'open' => FALSE,
+        'description' => '',
+        'required_fields' => FALSE,
+        'label_as_html' => FALSE,
+      ],
+    ];
+
+    // Save all field_group settings back.
+    foreach ($field_groups as $group_name => $group_settings) {
+      $form_display->setThirdPartySetting('field_group', $group_name, $group_settings);
+    }
+
+    $messages[] = 'Added collapsed "Area" fieldset with district and sublocality fields.';
+  }
+
+  $form_display->save();
+  $messages[] = 'Saved management form display.';
+
+  // Also add to the nuxt form display (used by frontend dashboard).
+  $nuxt_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.nuxt');
+
+  if ($nuxt_display) {
+    $changed = FALSE;
+
+    if (!$nuxt_display->getComponent('field_district')) {
+      $nuxt_display->setComponent('field_district', [
+        'type' => 'options_select',
+        'weight' => 2,
+        'region' => 'content',
+        'settings' => [],
+      ]);
+      $changed = TRUE;
+    }
+
+    if ($sublocality_exists && !$nuxt_display->getComponent('field_sublocality')) {
+      $nuxt_display->setComponent('field_sublocality', [
+        'type' => 'options_select',
+        'weight' => 3,
+        'region' => 'content',
+        'settings' => [],
+      ]);
+      $changed = TRUE;
+    }
+
+    // Add to group_location if field_group is available.
+    $nuxt_groups = $nuxt_display->getThirdPartySettings('field_group');
+    if (isset($nuxt_groups['group_location'])) {
+      $loc_children = $nuxt_groups['group_location']['children'] ?? [];
+      if (!in_array('field_district', $loc_children)) {
+        $loc_children[] = 'field_district';
+        $changed = TRUE;
+      }
+      if (!in_array('field_sublocality', $loc_children)) {
+        $loc_children[] = 'field_sublocality';
+        $changed = TRUE;
+      }
+      $nuxt_groups['group_location']['children'] = $loc_children;
+      $nuxt_display->setThirdPartySetting('field_group', 'group_location', $nuxt_groups['group_location']);
+    }
+
+    if ($changed) {
+      $nuxt_display->save();
+      $messages[] = 'Added district fields to nuxt form display.';
+    }
+  }
+
+  return empty($messages) ? 'District fields already in form display.' : implode("\n", $messages);
+}
