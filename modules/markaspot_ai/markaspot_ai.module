@@ -36,8 +36,9 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
     return;
   }
 
-  // Guard: GDPR gate (jurisdiction-level AI opt-in).
-  if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+  // Guard: jurisdiction-level PII redaction opt-in.
+  // Checks features.piiRedaction first, falls back to features.aiAnalysis.
+  if (!_markaspot_ai_is_feature_enabled_for_node($node, 'piiRedaction')) {
     return;
   }
 
@@ -94,60 +95,20 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
   // Layer 2: LLM-based name detection (optional).
   if ($config->get('pii_redaction.use_llm')) {
     // Check API key before attempting network call.
+    // PII defaults to 'ionos' (EU/DE residency), unlike embeddings which
+    // default to 'openai'. The key is resolved here as a pre-flight check;
+    // AiClientService::chat() resolves its own key internally.
     $provider = $config->get('pii_redaction.provider') ?: $config->get('default_provider') ?: 'ionos';
     $provider_config = $config->get('providers.' . $provider) ?? [];
     $api_key = _markaspot_ai_resolve_provider_key($provider, $provider_config);
 
-    if (!empty($api_key)) {
-      try {
-        /** @var \Drupal\markaspot_ai\Service\AiClientService $ai_client */
-        $ai_client = \Drupal::service('markaspot_ai.client');
-
-        $system_prompt = <<<'PROMPT'
-You are a PII detection system. Analyze the text for personal names (first names, last names, full names). Do NOT flag place names, street names, company names, or generic titles.
-
-Respond with a JSON object:
-{"names_found": ["Name1", "Name2"]}
-
-If no personal names are found, respond:
-{"names_found": []}
-PROMPT;
-
-        $response = $ai_client->chat([
-          ['role' => 'system', 'content' => $system_prompt],
-          ['role' => 'user', 'content' => $redacted_text],
-        ], [
-          'temperature' => 0.1,
-          'max_tokens' => 300,
-          'provider' => $provider,
-        ]);
-
-        $content = $response['choices'][0]['message']['content'] ?? '';
-        // Extract JSON from response (find outermost braces).
-        if (preg_match('/\{.*"names_found"\s*:\s*\[.*?\].*\}/s', $content, $json_match)) {
-          $parsed = json_decode($json_match[0], TRUE);
-          if (json_last_error() === JSON_ERROR_NONE && !empty($parsed['names_found'])) {
-            // Guard against prompt injection: limit count and length.
-            $names = array_slice($parsed['names_found'], 0, 10);
-            foreach ($names as $name) {
-              $name = trim($name);
-              if (strlen($name) >= 2 && strlen($name) <= 50) {
-                $escaped = preg_quote($name, '/');
-                $result = preg_replace('/\b' . $escaped . '\b/u', '[REDACTED name]', $redacted_text, -1, $count);
-                if ($result !== NULL && $count > 0) {
-                  $redacted_text = $result;
-                  $pii_found = TRUE;
-                }
-              }
-            }
-          }
-        }
-      }
-      catch (\Exception $e) {
-        \Drupal::logger('markaspot_ai')->warning('PII LLM detection failed for node @key, regex results preserved: @message', [
-          '@key' => $node_key,
-          '@message' => $e->getMessage(),
-        ]);
+    $names_found = _markaspot_ai_detect_names_via_llm($redacted_text, $provider, $api_key, $node_key);
+    foreach ($names_found as $name) {
+      $escaped = preg_quote($name, '/');
+      $result = preg_replace('/\b' . $escaped . '\b/u', '[REDACTED name]', $redacted_text, -1, $count);
+      if ($result !== NULL && $count > 0) {
+        $redacted_text = $result;
+        $pii_found = TRUE;
       }
     }
   }
@@ -519,9 +480,26 @@ function _markaspot_ai_get_jurisdiction_id_for_node(NodeInterface $node): ?int {
  *   TRUE if AI processing is allowed (default: TRUE for backwards compat).
  */
 function _markaspot_ai_is_ai_enabled_for_node(NodeInterface $node): bool {
+  return _markaspot_ai_is_feature_enabled_for_node($node, 'aiAnalysis');
+}
+
+/**
+ * Checks if a specific feature is enabled for a node's jurisdiction.
+ *
+ * Reads features.{feature} from the jurisdiction's field_nuxt_config.
+ * Falls back to features.aiAnalysis for backwards compatibility.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service request node.
+ * @param string $feature
+ *   The feature key (e.g. 'piiRedaction', 'aiSentiment').
+ *
+ * @return bool
+ *   TRUE if the feature is enabled (default: TRUE for backwards compat).
+ */
+function _markaspot_ai_is_feature_enabled_for_node(NodeInterface $node, string $feature): bool {
   $jurisdictionId = _markaspot_ai_get_jurisdiction_id_for_node($node);
   if ($jurisdictionId === NULL) {
-    // No jurisdiction assigned, allow AI processing (backwards compat).
     return TRUE;
   }
 
@@ -541,16 +519,158 @@ function _markaspot_ai_is_ai_enabled_for_node(NodeInterface $node): bool {
       return TRUE;
     }
 
-    // Check features.aiAnalysis flag (default: TRUE for backwards compat).
+    // Check specific feature first, fall back to aiAnalysis for backwards
+    // compatibility. Jurisdictions should set explicit feature flags
+    // (piiRedaction, aiSentiment) to decouple from aiAnalysis.
+    if (isset($config['features'][$feature])) {
+      return (bool) $config['features'][$feature];
+    }
     return $config['features']['aiAnalysis'] ?? TRUE;
   }
   catch (\Exception $e) {
-    \Drupal::logger('markaspot_ai')->warning('Failed to check AI flag for jurisdiction @id: @message', [
+    \Drupal::logger('markaspot_ai')->warning('Failed to check feature @feature for jurisdiction @id: @message', [
+      '@feature' => $feature,
       '@id' => $jurisdictionId,
       '@message' => $e->getMessage(),
     ]);
     return TRUE;
   }
+}
+
+/**
+ * Detects personal names via LLM with local NLP fallback.
+ *
+ * Tries the configured AI provider (e.g. IONOS) first, falls back to the
+ * local NLP service (Ollama) if the primary provider fails.
+ *
+ * @param string $text
+ *   The text to scan (already regex-redacted).
+ * @param string $provider
+ *   The primary AI provider name.
+ * @param string $api_key
+ *   The API key for the primary provider.
+ * @param string $node_key
+ *   Node identifier for logging.
+ *
+ * @return array
+ *   List of detected personal names (validated, max 10, max 50 chars each).
+ */
+function _markaspot_ai_detect_names_via_llm(string $text, string $provider, string $api_key, string $node_key): array {
+  $system_prompt = <<<'PROMPT'
+You are a PII detection system. Analyze the text for personal names (first names, last names, full names). Do NOT flag place names, street names, company names, or generic titles.
+
+Respond with a JSON object:
+{"names_found": ["Name1", "Name2"]}
+
+If no personal names are found, respond:
+{"names_found": []}
+PROMPT;
+
+  $names = [];
+
+  // Try primary provider (e.g. IONOS).
+  if (!empty($api_key)) {
+    try {
+      /** @var \Drupal\markaspot_ai\Service\AiClientService $ai_client */
+      $ai_client = \Drupal::service('markaspot_ai.client');
+
+      $response = $ai_client->chat([
+        ['role' => 'system', 'content' => $system_prompt],
+        ['role' => 'user', 'content' => $text],
+      ], [
+        'temperature' => 0.1,
+        'max_tokens' => 300,
+        'provider' => $provider,
+      ]);
+
+      $names = _markaspot_ai_parse_names_response($response);
+      if (!empty($names)) {
+        return $names;
+      }
+      // Empty names from a successful call means no PII found.
+      return [];
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_ai')->warning('PII primary provider (@provider) failed for @key, trying NLP fallback: @message', [
+        '@provider' => $provider,
+        '@key' => $node_key,
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  // Fallback: local NLP service (Ollama).
+  try {
+    /** @var \Drupal\markaspot_ai\Service\NlpClientService $nlp_client */
+    $nlp_client = \Drupal::service('markaspot_ai.nlp_client');
+    if ($nlp_client->isAvailable()) {
+      $result = $nlp_client->redactPii($text);
+      // NLP returns full redacted text. Extract entities that are names.
+      if (!empty($result['entities_found'])) {
+        foreach ($result['entities_found'] as $entity) {
+          // Parse "type: value" or {"type": "name", "value": "..."} format.
+          if (is_string($entity) && preg_match('/^name:\s*(.+)$/i', $entity, $m)) {
+            $name = trim($m[1]);
+            if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
+              $names[] = $name;
+            }
+          }
+          elseif (is_array($entity) && strtolower($entity['type'] ?? '') === 'name') {
+            $name = trim($entity['value'] ?? '');
+            if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
+              $names[] = $name;
+            }
+          }
+        }
+      }
+      return array_slice($names, 0, 10);
+    }
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot_ai')->warning('PII NLP fallback also failed for @key: @message', [
+      '@key' => $node_key,
+      '@message' => $e->getMessage(),
+    ]);
+  }
+
+  return [];
+}
+
+/**
+ * Parses names from an LLM chat response.
+ *
+ * @param array $response
+ *   The chat completion response.
+ *
+ * @return array
+ *   Validated list of names.
+ */
+function _markaspot_ai_parse_names_response(array $response): array {
+  $content = $response['choices'][0]['message']['content'] ?? '';
+  if (empty($content)) {
+    return [];
+  }
+
+  // Extract JSON from response (find outermost braces).
+  if (!preg_match('/\{.*?"names_found"\s*:\s*\[.*?\].*?\}/s', $content, $json_match)) {
+    return [];
+  }
+
+  $parsed = json_decode($json_match[0], TRUE);
+  if (json_last_error() !== JSON_ERROR_NONE || empty($parsed['names_found'])) {
+    return [];
+  }
+
+  // Guard against prompt injection: limit count and length.
+  $names = [];
+  foreach (array_slice($parsed['names_found'], 0, 10) as $name) {
+    $name = trim($name);
+    if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
+      $names[] = $name;
+    }
+  }
+
+  return $names;
 }
 
 /**
