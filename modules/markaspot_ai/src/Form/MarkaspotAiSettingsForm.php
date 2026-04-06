@@ -49,6 +49,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#options' => [
         'openai' => $this->t('OpenAI'),
         'azure' => $this->t('Azure OpenAI'),
+        'ionos' => $this->t('IONOS AI (Berlin)'),
       ],
       '#default_value' => $config->get('default_provider') ?? 'openai',
       '#required' => TRUE,
@@ -212,6 +213,80 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Embedding Deployment Name'),
       '#description' => $this->t('The deployment name for embeddings (e.g., text-embedding-3-large).'),
       '#default_value' => $config->get('providers.azure.embedding_model') ?? 'text-embedding-3-large',
+      '#required' => TRUE,
+    ];
+
+    // IONOS AI Configuration.
+    $form['provider']['ionos'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('IONOS AI Configuration'),
+      '#description' => $this->t('OpenAI-compatible API hosted in Berlin (de-txl). Supports EU data residency.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="default_provider"]' => ['value' => 'ionos'],
+        ],
+      ],
+    ];
+
+    $ionos_env_key = getenv('IONOS_AI_API_KEY') ?: getenv('MARKASPOT_AI_IONOS_KEY');
+    if (!empty($ionos_env_key)) {
+      $form['provider']['ionos']['ionos_api_key_status'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="messages messages--status">' .
+        $this->t('<strong>API key loaded from environment variable</strong> (IONOS_AI_API_KEY). This is the recommended secure approach.') .
+        '</div>',
+        '#weight' => -1,
+      ];
+      $form['provider']['ionos']['ionos_api_key'] = [
+        '#type' => 'textfield',
+        '#title' => $this->t('API Key'),
+        '#default_value' => '••••••••' . substr($ionos_env_key, -4),
+        '#disabled' => TRUE,
+      ];
+    }
+    else {
+      $existing_ionos_key = $config->get('providers.ionos.api_key');
+      $form['provider']['ionos']['ionos_api_key'] = [
+        '#type' => 'password',
+        '#title' => $this->t('API Key'),
+        '#description' => $this->t('Your IONOS AI API key (JWT). <strong>Recommended:</strong> Set IONOS_AI_API_KEY environment variable instead for better security.'),
+        '#default_value' => '',
+        '#attributes' => ['autocomplete' => 'off'],
+      ];
+
+      if (!empty($existing_ionos_key)) {
+        $form['provider']['ionos']['ionos_api_key']['#description'] = $this->t('API key is configured in database. Leave empty to keep existing, or enter new key to replace. <strong>Recommended:</strong> Use IONOS_AI_API_KEY environment variable instead.');
+        $form['provider']['ionos']['ionos_api_key_status'] = [
+          '#type' => 'item',
+          '#markup' => '<div class="messages messages--warning">' .
+          $this->t('API key stored in config database. Consider using environment variable for better security.') .
+          '</div>',
+          '#weight' => -1,
+        ];
+      }
+    }
+
+    $form['provider']['ionos']['ionos_api_url'] = [
+      '#type' => 'url',
+      '#title' => $this->t('API URL'),
+      '#description' => $this->t('The base URL for the IONOS AI API.'),
+      '#default_value' => $config->get('providers.ionos.api_url') ?? 'https://openai.inference.de-txl.ionos.com/v1',
+      '#required' => TRUE,
+    ];
+
+    $form['provider']['ionos']['ionos_chat_model'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Chat Model'),
+      '#description' => $this->t('Model to use for chat completions (e.g., mistralai/Mistral-Nemo-Instruct-2407).'),
+      '#default_value' => $config->get('providers.ionos.chat_model') ?? 'mistralai/Mistral-Nemo-Instruct-2407',
+      '#required' => TRUE,
+    ];
+
+    $form['provider']['ionos']['ionos_embedding_model'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Embedding Model'),
+      '#description' => $this->t('Model to use for generating embeddings (e.g., BAAI/bge-m3).'),
+      '#default_value' => $config->get('providers.ionos.embedding_model') ?? 'BAAI/bge-m3',
       '#required' => TRUE,
     ];
 
@@ -404,6 +479,12 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
         }
       }
     }
+    elseif ($provider === 'ionos') {
+      $ionos_url = $form_state->getValue('ionos_api_url');
+      if (!empty($ionos_url) && !filter_var($ionos_url, FILTER_VALIDATE_URL)) {
+        $form_state->setErrorByName('ionos_api_url', $this->t('IONOS API URL must be a valid URL.'));
+      }
+    }
   }
 
   /**
@@ -443,6 +524,20 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $config->set('providers.azure.chat_model', $form_state->getValue('azure_chat_model'));
     $config->set('providers.azure.embedding_model', $form_state->getValue('azure_embedding_model'));
     $config->set('providers.azure.auth_type', 'api_key_header');
+
+    // Save IONOS configuration.
+    // Only save API key when not loaded from environment variable.
+    $ionos_env_key = getenv('IONOS_AI_API_KEY') ?: getenv('MARKASPOT_AI_IONOS_KEY');
+    if (empty($ionos_env_key)) {
+      $ionos_api_key = $form_state->getValue('ionos_api_key');
+      if (!empty($ionos_api_key)) {
+        $config->set('providers.ionos.api_key', $ionos_api_key);
+      }
+    }
+    $config->set('providers.ionos.api_url', $form_state->getValue('ionos_api_url') ?? 'https://openai.inference.de-txl.ionos.com/v1');
+    $config->set('providers.ionos.chat_model', $form_state->getValue('ionos_chat_model'));
+    $config->set('providers.ionos.embedding_model', $form_state->getValue('ionos_embedding_model'));
+    $config->set('providers.ionos.auth_type', 'bearer');
 
     // Save duplicate detection settings.
     $config->set('duplicate_detection.enabled', (bool) $form_state->getValue('enabled'));
