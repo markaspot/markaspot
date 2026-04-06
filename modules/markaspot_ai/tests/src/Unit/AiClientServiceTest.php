@@ -82,7 +82,8 @@ class AiClientServiceTest extends UnitTestCase {
             'embedding_model' => 'text-embedding-3-large',
           ],
           'providers.azure' => [
-            'api_url' => 'https://my-azure.openai.azure.com/v1',
+            'api_url' => 'https://my-azure.openai.azure.com',
+            'api_version' => '2024-12-01-preview',
             'auth_type' => 'api_key_header',
             'api_key' => 'azure-key-456',
             'chat_model' => 'gpt-4o',
@@ -257,7 +258,7 @@ class AiClientServiceTest extends UnitTestCase {
       ->method('request')
       ->with(
         'POST',
-        'https://my-azure.openai.azure.com/v1/chat/completions',
+        'https://my-azure.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview',
         $this->callback(function (array $options) {
           return isset($options['headers']['api-key']);
         })
