@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.37](https://github.com/markaspot/markaspot/compare/11.9.36...11.9.37) (2026-04-07)
+
+### Features
+
+* **ai:** add IONOS AI provider (Berlin, DE) ([2c0d7b7](https://github.com/markaspot/markaspot/commit/2c0d7b7c7c6e4e3cc822092ae23d66507c009d4f))
+* **ai:** add NlpClientService for local Ollama fallback ([f0e92ab](https://github.com/markaspot/markaspot/commit/f0e92aba007e4916d4148080a166b6d0d581878f))
+* **ai:** add PII redaction in hook_node_presave ([76dd184](https://github.com/markaspot/markaspot/commit/76dd184bd2260b713675c9f1b514cb00214c2593))
+
+### Bug Fixes
+
+* **ai:** add per-feature jurisdiction gate and NLP fallback ([0b21577](https://github.com/markaspot/markaspot/commit/0b21577e795a0866528afce64dbf2a18e7a1520c))
+* **ai:** use configured provider for embedding queue ([7bffa30](https://github.com/markaspot/markaspot/commit/7bffa30882a749e8515a0429dd411441b71c96a1))
+
 ## [11.9.36](https://github.com/markaspot/markaspot/compare/11.9.35...11.9.36) (2026-04-06)
 
 ### Features
