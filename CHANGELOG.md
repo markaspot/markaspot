@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.38](https://github.com/markaspot/markaspot/compare/11.9.37...11.9.38) (2026-04-08)
+
+### Features
+
+* **boilerplate:** add field_boilerplate_type for field-scoped text templates ([e2c2c45](https://github.com/markaspot/markaspot/commit/e2c2c4572b330b011da7d6fe114bc821a32274ee))
+
+### Bug Fixes
+
+* **geocoder:** correct default district mapping fallback chains ([5463ac5](https://github.com/markaspot/markaspot/commit/5463ac5c406a00cd596a05b1e6f8f6b0add7d54e))
+* remove duplicate field.storage.node.body from service_request config ([bd1b45e](https://github.com/markaspot/markaspot/commit/bd1b45e8a569619d830ba95292f3a9b50fd647e1))
+
 ## [11.9.37](https://github.com/markaspot/markaspot/compare/11.9.36...11.9.37) (2026-04-07)
 
 ### Features
