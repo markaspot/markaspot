@@ -102,7 +102,7 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
     if (empty($mappings)) {
       $mappings = [
         [
-          'geocoder_properties' => ['suburb', 'city_district', 'borough'],
+          'geocoder_properties' => ['city_district', 'borough'],
           'field' => 'field_district',
           'vocabulary' => 'district',
           'auto_create' => FALSE,
@@ -134,14 +134,14 @@ class MarkaspotGeocoderSettingsForm extends ConfigFormBase {
     // Always show two rows: one for district, one for sublocality.
     $rows = [
       [
-        'geocoder_properties' => $mappings[0]['geocoder_properties'] ?? ['suburb', 'city_district', 'borough'],
+        'geocoder_properties' => $mappings[0]['geocoder_properties'] ?? ['city_district', 'borough'],
         'field' => $mappings[0]['field'] ?? 'field_district',
         'vocabulary' => $mappings[0]['vocabulary'] ?? 'district',
         'auto_create' => $mappings[0]['auto_create'] ?? FALSE,
         'enabled' => !empty($mappings[0]),
       ],
       [
-        'geocoder_properties' => $mappings[1]['geocoder_properties'] ?? ['quarter', 'neighbourhood'],
+        'geocoder_properties' => $mappings[1]['geocoder_properties'] ?? ['suburb', 'quarter', 'neighbourhood'],
         'field' => $mappings[1]['field'] ?? 'field_sublocality',
         'vocabulary' => $mappings[1]['vocabulary'] ?? 'sublocality',
         'auto_create' => $mappings[1]['auto_create'] ?? FALSE,
