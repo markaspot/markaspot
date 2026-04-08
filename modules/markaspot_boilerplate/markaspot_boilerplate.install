@@ -376,30 +376,7 @@ function markaspot_boilerplate_update_11003(): void {
     $logger->info('Added field_boilerplate_type to boilerplate view display.');
   }
 
-  // 5. Grant field_boilerplate_type permissions to tenant_admin.
-  $role = $etm->getStorage('user_role')->load('tenant_admin');
-  if ($role) {
-    $perms = [
-      'create field_boilerplate_type',
-      'edit field_boilerplate_type',
-      'edit own field_boilerplate_type',
-      'view field_boilerplate_type',
-      'view own field_boilerplate_type',
-    ];
-    $changed = FALSE;
-    foreach ($perms as $perm) {
-      if (!$role->hasPermission($perm)) {
-        $role->grantPermission($perm);
-        $changed = TRUE;
-      }
-    }
-    if ($changed) {
-      $role->save();
-      $logger->info('Added field_boilerplate_type permissions to tenant_admin role.');
-    }
-  }
-
-  // 6. Set status_notes as default on all existing boilerplate nodes.
+  // 5. Set status_notes as default on all existing boilerplate nodes.
   $nodes = $etm->getStorage('node')->loadByProperties([
     'type' => 'boilerplate',
   ]);
