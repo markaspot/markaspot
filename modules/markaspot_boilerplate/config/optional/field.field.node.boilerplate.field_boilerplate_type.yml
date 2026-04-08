@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_boilerplate_type
+    - node.type.boilerplate
+  module:
+    - options
+id: node.boilerplate.field_boilerplate_type
+field_name: field_boilerplate_type
+entity_type: node
+bundle: boilerplate
+label: 'Boilerplate Type'
+description: 'Determines where this boilerplate appears: in status notes, service provider notes, or internal remarks.'
+required: true
+translatable: false
+default_value:
+  - value: status_notes
+default_value_callback: ''
+settings: {}
+field_type: list_string

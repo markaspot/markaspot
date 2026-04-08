@@ -3,8 +3,10 @@ status: true
 dependencies:
   config:
     - field.field.node.boilerplate.body
+    - field.field.node.boilerplate.field_boilerplate_type
     - node.type.boilerplate
   module:
+    - options
     - path
     - text
 id: node.boilerplate.default
@@ -12,6 +14,12 @@ targetEntityType: node
 bundle: boilerplate
 mode: default
 content:
+  field_boilerplate_type:
+    type: options_select
+    weight: -4
+    region: content
+    settings: {  }
+    third_party_settings: {  }
   body:
     type: text_textarea_with_summary
     weight: 121

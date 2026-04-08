@@ -2,6 +2,10 @@ langcode: en
 status: true
 dependencies:
   config:
+    - field.field.node.boilerplate.field_boilerplate_type
+    - field.field.node.boilerplate.field_jurisdiction
+    - field.storage.node.field_boilerplate_type
+    - field.storage.node.field_jurisdiction
     - node.type.boilerplate
 id: node--boilerplate
 disabled: false
@@ -120,5 +124,17 @@ resourceFields:
     disabled: false
     fieldName: body
     publicName: body
+    enhancer:
+      id: ''
+  field_jurisdiction:
+    disabled: false
+    fieldName: field_jurisdiction
+    publicName: field_jurisdiction
+    enhancer:
+      id: ''
+  field_boilerplate_type:
+    disabled: false
+    fieldName: field_boilerplate_type
+    publicName: field_boilerplate_type
     enhancer:
       id: ''

@@ -294,3 +294,127 @@ function markaspot_boilerplate_update_11002(): void {
     }
   }
 }
+
+/**
+ * Add field_boilerplate_type to boilerplate nodes.
+ *
+ * Adds a list_string field so boilerplates can be scoped to status notes,
+ * service provider notes, or internal remarks. Sets all existing boilerplate
+ * nodes to 'status_notes' as the default.
+ */
+function markaspot_boilerplate_update_11003(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_boilerplate');
+
+  // 1. Create field storage if it does not exist.
+  $storage_id = 'node.field_boilerplate_type';
+  $field_storage = $etm->getStorage('field_storage_config')->load($storage_id);
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_boilerplate_type',
+      'entity_type' => 'node',
+      'type' => 'list_string',
+      'settings' => [
+        'allowed_values' => [
+          'status_notes' => 'Status Notes',
+          'service_provider' => 'Service Provider',
+          'remarks' => 'Remarks',
+        ],
+        'allowed_values_function' => '',
+      ],
+      'module' => 'options',
+      'cardinality' => 1,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage node.field_boilerplate_type.');
+  }
+
+  // 2. Create field instance on boilerplate bundle.
+  $field_id = 'node.boilerplate.field_boilerplate_type';
+  if (!$etm->getStorage('field_config')->load($field_id)) {
+    $etm->getStorage('field_config')->create([
+      'field_storage' => $field_storage,
+      'bundle' => 'boilerplate',
+      'label' => 'Boilerplate Type',
+      'description' => 'Determines where this boilerplate appears: in status notes, service provider notes, or internal remarks.',
+      'required' => TRUE,
+      'translatable' => FALSE,
+      'default_value' => [
+        ['value' => 'status_notes'],
+      ],
+      'settings' => [],
+    ])->save();
+    $logger->info('Created field instance @id.', ['@id' => $field_id]);
+  }
+
+  // 3. Add to form display.
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('node.boilerplate.default');
+  if ($form_display && !$form_display->getComponent('field_boilerplate_type')) {
+    $form_display->setComponent('field_boilerplate_type', [
+      'type' => 'options_select',
+      'weight' => -4,
+      'region' => 'content',
+      'settings' => [],
+    ]);
+    $form_display->save();
+    $logger->info('Added field_boilerplate_type to boilerplate form display.');
+  }
+
+  // 4. Add to view display.
+  $view_display = $etm->getStorage('entity_view_display')
+    ->load('node.boilerplate.default');
+  if ($view_display && !$view_display->getComponent('field_boilerplate_type')) {
+    $view_display->setComponent('field_boilerplate_type', [
+      'type' => 'list_default',
+      'weight' => 0,
+      'label' => 'above',
+      'region' => 'content',
+      'settings' => [],
+    ]);
+    $view_display->save();
+    $logger->info('Added field_boilerplate_type to boilerplate view display.');
+  }
+
+  // 5. Grant field_boilerplate_type permissions to tenant_admin.
+  $role = $etm->getStorage('user_role')->load('tenant_admin');
+  if ($role) {
+    $perms = [
+      'create field_boilerplate_type',
+      'edit field_boilerplate_type',
+      'edit own field_boilerplate_type',
+      'view field_boilerplate_type',
+      'view own field_boilerplate_type',
+    ];
+    $changed = FALSE;
+    foreach ($perms as $perm) {
+      if (!$role->hasPermission($perm)) {
+        $role->grantPermission($perm);
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $role->save();
+      $logger->info('Added field_boilerplate_type permissions to tenant_admin role.');
+    }
+  }
+
+  // 6. Set status_notes as default on all existing boilerplate nodes.
+  $nodes = $etm->getStorage('node')->loadByProperties([
+    'type' => 'boilerplate',
+  ]);
+  $count = 0;
+  foreach ($nodes as $node) {
+    if ($node->hasField('field_boilerplate_type') && $node->get('field_boilerplate_type')->isEmpty()) {
+      $node->set('field_boilerplate_type', 'status_notes');
+      $node->setRevisionLogMessage('Set default boilerplate type to status_notes.');
+      $node->save();
+      $count++;
+    }
+  }
+  if ($count > 0) {
+    $logger->info('Set field_boilerplate_type to status_notes on @count existing boilerplate nodes.', [
+      '@count' => $count,
+    ]);
+  }
+}
