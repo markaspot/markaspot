@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.39](https://github.com/markaspot/markaspot/compare/11.9.38...11.9.39) (2026-04-08)
+
+### Bug Fixes
+
+* **boilerplate:** remove invalid field_boilerplate_type permissions ([3802ca1](https://github.com/markaspot/markaspot/commit/3802ca1d8649b6b5facdda30e6bef7193e95e0ca))
+
 ## [11.9.38](https://github.com/markaspot/markaspot/compare/11.9.37...11.9.38) (2026-04-08)
 
 ### Features
