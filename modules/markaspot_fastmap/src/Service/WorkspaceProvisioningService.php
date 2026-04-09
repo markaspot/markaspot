@@ -270,7 +270,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
     try {
       $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
-      $availableLanguages = array_unique(array_merge([$defaultLang], array_keys($multilingualCategories)));
+      $availableLanguages = array_unique(array_merge(['en', $defaultLang], array_keys($multilingualCategories)));
 
       // 0. Ensure all requested languages are installed in Drupal.
       $this->ensureLanguagesExist($availableLanguages);
@@ -653,7 +653,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   private function createCategoryTerms(EntityStorageInterface $termStorage, int $groupId, array $multilingualCategories, string $defaultLang): array {
     $termIds = [];
     $weight = 0;
-    $defaultCategories = $multilingualCategories[$defaultLang];
+    $defaultCategories = $multilingualCategories[$defaultLang] ?? reset($multilingualCategories);
 
     foreach ($defaultCategories as $index => $categoryName) {
       $enName = $multilingualCategories['en'][$index] ?? $categoryName;
