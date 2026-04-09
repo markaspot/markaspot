@@ -250,10 +250,10 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       throw new \RuntimeException('categories must contain at least one non-empty string');
     }
 
-    $defaultLang = (is_string($requestedLang) && in_array($requestedLang, self::ALLOWED_LANGS, TRUE) && isset($multilingualCategories[$requestedLang]))
+    $defaultLang = (is_string($requestedLang) && in_array($requestedLang, self::ALLOWED_LANGS, TRUE))
       ? $requestedLang
       : array_key_first($multilingualCategories);
-    $defaultCategories = $multilingualCategories[$defaultLang];
+    $defaultCategories = $multilingualCategories[$defaultLang] ?? reset($multilingualCategories);
 
     if (count($defaultCategories) > self::MAX_CATEGORIES) {
       throw new \RuntimeException('Maximum ' . self::MAX_CATEGORIES . ' categories allowed');
@@ -270,7 +270,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
     try {
       $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
-      $availableLanguages = array_keys($multilingualCategories);
+      $availableLanguages = array_unique(array_merge([$defaultLang], array_keys($multilingualCategories)));
 
       // 0. Ensure all requested languages are installed in Drupal.
       $this->ensureLanguagesExist($availableLanguages);
