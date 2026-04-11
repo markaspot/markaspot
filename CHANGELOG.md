@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.41](https://github.com/markaspot/markaspot/compare/11.9.40...11.9.41) (2026-04-11)
+
+### Features
+
+* **fastmap:** add workspace URL and login link to demo expiry email ([7280634](https://github.com/markaspot/markaspot/commit/7280634fa3c4c39a4713b16dee1fac2094113900))
+* **vision:** include service definition attributes in AI analysis ([85f95b4](https://github.com/markaspot/markaspot/commit/85f95b4f45a28896f7808ed8d172b228c3caa6c7))
+
+### Bug Fixes
+
+* preserve meta response structure in GeoReport API ([dc335d6](https://github.com/markaspot/markaspot/commit/dc335d6542c8708434022edb71a2421a49bf90cf))
+* **vision:** improve prompt sanitization and per-category truncation ([231c048](https://github.com/markaspot/markaspot/commit/231c048d8d0297e1cfb876bfd3216623265a4176))
+
 ## [11.9.40](https://github.com/markaspot/markaspot/compare/11.9.39...11.9.40) (2026-04-11)
 
 ### Bug Fixes
