@@ -775,8 +775,9 @@ class ImageProcessingService {
    *   The sanitized string.
    */
   private function sanitizePromptField(string $value, int $maxLength): string {
-    $sanitized = preg_replace('/[\r\n\t]/', ' ', $value);
-    return substr($sanitized, 0, $maxLength);
+    // Strip all control characters (U+0000-U+001F, U+007F-U+009F).
+    $sanitized = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', ' ', $value);
+    return mb_substr($sanitized, 0, $maxLength, 'UTF-8');
   }
 
   /**
@@ -875,14 +876,23 @@ class ImageProcessingService {
         $sections[] = "Category tid={$tid} \"{$label}\":\n" . implode("\n", $lines);
       }
 
-      $result = implode("\n\n", $sections);
+      // Build result with per-category budget to avoid cutting mid-definition.
+      $result = '';
+      $budget = 4000;
+      $included = 0;
 
-      // Cap total size to prevent token budget overruns.
-      if (strlen($result) > 4000) {
-        $result = substr($result, 0, 4000) . "\n[... truncated ...]";
-        $this->logger->warning('Service definitions prompt truncated for jurisdiction @jid.', [
-          '@jid' => $jurisdictionId,
-        ]);
+      foreach ($sections as $section) {
+        $needed = mb_strlen($section, 'UTF-8') + ($included > 0 ? 2 : 0);
+        if ($needed > $budget) {
+          $this->logger->warning('Service definitions prompt truncated after @count categories for jurisdiction @jid.', [
+            '@count' => $included,
+            '@jid' => $jurisdictionId,
+          ]);
+          break;
+        }
+        $result .= ($included > 0 ? "\n\n" : '') . $section;
+        $budget -= $needed;
+        $included++;
       }
 
       return $result;
