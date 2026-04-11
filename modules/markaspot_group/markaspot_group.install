@@ -2540,3 +2540,73 @@ function markaspot_group_update_11916(): string {
 
   return "Fixed $fixed jurisdiction group relationships ($skipped skipped) out of " . count($mismatches) . " mismatches found.";
 }
+
+/**
+ * Fix bundle_field_map after group type rename organisation -> org.
+ *
+ * The Group module renamed the group type from "organisation" to "org" but
+ * did not update the bundle_field_map in key_value. This causes
+ * FieldStorageConfigInterface::getBundles() warnings and breaks
+ * entity_views_query_alter() with "A valid cache entry key is required".
+ * Idempotent: only touches entries that still reference "organisation-".
+ */
+function markaspot_group_update_11917(): string {
+  $kv = \Drupal::keyValue('entity.definitions.bundle_field_map');
+  $fixed = 0;
+
+  foreach ($kv->getAll() as $entity_type => $fields) {
+    $changed = FALSE;
+
+    foreach ($fields as $field_name => $info) {
+      if (!isset($info['bundles'])) {
+        continue;
+      }
+
+      foreach ($info['bundles'] as $bundle => $val) {
+        if (strpos($bundle, 'organisation-') === 0) {
+          $new_bundle = 'org-' . substr($bundle, strlen('organisation-'));
+          unset($fields[$field_name]['bundles'][$bundle]);
+          $fields[$field_name]['bundles'][$new_bundle] = $new_bundle;
+          $changed = TRUE;
+          $fixed++;
+        }
+      }
+    }
+
+    if ($changed) {
+      $kv->set($entity_type, $fields);
+    }
+  }
+
+  return "Fixed $fixed bundle_field_map entries (organisation -> org).";
+}
+
+/**
+ * Fix field_organisation target_bundles after group type rename.
+ *
+ * The entity reference field field_organisation on service_request may still
+ * reference target_bundle "organisation" instead of "org". This causes
+ * entity validation errors and broken reference widgets.
+ * Idempotent: only changes if the old bundle name is present.
+ */
+function markaspot_group_update_11918(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('field.field.node.service_request.field_organisation');
+
+  if ($config->isNew()) {
+    return 'field_organisation config not found, skipping.';
+  }
+
+  $settings = $config->get('settings');
+  $target_bundles = $settings['handler_settings']['target_bundles'] ?? [];
+
+  if (isset($target_bundles['organisation'])) {
+    unset($target_bundles['organisation']);
+    $target_bundles['org'] = 'org';
+    $settings['handler_settings']['target_bundles'] = $target_bundles;
+    $config->set('settings', $settings)->save();
+    return 'Updated field_organisation target_bundles: organisation -> org.';
+  }
+
+  return 'field_organisation target_bundles already correct.';
+}
