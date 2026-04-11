@@ -253,7 +253,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $defaultLang = (is_string($requestedLang) && in_array($requestedLang, self::ALLOWED_LANGS, TRUE))
       ? $requestedLang
       : array_key_first($multilingualCategories);
-    $defaultCategories = $multilingualCategories[$defaultLang] ?? reset($multilingualCategories);
+    $defaultCategories = $this->getDefaultCategories($multilingualCategories, $defaultLang);
 
     if (count($defaultCategories) > self::MAX_CATEGORIES) {
       throw new \RuntimeException('Maximum ' . self::MAX_CATEGORIES . ' categories allowed');
@@ -270,6 +270,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
     try {
       $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
+      // English must always be available (used as fallback for term machine names).
       $availableLanguages = array_unique(array_merge(['en', $defaultLang], array_keys($multilingualCategories)));
 
       // 0. Ensure all requested languages are installed in Drupal.
@@ -653,7 +654,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   private function createCategoryTerms(EntityStorageInterface $termStorage, int $groupId, array $multilingualCategories, string $defaultLang): array {
     $termIds = [];
     $weight = 0;
-    $defaultCategories = $multilingualCategories[$defaultLang] ?? reset($multilingualCategories);
+    $defaultCategories = $this->getDefaultCategories($multilingualCategories, $defaultLang);
 
     foreach ($defaultCategories as $index => $categoryName) {
       $enName = $multilingualCategories['en'][$index] ?? $categoryName;
@@ -730,6 +731,17 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     }
 
     return $result;
+  }
+
+  /**
+   * Returns the category list for the default language, with fallback.
+   *
+   * Falls back to the first available language when $defaultLang
+   * has no category data in $multilingualCategories.
+   */
+  private function getDefaultCategories(array $multilingualCategories, string $defaultLang): array {
+    return $multilingualCategories[$defaultLang]
+      ?? $multilingualCategories[array_key_first($multilingualCategories)];
   }
 
   /**
