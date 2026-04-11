@@ -148,6 +148,24 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
       '@name' => $params['workspace_name'] ?? '',
       '@date' => $params['expiry_date'] ?? '',
     ]);
+
+    // Build workspace URL and login link from slug + config.
+    $slug = $params['workspace_slug'] ?? '';
+    $base_url = \Drupal::config('markaspot_fastmap.settings')->get('workspace_base_url') ?: '';
+    if ($slug && $base_url) {
+      // Support both template URLs (https://example.com/{slug}) and plain
+      // base URLs (https://example.com) by appending the slug when no
+      // placeholder is present.
+      if (str_contains($base_url, '{slug}')) {
+        $workspace_url = str_replace(['{slug}', '{id}'], [$slug, ''], $base_url);
+      }
+      else {
+        $workspace_url = rtrim($base_url, '/') . '/' . $slug;
+      }
+      $message['body'][] = t('Your workspace: @url', ['@url' => $workspace_url]);
+      $message['body'][] = t('Log in: @url', ['@url' => $workspace_url . '/auth/login']);
+    }
+
     $message['body'][] = t('Create a permanent workspace anytime at https://civicspot.io');
   }
 }
@@ -462,6 +480,7 @@ function markaspot_fastmap_cron(): void {
               $user->getPreferredLangcode(),
               [
                 'workspace_name' => $group->label(),
+                'workspace_slug' => $group->hasField('field_slug') ? ($group->get('field_slug')->value ?? '') : '',
                 'expiry_date' => \Drupal::service('date.formatter')->format(
                   (int) $group->get('field_expiry_date')->value,
                   'medium'
