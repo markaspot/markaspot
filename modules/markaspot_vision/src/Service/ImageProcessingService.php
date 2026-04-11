@@ -333,6 +333,18 @@ class ImageProcessingService {
         . "Describe the situation and the issue, "
         . "not the people.";
 
+      // Append service definition attributes to the prompt.
+      $serviceDefsText = $this->getServiceDefinitionsForPrompt($jurisdictionId, $langcode);
+      if (!empty($serviceDefsText)) {
+        $prompt .= "\n\n## Service Definition Attributes\n"
+          . "Some categories have additional form fields (attributes). "
+          . "For the category you select, fill matching attributes based on what you observe in the image(s). "
+          . "Return values in the \"attributes\" array using the exact attribute codes listed below. "
+          . "For singlevaluelist/multivaluelist types, use ONLY the provided option keys. "
+          . "If you cannot determine a value from the image, use an empty string.\n\n"
+          . $serviceDefsText;
+      }
+
       // Append a language instruction so the AI responds in the
       // user's language, even without {language} in the template.
       if ($langcode && $langcode !== 'en') {
@@ -599,6 +611,18 @@ class ImageProcessingService {
               'hazard_category' => [
                 'type' => ['string', 'null'],
               ],
+              'attributes' => [
+                'type' => 'array',
+                'items' => [
+                  'type' => 'object',
+                  'properties' => [
+                    'code' => ['type' => 'string'],
+                    'value' => ['type' => ['string', 'null']],
+                  ],
+                  'required' => ['code', 'value'],
+                  'additionalProperties' => FALSE,
+                ],
+              ],
             ],
             'required' => [
               'category',
@@ -609,6 +633,7 @@ class ImageProcessingService {
               'hazard_issues',
               'privacy_flag',
               'privacy_issues',
+              'attributes',
             ],
             'additionalProperties' => FALSE,
           ],
@@ -732,6 +757,141 @@ class ImageProcessingService {
     catch (\Exception $e) {
       $this->logger->error('Error fetching leaf categories: ' . $e->getMessage());
       return [];
+    }
+  }
+
+  /**
+   * Sanitizes a string for safe inclusion in an AI prompt.
+   *
+   * Strips newlines and control characters, and truncates to prevent
+   * prompt injection via admin-editable service definition fields.
+   *
+   * @param string $value
+   *   The raw string value.
+   * @param int $maxLength
+   *   Maximum allowed character length.
+   *
+   * @return string
+   *   The sanitized string.
+   */
+  private function sanitizePromptField(string $value, int $maxLength): string {
+    $sanitized = preg_replace('/[\r\n\t]/', ' ', $value);
+    return substr($sanitized, 0, $maxLength);
+  }
+
+  /**
+   * Builds a prompt section with service definition attributes per category.
+   *
+   * Loads taxonomy terms from service_category, checks each for
+   * field_service_definition JSON, and formats variable attributes
+   * as human-readable text so the AI can suggest attribute values.
+   *
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction group ID to filter categories.
+   * @param string|null $langcode
+   *   Optional language code for translated term labels.
+   *
+   * @return string
+   *   Formatted attribute definitions per category, or empty string
+   *   if no categories have service definitions.
+   */
+  private function getServiceDefinitionsForPrompt(?int $jurisdictionId, ?string $langcode): string {
+    try {
+      $properties = ['vid' => 'service_category', 'status' => 1];
+      if ($jurisdictionId) {
+        $properties['field_jurisdiction'] = $jurisdictionId;
+      }
+
+      $terms = $this->entityTypeManager->getStorage('taxonomy_term')
+        ->loadByProperties($properties);
+
+      if (empty($terms)) {
+        return '';
+      }
+
+      // Translate terms if a specific language is requested.
+      if ($langcode) {
+        foreach ($terms as $tid => $term) {
+          if ($term->hasTranslation($langcode)) {
+            $terms[$tid] = $term->getTranslation($langcode);
+          }
+        }
+      }
+
+      $sections = [];
+
+      foreach ($terms as $term) {
+        if (!$term->hasField('field_service_definition') || $term->get('field_service_definition')->isEmpty()) {
+          continue;
+        }
+
+        $raw = $term->get('field_service_definition')->value;
+        $decoded = json_decode($raw, TRUE);
+        if (!is_array($decoded)) {
+          continue;
+        }
+
+        // Accept both {"attributes": [...]} wrapper and plain array format.
+        $attributes = isset($decoded['attributes']) && is_array($decoded['attributes'])
+          ? $decoded['attributes']
+          : $decoded;
+
+        // Filter to variable attributes only.
+        $variable_attrs = array_filter($attributes, function ($attr) {
+          return !empty($attr['variable']);
+        });
+
+        if (empty($variable_attrs)) {
+          continue;
+        }
+
+        $tid = $term->id();
+        $label = $this->sanitizePromptField($term->label(), 100);
+        $lines = [];
+
+        foreach ($variable_attrs as $attr) {
+          $code = $this->sanitizePromptField($attr['code'] ?? '', 64);
+          $datatype = $this->sanitizePromptField($attr['datatype'] ?? 'string', 32);
+          $description = $this->sanitizePromptField($attr['description'] ?? $code, 200);
+          $required = !empty($attr['required']) ? ', required' : '';
+
+          $line = "- \"{$code}\" ({$datatype}{$required}): {$description}";
+
+          // Add valid options for list types.
+          if (in_array($datatype, ['singlevaluelist', 'multivaluelist'], TRUE)
+              && !empty($attr['values'])) {
+            $options = [];
+            foreach ($attr['values'] as $option) {
+              $key = $this->sanitizePromptField($option['key'] ?? '', 64);
+              $name = $this->sanitizePromptField($option['name'] ?? $key, 100);
+              $options[] = "\"{$key}\" = {$name}";
+            }
+            $line .= "\n  Options: " . implode(', ', $options);
+          }
+
+          $lines[] = $line;
+        }
+
+        $sections[] = "Category tid={$tid} \"{$label}\":\n" . implode("\n", $lines);
+      }
+
+      $result = implode("\n\n", $sections);
+
+      // Cap total size to prevent token budget overruns.
+      if (strlen($result) > 4000) {
+        $result = substr($result, 0, 4000) . "\n[... truncated ...]";
+        $this->logger->warning('Service definitions prompt truncated for jurisdiction @jid.', [
+          '@jid' => $jurisdictionId,
+        ]);
+      }
+
+      return $result;
+    }
+    catch (\Exception $e) {
+      $this->logger->error('Error building service definitions for prompt: @error', [
+        '@error' => $e->getMessage(),
+      ]);
+      return '';
     }
   }
 
