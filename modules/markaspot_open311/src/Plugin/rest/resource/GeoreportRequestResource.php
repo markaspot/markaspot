@@ -281,6 +281,18 @@ class GeoreportRequestResource extends ResourceBase {
       $query->condition('request_id', $parameters['id']);
     }
 
+    // Validate jurisdiction access: authenticated users must be members
+    // of the request's jurisdiction to view single-request details.
+    if (!$this->currentUser->isAnonymous()) {
+      $request_id = $this->getRequestId($id);
+      $nodes = $this->entityTypeManager->getStorage('node')->loadByProperties(['request_id' => $request_id]);
+      if (!empty($nodes)) {
+        $node = reset($nodes);
+        $jurisdictionId = $this->georeportProcessor->getJurisdictionIdFromNode($node);
+        $this->georeportProcessor->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
+      }
+    }
+
     return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
   }
 

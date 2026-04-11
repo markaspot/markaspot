@@ -242,6 +242,21 @@ interface GeoreportProcessorServiceInterface {
   public function validateJurisdictionAccess(?int $jurisdictionId, $account = NULL): void;
 
   /**
+   * Resolves a jurisdiction ID from request parameters.
+   *
+   * Accepts numeric group IDs, slugs, and deprecated aliases (jurisdiction,
+   * gid). For slugs, performs a database lookup against the jurisdiction
+   * group's field_slug.
+   *
+   * @param array $parameters
+   *   Query parameters containing jurisdiction_id (or deprecated aliases).
+   *
+   * @return int|null
+   *   The resolved group ID, or NULL if not specified or not found.
+   */
+  public function resolveJurisdictionId(array $parameters): ?int;
+
+  /**
    * Gets all category term IDs that belong to a jurisdiction.
    *
    * @param int $jurisdictionId

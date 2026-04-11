@@ -380,6 +380,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // Start with the secure base query from the processor service.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
 
+    // Jurisdiction access enforcement for authenticated users:
+    // prevent tenant admins from reading data of foreign jurisdictions.
+    $resolvedJurisdictionId = $this->georeportProcessor->resolveJurisdictionId($parameters);
+    if ($resolvedJurisdictionId && !$this->currentUser->isAnonymous()) {
+      $this->georeportProcessor->validateJurisdictionAccess($resolvedJurisdictionId, $this->currentUser);
+    }
+
     // Workspace visibility enforcement: block anonymous GET for restricted workspaces.
     $jurisdictionId = $parameters['jurisdiction_id'] ?? NULL;
     if ($jurisdictionId && $this->workspaceVisibility && $this->currentUser->isAnonymous()) {
@@ -604,11 +611,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Get jurisdiction ID for downstream status/service_code filtering.
-    // Note: This only checks 'jurisdiction_id'. Deprecated aliases ('jurisdiction',
-    // 'gid') and slug resolution are handled by resolveJurisdictionId() in
-    // createNodeQuery() for node filtering, but not propagated here yet.
-    // @todo Use resolveJurisdictionId() once it is public on the processor service.
-    $jurisdictionId = isset($parameters['jurisdiction_id']) ? (int) $parameters['jurisdiction_id'] : NULL;
+    // Reuse the already-resolved ID from the access check above (supports
+    // slugs, numeric IDs, and deprecated aliases).
+    $jurisdictionId = $resolvedJurisdictionId;
 
     // Jurisdiction node filtering is already handled in createNodeQuery()
     // via resolveJurisdictionId() + getNodeIdsInJurisdiction(), which correctly

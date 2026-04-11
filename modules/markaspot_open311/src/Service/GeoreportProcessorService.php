@@ -978,7 +978,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return int|null
    *   The group ID or NULL if not specified/found.
    */
-  protected function resolveJurisdictionId(array $parameters): ?int {
+  public function resolveJurisdictionId(array $parameters): ?int {
     // New canonical parameter.
     $value = $parameters['jurisdiction_id'] ?? NULL;
 
