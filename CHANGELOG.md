@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.40](https://github.com/markaspot/markaspot/compare/11.9.39...11.9.40) (2026-04-11)
+
+### Bug Fixes
+
+* always include English in workspace available languages ([be12530](https://github.com/markaspot/markaspot/commit/be12530b23553d3f7def4fbf1fe817516900feca))
+* **group:** update hooks 11917/11918 fix bundle_field_map after organisation -> org rename ([25f05cc](https://github.com/markaspot/markaspot/commit/25f05cc7951f3dba4eeb5d913138d02477dabc74))
+* **security:** enforce jurisdiction membership on all GeoReport GET endpoints ([3f799fb](https://github.com/markaspot/markaspot/commit/3f799fb5fc43f31f12e31f636e9d0f11794cba0e))
+* use requested language for workspace status terms regardless of category keys ([dd9cdd6](https://github.com/markaspot/markaspot/commit/dd9cdd6806eb0a678f5f37428a621a4900a3caff))
+
+### Refactoring
+
+* **fastmap:** extract getDefaultCategories helper for multilingual fallback ([dd33f19](https://github.com/markaspot/markaspot/commit/dd33f19fec41563691517962ead4e93eb30acb4b))
+
 ## [11.9.39](https://github.com/markaspot/markaspot/compare/11.9.38...11.9.39) (2026-04-08)
 
 ### Bug Fixes
