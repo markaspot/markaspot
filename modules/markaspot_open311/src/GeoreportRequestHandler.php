@@ -146,7 +146,20 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
     }
 
     // Serialize response.
-    $serializedResult = $this->serializer->serialize($result, $format);
+    // Structured responses with metadata (e.g., meta=true) contain
+    // associative arrays like {requests: [...], meta: {total: N}}.
+    // Drupal's Serializer normalizer chain flattens these to indexed
+    // arrays, destroying the wrapper structure. For JSON, encode directly.
+    if (is_array($result) && isset($result['meta']) && $format === 'json') {
+      $serializedResult = json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+      // Standard REST pagination header for any consumer.
+      if (isset($result['meta']['total'])) {
+        $response->headers->set('X-Total-Count', (string) $result['meta']['total']);
+      }
+    }
+    else {
+      $serializedResult = $this->serializer->serialize($result, $format);
+    }
 
     // Set the appropriate Content-Type header.
     $response->headers->set('Content-Type', $request->getMimeType($format));
