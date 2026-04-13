@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.42](https://github.com/markaspot/markaspot/compare/11.9.41...11.9.42) (2026-04-13)
+
+### Features
+
+* **ai:** expose self-hosted NLP container as configurable PII provider ([8cbb22e](https://github.com/markaspot/markaspot/commit/8cbb22eb7f4c00f104eba34544d844d967340165))
+
 ## [11.9.41](https://github.com/markaspot/markaspot/compare/11.9.40...11.9.41) (2026-04-11)
 
 ### Features
