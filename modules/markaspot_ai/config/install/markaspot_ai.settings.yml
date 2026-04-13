@@ -36,3 +36,7 @@ pii_redaction:
   enabled: false
   use_llm: false
   provider: 'ionos'
+nlp_service:
+  enabled: false
+  url: 'http://markaspot-nlp:8100'
+  health_check_interval: 300

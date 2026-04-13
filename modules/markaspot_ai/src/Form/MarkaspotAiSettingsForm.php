@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_ai\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\markaspot_ai\Service\NlpClientService;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Configure Mark-a-Spot AI settings.
@@ -14,6 +18,28 @@ use Drupal\Core\Form\FormStateInterface;
  * duplicate detection parameters, and token tracking limits.
  */
 class MarkaspotAiSettingsForm extends ConfigFormBase {
+
+  /**
+   * Constructs a MarkaspotAiSettingsForm object.
+   */
+  public function __construct(
+    ConfigFactoryInterface $config_factory,
+    TypedConfigManagerInterface $typed_config_manager,
+    protected NlpClientService $nlpClient,
+  ) {
+    parent::__construct($config_factory, $typed_config_manager);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): static {
+    return new static(
+      $container->get('config.factory'),
+      $container->get('config.typed'),
+      $container->get('markaspot_ai.nlp_client'),
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -290,6 +316,117 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    // Self-Hosted NLP Service section.
+    // The description changes based on whether the saved URL points to a
+    // local Docker hostname or a public/external endpoint, so admins are
+    // never misled about where citizen report text actually travels.
+    $nlp_url_saved = $config->get('nlp_service.url') ?? 'http://markaspot-nlp:8100';
+    $nlp_host_saved = parse_url($nlp_url_saved, PHP_URL_HOST) ?: '';
+    // Heuristic: a host without dots is a local Compose service name (e.g.
+    // "nlp", "markaspot-nlp", "pii-service") or a bare hostname like
+    // "localhost" — i.e. local network only, no external traffic.
+    $nlp_is_local = ($nlp_host_saved !== '' && !str_contains($nlp_host_saved, '.'));
+
+    $form['nlp_service'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Self-Hosted NLP Service'),
+      '#description' => $nlp_is_local
+        ? $this->t('Local Phi-3 Mini container for PII redaction. Data is processed on this server only, via the Docker-internal network. Protected by a bearer token.')
+        : $this->t('External NLP endpoint configured: <code>@host</code>. Citizen report text will be transmitted to this host. Verify this complies with your data processing agreements.', ['@host' => $nlp_host_saved]),
+      '#open' => (bool) $config->get('nlp_service.enabled'),
+    ];
+
+    $form['nlp_service']['nlp_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Self-Hosted NLP Service'),
+      '#description' => $this->t('When enabled and selected as the PII provider, PII redaction calls go to the local container instead of an external LLM.'),
+      '#default_value' => (bool) $config->get('nlp_service.enabled'),
+    ];
+
+    $form['nlp_service']['nlp_url'] = [
+      '#type' => 'url',
+      '#title' => $this->t('NLP Service Base URL'),
+      '#description' => $this->t('Base URL of the NLP container. Default <code>http://markaspot-nlp:8100</code> matches the Compose service name in the reference deployment — adjust to your container name. For external endpoints, HTTPS is required. Override at runtime with the <code>MARKASPOT_NLP_API_URL</code> environment variable.'),
+      '#default_value' => $config->get('nlp_service.url') ?? 'http://markaspot-nlp:8100',
+    ];
+
+    $nlp_env_key = getenv('MARKASPOT_NLP_API_KEY');
+    if (!empty($nlp_env_key)) {
+      $form['nlp_service']['nlp_api_key_status'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="messages messages--status">' .
+        $this->t('<strong>Bearer token loaded from environment variable</strong> (MARKASPOT_NLP_API_KEY). This is the recommended secure approach.') .
+        '</div>',
+      ];
+    }
+    else {
+      $form['nlp_service']['nlp_api_key_status'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="messages messages--warning">' .
+        $this->t('<strong>No bearer token configured.</strong> Set <code>MARKASPOT_NLP_API_KEY</code> in your environment. Without it, the container falls back to open-internal mode (Docker network only).') .
+        '</div>',
+      ];
+    }
+
+    // Live health status — only probe when the service is enabled to avoid
+    // adding latency to the settings page for admins who don't use it.
+    if ($config->get('nlp_service.enabled')) {
+      $healthy = $this->nlpClient->isAvailable();
+      $form['nlp_service']['nlp_health'] = [
+        '#type' => 'item',
+        '#title' => $this->t('Health Status'),
+        '#markup' => $healthy
+          ? '<span style="color: #2f8f2f;">&#10003; ' . $this->t('Reachable, Ollama ready') . '</span>'
+          : '<span style="color: #c02222;">&#10007; ' . $this->t('Unreachable or Ollama not ready') . '</span>',
+      ];
+    }
+
+    // PII Redaction section.
+    $form['pii_redaction'] = [
+      '#type' => 'details',
+      '#title' => $this->t('PII Redaction'),
+      '#description' => $this->t('Remove personally identifiable information (names, emails, phone numbers, IBANs) from citizen reports before storing them. Two-layer pipeline: regex for structured patterns, optional LLM for unstructured names.'),
+      '#open' => (bool) $config->get('pii_redaction.enabled'),
+    ];
+
+    $form['pii_redaction']['pii_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable PII Redaction'),
+      '#description' => $this->t('Run the PII redaction pipeline on node presave. Required for GDPR-compliant citizen reports.'),
+      '#default_value' => (bool) $config->get('pii_redaction.enabled'),
+    ];
+
+    $form['pii_redaction']['pii_use_llm'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Use LLM for Name Detection'),
+      '#description' => $this->t('Layer 2: invoke the selected provider to detect names and addresses the regex layer cannot catch. Costs API tokens (or container capacity) per report.'),
+      '#default_value' => (bool) $config->get('pii_redaction.use_llm'),
+      '#states' => [
+        'visible' => [
+          ':input[name="pii_enabled"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
+    $form['pii_redaction']['pii_provider'] = [
+      '#type' => 'select',
+      '#title' => $this->t('PII Detection Provider'),
+      '#description' => $this->t('Which provider handles LLM-based PII detection. This can differ from the default provider. For GDPR, IONOS (Berlin) or the self-hosted NLP container keep data in EU jurisdiction.'),
+      '#options' => [
+        'openai' => $this->t('OpenAI'),
+        'azure' => $this->t('Azure OpenAI'),
+        'ionos' => $this->t('IONOS AI (Berlin)'),
+        'local_nlp' => $this->t('Self-Hosted NLP Container (Phi-3 Mini)'),
+      ],
+      '#default_value' => $config->get('pii_redaction.provider') ?? 'ionos',
+      '#states' => [
+        'visible' => [
+          ':input[name="pii_enabled"]' => ['checked' => TRUE],
+          ':input[name="pii_use_llm"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
+
     // Duplicate Detection section.
     $form['duplicate_detection'] = [
       '#type' => 'details',
@@ -485,6 +622,45 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
         $form_state->setErrorByName('ionos_api_url', $this->t('IONOS API URL must be a valid URL.'));
       }
     }
+
+    // Strict validation for the self-hosted NLP URL: prevents SSRF and
+    // bearer-token exfiltration. The bearer token in MARKASPOT_NLP_API_KEY is
+    // attached to every outgoing request, including the form's health probe,
+    // so an admin who could set this URL to an arbitrary host would leak the
+    // token on the next form load. Allowed: http for local hostnames only
+    // (Compose service names without dots, plus localhost / 127.0.0.1);
+    // https for any other host. Anything else is rejected.
+    $nlp_url = $form_state->getValue('nlp_url');
+    if (!empty($nlp_url)) {
+      $parsed = parse_url($nlp_url);
+      $scheme = $parsed['scheme'] ?? '';
+      $host = $parsed['host'] ?? '';
+      $is_local_host = ($host === 'localhost' || $host === '127.0.0.1' || ($host !== '' && !str_contains($host, '.')));
+      if (!filter_var($nlp_url, FILTER_VALIDATE_URL) || !in_array($scheme, ['http', 'https'], TRUE)) {
+        $form_state->setErrorByName('nlp_url', $this->t('NLP service URL must be a valid http:// or https:// URL.'));
+      }
+      elseif ($scheme === 'http' && !$is_local_host) {
+        $form_state->setErrorByName('nlp_url', $this->t('Plain HTTP is only permitted for local hostnames (Docker Compose service names without a domain, or <code>localhost</code> / <code>127.0.0.1</code>). External or fully-qualified hosts require HTTPS.'));
+      }
+    }
+
+    // Server-side enum validation for the PII provider. The select widget
+    // enforces this client-side and the schema Choice constraint catches it
+    // at config save, but defense in depth: never trust the submitted value.
+    $allowed_pii_providers = ['openai', 'azure', 'ionos', 'local_nlp'];
+    $pii_provider = $form_state->getValue('pii_provider');
+    if ($pii_provider !== NULL && !in_array($pii_provider, $allowed_pii_providers, TRUE)) {
+      $form_state->setErrorByName('pii_provider', $this->t('Invalid PII provider selected.'));
+    }
+
+    // Guard against selecting local_nlp as the PII provider while the
+    // service is disabled — that would produce silent failures at runtime.
+    if ($form_state->getValue('pii_enabled')
+        && $form_state->getValue('pii_use_llm')
+        && $pii_provider === 'local_nlp'
+        && !$form_state->getValue('nlp_enabled')) {
+      $form_state->setErrorByName('pii_provider', $this->t('The self-hosted NLP service must be enabled before it can be used as the PII detection provider.'));
+    }
   }
 
   /**
@@ -538,6 +714,18 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $config->set('providers.ionos.chat_model', $form_state->getValue('ionos_chat_model'));
     $config->set('providers.ionos.embedding_model', $form_state->getValue('ionos_embedding_model'));
     $config->set('providers.ionos.auth_type', 'bearer');
+
+    // Save self-hosted NLP service settings.
+    $config->set('nlp_service.enabled', (bool) $form_state->getValue('nlp_enabled'));
+    $nlp_url = $form_state->getValue('nlp_url');
+    if (!empty($nlp_url)) {
+      $config->set('nlp_service.url', $nlp_url);
+    }
+
+    // Save PII redaction settings.
+    $config->set('pii_redaction.enabled', (bool) $form_state->getValue('pii_enabled'));
+    $config->set('pii_redaction.use_llm', (bool) $form_state->getValue('pii_use_llm'));
+    $config->set('pii_redaction.provider', $form_state->getValue('pii_provider') ?? 'ionos');
 
     // Save duplicate detection settings.
     $config->set('duplicate_detection.enabled', (bool) $form_state->getValue('enabled'));

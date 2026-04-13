@@ -556,6 +556,14 @@ function _markaspot_ai_is_feature_enabled_for_node(NodeInterface $node, string $
  *   List of detected personal names (validated, max 10, max 50 chars each).
  */
 function _markaspot_ai_detect_names_via_llm(string $text, string $provider, string $api_key, string $node_key): array {
+  // Self-hosted primary path: skip the OpenAI-compatible client entirely and
+  // speak the Phi-3 container's native REST dialect. No fallback — if the
+  // admin explicitly chose local_nlp, they don't want silent fail-over to an
+  // external provider.
+  if ($provider === 'local_nlp') {
+    return _markaspot_ai_detect_names_via_nlp($text, $node_key);
+  }
+
   $system_prompt = <<<'PROMPT'
 You are a PII detection system. Analyze the text for personal names (first names, last names, full names). Do NOT flag place names, street names, company names, or generic titles.
 
@@ -565,8 +573,6 @@ Respond with a JSON object:
 If no personal names are found, respond:
 {"names_found": []}
 PROMPT;
-
-  $names = [];
 
   // Try primary provider (e.g. IONOS).
   if (!empty($api_key)) {
@@ -600,34 +606,61 @@ PROMPT;
   }
 
   // Fallback: local NLP service (Ollama).
+  return _markaspot_ai_detect_names_via_nlp($text, $node_key);
+}
+
+/**
+ * Calls the self-hosted NLP container to detect personal names.
+ *
+ * Used both as the primary path (when the admin selects local_nlp) and
+ * as a resilience fallback when a cloud provider fails.
+ *
+ * @param string $text
+ *   The text to scan (already regex-redacted).
+ * @param string $node_key
+ *   Node identifier for logging.
+ *
+ * @return array
+ *   List of detected personal names (validated, max 10, max 50 chars each).
+ */
+function _markaspot_ai_detect_names_via_nlp(string $text, string $node_key): array {
+  $names = [];
+
   try {
     /** @var \Drupal\markaspot_ai\Service\NlpClientService $nlp_client */
     $nlp_client = \Drupal::service('markaspot_ai.nlp_client');
-    if ($nlp_client->isAvailable()) {
-      $result = $nlp_client->redactPii($text);
-      // NLP returns full redacted text. Extract entities that are names.
-      if (!empty($result['entities_found'])) {
-        foreach ($result['entities_found'] as $entity) {
-          // Parse "type: value" or {"type": "name", "value": "..."} format.
-          if (is_string($entity) && preg_match('/^name:\s*(.+)$/i', $entity, $m)) {
-            $name = trim($m[1]);
-            if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
-              $names[] = $name;
-            }
+    if (!$nlp_client->isAvailable()) {
+      // Surface NLP outages in watchdog instead of silently returning "no
+      // PII found" — critical when local_nlp is the primary provider,
+      // because the caller will store the report unredacted.
+      \Drupal::logger('markaspot_ai')->warning('NLP service unavailable for @key — returning empty PII set. Reports may be stored without LLM-based name redaction.', [
+        '@key' => $node_key,
+      ]);
+      return [];
+    }
+
+    $result = $nlp_client->redactPii($text);
+    if (!empty($result['entities_found'])) {
+      foreach ($result['entities_found'] as $entity) {
+        // Parse "type: value" or {"type": "name", "value": "..."} format.
+        if (is_string($entity) && preg_match('/^name:\s*(.+)$/i', $entity, $m)) {
+          $name = trim($m[1]);
+          if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
+            $names[] = $name;
           }
-          elseif (is_array($entity) && strtolower($entity['type'] ?? '') === 'name') {
-            $name = trim($entity['value'] ?? '');
-            if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
-              $names[] = $name;
-            }
+        }
+        elseif (is_array($entity) && strtolower($entity['type'] ?? '') === 'name') {
+          $name = trim($entity['value'] ?? '');
+          if (mb_strlen($name) >= 2 && mb_strlen($name) <= 50) {
+            $names[] = $name;
           }
         }
       }
-      return array_slice($names, 0, 10);
     }
+    return array_slice($names, 0, 10);
   }
   catch (\Exception $e) {
-    \Drupal::logger('markaspot_ai')->warning('PII NLP fallback also failed for @key: @message', [
+    \Drupal::logger('markaspot_ai')->warning('PII NLP service failed for @key: @message', [
       '@key' => $node_key,
       '@message' => $e->getMessage(),
     ]);

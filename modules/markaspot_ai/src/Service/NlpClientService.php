@@ -250,12 +250,20 @@ class NlpClientService {
   }
 
   /**
-   * Gets the NLP service base URL from config.
+   * Gets the NLP service base URL.
+   *
+   * Priority: Environment variable (MARKASPOT_NLP_API_URL) > config value >
+   * Docker-internal default.
    *
    * @return string
    *   The service URL.
    */
   protected function getServiceUrl(): string {
+    $envValue = getenv('MARKASPOT_NLP_API_URL');
+    if (!empty($envValue)) {
+      return $envValue;
+    }
+
     return $this->getConfig()->get('nlp_service.url') ?? 'http://markaspot-nlp:8100';
   }
 

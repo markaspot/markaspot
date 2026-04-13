@@ -517,6 +517,36 @@ function markaspot_ai_update_10005(): void {
 }
 
 /**
+ * Add nlp_service configuration for self-hosted Phi-3 container.
+ */
+function markaspot_ai_update_10006(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_ai.settings');
+  $changed = FALSE;
+
+  if ($config->get('nlp_service') === NULL) {
+    $config->set('nlp_service', [
+      'enabled' => FALSE,
+      'url' => 'http://markaspot-nlp:8100',
+      'health_check_interval' => 300,
+    ]);
+    $changed = TRUE;
+  }
+
+  // Ensure pii_redaction.provider has a valid value now that the schema
+  // constrains it to an enum.
+  $allowed = ['openai', 'azure', 'ionos', 'local_nlp'];
+  $current = $config->get('pii_redaction.provider');
+  if (!in_array($current, $allowed, TRUE)) {
+    $config->set('pii_redaction.provider', 'ionos');
+    $changed = TRUE;
+  }
+
+  if ($changed) {
+    $config->save();
+  }
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {

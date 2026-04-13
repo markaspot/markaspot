@@ -124,3 +124,26 @@ markaspot_ai.settings:
         provider:
           type: string
           label: 'AI Provider for PII Detection'
+          constraints:
+            Choice:
+              choices:
+                - openai
+                - azure
+                - ionos
+                - local_nlp
+    nlp_service:
+      type: mapping
+      label: 'Self-Hosted NLP Service'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Enable Self-Hosted NLP Service'
+        url:
+          type: uri
+          label: 'NLP Service Base URL'
+        api_key:
+          type: string
+          label: 'Bearer Token (legacy/test only — production uses MARKASPOT_NLP_API_KEY env var)'
+        health_check_interval:
+          type: integer
+          label: 'Health Check Interval (seconds)'
