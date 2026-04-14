@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.43](https://github.com/markaspot/markaspot/compare/11.9.42...11.9.43) (2026-04-14)
+
+### Features
+
+* **passwordless:** add PATCH /api/auth/preferences for user langcode ([7ad8ddb](https://github.com/markaspot/markaspot/commit/7ad8ddb7ac43c83cda5993f8c144093b6d3fdf6a))
+
+### Refactoring
+
+* **ai,vision:** unify bearer ENV lookups on MARKASPOT_* schema ([ecf572c](https://github.com/markaspot/markaspot/commit/ecf572c76f47b6ac8bcc44bd226ac27f48096b36))
+* **vision:** unify blur service URL on MARKASPOT_BLUR_URL ([088db4f](https://github.com/markaspot/markaspot/commit/088db4fc72083d8117bf70e2db9b32e5cd6b0fd0))
+
 ## [11.9.42](https://github.com/markaspot/markaspot/compare/11.9.41...11.9.42) (2026-04-13)
 
 ### Features
