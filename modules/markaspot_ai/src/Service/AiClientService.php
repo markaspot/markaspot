@@ -472,7 +472,10 @@ class AiClientService {
   /**
    * Resolves the API key from environment variable or config.
    *
-   * Priority: Environment variable > Config value.
+   * Three-stage resolution per the canonical schema in #309:
+   *   1. Canonical ENV: MARKASPOT_AI_API_KEY (provider-agnostic).
+   *   2. Legacy per-provider ENVs (deprecation-logged).
+   *   3. providerConfig['api_key'] from markaspot_ai.settings.
    *
    * @param string $provider
    *   The provider name (e.g., 'openai', 'azure').
@@ -483,24 +486,32 @@ class AiClientService {
    *   The resolved API key, or empty string if not found.
    */
   protected function resolveApiKey(string $provider, array $providerConfig): string {
-    // Environment variable names to check (in order of priority).
-    $envVars = match ($provider) {
+    // Stage 1: canonical ENV (#309 schema).
+    $canonical = getenv('MARKASPOT_AI_API_KEY');
+    if (is_string($canonical) && $canonical !== '') {
+      return $canonical;
+    }
+
+    // Stage 2: legacy per-provider ENV names with deprecation warning.
+    $legacy = match ($provider) {
       'openai' => ['OPENAI_API_KEY', 'MARKASPOT_AI_OPENAI_KEY'],
       'azure' => ['AZURE_OPENAI_API_KEY', 'MARKASPOT_AI_AZURE_KEY'],
       'anthropic' => ['ANTHROPIC_API_KEY', 'MARKASPOT_AI_ANTHROPIC_KEY'],
       'ionos' => ['IONOS_AI_API_KEY', 'MARKASPOT_AI_IONOS_KEY'],
       default => ['MARKASPOT_AI_' . strtoupper($provider) . '_KEY'],
     };
-
-    // Check environment variables first.
-    foreach ($envVars as $envVar) {
+    foreach ($legacy as $envVar) {
       $value = getenv($envVar);
-      if (!empty($value)) {
+      if (is_string($value) && $value !== '') {
+        $this->logger->warning('Deprecated ENV @legacy used for provider @provider; migrate to MARKASPOT_AI_API_KEY (see #309).', [
+          '@legacy' => $envVar,
+          '@provider' => $provider,
+        ]);
         return $value;
       }
     }
 
-    // Fall back to config value.
+    // Stage 3: config fallback.
     return $providerConfig['api_key'] ?? '';
   }
 

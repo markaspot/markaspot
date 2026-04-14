@@ -145,11 +145,13 @@ class ImageProcessingService {
       'http_errors' => FALSE,
     ];
 
-    // Add Bearer auth if AI_API_KEY is set.
-    $ai_api_key = getenv('AI_API_KEY') ?: '';
-    if (!empty($ai_api_key)) {
+    // Resolve Bearer token for the blur edge auth.
+    // Stage 1: canonical MARKASPOT_BLUR_API_KEY (#309 schema).
+    // Stage 2: legacy AI_API_KEY (deprecation-logged, sunset next minor).
+    $bearer = $this->resolveBlurBearer();
+    if ($bearer !== '') {
       $request_options['headers'] = [
-        'Authorization' => 'Bearer ' . $ai_api_key,
+        'Authorization' => 'Bearer ' . $bearer,
       ];
     }
 
@@ -956,6 +958,34 @@ class ImageProcessingService {
     ];
 
     return $map[$langcode ?? ''] ?? 'English';
+  }
+
+  /**
+   * Resolves the bearer token for the blur edge service.
+   *
+   * Two-stage resolution per the canonical schema in #309:
+   *   1. Canonical ENV: MARKASPOT_BLUR_API_KEY.
+   *   2. Legacy ENV: AI_API_KEY (deprecation-logged, sunset next minor).
+   *
+   * No config-side fallback exists: the bearer is exclusively edge-auth and
+   * must come from the deployment ENV, never from persisted Drupal config.
+   *
+   * @return string
+   *   The resolved bearer token, or empty string if not configured.
+   */
+  protected function resolveBlurBearer(): string {
+    $canonical = getenv('MARKASPOT_BLUR_API_KEY');
+    if (is_string($canonical) && $canonical !== '') {
+      return $canonical;
+    }
+
+    $legacy = getenv('AI_API_KEY');
+    if (is_string($legacy) && $legacy !== '') {
+      $this->logger->warning('Deprecated ENV AI_API_KEY used for blur bearer; migrate to MARKASPOT_BLUR_API_KEY (see #309).');
+      return $legacy;
+    }
+
+    return '';
   }
 
 }

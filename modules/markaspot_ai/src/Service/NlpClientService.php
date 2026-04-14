@@ -235,14 +235,19 @@ class NlpClientService {
   /**
    * Resolves the NLP API key from environment or config.
    *
-   * Priority: Environment variable > Config value.
+   * Resolution per the canonical schema in #309:
+   *   1. Canonical ENV: MARKASPOT_NLP_API_KEY.
+   *   2. Config fallback: nlp_service.api_key (test/legacy only).
+   *
+   * No deprecated alias exists — MARKASPOT_NLP_API_KEY has been the only
+   * accepted ENV name since the service was introduced.
    *
    * @return string
    *   The resolved API key, or empty string if not found.
    */
   protected function resolveApiKey(): string {
     $envValue = getenv('MARKASPOT_NLP_API_KEY');
-    if (!empty($envValue)) {
+    if (is_string($envValue) && $envValue !== '') {
       return $envValue;
     }
 
@@ -252,15 +257,17 @@ class NlpClientService {
   /**
    * Gets the NLP service base URL.
    *
-   * Priority: Environment variable (MARKASPOT_NLP_API_URL) > config value >
-   * Docker-internal default.
+   * Resolution per the canonical schema in #309:
+   *   1. Canonical ENV: MARKASPOT_NLP_API_URL.
+   *   2. Config fallback: nlp_service.url.
+   *   3. Docker-internal default (compose service name).
    *
    * @return string
    *   The service URL.
    */
   protected function getServiceUrl(): string {
     $envValue = getenv('MARKASPOT_NLP_API_URL');
-    if (!empty($envValue)) {
+    if (is_string($envValue) && $envValue !== '') {
       return $envValue;
     }
 

@@ -45,6 +45,8 @@ class ImageProcessingServiceTest extends UnitTestCase {
     'MARKASPOT_VISION_AUTH_TYPE',
     'OPENAI_API_KEY',
     'VISION_BLUR_URL',
+    'MARKASPOT_BLUR_API_KEY',
+    'AI_API_KEY',
   ];
 
   /**
@@ -342,6 +344,56 @@ class ImageProcessingServiceTest extends UnitTestCase {
       'Unknown defaults to English' => ['xx', 'English'],
       'NULL defaults to English' => [NULL, 'English'],
     ];
+  }
+
+  /**
+   * Tests resolveBlurBearer: canonical MARKASPOT_BLUR_API_KEY wins.
+   *
+   * @covers ::resolveBlurBearer
+   */
+  public function testResolveBlurBearerCanonicalEnvTakesPrecedence(): void {
+    putenv('MARKASPOT_BLUR_API_KEY=canonical-bearer');
+    putenv('AI_API_KEY=legacy-bearer');
+
+    $this->logger->expects($this->never())->method('warning');
+
+    $service = $this->createService();
+    $bearer = $this->invokeMethod($service, 'resolveBlurBearer');
+
+    $this->assertSame('canonical-bearer', $bearer);
+  }
+
+  /**
+   * Tests resolveBlurBearer: legacy AI_API_KEY fires deprecation warning.
+   *
+   * @covers ::resolveBlurBearer
+   */
+  public function testResolveBlurBearerLegacyEnvTriggersWarning(): void {
+    putenv('AI_API_KEY=legacy-bearer');
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with($this->stringContains('Deprecated ENV AI_API_KEY'));
+
+    $service = $this->createService();
+    $bearer = $this->invokeMethod($service, 'resolveBlurBearer');
+
+    $this->assertSame('legacy-bearer', $bearer);
+  }
+
+  /**
+   * Tests resolveBlurBearer: returns empty when no ENV is set.
+   *
+   * @covers ::resolveBlurBearer
+   */
+  public function testResolveBlurBearerEmptyWhenNoEnv(): void {
+    // setUp has cleared both MARKASPOT_BLUR_API_KEY and AI_API_KEY.
+    $this->logger->expects($this->never())->method('warning');
+
+    $service = $this->createService();
+    $bearer = $this->invokeMethod($service, 'resolveBlurBearer');
+
+    $this->assertSame('', $bearer);
   }
 
 }

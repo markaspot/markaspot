@@ -60,10 +60,38 @@ class AiClientServiceTest extends UnitTestCase {
   protected $logger;
 
   /**
+   * Saved ENV variables to restore after each test.
+   *
+   * @var array<string, string|false>
+   */
+  protected array $savedEnv = [];
+
+  /**
+   * ENV variable names touched by resolveApiKey() across providers.
+   */
+  private const RESOLVE_API_KEY_ENV_KEYS = [
+    'MARKASPOT_AI_API_KEY',
+    'OPENAI_API_KEY',
+    'MARKASPOT_AI_OPENAI_KEY',
+    'AZURE_OPENAI_API_KEY',
+    'MARKASPOT_AI_AZURE_KEY',
+    'ANTHROPIC_API_KEY',
+    'MARKASPOT_AI_ANTHROPIC_KEY',
+    'IONOS_AI_API_KEY',
+    'MARKASPOT_AI_IONOS_KEY',
+  ];
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
+
+    // Isolate tests from host ENV: save and clear ai-related variables.
+    foreach (self::RESOLVE_API_KEY_ENV_KEYS as $key) {
+      $this->savedEnv[$key] = getenv($key);
+      putenv($key);
+    }
 
     $this->httpClient = $this->createMock(ClientInterface::class);
     $this->tokenTracking = $this->createMock(TokenTrackingService::class);
@@ -117,6 +145,30 @@ class AiClientServiceTest extends UnitTestCase {
       ->onlyMethods(['wait'])
       ->getMock();
     $this->service->method('wait')->willReturnCallback(function () {});
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    foreach ($this->savedEnv as $key => $value) {
+      if ($value === FALSE) {
+        putenv($key);
+      }
+      else {
+        putenv("$key=$value");
+      }
+    }
+    parent::tearDown();
+  }
+
+  /**
+   * Invokes a protected method on the service under test.
+   */
+  protected function invokeResolveApiKey(string $provider, array $providerConfig): string {
+    $reflection = new \ReflectionMethod($this->service, 'resolveApiKey');
+    $reflection->setAccessible(TRUE);
+    return $reflection->invokeArgs($this->service, [$provider, $providerConfig]);
   }
 
   /**
@@ -546,6 +598,69 @@ class AiClientServiceTest extends UnitTestCase {
     $this->expectExceptionMessage('Failed to decode API response');
 
     $this->service->chat([['role' => 'user', 'content' => 'test']]);
+  }
+
+  /**
+   * Tests resolveApiKey: canonical MARKASPOT_AI_API_KEY wins over legacy.
+   *
+   * @covers ::resolveApiKey
+   */
+  public function testResolveApiKeyCanonicalEnvTakesPrecedence(): void {
+    putenv('MARKASPOT_AI_API_KEY=canonical-key');
+    putenv('OPENAI_API_KEY=legacy-openai-key');
+
+    $this->logger->expects($this->never())->method('warning');
+
+    $key = $this->invokeResolveApiKey('openai', ['api_key' => 'config-key']);
+
+    $this->assertSame('canonical-key', $key);
+  }
+
+  /**
+   * Tests resolveApiKey: legacy ENV is honored and fires deprecation warning.
+   *
+   * @covers ::resolveApiKey
+   */
+  public function testResolveApiKeyLegacyEnvTriggersWarning(): void {
+    putenv('OPENAI_API_KEY=legacy-openai-key');
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('Deprecated ENV @legacy'),
+        $this->callback(function (array $context): bool {
+          return ($context['@legacy'] ?? NULL) === 'OPENAI_API_KEY'
+            && ($context['@provider'] ?? NULL) === 'openai';
+        })
+      );
+
+    $key = $this->invokeResolveApiKey('openai', ['api_key' => 'config-key']);
+
+    $this->assertSame('legacy-openai-key', $key);
+  }
+
+  /**
+   * Tests resolveApiKey: config fallback when no ENV is set.
+   *
+   * @covers ::resolveApiKey
+   */
+  public function testResolveApiKeyConfigFallbackWhenNoEnv(): void {
+    // Sanity check: setUp cleared all ENV keys.
+    $this->logger->expects($this->never())->method('warning');
+
+    $key = $this->invokeResolveApiKey('openai', ['api_key' => 'config-key']);
+
+    $this->assertSame('config-key', $key);
+  }
+
+  /**
+   * Tests resolveApiKey: returns empty string when nothing is configured.
+   *
+   * @covers ::resolveApiKey
+   */
+  public function testResolveApiKeyReturnsEmptyWhenNothingConfigured(): void {
+    $key = $this->invokeResolveApiKey('openai', []);
+    $this->assertSame('', $key);
   }
 
   /**
