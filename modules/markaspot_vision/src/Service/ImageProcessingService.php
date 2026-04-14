@@ -115,10 +115,11 @@ class ImageProcessingService {
       return $fallback;
     }
 
-    // Resolve blur service URL: config > ENV > default.
-    $blur_url = $config->get('blur_service_url');
-    if (empty($blur_url)) {
-      $blur_url = getenv('VISION_BLUR_URL') ?: 'http://markaspot-vision:8200/blur';
+    // Resolve blur service URL via the canonical schema (#309).
+    $blur_url = $this->resolveBlurUrl($config->get('blur_service_url'));
+    if ($blur_url === '') {
+      $this->logger->notice('Blur preprocessing enabled but no blur service URL configured (set MARKASPOT_BLUR_URL or markaspot_vision.settings.blur_service_url). Skipping blur step.');
+      return $fallback;
     }
 
     // Map MIME type to file extension for the multipart filename.
@@ -982,6 +983,43 @@ class ImageProcessingService {
     $legacy = getenv('AI_API_KEY');
     if (is_string($legacy) && $legacy !== '') {
       $this->logger->warning('Deprecated ENV AI_API_KEY used for blur bearer; migrate to MARKASPOT_BLUR_API_KEY (see #309).');
+      return $legacy;
+    }
+
+    return '';
+  }
+
+  /**
+   * Resolves the blur service URL.
+   *
+   * Resolution order per the canonical schema in #309:
+   *   1. Drupal config (markaspot_vision.settings.blur_service_url).
+   *   2. Canonical ENV: MARKASPOT_BLUR_URL.
+   *   3. Legacy ENV: VISION_BLUR_URL (deprecation-logged).
+   *
+   * No default is supplied: the blur step requires explicit deployment
+   * configuration. If nothing is set, blurSensitiveAreas() skips the
+   * blur step and returns the original image untouched.
+   *
+   * @param string|null $configValue
+   *   The blur_service_url config value, may be NULL or empty.
+   *
+   * @return string
+   *   The resolved blur service URL, or empty string if not configured.
+   */
+  protected function resolveBlurUrl(?string $configValue): string {
+    if (is_string($configValue) && $configValue !== '') {
+      return $configValue;
+    }
+
+    $canonical = getenv('MARKASPOT_BLUR_URL');
+    if (is_string($canonical) && $canonical !== '') {
+      return $canonical;
+    }
+
+    $legacy = getenv('VISION_BLUR_URL');
+    if (is_string($legacy) && $legacy !== '') {
+      $this->logger->warning('Deprecated ENV VISION_BLUR_URL used for blur service; migrate to MARKASPOT_BLUR_URL (see #309).');
       return $legacy;
     }
 

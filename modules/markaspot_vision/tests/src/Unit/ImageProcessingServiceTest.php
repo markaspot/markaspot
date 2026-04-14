@@ -46,6 +46,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
     'OPENAI_API_KEY',
     'VISION_BLUR_URL',
     'MARKASPOT_BLUR_API_KEY',
+    'MARKASPOT_BLUR_URL',
     'AI_API_KEY',
   ];
 
@@ -394,6 +395,86 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $bearer = $this->invokeMethod($service, 'resolveBlurBearer');
 
     $this->assertSame('', $bearer);
+  }
+
+  /**
+   * Tests resolveBlurUrl: config value wins over both ENV names.
+   *
+   * @covers ::resolveBlurUrl
+   */
+  public function testResolveBlurUrlConfigTakesPrecedence(): void {
+    putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
+    putenv('VISION_BLUR_URL=https://legacy.example/blur');
+
+    $this->logger->expects($this->never())->method('warning');
+
+    $service = $this->createService();
+    $url = $this->invokeMethod($service, 'resolveBlurUrl', ['https://config.example/blur']);
+
+    $this->assertSame('https://config.example/blur', $url);
+  }
+
+  /**
+   * Tests resolveBlurUrl: canonical MARKASPOT_BLUR_URL wins over legacy.
+   *
+   * @covers ::resolveBlurUrl
+   */
+  public function testResolveBlurUrlCanonicalEnvTakesPrecedenceOverLegacy(): void {
+    putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
+    putenv('VISION_BLUR_URL=https://legacy.example/blur');
+
+    $this->logger->expects($this->never())->method('warning');
+
+    $service = $this->createService();
+    $url = $this->invokeMethod($service, 'resolveBlurUrl', [NULL]);
+
+    $this->assertSame('https://canonical.example/blur', $url);
+  }
+
+  /**
+   * Tests resolveBlurUrl: legacy VISION_BLUR_URL fires deprecation warning.
+   *
+   * @covers ::resolveBlurUrl
+   */
+  public function testResolveBlurUrlLegacyEnvTriggersWarning(): void {
+    putenv('VISION_BLUR_URL=https://legacy.example/blur');
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with($this->stringContains('Deprecated ENV VISION_BLUR_URL'));
+
+    $service = $this->createService();
+    $url = $this->invokeMethod($service, 'resolveBlurUrl', [NULL]);
+
+    $this->assertSame('https://legacy.example/blur', $url);
+  }
+
+  /**
+   * Tests resolveBlurUrl: returns empty when nothing is configured.
+   *
+   * @covers ::resolveBlurUrl
+   */
+  public function testResolveBlurUrlReturnsEmptyWhenNothingConfigured(): void {
+    $this->logger->expects($this->never())->method('warning');
+
+    $service = $this->createService();
+    $url = $this->invokeMethod($service, 'resolveBlurUrl', [NULL]);
+
+    $this->assertSame('', $url);
+  }
+
+  /**
+   * Tests resolveBlurUrl: empty config string is treated as not-set.
+   *
+   * @covers ::resolveBlurUrl
+   */
+  public function testResolveBlurUrlEmptyConfigFallsThroughToEnv(): void {
+    putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
+
+    $service = $this->createService();
+    $url = $this->invokeMethod($service, 'resolveBlurUrl', ['']);
+
+    $this->assertSame('https://canonical.example/blur', $url);
   }
 
 }
