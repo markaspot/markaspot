@@ -7,6 +7,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
+use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -375,6 +376,7 @@ class PasswordlessAuthController extends ControllerBase {
           'email' => $account->getEmail(),
           'roles' => $account->getRoles(),
           'groups' => $this->getUserGroups($user),
+          'preferred_langcode' => $user->getPreferredLangcode(FALSE),
         ],
       ]);
     }
@@ -382,6 +384,78 @@ class PasswordlessAuthController extends ControllerBase {
     return new JsonResponse([
       'authenticated' => FALSE,
     ]);
+  }
+
+  /**
+   * Update authenticated user preferences.
+   *
+   * PATCH /api/auth/preferences
+   * Body: { "preferred_langcode": "de" }
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request object.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON response with the updated user, matching the status() shape.
+   */
+  public function updatePreferences(Request $request): JsonResponse {
+    $data = json_decode($request->getContent(), TRUE);
+
+    if (!is_array($data) || empty($data['preferred_langcode'])) {
+      return new JsonResponse([
+        'error' => 'preferred_langcode is required',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
+    $langcode = strtolower(trim((string) $data['preferred_langcode']));
+
+    // Validate against user-facing configurable languages only. STATE_ALL
+    // would also accept locked sentinels like 'und' (LANGCODE_NOT_SPECIFIED)
+    // and 'zxx' (LANGCODE_NOT_APPLICABLE), which must not be writable as a
+    // user preference.
+    $enabled = $this->languageManager()
+      ->getLanguages(LanguageInterface::STATE_CONFIGURABLE);
+    if (!isset($enabled[$langcode])) {
+      return new JsonResponse([
+        'error' => 'Invalid langcode',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
+    try {
+      /** @var \Drupal\user\UserInterface $user */
+      $user = $this->entityTypeManager()
+        ->getStorage('user')
+        ->load($this->currentUser->id());
+
+      if (!$user) {
+        return new JsonResponse([
+          'error' => 'User not found',
+        ], Response::HTTP_NOT_FOUND);
+      }
+
+      $user->set('preferred_langcode', $langcode);
+      $user->save();
+
+      return new JsonResponse([
+        'authenticated' => TRUE,
+        'user' => [
+          'uid' => $user->id(),
+          'name' => $user->getAccountName(),
+          'email' => $user->getEmail(),
+          'roles' => $user->getRoles(),
+          'groups' => $this->getUserGroups($user),
+          'preferred_langcode' => $user->getPreferredLangcode(FALSE),
+        ],
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_passwordless')->error('Failed to update preferences: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+      return new JsonResponse([
+        'error' => 'Failed to update preferences',
+      ], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
   }
 
   /**

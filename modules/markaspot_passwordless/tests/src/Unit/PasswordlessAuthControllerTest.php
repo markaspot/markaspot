@@ -12,6 +12,8 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
 use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
@@ -82,6 +84,13 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   protected $keyValueExpirable;
 
   /**
+   * Mocked language manager.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $languageManager;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -93,6 +102,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->configFactory = $this->createMock(ConfigFactoryInterface::class);
     $this->sessionConfiguration = $this->createMock(SessionConfigurationInterface::class);
     $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $this->languageManager = $this->createMock(LanguageManagerInterface::class);
 
     // Default passwordless config.
     $passwordlessConfig = $this->createMock(ImmutableConfig::class);
@@ -122,6 +132,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $container->set('module_handler', $moduleHandler);
     $container->set('entity_type.manager', $entityTypeManager);
     $container->set('logger.factory', $this->createLoggerFactoryStub());
+    $container->set('language_manager', $this->languageManager);
     \Drupal::setContainer($container);
 
     $this->controller = new PasswordlessAuthController(
@@ -572,6 +583,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $container->set('module_handler', $moduleHandler);
     $container->set('entity_type.manager', $entityTypeManager);
     $container->set('logger.factory', $this->createLoggerFactoryStub());
+    $container->set('language_manager', $this->languageManager);
     \Drupal::setContainer($container);
 
     $this->recreateController();
@@ -609,6 +621,100 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       }
 
     };
+  }
+
+  // ===========================================================================
+  // Tests for updatePreferences().
+  // ===========================================================================
+
+  /**
+   * Tests updatePreferences with missing payload returns 400.
+   *
+   * @covers ::updatePreferences
+   */
+  public function testUpdatePreferencesMissingLangcode(): void {
+    $request = new Request([], [], [], [], [], [], '{}');
+    $response = $this->controller->updatePreferences($request);
+
+    $this->assertEquals(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('preferred_langcode is required', $data['error']);
+  }
+
+  /**
+   * Tests updatePreferences with an unknown langcode returns 400.
+   *
+   * @covers ::updatePreferences
+   */
+  public function testUpdatePreferencesInvalidLangcode(): void {
+    $deLanguage = $this->createMock(LanguageInterface::class);
+    $this->languageManager
+      ->method('getLanguages')
+      ->with(LanguageInterface::STATE_CONFIGURABLE)
+      ->willReturn(['de' => $deLanguage]);
+
+    $request = new Request([], [], [], [], [], [], '{"preferred_langcode":"zz"}');
+    $response = $this->controller->updatePreferences($request);
+
+    $this->assertEquals(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('Invalid langcode', $data['error']);
+  }
+
+  /**
+   * Tests updatePreferences successfully persists a valid langcode.
+   *
+   * @covers ::updatePreferences
+   */
+  public function testUpdatePreferencesSuccess(): void {
+    $deLanguage = $this->createMock(LanguageInterface::class);
+    $this->languageManager
+      ->method('getLanguages')
+      ->with(LanguageInterface::STATE_CONFIGURABLE)
+      ->willReturn(['de' => $deLanguage, 'en' => $deLanguage]);
+
+    $this->currentUser->method('id')->willReturn(42);
+
+    $userEntity = $this->getMockBuilder(\stdClass::class)
+      ->addMethods([
+        'set',
+        'save',
+        'id',
+        'getAccountName',
+        'getEmail',
+        'getRoles',
+        'getPreferredLangcode',
+      ])
+      ->getMock();
+    $userEntity->expects($this->once())
+      ->method('set')
+      ->with('preferred_langcode', 'de');
+    $userEntity->expects($this->once())->method('save');
+    $userEntity->method('id')->willReturn(42);
+    $userEntity->method('getAccountName')->willReturn('alice');
+    $userEntity->method('getEmail')->willReturn('alice@example.com');
+    $userEntity->method('getRoles')->willReturn(['authenticated']);
+    $userEntity->method('getPreferredLangcode')->willReturn('de');
+
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->method('load')->with(42)->willReturn($userEntity);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')->with('user')->willReturn($userStorage);
+
+    // Replace the entity_type.manager service that ControllerBase reads
+    // lazily, then rebuild the controller so it picks up the new container.
+    $container = \Drupal::getContainer();
+    $container->set('entity_type.manager', $entityTypeManager);
+
+    $request = new Request([], [], [], [], [], [], '{"preferred_langcode":"de"}');
+    $response = $this->controller->updatePreferences($request);
+
+    $this->assertEquals(Response::HTTP_OK, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['authenticated']);
+    $this->assertEquals('de', $data['user']['preferred_langcode']);
+    $this->assertEquals('alice@example.com', $data['user']['email']);
   }
 
 }

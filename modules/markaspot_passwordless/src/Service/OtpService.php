@@ -345,6 +345,7 @@ class OtpService {
             'email' => $user->getEmail(),
             'roles' => $user->getRoles(),
             'groups' => $this->getUserGroups($user),
+            'preferred_langcode' => $user->getPreferredLangcode(FALSE),
           ],
         ];
       }
@@ -395,19 +396,25 @@ class OtpService {
         return NULL;
       }
 
-      // Auto-create user if they don't exist.
+      // Auto-create user. Seed preferred_langcode from the current Drupal
+      // request language so the dashboard hydrates with a sensible default;
+      // users can change this later via /api/auth/preferences.
       try {
+        $current_langcode = $this->languageManager->getCurrentLanguage()->getId();
+
         $user = User::create([
         // Use email as username.
           'name' => $email,
           'mail' => $email,
           'status' => 1,
           'roles' => ['authenticated'],
+          'preferred_langcode' => $current_langcode,
         ]);
         $user->save();
 
-        $this->logger->info('Created new user account for @email', [
+        $this->logger->info('Created new user account for @email with langcode @langcode', [
           '@email' => $email,
+          '@langcode' => $current_langcode,
         ]);
       }
       catch (\Exception $e) {
