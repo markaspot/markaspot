@@ -90,6 +90,7 @@ class TenantSettingsController extends ControllerBase {
     'sentiment',
     'group',
     'district',
+    'sublocality',
     'location',
     'created',
     'updated',
@@ -353,7 +354,7 @@ class TenantSettingsController extends ControllerBase {
   /**
    * Reads the field_nuxt_config JSON from the default translation.
    *
-   * field_nuxt_config is non-translatable config data that is only saved on
+   * Field_nuxt_config is non-translatable config data that is only saved on
    * the entity's original language. When the entity is loaded in a non-default
    * translation, this field may be empty. This helper always reads from the
    * default translation to ensure the config is never missing.
