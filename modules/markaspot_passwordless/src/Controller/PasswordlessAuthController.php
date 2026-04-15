@@ -11,6 +11,7 @@ use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -67,6 +68,13 @@ class PasswordlessAuthController extends ControllerBase {
   protected KeyValueExpirableFactoryInterface $keyValueExpirable;
 
   /**
+   * The feature flag checker.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker
+   */
+  protected FeatureFlagChecker $featureFlagChecker;
+
+  /**
    * Constructs a PasswordlessAuthController object.
    *
    * @param \Drupal\markaspot_passwordless\Service\OtpService $otp_service
@@ -81,6 +89,8 @@ class PasswordlessAuthController extends ControllerBase {
    *   The session configuration.
    * @param \Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface $key_value_expirable
    *   The expirable key-value store factory.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $feature_flag_checker
+   *   The feature flag checker.
    */
   public function __construct(
     OtpService $otp_service,
@@ -89,6 +99,7 @@ class PasswordlessAuthController extends ControllerBase {
     ConfigFactoryInterface $config_factory,
     SessionConfigurationInterface $session_configuration,
     KeyValueExpirableFactoryInterface $key_value_expirable,
+    FeatureFlagChecker $feature_flag_checker,
   ) {
     $this->otpService = $otp_service;
     $this->currentUser = $current_user;
@@ -96,6 +107,7 @@ class PasswordlessAuthController extends ControllerBase {
     $this->configFactory = $config_factory;
     $this->sessionConfiguration = $session_configuration;
     $this->keyValueExpirable = $key_value_expirable;
+    $this->featureFlagChecker = $feature_flag_checker;
   }
 
   /**
@@ -108,8 +120,38 @@ class PasswordlessAuthController extends ControllerBase {
       $container->get('flood'),
       $container->get('config.factory'),
       $container->get('session_configuration'),
-      $container->get('keyvalue.expirable')
+      $container->get('keyvalue.expirable'),
+      $container->get('markaspot_nuxt.feature_flag_checker')
     );
+  }
+
+  /**
+   * Checks whether passwordless auth is enabled for the request jurisdiction.
+   *
+   * Reads features.passwordless from field_nuxt_config. Default is FALSE
+   * (schema default), matching the frontend useFeatureFlags().passwordlessEnabled
+   * and the dashboard writer. Returns a 403 JsonResponse when disabled, NULL
+   * when the call should proceed.
+   *
+   * @param array $data
+   *   The decoded request body.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse|null
+   *   A 403 response when the feature is disabled, NULL otherwise.
+   */
+  protected function assertPasswordlessEnabled(array $data): ?JsonResponse {
+    $jurisdictionId = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
+    $jurisdiction = $jurisdictionId
+      ? $this->entityTypeManager()->getStorage('group')->load($jurisdictionId)
+      : NULL;
+
+    if (!$this->featureFlagChecker->isEnabled('features.passwordless', $jurisdiction, FALSE)) {
+      return new JsonResponse([
+        'error' => $this->t('Passwordless authentication is disabled for this jurisdiction.'),
+      ], Response::HTTP_FORBIDDEN);
+    }
+
+    return NULL;
   }
 
   /**
@@ -126,6 +168,16 @@ class PasswordlessAuthController extends ControllerBase {
    */
   public function requestCode(Request $request): JsonResponse {
     $data = json_decode($request->getContent(), TRUE);
+    if (!is_array($data)) {
+      $data = [];
+    }
+
+    // Feature flag gate — reject early when the jurisdiction has
+    // passwordless auth disabled. This runs before email validation
+    // and flood checks so disabled tenants never hit rate limiters.
+    if ($denied = $this->assertPasswordlessEnabled($data)) {
+      return $denied;
+    }
 
     // Validate input.
     if (empty($data['email'])) {
@@ -212,6 +264,16 @@ class PasswordlessAuthController extends ControllerBase {
    */
   public function verifyCode(Request $request): JsonResponse {
     $data = json_decode($request->getContent(), TRUE);
+    if (!is_array($data)) {
+      $data = [];
+    }
+
+    // Feature flag gate — reject when the jurisdiction has passwordless
+    // auth disabled. Belt-and-suspenders with requestCode's gate, in
+    // case someone grabs an OTP from a different tenant.
+    if ($denied = $this->assertPasswordlessEnabled($data)) {
+      return $denied;
+    }
 
     // Validate input.
     if (empty($data['email']) || empty($data['code'])) {
