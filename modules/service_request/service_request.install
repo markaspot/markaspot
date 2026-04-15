@@ -499,7 +499,7 @@ function service_request_update_11007() {
 
   // 3. Create field instance if missing.
   if (!FieldConfig::loadByName('node', 'service_request', 'field_sublocality')) {
-    FieldConfig::create([
+    $instance_config = [
       'field_name' => 'field_sublocality',
       'entity_type' => 'node',
       'bundle' => 'service_request',
@@ -521,9 +521,65 @@ function service_request_update_11007() {
           'auto_create_bundle' => '',
         ],
       ],
-    ])->save();
+    ];
+
+    // field_permissions reads permission_type from the FieldConfig instance,
+    // not the FieldStorage. The storage-level setting is kept for consistency
+    // with other legacy fields, but the instance-level one is what JSON:API
+    // and field-level access checks honor.
+    if ($has_field_permissions) {
+      $instance_config['third_party_settings'] = [
+        'field_permissions' => [
+          'permission_type' => 'public',
+        ],
+      ];
+    }
+
+    FieldConfig::create($instance_config)->save();
     $messages[] = 'Created field instance: node.service_request.field_sublocality';
   }
 
   return empty($messages) ? 'field_sublocality already exists.' : implode("\n", $messages);
+}
+
+/**
+ * Set field_permissions public on district/sublocality field instances.
+ *
+ * Earlier update hooks set the permission_type on the field storage, where
+ * the field_permissions module does not read it. As a result JSON:API's
+ * field-level access check returned FORBIDDEN for reads through
+ * /jsonapi/node/service_request?include=field_district,field_sublocality,
+ * which in turn caused the dashboard edit form to render the dropdowns as
+ * empty even when the taxonomy references were set on the node.
+ *
+ * This hook copies the intended public permission type onto the FieldConfig
+ * instances on service_request so JSON:API honors it. It is safe to re-run.
+ */
+function service_request_update_11008(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('field_permissions')) {
+    return 'field_permissions module not installed, nothing to do.';
+  }
+
+  $messages = [];
+  $field_names = ['field_district', 'field_sublocality'];
+
+  foreach ($field_names as $field_name) {
+    $field = FieldConfig::loadByName('node', 'service_request', $field_name);
+    if (!$field) {
+      $messages[] = "Skipped {$field_name}: field instance not present.";
+      continue;
+    }
+
+    $existing = $field->getThirdPartySetting('field_permissions', 'permission_type');
+    if ($existing === 'public') {
+      $messages[] = "Skipped {$field_name}: already public.";
+      continue;
+    }
+
+    $field->setThirdPartySetting('field_permissions', 'permission_type', 'public');
+    $field->save();
+    $messages[] = "Set permission_type=public on node.service_request.{$field_name}.";
+  }
+
+  return implode("\n", $messages);
 }
