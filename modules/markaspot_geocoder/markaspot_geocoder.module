@@ -47,7 +47,8 @@ function markaspot_geocoder_node_presave(EntityInterface $node) {
     $geocoder_service = \Drupal::service('markaspot_geocoder.geocoder');
     $districtFieldsEmpty = _markaspot_geocoder_has_empty_district_fields($node, $geocoder_service);
 
-    // Geocode when: new node, geolocation changed, address missing, or district fields empty.
+    // Geocode when the node is new, its coordinates moved, the address is
+    // missing, or any mapped district field is still empty.
     if (($isNew || $geolocationChanged || $addressMissing || $districtFieldsEmpty) && isset($lat, $lng)) {
       $address = $geocoder_service->getAddressFromCoordinates($lat, $lng);
 
@@ -60,10 +61,12 @@ function markaspot_geocoder_node_presave(EntityInterface $node) {
           $node->field_address->postal_code = $address['postal_code'];
         }
 
-        // Apply district taxonomy mappings (skips already-filled fields).
+        // Apply district taxonomy mappings. Pre-filled fields stay sticky
+        // unless the geolocation has moved in this save — a pin-move must
+        // trigger re-evaluation so district references follow the new point.
         $districtProperties = $address['district_properties'] ?? [];
         if (!empty($districtProperties)) {
-          _markaspot_geocoder_apply_district_mappings($node, $districtProperties, $geocoder_service);
+          _markaspot_geocoder_apply_district_mappings($node, $districtProperties, $geocoder_service, $geolocationChanged);
         }
 
         \Drupal::logger('markaspot_geocoder')->info('Geocoded address for node #@id', ['@id' => $node->id() ?? 'new']);
@@ -106,7 +109,9 @@ function _markaspot_geocoder_has_empty_district_fields(EntityInterface $node, Ma
  *
  * Iterates over configured district mappings, matches geocoder response
  * properties to taxonomy terms, and sets the corresponding entity reference
- * fields on the node.
+ * fields on the node. When the geolocation has changed the mapped fields are
+ * re-evaluated even if they are already populated — stale district references
+ * bound to the previous pin are the exception we want to overwrite.
  *
  * @param \Drupal\Core\Entity\EntityInterface $node
  *   The service request node.
@@ -114,8 +119,11 @@ function _markaspot_geocoder_has_empty_district_fields(EntityInterface $node, Ma
  *   Raw geocoder properties (e.g. suburb, quarter, city_district).
  * @param \Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService $geocoder_service
  *   The geocoder service for accessing mapping config.
+ * @param bool $geolocationChanged
+ *   Whether the node's coordinates changed in this save. True enables
+ *   re-evaluation of already-populated fields.
  */
-function _markaspot_geocoder_apply_district_mappings(EntityInterface $node, array $properties, MarkaspotGeocoderService $geocoder_service): void {
+function _markaspot_geocoder_apply_district_mappings(EntityInterface $node, array $properties, MarkaspotGeocoderService $geocoder_service, bool $geolocationChanged = FALSE): void {
   $mappings = $geocoder_service->getDistrictMappings();
 
   if (empty($mappings)) {
@@ -136,8 +144,10 @@ function _markaspot_geocoder_apply_district_mappings(EntityInterface $node, arra
       continue;
     }
 
-    // Skip if the field already has a value (don't overwrite manual selections).
-    if (!$node->get($fieldName)->isEmpty()) {
+    // Skip if the field already has a value AND the location has not moved.
+    // Manual selections made without a pin-move stay sticky; location changes
+    // force a re-evaluation so district references follow the pin.
+    if (!$node->get($fieldName)->isEmpty() && !$geolocationChanged) {
       continue;
     }
 
@@ -151,6 +161,16 @@ function _markaspot_geocoder_apply_district_mappings(EntityInterface $node, arra
     }
 
     if ($matchedValue === NULL) {
+      // Location moved but the new point has no matching property — clear
+      // the stale value so the field no longer references the previous pin.
+      // Manual selections without a pin-move are protected by the earlier
+      // !$geolocationChanged guard and never reach this branch.
+      if ($geolocationChanged && !$node->get($fieldName)->isEmpty()) {
+        $node->set($fieldName, NULL);
+        \Drupal::logger('markaspot_geocoder')->info('Cleared @field: location changed, new geocoder response has no matching property', [
+          '@field' => $fieldName,
+        ]);
+      }
       continue;
     }
 
