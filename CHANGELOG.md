@@ -1,5 +1,27 @@
 # Changelog
 
+## [11.9.45](https://github.com/markaspot/markaspot/compare/11.9.44...11.9.45) (2026-04-15)
+
+### Features
+
+* **geocoder:** ship sensible default district mappings ([3a567ba](https://github.com/markaspot/markaspot/commit/3a567ba9949cc417df44cdd6100478fb90c15922))
+* **nuxt:** reusable FeatureFlagAccessCheck + gate stats routes ([c2636c5](https://github.com/markaspot/markaspot/commit/c2636c5f34acf8c3b130257c6258a983c6d2b2d9))
+
+### Bug Fixes
+
+* **ai:** skip PII redaction on node updates and during config sync ([5b54ce1](https://github.com/markaspot/markaspot/commit/5b54ce1def3c305de163c98699fc9640ec530213))
+* **auth:** namespace OTP storage by jurisdiction to close cross-tenant reuse ([367bb4e](https://github.com/markaspot/markaspot/commit/367bb4e3e6be2969cd8c775677841084359643fa))
+* **geocoder:** re-evaluate district mapping on location change ([e2a6ece](https://github.com/markaspot/markaspot/commit/e2a6ece8c821fc70fb7d8c53902492285d1873f5))
+* **nuxt:** enable jsonapi_extras for district and sublocality taxonomies ([d034ef0](https://github.com/markaspot/markaspot/commit/d034ef0c1c4156cf67339f3a4d08e720374f71ff))
+* **nuxt:** harden FeatureFlagAccessCheck against cache leak and GID bypass ([3d8f614](https://github.com/markaspot/markaspot/commit/3d8f6141598e1ae5ac88387584a2dcd3d4510adc))
+* **service_request:** set field_permissions public on field instances ([3ec3ea8](https://github.com/markaspot/markaspot/commit/3ec3ea8997422c70ebd9122f27d80536ad58ae9f))
+* **tenant-settings:** allow sublocality in dashboard column whitelist ([bacb09a](https://github.com/markaspot/markaspot/commit/bacb09ad95df455d30a85f62a87ac66875213080))
+* **tests:** restore vision + open311 unit suites after service hardening ([9f3c806](https://github.com/markaspot/markaspot/commit/9f3c806aba4b47eef9c8955cf59b376c7d642c3c))
+
+### Refactoring
+
+* **nuxt:** remove orphan privacyBlur feature flag ([671c11b](https://github.com/markaspot/markaspot/commit/671c11b2aa0110e27421510e47175646b4fcabe8)), closes [#319](https://github.com/markaspot/markaspot/issues/319)
+
 ## [11.9.44](https://github.com/markaspot/markaspot/compare/11.9.43...11.9.44) (2026-04-15)
 
 ### Features
