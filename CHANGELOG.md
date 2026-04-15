@@ -1,5 +1,25 @@
 # Changelog
 
+## [11.9.44](https://github.com/markaspot/markaspot/compare/11.9.43...11.9.44) (2026-04-15)
+
+### Features
+
+* **passwordless:** enforce passwordless feature flag on auth endpoints ([6469799](https://github.com/markaspot/markaspot/commit/6469799aef972c5f7fccbafdea5686861f692203))
+* **privacy:** enforce privacyNotice feature flag on report creation ([253a78e](https://github.com/markaspot/markaspot/commit/253a78e086c823bfd2c22c37f50b3a09ef83292a))
+* **vision:** enforce aiAnalysis feature flag in vision endpoint ([1229ec1](https://github.com/markaspot/markaspot/commit/1229ec1a460adf70f86f253993fe944883dbe56c))
+
+### Bug Fixes
+
+* **group:** auto-create missing group_roles field on cloud migration ([8adaa3a](https://github.com/markaspot/markaspot/commit/8adaa3a0bc08af06f16d1337003da4c8090803ec))
+* **open311:** scope tenant isolation to dashboard-level users ([33bb7b1](https://github.com/markaspot/markaspot/commit/33bb7b19c0f7c90f9bc5718f5567d9061acb4888))
+* **privacy:** follow-up fixes for [#320](https://github.com/markaspot/markaspot/issues/320) landing ([4824c72](https://github.com/markaspot/markaspot/commit/4824c72cd431834f32b1007db807722d4558f6e6))
+* **request_id:** post-update backfill for jurisdiction_id=0 legacy rows ([341cdc6](https://github.com/markaspot/markaspot/commit/341cdc63d035414f9d3c6c54c04ade64f925d66c))
+* **vision:** declare markaspot_nuxt dependency + i18n error string ([40d4668](https://github.com/markaspot/markaspot/commit/40d46688c206010618220712be723ac9fbeac3a1))
+
+### Refactoring
+
+* **open311:** remove redundant isAnonymous guard in controller ([024e86c](https://github.com/markaspot/markaspot/commit/024e86c3ac79bead4ddf94e3f24e55fcde6eaa9f))
+
 ## [11.9.43](https://github.com/markaspot/markaspot/compare/11.9.42...11.9.43) (2026-04-14)
 
 ### Features
