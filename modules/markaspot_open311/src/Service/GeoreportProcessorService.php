@@ -1859,8 +1859,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       return;
     }
 
-    // Anonymous users are handled by standard permission checks.
-    if ($account->isAnonymous()) {
+    // Only users with dashboard-level access are subject to tenant
+    // isolation. The "access open311 advanced properties" permission is
+    // the canonical capability gate used by determineExtendedRole() to
+    // distinguish managers from basic users. Accounts without it —
+    // anonymous, API service identities (api_user role), and regular
+    // authenticated citizens — are governed by Group module's query-level
+    // access grants (jur-outsider = published-only view). This is
+    // role-agnostic: any future role that gains the permission
+    // automatically inherits the isolation check.
+    if (!$account->hasPermission('access open311 advanced properties')) {
       return;
     }
 
