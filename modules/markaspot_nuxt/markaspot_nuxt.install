@@ -147,3 +147,71 @@ function markaspot_nuxt_update_9002() {
 
   return t('markaspot_nuxt.settings already exists.');
 }
+
+/**
+ * Enable jsonapi_extras resource configs for district and sublocality terms.
+ *
+ * Mark-a-Spot sets jsonapi_extras.settings.default_disabled to TRUE, which
+ * means any taxonomy_term bundle without an explicit resource config is
+ * silently hidden from JSON:API. Relationships pointing at such a bundle
+ * are serialized with data: null regardless of the underlying field value
+ * — which is exactly what happened on the dashboard edit form when the
+ * Drupal side already had field_district / field_sublocality populated.
+ *
+ * This hook creates the two missing resource configs for existing tenants.
+ * Fresh installs get them via config/optional on module install, once the
+ * matching vocabulary exists.
+ *
+ * Idempotent: skips resources that already have a config entry.
+ */
+function markaspot_nuxt_update_9003(): string {
+  $messages = [];
+  $factory = \Drupal::configFactory();
+
+  $resources = [
+    'taxonomy_term--district' => [
+      'vocabulary' => 'district',
+      'label_dep' => 'taxonomy.vocabulary.district',
+    ],
+    'taxonomy_term--sublocality' => [
+      'vocabulary' => 'sublocality',
+      'label_dep' => 'taxonomy.vocabulary.sublocality',
+    ],
+  ];
+
+  foreach ($resources as $id => $info) {
+    // Skip bundles whose vocabulary is not installed on this tenant.
+    $vocab = \Drupal::entityTypeManager()
+      ->getStorage('taxonomy_vocabulary')
+      ->load($info['vocabulary']);
+    if (!$vocab) {
+      $messages[] = "Skipped {$id}: vocabulary not installed.";
+      continue;
+    }
+
+    $config_name = 'jsonapi_extras.jsonapi_resource_config.' . $id;
+    $config = $factory->getEditable($config_name);
+
+    if (!$config->isNew() && $config->get('disabled') === FALSE) {
+      $messages[] = "Skipped {$id}: already enabled.";
+      continue;
+    }
+
+    $config->setData([
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [$info['label_dep']],
+      ],
+      'id' => $id,
+      'disabled' => FALSE,
+      'path' => 'taxonomy_term/' . $info['vocabulary'],
+      'resourceType' => $id,
+      'resourceFields' => [],
+    ])->save();
+
+    $messages[] = "Enabled {$id} in jsonapi_extras.";
+  }
+
+  return implode("\n", $messages);
+}

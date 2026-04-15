@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - taxonomy.vocabulary.district
+id: taxonomy_term--district
+disabled: false
+path: taxonomy_term/district
+resourceType: taxonomy_term--district
+resourceFields: {  }

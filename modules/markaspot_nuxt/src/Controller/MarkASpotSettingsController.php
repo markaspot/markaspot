@@ -698,6 +698,7 @@ class MarkASpotSettingsController extends ControllerBase {
       $options[] = [
         'name' => $term->getName(),
         'tid' => (int) $term->id(),
+        'uuid' => $term->uuid(),
         'weight' => (int) $term->getWeight(),
       ];
     }

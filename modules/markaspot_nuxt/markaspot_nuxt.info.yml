@@ -3,6 +3,13 @@ type: module
 description: 'Exposes Mark-a-Spot configuration and data to Nuxt frontend via JSON API endpoints with independent map configuration'
 package: Mark-a-Spot
 core_version_requirement: ^10 || ^11
+dependencies:
+  # service_request defines the taxonomy vocabularies (service_category,
+  # service_status, district, sublocality, ...) that our config/optional
+  # jsonapi_extras resource configs depend on. Without an explicit dep the
+  # module install order is not guaranteed and the config/optional files
+  # are silently skipped on fresh installs when markaspot_nuxt lands first.
+  - markaspot:service_request
 
 # Note: json_form_widget is a soft dependency installed via update hook.
 # Removing hard dependency allows updates from older versions.

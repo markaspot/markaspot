@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - taxonomy.vocabulary.sublocality
+id: taxonomy_term--sublocality
+disabled: false
+path: taxonomy_term/sublocality
+resourceType: taxonomy_term--sublocality
+resourceFields: {  }
