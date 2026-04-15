@@ -271,7 +271,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
             $format_route->addRequirements(
               [
                 '_content_type_format'
-                => implode('|', $this->serializerFormats),
+                  => implode('|', $this->serializerFormats),
               ]);
             $collection->add("$route_name.$method.$format", $format_route);
           }
@@ -380,10 +380,15 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // Start with the secure base query from the processor service.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
 
-    // Jurisdiction access enforcement for authenticated users:
-    // prevent tenant admins from reading data of foreign jurisdictions.
+    // Jurisdiction access enforcement: prevent dashboard-level users
+    // (tenant admins, moderators, editorial) from reading foreign
+    // jurisdictions. The service method itself gates on the
+    // 'access open311 advanced properties' capability, so anonymous
+    // users, API service identities, and regular authenticated citizens
+    // short-circuit inside validateJurisdictionAccess() and are
+    // governed by Group module's query-level access grants.
     $resolvedJurisdictionId = $this->georeportProcessor->resolveJurisdictionId($parameters);
-    if ($resolvedJurisdictionId && !$this->currentUser->isAnonymous()) {
+    if ($resolvedJurisdictionId) {
       $this->georeportProcessor->validateJurisdictionAccess($resolvedJurisdictionId, $this->currentUser);
     }
 
