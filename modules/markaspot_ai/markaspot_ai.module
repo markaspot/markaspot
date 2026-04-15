@@ -23,10 +23,29 @@ use Drupal\paragraphs\Entity\Paragraph;
  * 2. Optional LLM call for name detection.
  *
  * Original text is preserved in an internal remark paragraph.
+ *
+ * Only runs on new nodes. Once a service request has been saved the body
+ * has already been persisted, delivered to notification subscribers,
+ * rendered on the dashboard and exposed via the Open311 API — redacting
+ * the text at that point would be cosmetic and would pointlessly block
+ * every dashboard edit with a synchronous LLM call.
  */
 function markaspot_ai_node_presave(NodeInterface $node): void {
   // Guard: only service requests.
   if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  // Guard: only run PII redaction on the initial insert. Edits, status
+  // updates and cron-driven changes do not need to re-process the body —
+  // and must not block on a synchronous LLM call.
+  if (!$node->isNew()) {
+    return;
+  }
+
+  // Guard: skip during config sync and migration imports. Those paths
+  // are not citizen submissions and should never trigger an LLM call.
+  if ($node->isSyncing()) {
     return;
   }
 
