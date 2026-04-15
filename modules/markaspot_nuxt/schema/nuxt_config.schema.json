@@ -415,12 +415,6 @@
           "description": "Enable party selection field on forms (deprecated: use conditionalFields instead)",
           "default": false
         },
-        "privacyBlur": {
-          "type": "boolean",
-          "title": "Privacy Blur",
-          "description": "Blur faces and license plates in uploaded images",
-          "default": false
-        },
         "photoRequiredCategories": {
           "type": "array",
           "title": "Photo Required Categories",

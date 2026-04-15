@@ -321,7 +321,6 @@ class MarkASpotSettingsController extends ControllerBase {
       'markaspot_stats' => 'statistics',
       'markaspot_dashboard' => 'dashboard',
       'markaspot_vision' => 'photoReporting',
-      'markaspot_privacy' => 'privacyBlur',
       'markaspot_feedback' => 'feedback',
       'markaspot_passwordless' => 'passwordless',
       'markaspot_emergency' => 'emergency',
