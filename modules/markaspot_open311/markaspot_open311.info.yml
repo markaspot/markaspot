@@ -9,3 +9,4 @@ dependencies:
   - rest
   - services_api_key_auth
   - markaspot_group
+  - markaspot_nuxt

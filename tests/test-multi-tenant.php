@@ -15,7 +15,6 @@ use Drupal\markaspot_group\Service\TenantAdminHelper;
 // ---------------------------------------------------------------------------
 // Test framework
 // ---------------------------------------------------------------------------
-
 $GLOBALS['_test'] = ['pass' => 0, 'fail' => 0, 'skip' => 0];
 
 /**
@@ -69,7 +68,6 @@ function skip_test(string $message): void {
 // ---------------------------------------------------------------------------
 // Setup: Discover ALL jurisdictions and their data
 // ---------------------------------------------------------------------------
-
 echo "\033[1m\n╔══════════════════════════════════════════════════════════╗\n";
 echo "║  Multi-Tenant Jurisdiction Isolation - Integration Tests ║\n";
 echo "╚══════════════════════════════════════════════════════════╝\033[0m\n";
@@ -172,7 +170,6 @@ if (!empty($parent_of)) {
 // ===========================================================================
 // 1. Category Taxonomy Isolation
 // ===========================================================================
-
 test_group('1. Category Taxonomy Isolation');
 
 // Each jurisdiction returns expected count.
@@ -206,7 +203,6 @@ assert_equal($catN, count($tAll), "Without filter: all $catN categories (single-
 // ===========================================================================
 // 2. Status Taxonomy Isolation
 // ===========================================================================
-
 test_group('2. Status Taxonomy Isolation');
 
 foreach ($jurs as $id => $j) {
@@ -236,7 +232,6 @@ for ($i = 0; $i < count($ids); $i++) {
 // ===========================================================================
 // 3. Translation Support
 // ===========================================================================
-
 test_group('3. Translation Support');
 
 $test_lang = NULL;
@@ -271,7 +266,6 @@ else {
 // ===========================================================================
 // 4. GeoReport API - Services
 // ===========================================================================
-
 test_group('4. GeoReport API - Services');
 
 $base = \Drupal::request()->getSchemeAndHttpHost();
@@ -313,7 +307,6 @@ for ($i = 0; $i < count($ids); $i++) {
 // ===========================================================================
 // 5. GeoReport API - Requests
 // ===========================================================================
-
 test_group('5. GeoReport API - Requests');
 
 $rAll = $http->get("$base/georeport/v2/requests.json", $opts);
@@ -371,11 +364,9 @@ if ($code === 200) {
 // ===========================================================================
 // 6. Settings Endpoint
 // ===========================================================================
-
 test_group('6. Settings Endpoint');
 
 // Uses global $resolve_root and $parent_of from setup section.
-
 $settings_by_jur = [];
 foreach ($jurs as $id => $j) {
   $rS = $http->get("$base/api/mark-a-spot-settings?jurisdiction=$id", $opts);
@@ -421,7 +412,6 @@ for ($i = 0; $i < count($ids); $i++) {
 // ===========================================================================
 // 7. Vision AI - Jurisdiction + Language
 // ===========================================================================
-
 test_group('7. Vision AI - Jurisdiction + Language');
 
 if (!\Drupal::hasService('markaspot_vision.image_processing')) {
@@ -490,7 +480,6 @@ else {
 // ===========================================================================
 // 8. Validation - Boundary
 // ===========================================================================
-
 test_group('8. Validation - Boundary');
 
 $boundary_class = 'Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary';
@@ -551,7 +540,6 @@ else {
 // ===========================================================================
 // 9. Emergency Mode
 // ===========================================================================
-
 test_group('9. Emergency Mode');
 
 if (!\Drupal::moduleHandler()->moduleExists('markaspot_emergency')) {
@@ -599,7 +587,6 @@ else {
 // ===========================================================================
 // 10. REST Auth Config
 // ===========================================================================
-
 test_group('10. REST Auth Config');
 
 foreach ([
@@ -615,7 +602,6 @@ foreach ([
 // ===========================================================================
 // 11. Group Entity Structure
 // ===========================================================================
-
 test_group('11. Group Entity Structure');
 
 $first_g = reset($groups);
@@ -638,7 +624,6 @@ foreach ($jurs as $id => $j) {
 // ===========================================================================
 // 12. Access Control - Group Roles (Editorial vs Moderation)
 // ===========================================================================
-
 test_group('12. Access Control - Group Roles');
 
 // Need at least 2 jurisdictions to test cross-jurisdiction denial.
@@ -818,6 +803,7 @@ else {
       'address_string' => 'Integration test address',
       'description' => 'Access control test - ' . date('c'),
       'jurisdiction_id' => (string) $home_id,
+      'field_gdpr' => TRUE,
     ]);
 
     $r = $http->post("$base/georeport/v2/requests.json?api_key=$ed_key", [
@@ -839,6 +825,7 @@ else {
       'address_string' => 'Should be denied',
       'description' => 'Cross-jurisdiction test',
       'jurisdiction_id' => (string) $foreign_id,
+      'field_gdpr' => TRUE,
     ]);
 
     $r = $http->post("$base/georeport/v2/requests.json?api_key=$ed_key", [
@@ -917,7 +904,6 @@ else {
 // ===========================================================================
 // 13. Tenant Admin - Role Sync + Query Filtering + Form Alter
 // ===========================================================================
-
 test_group('13. Tenant Admin');
 
 // Check if markaspot_group module is enabled (tenant admin hooks are now here).
@@ -1029,7 +1015,6 @@ else {
 // ===========================================================================
 // 14. Stats Endpoint - Jurisdiction Filtering
 // ===========================================================================
-
 test_group('14. Stats Endpoint - Jurisdiction Filtering');
 
 if (!\Drupal::moduleHandler()->moduleExists('markaspot_stats')) {
@@ -1220,7 +1205,6 @@ else {
 // ===========================================================================
 // 15. Child Jurisdiction - API Key POST with jurisdiction_id
 // ===========================================================================
-
 test_group('15. Child Jurisdiction API Key POST');
 
 // Find a parent-child pair from the hierarchy.
@@ -1393,6 +1377,7 @@ else {
       'address_string' => 'Child jurisdiction test address',
       'description' => 'Child jurisdiction API key test - ' . date('c'),
       'jurisdiction_id' => (string) $child_id,
+      'field_gdpr' => TRUE,
     ]);
 
     $r = $http->post("$base/georeport/v2/requests.json?api_key=$child_key_value", [
@@ -1489,6 +1474,7 @@ else {
           'address_string' => 'Should be denied',
           'description' => 'Child user in parent jurisdiction test',
           'jurisdiction_id' => (string) $parent_id_val,
+          'field_gdpr' => TRUE,
         ]);
 
         $r = $http->post("$base/georeport/v2/requests.json?api_key=$child_key_value", [
@@ -1544,7 +1530,6 @@ else {
 // ===========================================================================
 // 16. Pages: Jurisdiction Isolation
 // ===========================================================================
-
 test_group('16. Pages: Jurisdiction Isolation');
 
 $http = \Drupal::httpClient();
@@ -1623,7 +1608,6 @@ else {
 // ===========================================================================
 // Summary
 // ===========================================================================
-
 $t = $GLOBALS['_test'];
 $total = $t['pass'] + $t['fail'] + $t['skip'];
 $tested = $t['pass'] + $t['fail'];

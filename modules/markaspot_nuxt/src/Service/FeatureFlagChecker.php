@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_nuxt\Service;
 
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\node\NodeInterface;
 
@@ -21,10 +20,6 @@ use Drupal\node\NodeInterface;
  * closed, cost-critical features (aiAnalysis) default to the schema value.
  */
 final class FeatureFlagChecker {
-
-  public function __construct(
-    private readonly EntityTypeManagerInterface $entityTypeManager,
-  ) {}
 
   /**
    * Reads a feature flag value from a jurisdiction group's field_nuxt_config.
@@ -98,7 +93,7 @@ final class FeatureFlagChecker {
    * Reads and decodes the field_nuxt_config JSON from a group's default translation.
    */
   private function readConfig(GroupInterface $group): ?array {
-    $source = $group->isDefaultTranslation() ? $group : $group->getUntranslated();
+    $source = $group->getUntranslated();
     if (!$source->hasField('field_nuxt_config') || $source->get('field_nuxt_config')->isEmpty()) {
       return NULL;
     }

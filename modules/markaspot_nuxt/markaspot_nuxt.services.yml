@@ -7,7 +7,6 @@ services:
     arguments: ['@config.factory']
   markaspot_nuxt.feature_flag_checker:
     class: Drupal\markaspot_nuxt\Service\FeatureFlagChecker
-    arguments: ['@entity_type.manager']
 
   # Note: Boolean helper and json_form.* service overrides are registered
   # dynamically via MarkaspotNuxtServiceProvider when json_form_widget is active.
