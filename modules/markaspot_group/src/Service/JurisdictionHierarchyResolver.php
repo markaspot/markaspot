@@ -111,6 +111,26 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
   /**
    * {@inheritdoc}
    */
+  public function getAllRootJurisdictionIds(): array {
+    $ids = $this->database->select('groups_field_data', 'g')
+      ->fields('g', ['id'])
+      ->condition('g.type', 'jur')
+      ->notExists(
+        $this->database->select('group__field_parent_jurisdiction', 'p')
+          ->fields('p', ['entity_id'])
+          ->where('p.entity_id = g.id')
+          ->condition('p.deleted', 0)
+      )
+      ->orderBy('g.id', 'ASC')
+      ->execute()
+      ->fetchCol();
+
+    return array_map('intval', $ids);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function getDescendantIds(int $groupId): array {
     $ids = [$groupId];
     $visited = [$groupId];

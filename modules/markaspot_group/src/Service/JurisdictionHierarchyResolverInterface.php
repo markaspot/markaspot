@@ -34,6 +34,21 @@ interface JurisdictionHierarchyResolverInterface {
   public function isChildJurisdiction(int $groupId): bool;
 
   /**
+   * Returns the IDs of all root jurisdictions.
+   *
+   * A root is a group of bundle 'jur' whose field_parent_jurisdiction is
+   * empty. Uses a single raw SQL query for performance, avoiding full entity
+   * loads, to stay safe during post_update/install hooks where the entity
+   * query API may not be fully wired.
+   *
+   * @return int[]
+   *   Array of root group IDs sorted ascending. Empty array if no jur groups
+   *   exist yet (e.g. during the migrate-to-cloud window before
+   *   jurisdiction/setup.sh has run).
+   */
+  public function getAllRootJurisdictionIds(): array;
+
+  /**
    * Gets all descendant jurisdiction IDs (including the given ID).
    *
    * Traverses field_parent_jurisdiction downward via raw SQL for performance.
