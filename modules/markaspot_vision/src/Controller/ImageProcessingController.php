@@ -136,7 +136,7 @@ class ImageProcessingController extends ControllerBase {
       : NULL;
     if (!$this->featureFlagChecker->isEnabled('features.aiAnalysis', $jurisdictionForFlag, TRUE)) {
       return new JsonResponse([
-        'error' => 'AI analysis is disabled for this jurisdiction.',
+        'error' => $this->t('AI analysis is disabled for this jurisdiction.'),
       ], 403);
     }
 
