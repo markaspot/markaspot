@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_nuxt\Unit;
 
+use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -29,6 +31,23 @@ use Symfony\Component\Routing\Route;
  * @coversDefaultClass \Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck
  */
 class FeatureFlagAccessCheckTest extends UnitTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    // AccessResult::addCacheContexts() validates context names against the
+    // `cache_contexts_manager` service. Bootstrap a minimal container so
+    // the cache contexts declared by the access check pass validation.
+    $cacheContextsManager = $this->createMock(CacheContextsManager::class);
+    $cacheContextsManager->method('assertValidTokens')->willReturn(TRUE);
+
+    $container = new ContainerBuilder();
+    $container->set('cache_contexts_manager', $cacheContextsManager);
+    \Drupal::setContainer($container);
+  }
 
   /**
    * Builds a FeatureFlagAccessCheck with a request carrying the given query.

@@ -84,12 +84,19 @@ final class FeatureFlagAccessCheck implements AccessInterface {
       ? AccessResult::allowed()
       : AccessResult::forbidden(sprintf('Feature flag "%s" is disabled for this jurisdiction.', $flag));
 
-    // The access result depends on the jurisdiction resolved from the
-    // query string, not on user state, and the underlying field_nuxt_config
-    // can change via the dashboard settings endpoint at any time. Mark
-    // the result uncacheable rather than trying to enumerate cache
-    // contexts — these routes already set no_cache in their options.
-    return $result->setCacheMaxAge(0);
+    // Two-layer cache discipline. setCacheMaxAge(0) keeps the access
+    // result itself out of the access-check cache, and the query-args
+    // contexts make the dynamic-page-cache vary per jurisdiction — the
+    // latter matters for any future consumer that does NOT set
+    // no_cache on its route options. Without the contexts, the first
+    // allowed jurisdiction's response could be served to every other
+    // tenant from the dynamic-page-cache key.
+    return $result
+      ->setCacheMaxAge(0)
+      ->addCacheContexts([
+        'url.query_args:jurisdiction_id',
+        'url.query_args:jurisdiction',
+      ]);
   }
 
   /**
@@ -101,7 +108,9 @@ final class FeatureFlagAccessCheck implements AccessInterface {
       return NULL;
     }
 
-    $raw = $request->query->get('jurisdiction_id') ?? $request->query->get('jurisdiction');
+    // `?:` (not `??`) so that an empty-string primary param correctly
+    // falls through to the legacy alias instead of returning '' early.
+    $raw = $request->query->get('jurisdiction_id') ?: $request->query->get('jurisdiction');
     if ($raw === NULL || $raw === '') {
       return NULL;
     }
@@ -109,13 +118,18 @@ final class FeatureFlagAccessCheck implements AccessInterface {
     $storage = $this->entityTypeManager->getStorage('group');
 
     // Numeric: direct GID lookup with bundle + existence check to block
-    // phantom-GID pass-through.
-    if (is_numeric($raw)) {
+    // phantom-GID pass-through. ctype_digit() is stricter than is_numeric()
+    // and rejects scientific notation (`42e5`) and signed values.
+    if (is_string($raw) && ctype_digit($raw)) {
       $gid = (int) $raw;
       if ($gid <= 0) {
         return NULL;
       }
       $group = $storage->load($gid);
+      return ($group instanceof GroupInterface && $group->bundle() === 'jur') ? $group : NULL;
+    }
+    if (is_int($raw) && $raw > 0) {
+      $group = $storage->load($raw);
       return ($group instanceof GroupInterface && $group->bundle() === 'jur') ? $group : NULL;
     }
 
