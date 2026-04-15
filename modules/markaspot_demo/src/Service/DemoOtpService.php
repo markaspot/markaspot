@@ -85,18 +85,21 @@ class DemoOtpService extends OtpService {
    * Request an OTP code for email authentication.
    *
    * For demo users, we skip email sending and return success immediately.
+   * Signature must mirror the parent's exactly (LSP) — `jurisdiction_id`
+   * is required and comes before the optional `$langcode` since #324.
    *
    * @param string $email
    *   The email address.
+   * @param int $jurisdiction_id
+   *   The jurisdiction ID this code is bound to. Forwarded to the inner
+   *   service for non-demo users; demo users ignore it entirely.
    * @param string $langcode
    *   The language code for the OTP email.
-   * @param int $jurisdiction_id
-   *   The jurisdiction ID for scoping the OTP.
    *
    * @return array
    *   Result array with status and message.
    */
-  public function requestCode(string $email, string $langcode = '', int $jurisdiction_id = 0): array {
+  public function requestCode(string $email, int $jurisdiction_id, string $langcode = ''): array {
     // Check if this is a demo user.
     if ($this->isDemoUser($email)) {
       $this->logger->info('Demo mode: Code request for demo user @email. Use code: @code', [
@@ -114,23 +117,29 @@ class DemoOtpService extends OtpService {
     }
 
     // For non-demo users, use the inner service.
-    return $this->inner->requestCode($email, $langcode, $jurisdiction_id);
+    return $this->inner->requestCode($email, $jurisdiction_id, $langcode);
   }
 
   /**
    * Verify an OTP code.
    *
-   * For demo users, accept the fixed demo code.
+   * For demo users, accept the fixed demo code. Signature must mirror
+   * the parent's exactly (LSP) — `$jurisdiction_id` is required since #324.
+   * The demo short-circuit ignores it; real codes are forwarded to the
+   * inner service with the caller's jurisdiction scope intact.
    *
    * @param string $email
    *   The email address.
    * @param string $code
    *   The 6-digit OTP code.
+   * @param int $jurisdiction_id
+   *   The jurisdiction scope for the verification. Forwarded untouched
+   *   for non-demo paths.
    *
    * @return array
    *   Result array with status, message, and optional user data.
    */
-  public function verifyCode(string $email, string $code): array {
+  public function verifyCode(string $email, string $code, int $jurisdiction_id): array {
     // Check if this is a demo user with the demo code.
     if ($this->isDemoUser($email) && $code === self::DEMO_CODE) {
       $this->logger->info('Demo mode: Authenticating demo user @email with demo code', [
@@ -161,7 +170,7 @@ class DemoOtpService extends OtpService {
     }
 
     // For non-demo users or wrong code, use the inner service.
-    return $this->inner->verifyCode($email, $code);
+    return $this->inner->verifyCode($email, $code, $jurisdiction_id);
   }
 
   /**

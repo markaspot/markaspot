@@ -145,19 +145,23 @@ class OtpService {
   /**
    * Request an OTP code for email authentication.
    *
-   * Generates a new OTP code and sends it via email.
+   * Generates a new OTP code and sends it via email. The code is bound
+   * to the issuing jurisdiction so that verifyCode() cannot consume it
+   * on a different tenant.
    *
    * @param string $email
    *   The email address.
+   * @param int $jurisdiction_id
+   *   The jurisdiction group ID this code belongs to. 0 means
+   *   single-tenant / unscoped; callers MUST pass the real jurisdiction
+   *   ID in multi-tenant deployments to prevent cross-tenant reuse.
    * @param string $langcode
    *   The language code for the email.
-   * @param int $jurisdiction_id
-   *   The jurisdiction group ID for branding.
    *
    * @return array
    *   Result array with status and message.
    */
-  public function requestCode(string $email, string $langcode = '', int $jurisdiction_id = 0): array {
+  public function requestCode(string $email, int $jurisdiction_id, string $langcode = ''): array {
     // Clean up expired codes first.
     $this->cleanupExpiredCodes();
 
@@ -165,11 +169,14 @@ class OtpService {
     $config = $this->configFactory->get('markaspot_passwordless.settings');
     $code_lifetime = $config->get('code_lifetime') ?? 600;
 
-    // Invalidate any existing codes for this email.
+    // Invalidate existing codes for this email *within the same
+    // jurisdiction*. A request on tenant A must not wipe an in-flight
+    // code the same address holds on tenant B.
     $this->database->update('markaspot_passwordless_codes')
     // Mark as invalidated.
       ->fields(['verified' => 2])
       ->condition('email', $email)
+      ->condition('jurisdiction_id', $jurisdiction_id)
       ->condition('verified', 0)
       ->execute();
 
@@ -182,7 +189,8 @@ class OtpService {
     // exposure if the database is compromised.
     $code_hash = password_hash($code, PASSWORD_BCRYPT);
 
-    // Store hashed code in database.
+    // Store hashed code in database, bound to the issuing jurisdiction
+    // so that verifyCode() cannot consume it on a different tenant.
     try {
       $this->database->insert('markaspot_passwordless_codes')
         ->fields([
@@ -192,6 +200,7 @@ class OtpService {
           'created' => $now,
           'expires' => $expires,
           'verified' => 0,
+          'jurisdiction_id' => $jurisdiction_id,
         ])
         ->execute();
     }
@@ -233,11 +242,18 @@ class OtpService {
    *   The email address.
    * @param string $code
    *   The 6-digit OTP code.
+   * @param int $jurisdiction_id
+   *   The jurisdiction group ID the verification attempt is scoped to.
+   *   Codes issued for a different jurisdiction will not match, closing
+   *   the cross-tenant OTP reuse vector. 0 means single-tenant / unscoped;
+   *   callers MUST pass the real jurisdiction ID in multi-tenant
+   *   deployments. No default is intentionally provided to force the
+   *   decision at every call site.
    *
    * @return array
    *   Result array with status, message, and optional user data.
    */
-  public function verifyCode(string $email, string $code): array {
+  public function verifyCode(string $email, string $code, int $jurisdiction_id): array {
     // Get configuration values.
     $config = $this->configFactory->get('markaspot_passwordless.settings');
     $max_attempts = $config->get('max_attempts') ?? 3;
@@ -247,12 +263,16 @@ class OtpService {
     $transaction = $this->database->startTransaction('otp_verify');
 
     try {
-      // Look up pending codes for this email. Since codes are hashed,
-      // we cannot filter by code in the query. We fetch all pending
-      // codes for this email and verify against each hash.
+      // Look up pending codes for this email *within the caller's
+      // jurisdiction*. Since codes are hashed, we cannot filter by code
+      // in the query. We fetch all pending codes for this email+
+      // jurisdiction and verify against each hash. Scoping the lookup
+      // by jurisdiction_id makes cross-tenant OTP consumption
+      // structurally impossible rather than relying on a post-hoc check.
       $records = $this->database->select('markaspot_passwordless_codes', 'c')
         ->fields('c')
         ->condition('email', $email)
+        ->condition('jurisdiction_id', $jurisdiction_id)
         ->condition('verified', 0)
         ->orderBy('created', 'DESC')
         ->execute()

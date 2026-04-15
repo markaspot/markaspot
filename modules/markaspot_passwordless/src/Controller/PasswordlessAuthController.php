@@ -126,21 +126,88 @@ class PasswordlessAuthController extends ControllerBase {
   }
 
   /**
+   * Resolves the jurisdiction_id field from a request body.
+   *
+   * Enforces a strict contract:
+   * - Key absent, NULL, or empty string → returns 0 (single-tenant /
+   *   unscoped).
+   * - Key present and resolves to a real, loadable jur group → returns
+   *   the integer GID.
+   * - Key present but of the wrong type, unresolvable, or pointing at a
+   *   non-existent GID → returns FALSE (caller should reject with 400).
+   *
+   * This closes two bypasses from the #324 review cycle:
+   * 1. Attacker submits an unresolvable slug and falls through a
+   *    null-coalescing fallback onto the unscoped sentinel, matching
+   *    legacy / single-tenant OTP rows.
+   * 2. Attacker submits a positive numeric GID that does not correspond
+   *    to any jurisdiction (phantom tenant), exploiting the trait's
+   *    numeric pass-through to issue or consume OTPs against a
+   *    fictitious scope.
+   *
+   * @param array $data
+   *   The decoded request body.
+   *
+   * @return int|false
+   *   The resolved jurisdiction group ID, 0 for an omitted field, or
+   *   FALSE if the provided value does not resolve to a real group.
+   */
+  protected function resolveJurisdictionPayload(array $data): int|false {
+    if (!array_key_exists('jurisdiction_id', $data)) {
+      return 0;
+    }
+    $raw = $data['jurisdiction_id'];
+    if ($raw === NULL || $raw === '') {
+      return 0;
+    }
+    // Reject non-scalar input (array, object) before the trait's
+    // string|int|null signature would throw a TypeError.
+    if (!is_scalar($raw)) {
+      return FALSE;
+    }
+    $resolved = $this->resolveJurisdictionId($raw);
+    if ($resolved === NULL) {
+      return FALSE;
+    }
+    // The trait's numeric branch passes integers through without
+    // verifying the group exists. Enforce existence here so phantom
+    // GIDs cannot be used to issue or consume OTPs against fictitious
+    // tenants.
+    if ($resolved > 0) {
+      $group = $this->entityTypeManager()->getStorage('group')->load($resolved);
+      if (!$group || $group->bundle() !== 'jur') {
+        return FALSE;
+      }
+    }
+    return $resolved;
+  }
+
+  /**
    * Checks whether passwordless auth is enabled for the request jurisdiction.
    *
    * Reads features.passwordless from field_nuxt_config. Default is FALSE
    * (schema default), matching the frontend useFeatureFlags().passwordlessEnabled
-   * and the dashboard writer. Returns a 403 JsonResponse when disabled, NULL
-   * when the call should proceed.
+   * and the dashboard writer. Returns a 403 JsonResponse when disabled, a 400
+   * when the provided jurisdiction_id cannot be resolved, NULL when the call
+   * should proceed.
    *
    * @param array $data
    *   The decoded request body.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse|null
-   *   A 403 response when the feature is disabled, NULL otherwise.
+   *   A 400/403 response when the request is rejected, NULL otherwise.
    */
   protected function assertPasswordlessEnabled(array $data): ?JsonResponse {
-    $jurisdictionId = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
+    // Route through the strict resolver so that an unresolvable slug or
+    // a phantom GID gets a 400 (clear client error) rather than a 403
+    // ("feature disabled") that would mask the real reason.
+    $jurisdictionId = $this->resolveJurisdictionPayload($data);
+    if ($jurisdictionId === FALSE) {
+      return new JsonResponse([
+        'error' => 'Invalid jurisdiction_id',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
     $jurisdiction = $jurisdictionId
       ? $this->entityTypeManager()->getStorage('group')->load($jurisdictionId)
       : NULL;
@@ -215,13 +282,24 @@ class PasswordlessAuthController extends ControllerBase {
       ], Response::HTTP_TOO_MANY_REQUESTS);
     }
 
-    // Optional: language and jurisdiction from request body.
+    // Optional: language from request body.
     $langcode = !empty($data['langcode']) ? trim($data['langcode']) : '';
-    $jurisdiction_id = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL) ?? 0;
+
+    // Scope the request to a jurisdiction. If the caller provided a
+    // jurisdiction_id but it cannot be resolved to a real jur group,
+    // reject with 400 rather than falling through to the unscoped
+    // sentinel — otherwise an attacker could pin the insert at
+    // jurisdiction_id=0 and consume it later on any other tenant.
+    $jurisdiction_id = $this->resolveJurisdictionPayload($data);
+    if ($jurisdiction_id === FALSE) {
+      return new JsonResponse([
+        'error' => 'Invalid jurisdiction_id',
+      ], Response::HTTP_BAD_REQUEST);
+    }
 
     try {
       // Request OTP code.
-      $result = $this->otpService->requestCode($email, $langcode, $jurisdiction_id);
+      $result = $this->otpService->requestCode($email, $jurisdiction_id, $langcode);
 
       if ($result['success']) {
         // Register the successful request for rate limiting.
@@ -323,9 +401,23 @@ class PasswordlessAuthController extends ControllerBase {
       ], Response::HTTP_TOO_MANY_REQUESTS);
     }
 
+    // Resolve the jurisdiction context. The OTP must have been issued
+    // for this jurisdiction; otherwise the service-layer lookup will
+    // not find it. This is the storage-level mirror of the feature-flag
+    // gate at the top of this method — and what actually prevents an
+    // OTP issued on tenant A from being consumed on tenant B. Reject
+    // explicitly-provided-but-unresolvable jurisdiction_id values so
+    // an attacker cannot pin the lookup to the unscoped sentinel.
+    $jurisdiction_id = $this->resolveJurisdictionPayload($data);
+    if ($jurisdiction_id === FALSE) {
+      return new JsonResponse([
+        'error' => 'Invalid jurisdiction_id',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
     try {
       // Verify OTP code.
-      $result = $this->otpService->verifyCode($email, $code);
+      $result = $this->otpService->verifyCode($email, $code, $jurisdiction_id);
 
       if ($result['success']) {
         // Clear all failed attempt records on successful verification.
