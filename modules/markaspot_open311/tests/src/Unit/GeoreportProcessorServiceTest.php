@@ -281,7 +281,9 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->willReturn(TRUE);
 
     $user = $this->createMock(AccountProxyInterface::class);
-    $user->method('hasPermission')->willReturn(FALSE);
+    $user->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
     $user->method('id')->willReturn(5);
     $user->method('isAnonymous')->willReturn(FALSE);
 
@@ -307,7 +309,9 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->willReturn(TRUE);
 
     $user = $this->createMock(AccountProxyInterface::class);
-    $user->method('hasPermission')->willReturn(FALSE);
+    $user->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
     $user->method('id')->willReturn(5);
     $user->method('isAnonymous')->willReturn(FALSE);
 
@@ -333,7 +337,9 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->willReturn(TRUE);
 
     $user = $this->createMock(AccountProxyInterface::class);
-    $user->method('hasPermission')->willReturn(FALSE);
+    $user->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
     $user->method('id')->willReturn(5);
     $user->method('isAnonymous')->willReturn(FALSE);
 
@@ -355,7 +361,9 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->willReturn(TRUE);
 
     $user = $this->createMock(AccountProxyInterface::class);
-    $user->method('hasPermission')->willReturn(FALSE);
+    $user->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
     $user->method('id')->willReturn(5);
     $user->method('isAnonymous')->willReturn(FALSE);
 

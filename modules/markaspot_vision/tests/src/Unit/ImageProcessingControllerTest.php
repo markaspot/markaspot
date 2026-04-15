@@ -7,6 +7,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\media\MediaInterface;
@@ -76,6 +77,11 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->mediaStorage = $this->createMock(EntityStorageInterface::class);
     $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
 
+    // FeatureFlagChecker is final; instantiate the real service. With no
+    // jurisdiction context available in these unit tests, isEnabled() returns
+    // the caller's $default, and the controller defaults aiAnalysis to TRUE.
+    $featureFlagChecker = new FeatureFlagChecker();
+
     // Default: node query returns no results (no parent nodes).
     $nodeQuery = $this->createMock(QueryInterface::class);
     $nodeQuery->method('accessCheck')->willReturnSelf();
@@ -100,6 +106,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       $this->imageProcessingService,
       $loggerFactory,
       $this->flood,
+      $featureFlagChecker,
     );
 
     // Inject entityTypeManager via reflection (ControllerBase stores it
