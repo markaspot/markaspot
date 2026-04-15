@@ -1,4 +1,19 @@
 provider: 'nominatim'
 language: 'de'
 mapbox_token: ''
-district_mappings: []
+district_mappings:
+  -
+    field: field_district
+    vocabulary: district
+    geocoder_properties:
+      - city_district
+      - suburb
+      - borough
+    auto_create: true
+  -
+    field: field_sublocality
+    vocabulary: sublocality
+    geocoder_properties:
+      - quarter
+      - neighbourhood
+    auto_create: true

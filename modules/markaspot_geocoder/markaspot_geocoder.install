@@ -156,3 +156,45 @@ function markaspot_geocoder_update_11001() {
 
   return empty($messages) ? 'District fields already in form display.' : implode("\n", $messages);
 }
+
+/**
+ * Populate default district_mappings so fresh tenants auto-fill the fields.
+ *
+ * Earlier installs shipped with an empty district_mappings list, which meant
+ * the geocoder never touched field_district / field_sublocality on save, even
+ * after the fields were declared and added to form displays. This hook seeds
+ * a sensible default mapping keyed on common Nominatim/OSM properties. It is
+ * idempotent: existing non-empty mappings are left untouched.
+ *
+ * Mapping summary:
+ *   field_district     <- city_district | suburb | borough    (coarse)
+ *   field_sublocality  <- quarter | neighbourhood             (fine)
+ *
+ * Both fields use auto_create so the corresponding taxonomy terms are created
+ * on first match instead of requiring manual term setup per tenant.
+ */
+function markaspot_geocoder_update_11002(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_geocoder.settings');
+  $existing = $config->get('district_mappings');
+
+  if (!empty($existing)) {
+    return 'district_mappings already configured, leaving as-is.';
+  }
+
+  $config->set('district_mappings', [
+    [
+      'field' => 'field_district',
+      'vocabulary' => 'district',
+      'geocoder_properties' => ['city_district', 'suburb', 'borough'],
+      'auto_create' => TRUE,
+    ],
+    [
+      'field' => 'field_sublocality',
+      'vocabulary' => 'sublocality',
+      'geocoder_properties' => ['quarter', 'neighbourhood'],
+      'auto_create' => TRUE,
+    ],
+  ])->save();
+
+  return 'Populated default district_mappings for field_district and field_sublocality.';
+}
