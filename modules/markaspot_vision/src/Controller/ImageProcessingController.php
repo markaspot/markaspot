@@ -11,6 +11,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 
 /**
@@ -49,6 +50,13 @@ class ImageProcessingController extends ControllerBase {
   protected ?TierConfigService $tierConfig;
 
   /**
+   * The feature flag checker.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker
+   */
+  protected FeatureFlagChecker $featureFlagChecker;
+
+  /**
    * Constructs a new ImageProcessingController object.
    *
    * @param \Drupal\markaspot_vision\Service\ImageProcessingService $image_processing_service
@@ -57,6 +65,8 @@ class ImageProcessingController extends ControllerBase {
    *   The logger factory.
    * @param \Drupal\Core\Flood\FloodInterface $flood
    *   The flood service.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $feature_flag_checker
+   *   The feature flag checker.
    * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
    *   The tier config service (optional, only on SaaS).
    */
@@ -64,11 +74,13 @@ class ImageProcessingController extends ControllerBase {
     ImageProcessingService $image_processing_service,
     LoggerChannelFactoryInterface $logger_factory,
     FloodInterface $flood,
+    FeatureFlagChecker $feature_flag_checker,
     ?TierConfigService $tier_config = NULL,
   ) {
     $this->imageProcessingService = $image_processing_service;
     $this->logger = $logger_factory->get('markaspot_vision');
     $this->flood = $flood;
+    $this->featureFlagChecker = $feature_flag_checker;
     $this->tierConfig = $tier_config;
   }
 
@@ -80,6 +92,7 @@ class ImageProcessingController extends ControllerBase {
       $container->get('markaspot_vision.image_processing'),
       $container->get('logger.factory'),
       $container->get('flood'),
+      $container->get('markaspot_nuxt.feature_flag_checker'),
       $container->has('markaspot_fastmap.tier_config')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
@@ -110,6 +123,21 @@ class ImageProcessingController extends ControllerBase {
     $data = json_decode($request->getContent(), TRUE);
     if (!is_array($data)) {
       return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    // Feature flag gate: reject early when the jurisdiction has disabled
+    // AI analysis. Schema default is TRUE so an unconfigured tenant still
+    // gets the analysis; only an explicit `false` in field_nuxt_config
+    // blocks the call. This prevents the OpenAI request — and the cost —
+    // before any model is contacted.
+    $jurisdictionIdForFlag = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
+    $jurisdictionForFlag = $jurisdictionIdForFlag
+      ? $this->entityTypeManager()->getStorage('group')->load($jurisdictionIdForFlag)
+      : NULL;
+    if (!$this->featureFlagChecker->isEnabled('features.aiAnalysis', $jurisdictionForFlag, TRUE)) {
+      return new JsonResponse([
+        'error' => 'AI analysis is disabled for this jurisdiction.',
+      ], 403);
     }
 
     // AI budget check (only on SaaS with markaspot_fastmap installed).
