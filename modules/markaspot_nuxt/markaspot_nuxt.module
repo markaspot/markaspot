@@ -7,8 +7,10 @@
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\file\Entity\File;
+use Drupal\node\NodeInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Session\AccountInterface;
+use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 /**
  * Implements hook_entity_presave().
@@ -73,6 +75,51 @@ function markaspot_nuxt_entity_presave(EntityInterface $entity) {
     // Mark the file as permanent.
     $entity->setPermanent();
   }
+}
+
+/**
+ * Implements hook_node_presave().
+ *
+ * Enforces the per-jurisdiction privacy-notice consent flag on service
+ * request creation. When features.privacyNotice.enabled is true for the
+ * report's jurisdiction, the submission must set field_gdpr to TRUE.
+ *
+ * The check runs only on new nodes — editing an existing report does not
+ * require re-consenting. The default when the flag is unset is TRUE
+ * (fail-closed) so that misconfigured tenants stay compliant.
+ *
+ * Covers all save paths: Open311 REST, JSON:API, admin forms, drush
+ * imports. Throws UnprocessableEntityHttpException which Drupal's kernel
+ * exception subscriber maps to a 422 response for both REST and JSON:API.
+ */
+function markaspot_nuxt_node_presave(NodeInterface $node): void {
+  if ($node->bundle() !== 'service_request' || !$node->isNew()) {
+    return;
+  }
+  if (!$node->hasField('field_gdpr')) {
+    return;
+  }
+
+  /** @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $checker */
+  $checker = \Drupal::service('markaspot_nuxt.feature_flag_checker');
+  $jurisdiction = $checker->resolveJurisdictionForNode($node);
+
+  // Schema default is true — a tenant that never touched the flag still
+  // requires consent. Explicit `false` in field_nuxt_config disables it.
+  $required = $checker->isEnabled('features.privacyNotice.enabled', $jurisdiction, TRUE);
+  if (!$required) {
+    return;
+  }
+
+  $gdpr = $node->get('field_gdpr');
+  $accepted = !$gdpr->isEmpty() && ((bool) $gdpr->value === TRUE);
+  if ($accepted) {
+    return;
+  }
+
+  throw new UnprocessableEntityHttpException(
+    'Privacy notice consent (field_gdpr) is required for this jurisdiction but was not accepted.'
+  );
 }
 
 /**

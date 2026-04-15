@@ -702,6 +702,15 @@ class GeoreportRequestIndexResource extends ResourceBase {
       return $this->createNode($request_data);
     }
     catch (EntityStorageException $e) {
+      // Drupal's storage layer wraps some exceptions from presave hooks
+      // (e.g. UnprocessableEntityHttpException from the privacy-notice
+      // enforcement hook) into EntityStorageException. Unwrap and re-throw
+      // so the kernel exception subscriber maps them to their real HTTP
+      // status instead of a generic 500.
+      $previous = $e->getPrevious();
+      if ($previous instanceof HttpException) {
+        throw $previous;
+      }
       throw new HttpException(500, 'Internal Server Error', $e);
     }
   }
@@ -746,9 +755,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
             'target_revision_id' => $paragraph->getRevisionId(),
           ],
         ];
-        if (isset($node->field_gdpr)) {
-          $node->field_gdpr->value = 1;
-        }
 
         // Set the referenced term field.
         $node->field_status = [

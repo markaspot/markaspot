@@ -249,6 +249,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       ];
     }
 
+    // Privacy consent: pass through from the payload so hook_node_presave
+    // in markaspot_nuxt can enforce the features.privacyNotice.enabled flag.
+    if (array_key_exists('field_gdpr', $requestData)) {
+      $values['field_gdpr'] = (bool) $requestData['field_gdpr'];
+    }
+
     // Creating a tmp title to be created later via request_id
     // $values['title'] = $operation === 'create'  ? Html::escape(stripslashes($requestData['service_code'])) : NULL;.
     if (array_key_exists('description', $requestData)) {
