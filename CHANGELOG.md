@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.47](https://github.com/markaspot/markaspot/compare/11.9.46...11.9.47) (2026-04-16)
+
+### Bug Fixes
+
+* **nuxt:** add access_check tag for FeatureFlagAccessCheck service ([97eacb7](https://github.com/markaspot/markaspot/commit/97eacb7eb46a8aa81f3498be396bfa40d2c1f829))
+* **nuxt:** implement ContainerInjectionInterface on FeatureFlagAccessCheck ([da66056](https://github.com/markaspot/markaspot/commit/da660569320eed5e3d293d3010f4c3413a0ff916))
+
 ## [11.9.46](https://github.com/markaspot/markaspot/compare/11.9.45...11.9.46) (2026-04-16)
 
 ### Bug Fixes
