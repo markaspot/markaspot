@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.46](https://github.com/markaspot/markaspot/compare/11.9.45...11.9.46) (2026-04-16)
+
+### Bug Fixes
+
+* **open311:** correct field_category_gid type from string to entity_reference ([0536086](https://github.com/markaspot/markaspot/commit/0536086918055dad2e7bd48e591997b19e724ff0))
+
 ## [11.9.45](https://github.com/markaspot/markaspot/compare/11.9.44...11.9.45) (2026-04-15)
 
 ### Features
