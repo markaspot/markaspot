@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.48](https://github.com/markaspot/markaspot/compare/11.9.47...11.9.48) (2026-04-16)
+
+### Bug Fixes
+
+* default GDPR consent validation to opt-in ([e148812](https://github.com/markaspot/markaspot/commit/e1488123a3348808fe5de32e1c936f53c8a46a4e))
+
 ## [11.9.47](https://github.com/markaspot/markaspot/compare/11.9.46...11.9.47) (2026-04-16)
 
 ### Bug Fixes
