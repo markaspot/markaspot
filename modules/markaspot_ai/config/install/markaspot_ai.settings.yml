@@ -34,7 +34,7 @@ sentiment_analysis:
   model: 'gpt-4.1-mini'
 pii_redaction:
   enabled: false
-  use_llm: false
+  detect_names: false
   provider: 'ionos'
 nlp_service:
   enabled: false

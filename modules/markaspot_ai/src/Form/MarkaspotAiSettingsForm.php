@@ -101,8 +101,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $form['provider']['openai']['api_key_status'] = [
         '#type' => 'item',
         '#markup' => '<div class="messages messages--status">' .
-        $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
-        '</div>',
+          $this->t('<strong>API key loaded from environment variable</strong> (OPENAI_API_KEY). This is the recommended secure approach.') .
+          '</div>',
         '#weight' => -1,
       ];
       $form['provider']['openai']['api_key'] = [
@@ -130,8 +130,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
         $form['provider']['openai']['api_key_status'] = [
           '#type' => 'item',
           '#markup' => '<div class="messages messages--warning">' .
-          $this->t('API key stored in config database. Consider using environment variable for better security.') .
-          '</div>',
+            $this->t('API key stored in config database. Consider using environment variable for better security.') .
+            '</div>',
           '#weight' => -1,
         ];
       }
@@ -190,8 +190,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $form['provider']['azure']['azure_api_key_status'] = [
         '#type' => 'item',
         '#markup' => '<div class="messages messages--status">' .
-        $this->t('<strong>API key loaded from environment variable.</strong> This is the recommended secure approach.') .
-        '</div>',
+          $this->t('<strong>API key loaded from environment variable.</strong> This is the recommended secure approach.') .
+          '</div>',
         '#weight' => -1,
       ];
       $form['provider']['azure']['azure_api_key'] = [
@@ -259,8 +259,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $form['provider']['ionos']['ionos_api_key_status'] = [
         '#type' => 'item',
         '#markup' => '<div class="messages messages--status">' .
-        $this->t('<strong>API key loaded from environment variable</strong> (IONOS_AI_API_KEY). This is the recommended secure approach.') .
-        '</div>',
+          $this->t('<strong>API key loaded from environment variable</strong> (IONOS_AI_API_KEY). This is the recommended secure approach.') .
+          '</div>',
         '#weight' => -1,
       ];
       $form['provider']['ionos']['ionos_api_key'] = [
@@ -285,8 +285,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
         $form['provider']['ionos']['ionos_api_key_status'] = [
           '#type' => 'item',
           '#markup' => '<div class="messages messages--warning">' .
-          $this->t('API key stored in config database. Consider using environment variable for better security.') .
-          '</div>',
+            $this->t('API key stored in config database. Consider using environment variable for better security.') .
+            '</div>',
           '#weight' => -1,
         ];
       }
@@ -355,16 +355,16 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $form['nlp_service']['nlp_api_key_status'] = [
         '#type' => 'item',
         '#markup' => '<div class="messages messages--status">' .
-        $this->t('<strong>Bearer token loaded from environment variable</strong> (MARKASPOT_NLP_API_KEY). This is the recommended secure approach.') .
-        '</div>',
+          $this->t('<strong>Bearer token loaded from environment variable</strong> (MARKASPOT_NLP_API_KEY). This is the recommended secure approach.') .
+          '</div>',
       ];
     }
     else {
       $form['nlp_service']['nlp_api_key_status'] = [
         '#type' => 'item',
         '#markup' => '<div class="messages messages--warning">' .
-        $this->t('<strong>No bearer token configured.</strong> Set <code>MARKASPOT_NLP_API_KEY</code> in your environment. Without it, the container falls back to open-internal mode (Docker network only).') .
-        '</div>',
+          $this->t('<strong>No bearer token configured.</strong> Set <code>MARKASPOT_NLP_API_KEY</code> in your environment. Without it, the container falls back to open-internal mode (Docker network only).') .
+          '</div>',
       ];
     }
 
@@ -396,11 +396,19 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#default_value' => (bool) $config->get('pii_redaction.enabled'),
     ];
 
+    // Form-state key stays 'pii_use_llm' for backwards compatibility with
+    // any bookmarked #states selectors — the save target is the new
+    // detect_names key. Default is read from the new key, falling back to
+    // the legacy key until markaspot_ai_update_10008 has run.
+    $detect_names_default = $config->get('pii_redaction.detect_names');
+    if ($detect_names_default === NULL) {
+      $detect_names_default = $config->get('pii_redaction.use_llm');
+    }
     $form['pii_redaction']['pii_use_llm'] = [
       '#type' => 'checkbox',
-      '#title' => $this->t('Use LLM for Name Detection'),
-      '#description' => $this->t('Layer 2: invoke the selected provider to detect names and addresses the regex layer cannot catch. Costs API tokens (or container capacity) per report.'),
-      '#default_value' => (bool) $config->get('pii_redaction.use_llm'),
+      '#title' => $this->t('Detect Names via Provider'),
+      '#description' => $this->t('Layer 2: invoke the selected provider (cloud LLM or self-hosted NLP) to detect names and addresses the regex layer cannot catch. Costs API tokens or container capacity per report.'),
+      '#default_value' => (bool) $detect_names_default,
       '#states' => [
         'visible' => [
           ':input[name="pii_enabled"]' => ['checked' => TRUE],
@@ -722,9 +730,11 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $config->set('nlp_service.url', $nlp_url);
     }
 
-    // Save PII redaction settings.
+    // Save PII redaction settings. Writes to the new detect_names key;
+    // the legacy use_llm key is left untouched so rollback to an older
+    // profile release keeps working for one release cycle.
     $config->set('pii_redaction.enabled', (bool) $form_state->getValue('pii_enabled'));
-    $config->set('pii_redaction.use_llm', (bool) $form_state->getValue('pii_use_llm'));
+    $config->set('pii_redaction.detect_names', (bool) $form_state->getValue('pii_use_llm'));
     $config->set('pii_redaction.provider', $form_state->getValue('pii_provider') ?? 'ionos');
 
     // Save duplicate detection settings.

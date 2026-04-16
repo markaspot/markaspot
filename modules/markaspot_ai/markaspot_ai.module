@@ -83,8 +83,8 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
   $redacted_text = $redaction['text'];
   $pii_found = $redaction['pii_found'];
 
-  // Layer 2: LLM-based name detection (optional).
-  if ($config->get('pii_redaction.use_llm')) {
+  // Layer 2: provider-based name detection (optional).
+  if (_markaspot_ai_is_name_detection_enabled($config)) {
     // Check API key before attempting network call.
     // PII defaults to 'ionos' (EU/DE residency), unlike embeddings which
     // default to 'openai'. The key is resolved here as a pre-flight check;
@@ -600,10 +600,15 @@ function _markaspot_ai_redact_pii_regex(string $text, string $node_key = ''): ar
 }
 
 /**
- * Detects personal names via LLM with local NLP fallback.
+ * Detects personal names via the configured provider.
  *
- * Tries the configured AI provider (e.g. IONOS) first, falls back to the
- * local NLP service (Ollama) if the primary provider fails.
+ * Dispatches to one of two backends:
+ *   - local_nlp (self-hosted NLP container) is a first-class primary path.
+ *     When an admin picks it, the cloud-provider branch is skipped entirely
+ *     and there is no silent fail-over to an external service.
+ *   - Any other provider (openai, azure, ionos) routes through the shared
+ *     OpenAI-compatible client. If that call fails, the self-hosted NLP
+ *     container acts as a resilience fallback.
  *
  * @param string $text
  *   The text to scan (already regex-redacted).
@@ -824,4 +829,39 @@ function markaspot_ai_help(string $route_name): ?string {
   }
 
   return NULL;
+}
+
+/**
+ * Resolves the name-detection flag with deprecation fallback.
+ *
+ * Prefers the new pii_redaction.detect_names key and falls back to the
+ * deprecated pii_redaction.use_llm when the new key is not yet present.
+ * Logs a deprecation warning once per PHP process on the fallback path
+ * so admins know to re-export config without flooding watchdog during
+ * long-running CLI workers (drush queue:run, drush batch) or FPM
+ * worker lifetimes that span many requests.
+ *
+ * @param \Drupal\Core\Config\ImmutableConfig|\Drupal\Core\Config\Config $config
+ *   The markaspot_ai.settings config object.
+ *
+ * @return bool
+ *   TRUE if provider-based name detection should run.
+ */
+function _markaspot_ai_is_name_detection_enabled($config): bool {
+  $new = $config->get('pii_redaction.detect_names');
+  if ($new !== NULL) {
+    return (bool) $new;
+  }
+  $legacy = $config->get('pii_redaction.use_llm');
+  if ($legacy !== NULL) {
+    static $warned = FALSE;
+    if (!$warned) {
+      \Drupal::logger('markaspot_ai')->warning(
+        'markaspot_ai.settings.pii_redaction.use_llm is deprecated; use detect_names instead. Falling back for this request.'
+      );
+      $warned = TRUE;
+    }
+    return (bool) $legacy;
+  }
+  return FALSE;
 }

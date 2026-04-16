@@ -557,6 +557,17 @@ function markaspot_ai_update_10007(): void {
 }
 
 /**
+ * Copy pii_redaction.use_llm to pii_redaction.detect_names (deprecation).
+ */
+function markaspot_ai_update_10008(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_ai.settings');
+  if ($config->get('pii_redaction.detect_names') === NULL) {
+    $legacy = $config->get('pii_redaction.use_llm');
+    $config->set('pii_redaction.detect_names', (bool) $legacy)->save();
+  }
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {

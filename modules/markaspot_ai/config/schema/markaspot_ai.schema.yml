@@ -126,7 +126,13 @@ markaspot_ai.settings:
           label: 'Enable PII Redaction'
         use_llm:
           type: boolean
-          label: 'Use LLM for Name Detection'
+          # Deprecated: renamed to detect_names. Retained in the schema
+          # until the next release so legacy active config does not fail
+          # validation during the upgrade window.
+          label: 'Use LLM for Name Detection (deprecated, use detect_names)'
+        detect_names:
+          type: boolean
+          label: 'Detect Names via Provider'
         provider:
           type: string
           label: 'AI Provider for PII Detection'
