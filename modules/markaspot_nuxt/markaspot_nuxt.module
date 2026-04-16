@@ -104,9 +104,9 @@ function markaspot_nuxt_node_presave(NodeInterface $node): void {
   $checker = \Drupal::service('markaspot_nuxt.feature_flag_checker');
   $jurisdiction = $checker->resolveJurisdictionForNode($node);
 
-  // Schema default is true — a tenant that never touched the flag still
-  // requires consent. Explicit `false` in field_nuxt_config disables it.
-  $required = $checker->isEnabled('features.privacyNotice.enabled', $jurisdiction, TRUE);
+  // Schema default is false — consent only required when explicitly enabled
+  // via features.privacyNotice.enabled in field_nuxt_config.
+  $required = $checker->isEnabled('features.privacyNotice.enabled', $jurisdiction, FALSE);
   if (!$required) {
     return;
   }
