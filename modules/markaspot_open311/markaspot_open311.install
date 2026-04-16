@@ -222,3 +222,20 @@ function markaspot_open311_update_11805() {
 
   return t('public_district configuration already exists.');
 }
+
+/**
+ * Sync field_address storage definition after Address module schema changes.
+ *
+ * The Address module added address_line3 to its field type schema but provides
+ * no update hook to call updateFieldStorageDefinition(). Without this, upgraded
+ * sites produce "Undefined property: stdClass::$field_address_address_line3"
+ * warnings and InvalidArgumentException on JSON:API requests.
+ */
+function markaspot_open311_update_11806(): void {
+  $manager = \Drupal::entityDefinitionUpdateManager();
+  $field_storage_definitions = \Drupal::service('entity_field.manager')
+    ->getFieldStorageDefinitions('node');
+  if (isset($field_storage_definitions['field_address'])) {
+    $manager->updateFieldStorageDefinition($field_storage_definitions['field_address']);
+  }
+}
