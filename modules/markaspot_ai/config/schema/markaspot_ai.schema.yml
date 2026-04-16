@@ -5,6 +5,12 @@ markaspot_ai.settings:
     default_provider:
       type: string
       label: 'Default AI Provider'
+      constraints:
+        Choice:
+          choices:
+            - openai
+            - azure
+            - ionos
     providers:
       type: mapping
       label: 'AI Providers'

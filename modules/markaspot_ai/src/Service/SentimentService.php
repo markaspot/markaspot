@@ -197,8 +197,14 @@ PROMPT;
     $userPrompt = "Analyze the sentiment of this citizen report:\n\n" . $text;
 
     // Get model from config.
+    // Three-tier model resolution: the explicit sentiment model wins, then
+    // the configured default provider's chat_model, then a safe fallback.
+    // The safety net must be a model that exists on every provider tenant
+    // (OpenAI + Azure) — gpt-4.1-mini matches the install-config default.
     $config = $this->configFactory->get('markaspot_ai.settings');
-    $model = $config->get('sentiment_analysis.model') ?: 'gpt-4o-mini';
+    $provider = $config->get('default_provider') ?: 'openai';
+    $providerChatModel = $config->get("providers.{$provider}.chat_model") ?: 'gpt-4.1-mini';
+    $model = $config->get('sentiment_analysis.model') ?: $providerChatModel;
 
     try {
       $response = $this->aiClient->chat(

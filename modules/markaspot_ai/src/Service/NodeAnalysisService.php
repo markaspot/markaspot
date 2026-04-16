@@ -383,8 +383,7 @@ PROMPT;
 
     $userPrompt = "Analyze this citizen report:\n\n" . $context['text'];
 
-    $config = $this->configFactory->get('markaspot_ai.settings');
-    $model = $config->get('sentiment_analysis.model') ?: 'gpt-4o-mini';
+    $model = $this->resolveChatModel();
 
     $response = $this->aiClient->chat(
       [
@@ -401,8 +400,9 @@ PROMPT;
 
     // Track token usage.
     if (isset($response['usage'])) {
+      $provider = $this->configFactory->get('markaspot_ai.settings')->get('default_provider') ?: 'openai';
       $this->tokenTracking->logUsage(
-        'openai',
+        $provider,
         $model,
         'node_analysis',
         $response['usage']['prompt_tokens'] ?? 0,
@@ -421,6 +421,25 @@ PROMPT;
     }
 
     return $this->validateResult($result);
+  }
+
+  /**
+   * Resolves the chat model via a three-tier fallback chain.
+   *
+   * Order of precedence:
+   *   1. sentiment_analysis.model (explicit override).
+   *   2. providers.{default_provider}.chat_model (per-provider default).
+   *   3. 'gpt-4.1-mini' (hardcoded safety net — valid on OpenAI + Azure
+   *      tenants and matches the install-config default).
+   *
+   * @return string
+   *   The resolved model identifier.
+   */
+  protected function resolveChatModel(): string {
+    $config = $this->configFactory->get('markaspot_ai.settings');
+    $provider = $config->get('default_provider') ?: 'openai';
+    $providerChatModel = $config->get("providers.{$provider}.chat_model") ?: 'gpt-4.1-mini';
+    return $config->get('sentiment_analysis.model') ?: $providerChatModel;
   }
 
   /**

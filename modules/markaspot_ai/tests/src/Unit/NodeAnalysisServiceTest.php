@@ -253,6 +253,83 @@ class NodeAnalysisServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests the three-tier chat-model fallback chain.
+   *
+   * @covers ::resolveChatModel
+   */
+  public function testModelFallbackChain(): void {
+    // Tier 1: explicit sentiment_analysis.model wins outright.
+    $service = $this->createServiceWithConfig([
+      'sentiment_analysis.model' => 'foo',
+      'default_provider' => 'azure',
+      'providers.azure.chat_model' => 'gpt-4.1-mini',
+    ]);
+    $this->assertSame('foo', $this->invokeMethod($service, 'resolveChatModel', []));
+
+    // Tier 2: no explicit override, provider's chat_model wins.
+    $service = $this->createServiceWithConfig([
+      'sentiment_analysis.model' => NULL,
+      'default_provider' => 'azure',
+      'providers.azure.chat_model' => 'gpt-4.1-mini',
+    ]);
+    $this->assertSame('gpt-4.1-mini', $this->invokeMethod($service, 'resolveChatModel', []));
+
+    // Tier 3: default_provider points at an unconfigured provider, so
+    // neither the explicit override nor the provider's chat_model resolve.
+    // The hardcoded safety net must fire independently of the 'openai' ?:
+    // default in resolveChatModel().
+    $service = $this->createServiceWithConfig([
+      'sentiment_analysis.model' => NULL,
+      'default_provider' => 'xyz',
+      'providers.xyz.chat_model' => NULL,
+    ]);
+    $this->assertSame('gpt-4.1-mini', $this->invokeMethod($service, 'resolveChatModel', []));
+  }
+
+  /**
+   * Creates a NodeAnalysisService with the given config key/value map.
+   *
+   * @param array<string, mixed> $configMap
+   *   Map of config key => return value.
+   *
+   * @return \Drupal\markaspot_ai\Service\NodeAnalysisService
+   *   The service instance.
+   */
+  protected function createServiceWithConfig(array $configMap): NodeAnalysisService {
+    $aiClient = $this->createMock(AiClientService::class);
+    $sentimentService = $this->createMock(SentimentService::class);
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $tokenTracking = $this->createMock(TokenTrackingService::class);
+    $riskScoreCalculator = $this->createMock(RiskScoreCalculator::class);
+    $database = $this->createMock(Connection::class);
+    $logger = $this->createMock(LoggerInterface::class);
+
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnCallback(
+      static fn (string $key): mixed => $configMap[$key] ?? NULL,
+    );
+
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_ai.settings')
+      ->willReturn($config);
+
+    $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
+    $loggerFactory->method('get')->willReturn($logger);
+
+    return new NodeAnalysisService(
+      $aiClient,
+      $sentimentService,
+      $entityTypeManager,
+      $configFactory,
+      $loggerFactory,
+      $tokenTracking,
+      $riskScoreCalculator,
+      $database,
+    );
+  }
+
+  /**
    * Creates a NodeAnalysisService instance with mocked dependencies.
    *
    * @return \Drupal\markaspot_ai\Service\NodeAnalysisService

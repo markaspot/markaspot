@@ -547,6 +547,16 @@ function markaspot_ai_update_10006(): void {
 }
 
 /**
+ * Restore missing sentiment_analysis.model config key.
+ */
+function markaspot_ai_update_10007(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_ai.settings');
+  if (empty($config->get('sentiment_analysis.model'))) {
+    $config->set('sentiment_analysis.model', 'gpt-4.1-mini')->save();
+  }
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {
