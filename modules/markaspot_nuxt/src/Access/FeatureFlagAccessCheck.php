@@ -6,11 +6,13 @@ namespace Drupal\markaspot_nuxt\Access;
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Routing\Access\AccessInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Route;
 
@@ -45,13 +47,24 @@ use Symfony\Component\Routing\Route;
  * Routes that only receive jurisdiction in the body should do their own
  * controller-level gate (see PasswordlessAuthController).
  */
-final class FeatureFlagAccessCheck implements AccessInterface {
+final class FeatureFlagAccessCheck implements AccessInterface, ContainerInjectionInterface {
 
   public function __construct(
     private readonly FeatureFlagChecker $featureFlagChecker,
     private readonly RequestStack $requestStack,
     private readonly EntityTypeManagerInterface $entityTypeManager,
   ) {}
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): static {
+    return new static(
+      $container->get('markaspot_nuxt.feature_flag_checker'),
+      $container->get('request_stack'),
+      $container->get('entity_type.manager'),
+    );
+  }
 
   /**
    * Checks access for the incoming request against the route's feature flag.
