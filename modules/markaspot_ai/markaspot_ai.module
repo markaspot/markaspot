@@ -79,37 +79,9 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
   }
 
   // Layer 1: Regex-based PII detection.
-  $redacted_text = $body_text;
-  $pii_found = FALSE;
-
-  $patterns = [
-    // German phone numbers: +49/0049 followed by area code and number.
-    // Requires at least 7 digits total, allows multiple separators.
-    '/(\+49|0049)\s*[1-9][\d\s\/-]{6,15}\d/' => '[REDACTED phone]',
-    // German local phone numbers: 0 followed by area code (2-5 digits
-    // starting with non-zero) and subscriber number. Minimum 7 digits.
-    '/(?<!\d)0[1-9][\d\s\/-]{6,15}\d(?!\d)/' => '[REDACTED phone]',
-    // International phone numbers (non-German).
-    '/\+[1-48-9]\d{7,14}/' => '[REDACTED phone]',
-    // Email addresses.
-    '/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/' => '[REDACTED email]',
-    // IBAN (up to 34 chars, DE = 22 chars = 2 letters + 20 digits).
-    '/\b[A-Z]{2}\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{0,4}\b/' => '[REDACTED IBAN]',
-  ];
-
-  foreach ($patterns as $pattern => $replacement) {
-    $result = preg_replace($pattern, $replacement, $redacted_text, -1, $count);
-    if ($result === NULL) {
-      \Drupal::logger('markaspot_ai')->warning('Regex PII detection failed (malformed input) for node @key.', [
-        '@key' => $node_key,
-      ]);
-      continue;
-    }
-    $redacted_text = $result;
-    if ($count > 0) {
-      $pii_found = TRUE;
-    }
-  }
+  $redaction = _markaspot_ai_redact_pii_regex($body_text, $node_key);
+  $redacted_text = $redaction['text'];
+  $pii_found = $redaction['pii_found'];
 
   // Layer 2: LLM-based name detection (optional).
   if ($config->get('pii_redaction.use_llm')) {
@@ -554,6 +526,77 @@ function _markaspot_ai_is_feature_enabled_for_node(NodeInterface $node, string $
     ]);
     return TRUE;
   }
+}
+
+/**
+ * Redacts structured PII (IBAN, email, phone) from text via regex patterns.
+ *
+ * Pattern order matters: the most specific patterns run first so greedier
+ * matchers cannot eat characters they do not own. Concretely, a German IBAN
+ * ends in digit groups that also match the DE local phone regex, so IBAN
+ * must be redacted before phones.
+ *
+ * Order:
+ *   1. IBAN (most specific — country code + 20+ digits in blocks).
+ *   2. Email (unambiguous — contains "@").
+ *   3. DE international phone (+49/0049 prefix).
+ *   4. International phone (+1..+48, +80..+99).
+ *   5. DE local phone (least specific — just starts with a leading zero).
+ *
+ * @param string $text
+ *   The source text.
+ * @param string $node_key
+ *   Node identifier used for warning log context (may be empty).
+ *
+ * @return array
+ *   Associative array:
+ *   - text: string, the redacted text.
+ *   - pii_found: bool, TRUE if at least one pattern matched.
+ */
+function _markaspot_ai_redact_pii_regex(string $text, string $node_key = ''): array {
+  $patterns = [
+    // IBAN (up to 34 chars, DE = 22 chars = 2 letters + 20 digits). Runs
+    // first so the trailing digit blocks are not clipped by the phone
+    // regex below.
+    '/\b[A-Z]{2}\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{0,4}\b/' => '[REDACTED IBAN]',
+    // Email addresses. Unambiguous thanks to the "@" anchor.
+    '/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/' => '[REDACTED email]',
+    // German phone numbers: +49/0049 followed by area code and number.
+    // Requires at least 7 digits total, allows multiple separators.
+    '/(\+49|0049)\s*[1-9][\d\s\/-]{6,15}\d/' => '[REDACTED phone]',
+    // International phone numbers (non-German).
+    '/\+[1-48-9]\d{7,14}/' => '[REDACTED phone]',
+    // German local phone numbers: 0 followed by area code (2-5 digits
+    // starting with non-zero) and subscriber number. Minimum 7 digits.
+    // Runs last because its shape overlaps with IBAN digit blocks.
+    '/(?<!\d)0[1-9][\d\s\/-]{6,15}\d(?!\d)/' => '[REDACTED phone]',
+  ];
+
+  $redacted = $text;
+  $pii_found = FALSE;
+
+  foreach ($patterns as $pattern => $replacement) {
+    $result = preg_replace($pattern, $replacement, $redacted, -1, $count);
+    if ($result === NULL) {
+      // Only log if we have a Drupal container (hook invocations always do,
+      // unit tests deliberately do not).
+      if (\Drupal::hasContainer()) {
+        \Drupal::logger('markaspot_ai')->warning('Regex PII detection failed (malformed input) for node @key.', [
+          '@key' => $node_key,
+        ]);
+      }
+      continue;
+    }
+    $redacted = $result;
+    if ($count > 0) {
+      $pii_found = TRUE;
+    }
+  }
+
+  return [
+    'text' => $redacted,
+    'pii_found' => $pii_found,
+  ];
 }
 
 /**
