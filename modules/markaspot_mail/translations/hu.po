@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: markaspot_mail\n"
 "POT-Creation-Date: 2026-04-17\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"PO-Revision-Date: 2026-04-17\n"
 "Language-Team: hu <hu@markaspot>\n"
 "Language: hu\n"
 "MIME-Version: 1.0\n"
@@ -17,184 +17,184 @@ msgstr ""
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Your report was resolved"
-msgstr ""
+msgstr "Bejelentése megoldódott"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Thank you for using the issue tracker. Your report \"@title\" has been processed and is now marked as completed."
-msgstr ""
+msgstr "Köszönjük, hogy használja a hibabejelentőt. \"@title\" bejelentését feldolgoztuk, és most lezártként van megjelölve."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Are you satisfied with the result, or is there still action needed from your perspective? We would greatly appreciate your feedback."
-msgstr ""
+msgstr "Elégedett az eredménnyel, vagy az Ön megítélése szerint további intézkedésre van szükség? Nagyra értékelnénk visszajelzését."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "If you believe your concern has not been fully addressed, you can also reopen the case through this link."
-msgstr ""
+msgstr "Ha úgy gondolja, hogy ügyét még nem kezelték teljes körűen, ezen a linken újra megnyithatja azt."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Give feedback"
-msgstr ""
+msgstr "Visszajelzés küldése"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Feedback welcome on your report @id"
-msgstr ""
+msgstr "Visszajelzését várjuk a @id azonosítójú bejelentésről"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Your report @id: feedback welcome"
-msgstr ""
+msgstr "Az Ön @id azonosítójú bejelentése: visszajelzését várjuk"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Report"
-msgstr ""
+msgstr "Bejelentés"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to \"@group\""
-msgstr ""
+msgstr "Meghívást kapott ide: \"@group\""
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to join \"@group\" on @site."
-msgstr ""
+msgstr "Meghívást kapott, hogy csatlakozzon ehhez: \"@group\" itt: @site."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to join \"@group\"."
-msgstr ""
+msgstr "Meghívást kapott, hogy csatlakozzon ehhez: \"@group\"."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Accept your invitation to @group"
-msgstr ""
+msgstr "Fogadja el a @group csoportba szóló meghívását"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Join @group"
-msgstr ""
+msgstr "Csatlakozás: @group"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Click the button below to accept this invitation. The link expires in 7 days."
-msgstr ""
+msgstr "A meghívás elfogadásához kattintson az alábbi gombra. A link 7 nap múlva lejár."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "If you did not expect this invitation, you can safely ignore this email."
-msgstr ""
+msgstr "Ha nem számított erre a meghívásra, nyugodtan figyelmen kívül hagyhatja ezt az e-mailt."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Accept invitation"
-msgstr ""
+msgstr "Meghívás elfogadása"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your @site workspace \"@name\""
-msgstr ""
+msgstr "Aktiválja @site \"@name\" munkaterületét"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your workspace"
-msgstr ""
+msgstr "Aktiválja a munkaterületét"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Welcome to @site! Your workspace \"@name\" is ready to activate."
-msgstr ""
+msgstr "Üdvözöljük a @site oldalon! \"@name\" munkaterülete készen áll az aktiválásra."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Click the button below to verify your email and unlock the workspace."
-msgstr ""
+msgstr "Az e-mail-cím megerősítéséhez és a munkaterület feloldásához kattintson az alábbi gombra."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Unverified workspaces are automatically removed after @days days."
-msgstr ""
+msgstr "A meg nem erősített munkaterületek @days nap után automatikusan törlődnek."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Verify email"
-msgstr ""
+msgstr "E-mail megerősítése"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Click to activate your @name workspace"
-msgstr ""
+msgstr "Kattintson ide a @name munkaterület aktiválásához"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo workspace \"@name\" expires soon"
-msgstr ""
+msgstr "\"@name\" bemutató munkaterülete hamarosan lejár"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Demo workspace \"@name\" expires @date"
-msgstr ""
+msgstr "\"@name\" bemutató munkaterülete ekkor jár le: @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo expires @date"
-msgstr ""
+msgstr "A bemutatója ekkor jár le: @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "The demo workspace \"@name\" will be automatically removed on @date."
-msgstr ""
+msgstr "\"@name\" bemutató munkaterülete automatikusan törlődik ekkor: @date."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire."
-msgstr ""
+msgstr "Frissítsen most, hogy megőrizze munkaterületét, előzményeit és beállításait, vagy hagyja figyelmen kívül ezt az e-mailt, és hagyja lejárni."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Open my workspace"
-msgstr ""
+msgstr "Munkaterület megnyitása"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Create a permanent workspace"
-msgstr ""
+msgstr "Állandó munkaterület létrehozása"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Workspace"
-msgstr ""
+msgstr "Munkaterület"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Expires"
-msgstr ""
+msgstr "Lejár"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "@platform_name: Your verification code"
-msgstr ""
+msgstr "@platform_name: Az Ön ellenőrző kódja"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Verify your account"
-msgstr ""
+msgstr "Erősítse meg a fiókját"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Your verification code: @code"
-msgstr ""
+msgstr "Az Ön ellenőrző kódja: @code"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Enter this code in the next @minutes minutes. If you did not request this, you can ignore this email."
-msgstr ""
+msgstr "Adja meg ezt a kódot a következő @minutes percben. Ha nem Ön kérte, nyugodtan figyelmen kívül hagyhatja ezt az e-mailt."
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Your verification code: @code\n\nIt expires in @minutes minutes."
-msgstr ""
+msgstr "Az Ön ellenőrző kódja: @code\n\nA kód @minutes perc múlva lejár."
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "Your report needs more information"
-msgstr ""
+msgstr "Bejelentéséhez további adatokra van szükség"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "We need more information about your report"
-msgstr ""
+msgstr "További információra van szükségünk a bejelentéséről"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "Please clarify your report"
-msgstr ""
+msgstr "Kérjük, pontosítsa a bejelentését"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "We need a bit more information to process your report."
-msgstr ""
+msgstr "Még egy kis további információra van szükségünk a bejelentés feldolgozásához."
 
 #: templates/mail-layout.html.twig
 msgid "Docs"
-msgstr ""
+msgstr "Dokumentáció"
 
 #: templates/mail-layout.html.twig
 msgid "Impressum"
-msgstr ""
+msgstr "Impressum"
 
 #: templates/mail-layout.html.twig
 msgid "Datenschutz"
-msgstr ""
+msgstr "Datenschutz"
 
 #: templates/mail-layout.html.twig
 msgid "Legal notice"
-msgstr ""
+msgstr "Jogi tájékoztató"
 
 #: templates/mail-layout.html.twig
 msgid "Privacy"
-msgstr ""
+msgstr "Adatvédelem"

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: markaspot_mail\n"
 "POT-Creation-Date: 2026-04-17\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"PO-Revision-Date: 2026-04-17\n"
 "Language-Team: fi <fi@markaspot>\n"
 "Language: fi\n"
 "MIME-Version: 1.0\n"
@@ -17,184 +17,184 @@ msgstr ""
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Your report was resolved"
-msgstr ""
+msgstr "Ilmoituksesi on ratkaistu"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Thank you for using the issue tracker. Your report \"@title\" has been processed and is now marked as completed."
-msgstr ""
+msgstr "Kiitos, että käytät vikailmoituspalvelua. Ilmoituksesi \"@title\" on käsitelty ja merkitty valmiiksi."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Are you satisfied with the result, or is there still action needed from your perspective? We would greatly appreciate your feedback."
-msgstr ""
+msgstr "Oletko tyytyväinen lopputulokseen, vai tarvitaanko mielestäsi vielä toimenpiteitä? Arvostaisimme palautettasi suuresti."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "If you believe your concern has not been fully addressed, you can also reopen the case through this link."
-msgstr ""
+msgstr "Jos mielestäsi asiaasi ei ole vielä ratkaistu kokonaan, voit avata tapauksen uudelleen tämän linkin kautta."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Give feedback"
-msgstr ""
+msgstr "Anna palautetta"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Feedback welcome on your report @id"
-msgstr ""
+msgstr "Palautetta ilmoituksestasi @id"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Your report @id: feedback welcome"
-msgstr ""
+msgstr "Ilmoituksesi @id: palautetta toivotaan"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Report"
-msgstr ""
+msgstr "Ilmoitus"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to \"@group\""
-msgstr ""
+msgstr "Sinut on kutsuttu ryhmään \"@group\""
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to join \"@group\" on @site."
-msgstr ""
+msgstr "Sinut on kutsuttu liittymään ryhmään \"@group\" palvelussa @site."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to join \"@group\"."
-msgstr ""
+msgstr "Sinut on kutsuttu liittymään ryhmään \"@group\"."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Accept your invitation to @group"
-msgstr ""
+msgstr "Hyväksy kutsusi ryhmään @group"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Join @group"
-msgstr ""
+msgstr "Liity ryhmään @group"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Click the button below to accept this invitation. The link expires in 7 days."
-msgstr ""
+msgstr "Hyväksy tämä kutsu napsauttamalla alla olevaa painiketta. Linkki vanhenee 7 päivän kuluttua."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "If you did not expect this invitation, you can safely ignore this email."
-msgstr ""
+msgstr "Jos et odottanut tätä kutsua, voit huoletta jättää tämän sähköpostin huomiotta."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Accept invitation"
-msgstr ""
+msgstr "Hyväksy kutsu"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your @site workspace \"@name\""
-msgstr ""
+msgstr "Ota käyttöön @site-työtilasi \"@name\""
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your workspace"
-msgstr ""
+msgstr "Ota työtilasi käyttöön"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Welcome to @site! Your workspace \"@name\" is ready to activate."
-msgstr ""
+msgstr "Tervetuloa palveluun @site! Työtilasi \"@name\" on valmiina käyttöönotettavaksi."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Click the button below to verify your email and unlock the workspace."
-msgstr ""
+msgstr "Vahvista sähköpostiosoitteesi ja avaa työtila napsauttamalla alla olevaa painiketta."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Unverified workspaces are automatically removed after @days days."
-msgstr ""
+msgstr "Vahvistamattomat työtilat poistetaan automaattisesti @days päivän jälkeen."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Verify email"
-msgstr ""
+msgstr "Vahvista sähköposti"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Click to activate your @name workspace"
-msgstr ""
+msgstr "Napsauta aktivoidaksesi työtilasi @name"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo workspace \"@name\" expires soon"
-msgstr ""
+msgstr "Demo-työtilasi \"@name\" vanhenee pian"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Demo workspace \"@name\" expires @date"
-msgstr ""
+msgstr "Demo-työtila \"@name\" vanhenee @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo expires @date"
-msgstr ""
+msgstr "Demosi vanhenee @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "The demo workspace \"@name\" will be automatically removed on @date."
-msgstr ""
+msgstr "Demo-työtila \"@name\" poistetaan automaattisesti @date."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire."
-msgstr ""
+msgstr "Päivitä nyt, niin säilytät työtilasi, historiasi ja asetuksesi, tai anna sen vanhentua jättämällä tämä sähköposti huomiotta."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Open my workspace"
-msgstr ""
+msgstr "Avaa työtilani"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Create a permanent workspace"
-msgstr ""
+msgstr "Luo pysyvä työtila"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Workspace"
-msgstr ""
+msgstr "Työtila"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Expires"
-msgstr ""
+msgstr "Vanhenee"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "@platform_name: Your verification code"
-msgstr ""
+msgstr "@platform_name: Vahvistuskoodisi"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Verify your account"
-msgstr ""
+msgstr "Vahvista tilisi"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Your verification code: @code"
-msgstr ""
+msgstr "Vahvistuskoodisi: @code"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Enter this code in the next @minutes minutes. If you did not request this, you can ignore this email."
-msgstr ""
+msgstr "Syötä tämä koodi seuraavien @minutes minuutin aikana. Jos et pyytänyt sitä, voit jättää tämän sähköpostin huomiotta."
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Your verification code: @code\n\nIt expires in @minutes minutes."
-msgstr ""
+msgstr "Vahvistuskoodisi: @code\n\nSe vanhenee @minutes minuutin kuluttua."
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "Your report needs more information"
-msgstr ""
+msgstr "Ilmoituksesi tarvitsee lisätietoja"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "We need more information about your report"
-msgstr ""
+msgstr "Tarvitsemme lisätietoja ilmoituksestasi"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "Please clarify your report"
-msgstr ""
+msgstr "Tarkenna ilmoitustasi"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "We need a bit more information to process your report."
-msgstr ""
+msgstr "Tarvitsemme vielä hieman lisätietoja voidaksemme käsitellä ilmoituksesi."
 
 #: templates/mail-layout.html.twig
 msgid "Docs"
-msgstr ""
+msgstr "Dokumentaatio"
 
 #: templates/mail-layout.html.twig
 msgid "Impressum"
-msgstr ""
+msgstr "Impressum"
 
 #: templates/mail-layout.html.twig
 msgid "Datenschutz"
-msgstr ""
+msgstr "Datenschutz"
 
 #: templates/mail-layout.html.twig
 msgid "Legal notice"
-msgstr ""
+msgstr "Oikeudelliset tiedot"
 
 #: templates/mail-layout.html.twig
 msgid "Privacy"
-msgstr ""
+msgstr "Tietosuoja"

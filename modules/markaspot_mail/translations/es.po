@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: markaspot_mail\n"
 "POT-Creation-Date: 2026-04-17\n"
-"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"PO-Revision-Date: 2026-04-17\n"
 "Language-Team: es <es@markaspot>\n"
 "Language: es\n"
 "MIME-Version: 1.0\n"
@@ -17,184 +17,184 @@ msgstr ""
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Your report was resolved"
-msgstr ""
+msgstr "Su incidencia se ha resuelto"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Thank you for using the issue tracker. Your report \"@title\" has been processed and is now marked as completed."
-msgstr ""
+msgstr "Gracias por usar el gestor de incidencias. Su incidencia \"@title\" ha sido procesada y ahora figura como completada."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Are you satisfied with the result, or is there still action needed from your perspective? We would greatly appreciate your feedback."
-msgstr ""
+msgstr "¿Está satisfecho con el resultado o cree que todavía hace falta actuar? Agradeceríamos mucho sus comentarios."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "If you believe your concern has not been fully addressed, you can also reopen the case through this link."
-msgstr ""
+msgstr "Si cree que su caso no se ha resuelto por completo, también puede reabrirlo mediante este enlace."
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Give feedback"
-msgstr ""
+msgstr "Enviar comentarios"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Feedback welcome on your report @id"
-msgstr ""
+msgstr "Sus comentarios sobre su incidencia @id"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Your report @id: feedback welcome"
-msgstr ""
+msgstr "Su incidencia @id: se agradecen sus comentarios"
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Report"
-msgstr ""
+msgstr "Incidencia"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to \"@group\""
-msgstr ""
+msgstr "Ha sido invitado a \"@group\""
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to join \"@group\" on @site."
-msgstr ""
+msgstr "Ha sido invitado a unirse a \"@group\" en @site."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "You have been invited to join \"@group\"."
-msgstr ""
+msgstr "Ha sido invitado a unirse a \"@group\"."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Accept your invitation to @group"
-msgstr ""
+msgstr "Acepte su invitación a @group"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Join @group"
-msgstr ""
+msgstr "Únase a @group"
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Click the button below to accept this invitation. The link expires in 7 days."
-msgstr ""
+msgstr "Haga clic en el botón de abajo para aceptar esta invitación. El enlace caduca en 7 días."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "If you did not expect this invitation, you can safely ignore this email."
-msgstr ""
+msgstr "Si no esperaba esta invitación, puede ignorar este correo electrónico con total tranquilidad."
 
 #: src/Mail/Builder/GroupMemberInvitationBuilder.php
 msgid "Accept invitation"
-msgstr ""
+msgstr "Aceptar invitación"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your @site workspace \"@name\""
-msgstr ""
+msgstr "Active su espacio de trabajo \"@name\" de @site"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your workspace"
-msgstr ""
+msgstr "Active su espacio de trabajo"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Welcome to @site! Your workspace \"@name\" is ready to activate."
-msgstr ""
+msgstr "Bienvenido a @site. Su espacio de trabajo \"@name\" está listo para activarse."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Click the button below to verify your email and unlock the workspace."
-msgstr ""
+msgstr "Haga clic en el botón de abajo para verificar su correo electrónico y desbloquear el espacio de trabajo."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Unverified workspaces are automatically removed after @days days."
-msgstr ""
+msgstr "Los espacios de trabajo no verificados se eliminan automáticamente después de @days días."
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Verify email"
-msgstr ""
+msgstr "Verificar correo electrónico"
 
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Click to activate your @name workspace"
-msgstr ""
+msgstr "Haga clic para activar su espacio de trabajo @name"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo workspace \"@name\" expires soon"
-msgstr ""
+msgstr "Su espacio de trabajo de demostración \"@name\" caduca pronto"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Demo workspace \"@name\" expires @date"
-msgstr ""
+msgstr "El espacio de trabajo de demostración \"@name\" caduca el @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo expires @date"
-msgstr ""
+msgstr "Su demostración caduca el @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "The demo workspace \"@name\" will be automatically removed on @date."
-msgstr ""
+msgstr "El espacio de trabajo de demostración \"@name\" se eliminará automáticamente el @date."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire."
-msgstr ""
+msgstr "Actualice ahora para conservar su espacio de trabajo, historial y configuración, o ignore este correo para dejar que caduque."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Open my workspace"
-msgstr ""
+msgstr "Abrir mi espacio de trabajo"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Create a permanent workspace"
-msgstr ""
+msgstr "Crear un espacio de trabajo permanente"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Workspace"
-msgstr ""
+msgstr "Espacio de trabajo"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Expires"
-msgstr ""
+msgstr "Caduca"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "@platform_name: Your verification code"
-msgstr ""
+msgstr "@platform_name: Su código de verificación"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Verify your account"
-msgstr ""
+msgstr "Verifique su cuenta"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Your verification code: @code"
-msgstr ""
+msgstr "Su código de verificación: @code"
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Enter this code in the next @minutes minutes. If you did not request this, you can ignore this email."
-msgstr ""
+msgstr "Introduzca este código en los próximos @minutes minutos. Si no lo solicitó, puede ignorar este correo electrónico."
 
 #: src/Mail/Builder/PasswordlessOtpBuilder.php
 msgid "Your verification code: @code\n\nIt expires in @minutes minutes."
-msgstr ""
+msgstr "Su código de verificación: @code\n\nCaduca en @minutes minutos."
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "Your report needs more information"
-msgstr ""
+msgstr "Su incidencia necesita más información"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "We need more information about your report"
-msgstr ""
+msgstr "Necesitamos más información sobre su incidencia"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "Please clarify your report"
-msgstr ""
+msgstr "Aclare su incidencia, por favor"
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "We need a bit more information to process your report."
-msgstr ""
+msgstr "Necesitamos un poco más de información para procesar su incidencia."
 
 #: templates/mail-layout.html.twig
 msgid "Docs"
-msgstr ""
+msgstr "Documentación"
 
 #: templates/mail-layout.html.twig
 msgid "Impressum"
-msgstr ""
+msgstr "Impressum"
 
 #: templates/mail-layout.html.twig
 msgid "Datenschutz"
-msgstr ""
+msgstr "Datenschutz"
 
 #: templates/mail-layout.html.twig
 msgid "Legal notice"
-msgstr ""
+msgstr "Aviso legal"
 
 #: templates/mail-layout.html.twig
 msgid "Privacy"
-msgstr ""
+msgstr "Privacidad"
