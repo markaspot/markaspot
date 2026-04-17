@@ -39,3 +39,14 @@ services:
       - '@markaspot_mail.branding'
       - '@markaspot_mail.renderer'
       - '@logger.channel.markaspot_mail'
+
+  # Stage 2 ECA builders. Each claims a single ($module, $key) pair via
+  # supports(). Adding a new ECA mail = adding a class + a tag here; no
+  # changes to MailAlterHook or the registry.
+  markaspot_mail.builder.feedback_request:
+    class: Drupal\markaspot_mail\Mail\Builder\FeedbackRequestBuilder
+    arguments:
+      - '@markaspot_mail.branding'
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }
