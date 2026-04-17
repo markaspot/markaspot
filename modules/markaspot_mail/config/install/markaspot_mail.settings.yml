@@ -1,0 +1,26 @@
+platform:
+  name: 'Mark-a-Spot'
+  support_email: 'support@civic-patches.com'
+  reply_to: 'support@civic-patches.com'
+  logo_path: 'images/mark-a-spot-logo@2x.png'
+  primary_color: '#004ced'
+  background_color: '#EEF3FF'
+  legal_notice_url: 'https://civicpatches.de/impressum'
+  privacy_url: 'https://civicpatches.de/datenschutz'
+  frontend_base_url: 'https://mark-a-spot.com'
+  tenant_frontend_base_template: 'https://{slug}.civicspot.io'
+features:
+  show_platform_footer: true
+  tier_gating: false
+whitelist:
+  # Populated per stage. Empty in Stage 1 so the alter hook is inert until
+  # explicitly enabled. Each entry is keyed by "module.key" and its value is
+  # a mapping { mode: platform|jurisdiction, variant: hero_code|card_transactional }.
+  # Example:
+  #   markaspot_passwordless.verification_code:
+  #     mode: platform
+  #     variant: hero_code
+  #   markaspot_escalation.escalated:
+  #     mode: jurisdiction
+  #     variant: card_transactional
+  entries: {  }

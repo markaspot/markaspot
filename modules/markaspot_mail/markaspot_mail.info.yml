@@ -1,0 +1,9 @@
+name: 'Mark-a-Spot Mail'
+type: module
+description: 'Centralized HTML mail rendering with per-jurisdiction branding (DSGVO-aware platform vs. jurisdiction mode).'
+package: 'Mark-a-Spot'
+core_version_requirement: ^10.3 || ^11
+dependencies:
+  - drupal:system
+  - drupal:language
+  - group:group

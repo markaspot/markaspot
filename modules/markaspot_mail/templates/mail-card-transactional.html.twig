@@ -1,0 +1,83 @@
+{#
+/**
+ * @file
+ * White transactional card with optional CTA + features + contact block.
+ *
+ * Expected content keys:
+ * - headline       : string
+ * - intro          : string (lead paragraph)
+ * - body_blocks    : array of strings (paragraphs)
+ * - cta_label      : string (optional)
+ * - cta_url        : string (optional)
+ * - cta_url_is_safe: bool (set by renderer; when false, CTA is rendered as text)
+ * - features_block : array of { label: value } (optional; rendered as key/value rows)
+ * - contact_block  : array of strings (optional; contact lines)
+ */
+#}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="mas-card" style="background-color:#ffffff; border-radius:16px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+  <tr>
+    <td class="mas-card" style="padding:48px;">
+      {% if content.headline %}
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:22px; line-height:30px; font-weight:600; color:#0f172a; margin-bottom:16px;">
+          {{ content.headline }}
+        </div>
+      {% endif %}
+
+      {% if content.intro %}
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:15px; line-height:24px; color:#334155; margin-bottom:16px;">
+          {{ content.intro }}
+        </div>
+      {% endif %}
+
+      {% for block in content.body_blocks|default([]) %}
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:15px; line-height:24px; color:#334155; margin-bottom:16px;">
+          {{ block }}
+        </div>
+      {% endfor %}
+
+      {% if content.cta_url and content.cta_url_is_safe and content.cta_label %}
+        {# Bulletproof table-based button for Outlook compatibility. #}
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0;">
+          <tr>
+            <td align="center" bgcolor="{{ branding.primary_color }}" style="border-radius:999px; background-color:{{ branding.primary_color }};">
+              <a href="{{ content.cta_url }}"
+                 style="display:inline-block; padding:16px 32px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:999px; background-color:{{ branding.primary_color }};">
+                {{ content.cta_label }}
+              </a>
+            </td>
+          </tr>
+        </table>
+      {% elseif content.cta_url and content.cta_label %}
+        {# CTA URL failed validation; render as plain text. #}
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:14px; line-height:22px; color:#334155; margin:16px 0;">
+          {{ content.cta_label }}: {{ content.cta_url }}
+        </div>
+      {% endif %}
+
+      {% if content.features_block %}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:24px 0; border-top:1px solid #e2e8f0;">
+          {% for pair in content.features_block %}
+            {% for label, value in pair %}
+              <tr>
+                <td style="padding:12px 0; border-bottom:1px solid #e2e8f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; line-height:20px; color:#64748b;">
+                  {{ label }}
+                </td>
+                <td style="padding:12px 0; border-bottom:1px solid #e2e8f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; line-height:20px; color:#0f172a; text-align:right;">
+                  {{ value }}
+                </td>
+              </tr>
+            {% endfor %}
+          {% endfor %}
+        </table>
+      {% endif %}
+
+      {% if content.contact_block %}
+        <div style="margin-top:24px; padding-top:16px; border-top:1px solid #e2e8f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; line-height:20px; color:#475569;">
+          {% for line in content.contact_block %}
+            <div>{{ line }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </td>
+  </tr>
+</table>

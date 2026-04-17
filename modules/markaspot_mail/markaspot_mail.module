@@ -1,0 +1,60 @@
+<?php
+
+/**
+ * @file
+ * Module file for markaspot_mail.
+ *
+ * Thin shim that forwards the classic hook_mail_alter + hook_theme to the
+ * OO implementation under \Drupal\markaspot_mail. Attribute-based hooks
+ * aren't used here for consistency with markaspot_passwordless and other
+ * profile modules that still rely on classic hooks.
+ */
+
+declare(strict_types=1);
+
+use Drupal\markaspot_mail\Hook\MailAlterHook;
+
+/**
+ * Implements hook_theme().
+ */
+function markaspot_mail_theme($existing, $type, $theme, $path) {
+  return [
+    'markaspot_mail_layout' => [
+      'variables' => [
+        'variant' => 'card_transactional',
+        'branding' => [],
+        'content' => [],
+        'langcode' => 'en',
+      ],
+      'template' => 'mail-layout',
+    ],
+    'markaspot_mail_hero_code' => [
+      'variables' => [
+        'branding' => [],
+        'content' => [],
+      ],
+      'template' => 'mail-hero-code',
+    ],
+    'markaspot_mail_card_transactional' => [
+      'variables' => [
+        'branding' => [],
+        'content' => [],
+      ],
+      'template' => 'mail-card-transactional',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_mail_alter().
+ */
+function markaspot_mail_mail_alter(&$message) {
+  /** @var \Drupal\markaspot_mail\Hook\MailAlterHook $hook */
+  $hook = new MailAlterHook(
+    \Drupal::configFactory(),
+    \Drupal::service('markaspot_mail.branding'),
+    \Drupal::service('markaspot_mail.renderer'),
+    \Drupal::service('logger.channel.markaspot_mail'),
+  );
+  $hook->alter($message);
+}

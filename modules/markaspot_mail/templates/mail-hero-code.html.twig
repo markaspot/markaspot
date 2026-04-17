@@ -1,0 +1,49 @@
+{#
+/**
+ * @file
+ * OTP-style hero box.
+ *
+ * Expected content keys:
+ * - headline      : string
+ * - headline_link : string (optional, link target for the headline)
+ * - code          : string (the OTP / verification code)
+ * - subtext       : string (small print under the code)
+ */
+#}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td align="center" style="padding:0 0 24px 0;">
+      {% if content.headline %}
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:24px; line-height:32px; font-weight:600; color:#0f172a; text-align:center;">
+          {% if content.headline_link %}
+            <a href="{{ content.headline_link }}" style="color:#0f172a; text-decoration:none;">{{ content.headline }}</a>
+          {% else %}
+            {{ content.headline }}
+          {% endif %}
+        </div>
+      {% endif %}
+    </td>
+  </tr>
+  <tr>
+    <td align="center" style="padding:0;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{ branding.primary_color }}; border-radius:20px;">
+        <tr>
+          <td align="center" style="padding:40px 80px;">
+            <div style="font-family:'SF Mono',Monaco,Menlo,monospace; font-size:56px; line-height:64px; letter-spacing:0.15em; color:#ffffff; font-weight:600;">
+              {{ content.code }}
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  {% if content.subtext %}
+    <tr>
+      <td align="center" style="padding:24px 16px 0 16px;">
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:14px; line-height:22px; color:#475569; text-align:center;">
+          {{ content.subtext }}
+        </div>
+      </td>
+    </tr>
+  {% endif %}
+</table>

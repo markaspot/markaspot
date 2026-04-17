@@ -1,0 +1,65 @@
+markaspot_mail.settings:
+  type: config_object
+  label: 'Mark-a-Spot Mail settings'
+  mapping:
+    platform:
+      type: mapping
+      label: 'Platform-level branding defaults'
+      mapping:
+        name:
+          type: string
+          label: 'Platform name'
+        support_email:
+          type: string
+          label: 'Platform support email'
+        reply_to:
+          type: string
+          label: 'Platform Reply-To header'
+        logo_path:
+          type: string
+          label: 'Platform logo (module-relative path)'
+        primary_color:
+          type: string
+          label: 'Platform primary color (Tailwind name or #RRGGBB)'
+        background_color:
+          type: string
+          label: 'Platform background color (Tailwind name or #RRGGBB)'
+        legal_notice_url:
+          type: string
+          label: 'Platform legal notice URL (Impressum)'
+        privacy_url:
+          type: string
+          label: 'Platform privacy policy URL'
+        frontend_base_url:
+          type: string
+          label: 'Platform frontend base URL'
+        tenant_frontend_base_template:
+          type: string
+          label: 'Tenant frontend base URL template (must contain the {slug} placeholder)'
+    features:
+      type: mapping
+      label: 'Feature flags'
+      mapping:
+        show_platform_footer:
+          type: boolean
+          label: 'Always render the Platform Zone-2 footer'
+        tier_gating:
+          type: boolean
+          label: 'Hide the Platform footer on paid tiers (future stage)'
+    whitelist:
+      type: mapping
+      label: 'Whitelist of consumer mails to brand'
+      mapping:
+        entries:
+          type: sequence
+          label: 'Whitelist entries keyed by "<module>.<key>"'
+          sequence:
+            type: mapping
+            label: 'Whitelist entry'
+            mapping:
+              mode:
+                type: string
+                label: 'Branding mode ("platform" or "jurisdiction")'
+              variant:
+                type: string
+                label: 'Renderer variant ("hero_code" or "card_transactional")'

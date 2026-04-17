@@ -1,0 +1,144 @@
+{#
+/**
+ * @file
+ * Outer mail wrapper.
+ *
+ * Available variables:
+ * - variant: 'hero_code' | 'card_transactional'
+ * - branding: branding package (mode, platform_name, logo_url, primary_color,
+ *   background_color, support_email, legal_notice_url, privacy_url,
+ *   email_footer_html, reply_to, frontend_base_url, jurisdiction_slug,
+ *   jurisdiction_label, platform_footer)
+ * - content: variant-specific content
+ * - langcode: active langcode for the rendered message
+ *
+ * Styling is inline to survive Gmail/Outlook. A <style> block in <head>
+ * is used only for progressive enhancement (responsive breakpoint).
+ *
+ * Logo strategy:
+ * - Platform mode: inline SVG (no external request, degrades to nothing in
+ *   Gmail which strips <svg> tags — Zone-2 text links remain visible).
+ * - Jurisdiction mode: <img src="..."> with absolute URL from Drupal file API.
+ *   Inline SVG for uploaded files would require reading the file in PHP; that
+ *   is a Stage 2 enhancement once jurisdiction logos are stored as managed SVGs.
+ */
+#}
+<!DOCTYPE html>
+<html lang="{{ langcode|default('en') }}" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<title>{{ branding.platform_name }}</title>
+{# Light-mode only for consistency across OTP and transactional. #}
+<meta name="color-scheme" content="light">
+<style>
+  @media only screen and (max-width: 600px) {
+    .mas-container { width: 100% !important; }
+    .mas-card { padding: 24px !important; }
+  }
+</style>
+</head>
+<body style="margin:0; padding:0; background-color:{{ branding.background_color }}; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;">
+
+{# Preheader (hidden inbox preview snippet). #}
+{% set preheader = content.preheader|default('') %}
+{% if preheader %}
+  <div style="display:none !important; visibility:hidden; opacity:0; color:transparent; height:0; width:0; overflow:hidden; mso-hide:all;">
+    {{ preheader }}
+  </div>
+{% endif %}
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:{{ branding.background_color }};">
+  <tr>
+    <td align="center" style="padding:32px 16px;">
+      <table role="presentation" class="mas-container" width="560" cellpadding="0" cellspacing="0" border="0" style="width:560px; max-width:560px;">
+
+        {# Logo row. #}
+        <tr>
+          <td align="center" style="padding:0 0 24px 0;">
+            {% if branding.mode == 'platform' %}
+              <a href="{{ branding.platform_footer.mas_link }}" style="display:inline-block; text-decoration:none; border:0; outline:none;">
+                {% include '@markaspot_mail/_mas-logo.html.twig' with { 'width': 140, 'height': 57 } only %}
+              </a>
+            {% elseif branding.logo_url %}
+              <img src="{{ branding.logo_url }}" alt="{{ branding.platform_name }}" width="96" style="display:block; max-width:96px; height:auto; border:0; outline:none; text-decoration:none;">
+            {% else %}
+              <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:18px; font-weight:600; color:#111827;">
+                {{ branding.platform_name }}
+              </div>
+            {% endif %}
+          </td>
+        </tr>
+
+        {# Body slot. #}
+        <tr>
+          <td>
+            {% if variant == 'hero_code' %}
+              {% include '@markaspot_mail/mail-hero-code.html.twig' with { 'branding': branding, 'content': content } only %}
+            {% else %}
+              {% include '@markaspot_mail/mail-card-transactional.html.twig' with { 'branding': branding, 'content': content } only %}
+            {% endif %}
+          </td>
+        </tr>
+
+        {# Zone 1: Jurisdiction footer (only in jurisdiction mode). #}
+        {% if branding.mode == 'jurisdiction' %}
+          <tr>
+            <td style="padding:24px 8px 0 8px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; line-height:20px; color:#475569;">
+              {% if branding.email_footer_html %}
+                <div class="mas-muted" style="color:#475569;">{{ branding.email_footer_html }}</div>
+              {% endif %}
+              <div class="mas-muted" style="margin-top:8px; color:#475569;">
+                {% if branding.support_email %}
+                  <a href="mailto:{{ branding.support_email }}" style="color:#475569; text-decoration:underline;">{{ branding.support_email }}</a>
+                {% endif %}
+              </div>
+              <div class="mas-muted" style="margin-top:4px; color:#475569;">
+                {% if branding.legal_notice_url %}
+                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ 'Legal notice'|trans }}</a>
+                {% endif %}
+                {% if branding.legal_notice_url and branding.privacy_url %} &middot; {% endif %}
+                {% if branding.privacy_url %}
+                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ 'Privacy'|trans }}</a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endif %}
+
+        {# Zone 2: Platform footer (always). Inline SVG logo degrades gracefully
+           in Gmail / Outlook.com (SVG stripped, text links remain visible). #}
+        <tr>
+          <td style="padding:24px 8px 8px 8px; border-top:1px solid #e2e8f0; margin-top:16px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:12px; line-height:18px; color:#64748b;">
+            <div style="margin-bottom:10px;">
+              <a href="{{ branding.platform_footer.mas_link }}" style="display:inline-block; text-decoration:none; border:0; outline:none;">
+                {% include '@markaspot_mail/_mas-logo.html.twig' with { 'width': 80, 'height': 32 } only %}
+              </a>
+            </div>
+            <div style="margin-top:4px;">
+              <a href="{{ branding.platform_footer.mas_link }}" style="color:#64748b; text-decoration:none;">mark-a-spot.com</a>
+              &nbsp;&middot;&nbsp;
+              <a href="{{ branding.platform_footer.docs_link }}" style="color:#64748b; text-decoration:none;">{{ 'Docs'|trans }}</a>
+              &nbsp;&middot;&nbsp;
+              <a href="{{ branding.platform_footer.civicspot_link }}" style="color:#64748b; text-decoration:none;">civicspot.io</a>
+            </div>
+            <div style="margin-top:6px;">
+              <a href="{{ branding.platform_footer.impressum_link }}" style="color:#64748b; text-decoration:underline;">{{ 'Impressum'|trans }}</a>
+              &nbsp;&middot;&nbsp;
+              <a href="{{ branding.platform_footer.datenschutz_link }}" style="color:#64748b; text-decoration:underline;">{{ 'Datenschutz'|trans }}</a>
+            </div>
+            <div style="margin-top:6px; color:#94a3b8;">
+              {{ branding.platform_footer.copyright }}
+            </div>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+
+</body>
+</html>
