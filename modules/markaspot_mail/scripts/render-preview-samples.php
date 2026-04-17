@@ -30,6 +30,7 @@ $renderer = \Drupal::service('markaspot_mail.renderer');
 // has the registry injected.
 $feedbackBuilder = \Drupal::service('markaspot_mail.builder.feedback_request');
 $inviteBuilder = \Drupal::service('markaspot_mail.builder.group_member_invitation');
+$ecaActionBuilder = \Drupal::service('markaspot_mail.builder.eca_action_email');
 $etm = \Drupal::entityTypeManager();
 
 $branding = $brandingService->getBranding(NULL, 'platform', 'en');
@@ -119,6 +120,40 @@ if ($msg !== NULL) {
   fwrite(STDOUT, "  Subject: {$msg->subject}\n");
 }
 
+// 5. EcaActionEmailBuilder: simulates what the four ECA processes
+//    (process_confirm_report, process_tunr6d6 etc.) produce once their
+//    action_send_email_action has been post-processed by system_mail().
+//    We skip the real ECA trigger and feed a synthetic MailContext that
+//    matches the shape hook_mail_alter would see at runtime.
+$builderEcaHtml = '';
+$ecaNode = !empty($nodes) ? reset($nodes) : NULL;
+$ecaSubject = 'Your report #51-2026 is being processed';
+$ecaBody = "Good day!\n\nThank you for your contribution. Your request has been forwarded to the responsible department and is now being processed.\n\nYou will receive a final notification by email after it has been completed.\n\n-- This is an automatically generated email, and unfortunately, you cannot reply to it.";
+
+$ctx = new MailContext(
+  module: 'system',
+  key: 'action_send_email',
+  langcode: 'en',
+  params: [
+    'context' => [
+      'subject' => '[node:title] is being processed',
+      'message' => $ecaBody,
+      'node' => $ecaNode,
+    ],
+  ],
+  to: 'citizen@example.com',
+  subject: $ecaSubject,
+  body: [$ecaBody],
+);
+$msg = $ecaActionBuilder->build($ctx);
+if ($msg !== NULL) {
+  $b = $brandingService->getBranding($msg->jurisdictionId, $msg->mode, $ctx->langcode);
+  $out = $renderer->render($msg->variant, $b, $msg->content, $ctx->langcode, $msg->plainText);
+  $builderEcaHtml = $out['html'];
+  fwrite(STDOUT, "ECA action: mode={$msg->mode}, jur=" . ($msg->jurisdictionId ?? 'NULL') . "\n");
+  fwrite(STDOUT, "  Subject: {$msg->subject}\n");
+}
+
 file_put_contents('/tmp/mail_hero_code.html', $heroOutput['html']);
 file_put_contents('/tmp/mail_card_transactional.html', $cardOutput['html']);
 if ($builderFeedbackHtml !== '') {
@@ -126,6 +161,9 @@ if ($builderFeedbackHtml !== '') {
 }
 if ($builderInviteHtml !== '') {
   file_put_contents('/tmp/mail_builder_invitation.html', $builderInviteHtml);
+}
+if ($builderEcaHtml !== '') {
+  file_put_contents('/tmp/mail_builder_eca_action.html', $builderEcaHtml);
 }
 
 fwrite(STDOUT, "\nWrote:\n");

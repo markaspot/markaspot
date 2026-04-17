@@ -81,13 +81,36 @@ final class MailAlterHookTest extends UnitTestCase {
     ));
 
     $hook = $this->buildHook($builder);
-    foreach (['user', 'system', 'update'] as $module) {
+    foreach (['user', 'update'] as $module) {
       $message = $this->buildMessage(module: $module, key: 'password_reset');
       $originalSubject = $message['subject'];
       $hook->alter($message);
       $this->assertSame($originalSubject, $message['subject'], "Blocklisted module '$module' must not be branded.");
     }
     $this->assertFalse($builder->wasCalled, 'Builder must never run for blocklisted modules.');
+  }
+
+  /**
+   * @covers ::alter
+   *
+   * system is no longer hard-blocklisted — individual keys are gated by
+   * builder supports(). A builder that does not claim a system:* key must
+   * not be invoked, but a builder that does (EcaActionEmailBuilder for
+   * system:action_send_email) gets the chance to brand.
+   */
+  public function testAlterAllowsSystemModuleThroughWhenNoBuilderClaims(): void {
+    $builder = new RecordingStubBuilder(new MailMessage(
+      subject: 'should-not-happen',
+      variant: 'card_transactional',
+      content: [],
+    ));
+
+    $hook = $this->buildHook($builder);
+    $message = $this->buildMessage(module: 'system', key: 'mail');
+    $originalSubject = $message['subject'];
+    $hook->alter($message);
+    $this->assertSame($originalSubject, $message['subject']);
+    $this->assertFalse($builder->wasCalled, 'Builder must not be invoked when supports() returns FALSE.');
   }
 
   /**

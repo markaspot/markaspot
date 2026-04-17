@@ -25,6 +25,19 @@ final readonly class MailContext {
    *   The raw $message['params'] array passed by the consumer module.
    * @param mixed $to
    *   The $message['to'] value (string or array, depending on caller).
+   * @param string $subject
+   *   The $message['subject'] value as it stands when the hook runs.
+   *   hook_mail_alter executes AFTER hook_mail, so callers like
+   *   system_mail() (for action_send_email) have already token-replaced
+   *   their subject template into this field. Builders that want to
+   *   preserve the caller's subject (e.g. EcaActionEmailBuilder) read
+   *   from here instead of re-tokenizing the template themselves.
+   * @param array $body
+   *   The $message['body'] array as it stands when the hook runs. Each
+   *   entry is typically a string (or Markup) and corresponds to one
+   *   paragraph or render-array output appended by the module's
+   *   hook_mail. Empty array when the mail was never touched by a
+   *   previous hook.
    */
   public function __construct(
     public string $module,
@@ -32,6 +45,8 @@ final readonly class MailContext {
     public string $langcode,
     public array $params,
     public mixed $to,
+    public string $subject = '',
+    public array $body = [],
   ) {}
 
 }

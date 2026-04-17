@@ -25,6 +25,12 @@ enum MailType: string {
   case ECA_MODERATION = 'eca_moderation';
   case ECA_GROUP = 'eca_group';
 
+  // ECA-driven action_send_email_action workflows (Stage 2c). Catches
+  // everything the ECA editor fires via Drupal core's EmailAction plugin
+  // (module=system, key=action_send_email), irrespective of the
+  // specific ECA process that produced it.
+  case ECA_ACTION = 'eca_action';
+
   // CivicSpot / FastMap workspace mails (Stage 3).
   case FASTMAP_WORKSPACE_VERIFICATION = 'fastmap_workspace_verification';
   case FASTMAP_DEMO_EXPIRY = 'fastmap_demo_expiry';

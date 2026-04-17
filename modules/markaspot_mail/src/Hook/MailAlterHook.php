@@ -27,7 +27,17 @@ use Psr\Log\LoggerInterface;
  */
 final class MailAlterHook {
 
-  private const SYSTEM_MODULE_BLOCKLIST = ['user', 'system', 'update'];
+  /**
+   * Modules we never brand, even if a builder accidentally claims them.
+   *
+   * - user / update: authentication and upgrade-critical flows. A branded
+   *   password-reset mail that fails to render could lock admins out.
+   * - system: we allow through but gate individual keys via builder
+   *   supports() (e.g. EcaActionEmailBuilder claims 'action_send_email'
+   *   only). Other system keys remain untouched because no builder
+   *   claims them.
+   */
+  private const SYSTEM_MODULE_BLOCKLIST = ['user', 'update'];
 
   public function __construct(
     private readonly MailBuilderRegistry $registry,
@@ -62,6 +72,8 @@ final class MailAlterHook {
       langcode: $langcode,
       params: (array) ($message['params'] ?? []),
       to: $message['to'] ?? NULL,
+      subject: (string) ($message['subject'] ?? ''),
+      body: (array) ($message['body'] ?? []),
     );
 
     try {
