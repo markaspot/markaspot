@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.50](https://github.com/markaspot/markaspot/compare/11.9.49...11.9.50) (2026-04-17)
+
+### Bug Fixes
+
+* **mail:** enable markaspot_mail on existing and fresh installs ([6a11bb5](https://github.com/markaspot/markaspot/commit/6a11bb50bb1415b69a4bea5c60665b9fd53f2439))
+
 ## [11.9.49](https://github.com/markaspot/markaspot/compare/11.9.48...11.9.49) (2026-04-17)
 
 ### Features
