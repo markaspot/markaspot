@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.53](https://github.com/markaspot/markaspot/compare/11.9.52...11.9.53) (2026-04-17)
+
+### Bug Fixes
+
+* **mail:** rewrite asset URLs that resolve with a container-internal host ([47a2ac4](https://github.com/markaspot/markaspot/commit/47a2ac4a9353a2cd54e3a60283e389d85d398f9c))
+
 ## [11.9.52](https://github.com/markaspot/markaspot/compare/11.9.51...11.9.52) (2026-04-17)
 
 ### Bug Fixes
