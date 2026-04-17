@@ -21,7 +21,11 @@ final readonly class MailMessage {
 
   /**
    * @param string $subject
-   *   Final Subject: header. Replaces $message['subject'] verbatim.
+   *   Final Subject: header. Replaces $message['subject']. The hook runs
+   *   defense-in-depth CR/LF/NUL stripping at the assignment site (mail
+   *   header injection, CWE-93), but builders SHOULD still treat this as
+   *   a header-bound value: don't interpolate raw user input here without
+   *   prior sanitization, the hook sink is the last line of defense.
    * @param string $variant
    *   Either "hero_code" or "card_transactional". Unknown variants fall
    *   back to card_transactional at render time.
@@ -35,6 +39,10 @@ final readonly class MailMessage {
    *   Group entity ID for jurisdiction mode; NULL in platform mode.
    * @param string|null $plainText
    *   Explicit plain-text override. NULL defers to the renderer default.
+   *   Ends up as MIME text body content, not a header value — the hook
+   *   normalizes \r\n → \n before stashing it in $message['params'], but
+   *   builders with MIME-building plugins downstream should assume the
+   *   string flows to a text/plain MIME part without further escaping.
    */
   public function __construct(
     public string $subject,

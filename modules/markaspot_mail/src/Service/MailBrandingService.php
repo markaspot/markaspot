@@ -32,7 +32,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * persistent Mark-a-Spot attribution block. Tier-based removal is a later
  * stage and intentionally not implemented here.
  */
-final class MailBrandingService {
+class MailBrandingService {
 
   /**
    * Static map of Tailwind color names to HEX values.

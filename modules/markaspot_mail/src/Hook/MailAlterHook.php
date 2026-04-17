@@ -91,6 +91,10 @@ final class MailAlterHook {
       );
     }
     catch (\Throwable $e) {
+      // Silent-fail on render error is intentional: returning here leaves
+      // the original unbranded $message intact so Drupal still delivers
+      // the mail. hook_mail_alter may run under cron / queue / API-callback
+      // context where \Drupal::messenger() has no UI session to reach.
       $this->logger->error('Failed to render branded mail for @module:@key (type @type): @err', [
         '@module' => $module,
         '@key' => $key,
@@ -100,7 +104,12 @@ final class MailAlterHook {
       return;
     }
 
-    $message['subject'] = $msg->subject;
+    // Subject may come from user-controlled data via the builder (report
+    // title, display name, etc.) and ends up verbatim in an RFC 5322 header.
+    // Defense-in-depth: strip CR/LF/NUL even though builders SHOULD already
+    // sanitize. Mail header injection (CWE-93) would otherwise let an
+    // attacker add Bcc: / To: headers and turn the pipeline into a relay.
+    $message['subject'] = $this->sanitizeHeaderValue($msg->subject);
     $message['body'] = [$rendered['html']];
     $message['headers']['Content-Type'] = 'text/html; charset=UTF-8; format=flowed; delsp=no';
     if (!empty($brandingPackage['reply_to'])) {
@@ -114,8 +123,10 @@ final class MailAlterHook {
     unset($message['params']['plaintext']);
 
     // Stash the plain-text alternative so a downstream mailer plugin can
-    // promote it into a proper multipart/alternative body.
-    $message['params']['_plain_alt'] = $rendered['plain'];
+    // promote it into a proper multipart/alternative body. Normalize CR
+    // to LF as belt-and-suspenders for plugins that might naively splice
+    // the text next to headers without re-encoding.
+    $message['params']['_plain_alt'] = str_replace(["\r\n", "\r"], "\n", $rendered['plain']);
   }
 
   /**

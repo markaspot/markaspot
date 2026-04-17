@@ -23,7 +23,7 @@ use Psr\Log\LoggerInterface;
  * minimal progressive-enhancement block; all critical styling is inline so
  * it survives Gmail, Outlook and the broader MUA zoo.
  */
-final class MailHtmlRenderer {
+class MailHtmlRenderer {
 
   public function __construct(
     private readonly RendererInterface $renderer,

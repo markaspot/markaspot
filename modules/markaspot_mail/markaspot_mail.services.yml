@@ -25,8 +25,10 @@ services:
   # land in Stage 2 (ECA), Stage 3 (FastMap) and Stage 4 (passwordless OTP).
   # The registry is instantiated even when no builders are tagged; in that
   # case the hook dispatcher simply finds no match and returns early.
+  # Private: only MailAlterHook consumes this service.
   markaspot_mail.builder_registry:
     class: Drupal\markaspot_mail\Mail\MailBuilderRegistry
+    public: false
     arguments:
       - !tagged_iterator markaspot_mail.builder
 
