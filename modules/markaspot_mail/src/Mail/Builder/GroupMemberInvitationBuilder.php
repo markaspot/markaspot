@@ -49,7 +49,7 @@ final class GroupMemberInvitationBuilder implements MailBuilderInterface {
    * {@inheritdoc}
    */
   public function getType(): MailType {
-    return MailType::ECA_GROUP;
+    return MailType::ECA_GROUP_INVITATION;
   }
 
   /**

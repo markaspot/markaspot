@@ -19,8 +19,8 @@ final class GroupMemberInvitationBuilderTest extends UnitTestCase {
   /**
    * @covers ::getType
    */
-  public function testGetTypeReturnsEcaGroup(): void {
-    $this->assertSame(MailType::ECA_GROUP, $this->buildBuilder()->getType());
+  public function testGetTypeReturnsEcaGroupInvitation(): void {
+    $this->assertSame(MailType::ECA_GROUP_INVITATION, $this->buildBuilder()->getType());
   }
 
   /**

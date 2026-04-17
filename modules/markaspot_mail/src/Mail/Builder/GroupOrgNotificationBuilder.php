@@ -41,7 +41,7 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
    * {@inheritdoc}
    */
   public function getType(): MailType {
-    return MailType::ECA_GROUP;
+    return MailType::ECA_GROUP_ORG_NOTIFICATION;
   }
 
   /**

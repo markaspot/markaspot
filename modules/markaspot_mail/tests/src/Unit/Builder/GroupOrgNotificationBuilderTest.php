@@ -19,8 +19,8 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
   /**
    * @covers ::getType
    */
-  public function testGetTypeReturnsEcaGroup(): void {
-    $this->assertSame(MailType::ECA_GROUP, $this->buildBuilder()->getType());
+  public function testGetTypeReturnsEcaGroupOrgNotification(): void {
+    $this->assertSame(MailType::ECA_GROUP_ORG_NOTIFICATION, $this->buildBuilder()->getType());
   }
 
   /**
