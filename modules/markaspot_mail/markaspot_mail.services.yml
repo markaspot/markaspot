@@ -50,3 +50,10 @@ services:
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
+
+  markaspot_mail.builder.group_member_invitation:
+    class: Drupal\markaspot_mail\Mail\Builder\GroupMemberInvitationBuilder
+    arguments:
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }
