@@ -34,6 +34,33 @@ class PiiRedactionTest extends UnitTestCase {
   }
 
   /**
+   * Compact DE IBAN without spaces must be redacted (22-char, no separators).
+   *
+   * The old fixed-block regex required a space or group boundary after every
+   * four digits, so DE89370400440532013000 (all 22 chars run together) slipped
+   * through. The (?:\s?\d){11,30} form catches both formats.
+   */
+  public function testCompactIbanWithoutSpacesIsRedacted(): void {
+    $result = _markaspot_ai_redact_pii_regex('Meine IBAN ist DE89370400440532013000.');
+
+    $this->assertTrue($result['pii_found']);
+    $this->assertSame('Meine IBAN ist [REDACTED IBAN].', $result['text']);
+  }
+
+  /**
+   * Non-DE IBAN (AT, 20 chars) must be redacted.
+   *
+   * Austrian IBANs are 20 characters — shorter than DE — so exercising
+   * the lower bound of the (?:\s?\d){11,30} quantifier.
+   */
+  public function testAustrianIbanIsRedacted(): void {
+    $result = _markaspot_ai_redact_pii_regex('Konto: AT611904300234573201.');
+
+    $this->assertTrue($result['pii_found']);
+    $this->assertSame('Konto: [REDACTED IBAN].', $result['text']);
+  }
+
+  /**
    * Email "@" must not bleed into the phone regex.
    */
   public function testEmailDoesNotTriggerPhoneRegex(): void {

@@ -537,7 +537,8 @@ function _markaspot_ai_is_feature_enabled_for_node(NodeInterface $node, string $
  * must be redacted before phones.
  *
  * Order:
- *   1. IBAN (most specific — country code + 20+ digits in blocks).
+ *   1. IBAN (most specific — country code + 2 check digits + 11-30 more digits,
+ *      with or without spaces).
  *   2. Email (unambiguous — contains "@").
  *   3. DE international phone (+49/0049 prefix).
  *   4. International phone (+1..+48, +80..+99).
@@ -555,10 +556,12 @@ function _markaspot_ai_is_feature_enabled_for_node(NodeInterface $node, string $
  */
 function _markaspot_ai_redact_pii_regex(string $text, string $node_key = ''): array {
   $patterns = [
-    // IBAN (up to 34 chars, DE = 22 chars = 2 letters + 20 digits). Runs
-    // first so the trailing digit blocks are not clipped by the phone
-    // regex below.
-    '/\b[A-Z]{2}\d{2}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{4}\s?\d{0,4}\b/' => '[REDACTED IBAN]',
+    // IBAN (20–32 digits after the 2-letter country code + 2 check digits,
+    // DE = 22 chars total). The repeating (?:\s?\d) form matches both compact
+    // IBANs (no spaces, e.g. DE89370400440532013000) and the common
+    // space-grouped format (DE89 3704 0044 0532 0130 00). Runs first so the
+    // trailing digit blocks are not clipped by the phone regex below.
+    '/\b[A-Z]{2}\d{2}(?:\s?\d){11,30}\b/' => '[REDACTED IBAN]',
     // Email addresses. Unambiguous thanks to the "@" anchor.
     '/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/' => '[REDACTED email]',
     // German phone numbers: +49/0049 followed by area code and number.
