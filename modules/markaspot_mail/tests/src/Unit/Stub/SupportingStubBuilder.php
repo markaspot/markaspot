@@ -26,21 +26,21 @@ final class SupportingStubBuilder implements MailBuilderInterface {
   ) {}
 
   /**
-   *
+   * {@inheritdoc}
    */
   public function getType(): MailType {
     return $this->type;
   }
 
   /**
-   *
+   * {@inheritdoc}
    */
   public function supports(string $module, string $key): bool {
     return $module === $this->module && $key === $this->key;
   }
 
   /**
-   *
+   * {@inheritdoc}
    */
   public function build(MailContext $ctx): ?MailMessage {
     return new MailMessage(

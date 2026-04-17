@@ -26,21 +26,21 @@ final class RecordingStubBuilder implements MailBuilderInterface {
   ) {}
 
   /**
-   *
+   * {@inheritdoc}
    */
   public function getType(): MailType {
     return MailType::ECA_ESCALATION;
   }
 
   /**
-   *
+   * {@inheritdoc}
    */
   public function supports(string $module, string $key): bool {
     return $module === 'markaspot_escalation';
   }
 
   /**
-   *
+   * {@inheritdoc}
    */
   public function build(MailContext $ctx): ?MailMessage {
     $this->wasCalled = TRUE;

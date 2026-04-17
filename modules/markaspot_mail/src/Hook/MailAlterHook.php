@@ -124,9 +124,10 @@ final class MailAlterHook {
 
     // Stash the plain-text alternative so a downstream mailer plugin can
     // promote it into a proper multipart/alternative body. Normalize CR
-    // to LF as belt-and-suspenders for plugins that might naively splice
-    // the text next to headers without re-encoding.
-    $message['params']['_plain_alt'] = str_replace(["\r\n", "\r"], "\n", $rendered['plain']);
+    // to LF + drop NUL as belt-and-suspenders: some pedantic MIME libs
+    // truncate text parts at \0, and plugins building SMTP frames manually
+    // could otherwise mis-read the text boundary.
+    $message['params']['_plain_alt'] = str_replace(["\r\n", "\r", "\0"], ["\n", "\n", ''], $rendered['plain']);
   }
 
   /**
