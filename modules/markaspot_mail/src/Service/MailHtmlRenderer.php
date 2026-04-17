@@ -42,11 +42,16 @@ final class MailHtmlRenderer {
    *   Variant-specific content. See module README / task spec.
    * @param string $langcode
    *   Langcode for the rendered mail.
+   * @param string|null $plainTextOverride
+   *   Explicit plain-text alternative. When NULL, the plain text is
+   *   derived deterministically from $content and $branding. Builders
+   *   that care about exact wording / line-breaking in the text/plain
+   *   part pass a string; anything else defers to the default derivation.
    *
    * @return array
    *   ['html' => string, 'plain' => string]
    */
-  public function render(string $variant, array $branding, array $content, string $langcode): array {
+  public function render(string $variant, array $branding, array $content, string $langcode, ?string $plainTextOverride = NULL): array {
     $variant = in_array($variant, ['hero_code', 'card_transactional'], TRUE)
       ? $variant
       : 'card_transactional';
@@ -84,7 +89,9 @@ final class MailHtmlRenderer {
     ];
 
     $html = (string) $this->renderer->renderInIsolation($build);
-    $plain = $this->htmlToPlain($variant, $branding, $content);
+    $plain = $plainTextOverride !== NULL
+      ? rtrim($plainTextOverride, "\n") . "\n"
+      : $this->htmlToPlain($variant, $branding, $content);
 
     return [
       'html' => $html,

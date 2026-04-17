@@ -46,20 +46,3 @@ markaspot_mail.settings:
         tier_gating:
           type: boolean
           label: 'Hide the Platform footer on paid tiers (future stage)'
-    whitelist:
-      type: mapping
-      label: 'Whitelist of consumer mails to brand'
-      mapping:
-        entries:
-          type: sequence
-          label: 'Whitelist entries keyed by "<module>.<key>"'
-          sequence:
-            type: mapping
-            label: 'Whitelist entry'
-            mapping:
-              mode:
-                type: string
-                label: 'Branding mode ("platform" or "jurisdiction")'
-              variant:
-                type: string
-                label: 'Renderer variant ("hero_code" or "card_transactional")'

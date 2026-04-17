@@ -152,6 +152,47 @@ final class MailHtmlRendererTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::render
+   */
+  public function testPlainTextOverrideReplacesDerivedPlain(): void {
+    $branding = $this->buildBranding();
+    $content = [
+      'headline' => 'Your report was updated',
+      'intro' => 'Auto-derived intro that must NOT appear when override is passed.',
+      'body_blocks' => [],
+      'preheader' => '',
+    ];
+    $override = "Builder-controlled plain text.\nSecond line.";
+
+    $renderer = $this->buildRenderer();
+    $out = $renderer->render('card_transactional', $branding, $content, 'en', $override);
+
+    $this->assertStringContainsString("Builder-controlled plain text.\nSecond line.", $out['plain']);
+    $this->assertStringEndsWith("\n", $out['plain'], 'Override must terminate with a newline.');
+    // The auto-derived intro must not appear — override wins entirely.
+    $this->assertStringNotContainsString('Auto-derived intro', $out['plain']);
+  }
+
+  /**
+   * @covers ::render
+   */
+  public function testPlainTextOverrideNullFallsBackToDerivation(): void {
+    $branding = $this->buildBranding();
+    $content = [
+      'headline' => 'Your report was updated',
+      'intro' => 'Auto-derived intro that SHOULD appear when override is NULL.',
+      'body_blocks' => [],
+      'preheader' => '',
+    ];
+
+    $renderer = $this->buildRenderer();
+    $out = $renderer->render('card_transactional', $branding, $content, 'en', NULL);
+
+    $this->assertStringContainsString('Auto-derived intro', $out['plain']);
+    $this->assertStringContainsString('Mark-a-Spot', $out['plain']);
+  }
+
+  /**
    * Builds a MailHtmlRenderer backed by a stub RendererInterface.
    *
    * The stub echoes the build array's key variables so tests can assert

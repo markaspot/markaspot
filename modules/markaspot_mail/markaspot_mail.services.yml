@@ -20,3 +20,20 @@ services:
       - '@renderer'
       - '@markaspot_mail.branding'
       - '@logger.channel.markaspot_mail'
+
+  # Collects every service tagged markaspot_mail.builder. Individual builders
+  # land in Stage 2 (ECA), Stage 3 (FastMap) and Stage 4 (passwordless OTP).
+  # The registry is instantiated even when no builders are tagged; in that
+  # case the hook dispatcher simply finds no match and returns early.
+  markaspot_mail.builder_registry:
+    class: Drupal\markaspot_mail\Mail\MailBuilderRegistry
+    arguments:
+      - !tagged_iterator markaspot_mail.builder
+
+  markaspot_mail.mail_alter_hook:
+    class: Drupal\markaspot_mail\Hook\MailAlterHook
+    arguments:
+      - '@markaspot_mail.builder_registry'
+      - '@markaspot_mail.branding'
+      - '@markaspot_mail.renderer'
+      - '@logger.channel.markaspot_mail'
