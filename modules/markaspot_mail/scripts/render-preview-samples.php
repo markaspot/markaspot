@@ -31,6 +31,8 @@ $renderer = \Drupal::service('markaspot_mail.renderer');
 $feedbackBuilder = \Drupal::service('markaspot_mail.builder.feedback_request');
 $inviteBuilder = \Drupal::service('markaspot_mail.builder.group_member_invitation');
 $ecaActionBuilder = \Drupal::service('markaspot_mail.builder.eca_action_email');
+$workspaceVerificationBuilder = \Drupal::service('markaspot_mail.builder.workspace_verification');
+$demoExpiryBuilder = \Drupal::service('markaspot_mail.builder.demo_expiry_reminder');
 $etm = \Drupal::entityTypeManager();
 
 $branding = $brandingService->getBranding(NULL, 'platform', 'en');
@@ -154,6 +156,51 @@ if ($msg !== NULL) {
   fwrite(STDOUT, "  Subject: {$msg->subject}\n");
 }
 
+// 6. WorkspaceVerificationBuilder (FastMap sign-up).
+$builderWvHtml = '';
+$ctx = new MailContext(
+  module: 'markaspot_fastmap',
+  key: 'workspace_verification',
+  langcode: 'en',
+  params: [
+    'workspace_name' => 'Amsterdam Demo',
+    'site_name' => 'CivicSpot',
+    'verify_url' => 'https://civicspot.io/verify?token=demo-verify-token',
+    'cleanup_days' => '7',
+  ],
+  to: 'creator@example.com',
+);
+$msg = $workspaceVerificationBuilder->build($ctx);
+if ($msg !== NULL) {
+  $b = $brandingService->getBranding($msg->jurisdictionId, $msg->mode, $ctx->langcode);
+  $out = $renderer->render($msg->variant, $b, $msg->content, $ctx->langcode, $msg->plainText);
+  $builderWvHtml = $out['html'];
+  fwrite(STDOUT, "Workspace verification: mode={$msg->mode}\n");
+  fwrite(STDOUT, "  Subject: {$msg->subject}\n");
+}
+
+// 7. DemoExpiryReminderBuilder (FastMap demo expiring).
+$builderDemoHtml = '';
+$ctx = new MailContext(
+  module: 'markaspot_fastmap',
+  key: 'demo_expiry_reminder',
+  langcode: 'en',
+  params: [
+    'workspace_name' => 'Amsterdam Demo',
+    'expiry_date' => '2026-05-01',
+    'workspace_slug' => 'amsterdam-demo',
+  ],
+  to: 'owner@example.com',
+);
+$msg = $demoExpiryBuilder->build($ctx);
+if ($msg !== NULL) {
+  $b = $brandingService->getBranding($msg->jurisdictionId, $msg->mode, $ctx->langcode);
+  $out = $renderer->render($msg->variant, $b, $msg->content, $ctx->langcode, $msg->plainText);
+  $builderDemoHtml = $out['html'];
+  fwrite(STDOUT, "Demo expiry: mode={$msg->mode}\n");
+  fwrite(STDOUT, "  Subject: {$msg->subject}\n");
+}
+
 file_put_contents('/tmp/mail_hero_code.html', $heroOutput['html']);
 file_put_contents('/tmp/mail_card_transactional.html', $cardOutput['html']);
 if ($builderFeedbackHtml !== '') {
@@ -164,6 +211,12 @@ if ($builderInviteHtml !== '') {
 }
 if ($builderEcaHtml !== '') {
   file_put_contents('/tmp/mail_builder_eca_action.html', $builderEcaHtml);
+}
+if ($builderWvHtml !== '') {
+  file_put_contents('/tmp/mail_builder_workspace_verification.html', $builderWvHtml);
+}
+if ($builderDemoHtml !== '') {
+  file_put_contents('/tmp/mail_builder_demo_expiry.html', $builderDemoHtml);
 }
 
 fwrite(STDOUT, "\nWrote:\n");
