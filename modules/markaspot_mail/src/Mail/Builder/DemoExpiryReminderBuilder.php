@@ -116,8 +116,18 @@ final class DemoExpiryReminderBuilder implements MailBuilderInterface {
    * placeholder is present, mirroring the legacy hook_mail's behavior.
    * Returns empty string if no slug or no configured base so the caller
    * can fall back to the civicspot.io upsell URL.
+   *
+   * The slug is sanitized to [a-z0-9-] before URL assembly. Workspace
+   * slugs are created from a validated form field that enforces the
+   * same alphabet, but the mail params arrive via ECA / workflow code
+   * that could pass a crafted value through (e.g. "../../admin" or
+   * "foo?redir=attacker.test"). MailHtmlRenderer::isSafeUrl() already
+   * rejects non-http(s) schemes at render time, but a path-traversal
+   * or fragment-smuggling slug would still pass that gate. Sanitizing
+   * at the assembly site is the cheap fix.
    */
   private function resolveWorkspaceUrl(string $slug): string {
+    $slug = (string) preg_replace('/[^a-z0-9\-]/', '', strtolower($slug));
     if ($slug === '') {
       return '';
     }

@@ -136,6 +136,42 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
 
   /**
    * @covers ::build
+   *
+   * Path-traversal / fragment-smuggling regression guard. Slugs flow from
+   * workflow code into the CTA URL; a crafted "../../admin" or
+   * "acme?redir=attacker" must be stripped before URL assembly even though
+   * the renderer's isSafeUrl() would accept them structurally.
+   */
+  public function testBuildSanitizesSlugBeforeUrlAssembly(): void {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnMap([
+      ['workspace_base_url', 'https://civicspot.io/'],
+    ]);
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($config);
+
+    $builder = $this->buildBuilder(configFactory: $configFactory);
+    foreach ([
+      '../../admin' => 'https://civicspot.io/admin',
+      'acme?redir=attacker' => 'https://civicspot.io/acmerediraattacker',
+      'ACME/foo' => 'https://civicspot.io/acmefoo',
+      'fine-slug' => 'https://civicspot.io/fine-slug',
+    ] as $input => $expected) {
+      $ctx = $this->buildContext([
+        'workspace_name' => 'Demo',
+        'expiry_date' => '2026-05-01',
+        'workspace_slug' => $input,
+      ]);
+      $msg = $builder->build($ctx);
+      $this->assertNotNull($msg);
+      $this->assertStringNotContainsString('..', $msg->content['cta_url']);
+      $this->assertStringNotContainsString('?', $msg->content['cta_url']);
+      $this->assertStringNotContainsString('#', $msg->content['cta_url']);
+    }
+  }
+
+  /**
+   * @covers ::build
    */
   public function testBuildSubjectAndHeadlineReferenceWorkspaceAndDate(): void {
     $builder = $this->buildBuilder();
