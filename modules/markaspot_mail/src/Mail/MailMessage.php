@@ -33,14 +33,14 @@ final readonly class MailMessage {
    *   Variant-specific slot payload (see mail-hero-code.html.twig and
    *   mail-card-transactional.html.twig for expected keys).
    * @param string $mode
-   *   "platform" or "jurisdiction" — controls footer zones and branding
+   *   "platform" or "jurisdiction": controls footer zones and branding
    *   resolution.
    * @param int|null $jurisdictionId
    *   Group entity ID for jurisdiction mode; NULL in platform mode.
    * @param string|null $plainText
    *   Explicit plain-text override. NULL defers to the renderer default.
-   *   Ends up as MIME text body content, not a header value — the hook
-   *   normalizes \r\n → \n before stashing it in $message['params'], but
+   *   Ends up as MIME text body content, not a header value. The hook
+   *   normalizes \r\n to \n before stashing it in $message['params'], but
    *   builders with MIME-building plugins downstream should assume the
    *   string flows to a text/plain MIME part without further escaping.
    */

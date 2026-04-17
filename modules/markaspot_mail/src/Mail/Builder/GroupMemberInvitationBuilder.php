@@ -28,7 +28,7 @@ use Psr\Log\LoggerInterface;
  *
  * Optional params:
  *   - site_name  (string, defaults to the resolved platform name)
- *   - group_id   (int, future use for jurisdiction-scoped branding —
+ *   - group_id   (int, future use for jurisdiction-scoped branding:
  *                  currently ignored because the invitation is a
  *                  platform-level flow that may target any group type)
  *

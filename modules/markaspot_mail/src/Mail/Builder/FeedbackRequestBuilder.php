@@ -103,7 +103,7 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
       ],
     ];
 
-    $subject = (string) $this->t('Your report @id — feedback welcome', [
+    $subject = (string) $this->t('Your report @id: feedback welcome', [
       '@id' => $requestId,
     ], ['langcode' => $ctx->langcode]);
 

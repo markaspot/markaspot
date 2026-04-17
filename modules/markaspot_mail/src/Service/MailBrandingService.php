@@ -72,6 +72,20 @@ class MailBrandingService {
    */
   private const DEFAULT_BACKGROUND = '#EEF3FF';
 
+  /**
+   * Request-scoped memoization of resolved branding packages.
+   *
+   * Keyed by "<jurisdictionId|''>:<mode>:<langcode>". The entity type
+   * manager caches the group load, but the full branding assembly
+   * (logo file URL lookup, nuxt_config JSON decode, footer construction)
+   * is non-trivial. Builders that inject this service call getBranding()
+   * to resolve frontend URLs BEFORE MailAlterHook calls it again for
+   * rendering — memoization keeps the second call free.
+   *
+   * @var array<string, array>
+   */
+  private array $brandingCache = [];
+
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
@@ -111,6 +125,19 @@ class MailBrandingService {
    */
   public function getBranding(?int $jurisdictionId, string $mode, string $langcode): array {
     $mode = $mode === 'jurisdiction' ? 'jurisdiction' : 'platform';
+    $cacheKey = ($jurisdictionId ?? '') . ':' . $mode . ':' . $langcode;
+    if (isset($this->brandingCache[$cacheKey])) {
+      return $this->brandingCache[$cacheKey];
+    }
+    $branding = $this->computeBranding($jurisdictionId, $mode, $langcode);
+    $this->brandingCache[$cacheKey] = $branding;
+    return $branding;
+  }
+
+  /**
+   * Builds the branding package without the memoization shell.
+   */
+  private function computeBranding(?int $jurisdictionId, string $mode, string $langcode): array {
     $platformDefaults = $this->getPlatformDefaults();
 
     $branding = [
