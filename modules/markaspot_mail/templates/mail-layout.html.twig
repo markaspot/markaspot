@@ -100,11 +100,11 @@
               </div>
               <div class="mas-muted" style="margin-top:4px; color:#475569;">
                 {% if branding.legal_notice_url %}
-                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ 'Legal notice'|trans }}</a>
+                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ 'Legal notice'|trans({}, {'langcode': langcode}) }}</a>
                 {% endif %}
                 {% if branding.legal_notice_url and branding.privacy_url %} &middot; {% endif %}
                 {% if branding.privacy_url %}
-                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ 'Privacy'|trans }}</a>
+                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ 'Privacy'|trans({}, {'langcode': langcode}) }}</a>
                 {% endif %}
               </div>
             </td>
@@ -126,11 +126,11 @@
             <td style="padding:24px 8px 0 8px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; line-height:20px; color:#475569;">
               <div class="mas-muted" style="margin-top:4px; color:#475569;">
                 {% if branding.legal_notice_url %}
-                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ 'Legal notice'|trans }}</a>
+                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ 'Legal notice'|trans({}, {'langcode': langcode}) }}</a>
                 {% endif %}
                 {% if branding.legal_notice_url and branding.privacy_url %} &middot; {% endif %}
                 {% if branding.privacy_url %}
-                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ 'Privacy'|trans }}</a>
+                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ 'Privacy'|trans({}, {'langcode': langcode}) }}</a>
                 {% endif %}
               </div>
             </td>
@@ -155,14 +155,14 @@
             <div style="margin-top:4px;">
               <a href="{{ branding.platform_footer.mas_link }}" style="color:#64748b; text-decoration:none;">mark-a-spot.com</a>
               &nbsp;&middot;&nbsp;
-              <a href="{{ branding.platform_footer.docs_link }}" style="color:#64748b; text-decoration:none;">{{ 'Docs'|trans }}</a>
+              <a href="{{ branding.platform_footer.docs_link }}" style="color:#64748b; text-decoration:none;">{{ 'Docs'|trans({}, {'langcode': langcode}) }}</a>
               &nbsp;&middot;&nbsp;
               <a href="{{ branding.platform_footer.civicspot_link }}" style="color:#64748b; text-decoration:none;">civicspot.io</a>
             </div>
             <div style="margin-top:6px;">
-              <a href="{{ branding.platform_footer.impressum_link }}" style="color:#64748b; text-decoration:underline;">{{ 'Impressum'|trans }}</a>
+              <a href="{{ branding.platform_footer.impressum_link }}" style="color:#64748b; text-decoration:underline;">{{ 'Impressum'|trans({}, {'langcode': langcode}) }}</a>
               &nbsp;&middot;&nbsp;
-              <a href="{{ branding.platform_footer.datenschutz_link }}" style="color:#64748b; text-decoration:underline;">{{ 'Datenschutz'|trans }}</a>
+              <a href="{{ branding.platform_footer.datenschutz_link }}" style="color:#64748b; text-decoration:underline;">{{ 'Datenschutz'|trans({}, {'langcode': langcode}) }}</a>
             </div>
             <div style="margin-top:6px; color:#94a3b8;">
               {{ branding.platform_footer.copyright }}

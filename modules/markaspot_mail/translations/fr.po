@@ -1,0 +1,200 @@
+# Translation of markaspot_mail into fr.
+# Copyright (c) 2026 Civic Patches GmbH.
+# This file is distributed under the same license as the markaspot_mail package.
+# Translators: see README.md in this directory for the workflow.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: markaspot_mail\n"
+"POT-Creation-Date: 2026-04-17\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Language-Team: fr <fr@markaspot>\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Your report was resolved"
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Thank you for using the issue tracker. Your report \"@title\" has been processed and is now marked as completed."
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Are you satisfied with the result, or is there still action needed from your perspective? We would greatly appreciate your feedback."
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "If you believe your concern has not been fully addressed, you can also reopen the case through this link."
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Give feedback"
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Feedback welcome on your report @id"
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Your report @id: feedback welcome"
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Report"
+msgstr ""
+
+#: src/Mail/Builder/GroupMemberInvitationBuilder.php
+msgid "You have been invited to \"@group\""
+msgstr ""
+
+#: src/Mail/Builder/GroupMemberInvitationBuilder.php
+msgid "You have been invited to join \"@group\" on @site."
+msgstr ""
+
+#: src/Mail/Builder/GroupMemberInvitationBuilder.php
+msgid "You have been invited to join \"@group\"."
+msgstr ""
+
+#: src/Mail/Builder/GroupMemberInvitationBuilder.php
+msgid "Accept your invitation to @group"
+msgstr ""
+
+#: src/Mail/Builder/GroupMemberInvitationBuilder.php
+msgid "Join @group"
+msgstr ""
+
+#: src/Mail/Builder/GroupMemberInvitationBuilder.php
+msgid "Click the button below to accept this invitation. The link expires in 7 days."
+msgstr ""
+
+#: src/Mail/Builder/GroupMemberInvitationBuilder.php
+msgid "If you did not expect this invitation, you can safely ignore this email."
+msgstr ""
+
+#: src/Mail/Builder/GroupMemberInvitationBuilder.php
+msgid "Accept invitation"
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceVerificationBuilder.php
+msgid "Activate your @site workspace \"@name\""
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceVerificationBuilder.php
+msgid "Activate your workspace"
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceVerificationBuilder.php
+msgid "Welcome to @site! Your workspace \"@name\" is ready to activate."
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceVerificationBuilder.php
+msgid "Click the button below to verify your email and unlock the workspace."
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceVerificationBuilder.php
+msgid "Unverified workspaces are automatically removed after @days days."
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceVerificationBuilder.php
+msgid "Verify email"
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceVerificationBuilder.php
+msgid "Click to activate your @name workspace"
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "Your demo workspace \"@name\" expires soon"
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "Demo workspace \"@name\" expires @date"
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "Your demo expires @date"
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "The demo workspace \"@name\" will be automatically removed on @date."
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire."
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "Open my workspace"
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "Create a permanent workspace"
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "Workspace"
+msgstr ""
+
+#: src/Mail/Builder/DemoExpiryReminderBuilder.php
+msgid "Expires"
+msgstr ""
+
+#: src/Mail/Builder/PasswordlessOtpBuilder.php
+msgid "@platform_name: Your verification code"
+msgstr ""
+
+#: src/Mail/Builder/PasswordlessOtpBuilder.php
+msgid "Verify your account"
+msgstr ""
+
+#: src/Mail/Builder/PasswordlessOtpBuilder.php
+msgid "Your verification code: @code"
+msgstr ""
+
+#: src/Mail/Builder/PasswordlessOtpBuilder.php
+msgid "Enter this code in the next @minutes minutes. If you did not request this, you can ignore this email."
+msgstr ""
+
+#: src/Mail/Builder/PasswordlessOtpBuilder.php
+msgid "Your verification code: @code\n\nIt expires in @minutes minutes."
+msgstr ""
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "Your report needs more information"
+msgstr ""
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "We need more information about your report"
+msgstr ""
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "Please clarify your report"
+msgstr ""
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "We need a bit more information to process your report."
+msgstr ""
+
+#: templates/mail-layout.html.twig
+msgid "Docs"
+msgstr ""
+
+#: templates/mail-layout.html.twig
+msgid "Impressum"
+msgstr ""
+
+#: templates/mail-layout.html.twig
+msgid "Datenschutz"
+msgstr ""
+
+#: templates/mail-layout.html.twig
+msgid "Legal notice"
+msgstr ""
+
+#: templates/mail-layout.html.twig
+msgid "Privacy"
+msgstr ""
