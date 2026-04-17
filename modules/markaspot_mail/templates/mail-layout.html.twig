@@ -111,6 +111,32 @@
           </tr>
         {% endif %}
 
+        {# Zone 1b: Platform-mode fallback legal links. Only rendered when
+           platform_footer is suppressed AND we're in platform mode (Zone 1
+           above only renders in jurisdiction mode). Without this block, a
+           self-hosted enterprise running an OTP fallback in platform mode
+           with show_platform_footer=false would ship a transactional mail
+           with no Impressum link anywhere, which violates TMG/DDG §5 in
+           German deployments. Operators override
+           markaspot_mail.settings:platform.legal_notice_url and
+           platform.privacy_url to point at their own pages so this block
+           carries the correct links. #}
+        {% if branding.mode == 'platform' and not branding.platform_footer %}
+          <tr>
+            <td style="padding:24px 8px 0 8px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; line-height:20px; color:#475569;">
+              <div class="mas-muted" style="margin-top:4px; color:#475569;">
+                {% if branding.legal_notice_url %}
+                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ 'Legal notice'|trans }}</a>
+                {% endif %}
+                {% if branding.legal_notice_url and branding.privacy_url %} &middot; {% endif %}
+                {% if branding.privacy_url %}
+                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ 'Privacy'|trans }}</a>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endif %}
+
         {# Zone 2: Platform footer (Civic Patches attribution). Hidden when
            features.show_platform_footer is false — self-hosted enterprise
            installations and paid CivicSpot tiers opt out because Civic
