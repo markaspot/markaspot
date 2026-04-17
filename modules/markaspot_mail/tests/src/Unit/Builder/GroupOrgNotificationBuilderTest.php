@@ -64,7 +64,7 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Builds a MailContext with sensible test defaults.
    */
   private function buildContext(array $params): MailContext {
     return new MailContext(
@@ -77,7 +77,7 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Builds the subject with an optional custom logger.
    */
   private function buildBuilder(?LoggerInterface $logger = NULL): GroupOrgNotificationBuilder {
     return new GroupOrgNotificationBuilder(

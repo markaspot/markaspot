@@ -134,6 +134,7 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
    * to jurisdiction mode; otherwise we stay platform.
    *
    * @return array{0: string, 1: int|null}
+   *   Two-element array: [mode, jurisdictionId].
    */
   private function resolveJurisdictionFromContext(array $context): array {
     $entity = $context['node'] ?? $context['entity'] ?? NULL;

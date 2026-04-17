@@ -65,7 +65,7 @@ final class ModerationNoticeBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Builds a MailContext with sensible test defaults.
    */
   private function buildContext(array $params): MailContext {
     return new MailContext(
@@ -78,7 +78,7 @@ final class ModerationNoticeBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Builds the subject with an optional custom logger.
    */
   private function buildBuilder(?LoggerInterface $logger = NULL): ModerationNoticeBuilder {
     return new ModerationNoticeBuilder(

@@ -92,6 +92,7 @@ final class EscalationNotificationBuilder implements MailBuilderInterface {
    * shared ResolveJurisdictionFromNodeTrait.
    *
    * @return array{0: string, 1: int|null}
+   *   Two-element array: [mode, jurisdictionId].
    */
   private function resolveJurisdiction(array $params): array {
     $jur = $params['jurisdiction'] ?? NULL;

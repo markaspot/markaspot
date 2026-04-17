@@ -92,7 +92,7 @@ final class EscalationNotificationBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Builds a MailContext with sensible test defaults.
    */
   private function buildContext(array $params): MailContext {
     return new MailContext(
@@ -105,7 +105,7 @@ final class EscalationNotificationBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Builds the subject with an optional custom logger.
    */
   private function buildBuilder(?LoggerInterface $logger = NULL): EscalationNotificationBuilder {
     return new EscalationNotificationBuilder(

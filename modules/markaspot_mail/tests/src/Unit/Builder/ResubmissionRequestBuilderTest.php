@@ -135,7 +135,7 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Builds the subject with optional dep injection.
    */
   private function buildBuilder(
     ?ConfigFactoryInterface $configFactory = NULL,

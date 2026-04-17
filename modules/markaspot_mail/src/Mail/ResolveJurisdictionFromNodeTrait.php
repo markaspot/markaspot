@@ -33,6 +33,7 @@ trait ResolveJurisdictionFromNodeTrait {
    * ['jurisdiction', (int) $groupId].
    *
    * @return array{0: string, 1: int|null}
+   *   Two-element array: [mode, jurisdictionId].
    */
   protected function resolveJurisdictionFromNode(?NodeInterface $node): array {
     if ($node === NULL || !$node->hasField('field_jurisdiction')) {
