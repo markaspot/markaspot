@@ -422,24 +422,47 @@ class MailBrandingService {
   }
 
   /**
-   * Ensures a URL starts with a scheme+host. Prepends the configured
-   * backend_base_url when the input is path-only.
+   * Ensures a URL is absolute AND served from a publicly reachable host.
    *
-   * Short-circuits on protocol-relative URLs ("//host/path") to avoid the
-   * classic "https://base//host/path" double-slash bug. FileUrlGenerator
-   * doesn't emit them in Drupal 11, but buildModuleAssetUrl callers might.
+   * Three-way handling:
+   *   1. Protocol-relative ("//host/path"): passed through unchanged so
+   *      downstream callers can decide. Avoids the classic
+   *      "https://base//host/path" double-slash bug.
+   *   2. Absolute ("https?://host/path"): if the host looks like a
+   *      container-internal service name (no dot, localhost, docker
+   *      service hostname), the host is swapped for the configured
+   *      platform.backend_base_url. Otherwise the URL is returned as-is.
+   *      This defends against the common misconfiguration where
+   *      Drupal trusts the Host header forwarded by an in-cluster
+   *      reverse proxy (e.g. nginx sends Host: demo-nginx-1) and bakes
+   *      it into file URLs via FileUrlGenerator::generateAbsoluteString.
+   *   3. Path-only ("/path"): prepended with the resolved base.
+   *
+   * When no base URL is configured and the URL still needs help, the
+   * method logs a warning once (via the injected channel) and returns
+   * the best-effort value so mail delivery is not blocked.
    */
   private function ensureAbsolute(string $url): ?string {
     if ($url === '') {
       return NULL;
     }
-    if (preg_match('~^https?://~i', $url)) {
-      return $url;
-    }
     if (str_starts_with($url, '//')) {
       return $url;
     }
     $base = $this->resolveAbsoluteBaseUrl();
+    if (preg_match('~^(https?)://([^/?#]+)(.*)$~i', $url, $match) === 1) {
+      $host = $match[2];
+      if ($this->looksLikePublicHost($host)) {
+        return $url;
+      }
+      if ($base !== '') {
+        return rtrim($base, '/') . ($match[3] !== '' ? $match[3] : '/');
+      }
+      $this->logger->warning('Mail asset URL resolved with a non-public host (@url). Set markaspot_mail.settings.platform.backend_base_url so mail clients can fetch it.', [
+        '@url' => $url,
+      ]);
+      return $url;
+    }
     if ($base === '') {
       $this->logger->warning('Mail asset URL resolved to a relative path (@url). Set markaspot_mail.settings.platform.backend_base_url to an absolute URL so mail clients can fetch it.', [
         '@url' => $url,
