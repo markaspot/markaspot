@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.52](https://github.com/markaspot/markaspot/compare/11.9.51...11.9.52) (2026-04-17)
+
+### Bug Fixes
+
+* **mail:** resolve asset URLs absolutely for CLI and queue rendering ([a75b105](https://github.com/markaspot/markaspot/commit/a75b105a42bd69b3e8eceb7ec4488a16e6aa2078))
+
+### Refactoring
+
+* **mail:** strip brand-specific defaults from mail settings ([d60fc61](https://github.com/markaspot/markaspot/commit/d60fc61684af2cb91c62292c35a165d621168943))
+
 ## [11.9.51](https://github.com/markaspot/markaspot/compare/11.9.50...11.9.51) (2026-04-17)
 
 ### Bug Fixes
