@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.51](https://github.com/markaspot/markaspot/compare/11.9.50...11.9.51) (2026-04-17)
+
+### Bug Fixes
+
+* **mail:** force phpmailer_smtp default format to html ([f6621ca](https://github.com/markaspot/markaspot/commit/f6621ca64be29fef9189d439c6becffc40df0ae4))
+
 ## [11.9.50](https://github.com/markaspot/markaspot/compare/11.9.49...11.9.50) (2026-04-17)
 
 ### Bug Fixes
