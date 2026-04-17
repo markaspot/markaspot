@@ -391,6 +391,14 @@ class MailBrandingService {
 
   /**
    * Absolute URL for a file-reference item (field_logo_light etc.).
+   *
+   * Mails are often rendered outside an HTTP request (queue workers, cron,
+   * CLI). In that context FileUrlGenerator::generateAbsoluteString() falls
+   * back to the global $base_url from settings.php, which on multi-tenant
+   * cloud deployments points at the wrong host or at localhost. We defend
+   * against that: if the resolved URL is not an absolute HTTP URL, prepend
+   * an explicitly configured platform.backend_base_url so inbox clients
+   * can actually fetch the asset.
    */
   private function resolveFileAbsoluteUrl($fieldItemList): ?string {
     try {
@@ -402,7 +410,8 @@ class MailBrandingService {
       if ($uri === '') {
         return NULL;
       }
-      return $this->fileUrlGenerator->generateAbsoluteString($uri);
+      $url = (string) $this->fileUrlGenerator->generateAbsoluteString($uri);
+      return $this->ensureAbsolute($url);
     }
     catch (\Throwable $e) {
       $this->logger->warning('Could not resolve absolute URL for jurisdiction logo: @msg', [
@@ -410,6 +419,89 @@ class MailBrandingService {
       ]);
       return NULL;
     }
+  }
+
+  /**
+   * Ensures a URL starts with a scheme+host. Prepends the configured
+   * backend_base_url when the input is path-only.
+   *
+   * Short-circuits on protocol-relative URLs ("//host/path") to avoid the
+   * classic "https://base//host/path" double-slash bug. FileUrlGenerator
+   * doesn't emit them in Drupal 11, but buildModuleAssetUrl callers might.
+   */
+  private function ensureAbsolute(string $url): ?string {
+    if ($url === '') {
+      return NULL;
+    }
+    if (preg_match('~^https?://~i', $url)) {
+      return $url;
+    }
+    if (str_starts_with($url, '//')) {
+      return $url;
+    }
+    $base = $this->resolveAbsoluteBaseUrl();
+    if ($base === '') {
+      $this->logger->warning('Mail asset URL resolved to a relative path (@url). Set markaspot_mail.settings.platform.backend_base_url to an absolute URL so mail clients can fetch it.', [
+        '@url' => $url,
+      ]);
+      return $url;
+    }
+    return rtrim($base, '/') . '/' . ltrim($url, '/');
+  }
+
+  /**
+   * Resolves an absolute base URL for mail-embedded assets.
+   *
+   * Priority:
+   *   1. markaspot_mail.settings.platform.backend_base_url — explicit
+   *      per-tenant override, typically wired via settings.php from an
+   *      environment variable in multi-tenant deployments. Authoritative
+   *      because operators know their public host; a request-driven
+   *      fallback can leak a container-internal hostname when the
+   *      reverse-proxy trust setup isn't tight.
+   *   2. Current HTTP request via RequestStack, but only when the host
+   *      looks like a real public FQDN (contains a dot, isn't localhost).
+   *      Useful on single-instance installs without reverse proxies.
+   *   3. Empty string — caller preserves the relative URL. Mail clients
+   *      will not load it, but delivery still succeeds; a warning is
+   *      logged so operators can diagnose.
+   */
+  private function resolveAbsoluteBaseUrl(): string {
+    $configured = (string) ($this->configFactory
+      ->get('markaspot_mail.settings')
+      ->get('platform.backend_base_url') ?? '');
+    if ($configured !== '') {
+      return $configured;
+    }
+    if ($this->requestStack !== NULL) {
+      $request = $this->requestStack->getCurrentRequest();
+      if ($request !== NULL) {
+        $host = (string) $request->getHost();
+        if ($host !== '' && $this->looksLikePublicHost($host)) {
+          return (string) $request->getSchemeAndHttpHost();
+        }
+      }
+    }
+    return '';
+  }
+
+  /**
+   * Heuristic gate to keep container-internal hostnames out of mail bodies.
+   *
+   * Accepts anything with a dot in the hostname and rejects bare
+   * single-label hosts that point at service-discovery names (drupal,
+   * nginx, web, mailpit, localhost). Not a security boundary — operators
+   * still pin the safe value via backend_base_url config.
+   */
+  private function looksLikePublicHost(string $host): bool {
+    if (!str_contains($host, '.')) {
+      return FALSE;
+    }
+    $lower = strtolower($host);
+    if ($lower === 'localhost' || str_ends_with($lower, '.localhost')) {
+      return FALSE;
+    }
+    return TRUE;
   }
 
   /**
@@ -558,14 +650,7 @@ class MailBrandingService {
         ]);
       }
     }
-    $base = '';
-    if ($this->requestStack !== NULL) {
-      $request = $this->requestStack->getCurrentRequest();
-      if ($request !== NULL) {
-        $base = $request->getSchemeAndHttpHost();
-      }
-    }
-    return ($base !== '' ? $base . '/' : '/') . $modulePath . '/' . $relative;
+    return $this->ensureAbsolute('/' . $modulePath . '/' . $relative) ?? ('/' . $modulePath . '/' . $relative);
   }
 
 }
