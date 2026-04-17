@@ -166,8 +166,14 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
    *
    * Loads markaspot_feedback.mail.feedback_request.subject with the
    * language manager's config override so per-locale overrides work. Runs
-   * Drupal token replacement against ['node' => $node]. Falls back to a
+   * Drupal token replacement against ['node' => $node] with the current
+   * langcode and 'clear' => TRUE so unresolved [token] placeholders drop
+   * from the output instead of leaking as literal text. Falls back to a
    * t()-based default only when the config has no usable subject entry.
+   *
+   * Content sanitization (CR/LF/NUL strip against CWE-93 mail header
+   * injection) is delegated to MailAlterHook::sanitizeHeaderValue() at
+   * the $message['subject'] write site, not handled here.
    */
   private function resolveSubject(NodeInterface $node, string $requestId, string $langcode): string {
     $template = '';
