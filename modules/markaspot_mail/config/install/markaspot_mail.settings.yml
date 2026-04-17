@@ -1,14 +1,15 @@
 platform:
   name: 'Mark-a-Spot'
-  support_email: 'support@civic-patches.com'
-  reply_to: 'support@civic-patches.com'
+  support_email: ''
+  reply_to: ''
   logo_path: 'images/mark-a-spot-logo@2x.png'
   primary_color: '#004ced'
   background_color: '#EEF3FF'
-  legal_notice_url: 'https://civicpatches.de/impressum'
-  privacy_url: 'https://civicpatches.de/datenschutz'
-  frontend_base_url: 'https://mark-a-spot.com'
-  tenant_frontend_base_template: 'https://{slug}.civicspot.io'
+  legal_notice_url: ''
+  privacy_url: ''
+  frontend_base_url: ''
+  tenant_frontend_base_template: ''
+  backend_base_url: ''
 features:
   show_platform_footer: true
   tier_gating: false
