@@ -93,3 +93,34 @@ services:
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
+
+  markaspot_mail.builder.escalation_notification:
+    class: Drupal\markaspot_mail\Mail\Builder\EscalationNotificationBuilder
+    arguments:
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }
+
+  markaspot_mail.builder.resubmission_request:
+    class: Drupal\markaspot_mail\Mail\Builder\ResubmissionRequestBuilder
+    arguments:
+      - '@config.factory'
+      - '@language_manager'
+      - '@token'
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }
+
+  markaspot_mail.builder.moderation_notice:
+    class: Drupal\markaspot_mail\Mail\Builder\ModerationNoticeBuilder
+    arguments:
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }
+
+  markaspot_mail.builder.group_org_notification:
+    class: Drupal\markaspot_mail\Mail\Builder\GroupOrgNotificationBuilder
+    arguments:
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }
