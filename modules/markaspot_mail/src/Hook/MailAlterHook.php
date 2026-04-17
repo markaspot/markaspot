@@ -22,22 +22,27 @@ use Psr\Log\LoggerInterface;
  * IS the whitelist. Consumer modules migrate by providing a builder, not
  * by editing config.
  *
- * System mails from "user", "system" and "update" are hard-blocked so an
- * accidental registration can never hijack password-reset or status mails.
+ * System mails from "user" and "update" are hard-blocked so an accidental
+ * builder registration can never hijack password-reset or upgrade-notice
+ * flows. Everything else is gated by builder supports().
+ *
+ * On a successful brand, the hook OVERWRITES $message['body'] with the
+ * rendered HTML. Builders that need the pre-existing body (e.g.
+ * EcaActionEmailBuilder reads what system_mail wrote) capture it via
+ * MailContext::$body at dispatch time, BEFORE the overwrite.
  */
 final class MailAlterHook {
 
   /**
    * Modules we never brand, even if a builder accidentally claims them.
    *
-   * - user / update: authentication and upgrade-critical flows. A branded
-   *   password-reset mail that fails to render could lock admins out.
-   * - system: we allow through but gate individual keys via builder
-   *   supports() (e.g. EcaActionEmailBuilder claims 'action_send_email'
-   *   only). Other system keys remain untouched because no builder
-   *   claims them.
+   * User / update are authentication and upgrade-critical flows. A branded
+   * password-reset mail that fails to render could lock admins out. system
+   * was in this list before Stage 2c and got removed: its individual keys
+   * are now gated via builder supports() (EcaActionEmailBuilder claims
+   * 'action_send_email' only, and no builder claims any other system:*).
    */
-  private const SYSTEM_MODULE_BLOCKLIST = ['user', 'update'];
+  private const HARD_BLOCKLIST = ['user', 'update'];
 
   public function __construct(
     private readonly MailBuilderRegistry $registry,
@@ -56,7 +61,7 @@ final class MailAlterHook {
     if ($module === '' || $key === '') {
       return;
     }
-    if (in_array($module, self::SYSTEM_MODULE_BLOCKLIST, TRUE)) {
+    if (in_array($module, self::HARD_BLOCKLIST, TRUE)) {
       return;
     }
 

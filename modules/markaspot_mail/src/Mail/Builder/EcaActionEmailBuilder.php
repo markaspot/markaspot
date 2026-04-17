@@ -91,7 +91,7 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
     [$mode, $jurisdictionId] = $this->resolveJurisdictionFromContext($context);
 
     $content = [
-      'preheader' => mb_strimwidth(strip_tags($body), 0, 100, '...'),
+      'preheader' => mb_strimwidth(strip_tags($body), 0, 100, '…'),
       'intro' => $intro,
       'body_blocks' => $bodyBlocks,
     ];
@@ -144,11 +144,12 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
   /**
    * Resolves (mode, jurisdictionId) from the ECA action's $configuration.
    *
-   * EmailAction::execute() sets $configuration['node'] to the entity being
-   * acted upon; it might also arrive via $configuration['entity'] depending
-   * on the ECA model. When the entity has a field_jurisdiction reference
-   * pointing at a jur group we switch to jurisdiction mode; otherwise we
-   * stay platform.
+   * Core EmailAction::execute() sets $configuration['node'] = $entity, which
+   * is the canonical key. $configuration['entity'] is a defensive fallback
+   * that costs one ?? per build and hedges against a downstream ECA
+   * subclass or contrib extension that decides to rename. When the entity
+   * has a field_jurisdiction reference pointing at a jur group we switch
+   * to jurisdiction mode; otherwise we stay platform.
    *
    * @return array{0: string, 1: int|null}
    */
