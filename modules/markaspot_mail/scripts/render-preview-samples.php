@@ -33,6 +33,7 @@ $inviteBuilder = \Drupal::service('markaspot_mail.builder.group_member_invitatio
 $ecaActionBuilder = \Drupal::service('markaspot_mail.builder.eca_action_email');
 $workspaceVerificationBuilder = \Drupal::service('markaspot_mail.builder.workspace_verification');
 $demoExpiryBuilder = \Drupal::service('markaspot_mail.builder.demo_expiry_reminder');
+$otpBuilder = \Drupal::service('markaspot_mail.builder.passwordless_otp');
 $etm = \Drupal::entityTypeManager();
 
 $branding = $brandingService->getBranding(NULL, 'platform', 'en');
@@ -201,6 +202,31 @@ if ($msg !== NULL) {
   fwrite(STDOUT, "  Subject: {$msg->subject}\n");
 }
 
+// 8. PasswordlessOtpBuilder (verification_code OTP, jurisdiction mode).
+//    Uses the hero_code variant: colored hero card + monospaced code.
+$builderOtpHtml = '';
+$ctx = new MailContext(
+  module: 'markaspot_passwordless',
+  key: 'verification_code',
+  langcode: 'en',
+  params: [
+    'code' => '156428',
+    'expires_in' => 10,
+    'platform_name' => 'Amsterdam',
+    'jurisdiction_id' => 1,
+  ],
+  to: 'citizen@example.com',
+);
+$msg = $otpBuilder->build($ctx);
+if ($msg !== NULL) {
+  $b = $brandingService->getBranding($msg->jurisdictionId, $msg->mode, $ctx->langcode);
+  $out = $renderer->render($msg->variant, $b, $msg->content, $ctx->langcode, $msg->plainText);
+  $builderOtpHtml = $out['html'];
+  fwrite(STDOUT, "OTP: mode={$msg->mode}, jur=" . ($msg->jurisdictionId ?? 'NULL') . "\n");
+  fwrite(STDOUT, "  Subject: {$msg->subject}\n");
+  fwrite(STDOUT, "  Code: {$msg->content['code']}\n");
+}
+
 file_put_contents('/tmp/mail_hero_code.html', $heroOutput['html']);
 file_put_contents('/tmp/mail_card_transactional.html', $cardOutput['html']);
 if ($builderFeedbackHtml !== '') {
@@ -217,6 +243,9 @@ if ($builderWvHtml !== '') {
 }
 if ($builderDemoHtml !== '') {
   file_put_contents('/tmp/mail_builder_demo_expiry.html', $builderDemoHtml);
+}
+if ($builderOtpHtml !== '') {
+  file_put_contents('/tmp/mail_builder_otp.html', $builderOtpHtml);
 }
 
 fwrite(STDOUT, "\nWrote:\n");

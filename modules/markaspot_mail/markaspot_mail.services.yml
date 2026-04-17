@@ -84,3 +84,12 @@ services:
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
+
+  markaspot_mail.builder.passwordless_otp:
+    class: Drupal\markaspot_mail\Mail\Builder\PasswordlessOtpBuilder
+    arguments:
+      - '@config.factory'
+      - '@language_manager'
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }

@@ -480,6 +480,11 @@ class OtpService {
       'expires_in' => (int) ($code_lifetime / 60),
       'platform_name' => '',
       'email_footer' => '',
+      // Expose the jurisdiction id for markaspot_mail's PasswordlessOtpBuilder
+      // so branded OTP mails can render with jurisdiction Zone-1 + jurisdiction
+      // logo. The legacy hook_mail ignores this param; only markaspot_mail's
+      // hook_mail_alter reads it.
+      'jurisdiction_id' => $jurisdiction_id > 0 ? $jurisdiction_id : NULL,
     ];
 
     // Load jurisdiction group entity for platform name and email footer.
