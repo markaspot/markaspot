@@ -1,5 +1,42 @@
 # Changelog
 
+## [11.9.49](https://github.com/markaspot/markaspot/compare/11.9.48...11.9.49) (2026-04-17)
+
+### Features
+
+* **mail:** add EcaActionEmailBuilder for Drupal-core EmailAction mails ([568df58](https://github.com/markaspot/markaspot/commit/568df583c295dbe70dad0e5fd98d7a29299cbcbf))
+* **mail:** add FastMap workspace builders (Stage 3) ([1ab4285](https://github.com/markaspot/markaspot/commit/1ab4285fdcfeda5761cd9a8ec651735af5780e40))
+* **mail:** add FeedbackRequestBuilder (first ECA builder POC) ([1b9e17e](https://github.com/markaspot/markaspot/commit/1b9e17eff00b47f77d43be7dcce36a114a44c755))
+* **mail:** add four consumer builders (Escalation, Resubmission, Moderation, OrgNotification) ([6e7ca2b](https://github.com/markaspot/markaspot/commit/6e7ca2b15348f71e68f2e882ce9af9ef7a460021))
+* **mail:** add GroupMemberInvitationBuilder (second ECA builder POC) ([1844a55](https://github.com/markaspot/markaspot/commit/1844a55f6452b9bd223a443f948fc18a4254b217))
+* **mail:** add markaspot_mail foundation for branded HTML mails ([d1e5e4b](https://github.com/markaspot/markaspot/commit/d1e5e4b5325fdb5f65701cefc9a06085720246b4)), closes [#004ced](https://github.com/markaspot/markaspot/issues/004ced) [#EEF3FF](https://github.com/markaspot/markaspot/issues/EEF3FF)
+* **mail:** add PasswordlessOtpBuilder with Anthropic-style hero_code (Stage 4) ([9a029c0](https://github.com/markaspot/markaspot/commit/9a029c0983b041f070918d450b3245a9809ed7f3)), closes [#004ced](https://github.com/markaspot/markaspot/issues/004ced) [#325](https://github.com/markaspot/markaspot/issues/325)
+* **mail:** honor show_platform_footer flag to hide Civic Patches attribution ([eedebee](https://github.com/markaspot/markaspot/commit/eedebee440e09a94b1c85dd12cacac8fbfc87f4c))
+* **mail:** populate 15 locale translations (codex first pass) ([0558962](https://github.com/markaspot/markaspot/commit/05589622ef5aaee061230988f9253120721cccdd))
+* **mail:** ship Stage 5 i18n infrastructure + DE translation ([43bd427](https://github.com/markaspot/markaspot/commit/43bd427e81636acfd516588168108ed32181da1b))
+
+### Bug Fixes
+
+* **ai:** IBAN must match before phone pattern in PII redaction ([1fbe8ff](https://github.com/markaspot/markaspot/commit/1fbe8ff8894240dff1de43940236f20379a49f8e))
+* **ai:** three-tier model fallback for sentiment and node analysis ([374f52c](https://github.com/markaspot/markaspot/commit/374f52ceb99e13c7f70d625f9373395bf96a6898))
+* broaden IBAN regex to match compact 22-char input without spaces ([d1392f5](https://github.com/markaspot/markaspot/commit/d1392f518c2276cb5d1099ed645cd8f27c658d9f))
+* **mail:** add platform-mode legal-links fallback when Zone 2 is suppressed ([e0f4207](https://github.com/markaspot/markaspot/commit/e0f4207ffe595b8cffde321c7696b818762b742c))
+* **mail:** keep OTP code out of mail subject + document plainText override ([943bd50](https://github.com/markaspot/markaspot/commit/943bd50402b0e150e436b54230b0941201e23f7b))
+* **mail:** resolve request_id from base field + run token service on subject ([70249da](https://github.com/markaspot/markaspot/commit/70249dacae07cd3945a3970ed230404ba35f46ee))
+* **mail:** sanitize subject header and extract test stubs ([83c70c1](https://github.com/markaspot/markaspot/commit/83c70c16f2d1eed72bfa4e420ea7cc3db2a9b605))
+* **mail:** sanitize workspace slug before URL assembly in demo reminder ([5cb41fb](https://github.com/markaspot/markaspot/commit/5cb41fb98af9da03958cebf69396ffd905fca825))
+
+### Refactoring
+
+* **ai:** rename pii_redaction.use_llm to detect_names ([a2f1b58](https://github.com/markaspot/markaspot/commit/a2f1b58ffe684be1f40b06165e60be61d391d5ed)), closes [#states](https://github.com/markaspot/markaspot/issues/states)
+* **mail:** extract SplitParagraphs + ResolveJurisdictionFromNode traits ([e4dc0e9](https://github.com/markaspot/markaspot/commit/e4dc0e9f35902e88c770756efba7d5314104cab4))
+* **mail:** replace whitelist config with tagged-service builder dispatcher ([2bd98ac](https://github.com/markaspot/markaspot/commit/2bd98ac0f018e40dab0422d30e429d18f1400ddd))
+* **mail:** split ECA_GROUP enum into invitation + org_notification cases ([463c7b7](https://github.com/markaspot/markaspot/commit/463c7b7a8caefa2fffe0090c741e33b031554b5b))
+
+### Documentation
+
+* **mail:** clarify resolveSubject contract on token flags + sanitization ([4a7267e](https://github.com/markaspot/markaspot/commit/4a7267e23d9f7aae4056db48a38181b080daa9f9))
+
 ## [11.9.48](https://github.com/markaspot/markaspot/compare/11.9.47...11.9.48) (2026-04-16)
 
 ### Bug Fixes
