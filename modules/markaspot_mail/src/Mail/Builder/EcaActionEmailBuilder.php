@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Drupal\markaspot_mail\Mail\Builder;
 
 use Drupal\Core\Entity\ContentEntityInterface;
-use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
+use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -41,6 +41,8 @@ use Psr\Log\LoggerInterface;
  * system:action_send_email sends (non-ECA, no entity) into broken cards.
  */
 final class EcaActionEmailBuilder implements MailBuilderInterface {
+
+  use SplitParagraphsTrait;
 
   public function __construct(
     private readonly LoggerInterface $logger,
@@ -122,26 +124,6 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
   }
 
   /**
-   * Splits a body string into paragraph-delimited blocks.
-   *
-   * Blank-line separated paragraphs; leading/trailing whitespace trimmed;
-   * empty paragraphs dropped.
-   *
-   * @return list<string>
-   */
-  private function splitParagraphs(string $body): array {
-    $raw = preg_split("/\n\s*\n/", $body) ?: [$body];
-    $out = [];
-    foreach ($raw as $paragraph) {
-      $paragraph = trim($paragraph);
-      if ($paragraph !== '') {
-        $out[] = $paragraph;
-      }
-    }
-    return $out;
-  }
-
-  /**
    * Resolves (mode, jurisdictionId) from the ECA action's $configuration.
    *
    * Core EmailAction::execute() sets $configuration['node'] = $entity, which
@@ -155,13 +137,7 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
    */
   private function resolveJurisdictionFromContext(array $context): array {
     $entity = $context['node'] ?? $context['entity'] ?? NULL;
-    if (!$entity instanceof EntityInterface) {
-      return ['platform', NULL];
-    }
-    if (!$entity instanceof ContentEntityInterface) {
-      return ['platform', NULL];
-    }
-    if (!$entity->hasField('field_jurisdiction')) {
+    if (!$entity instanceof ContentEntityInterface || !$entity->hasField('field_jurisdiction')) {
       return ['platform', NULL];
     }
     $field = $entity->get('field_jurisdiction');

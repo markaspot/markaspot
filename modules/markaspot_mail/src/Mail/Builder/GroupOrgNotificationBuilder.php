@@ -8,6 +8,7 @@ use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
+use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -29,6 +30,8 @@ use Psr\Log\LoggerInterface;
  * single canonical jur context.
  */
 final class GroupOrgNotificationBuilder implements MailBuilderInterface {
+
+  use SplitParagraphsTrait;
 
   public function __construct(
     private readonly LoggerInterface $logger,
@@ -73,23 +76,6 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
       ],
       mode: 'platform',
     );
-  }
-
-  /**
-   * Splits a body string into paragraph-delimited blocks.
-   *
-   * @return list<string>
-   */
-  private function splitParagraphs(string $body): array {
-    $raw = preg_split("/\n\s*\n/", $body) ?: [$body];
-    $out = [];
-    foreach ($raw as $paragraph) {
-      $paragraph = trim($paragraph);
-      if ($paragraph !== '') {
-        $out[] = $paragraph;
-      }
-    }
-    return $out;
   }
 
 }

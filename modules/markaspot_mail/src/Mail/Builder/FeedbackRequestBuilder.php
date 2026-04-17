@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Drupal\markaspot_mail\Mail\Builder;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Entity\ContentEntityInterface;
-use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
 use Drupal\language\ConfigurableLanguageManagerInterface;
@@ -14,6 +12,7 @@ use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
+use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
@@ -53,6 +52,7 @@ use Psr\Log\LoggerInterface;
  */
 final class FeedbackRequestBuilder implements MailBuilderInterface {
 
+  use ResolveJurisdictionFromNodeTrait;
   use StringTranslationTrait;
 
   public function __construct(
@@ -87,7 +87,7 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
       return NULL;
     }
 
-    [$mode, $jurisdictionId] = $this->resolveJurisdiction($node);
+    [$mode, $jurisdictionId] = $this->resolveJurisdictionFromNode($node);
 
     $requestId = $this->resolveRequestId($ctx, $node);
     $nodeTitle = (string) $node->label();
@@ -129,36 +129,6 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
       mode: $mode,
       jurisdictionId: $jurisdictionId,
     );
-  }
-
-  /**
-   * Resolves (mode, jurisdictionId) from the node's field_jurisdiction.
-   *
-   * Uses the typed referencedEntities() accessor rather than the magic
-   * ->entity property so the resolution is mockable in unit tests and
-   * doesn't trip PHP 8.2+ dynamic-property deprecations.
-   *
-   * @return array{0: string, 1: int|null}
-   *   Two-element array: [mode, jurisdictionId]. mode is 'jurisdiction' when
-   *   the field holds a jur group target, 'platform' otherwise.
-   */
-  private function resolveJurisdiction(NodeInterface $node): array {
-    if (!$node->hasField('field_jurisdiction')) {
-      return ['platform', NULL];
-    }
-    $field = $node->get('field_jurisdiction');
-    if (!$field instanceof EntityReferenceFieldItemListInterface || $field->isEmpty()) {
-      return ['platform', NULL];
-    }
-    $referenced = $field->referencedEntities();
-    $target = $referenced[0] ?? NULL;
-    if (!$target instanceof ContentEntityInterface || $target->getEntityTypeId() !== 'group') {
-      return ['platform', NULL];
-    }
-    if ($target->bundle() !== 'jur') {
-      return ['platform', NULL];
-    }
-    return ['jurisdiction', (int) $target->id()];
   }
 
   /**

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail\Builder;
 
-use Drupal\Core\Entity\ContentEntityInterface;
-use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
+use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
+use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -31,6 +31,9 @@ use Psr\Log\LoggerInterface;
  *     field_jurisdiction; otherwise platform mode.
  */
 final class ModerationNoticeBuilder implements MailBuilderInterface {
+
+  use ResolveJurisdictionFromNodeTrait;
+  use SplitParagraphsTrait;
 
   public function __construct(
     private readonly LoggerInterface $logger,
@@ -64,7 +67,10 @@ final class ModerationNoticeBuilder implements MailBuilderInterface {
       return NULL;
     }
 
-    [$mode, $jurisdictionId] = $this->resolveJurisdiction($ctx->params);
+    $node = $ctx->params['node'] ?? NULL;
+    [$mode, $jurisdictionId] = $this->resolveJurisdictionFromNode(
+      $node instanceof NodeInterface ? $node : NULL
+    );
 
     $paragraphs = $this->splitParagraphs($body);
     $intro = array_shift($paragraphs) ?? '';
@@ -81,46 +87,6 @@ final class ModerationNoticeBuilder implements MailBuilderInterface {
       mode: $mode,
       jurisdictionId: $jurisdictionId,
     );
-  }
-
-  /**
-   * Resolves (mode, jurisdictionId) from the optional node param.
-   *
-   * @return array{0: string, 1: int|null}
-   */
-  private function resolveJurisdiction(array $params): array {
-    $node = $params['node'] ?? NULL;
-    if (!$node instanceof NodeInterface || !$node->hasField('field_jurisdiction')) {
-      return ['platform', NULL];
-    }
-    $field = $node->get('field_jurisdiction');
-    if (!$field instanceof EntityReferenceFieldItemListInterface || $field->isEmpty()) {
-      return ['platform', NULL];
-    }
-    $target = $field->referencedEntities()[0] ?? NULL;
-    if (!$target instanceof ContentEntityInterface
-      || $target->getEntityTypeId() !== 'group'
-      || $target->bundle() !== 'jur') {
-      return ['platform', NULL];
-    }
-    return ['jurisdiction', (int) $target->id()];
-  }
-
-  /**
-   * Splits a body string into paragraph-delimited blocks.
-   *
-   * @return list<string>
-   */
-  private function splitParagraphs(string $body): array {
-    $raw = preg_split("/\n\s*\n/", $body) ?: [$body];
-    $out = [];
-    foreach ($raw as $paragraph) {
-      $paragraph = trim($paragraph);
-      if ($paragraph !== '') {
-        $out[] = $paragraph;
-      }
-    }
-    return $out;
   }
 
 }
