@@ -47,6 +47,9 @@ services:
     class: Drupal\markaspot_mail\Mail\Builder\FeedbackRequestBuilder
     arguments:
       - '@markaspot_mail.branding'
+      - '@config.factory'
+      - '@language_manager'
+      - '@token'
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }

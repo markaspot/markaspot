@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use Drupal\Core\Utility\Token;
+use Drupal\language\Config\LanguageConfigOverride;
+use Drupal\language\ConfigurableLanguageManagerInterface;
+use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Render\Markup;
@@ -93,11 +98,11 @@ final class FeedbackRequestBuilderTest extends UnitTestCase {
     $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')->willReturnMap([
       ['field_jurisdiction', TRUE],
-      ['field_request_id', TRUE],
+      ['request_id', TRUE],
     ]);
     $node->method('get')->willReturnMap([
       ['field_jurisdiction', $jurisdictionField],
-      ['field_request_id', $this->singleValueField('2026-0042')],
+      ['request_id', $this->singleValueField('2026-0042')],
     ]);
     $node->method('label')->willReturn('Broken streetlight');
     $node->method('uuid')->willReturn('abc-123-uuid');
@@ -145,7 +150,7 @@ final class FeedbackRequestBuilderTest extends UnitTestCase {
     $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')->willReturnMap([
       ['field_jurisdiction', TRUE],
-      ['field_request_id', FALSE],
+      ['request_id', FALSE],
     ]);
     $node->method('get')->willReturnMap([
       ['field_jurisdiction', $emptyField],
@@ -185,10 +190,33 @@ final class FeedbackRequestBuilderTest extends UnitTestCase {
 
   /**
    * Builds the subject with mocked deps + string-translation stub.
+   *
+   * ConfigFactory + LanguageManager are stubbed to return empty config so
+   * the builder falls back to the hardcoded t() subject template. Token
+   * service is stubbed to a no-op replace() that returns its input. Tests
+   * that want the config-driven path assert against that explicitly.
    */
   private function buildBuilder(?MailBrandingService $branding = NULL, ?LoggerInterface $logger = NULL): FeedbackRequestBuilder {
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $immutableConfig = $this->createMock(ImmutableConfig::class);
+    $immutableConfig->method('get')->willReturn(NULL);
+    $configFactory->method('get')->willReturn($immutableConfig);
+
+    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
+    $override = $this->createMock(LanguageConfigOverride::class);
+    $override->method('get')->willReturn(NULL);
+    $languageManager->method('getLanguageConfigOverride')->willReturn($override);
+
+    $token = $this->createMock(Token::class);
+    $token->method('replace')->willReturnCallback(
+      fn (string $template): string => $template,
+    );
+
     $builder = new FeedbackRequestBuilder(
       $branding ?? $this->createMock(MailBrandingService::class),
+      $configFactory,
+      $languageManager,
+      $token,
       $logger ?? $this->createMock(LoggerInterface::class),
     );
     $builder->setStringTranslation($this->getStringTranslationStub());

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail\Builder;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\Core\Utility\Token;
+use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
@@ -31,8 +34,19 @@ use Psr\Log\LoggerInterface;
  *   - node: NodeInterface (service_request)
  *
  * Optional param:
- *   - request_id: pre-computed request identifier (falls back to
- *     field_request_id or $node->id()).
+ *   - request_id: pre-computed request identifier. Falls back to the
+ *     node's request_id BASE field (service_request bundle), then to
+ *     the node id.
+ *
+ * Subject template:
+ *   Pulled from markaspot_feedback.mail.feedback_request.subject via the
+ *   language manager's config override, so site admins can customize the
+ *   wording per locale without touching PHP. Drupal token replacement
+ *   runs against the template with ['node' => $node, 'langcode' => ...]
+ *   so tokens like [node:request_id], [node:title], [node:uuid] and
+ *   anything the markaspot_token module exposes will resolve. Falls back
+ *   to a hardcoded string only when the config has no subject entry for
+ *   the active langcode and no fallback default.
  *
  * Jurisdiction mode when the node's field_jurisdiction resolves to a
  * loadable jur group; otherwise platform mode (the rare orphan case).
@@ -43,6 +57,9 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
 
   public function __construct(
     private readonly MailBrandingService $branding,
+    private readonly ConfigFactoryInterface $configFactory,
+    private readonly ConfigurableLanguageManagerInterface $languageManager,
+    private readonly Token $token,
     private readonly LoggerInterface $logger,
   ) {}
 
@@ -103,9 +120,7 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
       ],
     ];
 
-    $subject = (string) $this->t('Your report @id: feedback welcome', [
-      '@id' => $requestId,
-    ], ['langcode' => $ctx->langcode]);
+    $subject = $this->resolveSubject($node, $requestId, $ctx->langcode);
 
     return new MailMessage(
       subject: $subject,
@@ -147,17 +162,55 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
   }
 
   /**
+   * Resolves the subject via the legacy config template + token replacement.
+   *
+   * Loads markaspot_feedback.mail.feedback_request.subject with the
+   * language manager's config override so per-locale overrides work. Runs
+   * Drupal token replacement against ['node' => $node]. Falls back to a
+   * t()-based default only when the config has no usable subject entry.
+   */
+  private function resolveSubject(NodeInterface $node, string $requestId, string $langcode): string {
+    $template = '';
+    $override = $this->languageManager
+      ->getLanguageConfigOverride($langcode, 'markaspot_feedback.mail')
+      ->get('feedback_request');
+    if (is_array($override) && !empty($override['subject'])) {
+      $template = (string) $override['subject'];
+    }
+    else {
+      $config = $this->configFactory->get('markaspot_feedback.mail')->get('feedback_request');
+      if (is_array($config) && !empty($config['subject'])) {
+        $template = (string) $config['subject'];
+      }
+    }
+    if ($template === '') {
+      return (string) $this->t('Your report @id: feedback welcome', [
+        '@id' => $requestId,
+      ], ['langcode' => $langcode]);
+    }
+    return (string) $this->token->replace($template, ['node' => $node], [
+      'langcode' => $langcode,
+      'clear' => TRUE,
+    ]);
+  }
+
+  /**
    * Resolves the human-facing request identifier.
    *
-   * Uses getString() instead of the magic ->value accessor on the field
-   * item list so the mockable surface stays explicit.
+   * Request_id is a base field on the service_request bundle (no field_
+   * prefix, no node__field_request_id table). It stores the Mark-a-Spot
+   * counter format "<counter>-<year>" (e.g. "51-2026") and is also exposed
+   * via the [node:request_id] token in markaspot_token.module.
+   *
+   * Uses getString() instead of the magic ->value accessor so the resolver
+   * stays mockable under PHP 8.2+ dynamic-property deprecations.
    */
   private function resolveRequestId(MailContext $ctx, NodeInterface $node): string {
     if (!empty($ctx->params['request_id'])) {
       return (string) $ctx->params['request_id'];
     }
-    if ($node->hasField('field_request_id') && !$node->get('field_request_id')->isEmpty()) {
-      return trim($node->get('field_request_id')->getString());
+    if ($node->hasField('request_id') && !$node->get('request_id')->isEmpty()) {
+      return trim($node->get('request_id')->getString());
     }
     return (string) $node->id();
   }
