@@ -140,6 +140,20 @@ class MailBrandingService {
   private function computeBranding(?int $jurisdictionId, string $mode, string $langcode): array {
     $platformDefaults = $this->getPlatformDefaults();
 
+    // features.show_platform_footer is the opt-out switch for self-hosted
+    // enterprise installations and paid CivicSpot tiers that don't want
+    // Civic Patches GmbH attribution in every mail. When false:
+    //   - Zone 2 (MaS logo + Docs/civicspot.io + civicpatches.de Impressum
+    //     + © Civic Patches GmbH) disappears entirely.
+    //   - The top Mark-a-Spot inline SVG in platform mode disappears too,
+    //     because it's the same brand mark the footer is attributing.
+    //   - Zone 1 (jurisdiction contact + legal links) is unaffected. The
+    //     Kommune remains the DSGVO-Verantwortliche and their links are
+    //     still rendered.
+    $showPlatformFooter = (bool) (
+      $this->configFactory->get('markaspot_mail.settings')->get('features.show_platform_footer') ?? TRUE
+    );
+
     $branding = [
       'mode' => $mode,
       'platform_name' => $platformDefaults['name'],
@@ -154,7 +168,8 @@ class MailBrandingService {
       'frontend_base_url' => $platformDefaults['frontend_base_url'],
       'jurisdiction_slug' => NULL,
       'jurisdiction_label' => NULL,
-      'platform_footer' => $this->getPlatformFooter(),
+      'platform_footer' => $showPlatformFooter ? $this->getPlatformFooter() : NULL,
+      'show_platform_footer' => $showPlatformFooter,
     ];
 
     if ($mode === 'platform' || $jurisdictionId === NULL) {

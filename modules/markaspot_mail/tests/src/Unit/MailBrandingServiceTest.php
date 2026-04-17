@@ -227,6 +227,44 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::getBranding
+   *
+   * features.show_platform_footer = false suppresses the Civic Patches
+   * attribution bundle. Self-hosted enterprise installations opt out so
+   * no civicpatches.de/impressum or copyright line ships in their mails.
+   */
+  public function testShowPlatformFooterFalseSuppressesPlatformFooter(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['features.show_platform_footer'] = FALSE;
+    $service = $this->buildService(NULL, NULL, NULL, $overrides);
+
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertNull($branding['platform_footer']);
+    $this->assertFalse($branding['show_platform_footer']);
+    // Platform name + color stay — the branding package is still usable,
+    // just without the Civic Patches attribution slot.
+    $this->assertSame('Mark-a-Spot', $branding['platform_name']);
+    $this->assertSame('#004ced', $branding['primary_color']);
+  }
+
+  /**
+   * @covers ::getBranding
+   *
+   * Flag defaults to TRUE when markaspot_mail.settings has no entry,
+   * so shipping config behavior stays backwards-compatible.
+   */
+  public function testShowPlatformFooterDefaultsToTrueWhenMissing(): void {
+    // Settings config without any features.show_platform_footer key.
+    $service = $this->buildService(NULL);
+
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertNotNull($branding['platform_footer']);
+    $this->assertTrue($branding['show_platform_footer']);
+  }
+
+  /**
    * S3: javascript: in legal_notice_url config falls back to the safe URL.
    *
    * @covers ::getBranding
