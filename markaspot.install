@@ -1903,6 +1903,25 @@ function markaspot_update_11911(): string {
 }
 
 /**
+ * Enable markaspot_mail on existing installations.
+ *
+ * The module ships the central hook_mail_alter dispatcher + branded HTML
+ * builders (OTP, feedback, escalation, workspace, moderation, org
+ * notification, ECA action mails) and was added to the profile after many
+ * tenants were already installed. Without the module enabled the builder
+ * registry never runs, so notification mails fall through to the Drupal
+ * core plain-text template and reach users as "-- / Thank you!" footers.
+ */
+function markaspot_update_11912(): string {
+  $handler = \Drupal::moduleHandler();
+  if ($handler->moduleExists('markaspot_mail')) {
+    return 'markaspot_mail already enabled; no action.';
+  }
+  \Drupal::service('module_installer')->install(['markaspot_mail']);
+  return 'Enabled markaspot_mail module.';
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {
