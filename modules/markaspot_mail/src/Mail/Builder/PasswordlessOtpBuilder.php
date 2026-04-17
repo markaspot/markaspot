@@ -97,7 +97,15 @@ final class PasswordlessOtpBuilder implements MailBuilderInterface {
       '@platform_name' => $platformName,
     ];
 
-    $subject = $this->resolveFromConfig('subject', $replacements, $langcode)
+    // The subject template explicitly drops @code. Admins who customize
+    // the subject config could otherwise write "@platform_name: @code"
+    // and leak the OTP into the mail-subject header, which travels in
+    // cleartext SMTP, appears in inbox-preview notifications, gets
+    // logged at MTAs, and is often indexed by mail providers. Body +
+    // plainText keep the @code placeholder; only the header-bound slot
+    // drops it here.
+    $subjectReplacements = array_diff_key($replacements, ['@code' => TRUE]);
+    $subject = $this->resolveFromConfig('subject', $subjectReplacements, $langcode)
       ?: (string) $this->t('@platform_name: Your verification code', [
         '@platform_name' => $platformName,
       ], ['langcode' => $langcode]);

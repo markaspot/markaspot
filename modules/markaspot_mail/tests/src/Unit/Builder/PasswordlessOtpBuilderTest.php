@@ -149,12 +149,17 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
 
   /**
    * @covers ::build
+   *
+   * Regression guard: even if an admin sets the subject template to
+   * include @code, the OTP value must NOT appear in the mail-subject
+   * header. @code stays literal in the rendered subject; only body +
+   * plainText substitute it.
    */
-  public function testBuildAppliesConfigSubjectTemplateViaPlaceholders(): void {
+  public function testBuildExcludesCodePlaceholderFromSubject(): void {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturnCallback(
       fn (string $key): ?array => $key === 'verification_code'
-        ? ['subject' => '@platform_name: code @code (expires in @expires_in min)']
+        ? ['subject' => '@platform_name code: @code']
         : NULL,
     );
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
@@ -177,7 +182,49 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $msg = $builder->build($ctx);
 
     $this->assertNotNull($msg);
-    $this->assertSame('CivicSpot: code 156428 (expires in 10 min)', $msg->subject);
+    // Subject keeps @code literal: the admin's template is respected
+    // for every placeholder EXCEPT the OTP value.
+    $this->assertSame('CivicSpot code: @code', $msg->subject);
+    $this->assertStringNotContainsString('156428', $msg->subject);
+    // But the body + plainText do substitute @code (no regression
+    // of the OTP being visible in the mail at all).
+    $this->assertSame('156 428', $msg->content['code']);
+    $this->assertStringContainsString('156428', $msg->plainText);
+  }
+
+  /**
+   * @covers ::build
+   */
+  public function testBuildAppliesConfigSubjectTemplateViaPlaceholders(): void {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnCallback(
+      fn (string $key): ?array => $key === 'verification_code'
+        ? ['subject' => '@platform_name (expires in @expires_in min)']
+        : NULL,
+    );
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($config);
+
+    $override = $this->createMock(LanguageConfigOverride::class);
+    $override->method('get')->willReturn(NULL);
+    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
+    $languageManager->method('getLanguageConfigOverride')->willReturn($override);
+
+    $builder = $this->buildBuilder(
+      configFactory: $configFactory,
+      languageManager: $languageManager,
+    );
+    $ctx = $this->buildContext([
+      'code' => '156428',
+      'expires_in' => '10',
+      'platform_name' => 'CivicSpot',
+    ]);
+    $msg = $builder->build($ctx);
+
+    $this->assertNotNull($msg);
+    // @platform_name and @expires_in substitute; @code never reaches
+    // the subject slot (see testBuildExcludesCodePlaceholderFromSubject).
+    $this->assertSame('CivicSpot (expires in 10 min)', $msg->subject);
   }
 
   /**
