@@ -1,0 +1,5 @@
+dependencies:
+  module:
+    - phpmailer_smtp
+format: html
+force_html: 0

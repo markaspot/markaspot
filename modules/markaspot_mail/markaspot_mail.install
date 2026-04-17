@@ -1,0 +1,38 @@
+<?php
+
+/**
+ * @file
+ * Install and update hooks for markaspot_mail.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Switch phpmailer_smtp default format to html on existing installs.
+ *
+ * The phpmailer_smtp contrib module ships with `format: text_plain` as its
+ * install default. Its PhpMailerSmtp::format() plugin only DOWNGRADES to
+ * plain when the hook_mail_alter pipeline explicitly sets Content-Type:
+ * text/plain. It never UPGRADES to html from a Content-Type: text/html
+ * header. Result: every branded HTML mail produced by our builders lands
+ * in inboxes as a naive html-to-text conversion that keeps inline <style>
+ * block content as visible noise.
+ *
+ * Fresh enablements of markaspot_mail import the html default via
+ * config/optional/phpmailer_smtp.format.yml. This update hook handles
+ * tenants that already had markaspot_mail enabled before the optional
+ * config shipped (e.g. the demo tenant, manually enabled during
+ * diagnosis). Idempotent: no-op if format is already html or if
+ * phpmailer_smtp is not installed.
+ */
+function markaspot_mail_update_10001(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('phpmailer_smtp')) {
+    return 'phpmailer_smtp not enabled; no action.';
+  }
+  $config = \Drupal::configFactory()->getEditable('phpmailer_smtp.format');
+  if ($config->get('format') === 'html') {
+    return 'phpmailer_smtp.format.format already html; no action.';
+  }
+  $config->set('format', 'html')->save();
+  return 'Switched phpmailer_smtp.format.format to html.';
+}
