@@ -583,3 +583,163 @@ function service_request_update_11008(): string {
 
   return implode("\n", $messages);
 }
+
+/**
+ * Implements hook_update_N().
+ *
+ * Upgrade management form_display to include Priority, Service Provider,
+ * Internal Remark, Escalation groups + components. Idempotent: only adds
+ * components for fields that actually exist on the service_request bundle.
+ *
+ * Upstream of this hook the profile's config/install shipped a minimal
+ * management form_display (4 groups: citizen_input + administration +
+ * contact + edit_service_request). The dashboard edit page relies on
+ * field_group assignments — fields without a group are not rendered.
+ *
+ * This hook is additive: it merges new groups + components into any
+ * existing management form_display and only touches components that are
+ * not yet configured, preserving tenant customizations.
+ */
+function service_request_update_11009(): string {
+  $display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if (!$display) {
+    return 'node.service_request.management form_display missing, nothing to do.';
+  }
+
+  $messages = [];
+
+  // Components to add if the bundle field exists + not yet configured.
+  $components = [
+    'field_priority' => [
+      'type' => 'boolean_checkbox',
+      'weight' => 10,
+      'region' => 'content',
+      'settings' => ['display_label' => TRUE],
+      'third_party_settings' => [],
+    ],
+    'field_service_provider' => [
+      'type' => 'options_select',
+      'weight' => 19,
+      'region' => 'content',
+      'settings' => [],
+      'third_party_settings' => [],
+    ],
+    'field_service_provider_notes' => [
+      'type' => 'text_textarea',
+      'weight' => 21,
+      'region' => 'content',
+      'settings' => ['rows' => 4, 'placeholder' => ''],
+      'third_party_settings' => [],
+    ],
+    'field_service_provider_feedback' => [
+      'type' => 'text_textarea',
+      'weight' => 22,
+      'region' => 'content',
+      'settings' => ['rows' => 4, 'placeholder' => ''],
+      'third_party_settings' => [],
+    ],
+    'field_service_provider_files' => [
+      'type' => 'file_generic',
+      'weight' => 23,
+      'region' => 'content',
+      'settings' => ['progress_indicator' => 'throbber'],
+      'third_party_settings' => [],
+    ],
+    'field_internal_remark' => [
+      'type' => 'paragraphs',
+      'weight' => 24,
+      'region' => 'content',
+      'settings' => [],
+      'third_party_settings' => [],
+    ],
+    'field_escalation' => [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 25,
+      'region' => 'content',
+      'settings' => ['match_operator' => 'CONTAINS', 'size' => 60, 'placeholder' => ''],
+      'third_party_settings' => [],
+    ],
+  ];
+
+  foreach ($components as $field_name => $config) {
+    if (!FieldConfig::loadByName('node', 'service_request', $field_name)) {
+      $messages[] = "Skipped {$field_name}: field instance not present.";
+      continue;
+    }
+    if ($display->getComponent($field_name)) {
+      $messages[] = "Skipped {$field_name}: component already set.";
+      continue;
+    }
+    $display->setComponent($field_name, $config);
+    $messages[] = "Added {$field_name} to management form_display.";
+  }
+
+  // Field groups: merge into existing third_party_settings.field_group.
+  $tps = $display->getThirdPartySettings('field_group');
+
+  // New groups. Only add if not yet present and if at least one child field
+  // exists on the bundle (else the group is empty and confusing).
+  $groups_to_add = [
+    'group_status' => [
+      'parent_name' => 'group_administration',
+      'children' => ['field_status', 'field_status_notes'],
+      'format_type' => 'details',
+      'label' => 'Status',
+      'weight' => 11,
+      'format_settings' => ['open' => TRUE, 'required_fields' => TRUE],
+    ],
+    'group_service_provider' => [
+      'parent_name' => 'group_administration',
+      'children' => ['field_service_provider', 'field_service_provider_notes', 'field_service_provider_feedback', 'field_service_provider_files'],
+      'format_type' => 'details',
+      'label' => 'Service Provider',
+      'weight' => 15,
+      'format_settings' => ['open' => FALSE, 'required_fields' => TRUE],
+    ],
+    'group_internal' => [
+      'parent_name' => 'group_administration',
+      'children' => ['field_internal_remark', 'field_priority', 'field_escalation'],
+      'format_type' => 'details',
+      'label' => 'Internal',
+      'weight' => 20,
+      'format_settings' => ['open' => FALSE, 'required_fields' => TRUE],
+    ],
+  ];
+
+  foreach ($groups_to_add as $gid => $gdef) {
+    if (isset($tps[$gid])) {
+      $messages[] = "Skipped group {$gid}: already present.";
+      continue;
+    }
+    // Filter children to those whose field instances actually exist.
+    $valid_children = array_filter($gdef['children'], function ($fn) {
+      return (bool) FieldConfig::loadByName('node', 'service_request', $fn);
+    });
+    if (empty($valid_children)) {
+      $messages[] = "Skipped group {$gid}: no child fields present.";
+      continue;
+    }
+    $gdef['children'] = array_values($valid_children);
+    $tps[$gid] = $gdef;
+
+    // Register as child of parent group.
+    if (isset($tps[$gdef['parent_name']])) {
+      $parent_children = $tps[$gdef['parent_name']]['children'] ?? [];
+      if (!in_array($gid, $parent_children, TRUE)) {
+        $parent_children[] = $gid;
+        $tps[$gdef['parent_name']]['children'] = $parent_children;
+      }
+    }
+    $messages[] = "Added group {$gid} with children: " . implode(', ', $valid_children);
+  }
+
+  foreach ($tps as $gid => $def) {
+    $display->setThirdPartySetting('field_group', $gid, $def);
+  }
+  $display->save();
+
+  return implode("\n", $messages);
+}
