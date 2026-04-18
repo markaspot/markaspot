@@ -11,7 +11,7 @@ id: node.service_request.field_service_provider_files
 field_name: field_service_provider_files
 entity_type: node
 bundle: service_request
-label: service_provider_files
+label: 'Service Provider Files'
 description: ''
 required: false
 translatable: false

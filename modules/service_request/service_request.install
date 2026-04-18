@@ -627,6 +627,13 @@ function service_request_update_11009(): string {
       'settings' => [],
       'third_party_settings' => [],
     ],
+    'field_service_provider_status' => [
+      'type' => 'options_select',
+      'weight' => 20,
+      'region' => 'content',
+      'settings' => [],
+      'third_party_settings' => [],
+    ],
     'field_service_provider_notes' => [
       'type' => 'text_textarea',
       'weight' => 21,
@@ -693,9 +700,9 @@ function service_request_update_11009(): string {
     ],
     'group_service_provider' => [
       'parent_name' => 'group_administration',
-      'children' => ['field_service_provider', 'field_service_provider_notes', 'field_service_provider_feedback', 'field_service_provider_files'],
+      'children' => ['field_service_provider', 'field_service_provider_status', 'field_service_provider_notes', 'field_service_provider_feedback', 'field_service_provider_files'],
       'format_type' => 'details',
-      'label' => 'Service Provider',
+      'label' => 'Dienstleister',
       'weight' => 15,
       'format_settings' => ['open' => FALSE, 'required_fields' => TRUE],
     ],
@@ -703,18 +710,14 @@ function service_request_update_11009(): string {
       'parent_name' => 'group_administration',
       'children' => ['field_internal_remark', 'field_priority', 'field_escalation'],
       'format_type' => 'details',
-      'label' => 'Internal',
+      'label' => 'Intern',
       'weight' => 20,
       'format_settings' => ['open' => FALSE, 'required_fields' => TRUE],
     ],
   ];
 
   foreach ($groups_to_add as $gid => $gdef) {
-    if (isset($tps[$gid])) {
-      $messages[] = "Skipped group {$gid}: already present.";
-      continue;
-    }
-    // Filter children to those whose field instances actually exist.
+    // Filter desired children to those whose field instances actually exist.
     $valid_children = array_filter($gdef['children'], function ($fn) {
       return (bool) FieldConfig::loadByName('node', 'service_request', $fn);
     });
@@ -722,7 +725,23 @@ function service_request_update_11009(): string {
       $messages[] = "Skipped group {$gid}: no child fields present.";
       continue;
     }
-    $gdef['children'] = array_values($valid_children);
+    $valid_children = array_values($valid_children);
+
+    if (isset($tps[$gid])) {
+      // Group exists: merge any missing valid children into it.
+      $existing = $tps[$gid]['children'] ?? [];
+      $missing = array_values(array_diff($valid_children, $existing));
+      if (empty($missing)) {
+        $messages[] = "Skipped group {$gid}: already has all valid children.";
+        continue;
+      }
+      $tps[$gid]['children'] = array_values(array_unique(array_merge($existing, $missing)));
+      $messages[] = "Merged group {$gid} with new children: " . implode(', ', $missing);
+      continue;
+    }
+
+    // New group.
+    $gdef['children'] = $valid_children;
     $tps[$gid] = $gdef;
 
     // Register as child of parent group.

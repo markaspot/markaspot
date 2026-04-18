@@ -1,0 +1,8 @@
+langcode: en
+status: true
+dependencies: {  }
+name: 'Service Provider Status'
+vid: service_provider_status
+description: 'Status of a service provider job (in progress, completed, etc.).'
+weight: 0
+new_revision: false
