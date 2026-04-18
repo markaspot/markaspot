@@ -4,6 +4,7 @@ dependencies:
   config:
     - field.field.node.boilerplate.body
     - field.field.node.boilerplate.field_boilerplate_type
+    - field.field.node.boilerplate.field_organisation
     - node.type.boilerplate
   module:
     - options
@@ -19,6 +20,16 @@ content:
     weight: -4
     region: content
     settings: {  }
+    third_party_settings: {  }
+  field_organisation:
+    type: entity_reference_autocomplete
+    weight: -2
+    region: content
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
     third_party_settings: {  }
   body:
     type: text_textarea_with_summary

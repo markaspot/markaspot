@@ -4,6 +4,7 @@ dependencies:
   config:
     - field.field.node.boilerplate.body
     - field.field.node.boilerplate.field_boilerplate_type
+    - field.field.node.boilerplate.field_organisation
     - node.type.boilerplate
   module:
     - options
@@ -34,6 +35,7 @@ content:
     third_party_settings: {  }
     region: content
 hidden:
+  field_organisation: true
   groups: true
   groups_type_organisation: true
   langcode: true
