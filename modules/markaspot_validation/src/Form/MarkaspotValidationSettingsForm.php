@@ -2,9 +2,12 @@
 
 namespace Drupal\markaspot_validation\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Configure georeport settings for this site.
@@ -12,6 +15,36 @@ use Drupal\Core\StringTranslation\StringTranslationTrait;
 class MarkaspotValidationSettingsForm extends ConfigFormBase {
 
   use StringTranslationTrait;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
+   * Constructs a MarkaspotValidationSettingsForm object.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The configuration factory.
+   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
+   *   The entity type manager.
+   */
+  public function __construct(ConfigFactoryInterface $config_factory, EntityTypeManagerInterface $entity_type_manager) {
+    parent::__construct($config_factory);
+    $this->entityTypeManager = $entity_type_manager;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static(
+      $container->get('config.factory'),
+      $container->get('entity_type.manager'),
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -82,6 +115,21 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('hint'),
       '#description' => $this->t('Users can ignore this validation note by resubmitting the report form.'),
     ];
+
+    $term_options = [];
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties(['vid' => 'service_status']);
+    foreach ($terms as $term) {
+      $term_options[$term->id()] = $term->label();
+    }
+
+    $form['markaspot_validation']['excluded_statuses'] = [
+      '#type' => 'checkboxes',
+      '#title' => $this->t('Exclude statuses from duplicate check'),
+      '#default_value' => $config->get('excluded_statuses') ?? [],
+      '#options' => $term_options,
+      '#description' => $this->t('Nodes in these statuses are not considered duplicates. Useful for closed/resolved reports.'),
+    ];
+
     $form['markaspot_validation']['treshold'] = [
       '#type' => 'number',
       '#min' => 1,
@@ -130,6 +178,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
+    $excluded_statuses = array_values(array_map('intval', array_filter($values['excluded_statuses'])));
     $this->config('markaspot_validation.settings')
       ->set('wkt', $values['wkt'])
       ->set('multiple_reports', $values['multiple_reports'])
@@ -141,6 +190,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       ->set('hint', $values['hint'])
       ->set('treshold', $values['treshold'])
       ->set('defaultLocation', $values['defaultLocation'])
+      ->set('excluded_statuses', $excluded_statuses)
       ->save();
 
     parent::submitForm($form, $form_state);

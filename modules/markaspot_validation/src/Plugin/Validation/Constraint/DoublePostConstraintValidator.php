@@ -286,6 +286,11 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
       ->condition('created', $this->time->getRequestTime() - (24 * 60 * 60 * (int) $days), '>=')
       ->accessCheck(FALSE);
 
+    $excludedStatuses = $config->get('excluded_statuses') ?? [];
+    if (!empty($excludedStatuses)) {
+      $query->condition('field_status.target_id', $excludedStatuses, 'NOT IN');
+    }
+
     $nids = $query->execute();
     return $nids;
   }

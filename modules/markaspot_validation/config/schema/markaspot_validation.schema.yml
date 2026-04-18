@@ -1,0 +1,44 @@
+markaspot_validation.settings:
+  type: config_object
+  label: 'Mark-a-Spot Validation Settings'
+  mapping:
+    locality:
+      type: sequence
+      label: 'Locality'
+      sequence:
+        type: string
+    unit:
+      type: string
+      label: 'Unit'
+    radius:
+      type: string
+      label: 'Radius'
+    days:
+      type: integer
+      label: 'Days'
+    wkt:
+      type: string
+      label: 'WKT polygon'
+    hint:
+      type: boolean
+      label: 'Hint mode'
+    multiple_reports:
+      type: boolean
+      label: 'Multiple reports check'
+    max_count:
+      type: integer
+      label: 'Maximum report count per day'
+    duplicate_check:
+      type: boolean
+      label: 'Duplicate check enabled'
+    treshold:
+      type: integer
+      label: 'Iterations threshold'
+    defaultLocation:
+      type: boolean
+      label: 'Force new location if default lat/lon is posted'
+    excluded_statuses:
+      type: sequence
+      label: 'Excluded status term IDs for duplicate check'
+      sequence:
+        type: integer
