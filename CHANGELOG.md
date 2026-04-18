@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.55](https://github.com/markaspot/markaspot/compare/11.9.54...11.9.55) (2026-04-18)
+
+### Bug Fixes
+
+* inline sanitized SVG jurisdiction logos in transactional mails ([7b00294](https://github.com/markaspot/markaspot/commit/7b00294aadd800b3dc727aebfb26165b4dc7d20e))
+
 ## [11.9.54](https://github.com/markaspot/markaspot/compare/11.9.53...11.9.54) (2026-04-18)
 
 ### Features
