@@ -395,3 +395,91 @@ function markaspot_boilerplate_update_11003(): void {
     ]);
   }
 }
+
+/**
+ * Add field_organisation to boilerplate nodes for org-scoped templates.
+ *
+ * Some tenants (e.g. LHM) need boilerplates scoped to specific organisations.
+ * Reuses the existing node.field_organisation storage from markaspot_group
+ * when available; otherwise creates it. The field instance on boilerplate is
+ * optional (empty = applies to all orgs).
+ */
+function markaspot_boilerplate_update_11004(): void {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_boilerplate');
+
+  // 1. Reuse existing field storage from markaspot_group, or create it.
+  $field_storage = $etm->getStorage('field_storage_config')
+    ->load('node.field_organisation');
+  if (!$field_storage) {
+    $field_storage = $etm->getStorage('field_storage_config')->create([
+      'field_name' => 'field_organisation',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'group',
+      ],
+      'module' => 'core',
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ]);
+    $field_storage->save();
+    $logger->info('Created field storage node.field_organisation.');
+  }
+
+  // 2. Create field instance on boilerplate bundle.
+  $field_id = 'node.boilerplate.field_organisation';
+  if (!$etm->getStorage('field_config')->load($field_id)) {
+    $etm->getStorage('field_config')->create([
+      'field_storage' => $field_storage,
+      'bundle' => 'boilerplate',
+      'label' => 'Organisation',
+      'description' => 'Limit this boilerplate to specific organisations. Leave empty to show for all.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => [
+            'org' => 'org',
+          ],
+          'sort' => [
+            'field' => 'label',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+          'auto_create_bundle' => '',
+        ],
+      ],
+    ])->save();
+    $logger->info('Created field instance @id.', ['@id' => $field_id]);
+  }
+
+  // 3. Add to form display (after field_boilerplate_type, before body).
+  $form_display = $etm->getStorage('entity_form_display')
+    ->load('node.boilerplate.default');
+  if ($form_display && !$form_display->getComponent('field_organisation')) {
+    $form_display->setComponent('field_organisation', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => -2,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+    $form_display->save();
+    $logger->info('Added field_organisation to boilerplate form display.');
+  }
+
+  // 4. Hide on default view display (not needed in rendered output).
+  $view_display = $etm->getStorage('entity_view_display')
+    ->load('node.boilerplate.default');
+  if ($view_display && !$view_display->getComponent('field_organisation')) {
+    $view_display->removeComponent('field_organisation');
+    $view_display->save();
+    $logger->info('Hid field_organisation on boilerplate view display.');
+  }
+}
