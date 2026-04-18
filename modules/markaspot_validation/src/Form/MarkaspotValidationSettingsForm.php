@@ -164,26 +164,19 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
-  public function validateForm(array &$form, FormStateInterface $form_state) {
-    parent::validateForm($form, $form_state);
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
     $excluded_statuses = array_values(array_map('intval', array_filter($values['excluded_statuses'])));
     $this->config('markaspot_validation.settings')
       ->set('wkt', $values['wkt'])
       ->set('multiple_reports', $values['multiple_reports'])
-      ->set('max_count', $values['max_count'])
+      ->set('max_count', (int) $values['max_count'])
       ->set('duplicate_check', $values['duplicate_check'])
       ->set('radius', $values['radius'])
       ->set('unit', $values['unit'])
-      ->set('days', $values['days'])
+      ->set('days', (int) $values['days'])
       ->set('hint', $values['hint'])
-      ->set('treshold', $values['treshold'])
+      ->set('treshold', (int) $values['treshold'])
       ->set('defaultLocation', $values['defaultLocation'])
       ->set('excluded_statuses', $excluded_statuses)
       ->save();
