@@ -13,6 +13,7 @@ use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Render\Markup;
 use Drupal\Core\Url;
+use enshrined\svgSanitize\Sanitizer;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
@@ -141,15 +142,11 @@ class MailBrandingService {
     $platformDefaults = $this->getPlatformDefaults();
 
     // features.show_platform_footer is the opt-out switch for self-hosted
-    // enterprise installations and paid CivicSpot tiers that don't want
-    // Civic Patches GmbH attribution in every mail. When false:
-    //   - Zone 2 (MaS logo + Docs/civicspot.io + civicpatches.de Impressum
-    //     + © Civic Patches GmbH) disappears entirely.
-    //   - The top Mark-a-Spot inline SVG in platform mode disappears too,
-    //     because it's the same brand mark the footer is attributing.
-    //   - Zone 1 (jurisdiction contact + legal links) is unaffected. The
-    //     Kommune remains the DSGVO-Verantwortliche and their links are
-    //     still rendered.
+    // enterprise installations and paid CivicSpot tiers. When false, Zone 2
+    // (MaS logo + Docs/civicspot.io + civicpatches.de Impressum + copyright)
+    // disappears entirely, the top Mark-a-Spot inline SVG in platform mode
+    // disappears too. Zone 1 (jurisdiction contact + legal links) is
+    // unaffected: the Kommune remains the DSGVO-Verantwortliche.
     $showPlatformFooter = (bool) (
       $this->configFactory->get('markaspot_mail.settings')->get('features.show_platform_footer') ?? TRUE
     );
@@ -158,6 +155,7 @@ class MailBrandingService {
       'mode' => $mode,
       'platform_name' => $platformDefaults['name'],
       'logo_url' => $platformDefaults['logo_url'],
+      'logo_svg_inline' => NULL,
       'primary_color' => $platformDefaults['primary_color'],
       'background_color' => $platformDefaults['background_color'],
       'support_email' => $this->sanitizeHeaderValue($platformDefaults['support_email']),
@@ -218,10 +216,20 @@ class MailBrandingService {
     }
 
     // Logo: prefer field_logo_light; absolute URL via FileUrlGenerator.
+    // SVG files are additionally inlined for email client compatibility —
+    // Gmail, Outlook and iOS Mail all block SVG in <img src="...svg">.
     if ($group->hasField('field_logo_light') && !$group->get('field_logo_light')->isEmpty()) {
-      $logoUrl = $this->resolveFileAbsoluteUrl($group->get('field_logo_light'));
+      $logoField = $group->get('field_logo_light');
+      $logoUrl = $this->resolveFileAbsoluteUrl($logoField);
       if ($logoUrl !== NULL) {
         $branding['logo_url'] = $logoUrl;
+        $entity = $logoField->entity;
+        if ($entity !== NULL) {
+          $svgInline = $this->readSvgInline((string) $entity->getFileUri());
+          if ($svgInline !== NULL) {
+            $branding['logo_svg_inline'] = $svgInline;
+          }
+        }
       }
     }
 
@@ -650,6 +658,62 @@ class MailBrandingService {
       $out[] = '<p style="margin:0 0 12px 0;">' . $escaped . '</p>';
     }
     return Markup::create(implode('', $out));
+  }
+
+  /**
+   * Reads an SVG file and returns sanitized inline markup for email embedding.
+   *
+   * SVG in <img src="...svg"> is blocked by Gmail, Outlook, and iOS Mail.
+   * Inlining works in Apple Mail and Thunderbird; Gmail/Outlook strip <svg>
+   * silently, leaving the alt text visible.
+   *
+   * Security: the SVG is passed through enshrined/svg-sanitize before being
+   * wrapped in Markup::create(). This removes <script>, event handlers
+   * (onload, onerror, …), <foreignObject>, and external resource references
+   * (xlink:href, href to external URLs) that would otherwise enable stored XSS
+   * or tracking pixel leaks via Apple Mail / Thunderbird rendering.
+   *
+   * Returns NULL for non-SVG URIs, unreadable files, or files over 100 KB.
+   */
+  private function readSvgInline(string $uri): ?MarkupInterface {
+    if (preg_match('/\.svg$/i', $uri) !== 1) {
+      return NULL;
+    }
+    $maxBytes = 100 * 1024;
+    $content = @file_get_contents($uri, FALSE, NULL, 0, $maxBytes + 1);
+    if ($content === FALSE || strlen($content) > $maxBytes) {
+      return NULL;
+    }
+    // Sanitize: remove <script>, event handlers, <foreignObject>, and external
+    // resource references before the content is trusted as safe HTML.
+    // removeRemoteReferences(TRUE) also closes privacy-leak vectors via
+    // <image xlink:href="https://..."> tracking pixels.
+    $sanitizer = new Sanitizer();
+    $sanitizer->removeRemoteReferences(TRUE);
+    $clean = $sanitizer->sanitize($content);
+    if ($clean === FALSE || $clean === '') {
+      return NULL;
+    }
+    // Strip XML declaration and DOCTYPE — invalid inside HTML5 <body>.
+    $clean = (string) preg_replace('/^<\?xml[^?]*\?>\s*/i', '', $clean);
+    $clean = (string) preg_replace('/<!DOCTYPE[^>]*>\s*/i', '', $clean);
+    // Inject email-safe sizing on the root <svg> element. Prepending our
+    // width/height means they win over any existing presentational attributes
+    // (first attribute wins in HTML parsing). The inline style takes CSS
+    // precedence on supporting clients.
+    $clean = (string) preg_replace(
+      '/<svg\b/i',
+      '<svg width="96" style="display:block; max-width:96px; height:auto; border:0; outline:none;"',
+      $clean,
+      1,
+    );
+    $trimmed = trim($clean);
+    if ($trimmed === '') {
+      return NULL;
+    }
+    // Sanitizer::sanitize() already removed scripts, event handlers, and
+    // external references. Safe to wrap in Markup::create().
+    return Markup::create($trimmed);
   }
 
   /**

@@ -18,9 +18,10 @@
  * Logo strategy:
  * - Platform mode: inline SVG (no external request, degrades to nothing in
  *   Gmail which strips <svg> tags — Zone-2 text links remain visible).
- * - Jurisdiction mode: <img src="..."> with absolute URL from Drupal file API.
- *   Inline SVG for uploaded files would require reading the file in PHP; that
- *   is a Stage 2 enhancement once jurisdiction logos are stored as managed SVGs.
+ * - Jurisdiction mode: uploaded SVG logos are inlined by MailBrandingService
+ *   (branding.logo_svg_inline). PNG/JPEG logos fall back to <img src="...">.
+ *   Inline SVG degrades gracefully: Gmail/Outlook strip <svg> silently,
+ *   alt text stays readable; Apple Mail and iOS Mail render it natively.
  */
 #}
 <!DOCTYPE html>
@@ -65,6 +66,8 @@
               <a href="{{ branding.platform_footer.mas_link }}" style="display:inline-block; text-decoration:none; border:0; outline:none;">
                 {% include '@markaspot_mail/_mas-logo.html.twig' with { 'width': 140, 'height': 57 } only %}
               </a>
+            {% elseif branding.logo_svg_inline %}
+              {{ branding.logo_svg_inline }}
             {% elseif branding.logo_url %}
               <img src="{{ branding.logo_url }}" alt="{{ branding.platform_name }}" width="96" style="display:block; max-width:96px; height:auto; border:0; outline:none; text-decoration:none;">
             {% else %}

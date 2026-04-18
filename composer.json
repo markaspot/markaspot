@@ -59,7 +59,8 @@
         "drupal/iconify_field": "^1.2",
         "drupal/inline_entity_form": "^3",
         "drupal/shs": "^3",
-        "drupal/json_form_widget": "^1"
+        "drupal/json_form_widget": "^1",
+        "enshrined/svg-sanitize": "^0.22"
     },
     "suggest": {
         "drupal/redis": "Optional Redis cache backend for improved performance"
