@@ -16,6 +16,7 @@ use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
+use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Drupal\Tests\UnitTestCase;
@@ -91,6 +92,13 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   protected $languageManager;
 
   /**
+   * Mocked feature flag checker.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $featureFlagChecker;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -103,6 +111,9 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->sessionConfiguration = $this->createMock(SessionConfigurationInterface::class);
     $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
     $this->languageManager = $this->createMock(LanguageManagerInterface::class);
+    $this->featureFlagChecker = $this->createMock(FeatureFlagChecker::class);
+    // Default: passwordless feature enabled so tests hit the logic under test.
+    $this->featureFlagChecker->method('isEnabled')->willReturn(TRUE);
 
     // Default passwordless config.
     $passwordlessConfig = $this->createMock(ImmutableConfig::class);
@@ -133,6 +144,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $container->set('entity_type.manager', $entityTypeManager);
     $container->set('logger.factory', $this->createLoggerFactoryStub());
     $container->set('language_manager', $this->languageManager);
+    $container->set('string_translation', $this->getStringTranslationStub());
     \Drupal::setContainer($container);
 
     $this->controller = new PasswordlessAuthController(
@@ -142,12 +154,46 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->sessionConfiguration,
       $this->keyValueExpirable,
+      $this->featureFlagChecker,
     );
   }
 
   // ===========================================================================
   // Tests for requestCode().
   // ===========================================================================
+
+  /**
+   * Tests requestCode returns 403 when passwordless is disabled.
+   *
+   * Regression guard for the production path documented in
+   * MEMORY.md (bug-features-passwordless-missing): a tenant without
+   * `features.passwordless=true` in field_nuxt_config must 403, not fall
+   * through to OTP generation. Default is fail-closed (FALSE).
+   *
+   * @covers ::requestCode
+   */
+  public function testRequestCodeDisabledByFeatureFlag(): void {
+    $this->setPasswordlessFlag(FALSE);
+
+    $request = new Request([], [], [], [], [], [], '{"email":"user@example.com"}');
+    $response = $this->controller->requestCode($request);
+
+    $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
+  }
+
+  /**
+   * Tests verifyCode returns 403 when passwordless is disabled.
+   *
+   * @covers ::verifyCode
+   */
+  public function testVerifyCodeDisabledByFeatureFlag(): void {
+    $this->setPasswordlessFlag(FALSE);
+
+    $request = new Request([], [], [], [], [], [], '{"email":"user@example.com","code":"123456"}');
+    $response = $this->controller->verifyCode($request);
+
+    $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
+  }
 
   /**
    * Tests requestCode with missing email returns 400.
@@ -563,7 +609,20 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->sessionConfiguration,
       $this->keyValueExpirable,
+      $this->featureFlagChecker,
     );
+  }
+
+  /**
+   * Rebuilds the controller with the passwordless feature flag toggled.
+   *
+   * Production default is fail-closed (flag absent = disabled), so negative
+   * cases must swap the default-TRUE mock for a fresh FALSE stub.
+   */
+  protected function setPasswordlessFlag(bool $enabled): void {
+    $this->featureFlagChecker = $this->createMock(FeatureFlagChecker::class);
+    $this->featureFlagChecker->method('isEnabled')->willReturn($enabled);
+    $this->recreateController();
   }
 
   /**
@@ -584,6 +643,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $container->set('entity_type.manager', $entityTypeManager);
     $container->set('logger.factory', $this->createLoggerFactoryStub());
     $container->set('language_manager', $this->languageManager);
+    $container->set('string_translation', $this->getStringTranslationStub());
     \Drupal::setContainer($container);
 
     $this->recreateController();

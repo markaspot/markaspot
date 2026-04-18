@@ -19,7 +19,7 @@ use Drupal\node\NodeInterface;
  * features (privacyNotice) default to TRUE so an unconfigured tenant fails
  * closed, cost-critical features (aiAnalysis) default to the schema value.
  */
-final class FeatureFlagChecker {
+class FeatureFlagChecker {
 
   /**
    * Reads a feature flag value from a jurisdiction group's field_nuxt_config.
