@@ -6,15 +6,12 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Configure georeport settings for this site.
  */
 class MarkaspotValidationSettingsForm extends ConfigFormBase {
-
-  use StringTranslationTrait;
 
   /**
    * The entity type manager.
@@ -117,7 +114,13 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
     ];
 
     $term_options = [];
-    $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties(['vid' => 'service_status']);
+    $term_ids = $this->entityTypeManager->getStorage('taxonomy_term')->getQuery()
+      ->condition('vid', 'service_status')
+      ->sort('weight')
+      ->sort('name')
+      ->accessCheck(FALSE)
+      ->execute();
+    $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadMultiple($term_ids);
     foreach ($terms as $term) {
       $term_options[$term->id()] = $term->label();
     }
@@ -162,14 +165,6 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function validateForm(array &$form, FormStateInterface $form_state) {
-
-    $wkt = trim($form_state->getValue('wkt'));
-
-    if (!empty($valid)) {
-      $form_state->set('wkt', $wkt);
-
-    }
-
     parent::validateForm($form, $form_state);
   }
 
