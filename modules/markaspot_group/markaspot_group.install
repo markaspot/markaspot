@@ -2610,3 +2610,28 @@ function markaspot_group_update_11918(): string {
 
   return 'field_organisation target_bundles already correct.';
 }
+
+/**
+ * Bump node.field_organisation cardinality from 1 to unlimited.
+ *
+ * Enables multi-org references on any bundle using this storage
+ * (service_request, boilerplate, ...). Existing single-value data is
+ * preserved. Per-bundle widget config still determines single vs multi UI.
+ */
+function markaspot_group_update_11919(): string {
+  $field_storage = \Drupal::entityTypeManager()
+    ->getStorage('field_storage_config')
+    ->load('node.field_organisation');
+
+  if (!$field_storage) {
+    return 'node.field_organisation storage not found - nothing to do.';
+  }
+
+  if ($field_storage->getCardinality() === -1) {
+    return 'node.field_organisation cardinality already unlimited.';
+  }
+
+  $field_storage->setCardinality(-1);
+  $field_storage->save();
+  return 'Bumped node.field_organisation cardinality to unlimited.';
+}

@@ -82,7 +82,7 @@ actions:
     configuration:
       field_name: field_organisation.target_id
       field_value: '[node:field_category:entity:field_category_gid:target_id]'
-      method: 'set:clear'
+      method: 'append'
       strip_tags: false
       trim: false
       save_entity: true

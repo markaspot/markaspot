@@ -487,21 +487,11 @@ function markaspot_boilerplate_update_11004(): void {
 }
 
 /**
- * Bump node.field_organisation cardinality from 1 to unlimited.
+ * Moved to markaspot_group_update_11919 (storage lives in markaspot_group).
  *
- * Enables both boilerplate and service_request to reference multiple orgs.
- * Existing single-value data is preserved. Per-bundle widget config still
- * determines whether UI renders as single or multi-select.
+ * Stub preserved for schema-version consistency on sites that ran an early
+ * iteration of this hook before it was relocated.
  */
-function markaspot_boilerplate_update_11005(): void {
-  $etm = \Drupal::entityTypeManager();
-  $logger = \Drupal::logger('markaspot_boilerplate');
-
-  $field_storage = $etm->getStorage('field_storage_config')
-    ->load('node.field_organisation');
-  if ($field_storage && $field_storage->getCardinality() !== -1) {
-    $field_storage->setCardinality(-1);
-    $field_storage->save();
-    $logger->info('Bumped node.field_organisation cardinality to unlimited.');
-  }
+function markaspot_boilerplate_update_11005(): string {
+  return 'Cardinality bump relocated to markaspot_group_update_11919.';
 }
