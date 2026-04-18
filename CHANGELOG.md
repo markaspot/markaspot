@@ -1,5 +1,25 @@
 # Changelog
 
+## [11.9.54](https://github.com/markaspot/markaspot/compare/11.9.53...11.9.54) (2026-04-18)
+
+### Features
+
+* **boilerplate:** add field_organisation for org-specific boilerplates ([e4336f3](https://github.com/markaspot/markaspot/commit/e4336f36c5fe9e51a3997cb531993c5495be053c))
+* **boilerplate:** allow multiple orgs per boilerplate ([f1d8bb4](https://github.com/markaspot/markaspot/commit/f1d8bb469b7aef3949ec152a2bf68739e22e9cf9))
+* **markaspot_validation:** add excluded_statuses config for duplicate check ([2cdd00a](https://github.com/markaspot/markaspot/commit/2cdd00afec059fe06752c8d7f0272f5e5899b50c))
+* **service_request:** update_11009 adds field_service_provider_status + group merge ([d30a3f4](https://github.com/markaspot/markaspot/commit/d30a3f483efd1e971014c90a9c7d95d85585d1cf))
+* **service_request:** update_11009 adds management form groups + SP/internal components ([6a42175](https://github.com/markaspot/markaspot/commit/6a42175b556f88fbd0e02504b9b0d579a1ad9c95))
+
+### Bug Fixes
+
+* **group:** propagate ECA set:clear -> append + dedupe field_organisation ([2579f3a](https://github.com/markaspot/markaspot/commit/2579f3ab47e9bd3674c5b7e91e31cc98377b8e0d))
+
+### Refactoring
+
+* **boilerplate,group:** relocate cardinality bump, fix ECA append ([0cbc367](https://github.com/markaspot/markaspot/commit/0cbc367b7f32b51de24488872c893c3eac6fde2b))
+* **markaspot_validation:** fix settings form review findings ([38233af](https://github.com/markaspot/markaspot/commit/38233afac81d56e5fe3cd15b0fdc501de118a9c6))
+* **markaspot_validation:** remove useless validateForm override, cast integer config values ([c1f144d](https://github.com/markaspot/markaspot/commit/c1f144dbee50dcaabae81c034cecba0a4eb0e9e6))
+
 ## [11.9.53](https://github.com/markaspot/markaspot/compare/11.9.52...11.9.53) (2026-04-17)
 
 ### Bug Fixes
