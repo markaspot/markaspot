@@ -558,6 +558,14 @@ function markaspot_group_node_presave(NodeInterface $node): void {
     array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'))
   ));
 
+  // Write the deduped list back so JSON:API responses and Views don't carry
+  // duplicate target_ids when upstream appenders (ECA process_apply_group,
+  // API payload) add a GID that was already selected.
+  $raw_ids = array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'));
+  if (count($raw_ids) !== count($new_group_ids)) {
+    $node->set('field_organisation', array_map(static fn(int $id) => ['target_id' => $id], array_values($new_group_ids)));
+  }
+
   // For new nodes, we can't sync yet - need to wait until after save.
   // The relationships will be created in hook_node_insert.
   if ($node->isNew()) {

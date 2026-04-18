@@ -2635,3 +2635,32 @@ function markaspot_group_update_11919(): string {
   $field_storage->save();
   return 'Bumped node.field_organisation cardinality to unlimited.';
 }
+
+/**
+ * Sync process_apply_group ECA: method 'set:clear' -> 'append'.
+ *
+ * Coupled with update_11919 cardinality bump: with cardinality=-1, the old
+ * 'set:clear' on field_organisation.target_id silently wiped any multi-org
+ * values set upstream (manual staff selection, API payload). Append preserves
+ * them and lets the category-derived GID join the list. Fresh installs get
+ * the fixed ECA via profile config/optional; this hook propagates the fix to
+ * existing tenants that already have the ECA in active config.
+ */
+function markaspot_group_update_11920(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('eca.eca.process_apply_group');
+
+  if ($config->isNew()) {
+    return 'eca.eca.process_apply_group not installed on this tenant - nothing to do.';
+  }
+
+  $current = $config->get('actions.Activiy_save_group.configuration.method');
+  if ($current !== 'set:clear') {
+    return "Activiy_save_group method already '$current' - nothing to do.";
+  }
+
+  $config
+    ->set('actions.Activiy_save_group.configuration.method', 'append')
+    ->save();
+  return "Flipped Activiy_save_group method from 'set:clear' to 'append'.";
+}
