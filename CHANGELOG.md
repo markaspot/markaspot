@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.56](https://github.com/markaspot/markaspot/compare/11.9.55...11.9.56) (2026-04-19)
+
+### Bug Fixes
+
+* **mail:** remove explicit Content-Type header to allow multipart/alternative ([d1b4e86](https://github.com/markaspot/markaspot/commit/d1b4e86e1842e035deb2e63b6c6ddf8fc54d6ab5))
+
 ## [11.9.55](https://github.com/markaspot/markaspot/compare/11.9.54...11.9.55) (2026-04-18)
 
 ### Bug Fixes
