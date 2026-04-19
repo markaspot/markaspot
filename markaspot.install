@@ -1922,6 +1922,25 @@ function markaspot_update_11912(): string {
 }
 
 /**
+ * Ensure phpmailer_smtp sends HTML and uses phpmailer_smtp as formatter.
+ *
+ * config/optional sets these at fresh install, but not on migrated tenants.
+ */
+function markaspot_update_11913(): string {
+  $config = \Drupal::configFactory()->getEditable('phpmailer_smtp.format');
+  if ($config->get('format') !== 'html') {
+    $config->set('format', 'html')->save();
+  }
+
+  $mailsystem = \Drupal::configFactory()->getEditable('mailsystem.settings');
+  if ($mailsystem->get('defaults.formatter') !== 'phpmailer_smtp') {
+    $mailsystem->set('defaults.formatter', 'phpmailer_smtp')->save();
+  }
+
+  return 'phpmailer_smtp format set to html, mailsystem formatter set to phpmailer_smtp.';
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {
