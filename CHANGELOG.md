@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.62](https://github.com/markaspot/markaspot/compare/11.9.61...11.9.62) (2026-04-19)
+
+### Bug Fixes
+
+* skip address module personal-name constraints on jurisdiction address field ([e8b21c5](https://github.com/markaspot/markaspot/commit/e8b21c56307d539f474a147581fadec164ecc665))
+
 ## [11.9.61](https://github.com/markaspot/markaspot/compare/11.9.60...11.9.61) (2026-04-19)
 
 ### Bug Fixes
