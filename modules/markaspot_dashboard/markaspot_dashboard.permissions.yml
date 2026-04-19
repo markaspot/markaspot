@@ -12,3 +12,8 @@ administer dashboard:
   title: 'Administer Dashboard'
   description: 'Configure dashboard settings and access administrative functions.'
   restrict access: true
+
+access platform admin:
+  title: 'Access Platform Admin'
+  description: 'View cross-tenant platform aggregates (tenant count, report count, signups). Granted only to the administrator role.'
+  restrict access: true

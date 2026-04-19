@@ -128,3 +128,27 @@ markaspot_dashboard.admin:
     _permission: 'access dashboard kpis'
   options:
     _admin_route: TRUE
+
+# Platform admin aggregates — feeds Nuxt /admin overview cards
+markaspot_dashboard.admin_stats:
+  path: '/api/admin/stats'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\AdminStatsController::stats'
+    _title: 'Platform Admin Stats'
+  methods: [GET]
+  requirements:
+    _permission: 'access platform admin'
+  options:
+    _format: 'json'
+
+# Platform admin signups feed — recent jurisdiction creations
+markaspot_dashboard.admin_signups:
+  path: '/api/admin/signups'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\AdminStatsController::signups'
+    _title: 'Platform Admin Signups'
+  methods: [GET]
+  requirements:
+    _permission: 'access platform admin'
+  options:
+    _format: 'json'
