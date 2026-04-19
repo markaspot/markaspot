@@ -1925,19 +1925,27 @@ function markaspot_update_11912(): string {
  * Ensure phpmailer_smtp sends HTML and uses phpmailer_smtp as formatter.
  *
  * config/optional sets these at fresh install, but not on migrated tenants.
+ * Intentionally enforces the platform default on all tenants: HTML mail is
+ * non-negotiable for branded OTP and notification mails.
+ *
+ * @return string
  */
 function markaspot_update_11913(): string {
+  $changes = [];
+
   $config = \Drupal::configFactory()->getEditable('phpmailer_smtp.format');
   if ($config->get('format') !== 'html') {
     $config->set('format', 'html')->save();
+    $changes[] = 'phpmailer_smtp.format → html';
   }
 
   $mailsystem = \Drupal::configFactory()->getEditable('mailsystem.settings');
   if ($mailsystem->get('defaults.formatter') !== 'phpmailer_smtp') {
     $mailsystem->set('defaults.formatter', 'phpmailer_smtp')->save();
+    $changes[] = 'mailsystem.settings formatter → phpmailer_smtp';
   }
 
-  return 'phpmailer_smtp format set to html, mailsystem formatter set to phpmailer_smtp.';
+  return $changes ? implode(', ', $changes) . '.' : 'No changes needed.';
 }
 
 /**
