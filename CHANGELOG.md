@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.57](https://github.com/markaspot/markaspot/compare/11.9.56...11.9.57) (2026-04-19)
+
+### Bug Fixes
+
+* **mail:** strip style blocks before phpmailer_smtp generates AltBody ([b4daf78](https://github.com/markaspot/markaspot/commit/b4daf78711bcf8b810a0e4d88257bba2dc818553))
+* **management-form:** replace field_service_provider_files with field_sp_attachment in group_service_provider ([b3ce16f](https://github.com/markaspot/markaspot/commit/b3ce16f696b62b6743ad55f3317caa349637a0ff))
+
 ## [11.9.56](https://github.com/markaspot/markaspot/compare/11.9.55...11.9.56) (2026-04-19)
 
 ### Bug Fixes
