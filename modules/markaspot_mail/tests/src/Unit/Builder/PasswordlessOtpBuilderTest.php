@@ -53,7 +53,7 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
   /**
    * @covers ::build
    */
-  public function testBuildUsesHeroCodeVariantWithSpaceSeparatedCode(): void {
+  public function testBuildUsesHeroCodeVariant(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([
       'code' => '156428',
@@ -64,8 +64,8 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
 
     $this->assertNotNull($msg);
     $this->assertSame('hero_code', $msg->variant);
-    // 6-digit codes render with a mid-string space for readability.
-    $this->assertSame('156 428', $msg->content['code']);
+    // Code is passed through unchanged; letter-spacing in the template provides visual separation.
+    $this->assertSame('156428', $msg->content['code']);
     $this->assertStringContainsString('156428', $msg->plainText);
     $this->assertStringContainsString('10', $msg->plainText);
     $this->assertArrayHasKey('preheader', $msg->content);
@@ -188,7 +188,7 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $this->assertStringNotContainsString('156428', $msg->subject);
     // But the body + plainText do substitute @code (no regression
     // of the OTP being visible in the mail at all).
-    $this->assertSame('156 428', $msg->content['code']);
+    $this->assertSame('156428', $msg->content['code']);
     $this->assertStringContainsString('156428', $msg->plainText);
   }
 

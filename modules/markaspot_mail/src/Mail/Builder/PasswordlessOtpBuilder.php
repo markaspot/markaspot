@@ -16,9 +16,9 @@ use Psr\Log\LoggerInterface;
 /**
  * Builder for markaspot_passwordless:verification_code mails.
  *
- * Produces the sign-in OTP mail in the Anthropic-style hero_code variant:
- * a #004ced hero card with the code set in 56px monospace and 0.15em
- * letter-spacing, framed by the recipient-facing subject + subtext.
+ * Produces the sign-in OTP mail in the hero_code variant: a colored hero
+ * card with the code rendered in monospace with letter-spacing for visual
+ * digit separation, framed by the recipient-facing subject + subtext.
  *
  * Required param:
  *   - code (string): the OTP value (numeric, but we never narrow the type
@@ -137,12 +137,7 @@ final class PasswordlessOtpBuilder implements MailBuilderInterface {
   }
 
   /**
-   * Inserts a mid-string space in 6-digit codes for visual readability.
    *
-   * "156428" -> "156 428". Leaves non-6-digit codes untouched so future
-   * variants (5-digit, 8-digit, alphanumeric) still render sensibly.
-   * The monospace + 0.15em letter-spacing in the hero template already
-   * carries most of the readability; this is the last 10%.
    */
   private function formatCodeForDisplay(string $code): string {
     return $code;
