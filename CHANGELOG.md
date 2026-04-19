@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.58](https://github.com/markaspot/markaspot/compare/11.9.57...11.9.58) (2026-04-19)
+
+### Bug Fixes
+
+* **markaspot_mail:** restore Content-Type text/html and add passthrough theme ([bad0e7d](https://github.com/markaspot/markaspot/commit/bad0e7d6bc0c99125f141c2baf2c6cb2eee02e4f))
+
 ## [11.9.57](https://github.com/markaspot/markaspot/compare/11.9.56...11.9.57) (2026-04-19)
 
 ### Bug Fixes
