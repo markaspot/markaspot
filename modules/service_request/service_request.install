@@ -648,7 +648,7 @@ function service_request_update_11009(): string {
       'settings' => ['rows' => 4, 'placeholder' => ''],
       'third_party_settings' => [],
     ],
-    'field_service_provider_files' => [
+    'field_sp_attachment' => [
       'type' => 'file_generic',
       'weight' => 23,
       'region' => 'content',
@@ -700,7 +700,7 @@ function service_request_update_11009(): string {
     ],
     'group_service_provider' => [
       'parent_name' => 'group_administration',
-      'children' => ['field_service_provider', 'field_service_provider_status', 'field_service_provider_notes', 'field_service_provider_feedback', 'field_service_provider_files'],
+      'children' => ['field_service_provider', 'field_service_provider_status', 'field_service_provider_notes', 'field_service_provider_feedback', 'field_sp_attachment'],
       'format_type' => 'details',
       'label' => 'Dienstleister',
       'weight' => 15,
@@ -759,6 +759,76 @@ function service_request_update_11009(): string {
     $display->setThirdPartySetting('field_group', $gid, $def);
   }
   $display->save();
+
+  return implode("\n", $messages);
+}
+
+/**
+ * Repair group_service_provider: add field_sp_attachment, drop field_service_provider_files.
+ *
+ * update_11009 incorrectly listed field_service_provider_files as the SP file
+ * field and omitted field_sp_attachment. This hook corrects existing form
+ * displays on tenants that already ran 11009.
+ */
+function service_request_update_11010(): string {
+  $display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if (!$display) {
+    return 'node.service_request.management form_display missing, nothing to do.';
+  }
+
+  $messages = [];
+  $changed = FALSE;
+
+  // Ensure field_sp_attachment component is present.
+  if (FieldConfig::loadByName('node', 'service_request', 'field_sp_attachment') && !$display->getComponent('field_sp_attachment')) {
+    $display->setComponent('field_sp_attachment', [
+      'type' => 'file_generic',
+      'weight' => 23,
+      'region' => 'content',
+      'settings' => ['progress_indicator' => 'throbber'],
+      'third_party_settings' => [],
+    ]);
+    $messages[] = 'Added field_sp_attachment component.';
+    $changed = TRUE;
+  }
+
+  // Fix group_service_provider children: add field_sp_attachment, remove field_service_provider_files.
+  $tps = $display->getThirdPartySettings('field_group');
+  if (isset($tps['group_service_provider'])) {
+    $children = $tps['group_service_provider']['children'] ?? [];
+    $original = $children;
+
+    // Remove legacy field.
+    $children = array_values(array_diff($children, ['field_service_provider_files']));
+
+    // Add correct field if missing and the field instance exists.
+    if (!in_array('field_sp_attachment', $children, TRUE) &&
+        FieldConfig::loadByName('node', 'service_request', 'field_sp_attachment')) {
+      $children[] = 'field_sp_attachment';
+    }
+
+    if ($children !== $original) {
+      $tps['group_service_provider']['children'] = $children;
+      foreach ($tps as $gid => $def) {
+        $display->setThirdPartySetting('field_group', $gid, $def);
+      }
+      $messages[] = 'Repaired group_service_provider children: removed field_service_provider_files, added field_sp_attachment.';
+      $changed = TRUE;
+    }
+    else {
+      $messages[] = 'group_service_provider already correct, no changes.';
+    }
+  }
+  else {
+    $messages[] = 'group_service_provider not found, update_11009 may not have run yet.';
+  }
+
+  if ($changed) {
+    $display->save();
+  }
 
   return implode("\n", $messages);
 }
