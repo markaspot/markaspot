@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.61](https://github.com/markaspot/markaspot/compare/11.9.60...11.9.61) (2026-04-19)
+
+### Bug Fixes
+
+* **mail:** replace old gray wordmark with new blue brand logo PNG ([b9f5ced](https://github.com/markaspot/markaspot/commit/b9f5cedb24f6c06e04f63082a14f833d4d2bb1b1)), closes [#587cff](https://github.com/markaspot/markaspot/issues/587cff) [#002682](https://github.com/markaspot/markaspot/issues/002682)
+
 ## [11.9.60](https://github.com/markaspot/markaspot/compare/11.9.59...11.9.60) (2026-04-19)
 
 ### Features
