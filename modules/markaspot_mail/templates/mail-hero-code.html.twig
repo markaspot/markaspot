@@ -30,7 +30,11 @@
         <tr>
           <td align="center" style="padding:40px 80px;">
             <div style="font-family:'SF Mono',Monaco,Menlo,monospace; font-size:40px; line-height:48px; letter-spacing:0.2em; color:#ffffff; font-weight:600;">
-              {{ content.code }}
+              {% if content.code|length == 6 %}
+                <span>{{ content.code|slice(0,3) }}</span><span style="margin-left:0.5em;">{{ content.code|slice(3) }}</span>
+              {% else %}
+                {{ content.code }}
+              {% endif %}
             </div>
           </td>
         </tr>
