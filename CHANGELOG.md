@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.59](https://github.com/markaspot/markaspot/compare/11.9.58...11.9.59) (2026-04-19)
+
+### Bug Fixes
+
+* **markaspot_mail:** remove OTP space that broke copy-paste, reduce hero code size ([46af993](https://github.com/markaspot/markaspot/commit/46af9935bdc51d943d4fff8423193528972a2ccc))
+* **markaspot_mail:** restore 3+3 visual grouping via template spans ([2a378d1](https://github.com/markaspot/markaspot/commit/2a378d1ca43cbc63e2c62f830573dc188f24018c))
+* **markaspot_mail:** use px instead of em for span gap for Outlook compat ([e15ef0e](https://github.com/markaspot/markaspot/commit/e15ef0e0ae01adf8cbb3412a6c0d3c6b3dc586e7))
+
 ## [11.9.58](https://github.com/markaspot/markaspot/compare/11.9.57...11.9.58) (2026-04-19)
 
 ### Bug Fixes
