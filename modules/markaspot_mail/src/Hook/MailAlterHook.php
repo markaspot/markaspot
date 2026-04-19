@@ -128,7 +128,6 @@ final class MailAlterHook {
     // attacker add Bcc: / To: headers and turn the pipeline into a relay.
     $message['subject'] = $this->sanitizeHeaderValue($msg->subject);
     $message['body'] = [$rendered['html']];
-    $message['headers']['Content-Type'] = 'text/html; charset=UTF-8; format=flowed; delsp=no';
     if (!empty($brandingPackage['reply_to'])) {
       $message['headers']['Reply-To'] = $this->sanitizeHeaderValue((string) $brandingPackage['reply_to']);
     }
