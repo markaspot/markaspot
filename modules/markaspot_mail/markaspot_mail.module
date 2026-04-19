@@ -40,6 +40,16 @@ function markaspot_mail_theme($existing, $type, $theme, $path) {
       ],
       'template' => 'mail-card-transactional',
     ],
+    'markaspot_mail_passthrough' => [
+      'variables' => [
+        'body' => '',
+        'module' => '',
+        'key' => '',
+        'recipient' => '',
+        'subject' => '',
+      ],
+      'template' => 'mail-passthrough',
+    ],
   ];
 }
 

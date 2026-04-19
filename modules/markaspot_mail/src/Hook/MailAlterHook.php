@@ -134,6 +134,17 @@ final class MailAlterHook {
     // all elements are preserved, so the HTML part still renders correctly.
     $html = preg_replace('/<style[^>]*>.*?<\/style>/si', '', $rendered['html']);
     $message['body'] = [$html];
+    // Drupal's MailManager seeds every message with Content-Type: text/plain.
+    // phpmailer_smtp reads that header in format() and, if not force_html,
+    // converts the body to plain text. Override to text/html so our branded
+    // HTML body is not silently downgraded to a text-only email.
+    $message['headers']['Content-Type'] = 'text/html; charset=UTF-8';
+    // Tell phpmailer_smtp to use our passthrough template so it does not wrap
+    // the already-complete HTML document in a second <html><body> structure.
+    // Nested HTML causes Apple Mail to ignore the inner <head> (meta tags for
+    // color-scheme and x-apple-disable-message-reformatting) and can prevent
+    // proper HTML rendering altogether.
+    $message['params']['theme'] = 'markaspot_mail_passthrough';
     if (!empty($brandingPackage['reply_to'])) {
       $message['headers']['Reply-To'] = $this->sanitizeHeaderValue((string) $brandingPackage['reply_to']);
     }
