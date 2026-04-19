@@ -145,9 +145,6 @@ final class PasswordlessOtpBuilder implements MailBuilderInterface {
    * carries most of the readability; this is the last 10%.
    */
   private function formatCodeForDisplay(string $code): string {
-    if (preg_match('/^\d{6}$/', $code) === 1) {
-      return substr($code, 0, 3) . ' ' . substr($code, 3);
-    }
     return $code;
   }
 
