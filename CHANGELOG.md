@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.60](https://github.com/markaspot/markaspot/compare/11.9.59...11.9.60) (2026-04-19)
+
+### Features
+
+* **dashboard:** add admin aggregate endpoints ([46b7a60](https://github.com/markaspot/markaspot/commit/46b7a60f7db346f018f1c04d60d9f089e7e9d364))
+
+### Bug Fixes
+
+* ensure phpmailer_smtp sends HTML on migrated tenants ([310f6bb](https://github.com/markaspot/markaspot/commit/310f6bb1854f35ab662e702c9561224e302924c8))
+* improve update hook 11913 per review ([a662191](https://github.com/markaspot/markaspot/commit/a662191e34ff744cc549e20d117442dfc67ab924))
+
 ## [11.9.59](https://github.com/markaspot/markaspot/compare/11.9.58...11.9.59) (2026-04-19)
 
 ### Bug Fixes
