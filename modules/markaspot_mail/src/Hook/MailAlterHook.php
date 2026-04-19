@@ -127,7 +127,13 @@ final class MailAlterHook {
     // sanitize. Mail header injection (CWE-93) would otherwise let an
     // attacker add Bcc: / To: headers and turn the pipeline into a relay.
     $message['subject'] = $this->sanitizeHeaderValue($msg->subject);
-    $message['body'] = [$rendered['html']];
+    // Strip <style> blocks before handing HTML to phpmailer_smtp. PHPMailer
+    // generates the plaintext AltBody via html2text() from this HTML; if the
+    // <style> block is present, the CSS leaks into the text part and appears
+    // verbatim in Apple Mail's notification/plaintext view. Inline styles on
+    // all elements are preserved, so the HTML part still renders correctly.
+    $html = preg_replace('/<style[^>]*>.*?<\/style>/si', '', $rendered['html']);
+    $message['body'] = [$html];
     if (!empty($brandingPackage['reply_to'])) {
       $message['headers']['Reply-To'] = $this->sanitizeHeaderValue((string) $brandingPackage['reply_to']);
     }
