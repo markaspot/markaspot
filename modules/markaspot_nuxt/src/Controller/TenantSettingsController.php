@@ -825,9 +825,17 @@ class TenantSettingsController extends ControllerBase {
     // Validate only the fields that were actually changed, not the entire
     // entity. Full entity validation would fail on unrelated fields (e.g.
     // address module constraints on country-specific formats).
+    // Skip field_jurisdiction_address: the address module enforces personal
+    // name fields (given_name, family_name) for certain countries, which do
+    // not apply to organizational jurisdiction addresses. Our own validation
+    // in validateFieldValue() is sufficient.
+    $skipFieldValidation = ['field_jurisdiction_address'];
     $validationErrors = [];
     foreach (array_keys($data) as $fieldName) {
       if (!$group->hasField($fieldName)) {
+        continue;
+      }
+      if (in_array($fieldName, $skipFieldValidation, TRUE)) {
         continue;
       }
       $fieldViolations = $group->get($fieldName)->validate();
@@ -1807,7 +1815,7 @@ class TenantSettingsController extends ControllerBase {
         if ($value !== strip_tags($value)) {
           return 'field_platform_name must not contain HTML tags.';
         }
-        if (strlen($value) > 100) {
+        if (mb_strlen($value) > 100) {
           return 'field_platform_name must not exceed 100 characters.';
         }
         return NULL;
@@ -1828,7 +1836,7 @@ class TenantSettingsController extends ControllerBase {
         if ($value !== strip_tags($value)) {
           return 'field_email_footer must not contain HTML tags.';
         }
-        if (strlen($value) > 1000) {
+        if (mb_strlen($value) > 1000) {
           return 'field_email_footer must not exceed 1000 characters.';
         }
         return NULL;
@@ -1843,10 +1851,26 @@ class TenantSettingsController extends ControllerBase {
               return 'field_jurisdiction_address.country_code must be a 2-letter ISO country code (uppercase).';
             }
           }
-          $stringSubfields = ['organization', 'address_line1', 'locality', 'postal_code'];
-          foreach ($stringSubfields as $subfield) {
-            if (isset($value[$subfield]) && !is_string($value[$subfield])) {
+          $stringSubfields = [
+            'organization' => 255,
+            'address_line1' => 255,
+            'address_line2' => 255,
+            'address_line3' => 255,
+            'locality' => 255,
+            'postal_code' => 255,
+          ];
+          foreach ($stringSubfields as $subfield => $maxLength) {
+            if (!isset($value[$subfield])) {
+              continue;
+            }
+            if (!is_string($value[$subfield])) {
               return "field_jurisdiction_address.$subfield must be a string.";
+            }
+            if ($value[$subfield] !== strip_tags($value[$subfield])) {
+              return "field_jurisdiction_address.$subfield must not contain HTML tags.";
+            }
+            if (mb_strlen($value[$subfield]) > $maxLength) {
+              return "field_jurisdiction_address.$subfield must not exceed $maxLength characters.";
             }
           }
         }
@@ -1868,7 +1892,7 @@ class TenantSettingsController extends ControllerBase {
           return "$fieldName must be a string.";
         }
         // text_long fields: allow HTML content but cap at a reasonable size.
-        if (strlen($value) > 50000) {
+        if (mb_strlen($value) > 50000) {
           return "$fieldName must not exceed 50000 characters.";
         }
         return NULL;
