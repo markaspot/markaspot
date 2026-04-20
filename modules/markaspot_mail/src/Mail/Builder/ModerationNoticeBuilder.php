@@ -84,7 +84,7 @@ final class ModerationNoticeBuilder implements MailBuilderInterface {
     $attachments = $node instanceof NodeInterface
       ? $this->attachmentResolver->resolve(
         $node,
-        ['field_request_image', 'field_attachment'],
+        ['field_request_image', 'field_request_media', 'field_attachment'],
         includePrivate: TRUE,
       )
       : [];

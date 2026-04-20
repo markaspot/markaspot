@@ -113,7 +113,7 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
       && !$this->recipientIsReporter($ctx->to, $entity)) {
       $attachments = $this->attachmentResolver->resolve(
         $entity,
-        ['field_request_image', 'field_attachment'],
+        ['field_request_image', 'field_request_media', 'field_attachment'],
         includePrivate: TRUE,
       );
     }

@@ -9,6 +9,7 @@ use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\file\FileInterface;
 use Drupal\markaspot_mail\Mail\MailAttachment;
+use Drupal\media\MediaInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -43,10 +44,10 @@ use Psr\Log\LoggerInterface;
  * Mail/*Trait.php helpers. Consistent with MailBrandingService and
  * MailHtmlRenderer, which use the same DI registration.
  *
- * Out of scope here: Media entities (field_request_media). A media
- * bundle wraps a file entity via source_field, so a future iteration
- * can add a second loop that resolves media → file and reuses the
- * same gate pipeline.
+ * Media entities (field_request_media) are resolved transparently:
+ * the collector expands a MediaInterface reference to its source file
+ * via getSource()->getConfiguration()['source_field'], then applies
+ * the same gate pipeline as for direct FileInterface references.
  */
 class AttachmentResolver {
 
@@ -218,14 +219,23 @@ class AttachmentResolver {
       if (!$field instanceof EntityReferenceFieldItemListInterface || $field->isEmpty()) {
         continue;
       }
-      foreach ($field->referencedEntities() as $file) {
-        if (!$file instanceof FileInterface) {
+      foreach ($field->referencedEntities() as $referenced) {
+        if ($referenced instanceof MediaInterface) {
+          $sourceFieldName = $referenced->getSource()->getConfiguration()['source_field'] ?? NULL;
+          if ($sourceFieldName === NULL || !$referenced->hasField($sourceFieldName)) {
+            continue;
+          }
+          foreach ($referenced->get($sourceFieldName)->referencedEntities() as $file) {
+            if ($file instanceof FileInterface && $file->isPermanent()) {
+              $out[] = $file;
+            }
+          }
           continue;
         }
-        if (!$file->isPermanent()) {
+        if (!$referenced instanceof FileInterface || !$referenced->isPermanent()) {
           continue;
         }
-        $out[] = $file;
+        $out[] = $referenced;
       }
     }
     return $out;

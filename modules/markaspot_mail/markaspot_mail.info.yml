@@ -7,4 +7,5 @@ dependencies:
   - drupal:system
   - drupal:language
   - drupal:file
+  - drupal:media
   - group:group
