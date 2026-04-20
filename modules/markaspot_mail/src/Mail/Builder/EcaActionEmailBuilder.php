@@ -87,8 +87,8 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
     }
 
     $paragraphs = $this->splitParagraphs($body);
-    $intro = array_shift($paragraphs) ?? '';
-    $bodyBlocks = $paragraphs;
+    $intro = Markup::create(array_shift($paragraphs) ?? '');
+    $bodyBlocks = array_map(static fn(string $p): Markup => Markup::create($p), $paragraphs);
 
     [$mode, $jurisdictionId] = $this->resolveJurisdictionFromContext($context);
 
