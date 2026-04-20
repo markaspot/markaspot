@@ -93,6 +93,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send E-Mail Closed'
     configuration:
+      object: 'entity'
       recipient: '[node:field_e_mail:value]'
       subject: 'Solved! Your Service Request #[node:request_id]'
       message: |
@@ -111,6 +112,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send E-Mail'
     configuration:
+      object: 'entity'
       recipient: '[node:field_e_mail:value]'
       subject: 'Your Request #[node:request_id] in Mark-a-Spot. Unfortunately, we are not responsible.'
       message: |
@@ -134,6 +136,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send E-Mail Update'
     configuration:
+      object: 'entity'
       recipient: '[node:field_e_mail:value]'
       subject: 'Update! Your Request #[node:request_id] in Mascity 311'
       message: |

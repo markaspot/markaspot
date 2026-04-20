@@ -95,6 +95,7 @@ actions:
     label: 'Notify Group'
     plugin: action_send_email_action
     configuration:
+      object: 'entity'
       recipient: '[node:field_organisation:entity:field_head_organisation_e_mail]'
       subject: 'A request #[node:request_id] for the category [node:field_category]'
       message: |-

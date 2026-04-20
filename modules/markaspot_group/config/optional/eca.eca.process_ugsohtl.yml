@@ -72,6 +72,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send Mail (Welcome Closed)'
     configuration:
+      object: 'entity'
       recipient: '[node:field_e_mail:value]'
       subject: 'Your request [node:request_id] status update'
       message: |-
@@ -116,6 +117,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send Mail (Welcome Open)'
     configuration:
+      object: 'entity'
       recipient: '[node:field_e_mail:value]'
       subject: 'Your request [node:request_id] status update'
       message: |-
@@ -160,6 +162,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send Mail (Welcome Open)'
     configuration:
+      object: 'entity'
       replace_tokens: false
       recipient: '[node:field_e_mail:value]'
       subject: 'Your request [node:request_id] status update'

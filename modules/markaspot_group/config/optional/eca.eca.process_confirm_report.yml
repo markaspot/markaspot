@@ -46,6 +46,7 @@ actions:
     plugin: action_send_email_action
     label: 'Send Confirmation Email'
     configuration:
+      object: 'entity'
       recipient: '[node:field_e_mail:value]'
       subject: 'Your Report #[node:request_id] has been received'
       message: |-
