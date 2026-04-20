@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\language\Config\LanguageConfigOverride;
@@ -14,15 +17,10 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\WorkspaceVerificationBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\WorkspaceVerificationBuilder::class)]
+#[Group('markaspot_mail')]
 final class WorkspaceVerificationBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsFastmapWorkspaceVerification(): void {
     $this->assertSame(
       MailType::FASTMAP_WORKSPACE_VERIFICATION,
@@ -30,9 +28,6 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     );
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsOnlyWorkspaceVerificationKey(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_fastmap', 'workspace_verification'));
@@ -41,9 +36,6 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'workspace_verification'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenWorkspaceNameMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -55,9 +47,6 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenVerifyUrlMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -69,9 +58,6 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildProducesPlatformMailWithCtaAndCleanupReference(): void {
     $builder = $this->buildBuilder();
 
@@ -98,9 +84,6 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertTrue(array_any($msg->content['body_blocks'], fn($b) => str_contains($b, '14')));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildUsesDefaultSiteNameWhenMissing(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([
@@ -112,9 +95,6 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertStringContainsString('CivicSpot', $msg->subject);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildAppliesConfigSubjectTemplateViaPlaceholders(): void {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturnCallback(

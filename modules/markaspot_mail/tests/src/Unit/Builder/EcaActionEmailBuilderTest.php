@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_mail\Enum\MailType;
@@ -13,22 +16,14 @@ use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\EcaActionEmailBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\EcaActionEmailBuilder::class)]
+#[Group('markaspot_mail')]
 final class EcaActionEmailBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsEcaAction(): void {
     $this->assertSame(MailType::ECA_ACTION, $this->buildBuilder()->getType());
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsOnlySystemActionSendEmail(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('system', 'action_send_email'));
@@ -37,9 +32,6 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('markaspot_feedback', 'feedback_request'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenContextIsMissing(): void {
     $builder = $this->buildBuilder();
     $ctx = new MailContext(
@@ -54,9 +46,6 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenContextSubjectIsEmpty(): void {
     $builder = $this->buildBuilder();
     $ctx = new MailContext(
@@ -71,9 +60,6 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenFinalSubjectIsEmpty(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('notice');
@@ -90,9 +76,6 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildPreservesSubjectAndSplitsBodyIntoParagraphs(): void {
     $builder = $this->buildBuilder();
     $body = "Dear citizen,\n\nThank you for your report. We will review it shortly.\n\nBest regards";
@@ -120,9 +103,6 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
     $this->assertArrayHasKey('preheader', $msg->content);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildResolvesJurisdictionModeFromNodeContext(): void {
     $group = $this->createMock(GroupInterface::class);
     $group->method('getEntityTypeId')->willReturn('group');
@@ -158,9 +138,6 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
     $this->assertSame(5, $msg->jurisdictionId);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildFallsBackToPlatformWhenNodeHasNoJurisdiction(): void {
     $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')->willReturn(FALSE);

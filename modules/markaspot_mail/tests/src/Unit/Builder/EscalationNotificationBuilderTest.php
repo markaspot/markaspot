@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\EscalationNotificationBuilder;
@@ -11,22 +14,14 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\EscalationNotificationBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\EscalationNotificationBuilder::class)]
+#[Group('markaspot_mail')]
 final class EscalationNotificationBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsEcaEscalation(): void {
     $this->assertSame(MailType::ECA_ESCALATION, $this->buildBuilder()->getType());
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsEscalationAndDelegationKeys(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_escalation', 'escalation_notification'));
@@ -35,9 +30,6 @@ final class EscalationNotificationBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other_module', 'escalation_notification'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullOnMissingSubjectOrBody(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->exactly(2))->method('warning');
@@ -49,9 +41,6 @@ final class EscalationNotificationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildResolvesJurisdictionFromTargetJurisdictionParam(): void {
     $jur = $this->createMock(GroupInterface::class);
     $jur->method('getEntityTypeId')->willReturn('group');
@@ -75,9 +64,6 @@ final class EscalationNotificationBuilderTest extends UnitTestCase {
     $this->assertSame(['Body paragraph.'], $msg->content['body_blocks']);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildFallsBackToPlatformModeWhenNoJurisdictionResolves(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([

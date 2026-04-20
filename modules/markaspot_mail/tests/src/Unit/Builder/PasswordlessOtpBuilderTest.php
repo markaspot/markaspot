@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\language\Config\LanguageConfigOverride;
@@ -14,22 +17,14 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\PasswordlessOtpBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\PasswordlessOtpBuilder::class)]
+#[Group('markaspot_mail')]
 final class PasswordlessOtpBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsPasswordlessOtp(): void {
     $this->assertSame(MailType::PASSWORDLESS_OTP, $this->buildBuilder()->getType());
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsOnlyVerificationCodeKey(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_passwordless', 'verification_code'));
@@ -38,9 +33,6 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'verification_code'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenCodeMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -50,9 +42,6 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildUsesHeroCodeVariant(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([
@@ -72,9 +61,6 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $this->assertArrayHasKey('headline', $msg->content);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildPreservesNonSixDigitCodeShape(): void {
     $builder = $this->buildBuilder();
 
@@ -97,9 +83,6 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $this->assertSame('4242', $msg->content['code']);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildStaysInPlatformModeWhenNoJurisdictionId(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([
@@ -113,9 +96,6 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $this->assertNull($msg->jurisdictionId);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildSwitchesToJurisdictionModeWhenIdProvided(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([
@@ -130,9 +110,6 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $this->assertSame(7, $msg->jurisdictionId);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildIgnoresNonPositiveJurisdictionId(): void {
     $builder = $this->buildBuilder();
     foreach ([0, -1, NULL, ''] as $raw) {
@@ -148,8 +125,6 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::build
-   *
    * Regression guard: even if an admin sets the subject template to
    * include @code, the OTP value must NOT appear in the mail-subject
    * header. @code stays literal in the rendered subject; only body +
@@ -192,9 +167,6 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
     $this->assertStringContainsString('156428', $msg->plainText);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildAppliesConfigSubjectTemplateViaPlaceholders(): void {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturnCallback(

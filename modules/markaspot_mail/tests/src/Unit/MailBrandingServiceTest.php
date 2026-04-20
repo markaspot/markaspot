@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Component\Render\MarkupInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -16,10 +19,8 @@ use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Service\MailBrandingService
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Service\MailBrandingService::class)]
+#[Group('markaspot_mail')]
 final class MailBrandingServiceTest extends UnitTestCase {
 
   /**
@@ -37,10 +38,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
     'platform.frontend_base_url' => 'https://mark-a-spot.com',
     'platform.tenant_frontend_base_template' => 'https://{slug}.civicspot.io',
   ];
-
-  /**
-   * @covers ::getBranding
-   */
   public function testPlatformModeReturnsDefaults(): void {
     $service = $this->buildService(NULL);
     $branding = $service->getBranding(NULL, 'platform', 'en');
@@ -58,9 +55,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertStringContainsString('Civic Patches GmbH', $branding['platform_footer']['copyright']);
   }
 
-  /**
-   * @covers ::getBranding
-   */
   public function testJurisdictionAmsterdamMapsBlueToHex(): void {
     $group = $this->buildGroup([
       'id' => 1,
@@ -93,9 +87,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertStringContainsString('<br', $footerHtml);
   }
 
-  /**
-   * @covers ::getBranding
-   */
   public function testJurisdictionBcpMapsEmeraldToHex(): void {
     $group = $this->buildGroup([
       'id' => 8,
@@ -113,9 +104,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('bcp-council', $branding['jurisdiction_slug']);
   }
 
-  /**
-   * @covers ::getBranding
-   */
   public function testJurisdictionSlugBuildsLegalUrlsWhenFieldsContainContent(): void {
     $group = $this->buildGroup([
       'id' => 5,
@@ -140,9 +128,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('https://rotterdam.civicspot.io', $branding['frontend_base_url']);
   }
 
-  /**
-   * @covers ::getBranding
-   */
   public function testMissingJurisdictionFallsBackAndLogsWarning(): void {
     $storage = $this->createMock(EntityStorageInterface::class);
     $storage->method('load')->willReturn(NULL);
@@ -160,9 +145,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('https://civicpatches.de/impressum', $branding['legal_notice_url']);
   }
 
-  /**
-   * @covers ::getBranding
-   */
   public function testUnknownColorFallsBackToDefault(): void {
     $group = $this->buildGroup([
       'id' => 9,
@@ -177,9 +159,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('#004ced', $branding['primary_color']);
   }
 
-  /**
-   * @covers ::getBranding
-   */
   public function testHexColorPassesThrough(): void {
     $group = $this->buildGroup([
       'id' => 7,
@@ -199,8 +178,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
    *
    * S2 defense-in-depth: anything that flows into Reply-To must never
    * contain raw \r / \n.
-   *
-   * @covers ::getBranding
    */
   public function testJurisdictionEmailStripsCrlfBeforeHeaderAssignment(): void {
     $group = $this->buildGroup([
@@ -227,8 +204,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getBranding
-   *
    * features.show_platform_footer = false suppresses the Civic Patches
    * attribution bundle. Self-hosted enterprise installations opt out so
    * no civicpatches.de/impressum or copyright line ships in their mails.
@@ -249,8 +224,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getBranding
-   *
    * Flag defaults to TRUE when markaspot_mail.settings has no entry,
    * so shipping config behavior stays backwards-compatible.
    */
@@ -266,8 +239,6 @@ final class MailBrandingServiceTest extends UnitTestCase {
 
   /**
    * S3: javascript: in legal_notice_url config falls back to the safe URL.
-   *
-   * @covers ::getBranding
    */
   public function testJavascriptUrlInPlatformConfigFallsBackToSafeDefault(): void {
     $overrides = self::PLATFORM_SETTINGS;

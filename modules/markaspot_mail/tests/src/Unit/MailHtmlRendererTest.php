@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -17,9 +20,6 @@ use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- * @coversDefaultClass \Drupal\markaspot_mail\Service\MailHtmlRenderer
- * @group markaspot_mail
- *
  * These tests verify the render-array shape passed into the Drupal Renderer
  * and the plaintext fallback derived from the same content. They don't hit
  * Twig (that's what integration / kernel smoke tests are for); instead we
@@ -27,11 +27,9 @@ use Psr\Log\LoggerInterface;
  * lets us assert the key pieces the consumer cares about (primary color,
  * code string, bulletproof button shape).
  */
+#[CoversClass(\Drupal\markaspot_mail\Service\MailHtmlRenderer::class)]
+#[Group('markaspot_mail')]
 final class MailHtmlRendererTest extends UnitTestCase {
-
-  /**
-   * @covers ::render
-   */
   public function testHeroCodeRendersCodeAndPrimaryColor(): void {
     $branding = $this->buildBranding();
     $content = [
@@ -56,9 +54,6 @@ final class MailHtmlRendererTest extends UnitTestCase {
     $this->assertStringContainsString('preheader-hidden', $out['html']);
   }
 
-  /**
-   * @covers ::render
-   */
   public function testHeroCodePlainSpacesOutCode(): void {
     $branding = $this->buildBranding();
     $content = [
@@ -78,9 +73,6 @@ final class MailHtmlRendererTest extends UnitTestCase {
     $this->assertStringContainsString('Impressum: https://civicpatches.de/impressum', $plain);
   }
 
-  /**
-   * @covers ::render
-   */
   public function testCardTransactionalUsesBulletproofButton(): void {
     $branding = $this->buildBranding();
     $content = [
@@ -103,9 +95,6 @@ final class MailHtmlRendererTest extends UnitTestCase {
     $this->assertStringContainsString('View report: https://mark-a-spot.com/amsterdam/requests/42', $out['plain']);
   }
 
-  /**
-   * @covers ::render
-   */
   public function testUnsafeCtaUrlIsFlaggedAsUnsafe(): void {
     $branding = $this->buildBranding();
     $content = [
@@ -127,9 +116,6 @@ final class MailHtmlRendererTest extends UnitTestCase {
     $this->assertStringNotContainsString('Open: javascript:alert(1)', $out['plain']);
   }
 
-  /**
-   * @covers ::render
-   */
   public function testFeaturesAndContactBlocksAppearInPlain(): void {
     $branding = $this->buildBranding();
     $content = [
@@ -151,9 +137,6 @@ final class MailHtmlRendererTest extends UnitTestCase {
     $this->assertStringContainsString('Questions? support@civic-patches.com', $plain);
   }
 
-  /**
-   * @covers ::render
-   */
   public function testPlainTextOverrideReplacesDerivedPlain(): void {
     $branding = $this->buildBranding();
     $content = [
@@ -173,9 +156,6 @@ final class MailHtmlRendererTest extends UnitTestCase {
     $this->assertStringNotContainsString('Auto-derived intro', $out['plain']);
   }
 
-  /**
-   * @covers ::render
-   */
   public function testPlainTextOverrideNullFallsBackToDerivation(): void {
     $branding = $this->buildBranding();
     $content = [

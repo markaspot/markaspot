@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\markaspot_mail\Enum\MailType;
@@ -12,15 +15,10 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\DemoExpiryReminderBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\DemoExpiryReminderBuilder::class)]
+#[Group('markaspot_mail')]
 final class DemoExpiryReminderBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsFastmapDemoExpiry(): void {
     $this->assertSame(
       MailType::FASTMAP_DEMO_EXPIRY,
@@ -28,9 +26,6 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
     );
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsOnlyDemoExpiryReminderKey(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_fastmap', 'demo_expiry_reminder'));
@@ -38,9 +33,6 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'demo_expiry_reminder'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenWorkspaceNameMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -52,9 +44,6 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenExpiryDateMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -66,9 +55,6 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildFallsBackToCivicspotUrlWhenSlugOrBaseMissing(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([
@@ -87,9 +73,6 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
     $this->assertNotEmpty($msg->content['features_block']);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildBuildsWorkspaceUrlFromPlainBaseAndSlug(): void {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturnMap([
@@ -111,9 +94,6 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
     $this->assertSame('Open my workspace', $msg->content['cta_label']);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildBuildsWorkspaceUrlFromTemplateWithSlugPlaceholder(): void {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->willReturnMap([
@@ -135,8 +115,6 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::build
-   *
    * Path-traversal / fragment-smuggling regression guard. Slugs flow from
    * workflow code into the CTA URL; a crafted "../../admin" or
    * "acme?redir=attacker" must be stripped before URL assembly even though
@@ -170,9 +148,6 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
     }
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildSubjectAndHeadlineReferenceWorkspaceAndDate(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([

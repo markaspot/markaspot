@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Utility\Token;
@@ -16,22 +19,14 @@ use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\ResubmissionRequestBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\ResubmissionRequestBuilder::class)]
+#[Group('markaspot_mail')]
 final class ResubmissionRequestBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsEcaResubmission(): void {
     $this->assertSame(MailType::ECA_RESUBMISSION, $this->buildBuilder()->getType());
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsOnlyResubmitRequest(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_resubmission', 'resubmit_request'));
@@ -39,9 +34,6 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'resubmit_request'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenNodeMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -57,9 +49,6 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildFallsBackToHardcodedCopyWhenConfigMissing(): void {
     $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')->willReturn(FALSE);
@@ -81,9 +70,6 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
     $this->assertSame('Please clarify your report', $msg->content['headline']);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildAppliesConfigTemplateViaTokenReplace(): void {
     $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')->willReturn(FALSE);

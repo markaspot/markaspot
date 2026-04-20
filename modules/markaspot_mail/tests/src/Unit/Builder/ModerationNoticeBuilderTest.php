@@ -4,28 +4,23 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\ModerationNoticeBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\ModerationNoticeBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\ModerationNoticeBuilder::class)]
+#[Group('markaspot_mail')]
 final class ModerationNoticeBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsEcaModeration(): void {
     $this->assertSame(MailType::ECA_MODERATION, $this->buildBuilder()->getType());
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsFlagThresholdAndFlagImmediate(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_moderation', 'flag_threshold'));
@@ -34,9 +29,6 @@ final class ModerationNoticeBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'flag_threshold'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullOnMissingParams(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -44,9 +36,6 @@ final class ModerationNoticeBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($this->buildContext(['subject' => 'x'])));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildProducesPlatformCardFromSubjectAndBody(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([

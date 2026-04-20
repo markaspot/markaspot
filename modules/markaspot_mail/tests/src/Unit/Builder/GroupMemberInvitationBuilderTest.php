@@ -4,28 +4,23 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\GroupMemberInvitationBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\GroupMemberInvitationBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\GroupMemberInvitationBuilder::class)]
+#[Group('markaspot_mail')]
 final class GroupMemberInvitationBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsEcaGroupInvitation(): void {
     $this->assertSame(MailType::ECA_GROUP_INVITATION, $this->buildBuilder()->getType());
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsOnlyMemberInvitationKey(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_group', 'member_invitation'));
@@ -34,9 +29,6 @@ final class GroupMemberInvitationBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other_module', 'member_invitation'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenGroupNameMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -48,9 +40,6 @@ final class GroupMemberInvitationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenClaimUrlMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -62,9 +51,6 @@ final class GroupMemberInvitationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenClaimUrlIsOnlyWhitespace(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -77,9 +63,6 @@ final class GroupMemberInvitationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildProducesPlatformMailMessageWithCta(): void {
     $builder = $this->buildBuilder();
 
@@ -102,9 +85,6 @@ final class GroupMemberInvitationBuilderTest extends UnitTestCase {
     $this->assertCount(2, $msg->content['body_blocks']);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildOmitsSiteNameFromIntroWhenMissing(): void {
     $builder = $this->buildBuilder();
 

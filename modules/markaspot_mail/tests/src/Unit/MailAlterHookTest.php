@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Core\Render\Markup;
 use Drupal\markaspot_mail\Hook\MailAlterHook;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
@@ -15,15 +18,11 @@ use Drupal\Tests\markaspot_mail\Unit\Stub\RecordingStubBuilder;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Hook\MailAlterHook
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Hook\MailAlterHook::class)]
+#[Group('markaspot_mail')]
 final class MailAlterHookTest extends UnitTestCase {
 
   /**
-   * @covers ::alter
-   *
    * Regression guard for mail header injection (CWE-93) via Subject:. A
    * builder that naively interpolates user input (report title, display
    * name) into its subject could otherwise inject Bcc: / To: headers.
@@ -49,8 +48,6 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::alter
-   *
    * _plain_alt ends up as a MIME text body, not a header, but we still
    * normalize \r\n → \n as belt-and-suspenders defense against future
    * mailer plugins that might naively splice it next to headers.
@@ -70,9 +67,6 @@ final class MailAlterHookTest extends UnitTestCase {
     $this->assertStringNotContainsString("\r", $message['params']['_plain_alt']);
   }
 
-  /**
-   * @covers ::alter
-   */
   public function testAlterSkipsBlocklistedModules(): void {
     $builder = new RecordingStubBuilder(new MailMessage(
       subject: 'should-not-happen',
@@ -91,8 +85,6 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::alter
-   *
    * system is no longer hard-blocklisted — individual keys are gated by
    * builder supports(). A builder that does not claim a system:* key must
    * not be invoked, but a builder that does (EcaActionEmailBuilder for
@@ -113,9 +105,6 @@ final class MailAlterHookTest extends UnitTestCase {
     $this->assertFalse($builder->wasCalled, 'Builder must not be invoked when supports() returns FALSE.');
   }
 
-  /**
-   * @covers ::alter
-   */
   public function testAlterSkipsWhenRegistryHasNoMatch(): void {
     $hook = $this->buildHook(NULL);
     $message = $this->buildMessage();

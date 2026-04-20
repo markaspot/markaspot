@@ -4,28 +4,23 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\GroupOrgNotificationBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\GroupOrgNotificationBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\GroupOrgNotificationBuilder::class)]
+#[Group('markaspot_mail')]
 final class GroupOrgNotificationBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsEcaGroupOrgNotification(): void {
     $this->assertSame(MailType::ECA_GROUP_ORG_NOTIFICATION, $this->buildBuilder()->getType());
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsOnlyOrgNotification(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_group', 'org_notification'));
@@ -33,9 +28,6 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'org_notification'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullOnMissingParams(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -43,9 +35,6 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($this->buildContext(['subject' => 'x'])));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildProducesPlatformCardFromSubjectAndMessage(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([

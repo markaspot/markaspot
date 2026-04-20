@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
+
 use Drupal\Core\Utility\Token;
 use Drupal\language\Config\LanguageConfigOverride;
 use Drupal\language\ConfigurableLanguageManagerInterface;
@@ -21,23 +24,15 @@ use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
-/**
- * @coversDefaultClass \Drupal\markaspot_mail\Mail\Builder\FeedbackRequestBuilder
- * @group markaspot_mail
- */
+#[CoversClass(\Drupal\markaspot_mail\Mail\Builder\FeedbackRequestBuilder::class)]
+#[Group('markaspot_mail')]
 final class FeedbackRequestBuilderTest extends UnitTestCase {
 
-  /**
-   * @covers ::getType
-   */
   public function testGetTypeReturnsEcaFeedback(): void {
     $builder = $this->buildBuilder();
     $this->assertSame(MailType::ECA_FEEDBACK, $builder->getType());
   }
 
-  /**
-   * @covers ::supports
-   */
   public function testSupportsOnlyFeedbackRequestKey(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_feedback', 'feedback_request'));
@@ -46,9 +41,6 @@ final class FeedbackRequestBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('markaspot_escalation', 'escalation_notice'));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenNodeMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -64,9 +56,6 @@ final class FeedbackRequestBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildReturnsNullWhenParamIsNotNode(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -82,9 +71,6 @@ final class FeedbackRequestBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildProducesJurisdictionScopedMailMessage(): void {
     $group = $this->createMock(GroupInterface::class);
     $group->method('getEntityTypeId')->willReturn('group');
@@ -140,9 +126,6 @@ final class FeedbackRequestBuilderTest extends UnitTestCase {
     $this->assertArrayHasKey('features_block', $msg->content);
   }
 
-  /**
-   * @covers ::build
-   */
   public function testBuildFallsBackToPlatformModeWhenJurisdictionMissing(): void {
     $emptyField = $this->createMock(FieldItemListInterface::class);
     $emptyField->method('isEmpty')->willReturn(TRUE);
