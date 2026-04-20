@@ -19,14 +19,24 @@ use Drupal\Component\Utility\Xss;
 trait SplitParagraphsTrait {
 
   /**
+   * Mail-safe HTML tags for body paragraphs.
+   *
+   * Covers operator formatting intent (headings, lists, inline emphasis,
+   * links) without exposing the filterAdmin surface (<style>, <iframe>,
+   * <object>, etc. which filterAdmin permits but mail bodies never need).
+   */
+  private const MAIL_ALLOWED_TAGS = [
+    'p', 'br', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'h2', 'h3', 'span',
+  ];
+
+  /**
    * Splits a body string into sanitized, paragraph-delimited blocks.
    *
-   * Each paragraph is passed through Xss::filterAdmin() and wrapped in
-   * a Markup object so Twig renders the HTML without double-escaping.
-   * filterAdmin() strips script elements and event-handler attributes
-   * while preserving formatting tags (<p>, <strong>, <a href>, etc.) --
-   * appropriate for operator-authored ECA templates that embed
-   * citizen-submitted token values like [node:body].
+   * Each paragraph is filtered with an explicit mail-safe tag whitelist and
+   * wrapped in a Markup object so Twig renders the HTML without double-
+   * escaping. The tag list covers operator formatting intent while blocking
+   * citizen-submitted token content (e.g. [node:body]) from injecting
+   * script, style, or object elements into mail output.
    *
    * @param string $body
    *   The body text. Blank-line-separated paragraphs.
@@ -40,7 +50,7 @@ trait SplitParagraphsTrait {
     foreach ($raw as $paragraph) {
       $paragraph = trim($paragraph);
       if ($paragraph !== '') {
-        $out[] = Markup::create(Xss::filterAdmin($paragraph));
+        $out[] = Markup::create(Xss::filter($paragraph, self::MAIL_ALLOWED_TAGS));
       }
     }
     return $out;
