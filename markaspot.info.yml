@@ -78,5 +78,6 @@ dependencies:
   - markaspot_feedback
   - markaspot_mail
   - markaspot_vision
+  - markaspot_notification
 themes:
   - gin

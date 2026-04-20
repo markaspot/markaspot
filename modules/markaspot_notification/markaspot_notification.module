@@ -1,0 +1,33 @@
+<?php
+
+/**
+ * @file
+ * Mark-a-Spot Notification module hooks.
+ */
+
+declare(strict_types=1);
+
+use Drupal\group\Entity\GroupRelationshipInterface;
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for group_relationship entities.
+ *
+ * Records a 'group_assigned' notification when a service_request node is added
+ * to a group, so the frontend can surface the assignment side effect.
+ */
+function markaspot_notification_group_relationship_insert(GroupRelationshipInterface $relationship): void {
+  // Only handle node:service_request relationships, not memberships or other
+  // group content plugins.
+  if ($relationship->getPluginId() !== 'group_node:service_request') {
+    return;
+  }
+
+  $node = $relationship->getEntity();
+  if ($node === NULL || $node->bundle() !== 'service_request') {
+    return;
+  }
+
+  $group = $relationship->getGroup();
+  \Drupal::service('markaspot_notification.collector')
+    ->record($node->uuid(), 'group_assigned', ['group' => $group->label()]);
+}

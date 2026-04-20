@@ -1,0 +1,15 @@
+services:
+  markaspot_notification.collector:
+    class: Drupal\markaspot_notification\NotificationCollector
+    arguments: ['@tempstore.private']
+
+  markaspot_notification.mail_manager:
+    class: Drupal\markaspot_notification\Mail\NotifyMailManager
+    decorates: plugin.manager.mail
+    arguments: ['@markaspot_notification.mail_manager.inner', '@markaspot_notification.collector']
+
+  markaspot_notification.request_context:
+    class: Drupal\markaspot_notification\EventSubscriber\RequestContextSubscriber
+    arguments: ['@markaspot_notification.collector']
+    tags:
+      - { name: event_subscriber }
