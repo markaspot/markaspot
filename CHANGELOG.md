@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.64](https://github.com/markaspot/markaspot/compare/11.9.63...11.9.64) (2026-04-20)
+
+### Bug Fixes
+
+* **mail:** add b/i to mail tag whitelist for CKEditor compat ([09b45ff](https://github.com/markaspot/markaspot/commit/09b45ffa1feb01ddc59ef9b83c65d98ae31c68ba))
+* **mail:** render token HTML as raw in transactional card template ([38e7f83](https://github.com/markaspot/markaspot/commit/38e7f83eb4687c558eb2679bac645cd341235f9d))
+* **mail:** resolve Media entities in AttachmentResolver, add media dependency ([228b75b](https://github.com/markaspot/markaspot/commit/228b75b01ea0b55542c508d037375c8f25a10871))
+* **mail:** sanitize body paragraphs and harden AttachmentResolver ([bc6b2e0](https://github.com/markaspot/markaspot/commit/bc6b2e0ef92d44e0d26c8d1d36f2f7639256fa08))
+* **mail:** tighten XSS filter to mail-safe tag whitelist ([45b2ad8](https://github.com/markaspot/markaspot/commit/45b2ad83fbf6632e025063f709d1884c68df82a4))
+
 ## [11.9.63](https://github.com/markaspot/markaspot/compare/11.9.62...11.9.63) (2026-04-20)
 
 ### Features
