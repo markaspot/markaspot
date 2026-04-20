@@ -161,6 +161,19 @@ final class MailAlterHook {
     // truncate text parts at \0, and plugins building SMTP frames manually
     // could otherwise mis-read the text boundary.
     $message['params']['_plain_alt'] = str_replace(["\r\n", "\r", "\0"], ["\n", "\n", ''], $rendered['plain']);
+
+    // Merge builder-supplied attachments into the phpmailer_smtp slot.
+    // PhpMailerSmtp::addAttachments() reads params.attachments (and the
+    // legacy params.files) and handles base64 + public:// resolution.
+    // Preserve anything upstream hook implementations already placed
+    // there instead of overwriting blindly.
+    if ($msg->attachments !== []) {
+      $existing = $message['params']['attachments'] ?? [];
+      foreach ($msg->attachments as $attachment) {
+        $existing[] = $attachment->toParam();
+      }
+      $message['params']['attachments'] = $existing;
+    }
   }
 
   /**

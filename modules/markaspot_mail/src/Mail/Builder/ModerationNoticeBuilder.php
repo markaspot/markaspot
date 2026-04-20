@@ -10,6 +10,7 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
+use Drupal\markaspot_mail\Service\AttachmentResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -37,6 +38,7 @@ final class ModerationNoticeBuilder implements MailBuilderInterface {
 
   public function __construct(
     private readonly LoggerInterface $logger,
+    private readonly AttachmentResolver $attachmentResolver,
   ) {}
 
   /**
@@ -75,6 +77,18 @@ final class ModerationNoticeBuilder implements MailBuilderInterface {
     $paragraphs = $this->splitParagraphs($body);
     $intro = array_shift($paragraphs) ?? '';
 
+    // Moderators need the citizen uploads to decide on the flag — the
+    // HTML body only references them; attach the files themselves.
+    // includePrivate: TRUE because field_request_image is private://
+    // and the moderator is an authenticated, role-gated recipient.
+    $attachments = $node instanceof NodeInterface
+      ? $this->attachmentResolver->resolve(
+        $node,
+        ['field_request_image', 'field_attachment'],
+        includePrivate: TRUE,
+      )
+      : [];
+
     return new MailMessage(
       subject: $subject,
       variant: 'card_transactional',
@@ -86,6 +100,7 @@ final class ModerationNoticeBuilder implements MailBuilderInterface {
       ],
       mode: $mode,
       jurisdictionId: $jurisdictionId,
+      attachments: $attachments,
     );
   }
 

@@ -21,6 +21,20 @@ services:
       - '@markaspot_mail.branding'
       - '@logger.channel.markaspot_mail'
 
+  # Gates file-/image-reference fields into MailAttachment DTOs. Builders
+  # that opt into shipping report files (escalation, moderation, ECA
+  # opt-in) inject this service. MIME whitelist + size caps live in
+  # markaspot_mail.settings:attachments.*, not here, so operators can
+  # tighten the policy without touching code. Private: only consumed by
+  # in-bundle builders; external modules should add their own builder
+  # instead of calling this service directly.
+  markaspot_mail.attachment_resolver:
+    class: Drupal\markaspot_mail\Service\AttachmentResolver
+    public: false
+    arguments:
+      - '@config.factory'
+      - '@logger.channel.markaspot_mail'
+
   # Collects every service tagged markaspot_mail.builder. Individual builders
   # land in Stage 2 (ECA), Stage 3 (FastMap) and Stage 4 (passwordless OTP).
   # The registry is instantiated even when no builders are tagged; in that
@@ -65,6 +79,7 @@ services:
     class: Drupal\markaspot_mail\Mail\Builder\EcaActionEmailBuilder
     arguments:
       - '@logger.channel.markaspot_mail'
+      - '@markaspot_mail.attachment_resolver'
     tags:
       - { name: markaspot_mail.builder }
 
@@ -98,6 +113,7 @@ services:
     class: Drupal\markaspot_mail\Mail\Builder\EscalationNotificationBuilder
     arguments:
       - '@logger.channel.markaspot_mail'
+      - '@markaspot_mail.attachment_resolver'
     tags:
       - { name: markaspot_mail.builder }
 
@@ -115,6 +131,7 @@ services:
     class: Drupal\markaspot_mail\Mail\Builder\ModerationNoticeBuilder
     arguments:
       - '@logger.channel.markaspot_mail'
+      - '@markaspot_mail.attachment_resolver'
     tags:
       - { name: markaspot_mail.builder }
 

@@ -36,3 +36,44 @@ function markaspot_mail_update_10001(): string {
   $config->set('format', 'html')->save();
   return 'Switched phpmailer_smtp.format.format to html.';
 }
+
+/**
+ * Seed attachments.* defaults into markaspot_mail.settings.
+ *
+ * Fresh installs get the new block via config/install. Existing installs
+ * miss it entirely — without these defaults, AttachmentResolver falls
+ * back to its hard-coded constants (safe but invisible to operators
+ * trying to audit "what gets attached"). This hook only fills missing
+ * keys so a site-admin override of e.g. max_total_bytes survives.
+ */
+function markaspot_mail_update_10002(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_mail.settings');
+  $current = $config->get('attachments') ?? [];
+  $defaults = [
+    'enabled' => TRUE,
+    'max_per_file_bytes' => 5242880,
+    'max_total_bytes' => 20971520,
+    'allowed_mime' => [
+      'image/jpeg',
+      'image/png',
+      'image/gif',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'message/rfc822',
+      'text/plain',
+    ],
+  ];
+  $added = [];
+  foreach ($defaults as $key => $value) {
+    if (!array_key_exists($key, $current)) {
+      $current[$key] = $value;
+      $added[] = $key;
+    }
+  }
+  if ($added === []) {
+    return 'attachments.* already present; no action.';
+  }
+  $config->set('attachments', $current)->save();
+  return 'Seeded attachments defaults: ' . implode(', ', $added) . '.';
+}

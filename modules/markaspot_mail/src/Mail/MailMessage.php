@@ -43,6 +43,13 @@ final readonly class MailMessage {
    *   normalizes \r\n to \n before stashing it in $message['params'], but
    *   builders with MIME-building plugins downstream should assume the
    *   string flows to a text/plain MIME part without further escaping.
+   * @param list<\Drupal\markaspot_mail\Mail\MailAttachment> $attachments
+   *   File attachments to ship alongside the rendered body. Empty by
+   *   default — builders opt in per mail type (staff-facing mails like
+   *   escalation/moderation attach; citizen-facing mails and OTP never).
+   *   The hook converts each entry via MailAttachment::toParam() and
+   *   merges the result into $message['params']['attachments'], where
+   *   phpmailer_smtp::addAttachments() picks it up without further code.
    */
   public function __construct(
     public string $subject,
@@ -51,6 +58,7 @@ final readonly class MailMessage {
     public string $mode = 'platform',
     public ?int $jurisdictionId = NULL,
     public ?string $plainText = NULL,
+    public array $attachments = [],
   ) {}
 
 }

@@ -13,3 +13,16 @@ platform:
 features:
   show_platform_footer: true
   tier_gating: false
+attachments:
+  enabled: true
+  max_per_file_bytes: 5242880
+  max_total_bytes: 20971520
+  allowed_mime:
+    - image/jpeg
+    - image/png
+    - image/gif
+    - application/pdf
+    - application/msword
+    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
+    - message/rfc822
+    - text/plain

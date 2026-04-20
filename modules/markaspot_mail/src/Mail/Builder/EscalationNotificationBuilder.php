@@ -11,6 +11,7 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
+use Drupal\markaspot_mail\Service\AttachmentResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -35,6 +36,7 @@ final class EscalationNotificationBuilder implements MailBuilderInterface {
 
   public function __construct(
     private readonly LoggerInterface $logger,
+    private readonly AttachmentResolver $attachmentResolver,
   ) {}
 
   /**
@@ -70,6 +72,20 @@ final class EscalationNotificationBuilder implements MailBuilderInterface {
     $paragraphs = $this->splitParagraphs($body);
     $intro = array_shift($paragraphs) ?? '';
 
+    // Recipient is the target jurisdiction's staff — attach the citizen
+    // uploads so the handler has the visual context without having to
+    // click into the dashboard. field_request_image is stored under
+    // uri_scheme: private, so we must opt in to private-scheme resolution.
+    // The staff recipient is the legitimate audience for this data.
+    $node = $ctx->params['node'] ?? NULL;
+    $attachments = $node instanceof NodeInterface
+      ? $this->attachmentResolver->resolve(
+        $node,
+        ['field_request_image', 'field_attachment'],
+        includePrivate: TRUE,
+      )
+      : [];
+
     return new MailMessage(
       subject: $subject,
       variant: 'card_transactional',
@@ -81,6 +97,7 @@ final class EscalationNotificationBuilder implements MailBuilderInterface {
       ],
       mode: $mode,
       jurisdictionId: $jurisdictionId,
+      attachments: $attachments,
     );
   }
 

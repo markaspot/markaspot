@@ -49,3 +49,22 @@ markaspot_mail.settings:
         tier_gating:
           type: boolean
           label: 'Hide the Platform footer on paid tiers (future stage)'
+    attachments:
+      type: mapping
+      label: 'File-attachment policy for outgoing mails'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Master switch for mail attachments'
+        max_per_file_bytes:
+          type: integer
+          label: 'Per-file size cap in bytes'
+        max_total_bytes:
+          type: integer
+          label: 'Total-size budget per mail in bytes'
+        allowed_mime:
+          type: sequence
+          label: 'Whitelisted MIME types (empty list means MIME gate disabled; use "enabled: false" to block attachments outright)'
+          sequence:
+            type: string
+            label: 'MIME type'

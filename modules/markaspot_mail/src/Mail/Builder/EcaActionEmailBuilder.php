@@ -11,6 +11,7 @@ use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
+use Drupal\markaspot_mail\Service\AttachmentResolver;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -46,6 +47,7 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
 
   public function __construct(
     private readonly LoggerInterface $logger,
+    private readonly AttachmentResolver $attachmentResolver,
   ) {}
 
   /**
@@ -90,7 +92,31 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
     $intro = array_shift($paragraphs) ?? '';
     $bodyBlocks = $paragraphs;
 
-    [$mode, $jurisdictionId] = $this->resolveJurisdictionFromContext($context);
+    $entity = $context['node'] ?? $context['entity'] ?? NULL;
+    [$mode, $jurisdictionId] = $this->resolveJurisdictionFromEntity(
+      $entity instanceof ContentEntityInterface ? $entity : NULL
+    );
+
+    // Auto-attach citizen uploads whenever the recipient is NOT the
+    // reporter. Confirmation and status-update mails from ECA routes
+    // go back to the person who filed the report — they already have
+    // their own files. Org / head-organisation / jurisdiction-staff
+    // recipients, on the other hand, need the files to act on the
+    // ticket, and we would otherwise require every BPMN workflow to
+    // opt in manually. Bundle-gated to node/service_request so
+    // accidental ECA workflows against user/comment entities can't
+    // trigger resolver calls with irrelevant field names.
+    $attachments = [];
+    if ($entity instanceof ContentEntityInterface
+      && $entity->getEntityTypeId() === 'node'
+      && $entity->bundle() === 'service_request'
+      && !$this->recipientIsReporter($ctx->to, $entity)) {
+      $attachments = $this->attachmentResolver->resolve(
+        $entity,
+        ['field_request_image', 'field_attachment'],
+        includePrivate: TRUE,
+      );
+    }
 
     $content = [
       'preheader' => mb_strimwidth(strip_tags($body), 0, 100, '…'),
@@ -104,7 +130,73 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
       content: $content,
       mode: $mode,
       jurisdictionId: $jurisdictionId,
+      attachments: $attachments,
     );
+  }
+
+  /**
+   * True when any recipient matches the entity's reporter email.
+   *
+   * If a citizen's own mail is in the To/Cc list we skip attachments
+   * entirely — Drupal's mail pipeline has no per-recipient attachment
+   * control, so mixed lists (staff + citizen) fail closed rather than
+   * leak citizen-visible-but-own files back to them in a decorated mail.
+   * That matches the user's intent: "Bürger brauchen nicht das eigene
+   * File zur Bestätigung."
+   *
+   * Parsing handles three common $to shapes produced by Drupal's mail
+   * pipeline: (1) a bare address string, (2) a comma-separated list of
+   * addresses, (3) RFC 5322 display-name form "Max Mustermann"
+   * <max@example.com> produced by ECA tokens that expand to
+   * [node:author:name] <[node:field_e_mail]>.
+   *
+   * Intentionally NOT normalized: plus-aliases (max+tag@… vs max@…) and
+   * IDN/Punycode. Plus-aliasing is MTA-local and not resolvable at the
+   * application layer; IDN normalization would require introducing a
+   * dependency we don't otherwise need. Both are acceptable residuals
+   * for the Mark-a-Spot deployment model (direct form input, minimal
+   * intermediate normalization between report submission and mail send).
+   */
+  private function recipientIsReporter(mixed $to, ContentEntityInterface $entity): bool {
+    if (!$entity->hasField('field_e_mail')) {
+      return FALSE;
+    }
+    $field = $entity->get('field_e_mail');
+    if ($field->isEmpty()) {
+      return FALSE;
+    }
+    // getString() returns a single string (joined for multi-value; for
+    // email single-value fields identical to ->first()->value). Using
+    // the declared interface method keeps the recipient-check unit-
+    // testable without mocking FieldItemBase::__get magic access.
+    $reporterEmail = strtolower(trim($field->getString()));
+    if ($reporterEmail === '') {
+      return FALSE;
+    }
+    $recipients = is_array($to) ? $to : explode(',', (string) $to);
+    foreach ($recipients as $recipient) {
+      $normalized = strtolower(trim((string) $recipient));
+      // RFC 5322 display-name: the real angle-addr is ALWAYS the last
+      // token on the mailbox line (`display-name SP angle-addr`). A
+      // naive first-match regex (/<([^>]+)>/) lets a reporter hide
+      // their own address inside the display-name part
+      // (e.g. `"Max <spoof@evil.com>" <reporter@example.org>`), which
+      // would let the gate either false-positive or false-negative
+      // depending on which address was injected. The anchor `\s*$`
+      // pins the match to the trailing angle-addr, and
+      // FILTER_VALIDATE_EMAIL post-validates so malformed content
+      // between brackets falls through to the plain-string comparison.
+      if (preg_match('/<([^<>]+)>\s*$/', $normalized, $matches)) {
+        $candidate = strtolower(trim($matches[1]));
+        if (filter_var($candidate, FILTER_VALIDATE_EMAIL) !== FALSE) {
+          $normalized = $candidate;
+        }
+      }
+      if ($normalized === $reporterEmail) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   /**
@@ -124,21 +216,19 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
   }
 
   /**
-   * Resolves (mode, jurisdictionId) from the ECA action's $configuration.
+   * Resolves (mode, jurisdictionId) from the acted-upon entity.
    *
-   * Core EmailAction::execute() sets $configuration['node'] = $entity, which
-   * is the canonical key. $configuration['entity'] is a defensive fallback
-   * that costs one ?? per build and hedges against a downstream ECA
-   * subclass or contrib extension that decides to rename. When the entity
-   * has a field_jurisdiction reference pointing at a jur group we switch
-   * to jurisdiction mode; otherwise we stay platform.
+   * Called with either $context['node'] or $context['entity'] (both keys
+   * exist in the wild; core EmailAction sets 'node', while some ECA
+   * subclasses/contrib extensions rename). When the entity has a
+   * field_jurisdiction reference pointing at a jur group we switch to
+   * jurisdiction mode; otherwise we stay platform.
    *
    * @return array{0: string, 1: int|null}
    *   Two-element array: [mode, jurisdictionId].
    */
-  private function resolveJurisdictionFromContext(array $context): array {
-    $entity = $context['node'] ?? $context['entity'] ?? NULL;
-    if (!$entity instanceof ContentEntityInterface || !$entity->hasField('field_jurisdiction')) {
+  private function resolveJurisdictionFromEntity(?ContentEntityInterface $entity): array {
+    if ($entity === NULL || !$entity->hasField('field_jurisdiction')) {
       return ['platform', NULL];
     }
     $field = $entity->get('field_jurisdiction');
