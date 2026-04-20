@@ -48,6 +48,11 @@ class MetricsCalculatorService {
   protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * Whether node__field_organisation exists; NULL = not yet checked.
+   */
+  protected ?bool $hasOrganisationNodeField = NULL;
+
+  /**
    * Constructs a MetricsCalculatorService object.
    *
    * @param \Drupal\Core\Database\Connection $database
@@ -156,8 +161,8 @@ class MetricsCalculatorService {
       $query->condition('g.id', $jurisdictionIds, 'IN');
     }
 
-    // Organisation filter.
-    if (!empty($filters['organisation_id'])) {
+    // Organisation filter — only applicable when the node field table exists.
+    if (!empty($filters['organisation_id']) && $this->hasOrganisationNodeField()) {
       $query->innerJoin('node__field_organisation', 'fo', 'n.nid = fo.entity_id AND fo.deleted = 0');
       $query->condition('fo.field_organisation_target_id', $filters['organisation_id']);
     }
@@ -186,6 +191,14 @@ class MetricsCalculatorService {
       ];
     }
 
+    if (!$this->hasOrganisationNodeField()) {
+      return [
+        'forwarded_count' => 0,
+        'total_count' => count($node_ids),
+        'rate' => 0.0,
+      ];
+    }
+
     $named_placeholders = [];
     $args = [];
     foreach ($node_ids as $i => $nid) {
@@ -196,7 +209,7 @@ class MetricsCalculatorService {
     $placeholder_string = implode(',', $named_placeholders);
 
     // Count nodes where organisation changed between revisions.
-    // We compare each revision with the previous one and check if organisation differs.
+    // Compare each revision with the previous one for organisation diff.
     $forwarded_query = $this->database->query("
       SELECT COUNT(DISTINCT nfo.entity_id) as forwarded_count
       FROM {node_revision__field_organisation} nfo
@@ -271,9 +284,31 @@ class MetricsCalculatorService {
     // Find nodes that:
     // 1. Have exactly 2 status_notes paragraphs
     // 2. Are currently closed (have a paragraph with closed status)
-    // 3. Have no organisation changes.
+    // 3. Have no organisation changes (only when the forwarding table exists).
     $fcr_args = $args;
     $fcr_args[':closed_tid'] = $closed_tid;
+
+    // The NOT EXISTS clause is omitted on setups without forwarding support
+    // (node__field_organisation table absent). On those setups all
+    // single-step closed requests count as FCR.
+    $no_forwarding_clause = '';
+    if ($this->hasOrganisationNodeField()) {
+      $no_forwarding_clause = "
+        -- No organisation change check
+        AND NOT EXISTS (
+          SELECT 1
+          FROM {node_revision__field_organisation} nfo1
+          INNER JOIN {node_revision} nr1 ON nfo1.revision_id = nr1.vid
+          INNER JOIN {node_revision__field_organisation} nfo2 ON nfo2.entity_id = nfo1.entity_id
+          INNER JOIN {node_revision} nr2 ON nfo2.revision_id = nr2.vid
+          WHERE nfo1.entity_id = n.nid
+            AND nfo1.deleted = 0
+            AND nfo2.deleted = 0
+            AND nr2.vid > nr1.vid
+            AND nfo2.field_organisation_target_id != nfo1.field_organisation_target_id
+        )";
+    }
+
     $fcr_query = $this->database->query("
       SELECT n.nid
       FROM {node_field_data} n
@@ -291,19 +326,7 @@ class MetricsCalculatorService {
       WHERE n.nid IN ($placeholder_string)
         AND n.type = 'service_request'
         AND pst.field_status_term_target_id = :closed_tid
-        -- No organisation change check
-        AND NOT EXISTS (
-          SELECT 1
-          FROM {node_revision__field_organisation} nfo1
-          INNER JOIN {node_revision} nr1 ON nfo1.revision_id = nr1.vid
-          INNER JOIN {node_revision__field_organisation} nfo2 ON nfo2.entity_id = nfo1.entity_id
-          INNER JOIN {node_revision} nr2 ON nfo2.revision_id = nr2.vid
-          WHERE nfo1.entity_id = n.nid
-            AND nfo1.deleted = 0
-            AND nfo2.deleted = 0
-            AND nr2.vid > nr1.vid
-            AND nfo2.field_organisation_target_id != nfo1.field_organisation_target_id
-        )
+        $no_forwarding_clause
       GROUP BY n.nid
     ", $fcr_args);
 
@@ -831,6 +854,15 @@ class MetricsCalculatorService {
    *   Forwarding breakdown data.
    */
   public function calculateForwardingDetails(array $filters): array {
+    if (!$this->hasOrganisationNodeField()) {
+      return [
+        'by_source_organisation' => [],
+        'by_category' => [],
+        'total_forwards' => 0,
+        'filters_applied' => $this->getAppliedFiltersInfo($filters),
+      ];
+    }
+
     $node_ids = $this->getFilteredNodeIds($filters);
 
     if (empty($node_ids)) {
@@ -1293,6 +1325,25 @@ class MetricsCalculatorService {
       ['level' => 3, 'label' => 'High', 'count' => 0],
       ['level' => 4, 'label' => 'Critical', 'count' => 0],
     ];
+  }
+
+  /**
+   * Check whether the node__field_organisation table exists.
+   *
+   * The result is cached in $this->hasOrganisationNodeField so the schema
+   * lookup happens at most once per request. On Group 3 / jurisdiction-only
+   * setups field_organisation lives on taxonomy terms, not nodes, so the
+   * node field table is never created.
+   *
+   * @return bool
+   *   TRUE if the table exists, FALSE otherwise.
+   */
+  private function hasOrganisationNodeField(): bool {
+    if ($this->hasOrganisationNodeField === NULL) {
+      $this->hasOrganisationNodeField = $this->database->schema()
+        ->tableExists('node__field_organisation');
+    }
+    return $this->hasOrganisationNodeField;
   }
 
 }
