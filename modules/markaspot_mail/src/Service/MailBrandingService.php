@@ -208,12 +208,12 @@ class MailBrandingService {
       $branding['jurisdiction_slug'] = (string) $group->get('field_slug')->value;
     }
 
+    // field_platform_name overrides the display name; fall back to group label.
+    $platformName = '';
     if ($group->hasField('field_platform_name') && !$group->get('field_platform_name')->isEmpty()) {
       $platformName = trim((string) $group->get('field_platform_name')->value);
-      if ($platformName !== '') {
-        $branding['platform_name'] = $platformName;
-      }
     }
+    $branding['platform_name'] = $platformName !== '' ? $platformName : (string) $group->label();
 
     // Logo: prefer field_logo_light; absolute URL via FileUrlGenerator.
     // SVG files are additionally inlined for email client compatibility —
