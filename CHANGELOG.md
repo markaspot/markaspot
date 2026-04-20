@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.63](https://github.com/markaspot/markaspot/compare/11.9.62...11.9.63) (2026-04-20)
+
+### Features
+
+* add markaspot_notification module for ECA side-effect feedback ([f7c17ae](https://github.com/markaspot/markaspot/commit/f7c17ae6b703ec149a3f9ce9573586350a52f0cd))
+* **mail:** add attachment pipeline for staff-recipient mails ([432c128](https://github.com/markaspot/markaspot/commit/432c12811199e3f0d1b67d2445fcff29a3d2527f))
+
+### Bug Fixes
+
+* **dashboard:** guard organisation field join against missing node table ([b2319c3](https://github.com/markaspot/markaspot/commit/b2319c32145cb61218e49bbfb4c54e996200d359))
+* **eca:** pass entity to action_send_email_action via object key ([218fe6e](https://github.com/markaspot/markaspot/commit/218fe6ea19ae096e35d54b35d5d7f700f3fcaadd))
+* **eca:** remove citizen body from confirmation email to prevent token injection ([9c056a2](https://github.com/markaspot/markaspot/commit/9c056a225781af14c09de84f9da60f594d40260d))
+* **mail:** keep ECA transactional intro and body blocks as strings ([de952fd](https://github.com/markaspot/markaspot/commit/de952fdff5e4f1df9bb00531facb32e47979b1ad))
+* **mail:** render token HTML in ECA bodies, use group label as platform_name fallback ([65c8c5d](https://github.com/markaspot/markaspot/commit/65c8c5dd707ad84b90deb814d545e7ef5f7c1f76))
+* **mail:** render token-replaced HTML in ECA action email body blocks ([ba7dcef](https://github.com/markaspot/markaspot/commit/ba7dcef8f55dcd482df609f22a1387073d93d945))
+
 ## [11.9.62](https://github.com/markaspot/markaspot/compare/11.9.61...11.9.62) (2026-04-19)
 
 ### Bug Fixes
