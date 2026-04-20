@@ -211,6 +211,7 @@ class AttachmentResolver {
    */
   private function collectCandidates(ContentEntityInterface $entity, array $fieldNames): array {
     $out = [];
+    $seen = [];
     foreach ($fieldNames as $fieldName) {
       if (!$entity->hasField($fieldName)) {
         continue;
@@ -225,9 +226,17 @@ class AttachmentResolver {
           if ($sourceFieldName === NULL || !$referenced->hasField($sourceFieldName)) {
             continue;
           }
-          foreach ($referenced->get($sourceFieldName)->referencedEntities() as $file) {
+          $sourceField = $referenced->get($sourceFieldName);
+          if (!$sourceField instanceof EntityReferenceFieldItemListInterface) {
+            continue;
+          }
+          foreach ($sourceField->referencedEntities() as $file) {
             if ($file instanceof FileInterface && $file->isPermanent()) {
-              $out[] = $file;
+              $fid = (int) $file->id();
+              if (!isset($seen[$fid])) {
+                $seen[$fid] = TRUE;
+                $out[] = $file;
+              }
             }
           }
           continue;
@@ -235,7 +244,11 @@ class AttachmentResolver {
         if (!$referenced instanceof FileInterface || !$referenced->isPermanent()) {
           continue;
         }
-        $out[] = $referenced;
+        $fid = (int) $referenced->id();
+        if (!isset($seen[$fid])) {
+          $seen[$fid] = TRUE;
+          $out[] = $referenced;
+        }
       }
     }
     return $out;
