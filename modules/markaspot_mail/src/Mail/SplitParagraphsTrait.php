@@ -26,7 +26,7 @@ trait SplitParagraphsTrait {
    * <object>, etc. which filterAdmin permits but mail bodies never need).
    */
   private const MAIL_ALLOWED_TAGS = [
-    'p', 'br', 'strong', 'em', 'a', 'ul', 'ol', 'li', 'h2', 'h3', 'span',
+    'p', 'br', 'strong', 'em', 'b', 'i', 'a', 'ul', 'ol', 'li', 'h2', 'h3', 'span',
   ];
 
   /**
