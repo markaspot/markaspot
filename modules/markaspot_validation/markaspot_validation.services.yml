@@ -10,3 +10,13 @@ services:
   markaspot_validation.default_location_constraint_validator:
     class: Drupal\markaspot_validation\Plugin\Validation\Constraint\DefaultLocationConstraintValidator
     arguments: ['@datetime.time', '@request_stack', '@entity_type.manager', '@config.factory', '@current_user']
+
+  # Post-processes JSON:API 422 responses to forward the violation cause
+  # (set via ConstraintViolationBuilder::setCause()) as JSON:API `meta` on
+  # the matching error object. Core's normalizer is sealed off from third
+  # parties via a namespace check in Drupal\jsonapi\Serializer\Serializer,
+  # so we layer this on top with a response subscriber instead.
+  markaspot_validation.violation_cause_response_subscriber:
+    class: Drupal\markaspot_validation\EventSubscriber\ViolationCauseResponseSubscriber
+    tags:
+      - { name: event_subscriber }

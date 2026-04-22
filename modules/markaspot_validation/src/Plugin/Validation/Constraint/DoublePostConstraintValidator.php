@@ -2,7 +2,6 @@
 
 namespace Drupal\markaspot_validation\Plugin\Validation\Constraint;
 
-use Drupal\Core\Link;
 use Drupal\Core\Url;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Component\Datetime\TimeInterface;
@@ -11,6 +10,7 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\markaspot_validation\EventSubscriber\ViolationCauseResponseSubscriber;
 use AnthonyMartin\GeoLocation\GeoLocation as GeoLocation;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -139,29 +139,50 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
     // Build the duplicate info for response.
     $duplicateInfo = $this->buildDuplicateInfo($nids, $config);
 
-    // Hard block mode: always reject.
-    if (!$isHintMode) {
-      $this->context->addViolation(
-        $duplicateInfo['message'] . '</br>' .
-        $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!')
-      );
+    // Structured payload surfaced to headless clients under the `meta` key
+    // of the JSON:API error object. `setCause()` keeps it separate from
+    // message placeholders, and we also stash it in a request attribute so
+    // the response subscriber can inject it once the JSON has been rendered
+    // (core's JSON:API normalizer is sealed off from third-party extension).
+    //
+    // When the matched node is unpublished and the anonymous submitter cannot
+    // view it, `existing_report_id` / `existing_report_url` are NULL so we do
+    // not disclose the identity of pending reports.
+    $cause = [
+      'duplicate_hint' => $isHintMode,
+      'existing_report_id' => $duplicateInfo['request_id'],
+      'existing_report_url' => $duplicateInfo['url'],
+    ];
+    $this->stashCause($request, 'field_geolocation', $cause);
+
+    // Plain-text message for the violation. Rich HTML (link, modal trigger)
+    // lives on the admin Drupal form render path only, not in the API
+    // response — `detail` in a JSON:API error object is plain text per spec.
+    // Frontend clients build their own link from `meta.existing_report_url`.
+    $hardBlockSuffix = $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!');
+    $hintSuffix = $this->t('You can ignore this message by resubmitting. To help us, please compare the possible duplicate at the linked report.');
+
+    $suffix = $isHintMode ? $hintSuffix : $hardBlockSuffix;
+    $this->context->buildViolation((string) $duplicateInfo['message'] . ' ' . (string) $suffix)
+      ->setCause($cause)
+      ->addViolation();
+  }
+
+  /**
+   * Record a structured cause on the request keyed by property path.
+   *
+   * The JSON:API exception pipeline discards ConstraintViolation::getCause()
+   * when serializing the 422 response, so we hand the payload to the
+   * ViolationCauseResponseSubscriber via the request attribute bag.
+   */
+  protected function stashCause($request, string $property_path, array $cause): void {
+    if (!$request) {
       return;
     }
-
-    // Hint mode without acknowledgment: show warning with instructions.
-    $hintMessage = $this->t(
-      'You can ignore this message by resubmitting. To help us, please compare the possible duplicate by clicking the link above.'
-    );
-
-    $this->context->addViolation(
-      $duplicateInfo['message'] . '</br>' . $hintMessage,
-      [
-        'duplicate_hint' => TRUE,
-        'existing_report_id' => $duplicateInfo['request_id'],
-        'existing_report_nid' => $duplicateInfo['nid'],
-        'existing_report_url' => $duplicateInfo['url'],
-      ]
-    );
+    $key = ViolationCauseResponseSubscriber::ATTR_KEY;
+    $all = $request->attributes->get($key, []);
+    $all[$property_path] = $cause;
+    $request->attributes->set($key, $all);
   }
 
   /**
@@ -203,36 +224,44 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
    *   The module configuration.
    *
    * @return array
-   *   Array with message, request_id, nid, and url.
+   *   Plain-text message plus request_id and absolute URL for JSON:API meta.
+   *   When the matched node is unpublished and the current user cannot view
+   *   it, request_id and url are NULL to avoid leaking the identity of
+   *   pending/archived reports via the 422 response.
    */
   protected function buildDuplicateInfo(array $nids, ImmutableConfig $config): array {
     $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
     $node = reset($nodes);
 
-    $url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE]);
-    $link_options = [
-      'attributes' => [
-        'class' => ['doublepost', 'use-ajax'],
-        'data-dialog-type' => 'modal',
-        'data-history-node-id' => [$node->id()],
-      ],
-    ];
-    $url->setOptions($link_options);
-
     $unit = $config->get('unit') === 'yards' ? 'yards' : 'meters';
-    $message_string = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
-      '@id' => $node->request_id->value,
-      '@radius' => $config->get('radius'),
-      '@unit' => $unit,
-    ]);
 
-    $link = Link::fromTextAndUrl($message_string, $url);
+    // Access check: a matched unpublished/archived node may be invisible to
+    // the anonymous submitter, so do not include its URL or request_id in
+    // the structured payload. The message falls back to generic text in that
+    // case to avoid disclosing a specific pending-report ID.
+    $viewable = $node->access('view', $this->account);
+
+    if ($viewable) {
+      $url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+      $message = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
+        '@id' => $node->request_id->value,
+        '@radius' => $config->get('radius'),
+        '@unit' => $unit,
+      ]);
+      return [
+        'message' => $message,
+        'request_id' => $node->request_id->value,
+        'url' => $url,
+      ];
+    }
 
     return [
-      'message' => $link->toString(),
-      'request_id' => $node->request_id->value,
-      'nid' => $node->id(),
-      'url' => $url->toString(),
+      'message' => $this->t('We found a recently added report of the same category within a radius of @radius @unit.', [
+        '@radius' => $config->get('radius'),
+        '@unit' => $unit,
+      ]),
+      'request_id' => NULL,
+      'url' => NULL,
     ];
   }
 
@@ -274,8 +303,6 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
     $maxLon = $coordinates[1]->getLongitudeInDegrees();
 
     $query = $this->entityTypeManager->getStorage('node')->getQuery()
-      // Only published requests get validated as positive:
-      ->condition('status', 1)
       ->condition('changed', $this->time->getRequestTime(), '<')
       ->condition('type', 'service_request')
       ->condition('field_geolocation.lat', $minLat, '>')
@@ -285,6 +312,13 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
       ->condition('field_category.target_id', $target_id)
       ->condition('created', $this->time->getRequestTime() - (24 * 60 * 60 * (int) $days), '>=')
       ->accessCheck(FALSE);
+
+    // Only published requests get validated as positive by default. When the
+    // moderation workflow creates reports as unpublished, set
+    // `check_unpublished` to TRUE so pending reports also count as duplicates.
+    if (!$config->get('check_unpublished')) {
+      $query->condition('status', 1);
+    }
 
     $excludedStatuses = $config->get('excluded_statuses') ?? [];
     if (!empty($excludedStatuses)) {
