@@ -3,7 +3,9 @@
 namespace Drupal\markaspot_validation\Form;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -21,16 +23,28 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
   protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
+   * The module handler.
+   *
+   * @var \Drupal\Core\Extension\ModuleHandlerInterface
+   */
+  protected ModuleHandlerInterface $moduleHandler;
+
+  /**
    * Constructs a MarkaspotValidationSettingsForm object.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The configuration factory.
+   * @param \Drupal\Core\Config\TypedConfigManagerInterface $typed_config_manager
+   *   The typed config manager.
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager.
+   * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
+   *   The module handler.
    */
-  public function __construct(ConfigFactoryInterface $config_factory, EntityTypeManagerInterface $entity_type_manager) {
-    parent::__construct($config_factory);
+  public function __construct(ConfigFactoryInterface $config_factory, TypedConfigManagerInterface $typed_config_manager, EntityTypeManagerInterface $entity_type_manager, ModuleHandlerInterface $module_handler) {
+    parent::__construct($config_factory, $typed_config_manager);
     $this->entityTypeManager = $entity_type_manager;
+    $this->moduleHandler = $module_handler;
   }
 
   /**
@@ -39,7 +53,9 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
   public static function create(ContainerInterface $container) {
     return new static(
       $container->get('config.factory'),
+      $container->get('config.typed'),
       $container->get('entity_type.manager'),
+      $container->get('module_handler'),
     );
   }
 
@@ -133,6 +149,13 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       '#description' => $this->t('Nodes in these statuses are not considered duplicates. Useful for closed/resolved reports.'),
     ];
 
+    $form['markaspot_validation']['check_unpublished'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Also check unpublished reports as duplicate candidates'),
+      '#default_value' => $config->get('check_unpublished'),
+      '#description' => $this->t('Enable if your workflow creates reports as unpublished (pending moderation) and you want those pending reports to count as duplicates. When off (default), only published reports are compared. Caveat: with this enabled, archived or trashed reports can also re-enter the duplicate pool. Populate <em>Exclude statuses from duplicate check</em> above with your archive/trash status terms to keep them out.'),
+    ];
+
     $form['markaspot_validation']['treshold'] = [
       '#type' => 'number',
       '#min' => 1,
@@ -167,6 +190,7 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
   public function submitForm(array &$form, FormStateInterface $form_state) {
     $values = $form_state->getValues();
     $excluded_statuses = array_values(array_map('intval', array_filter($values['excluded_statuses'])));
+    $check_unpublished = (bool) $values['check_unpublished'];
     $this->config('markaspot_validation.settings')
       ->set('wkt', $values['wkt'])
       ->set('multiple_reports', $values['multiple_reports'])
@@ -179,7 +203,16 @@ class MarkaspotValidationSettingsForm extends ConfigFormBase {
       ->set('treshold', (int) $values['treshold'])
       ->set('defaultLocation', $values['defaultLocation'])
       ->set('excluded_statuses', $excluded_statuses)
+      ->set('check_unpublished', $check_unpublished)
       ->save();
+
+    // Warn when unpublished-matching is enabled without an exclusion list
+    // on a site that has markaspot_archive installed: archived reports
+    // (unpublished by the archive cron) would otherwise re-enter the
+    // duplicate-candidate pool and surface as false positives.
+    if ($check_unpublished && empty($excluded_statuses) && $this->moduleHandler->moduleExists('markaspot_archive')) {
+      $this->messenger()->addWarning($this->t('Duplicate check now includes unpublished reports, but no status terms are excluded. With the Mark-a-Spot Archive module installed, archived reports will re-appear as duplicate candidates. Select your archive/trash status terms under "Exclude statuses from duplicate check" to keep them out.'));
+    }
 
     parent::submitForm($form, $form_state);
   }

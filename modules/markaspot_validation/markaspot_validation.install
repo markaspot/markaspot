@@ -1,0 +1,18 @@
+<?php
+
+/**
+ * @file
+ * Install and update hooks for the Mark-a-Spot Validation module.
+ */
+
+/**
+ * Add default value for `check_unpublished` duplicate-check setting.
+ */
+function markaspot_validation_update_11901(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_validation.settings');
+  if ($config->get('check_unpublished') === NULL) {
+    $config->set('check_unpublished', FALSE)->save(TRUE);
+    return 'Set markaspot_validation.check_unpublished to FALSE (keep existing behaviour: only published reports are checked for duplicates).';
+  }
+  return 'markaspot_validation.check_unpublished already set, nothing to do.';
+}

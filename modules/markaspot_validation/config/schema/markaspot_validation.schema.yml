@@ -42,3 +42,6 @@ markaspot_validation.settings:
       label: 'Excluded status term IDs for duplicate check'
       sequence:
         type: integer
+    check_unpublished:
+      type: boolean
+      label: 'Also check unpublished reports as duplicate candidates'
