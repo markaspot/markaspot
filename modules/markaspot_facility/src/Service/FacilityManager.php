@@ -14,11 +14,20 @@ use Psr\Log\LoggerInterface;
  * Manages jurisdiction facility settings and service request derivation.
  */
 class FacilityManager {
-
   /**
    * Maximum number of facilities allowed in the MVP blob.
    */
   private const MAX_ITEMS = 500;
+
+  /**
+   * Canonical facility modes accepted by the client runtime.
+   *
+   * Kept in sync with FacilityMode in types/clientConfig.ts. Anything outside
+   * this set resolves to `exclusive` via the legacy fallback when
+   * `enabled: true`, so storing arbitrary strings here creates a silent
+   * drift between admin intent and citizen-facing behaviour.
+   */
+  public const ALLOWED_MODES = ['exclusive', 'optional', 'disabled'];
 
   /**
    * Entity type manager.
@@ -79,9 +88,9 @@ class FacilityManager {
     }
 
     $source->set(
-      'field_facilities',
-      json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-    );
+          'field_facilities',
+          json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+      );
     $source->save();
 
     return $normalized;
@@ -91,11 +100,13 @@ class FacilityManager {
    * Applies facility-derived geodata and address to a service request node.
    */
   public function applyToServiceRequest(NodeInterface $node): void {
-    if ($node->bundle() !== 'service_request'
-      || !$node->hasField('field_facility')
-      || $node->get('field_facility')->isEmpty()
-      || !$node->hasField('field_jurisdiction')
-      || $node->get('field_jurisdiction')->isEmpty()) {
+    if (
+          $node->bundle() !== 'service_request'
+          || !$node->hasField('field_facility')
+          || $node->get('field_facility')->isEmpty()
+          || !$node->hasField('field_jurisdiction')
+          || $node->get('field_jurisdiction')->isEmpty()
+      ) {
       return;
     }
 
@@ -112,6 +123,16 @@ class FacilityManager {
     }
 
     $settings = $this->getDashboardSettings($group);
+
+    // In optional mode the citizen chose the position; the facility tag is
+    // auto-derived from it and must not override the picked coordinates or
+    // address. Preserves the `tag = f(position)` invariant documented for
+    // the feature. Disabled mode should not reach this code with a facility
+    // set, but we guard defensively.
+    if (($settings['mode'] ?? 'disabled') !== 'exclusive') {
+      return;
+    }
+
     foreach ($settings['items'] as $facility) {
       if (($facility['id'] ?? '') !== $facility_id) {
         continue;
@@ -140,13 +161,13 @@ class FacilityManager {
     }
 
     $this->logger->warning(
-      'Facility "@facility" was not found for jurisdiction @jurisdiction while saving service request @node.',
-      [
-        '@facility' => $facility_id,
-        '@jurisdiction' => $jurisdiction_id,
-        '@node' => $node->id() ?? 'new',
-      ]
-    );
+          'Facility "@facility" was not found for jurisdiction @jurisdiction while saving service request @node.',
+          [
+            '@facility' => $facility_id,
+            '@jurisdiction' => $jurisdiction_id,
+            '@node' => $node->id() ?? 'new',
+          ]
+      );
   }
 
   /**
@@ -157,16 +178,59 @@ class FacilityManager {
       return TRUE;
     }
 
-    if ($node->bundle() !== 'service_request'
-      || !$node->hasField('field_facility')
-      || $node->get('field_facility')->isEmpty()
-      || !$node->hasField('field_address')
-      || $node->get('field_address')->isEmpty()) {
+    if (
+          $node->bundle() !== 'service_request'
+          || !$node->hasField('field_facility')
+          || $node->get('field_facility')->isEmpty()
+          || !$node->hasField('field_address')
+          || $node->get('field_address')->isEmpty()
+      ) {
+      return FALSE;
+    }
+
+    // Only treat a pre-existing address as locked in exclusive mode. In
+    // optional mode the citizen authored the address, so the geocoder must
+    // stay free to re-derive it from moved coordinates. Without this gate,
+    // markaspot_geocoder would freeze the address on every subsequent save
+    // of an optional-mode report that happens to carry a facility tag.
+    if ($this->resolveEffectiveMode($node) !== 'exclusive') {
       return FALSE;
     }
 
     $address_line1 = $node->get('field_address')->first()?->address_line1 ?? NULL;
     return is_string($address_line1) && trim($address_line1) !== '';
+  }
+
+  /**
+   * Resolves the effective facility mode for a node's jurisdiction.
+   *
+   * Returns NULL when the node is not a service_request, is missing a
+   * jurisdiction reference, or points at a jurisdiction whose group cannot
+   * be loaded. Callers should treat NULL as "mode-agnostic" and make their
+   * own decision (typically: fail secure).
+   */
+  private function resolveEffectiveMode(NodeInterface $node): ?string {
+    if (
+          $node->bundle() !== 'service_request'
+          || !$node->hasField('field_jurisdiction')
+          || $node->get('field_jurisdiction')->isEmpty()
+      ) {
+      return NULL;
+    }
+
+    $jurisdiction_item = $node->get('field_jurisdiction')->first();
+    $jurisdiction_id = (int) ($jurisdiction_item->target_id ?? 0);
+    if ($jurisdiction_id <= 0) {
+      return NULL;
+    }
+
+    $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
+    if (!$group instanceof GroupInterface) {
+      return NULL;
+    }
+
+    $settings = $this->getDashboardSettings($group);
+    return $settings['mode'] ?? 'disabled';
   }
 
   /**
@@ -209,14 +273,14 @@ class FacilityManager {
       }
     }
 
-    if (!empty($settings['mode']) && is_string($settings['mode'])) {
-      $normalized['mode'] = trim($settings['mode']);
-    }
+    $normalized['mode'] = $this->resolveStoredMode($settings, $normalized['enabled']);
 
     if (!empty($settings['items']) && is_array($settings['items'])) {
       foreach ($settings['items'] as $item) {
-        if (!is_array($item) || empty($item['id']) || empty($item['label'])
-          || !isset($item['lat'], $item['lng'])) {
+        if (
+              !is_array($item) || empty($item['id']) || empty($item['label'])
+              || !isset($item['lat'], $item['lng'])
+          ) {
           continue;
         }
 
@@ -245,6 +309,26 @@ class FacilityManager {
     }
 
     return $normalized;
+  }
+
+  /**
+   * Resolves a stored mode value to one of the canonical modes.
+   *
+   * Tolerates legacy rows where `mode` is absent, empty, or an obsolete slug
+   * like `facility_required`. Unknown values collapse to `exclusive` when
+   * the feature is enabled (matches the client runtime legacy fallback in
+   * `useFacilityReporting.ts`) and to `disabled` otherwise. This keeps the
+   * dashboard form from hitting a 400 on the first Save after the allowlist
+   * was tightened.
+   */
+  private function resolveStoredMode(array $settings, bool $enabled): string {
+    $raw = isset($settings['mode']) && is_string($settings['mode'])
+      ? trim($settings['mode'])
+      : '';
+    if (in_array($raw, self::ALLOWED_MODES, TRUE)) {
+      return $raw;
+    }
+    return $enabled ? 'exclusive' : 'disabled';
   }
 
   /**
@@ -288,11 +372,11 @@ class FacilityManager {
       foreach (['singular', 'plural'] as $key) {
         if (array_key_exists($key, $payload['label'])) {
           $label[$key] = $this->validateTextValue(
-            $payload['label'][$key],
-            "label.$key",
-            120,
-            TRUE
-          );
+                $payload['label'][$key],
+                "label.$key",
+                120,
+                TRUE
+            );
         }
       }
       if ($label !== []) {
@@ -305,8 +389,11 @@ class FacilityManager {
         throw new \InvalidArgumentException('mode must be a string when provided.');
       }
       $mode = trim($payload['mode']);
-      if ($mode === '' || !preg_match('/^[a-z][a-z0-9_-]{0,63}$/', $mode)) {
-        throw new \InvalidArgumentException('mode must match /^[a-z][a-z0-9_-]{0,63}$/.');
+      if (!in_array($mode, self::ALLOWED_MODES, TRUE)) {
+        throw new \InvalidArgumentException(sprintf(
+              'mode must be one of %s.',
+              implode(', ', self::ALLOWED_MODES)
+          ));
       }
       $normalized['mode'] = $mode;
     }
@@ -350,7 +437,7 @@ class FacilityManager {
           "items[$index].address",
           512,
           TRUE
-        );
+          );
       }
 
       if (array_key_exists('organisationId', $item)) {
@@ -358,7 +445,7 @@ class FacilityManager {
           $item['organisationId'],
           "items[$index].organisationId",
           255
-        );
+          );
       }
 
       $normalized['items'][] = $normalized_item;
