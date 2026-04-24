@@ -1,0 +1,214 @@
+<?php
+
+/**
+ * @file
+ * Install and update functions for markaspot_facility.
+ */
+
+declare(strict_types=1);
+
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\group\Entity\GroupInterface;
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_facility_install(): void {
+  _markaspot_facility_ensure_fields();
+}
+
+/**
+ * Ensures the facility fields exist on group.jur and node.service_request.
+ */
+function markaspot_facility_update_11001(): string {
+  _markaspot_facility_ensure_fields();
+  return 'Ensured field_facilities and field_facility exist.';
+}
+
+/**
+ * Migrates any legacy field_nuxt_config.facilities payload into field_facilities.
+ *
+ * Earlier versions of the module accepted writes through the markaspot_nuxt
+ * controller path, which persisted the payload into field_nuxt_config. The
+ * module now treats field_facilities on the jurisdiction group as the single
+ * source of truth; this hook moves any remaining legacy payload across and
+ * strips the stale facilities key from field_nuxt_config so the two paths
+ * cannot diverge.
+ */
+function markaspot_facility_update_11002(): string {
+  $migrated = [];
+  $storage = \Drupal::entityTypeManager()->getStorage('group');
+  $ids = \Drupal::entityQuery('group')
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->execute();
+
+  if (!$ids) {
+    return 'No jurisdiction groups found. Nothing to migrate.';
+  }
+
+  foreach ($storage->loadMultiple($ids) as $group) {
+    if (!$group instanceof GroupInterface) {
+      continue;
+    }
+    if (!$group->hasField('field_nuxt_config') || !$group->hasField('field_facilities')) {
+      continue;
+    }
+
+    $moved = FALSE;
+    foreach ($group->getTranslationLanguages() as $langcode => $language) {
+      $translation = $group->getTranslation($langcode);
+      $raw = (string) $translation->get('field_nuxt_config')->value;
+      if (trim($raw) === '') {
+        continue;
+      }
+
+      $config = json_decode($raw, TRUE);
+      if (!is_array($config) || !array_key_exists('facilities', $config)) {
+        continue;
+      }
+
+      $legacy = $config['facilities'];
+      unset($config['facilities']);
+      $translation->set('field_nuxt_config', json_encode(
+        $config,
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+      ));
+
+      $canonical_raw = (string) $translation->get('field_facilities')->value;
+      $canonical_empty = trim($canonical_raw) === ''
+        || !is_array(json_decode($canonical_raw, TRUE));
+
+      if ($canonical_empty && is_array($legacy)) {
+        $translation->set('field_facilities', json_encode(
+          $legacy,
+          JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+        ));
+      }
+
+      $moved = TRUE;
+    }
+
+    if ($moved) {
+      $group->save();
+      $migrated[] = $group->id() . ':' . $group->label();
+    }
+  }
+
+  return $migrated
+    ? 'Migrated legacy facilities payload on groups: ' . implode(', ', $migrated)
+    : 'No legacy facilities payload found in field_nuxt_config.';
+}
+
+/**
+ * Creates the MVP facility storage fields if config import skipped them.
+ */
+function _markaspot_facility_ensure_fields(): void {
+  $field_storage = FieldStorageConfig::loadByName('group', 'field_facilities');
+  if (!$field_storage) {
+    FieldStorageConfig::create([
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => ['group', 'text'],
+      ],
+      'id' => 'group.field_facilities',
+      'field_name' => 'field_facilities',
+      'entity_type' => 'group',
+      'type' => 'text_long',
+      'settings' => [],
+      'module' => 'text',
+      'locked' => FALSE,
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ])->save();
+  }
+
+  $field = FieldConfig::loadByName('group', 'jur', 'field_facilities');
+  if (!$field) {
+    FieldConfig::create([
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.group.field_facilities',
+          'group.type.jur',
+        ],
+      ],
+      'id' => 'group.jur.field_facilities',
+      'field_name' => 'field_facilities',
+      'entity_type' => 'group',
+      'bundle' => 'jur',
+      'label' => 'Facilities',
+      'description' => 'JSON configuration for facility-based reporting.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [
+        'allowed_formats' => [],
+      ],
+    ])->save();
+  }
+
+  $node_storage = FieldStorageConfig::loadByName('node', 'field_facility');
+  if (!$node_storage) {
+    FieldStorageConfig::create([
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => ['field_permissions', 'node'],
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'public',
+        ],
+      ],
+      'id' => 'node.field_facility',
+      'field_name' => 'field_facility',
+      'entity_type' => 'node',
+      'type' => 'string',
+      'settings' => [
+        'max_length' => 128,
+        'case_sensitive' => FALSE,
+        'is_ascii' => TRUE,
+      ],
+      'module' => 'core',
+      'locked' => FALSE,
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ])->save();
+  }
+
+  $node_field = FieldConfig::loadByName('node', 'service_request', 'field_facility');
+  if (!$node_field) {
+    FieldConfig::create([
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.node.field_facility',
+          'node.type.service_request',
+        ],
+      ],
+      'id' => 'node.service_request.field_facility',
+      'field_name' => 'field_facility',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Facility',
+      'description' => 'Machine key of the selected facility for facility-based reporting.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [],
+    ])->save();
+  }
+}

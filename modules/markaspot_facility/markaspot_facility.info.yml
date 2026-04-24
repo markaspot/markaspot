@@ -1,0 +1,11 @@
+name: 'Markaspot Facility'
+type: module
+description: 'Stores jurisdiction facilities and exposes facility-based reporting settings.'
+package: Mark-a-Spot
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:field_permissions
+  - markaspot:markaspot_group
+  - markaspot:markaspot_nuxt
+  - markaspot:service_request
+

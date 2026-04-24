@@ -1,0 +1,28 @@
+# Dashboard (authenticated admin) view of the facilities payload.
+# Returns inactive items alongside active ones. The anonymous public view
+# is delivered via hook_markaspot_nuxt_settings_alter into the
+# /api/mark-a-spot-settings response, not through this endpoint.
+markaspot_facility.tenant_settings_facilities_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/facilities'
+  defaults:
+    _controller: '\Drupal\markaspot_facility\Controller\FacilitySettingsController::getFacilitiesSettings'
+    _title: 'Get Tenant Facilities Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_facility.tenant_settings_facilities_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/facilities'
+  defaults:
+    _controller: '\Drupal\markaspot_facility\Controller\FacilitySettingsController::updateFacilitiesSettings'
+    _title: 'Update Tenant Facilities Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+

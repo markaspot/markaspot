@@ -53,8 +53,14 @@ function markaspot_geocoder_node_presave(EntityInterface $node) {
       $address = $geocoder_service->getAddressFromCoordinates($lat, $lng);
 
       if ($address) {
+        $preserveExistingAddress = \Drupal::hasService('markaspot_facility.manager')
+          && \Drupal::service('markaspot_facility.manager')->isAddressLocked($node);
+
         // Only update address if it was missing or geolocation changed.
-        if ($isNew || $geolocationChanged || $addressMissing) {
+        // Facility-based reporting may pre-fill a canonical address string
+        // from the selected facility. Preserve that value while still running
+        // district mappings from the facility coordinates.
+        if (!$preserveExistingAddress && ($isNew || $geolocationChanged || $addressMissing)) {
           $node->field_address->country_code = $address['country_code'];
           $node->field_address->locality = $address['locality'];
           $node->field_address->address_line1 = $address['address_line1'];

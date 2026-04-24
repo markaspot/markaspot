@@ -342,10 +342,25 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @covers ::getMarkASpotSettings
    */
   public function testGetSettingsMergesJurisdictionConfig(): void {
+    // The facilities key intentionally stays in field_nuxt_config to assert
+    // that MarkASpotSettingsController no longer propagates it. Facility
+    // payloads are delivered exclusively by markaspot_facility via the
+    // settings alter hook (covered by FacilityManagerTest).
     $nuxtJson = json_encode([
       'client' => ['name' => 'Stadt Bonn', 'shortName' => 'Bonn'],
       'theme' => ['primary' => 'cyan', 'secondary' => 'teal'],
       'features' => ['voting' => TRUE],
+      'facilities' => [
+        'enabled' => TRUE,
+        'items' => [
+          [
+            'id' => 'stadsloket-centrum',
+            'label' => 'Stadsloket Centrum',
+            'lat' => 52.3676842,
+            'lng' => 4.9002256,
+          ],
+        ],
+      ],
       'map' => [
         'center' => ['lat' => 50.73, 'lng' => 7.1],
         'zoomInitial' => 14,
@@ -373,6 +388,11 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals('Stadt Bonn', $data['client']['name']);
     $this->assertEquals('cyan', $data['theme']['primary']);
     $this->assertTrue($data['features']['voting']);
+
+    // Facilities MUST NOT leak through from field_nuxt_config. The payload
+    // is owned by markaspot_facility and delivered via the settings alter
+    // hook, which is not invoked in this unit context.
+    $this->assertArrayNotHasKey('facilities', $data);
 
     // Map center synced to top-level.
     $this->assertEquals(50.73, $data['center_lat']);

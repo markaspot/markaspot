@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - group
+    - text
+id: group.field_facilities
+field_name: field_facilities
+entity_type: group
+type: text_long
+settings: {  }
+module: text
+locked: false
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false
+

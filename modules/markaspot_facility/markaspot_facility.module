@@ -1,0 +1,42 @@
+<?php
+
+/**
+ * @file
+ * Hooks for the markaspot_facility module.
+ */
+
+declare(strict_types=1);
+
+use Drupal\node\NodeInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\group\Entity\GroupInterface;
+
+/**
+ * Implements hook_markaspot_nuxt_settings_alter().
+ *
+ * Field_facilities on the jur group is the single source of truth for the
+ * public facilities payload. Callers must not read facilities from
+ * field_nuxt_config: the canonical value produced here wins unconditionally.
+ *
+ * The 'facilities' key in the public settings payload is owned by this
+ * module. Other alter hook implementations must not write to
+ * $settings['facilities']; doing so will clobber the canonical value
+ * produced from field_facilities and cause drift between the dashboard
+ * controller (FacilitySettingsController) and the public settings endpoint.
+ */
+function markaspot_facility_markaspot_nuxt_settings_alter(array &$settings, ?GroupInterface $group = NULL): void {
+  $settings['facilities'] = \Drupal::service('markaspot_facility.manager')
+    ->getPublicSettings($group);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for node entities.
+ */
+function markaspot_facility_node_presave(EntityInterface $node): void {
+  if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+    return;
+  }
+
+  \Drupal::service('markaspot_facility.manager')
+    ->applyToServiceRequest($node);
+}

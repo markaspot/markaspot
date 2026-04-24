@@ -1,0 +1,19 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_facility
+    - node.type.service_request
+id: node.service_request.field_facility
+field_name: field_facility
+entity_type: node
+bundle: service_request
+label: Facility
+description: 'Machine key of the selected facility for facility-based reporting.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string
+

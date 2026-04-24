@@ -1460,7 +1460,6 @@ function markaspot_update_11910(): string {
   //    crash on partially migrated data (getName() on null, missing ID).
   //    Every config operation below is a direct DB query.
   // -------------------------------------------------------------------
-
   // 3a. Guard: ensure group.type.org exists before deleting organisation.
   $org_exists = (bool) $database->select('config', 'c')
     ->fields('c', ['name'])
@@ -1728,7 +1727,7 @@ function _markaspot_update_11910_fix_string(string $value, bool $group_context =
   //   core.entity_view_display.group.organisation.*
   // Does NOT match:
   //   field.storage.group.field_organisation
-  //   field.field.group.org.field_organisation
+  //   field.field.group.org.field_organisation.
   $patterns = [
     // 'group.type.organisation' at end of string or before a dot.
     '/\bgroup\.type\.organisation\b/' => 'group.type.org',
@@ -1742,7 +1741,7 @@ function _markaspot_update_11910_fix_string(string $value, bool $group_context =
     // '*.group.organisation' at end. Only when preceded by a known prefix.
     // Includes core.base_field_override.group for base field overrides.
     '/\b(field\.field\.group|core\.entity_form_display\.group|core\.entity_view_display\.group|core\.base_field_override\.group)\.organisation\b/' => '$1.org',
-    // language.content_settings.group.organisation
+    // language.content_settings.group.organisation.
     '/\blanguage\.content_settings\.group\.organisation\b/' => 'language.content_settings.group.org',
     // Entity ID patterns: 'group.organisation' or 'group.organisation.*'
     // (e.g., base_field_override id = 'group.organisation.changed')
@@ -1760,7 +1759,6 @@ function _markaspot_update_11910_fix_string(string $value, bool $group_context =
   // This catches dependency arrays like ['group.type.organisation'].
   // Already handled by the first pattern above if standalone, but also catches
   // compound strings or serialized references.
-
   return $result;
 }
 
@@ -1776,7 +1774,7 @@ function _markaspot_update_11910_fix_string(string $value, bool $group_context =
  *   core.entity_form_display.group.organisation.* -> ...group.org.*
  *   core.entity_view_display.group.organisation.* -> ...group.org.*
  *   core.base_field_override.group.organisation.* -> ...group.org.*
- *   language.content_settings.group.organisation -> ...group.org
+ *   language.content_settings.group.organisation -> ...group.org.
  *
  * Config names that are NOT renamed (not group type references):
  *   taxonomy.vocabulary.organisation (taxonomy vocab, own ID)
@@ -1799,20 +1797,20 @@ function _markaspot_update_11910_fix_config_name(string $name): string {
   // Never rename taxonomy vocabularies, facets, blocks, or field names.
   $parts = explode('.', $name);
 
-  // Pattern: group.type.organisation -> group.type.org
+  // Pattern: group.type.organisation -> group.type.org.
   if (count($parts) >= 3 && $parts[0] === 'group' && $parts[1] === 'type' && $parts[2] === 'organisation') {
     $parts[2] = 'org';
     return implode('.', $parts);
   }
 
-  // Pattern: group.content_type.organisation-* -> group.content_type.org-*
+  // Pattern: group.content_type.organisation-* -> group.content_type.org-*.
   if (count($parts) >= 3 && $parts[0] === 'group' && $parts[1] === 'content_type' && str_starts_with($parts[2], 'organisation-')) {
     $parts[2] = 'org-' . substr($parts[2], strlen('organisation-'));
     return implode('.', $parts);
   }
 
   // Pattern: group.role.organisation-* -> group.role.org-*
-  // Pattern: group.relationship_type.organisation-* -> group.relationship_type.org-*
+  // Pattern: group.relationship_type.organisation-* -> group.relationship_type.org-*.
   if (count($parts) >= 3 && $parts[0] === 'group'
       && in_array($parts[1], ['role', 'relationship_type'])
       && str_starts_with($parts[2], 'organisation-')) {
@@ -1924,7 +1922,7 @@ function markaspot_update_11912(): string {
 /**
  * Ensure phpmailer_smtp sends HTML and uses phpmailer_smtp as formatter.
  *
- * config/optional sets these at fresh install, but not on migrated tenants.
+ * Config/optional sets these at fresh install, but not on migrated tenants.
  * Intentionally enforces the platform default on all tenants: HTML mail is
  * non-negotiable for branded OTP and notification mails.
  *

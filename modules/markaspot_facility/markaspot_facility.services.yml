@@ -1,0 +1,5 @@
+services:
+  markaspot_facility.manager:
+    class: Drupal\markaspot_facility\Service\FacilityManager
+    arguments: ['@entity_type.manager', '@logger.factory']
+

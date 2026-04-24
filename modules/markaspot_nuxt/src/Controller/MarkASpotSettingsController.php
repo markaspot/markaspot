@@ -226,6 +226,9 @@ class MarkASpotSettingsController extends ControllerBase {
         // Merge jurisdiction config into settings.
         // These override/extend the base settings.
         // Keys must match the nuxt_config.schema.json properties.
+        // The 'facilities' key is intentionally absent here. It is delivered
+        // exclusively by markaspot_facility via hook_markaspot_nuxt_settings_alter
+        // from the canonical field_facilities field on the jurisdiction group.
         $config_keys = [
           'client',
           'theme',

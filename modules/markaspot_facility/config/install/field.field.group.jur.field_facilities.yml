@@ -1,0 +1,20 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_facilities
+    - group.type.jur
+id: group.jur.field_facilities
+field_name: field_facilities
+entity_type: group
+bundle: jur
+label: Facilities
+description: 'JSON configuration for facility-based reporting.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long
+
