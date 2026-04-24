@@ -2478,6 +2478,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // This flag allows frontend to show an unpublished indicator icon.
     $extendedAttributes['published'] = $node->isPublished();
 
+    // Facility id for facility-mode reports (string, set by FacilityManager
+    // on submit). Consumed by the dashboard list column and edit form.
+    if ($node->hasField('field_facility') && !$node->get('field_facility')->isEmpty()) {
+      $extendedAttributes['field_facility'] = (string) $node->get('field_facility')->value;
+    }
+
     // Cache the result for future use.
     $extendedAttributesCache[$cacheKey] = $extendedAttributes;
 
