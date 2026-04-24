@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.65](https://github.com/markaspot/markaspot/compare/11.9.64...11.9.65) (2026-04-24)
+
+### Features
+
+* **facility:** add facility-based reporting ([94db1ad](https://github.com/markaspot/markaspot/commit/94db1ad02924287ecb8312fc68bd89d447cdf69d))
+* **facility:** gate exclusive-mode assumption on location + address ([b5020e0](https://github.com/markaspot/markaspot/commit/b5020e0f7aa1373a92baf90ba3f7e36c7d89356b))
+* **markaspot_validation:** check_unpublished config for moderated workflows ([b5047f8](https://github.com/markaspot/markaspot/commit/b5047f8d6c19a54e295bf3e229da14975a9bd1c7))
+* **markaspot_validation:** surface duplicate-check cause via JSON:API meta ([bcad249](https://github.com/markaspot/markaspot/commit/bcad249cde87814e1626dac137547aedd51689be))
+* **open311:** expose field_facility in extended attributes ([abcea70](https://github.com/markaspot/markaspot/commit/abcea70e042dcfdb82578d9282bfd3f77d7aea80))
+
 ## [11.9.64](https://github.com/markaspot/markaspot/compare/11.9.63...11.9.64) (2026-04-20)
 
 ### Bug Fixes
