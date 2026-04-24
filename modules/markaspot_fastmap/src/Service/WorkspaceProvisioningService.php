@@ -35,6 +35,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'it' => 'Creato',
         'pt' => 'Criado',
         'da' => 'Oprettet',
+        'fi' => 'Luotu',
+        'nb' => 'Opprettet',
+        'sv' => 'Skapad',
         'tr' => 'Oluşturuldu',
         'uk' => 'Створено',
         'ar' => 'تم الإنشاء',
@@ -54,6 +57,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'it' => 'Completato',
         'pt' => 'Concluído',
         'da' => 'Afsluttet',
+        'fi' => 'Valmis',
+        'nb' => 'Fullført',
+        'sv' => 'Klar',
         'tr' => 'Tamamlandı',
         'uk' => 'Завершено',
         'ar' => 'منتهي',
@@ -552,15 +558,42 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
   /**
    * Creates default status terms for a workspace.
+   *
+   * The term is saved in the workspace's default language whenever a
+   * localized name is available in self::DEFAULT_STATUSES. If the default
+   * language has no localized name, the term falls back to English as
+   * primary langcode so that the "Default" tab in the status admin reads
+   * a natural English label instead of an English string mis-tagged as
+   * the workspace language. All other available languages are added as
+   * secondary translations.
+   *
+   * @param \Drupal\Core\Entity\EntityStorageInterface $termStorage
+   *   The taxonomy term storage.
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param string $defaultLang
+   *   The workspace's default language code.
+   * @param string[] $languages
+   *   All workspace language codes (including $defaultLang and 'en').
    */
   private function createStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $languages): void {
     $weight = 0;
     foreach (self::DEFAULT_STATUSES as $status) {
-      $defaultName = $status['name'][$defaultLang] ?? $status['name']['en'];
+      $hasDefaultTranslation = isset($status['name'][$defaultLang]);
+      $primaryLang = $hasDefaultTranslation ? $defaultLang : 'en';
+      $primaryName = $status['name'][$primaryLang] ?? $status['name']['en'];
+
+      if (!$hasDefaultTranslation && $defaultLang !== 'en') {
+        $this->logger->warning('Default status "@name" has no translation for @lang; falling back to English as primary langcode.', [
+          '@name' => $status['name']['en'],
+          '@lang' => $defaultLang,
+        ]);
+      }
+
       $term = $termStorage->create([
         'vid' => 'service_status',
-        'name' => $defaultName,
-        'langcode' => $defaultLang,
+        'name' => $primaryName,
+        'langcode' => $primaryLang,
         'weight' => $weight++,
         'field_status_hex' => ['color' => $status['hex']],
         'field_status_icon' => $status['icon'],
@@ -570,7 +603,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $term->save();
 
       foreach ($languages as $lang) {
-        if ($lang === $defaultLang) {
+        if ($lang === $primaryLang) {
           continue;
         }
         $translatedName = $status['name'][$lang] ?? NULL;

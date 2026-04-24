@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_fastmap\Unit;
 
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -122,7 +124,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
 
     $this->langStorage = $this->createMock(EntityStorageInterface::class);
-    $langEntity = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+    $langEntity = $this->createMock(EntityInterface::class);
     $langEntity->method('save')->willReturn(1);
     $this->langStorage->method('create')->willReturn($langEntity);
 
@@ -150,7 +152,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->languageManager = $this->createMock(LanguageManagerInterface::class);
     $langMock = $this->createMock(LanguageInterface::class);
     $allLangs = [];
-    foreach (['en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'it', 'pl', 'pt', 'tr', 'uk'] as $code) {
+    foreach (['en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'fi', 'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk'] as $code) {
       $allLangs[$code] = $langMock;
     }
     $this->languageManager->method('getLanguages')
@@ -857,7 +859,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $initialTerm = $this->createMock(TermInterface::class);
     $initialTerm->method('id')->willReturn(100);
     $initialTerm->method('hasField')->willReturn(TRUE);
-    $initialField = $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class);
+    $initialField = $this->createMock(FieldItemListInterface::class);
     $initialField->method('isEmpty')->willReturn(FALSE);
     $initialField->__set('value', 'initial');
     $initialField->method('__get')->with('value')->willReturn('initial');
@@ -866,7 +868,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $closedTerm = $this->createMock(TermInterface::class);
     $closedTerm->method('id')->willReturn(101);
     $closedTerm->method('hasField')->willReturn(TRUE);
-    $closedField = $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class);
+    $closedField = $this->createMock(FieldItemListInterface::class);
     $closedField->method('isEmpty')->willReturn(FALSE);
     $closedField->__set('value', 'closed');
     $closedField->method('__get')->with('value')->willReturn('closed');
@@ -950,7 +952,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $nuxtConfigJson = json_encode([
       'map' => ['center' => [20.5, 10.5], 'zoomInitial' => 13],
     ]);
-    $nuxtConfigField = $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class);
+    $nuxtConfigField = $this->createMock(FieldItemListInterface::class);
     $nuxtConfigField->method('isEmpty')->willReturn(FALSE);
     $nuxtConfigField->method('__get')->with('value')->willReturn($nuxtConfigJson);
 
@@ -965,7 +967,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         ],
       ],
     ]);
-    $boundaryField = $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class);
+    $boundaryField = $this->createMock(FieldItemListInterface::class);
     $boundaryField->method('isEmpty')->willReturn(FALSE);
     $boundaryField->method('__get')->with('value')->willReturn($boundaryJson);
 
@@ -975,7 +977,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         return match ($fieldName) {
           'field_nuxt_config' => $nuxtConfigField,
           'field_boundary' => $boundaryField,
-          default => $this->createMock(\Drupal\Core\Field\FieldItemListInterface::class),
+          default => $this->createMock(FieldItemListInterface::class),
         };
       }
     );
@@ -1142,7 +1144,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
               'lang' => $lang,
               'translated_name' => $data['name'],
             ];
-            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans = $this->createMock(EntityInterface::class);
             $trans->method('save')->willReturn(1);
             return $trans;
           });
@@ -1238,7 +1240,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
               'lang' => $lang,
               'translated_name' => $data['name'],
             ];
-            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans = $this->createMock(EntityInterface::class);
             $trans->method('save')->willReturn(1);
             return $trans;
           });
@@ -1326,7 +1328,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $term->method('addTranslation')
           ->willReturnCallback(function (string $lang, array $data) use (&$translationCalls) {
             $translationCalls[] = ['lang' => $lang, 'name' => $data['name']];
-            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans = $this->createMock(EntityInterface::class);
             $trans->method('save')->willReturn(1);
             return $trans;
           });
@@ -1434,7 +1436,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
               'title' => $data['title'],
               'body' => $data['body']['value'] ?? $data['body'],
             ];
-            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans = $this->createMock(EntityInterface::class);
             $trans->method('save')->willReturn(1);
             return $trans;
           });
@@ -1524,7 +1526,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
               'title' => $data['title'],
               'body' => $data['body']['value'] ?? $data['body'],
             ];
-            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans = $this->createMock(EntityInterface::class);
             $trans->method('save')->willReturn(1);
             return $trans;
           });
@@ -1621,7 +1623,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $node->method('addTranslation')
           ->willReturnCallback(function (string $lang, array $data) use (&$nodeTranslations) {
             $nodeTranslations[] = ['lang' => $lang];
-            $trans = $this->createMock(\Drupal\Core\Entity\EntityInterface::class);
+            $trans = $this->createMock(EntityInterface::class);
             $trans->method('save')->willReturn(1);
             return $trans;
           });
@@ -1755,6 +1757,225 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       }
 
     };
+  }
+
+  /**
+   * Tests default status terms for an Italian workspace (#358).
+   *
+   * Covers the reported bug: a workspace created with language=it must
+   * receive the two default status terms in Italian as their primary
+   * language, with English added as a secondary translation. Prior to the
+   * fix the terms were stored with langcode=it but name="Created"/"Done",
+   * so the Italian (Default) tab in the admin rendered English labels.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testDefaultStatusTermsAreLocalizedForItalianWorkspace(): void {
+    // Capture the record array via a closure-friendly helper.
+    $record = $this->setupDefaultStatusTermTrackerViaRef();
+
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => [
+        'en' => ['Road Damage', 'Flood'],
+        'it' => ['Danno stradale', 'Alluvione'],
+      ],
+      'language' => 'it',
+      // No 'statuses' key: exercise the DEFAULT_STATUSES path.
+    ]));
+
+    $creates = $record->creates;
+    $translations = $record->translations;
+
+    // Two default status terms created, both with langcode=it and
+    // Italian primary names.
+    $this->assertCount(2, $creates, 'Two default status terms should be created.');
+
+    $this->assertSame('it', $creates[0]['langcode']);
+    $this->assertSame('Creato', $creates[0]['name']);
+    $this->assertSame('initial', $creates[0]['mapping']);
+
+    $this->assertSame('it', $creates[1]['langcode']);
+    $this->assertSame('Completato', $creates[1]['name']);
+    $this->assertSame('closed', $creates[1]['mapping']);
+
+    // Each default status term gets an English translation added.
+    $firstTermTranslations = array_values(array_filter(
+      $translations,
+      fn($t) => $t['term_id'] === $creates[0]['term_id'],
+    ));
+    $enFirst = array_values(array_filter($firstTermTranslations, fn($t) => $t['lang'] === 'en'));
+    $this->assertCount(1, $enFirst);
+    $this->assertSame('Created', $enFirst[0]['name']);
+
+    $secondTermTranslations = array_values(array_filter(
+      $translations,
+      fn($t) => $t['term_id'] === $creates[1]['term_id'],
+    ));
+    $enSecond = array_values(array_filter($secondTermTranslations, fn($t) => $t['lang'] === 'en'));
+    $this->assertCount(1, $enSecond);
+    $this->assertSame('Done', $enSecond[0]['name']);
+
+    // Italian must NOT be added as a secondary translation when it is
+    // already the primary langcode (would trigger a duplicate-translation
+    // EntityStorageException in Drupal core).
+    $itFirst = array_filter($firstTermTranslations, fn($t) => $t['lang'] === 'it');
+    $this->assertEmpty($itFirst, 'Primary language must not be re-added as translation.');
+  }
+
+  /**
+   * Tests default status terms for every ALLOWED_LANGS locale (#358).
+   *
+   * Every locale the onboarding exposes must either (a) have a localized
+   * default status name in self::DEFAULT_STATUSES so the primary langcode
+   * matches the workspace default language, or (b) gracefully fall back to
+   * English with langcode=en so the "Default" tab still renders a
+   * consistent label. The test pins down both cases so regressions are
+   * caught before a tenant is provisioned.
+   *
+   * @dataProvider provideAllowedLocales
+   * @covers ::provisionWorkspace
+   */
+  public function testDefaultStatusTermsMatchPrimaryLangcodeForEveryAllowedLocale(string $locale): void {
+    $record = $this->setupDefaultStatusTermTrackerViaRef();
+
+    $this->service->provisionWorkspace($this->validData([
+      'categories' => [
+        'en' => ['Road Damage'],
+        $locale => ['Road Damage'],
+      ],
+      'language' => $locale,
+    ]));
+
+    $creates = $record->creates;
+    $this->assertCount(2, $creates, "Two default status terms should be created for locale {$locale}.");
+
+    foreach ($creates as $create) {
+      $this->assertNotSame('', $create['name'], "Status term for locale {$locale} must have a non-empty name.");
+      // Term's primary langcode must equal the name's source language so
+      // the Default tab in the admin renders the same string that is stored
+      // as the primary entry in taxonomy_term_field_data.
+      $this->assertContains(
+        $create['langcode'],
+        [$locale, 'en'],
+        "Status term langcode should be either {$locale} or 'en' fallback.",
+      );
+    }
+  }
+
+  /**
+   * Provides every ALLOWED_LANGS locale for the default-status test.
+   *
+   * @return array<string, array{string}>
+   *   Locale code keyed test cases.
+   */
+  public static function provideAllowedLocales(): array {
+    $locales = [
+      'en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
+      'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
+    ];
+    $cases = [];
+    foreach ($locales as $locale) {
+      $cases[$locale] = [$locale];
+    }
+    return $cases;
+  }
+
+  /**
+   * Helper that wraps the status-term tracker array in an object.
+   *
+   * Individual test methods read $record->creates / $record->translations
+   * after provisionWorkspace() runs; the closure inside the mock term
+   * storage mutates the same object so the captured state is visible to
+   * the asserting code.
+   */
+  protected function setupDefaultStatusTermTrackerViaRef(): object {
+    $record = new class {
+      /**
+       * Captured status-term create() payloads.
+       *
+       * @var array<int, array{term_id: int, name: string, langcode: string, mapping: string}>
+       */
+      public array $creates = [];
+
+      /**
+       * Captured addTranslation() payloads per status term.
+       *
+       * @var array<int, array{term_id: int, lang: string, name: string}>
+       */
+      public array $translations = [];
+
+    };
+
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('set')->willReturnSelf();
+    $group->method('save')->willReturn(1);
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+    $this->groupStorage->method('create')->willReturn($group);
+
+    $termIdCounter = 0;
+    $this->termStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, $record) {
+        $termIdCounter++;
+        $currentId = $termIdCounter;
+
+        $isStatus = ($values['vid'] ?? '') === 'service_status';
+        if ($isStatus) {
+          $record->creates[] = [
+            'term_id' => $currentId,
+            'name' => $values['name'] ?? '',
+            'langcode' => $values['langcode'] ?? '',
+            'mapping' => $values['field_open311_mapping'] ?? '',
+          ];
+        }
+
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn($currentId);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(TRUE);
+        $term->method('addTranslation')
+          ->willReturnCallback(function (string $lang, array $data) use ($currentId, $isStatus, $record) {
+            if ($isStatus) {
+              $record->translations[] = [
+                'term_id' => $currentId,
+                'lang' => $lang,
+                'name' => $data['name'] ?? '',
+              ];
+            }
+            $trans = $this->createMock(EntityInterface::class);
+            $trans->method('save')->willReturn(1);
+            return $trans;
+          });
+        return $term;
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function () {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        $node->method('isTranslatable')->willReturn(FALSE);
+        return $node;
+      });
+
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    return $record;
   }
 
 }
