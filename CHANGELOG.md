@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.67](https://github.com/markaspot/markaspot/compare/11.9.66...11.9.67) (2026-04-26)
+
+### Features
+
+* **i18n:** register Czech locale and add Hungarian backend parity ([2f53031](https://github.com/markaspot/markaspot/commit/2f53031d1f6105b87d338a5afab962fe7042052a))
+
 ## [11.9.66](https://github.com/markaspot/markaspot/compare/11.9.65...11.9.66) (2026-04-26)
 
 ### Features
