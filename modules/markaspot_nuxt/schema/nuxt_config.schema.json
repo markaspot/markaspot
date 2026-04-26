@@ -677,7 +677,7 @@
           "description": "Language codes to enable for this jurisdiction",
           "items": {
             "type": "string",
-            "enum": ["de", "de-ls", "en", "fr", "es", "it", "pt", "nl", "tr", "ar", "uk", "pl"]
+            "enum": ["de", "de-ls", "en", "cs", "fr", "es", "hu", "it", "pt", "nl", "da", "sv", "nb", "fi", "tr", "ar", "uk", "pl"]
           },
           "default": ["de", "en"],
           "uniqueItems": true
@@ -685,7 +685,7 @@
         "default": {
           "type": "string",
           "title": "Default Language",
-          "enum": ["de", "de-ls", "en", "fr", "es", "it", "pt", "nl", "tr", "ar", "uk", "pl"],
+          "enum": ["de", "de-ls", "en", "cs", "fr", "es", "hu", "it", "pt", "nl", "da", "sv", "nb", "fi", "tr", "ar", "uk", "pl"],
           "default": "de"
         }
       }

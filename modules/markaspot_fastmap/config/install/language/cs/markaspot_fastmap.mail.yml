@@ -1,0 +1,12 @@
+langcode: cs
+workspace_verification:
+  subject: '@site_name: Potvrďte pracovní prostor "@workspace_name"'
+  body: |
+    Požádali jste o nový pracovní prostor: @workspace_name
+
+    Kliknutím na odkaz níže pracovní prostor ověříte a aktivujete:
+    @verify_url
+
+    Tento odkaz vyprší za @cleanup_days dní.
+
+    Pokud jste o to nežádali, tento e-mail ignorujte.

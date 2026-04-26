@@ -34,8 +34,8 @@ class FastMapWorkspaceController extends ControllerBase {
    * Allowed language codes matching the frontend allowlist.
    */
   private const ALLOWED_LANGS = [
-    'en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
-    'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
+    'en', 'de', 'cs', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
+    'hu', 'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
   ];
 
   /**

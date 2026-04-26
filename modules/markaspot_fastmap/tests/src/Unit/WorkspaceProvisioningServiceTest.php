@@ -152,7 +152,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->languageManager = $this->createMock(LanguageManagerInterface::class);
     $langMock = $this->createMock(LanguageInterface::class);
     $allLangs = [];
-    foreach (['en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'fi', 'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk'] as $code) {
+    foreach (['en', 'de', 'cs', 'nl', 'fr', 'es', 'ar', 'da', 'fi', 'hu', 'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk'] as $code) {
       $allLangs[$code] = $langMock;
     }
     $this->languageManager->method('getLanguages')
@@ -1870,8 +1870,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    */
   public static function provideAllowedLocales(): array {
     $locales = [
-      'en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
-      'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
+      'en', 'de', 'cs', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
+      'hu', 'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
     ];
     $cases = [];
     foreach ($locales as $locale) {

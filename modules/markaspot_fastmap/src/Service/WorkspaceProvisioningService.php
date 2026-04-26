@@ -28,6 +28,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       'name' => [
         'en' => 'Created',
         'de' => 'Erstellt',
+        'cs' => 'Vytvořeno',
         'nl' => 'Aangemaakt',
         'fr' => 'Créé',
         'es' => 'Creado',
@@ -50,6 +51,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       'name' => [
         'en' => 'Done',
         'de' => 'Erledigt',
+        'cs' => 'Hotovo',
         'nl' => 'Afgerond',
         'fr' => 'Terminé',
         'es' => 'Hecho',
@@ -157,6 +159,13 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       ['title' => 'Überfüllter Mülleimer', 'description' => 'Der öffentliche Mülleimer an diesem Standort ist überfüllt und muss geleert werden.'],
       ['title' => 'Graffiti an Gebäude', 'description' => 'An der Fassade des Gebäudes befindet sich Graffiti.'],
     ],
+    'cs' => [
+      ['title' => 'Rozbitá pouliční lampa', 'description' => 'Pouliční lampa na tomto místě již několik dní nesvítí.'],
+      ['title' => 'Výtluk na hlavní silnici', 'description' => 'Na vozovce se vytvořil velký výtluk, který komplikuje dopravu.'],
+      ['title' => 'Poškozený chodník', 'description' => 'Dlaždice chodníku jsou popraskané a nerovné, hrozí zakopnutí.'],
+      ['title' => 'Přeplněný odpadkový koš', 'description' => 'Veřejný odpadkový koš na tomto místě je přeplněný a je třeba jej vyprázdnit.'],
+      ['title' => 'Graffiti na budově', 'description' => 'Na fasádě budovy na tomto místě je graffiti.'],
+    ],
     'nl' => [
       ['title' => 'Kapotte straatlantaarn', 'description' => 'De straatlantaarn op deze locatie is al meerdere dagen kapot.'],
       ['title' => 'Gat in de weg', 'description' => 'Er is een groot gat in het wegdek ontstaan.'],
@@ -190,8 +199,8 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   private const DEMO_STATUS_MAPPINGS = ['initial', 'initial', 'initial', 'open', 'closed'];
 
   private const ALLOWED_LANGS = [
-    'en', 'de', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
-    'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
+    'en', 'de', 'cs', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
+    'hu', 'it', 'nb', 'pl', 'pt', 'sv', 'tr', 'uk',
   ];
 
   /**
@@ -859,6 +868,13 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         . '<p>Nutzen Sie die Karte, um bestehende Meldungen zu sehen oder eine neue zu erstellen. '
         . 'Wählen Sie eine Kategorie, markieren Sie den Standort und beschreiben Sie das Anliegen. '
         . 'Ihre Meldung hilft, %name für alle zu verbessern.</p>',
+    ],
+    'cs' => [
+      'title' => 'Vítejte v %name',
+      'body' => '<p>Vítejte v <strong>%name</strong>, vaší platformě pro občanská hlášení.</p>'
+        . '<p>Pomocí mapy můžete procházet existující hlášení nebo vytvořit nové. '
+        . 'Vyberte kategorii, označte místo a popište problém. '
+        . 'Vaše hlášení pomáhá zlepšovat %name pro všechny.</p>',
     ],
     'fr' => [
       'title' => 'Bienvenue sur %name',

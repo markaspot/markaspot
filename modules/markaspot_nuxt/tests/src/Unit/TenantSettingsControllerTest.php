@@ -1080,9 +1080,36 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $locales = TenantSettingsController::SUPPORTED_LOCALES;
     $this->assertArrayHasKey('de', $locales);
     $this->assertArrayHasKey('en', $locales);
+    $this->assertArrayHasKey('cs', $locales);
     $this->assertArrayHasKey('fr', $locales);
     $this->assertArrayHasKey('ar', $locales);
     $this->assertNotEmpty($locales);
+  }
+
+  /**
+   * Tests that the config schema language enum matches SUPPORTED_LOCALES.
+   *
+   * @coversNothing
+   */
+  public function testLanguageSchemaMatchesSupportedLocales(): void {
+    $schemaPath = dirname(__DIR__, 3) . '/schema/nuxt_config.schema.json';
+    $this->assertFileExists($schemaPath);
+
+    $schema = json_decode((string) file_get_contents($schemaPath), TRUE);
+    $this->assertSame(JSON_ERROR_NONE, json_last_error(), json_last_error_msg());
+
+    $expected = array_keys(TenantSettingsController::SUPPORTED_LOCALES);
+    sort($expected);
+
+    $available = $schema['properties']['languages']['properties']['available']['items']['enum'] ?? NULL;
+    $default = $schema['properties']['languages']['properties']['default']['enum'] ?? NULL;
+    $this->assertIsArray($available);
+    $this->assertIsArray($default);
+    sort($available);
+    sort($default);
+
+    $this->assertSame($expected, $available);
+    $this->assertSame($expected, $default);
   }
 
   /**

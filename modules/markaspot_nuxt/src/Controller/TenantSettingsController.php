@@ -118,9 +118,11 @@ class TenantSettingsController extends ControllerBase {
   const SUPPORTED_LOCALES = [
     'de' => 'Deutsch',
     'en' => 'English',
+    'cs' => 'Čeština',
     'de-ls' => 'Einfache Sprache',
     'es' => 'Español',
     'fr' => 'Français',
+    'hu' => 'Magyar',
     'it' => 'Italiano',
     'pt' => 'Português',
     'tr' => 'Türkçe',
@@ -140,9 +142,11 @@ class TenantSettingsController extends ControllerBase {
   const LOCALE_ISO_CODES = [
     'de' => 'de-DE',
     'en' => 'en-US',
+    'cs' => 'cs-CZ',
     'de-ls' => 'de-DE',
     'es' => 'es-ES',
     'fr' => 'fr-FR',
+    'hu' => 'hu-HU',
     'it' => 'it-IT',
     'pt' => 'pt-PT',
     'tr' => 'tr-TR',

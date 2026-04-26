@@ -10,6 +10,7 @@ one `.po` file per locale supported by the Mark-a-Spot frontend.
 |-------------------|---------------------|-------------------------------|
 | `markaspot_mail.pot` | Source strings (EN) | 44 messages, kept in sync by hand until `drush locale:check` is wired up |
 | `de.po`              | German (primary)    | Fully translated (first-mover, Civic Patches in-house) |
+| `cs.po`              | Czech               | Fully translated |
 | `ar.po`              | Arabic              | Stub — msgstrs empty |
 | `da.po`              | Danish              | Stub — msgstrs empty |
 | `de-ls.po`           | German Leichte Sprache | Stub — msgstrs empty (sensitive register, recommend human translator) |
@@ -93,10 +94,10 @@ modules/markaspot_group/config/install/language/<langcode>/markaspot_group.mail.
 
 ### Config-locale gap as of 2026-04-17
 
-| Module                  | Locales shipped today                         | Missing (of 16 MaS locales)                                    |
+| Module                  | Locales shipped today                         | Missing (of 17 MaS locales)                                    |
 |-------------------------|-----------------------------------------------|----------------------------------------------------------------|
-| markaspot_passwordless  | ar, da, de, es, fi, fr, it, nb, nl, pl, pt, sv, tr, uk | de-ls, hu                                          |
-| markaspot_fastmap       | ar, da, de, es, fr, it, nl, pl, pt-br, tr, uk | de-ls, fi, hu, nb, sv                                          |
+| markaspot_passwordless  | ar, cs, da, de, es, fi, fr, it, nb, nl, pl, pt, sv, tr, uk | de-ls, hu                                      |
+| markaspot_fastmap       | ar, cs, da, de, es, fr, it, nl, pl, pt-br, tr, uk | de-ls, fi, hu, nb, sv                                      |
 | markaspot_feedback      | de                                            | ar, da, de-ls, es, fi, fr, hu, it, nb, nl, pl, pt, sv, tr, uk  |
 | markaspot_resubmission  | de                                            | ar, da, de-ls, es, fi, fr, hu, it, nb, nl, pl, pt, sv, tr, uk  |
 | markaspot_group         | de                                            | ar, da, de-ls, es, fi, fr, hu, it, nb, nl, pl, pt, sv, tr, uk  |

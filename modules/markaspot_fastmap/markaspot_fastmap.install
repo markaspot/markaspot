@@ -994,3 +994,31 @@ function markaspot_fastmap_update_11916(): void {
     $logger->info('jur-tenant_admin already has all page permissions.');
   }
 }
+
+/**
+ * Install Czech workspace verification mail translation for existing sites.
+ */
+function markaspot_fastmap_update_11917(): void {
+  $language_manager = \Drupal::languageManager();
+  $logger = \Drupal::logger('markaspot_fastmap');
+
+  if (!$language_manager->getLanguage('cs')) {
+    $logger->info('Czech language is not installed, skipped fastmap mail translation.');
+    return;
+  }
+
+  $override = $language_manager->getLanguageConfigOverride('cs', 'markaspot_fastmap.mail');
+  if (!$override->isNew()) {
+    $logger->info('Czech fastmap mail translation already exists.');
+    return;
+  }
+
+  $override
+    ->set('workspace_verification', [
+      'subject' => '@site_name: Potvrďte pracovní prostor "@workspace_name"',
+      'body' => "Požádali jste o nový pracovní prostor: @workspace_name\n\nKliknutím na odkaz níže pracovní prostor ověříte a aktivujete:\n@verify_url\n\nTento odkaz vyprší za @cleanup_days dní.\n\nPokud jste o to nežádali, tento e-mail ignorujte.\n",
+    ])
+    ->save();
+
+  $logger->info('Installed Czech fastmap mail translation.');
+}

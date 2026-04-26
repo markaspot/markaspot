@@ -1,0 +1,194 @@
+# Czech translation for Mark-a-Spot Emergency module
+# Copyright (c) 2024 Mark-a-Spot
+# This file is distributed under the same license as the Mark-a-Spot package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Mark-a-Spot Emergency\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-09-29 12:00+0000\n"
+"PO-Revision-Date: 2026-04-26 00:00+0000\n"
+"Last-Translator: cs <cs@markaspot>\n"
+"Language-Team: cs <cs@markaspot>\n"
+"Language: cs\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1) ? 0 : (n>=2 && n<=4) ? 1 : 2;\n"
+
+msgid "Emergency Mode Configuration"
+msgstr "Konfigurace nouzového režimu"
+
+msgid "Current Status"
+msgstr "Aktuální stav"
+
+msgid "Off"
+msgstr "Vypnuto"
+
+msgid "Standby"
+msgstr "Pohotovost"
+
+msgid "Active"
+msgstr "Aktivní"
+
+msgid "Emergency mode type"
+msgstr "Typ nouzového režimu"
+
+msgid "Disaster"
+msgstr "Katastrofa"
+
+msgid "Crisis"
+msgstr "Krize"
+
+msgid "Maintenance"
+msgstr "Údržba"
+
+msgid "Force redirect to lite UI"
+msgstr "Vynutit přesměrování na zjednodušené rozhraní"
+
+msgid "Unpublish regular categories"
+msgstr "Zrušit zveřejnění běžných kategorií"
+
+msgid "Restore categories on deactivation"
+msgstr "Obnovit kategorie při deaktivaci"
+
+msgid "CAP Alert Banner System"
+msgstr "Systém výstražného banneru CAP"
+
+msgid "Configure Common Alerting Protocol (CAP) compliant banners for high-priority information."
+msgstr "Nastavte bannery kompatibilní s Common Alerting Protocol (CAP) pro vysoce prioritní informace."
+
+msgid "Enable CAP banner system"
+msgstr "Povolit systém bannerů CAP"
+
+msgid "Allow emergency banners to be displayed on the frontend."
+msgstr "Povolit zobrazování nouzových bannerů ve frontendu."
+
+msgid "Banner message"
+msgstr "Zpráva banneru"
+
+msgid "The text to display in the banner. Leave empty to hide banner."
+msgstr "Text, který se zobrazí v banneru. Ponechte prázdné pro skrytí banneru."
+
+msgid "Alert level"
+msgstr "Úroveň výstrahy"
+
+msgid "Info (Blue)"
+msgstr "Informace (modrá)"
+
+msgid "Minor - CAP (Blue)"
+msgstr "Nízká - CAP (modrá)"
+
+msgid "Moderate - CAP (Amber)"
+msgstr "Střední - CAP (oranžová)"
+
+msgid "Severe - CAP (Red)"
+msgstr "Vážná - CAP (červená)"
+
+msgid "Extreme - CAP (Dark Red)"
+msgstr "Extrémní - CAP (tmavě červená)"
+
+msgid "Warning (Amber)"
+msgstr "Varování (oranžová)"
+
+msgid "Error (Red)"
+msgstr "Chyba (červená)"
+
+msgid "Critical (Dark Red)"
+msgstr "Kritická (tmavě červená)"
+
+msgid "Success (Green)"
+msgstr "Úspěch (zelená)"
+
+msgid "Choose alert level. CAP levels follow international Common Alerting Protocol standards."
+msgstr "Vyberte úroveň výstrahy. Úrovně CAP odpovídají mezinárodním standardům Common Alerting Protocol."
+
+msgid "Banner title (optional)"
+msgstr "Název banneru (volitelné)"
+
+msgid "Optional title for the banner. If empty, a default title based on alert level will be used."
+msgstr "Volitelný název banneru. Pokud zůstane prázdný, použije se výchozí název podle úrovně výstrahy."
+
+msgid "Display Conditions"
+msgstr "Podmínky zobrazení"
+
+msgid "Show only during emergency mode"
+msgstr "Zobrazit pouze během nouzového režimu"
+
+msgid "Banner will only be visible when emergency mode is active."
+msgstr "Banner bude viditelný pouze při aktivním nouzovém režimu."
+
+msgid "Show during maintenance mode"
+msgstr "Zobrazit během režimu údržby"
+
+msgid "Banner will be visible during maintenance mode."
+msgstr "Banner bude viditelný během režimu údržby."
+
+msgid "Always visible"
+msgstr "Vždy viditelné"
+
+msgid "Banner will always be visible regardless of emergency/maintenance mode."
+msgstr "Banner bude vždy viditelný bez ohledu na nouzový režim nebo režim údržby."
+
+msgid "Activate Emergency Mode"
+msgstr "Aktivovat nouzový režim"
+
+msgid "Deactivate Emergency Mode"
+msgstr "Deaktivovat nouzový režim"
+
+msgid "Emergency mode has been activated."
+msgstr "Nouzový režim byl aktivován."
+
+msgid "Emergency mode has been deactivated."
+msgstr "Nouzový režim byl deaktivován."
+
+msgid "Error activating emergency mode: @error"
+msgstr "Chyba při aktivaci nouzového režimu: @error"
+
+msgid "Error deactivating emergency mode: @error"
+msgstr "Chyba při deaktivaci nouzového režimu: @error"
+
+msgid "Injured Persons"
+msgstr "Zraněné osoby"
+
+msgid "Blocked Roads"
+msgstr "Zablokované silnice"
+
+msgid "Shelter Needed"
+msgstr "Potřeba přístřeší"
+
+msgid "Water/Food Needed"
+msgstr "Potřeba vody/jídla"
+
+msgid "Missing Persons"
+msgstr "Pohřešované osoby"
+
+msgid "Power Outage"
+msgstr "Výpadek elektřiny"
+
+msgid "Gas Leak"
+msgstr "Únik plynu"
+
+msgid "Building Damage"
+msgstr "Poškození budovy"
+
+msgid "Emergency Mode Active"
+msgstr "Nouzový režim aktivní"
+
+msgid "The system is currently in emergency mode. Please use the emergency reporting categories."
+msgstr "Systém je aktuálně v nouzovém režimu. Použijte prosím kategorie nouzového hlášení."
+
+msgid "Go to Emergency Reporting"
+msgstr "Přejít na nouzové hlášení"
+
+msgid "Maintenance banner text"
+msgstr "Text banneru údržby"
+
+msgid "Optional message shown by the frontend while maintenance mode is active."
+msgstr "Volitelná zpráva zobrazená ve frontendu, když je aktivní režim údržby."
+
+msgid "Force redirect to lite UI in maintenance"
+msgstr "Vynutit přesměrování na zjednodušené rozhraní během údržby"
+
+msgid "Usually disabled. Enable only if you want to use the lite UI during maintenance."
+msgstr "Obvykle vypnuto. Povolte pouze tehdy, pokud chcete během údržby použít zjednodušené rozhraní."
