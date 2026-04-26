@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_facility\Service;
 
+use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
@@ -44,6 +45,13 @@ class FacilityManager {
   private LoggerInterface $logger;
 
   /**
+   * Country repository for ISO 3166-1 alpha-2 validation.
+   *
+   * @var \CommerceGuys\Addressing\Country\CountryRepositoryInterface
+   */
+  private CountryRepositoryInterface $countryRepository;
+
+  /**
    * Tracks nodes whose address was locked from a selected facility.
    *
    * @var \SplObjectStorage<\Drupal\node\NodeInterface, bool>
@@ -56,9 +64,11 @@ class FacilityManager {
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
     LoggerChannelFactoryInterface $logger_factory,
+    CountryRepositoryInterface $country_repository,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->logger = $logger_factory->get('markaspot_facility');
+    $this->countryRepository = $country_repository;
     $this->addressLocks = new \SplObjectStorage();
   }
 
@@ -146,15 +156,11 @@ class FacilityManager {
       }
 
       if (!empty($facility['address']) && $node->hasField('field_address')) {
-        $country_code = $this->resolveCountryCode($node, $group);
-        $address = [
-          'address_line1' => $facility['address'],
-        ];
-        if ($country_code !== NULL) {
-          $address['country_code'] = $country_code;
+        $address = $this->buildFieldAddressFromFacility($facility['address'], $node, $group);
+        if ($address !== NULL) {
+          $node->set('field_address', $address);
+          $this->addressLocks[$node] = TRUE;
         }
-        $node->set('field_address', $address);
-        $this->addressLocks[$node] = TRUE;
       }
 
       return;
@@ -297,8 +303,9 @@ class FacilityManager {
           'active' => $active,
         ];
 
-        if (!empty($item['address']) && is_string($item['address'])) {
-          $normalized_item['address'] = $item['address'];
+        $stored_address = $this->normalizeStoredAddress($item['address'] ?? NULL);
+        if ($stored_address !== NULL) {
+          $normalized_item['address'] = $stored_address;
         }
         if (!empty($item['organisationId']) && is_string($item['organisationId'])) {
           $normalized_item['organisationId'] = $item['organisationId'];
@@ -432,11 +439,9 @@ class FacilityManager {
       ];
 
       if (array_key_exists('address', $item)) {
-        $normalized_item['address'] = $this->validateTextValue(
+        $normalized_item['address'] = $this->validateFacilityAddress(
           $item['address'],
-          "items[$index].address",
-          512,
-          TRUE
+          "items[$index].address"
           );
       }
 
@@ -493,6 +498,183 @@ class FacilityManager {
       throw new \InvalidArgumentException("$path must not contain HTML.");
     }
     return $trimmed;
+  }
+
+  /**
+   * Validates a facility address payload (legacy string or structured object).
+   *
+   * Accepts either:
+   * - a non-empty string up to 512 chars (legacy form, mirrors what tenants
+   *   stored before the admin UI gained reverse geocoding), or
+   * - an associative array `{address_line1, country_code?, locality?,
+   *   postal_code?}` written by the new admin UI after reverse geocoding.
+   *
+   * Anything else is rejected. The structured form requires `address_line1`
+   * and silently drops empty optional sub-keys so a `country_code: ''` from
+   * a JSON null-coercion does not pollute storage. The legacy string branch
+   * rejects empty/whitespace-only input so the write/read paths agree:
+   * `normalizeStoredAddress()` would trim a whitespace string back to NULL,
+   * which would silently lose the value on the next GET.
+   *
+   * @return array<string, string>|string
+   *   The canonical legacy string or the canonical structured array.
+   */
+  private function validateFacilityAddress(mixed $value, string $path): array|string {
+    if (is_string($value)) {
+      return $this->validateTextValue($value, $path, 512, FALSE);
+    }
+    if (is_array($value)) {
+      return $this->validateStructuredAddress($value, $path);
+    }
+    throw new \InvalidArgumentException("$path must be a string or an object.");
+  }
+
+  /**
+   * Validates a structured FacilityAddress object.
+   *
+   * Mirrors the four sub-fields required by Drupal's Address module so the
+   * admin UI's reverse-geocoded payload can be persisted as-is. Optional
+   * sub-keys are skipped when not a non-empty string after trimming.
+   *
+   * @param array<int|string, mixed> $value
+   *   The structured address candidate.
+   * @param string $path
+   *   The dotted path for error messages (e.g. `items[0].address`).
+   *
+   * @return array<string, string>
+   *   The validated structured address with only present, non-empty keys.
+   */
+  private function validateStructuredAddress(array $value, string $path): array {
+    $allowed = ['address_line1', 'country_code', 'locality', 'postal_code'];
+    $unknown = array_diff(array_keys($value), $allowed);
+    if ($unknown !== []) {
+      throw new \InvalidArgumentException("$path contains unknown keys: " . implode(', ', $unknown) . '.');
+    }
+
+    if (!array_key_exists('address_line1', $value)) {
+      throw new \InvalidArgumentException("$path.address_line1 is required.");
+    }
+
+    $structured = [
+      'address_line1' => $this->validateTextValue($value['address_line1'], "$path.address_line1", 255),
+    ];
+
+    if (array_key_exists('country_code', $value) && $this->isNonEmptyString($value['country_code'])) {
+      $country = strtoupper(trim((string) $value['country_code']));
+      // The regex is a cheap pre-check for the shape; the actual ISO 3166-1
+      // alpha-2 list lookup catches non-existent codes (XX, ZZ, EU, XK) that
+      // would otherwise pass here and crash Drupal's downstream Address
+      // module (commerceguys/addressing) with a field-constraint violation
+      // on every subsequent service request submission.
+      if (!preg_match('/^[A-Z]{2}$/', $country)) {
+        throw new \InvalidArgumentException("$path.country_code must be a 2-letter ISO 3166-1 alpha-2 code.");
+      }
+      if (!array_key_exists($country, $this->countryRepository->getList())) {
+        throw new \InvalidArgumentException("$path.country_code must be a valid ISO 3166-1 alpha-2 country code.");
+      }
+      $structured['country_code'] = $country;
+    }
+
+    if (array_key_exists('locality', $value) && $this->isNonEmptyString($value['locality'])) {
+      $structured['locality'] = $this->validateTextValue($value['locality'], "$path.locality", 255);
+    }
+
+    if (array_key_exists('postal_code', $value) && $this->isNonEmptyString($value['postal_code'])) {
+      $structured['postal_code'] = $this->validateTextValue($value['postal_code'], "$path.postal_code", 32);
+    }
+
+    return $structured;
+  }
+
+  /**
+   * Returns TRUE for a string with at least one non-whitespace character.
+   *
+   * Used to skip empty optional address sub-keys (e.g. an undefined that
+   * coerced to JSON null and surfaced as a missing/empty value).
+   */
+  private function isNonEmptyString(mixed $value): bool {
+    return is_string($value) && trim($value) !== '';
+  }
+
+  /**
+   * Normalizes a stored address value for the dashboard/public response.
+   *
+   * Accepts the legacy string form or a structured array previously written
+   * by the admin UI. Unknown keys in the structured form are dropped; an
+   * incomplete structured form (missing `address_line1`) is treated as
+   * absent so a corrupted blob doesn't poison every dashboard load.
+   *
+   * @return array<string, string>|string|null
+   *   The normalized stored address, or NULL when nothing usable is present.
+   */
+  private function normalizeStoredAddress(mixed $value): array|string|null {
+    if (is_string($value)) {
+      $trimmed = trim($value);
+      return $trimmed === '' ? NULL : $trimmed;
+    }
+    if (!is_array($value) || !$this->isNonEmptyString($value['address_line1'] ?? NULL)) {
+      return NULL;
+    }
+    $normalized = [
+      'address_line1' => trim((string) $value['address_line1']),
+    ];
+    foreach (['country_code', 'locality', 'postal_code'] as $key) {
+      if ($this->isNonEmptyString($value[$key] ?? NULL)) {
+        $normalized[$key] = $key === 'country_code'
+          ? strtoupper(trim((string) $value[$key]))
+          : trim((string) $value[$key]);
+      }
+    }
+    return $normalized;
+  }
+
+  /**
+   * Builds the field_address payload for a service request from a facility.
+   *
+   * Returns the structured array directly when the stored facility carries
+   * one; falls back to `{address_line1, country_code?}` derived from a legacy
+   * string + jurisdiction country code otherwise. Returns NULL when the
+   * source value yields no usable address line.
+   *
+   * @return array<string, string>|null
+   *   The address payload for `$node->set('field_address', ...)`.
+   */
+  private function buildFieldAddressFromFacility(
+    mixed $stored_address,
+    NodeInterface $node,
+    GroupInterface $group,
+  ): ?array {
+    if (is_array($stored_address) && $this->isNonEmptyString($stored_address['address_line1'] ?? NULL)) {
+      $address = ['address_line1' => trim((string) $stored_address['address_line1'])];
+      foreach (['country_code', 'locality', 'postal_code'] as $key) {
+        if ($this->isNonEmptyString($stored_address[$key] ?? NULL)) {
+          $address[$key] = $key === 'country_code'
+            ? strtoupper(trim((string) $stored_address[$key]))
+            : trim((string) $stored_address[$key]);
+        }
+      }
+      // Only consult the jurisdiction fallback when the structured payload
+      // didn't already supply a country code. Preserves the admin's intent
+      // when reverse geocoding produced one.
+      if (!isset($address['country_code'])) {
+        $country_code = $this->resolveCountryCode($node, $group);
+        if ($country_code !== NULL) {
+          $address['country_code'] = $country_code;
+        }
+      }
+      return $address;
+    }
+
+    if (is_string($stored_address) && trim($stored_address) !== '') {
+      $address = ['address_line1' => trim($stored_address)];
+      $country_code = $this->resolveCountryCode($node, $group);
+      if ($country_code !== NULL) {
+        $address['country_code'] = $country_code;
+      }
+      return $address;
+    }
+
+    return NULL;
   }
 
   /**

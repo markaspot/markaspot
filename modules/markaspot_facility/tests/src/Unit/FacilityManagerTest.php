@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_facility\Unit;
 
+use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
@@ -29,6 +30,13 @@ class FacilityManagerTest extends UnitTestCase {
   protected EntityStorageInterface $groupStorage;
 
   /**
+   * Country repository mock.
+   *
+   * @var \CommerceGuys\Addressing\Country\CountryRepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected CountryRepositoryInterface $countryRepository;
+
+  /**
    * Facility manager under test.
    *
    * @var \Drupal\markaspot_facility\Service\FacilityManager
@@ -52,7 +60,18 @@ class FacilityManagerTest extends UnitTestCase {
     $logger_factory = $this->createMock(LoggerChannelFactoryInterface::class);
     $logger_factory->method('get')->willReturn($this->createMock(LoggerInterface::class));
 
-    $this->manager = new FacilityManager($entity_type_manager, $logger_factory);
+    $this->countryRepository = $this->createMock(CountryRepositoryInterface::class);
+    $this->countryRepository->method('getList')->willReturn([
+      'DE' => 'Germany',
+      'NL' => 'Netherlands',
+      'GB' => 'United Kingdom',
+    ]);
+
+    $this->manager = new FacilityManager(
+      $entity_type_manager,
+      $logger_factory,
+      $this->countryRepository,
+    );
   }
 
   /**
@@ -286,6 +305,291 @@ class FacilityManagerTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsAcceptsStructuredAddress(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'address' => [
+            'address_line1' => 'Hauptstrasse 12',
+            'country_code' => 'de',
+            'locality' => 'Berlin',
+            'postal_code' => '10117',
+          ],
+        ],
+      ],
+    ]);
+
+    $this->assertSame([
+      'address_line1' => 'Hauptstrasse 12',
+      'country_code' => 'DE',
+      'locality' => 'Berlin',
+      'postal_code' => '10117',
+    ], $normalized['items'][0]['address']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsPreservesLegacyStringAddress(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'address' => 'Main Street 1',
+        ],
+      ],
+    ]);
+
+    $this->assertSame('Main Street 1', $normalized['items'][0]['address']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   */
+  public function testNormalizeSubmittedSettingsDropsEmptyOptionalAddressKeys(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'address' => [
+            'address_line1' => 'Hauptstrasse 12',
+            'country_code' => '',
+            'locality' => '   ',
+            'postal_code' => NULL,
+          ],
+        ],
+      ],
+    ]);
+
+    $this->assertSame([
+      'address_line1' => 'Hauptstrasse 12',
+    ], $normalized['items'][0]['address']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   * @dataProvider invalidStructuredAddressProvider
+   */
+  public function testNormalizeSubmittedSettingsRejectsInvalidStructuredAddress(
+    mixed $address,
+    string $expectedMessage,
+  ): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage($expectedMessage);
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'address' => $address,
+        ],
+      ],
+    ]);
+  }
+
+  /**
+   * Provides malformed address payloads plus the expected error message.
+   */
+  public static function invalidStructuredAddressProvider(): array {
+    return [
+      'missing address_line1' => [
+        ['country_code' => 'DE'],
+        'items[0].address.address_line1 is required.',
+      ],
+      'empty address_line1' => [
+        ['address_line1' => '   '],
+        'items[0].address.address_line1 must be a non-empty string.',
+      ],
+      'unknown sub-key' => [
+        ['address_line1' => 'Main', 'street' => 'Foo'],
+        'items[0].address contains unknown keys: street.',
+      ],
+      'invalid country_code shape (3 letters)' => [
+        ['address_line1' => 'Main', 'country_code' => 'GER'],
+        'items[0].address.country_code must be a 2-letter ISO 3166-1 alpha-2 code.',
+      ],
+      'non-iso 2-letter code (XX)' => [
+        ['address_line1' => 'Main', 'country_code' => 'XX'],
+        'items[0].address.country_code must be a valid ISO 3166-1 alpha-2 country code.',
+      ],
+      'non-iso 2-letter code (ZZ)' => [
+        ['address_line1' => 'Main', 'country_code' => 'ZZ'],
+        'items[0].address.country_code must be a valid ISO 3166-1 alpha-2 country code.',
+      ],
+      'non-iso 2-letter code (XK)' => [
+        ['address_line1' => 'Main', 'country_code' => 'XK'],
+        'items[0].address.country_code must be a valid ISO 3166-1 alpha-2 country code.',
+      ],
+      'wrong type (integer)' => [
+        42,
+        'items[0].address must be a string or an object.',
+      ],
+      'wrong type (boolean)' => [
+        TRUE,
+        'items[0].address must be a string or an object.',
+      ],
+    ];
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   *
+   * The country list lookup accepts ISO 3166-1 alpha-2 codes that exist in the
+   * `address.country_repository` mock (DE in setUp's known list).
+   */
+  public function testNormalizeSubmittedSettingsAcceptsValidIsoCountryCode(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'address' => [
+            'address_line1' => 'Hauptstrasse 12',
+            'country_code' => 'DE',
+          ],
+        ],
+      ],
+    ]);
+
+    $this->assertSame('DE', $normalized['items'][0]['address']['country_code']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   *
+   * A whitespace-only legacy address string is rejected by the validator so
+   * the write/read paths agree. `normalizeStoredAddress()` would trim such a
+   * value back to NULL on read, silently losing the user's input.
+   */
+  public function testNormalizeSubmittedSettingsRejectsWhitespaceOnlyLegacyAddress(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('items[0].address must be a non-empty string.');
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'address' => '   ',
+        ],
+      ],
+    ]);
+  }
+
+  /**
+   * @covers ::getDashboardSettings
+   */
+  public function testGetDashboardSettingsReturnsStructuredAddressRoundTrip(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')->with('field_facilities')->willReturn(TRUE);
+    $json = json_encode([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'active' => TRUE,
+          'address' => [
+            'address_line1' => 'Hauptstrasse 12',
+            'country_code' => 'DE',
+            'locality' => 'Berlin',
+            'postal_code' => '10117',
+          ],
+        ],
+      ],
+    ]);
+      // phpcs:disable
+      $group->method('get')->with('field_facilities')->willReturn(new class($json) {
+      public string $value;
+
+      public function __construct(string $json) { $this->value = $json; }
+
+      public function isEmpty(): bool { return FALSE; }
+      });
+      // phpcs:enable
+
+    $settings = $this->manager->getDashboardSettings($group);
+
+    $this->assertSame([
+      'address_line1' => 'Hauptstrasse 12',
+      'country_code' => 'DE',
+      'locality' => 'Berlin',
+      'postal_code' => '10117',
+    ], $settings['items'][0]['address']);
+  }
+
+  /**
+   * @covers ::getDashboardSettings
+   */
+  public function testGetDashboardSettingsDropsCorruptStructuredAddress(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')->with('field_facilities')->willReturn(TRUE);
+    $json = json_encode([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'active' => TRUE,
+          'address' => ['country_code' => 'DE'],
+        ],
+      ],
+    ]);
+      // phpcs:disable
+      $group->method('get')->with('field_facilities')->willReturn(new class($json) {
+      public string $value;
+
+      public function __construct(string $json) { $this->value = $json; }
+
+      public function isEmpty(): bool { return FALSE; }
+      });
+      // phpcs:enable
+
+    $settings = $this->manager->getDashboardSettings($group);
+
+    $this->assertArrayNotHasKey('address', $settings['items'][0]);
+  }
+
+  /**
    * @covers ::applyToServiceRequest
    */
   public function testApplyToServiceRequestSetsFacilityLocationAndAddress(): void {
@@ -370,6 +674,179 @@ class FacilityManagerTest extends UnitTestCase {
       ['field_address', ['address_line1' => 'Main Street 1', 'country_code' => 'DE']],
     ], $set_calls);
     $this->assertTrue($this->manager->isAddressLocked($node));
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   *
+   * Structured-address path: the four sub-fields flow through verbatim and
+   * the jurisdiction country fallback is suppressed (admin intent wins).
+   */
+  public function testApplyToServiceRequestPassesStructuredAddressVerbatim(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'active' => TRUE,
+            'address' => [
+              'address_line1' => 'Hauptstrasse 12',
+              'country_code' => 'NL',
+              'locality' => 'Berlin',
+              'postal_code' => '10117',
+            ],
+          ],
+        ],
+      ]),
+    // phpcs:disable
+    'field_jurisdiction_address' => new class() {
+          public string $country_code = 'DE';
+      },
+      // phpcs:enable
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+      // phpcs:disable
+      $facility_field = new class('campus_north') {
+            public function __construct(public string $value) {}
+
+            public function isEmpty(): bool { return FALSE; }
+      };
+      $jurisdiction_field = new class() {
+            public function isEmpty(): bool { return FALSE; }
+
+            public function first(): object { return (object) ['target_id' => 14]; }
+      };
+      $address_field = new class() {
+            public function isEmpty(): bool { return TRUE; }
+
+            public function first(): ?object { return NULL; }
+      };
+      // phpcs:enable
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('hasField')
+      ->willReturnCallback(fn(string $field) => in_array($field, [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_address',
+      ], TRUE));
+    $node->method('get')
+      ->willReturnCallback(fn(string $field) => match ($field) {
+            'field_facility' => $facility_field,
+            'field_jurisdiction' => $jurisdiction_field,
+            'field_address' => $address_field,
+            default => $this->createMock(FieldItemListInterface::class),
+      });
+
+    $set_calls = [];
+    $node->expects($this->exactly(2))
+      ->method('set')
+      ->willReturnCallback(function (string $field_name, array $value) use (&$set_calls): void {
+            $set_calls[] = [$field_name, $value];
+      });
+
+    $this->manager->applyToServiceRequest($node);
+    $this->assertSame([
+      ['field_geolocation', ['lat' => 52.5, 'lng' => 13.4]],
+      [
+        'field_address',
+        [
+          'address_line1' => 'Hauptstrasse 12',
+          'country_code' => 'NL',
+          'locality' => 'Berlin',
+          'postal_code' => '10117',
+        ],
+      ],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   *
+   * Structured address WITHOUT country_code falls back to the jurisdiction
+   * country, matching the legacy string path's behaviour.
+   */
+  public function testApplyToServiceRequestFallsBackToJurisdictionCountryForPartialStructuredAddress(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'active' => TRUE,
+            'address' => [
+              'address_line1' => 'Hauptstrasse 12',
+            ],
+          ],
+        ],
+      ]),
+    // phpcs:disable
+    'field_jurisdiction_address' => new class() {
+          public string $country_code = 'DE';
+      },
+      // phpcs:enable
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+      // phpcs:disable
+      $facility_field = new class('campus_north') {
+            public function __construct(public string $value) {}
+
+            public function isEmpty(): bool { return FALSE; }
+      };
+      $jurisdiction_field = new class() {
+            public function isEmpty(): bool { return FALSE; }
+
+            public function first(): object { return (object) ['target_id' => 14]; }
+      };
+      $address_field = new class() {
+            public function isEmpty(): bool { return TRUE; }
+
+            public function first(): ?object { return NULL; }
+      };
+      // phpcs:enable
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('hasField')
+      ->willReturnCallback(fn(string $field) => in_array($field, [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_address',
+      ], TRUE));
+    $node->method('get')
+      ->willReturnCallback(fn(string $field) => match ($field) {
+            'field_facility' => $facility_field,
+            'field_jurisdiction' => $jurisdiction_field,
+            'field_address' => $address_field,
+            default => $this->createMock(FieldItemListInterface::class),
+      });
+
+    $set_calls = [];
+    $node->method('set')
+      ->willReturnCallback(function (string $field_name, array $value) use (&$set_calls): void {
+            $set_calls[] = [$field_name, $value];
+      });
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      'address_line1' => 'Hauptstrasse 12',
+      'country_code' => 'DE',
+    ], $set_calls[1][1]);
   }
 
   /**
