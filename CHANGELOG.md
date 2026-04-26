@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.66](https://github.com/markaspot/markaspot/compare/11.9.65...11.9.66) (2026-04-26)
+
+### Features
+
+* **facility:** accept structured FacilityAddress with ISO country validation ([6adba7e](https://github.com/markaspot/markaspot/commit/6adba7ed7c5c57b83ef29fa1a7800418534dab50))
+
+### Bug Fixes
+
+* **workspace:** localize default status terms on workspace create ([86639d3](https://github.com/markaspot/markaspot/commit/86639d3c434b3e918faebb174813e5e0f18de17e))
+
 ## [11.9.65](https://github.com/markaspot/markaspot/compare/11.9.64...11.9.65) (2026-04-24)
 
 ### Features
