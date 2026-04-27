@@ -1673,7 +1673,20 @@ function markaspot_group_query_taxonomy_term_access_alter(AlterableInterface $qu
 
   $jur_ids = TenantAdminHelper::getUserJurisdictionIds($current_user);
   if (empty($jur_ids)) {
-    // No jurisdictions: add an impossible condition to show nothing.
+    // Fallback for tenant_admin users whose Drupal role was assigned outside
+    // the jur-tenant_admin group role sync (e.g., manually or pre-2.x).
+    // In that case, show terms for any jur group they are a member of.
+    $user = User::load($current_user->id());
+    if ($user) {
+      foreach (\Drupal\group\Entity\GroupMembership::loadByUser($user) as $membership) {
+        if ($membership->getGroup()->bundle() === 'jur') {
+          $jur_ids[] = (int) $membership->getGroupId();
+        }
+      }
+    }
+  }
+  if (empty($jur_ids)) {
+    // No jurisdictions at all: add an impossible condition to show nothing.
     $query->where('1 = 0');
     return;
   }
