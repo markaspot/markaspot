@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.68](https://github.com/markaspot/markaspot/compare/11.9.67...11.9.68) (2026-04-27)
+
+### Bug Fixes
+
+* **group:** show status terms for tenant_admin without jur-tenant_admin group role ([330ab37](https://github.com/markaspot/markaspot/commit/330ab37d71561e8a88c6a20f893e00dd77f1e2d4))
+
 ## [11.9.67](https://github.com/markaspot/markaspot/compare/11.9.66...11.9.67) (2026-04-26)
 
 ### Features
