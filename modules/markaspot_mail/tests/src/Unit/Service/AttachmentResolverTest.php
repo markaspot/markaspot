@@ -179,9 +179,9 @@ final class AttachmentResolverTest extends UnitTestCase {
       'max_per_file_bytes' => 1000,
       'max_total_bytes' => 1500,
     ], logger: $logger);
-    $first = $this->buildFile(filename: 'a.jpg', size: 800);
-    $second = $this->buildFile(filename: 'b.jpg', size: 800);
-    $third = $this->buildFile(filename: 'c.jpg', size: 800);
+    $first = $this->buildFile(id: 1, filename: 'a.jpg', size: 800);
+    $second = $this->buildFile(id: 2, filename: 'b.jpg', size: 800);
+    $third = $this->buildFile(id: 3, filename: 'c.jpg', size: 800);
     $entity = $this->buildEntity(['field_request_image' => [$first, $second, $third]]);
     $result = $resolver->resolve($entity, ['field_request_image']);
     // First fits (800 &lt;= 1500), second would bring us to 1600 &gt; 1500 — stop.
@@ -197,8 +197,8 @@ final class AttachmentResolverTest extends UnitTestCase {
       'max_per_file_bytes' => 1000,
       'max_total_bytes' => 1500,
     ]);
-    $first = $this->buildFile(filename: 'a.jpg', size: 750);
-    $second = $this->buildFile(filename: 'b.jpg', size: 750);
+    $first = $this->buildFile(id: 1, filename: 'a.jpg', size: 750);
+    $second = $this->buildFile(id: 2, filename: 'b.jpg', size: 750);
     $entity = $this->buildEntity(['field_request_image' => [$first, $second]]);
     $result = $resolver->resolve($entity, ['field_request_image']);
     $this->assertCount(2, $result);
@@ -214,8 +214,8 @@ final class AttachmentResolverTest extends UnitTestCase {
       'max_per_file_bytes' => 1000,
       'max_total_bytes' => 1500,
     ]);
-    $nullSize = $this->buildFile(filename: 'unknown.jpg', size: NULL);
-    $small = $this->buildFile(filename: 'tiny.jpg', size: 100);
+    $nullSize = $this->buildFile(id: 1, filename: 'unknown.jpg', size: NULL);
+    $small = $this->buildFile(id: 2, filename: 'tiny.jpg', size: 100);
     $entity = $this->buildEntity(['field_request_image' => [$nullSize, $small]]);
     $result = $resolver->resolve($entity, ['field_request_image']);
     // First books 1000 (cap). Second needs 100, 1000+100=1100 &lt;= 1500 — fits.
@@ -229,8 +229,8 @@ final class AttachmentResolverTest extends UnitTestCase {
    */
   public function testFieldOrderPreservedAcrossMultipleFields(): void {
     $resolver = $this->buildResolver();
-    $img = $this->buildFile(filename: 'photo.jpg');
-    $doc = $this->buildFile(filename: 'report.pdf', mime: 'application/pdf');
+    $img = $this->buildFile(id: 1, filename: 'photo.jpg');
+    $doc = $this->buildFile(id: 2, filename: 'report.pdf', mime: 'application/pdf');
     $entity = $this->buildEntity([
       'field_request_image' => [$img],
       'field_attachment' => [$doc],
