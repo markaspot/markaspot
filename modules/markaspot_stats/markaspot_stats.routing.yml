@@ -5,7 +5,7 @@ markaspot_stats.status:
     _title: 'Service Request Status Statistics'
     _format: 'json'
   requirements:
-    _custom_access: '\Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck::check'
+    _custom_access: 'markaspot_nuxt.feature_flag_access_check:check'
   options:
     _feature_flag: 'features.statistics'
     _feature_flag_default: false
@@ -18,7 +18,7 @@ markaspot_stats.api_status:
     _title: 'Service Request Status Statistics'
     _format: 'json'
   requirements:
-    _custom_access: '\Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck::check'
+    _custom_access: 'markaspot_nuxt.feature_flag_access_check:check'
   options:
     _feature_flag: 'features.statistics'
     _feature_flag_default: false
@@ -31,7 +31,7 @@ markaspot_stats.categories:
     _title: 'Service Request Category Statistics'
     _format: 'json'
   requirements:
-    _custom_access: '\Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck::check'
+    _custom_access: 'markaspot_nuxt.feature_flag_access_check:check'
   options:
     _feature_flag: 'features.statistics'
     _feature_flag_default: false
@@ -44,7 +44,7 @@ markaspot_stats.api_categories:
     _title: 'Service Request Category Statistics'
     _format: 'json'
   requirements:
-    _custom_access: '\Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck::check'
+    _custom_access: 'markaspot_nuxt.feature_flag_access_check:check'
   options:
     _feature_flag: 'features.statistics'
     _feature_flag_default: false
@@ -57,7 +57,7 @@ markaspot_stats.categories_hierarchical:
     _title: 'Hierarchical Service Request Category Statistics'
     _format: 'json'
   requirements:
-    _custom_access: '\Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck::check'
+    _custom_access: 'markaspot_nuxt.feature_flag_access_check:check'
   options:
     _feature_flag: 'features.statistics'
     _feature_flag_default: false

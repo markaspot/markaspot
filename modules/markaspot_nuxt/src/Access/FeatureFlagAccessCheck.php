@@ -31,7 +31,7 @@ use Symfony\Component\Routing\Route;
  *   defaults:
  *     _controller: '\Drupal\markaspot_stats\Controller\StatsController::getStatusStats'
  *   requirements:
- *     _custom_access: '\Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck::check'
+ *     _custom_access: 'markaspot_nuxt.feature_flag_access_check:check'
  *   options:
  *     _feature_flag: 'features.statistics'
  *     _feature_flag_default: false
