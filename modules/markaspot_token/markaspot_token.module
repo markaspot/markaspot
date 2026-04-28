@@ -93,25 +93,27 @@ function markaspot_token_tokens(
           break;
 
         case 'initial_status_note':
+          $replacements[$original] = '';
           if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
-            $first = $node->get('field_status_notes')->first()->entity;
+            $entities = $node->get('field_status_notes')->referencedEntities();
+            $first = reset($entities) ?: NULL;
             if ($first && $first->hasField('field_status_note') && !$first->get('field_status_note')->isEmpty()) {
-              $replacements[$original] = Html::escape($first->get('field_status_note')->value);
+              $replacements[$original] = _markaspot_token_status_note_value($first->get('field_status_note')->value);
               $bubbleable_metadata->addCacheableDependency($first);
-              break;
+              $bubbleable_metadata->addCacheableDependency($node);
             }
           }
-          $replacements[$original] = '';
           break;
 
         case 'latest_status_note':
           $replacements[$original] = '';
           if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
-            $items = $node->get('field_status_notes');
-            $last = $items->get($items->count() - 1)?->entity;
+            $entities = $node->get('field_status_notes')->referencedEntities();
+            $last = end($entities) ?: NULL;
             if ($last && $last->hasField('field_status_note') && !$last->get('field_status_note')->isEmpty()) {
-              $replacements[$original] = Html::escape($last->get('field_status_note')->value);
+              $replacements[$original] = _markaspot_token_status_note_value($last->get('field_status_note')->value);
               $bubbleable_metadata->addCacheableDependency($last);
+              $bubbleable_metadata->addCacheableDependency($node);
             }
           }
           break;
@@ -131,4 +133,25 @@ function markaspot_token_tokens(
   }
   return $replacements;
 
+}
+
+/**
+ * Sanitises a status note paragraph body for use in mail tokens.
+ *
+ * Strips CR/LF before HTML-escaping so the value is safe in both mail
+ * bodies and mail subject lines (the token may end up in either,
+ * depending on how an ECA action template is configured). Without the
+ * newline strip, a manager who writes "ok\nBcc: attacker@example.com"
+ * could inject mail headers if the token is ever placed in a subject:
+ * field — Html::escape() encodes HTML metacharacters but leaves
+ * newlines intact (CWE-93).
+ *
+ * Newlines are replaced with a single space rather than removed so word
+ * boundaries are preserved when the value is rendered inline in a body
+ * paragraph; the body Twig path runs Xss::filter and re-paragraphs via
+ * SplitParagraphsTrait, which works on blank-line separators not single
+ * newlines, so the visual result is unchanged for body usage.
+ */
+function _markaspot_token_status_note_value(string $raw): string {
+  return Html::escape(str_replace(["\r\n", "\r", "\n"], ' ', $raw));
 }
