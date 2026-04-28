@@ -67,7 +67,7 @@ final class ModerationNoticeBuilderTest extends UnitTestCase {
     $this->assertSame('platform', $msg->mode);
     $this->assertSame('Report flagged', $msg->subject);
     $this->assertSame('Report flagged', $msg->content['headline']);
-    $this->assertStringStartsWith('Under DSA', $msg->content['intro']);
+    $this->assertStringStartsWith('Under DSA', (string) $msg->content['intro']);
     $this->assertCount(1, $msg->content['body_blocks']);
   }
 
@@ -103,7 +103,7 @@ final class ModerationNoticeBuilderTest extends UnitTestCase {
       ->method('resolve')
       ->with(
         $this->identicalTo($node),
-        ['field_request_image', 'field_attachment'],
+        ['field_request_image', 'field_request_media', 'field_attachment'],
         includePrivate: TRUE,
       )
       ->willReturn([$attachment]);

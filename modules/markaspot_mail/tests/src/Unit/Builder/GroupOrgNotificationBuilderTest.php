@@ -13,14 +13,23 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
+/**
+ *
+ */
 #[CoversClass(\Drupal\markaspot_mail\Mail\Builder\GroupOrgNotificationBuilder::class)]
 #[Group('markaspot_mail')]
 final class GroupOrgNotificationBuilderTest extends UnitTestCase {
 
+  /**
+   *
+   */
   public function testGetTypeReturnsEcaGroupOrgNotification(): void {
     $this->assertSame(MailType::ECA_GROUP_ORG_NOTIFICATION, $this->buildBuilder()->getType());
   }
 
+  /**
+   *
+   */
   public function testSupportsOnlyOrgNotification(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_group', 'org_notification'));
@@ -28,6 +37,9 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'org_notification'));
   }
 
+  /**
+   *
+   */
   public function testBuildReturnsNullOnMissingParams(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -35,6 +47,9 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($this->buildContext(['subject' => 'x'])));
   }
 
+  /**
+   *
+   */
   public function testBuildProducesPlatformCardFromSubjectAndMessage(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([
@@ -48,8 +63,8 @@ final class GroupOrgNotificationBuilderTest extends UnitTestCase {
     $this->assertSame('platform', $msg->mode);
     $this->assertNull($msg->jurisdictionId);
     $this->assertSame('New report routed to Dept A', $msg->subject);
-    $this->assertSame('Intro line.', $msg->content['intro']);
-    $this->assertSame(['Second paragraph.'], $msg->content['body_blocks']);
+    $this->assertSame('Intro line.', (string) $msg->content['intro']);
+    $this->assertSame(['Second paragraph.'], array_map('strval', $msg->content['body_blocks']));
   }
 
   /**

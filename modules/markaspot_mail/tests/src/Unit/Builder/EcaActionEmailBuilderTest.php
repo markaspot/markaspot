@@ -123,10 +123,10 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
     $this->assertSame('Your report was received', $msg->subject);
     $this->assertSame('platform', $msg->mode);
     $this->assertNull($msg->jurisdictionId);
-    $this->assertSame('Dear citizen,', $msg->content['intro']);
+    $this->assertSame('Dear citizen,', (string) $msg->content['intro']);
     $this->assertCount(2, $msg->content['body_blocks']);
-    $this->assertStringStartsWith('Thank you', $msg->content['body_blocks'][0]);
-    $this->assertSame('Best regards', $msg->content['body_blocks'][1]);
+    $this->assertStringStartsWith('Thank you', (string) $msg->content['body_blocks'][0]);
+    $this->assertSame('Best regards', (string) $msg->content['body_blocks'][1]);
     $this->assertArrayHasKey('preheader', $msg->content);
   }
 
@@ -401,7 +401,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
       ->method('resolve')
       ->with(
         $this->isInstanceOf(ContentEntityInterface::class),
-        ['field_request_image', 'field_attachment'],
+        ['field_request_image', 'field_request_media', 'field_attachment'],
         includePrivate: TRUE,
       )
       ->willReturn([$attachment]);

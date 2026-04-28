@@ -19,14 +19,23 @@ use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
+/**
+ *
+ */
 #[CoversClass(\Drupal\markaspot_mail\Mail\Builder\ResubmissionRequestBuilder::class)]
 #[Group('markaspot_mail')]
 final class ResubmissionRequestBuilderTest extends UnitTestCase {
 
+  /**
+   *
+   */
   public function testGetTypeReturnsEcaResubmission(): void {
     $this->assertSame(MailType::ECA_RESUBMISSION, $this->buildBuilder()->getType());
   }
 
+  /**
+   *
+   */
   public function testSupportsOnlyResubmitRequest(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_resubmission', 'resubmit_request'));
@@ -34,6 +43,9 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'resubmit_request'));
   }
 
+  /**
+   *
+   */
   public function testBuildReturnsNullWhenNodeMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -49,6 +61,9 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
+  /**
+   *
+   */
   public function testBuildFallsBackToHardcodedCopyWhenConfigMissing(): void {
     $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')->willReturn(FALSE);
@@ -70,6 +85,9 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
     $this->assertSame('Please clarify your report', $msg->content['headline']);
   }
 
+  /**
+   *
+   */
   public function testBuildAppliesConfigTemplateViaTokenReplace(): void {
     $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')->willReturn(FALSE);
@@ -116,8 +134,8 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
 
     $this->assertNotNull($msg);
     $this->assertSame('Please clarify Pothole on Main St', $msg->subject);
-    $this->assertSame('Hello,', $msg->content['intro']);
-    $this->assertSame(['Please clarify the report 42-2026.'], $msg->content['body_blocks']);
+    $this->assertSame('Hello,', (string) $msg->content['intro']);
+    $this->assertSame(['Please clarify the report 42-2026.'], array_map('strval', $msg->content['body_blocks']));
   }
 
   /**

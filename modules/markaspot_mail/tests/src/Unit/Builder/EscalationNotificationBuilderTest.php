@@ -78,8 +78,8 @@ final class EscalationNotificationBuilderTest extends UnitTestCase {
     $this->assertSame(42, $msg->jurisdictionId);
     $this->assertSame('Request #12 escalated', $msg->subject);
     $this->assertSame('Request #12 escalated', $msg->content['headline']);
-    $this->assertSame('Intro paragraph.', $msg->content['intro']);
-    $this->assertSame(['Body paragraph.'], $msg->content['body_blocks']);
+    $this->assertSame('Intro paragraph.', (string) $msg->content['intro']);
+    $this->assertSame(['Body paragraph.'], array_map('strval', $msg->content['body_blocks']));
   }
 
   /**
@@ -116,7 +116,7 @@ final class EscalationNotificationBuilderTest extends UnitTestCase {
       ->method('resolve')
       ->with(
         $this->identicalTo($node),
-        ['field_request_image', 'field_attachment'],
+        ['field_request_image', 'field_request_media', 'field_attachment'],
         includePrivate: TRUE,
       )
       ->willReturn([$attachment]);

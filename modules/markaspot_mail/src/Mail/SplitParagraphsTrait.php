@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail;
 
-use Drupal\Component\Render\Markup;
+use Drupal\Core\Render\Markup;
 use Drupal\Component\Utility\Xss;
 
 /**
