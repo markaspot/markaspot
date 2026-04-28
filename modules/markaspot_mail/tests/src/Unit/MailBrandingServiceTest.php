@@ -19,6 +19,9 @@ use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
+/**
+ *
+ */
 #[CoversClass(\Drupal\markaspot_mail\Service\MailBrandingService::class)]
 #[Group('markaspot_mail')]
 final class MailBrandingServiceTest extends UnitTestCase {
@@ -38,7 +41,22 @@ final class MailBrandingServiceTest extends UnitTestCase {
     'platform.frontend_base_url' => 'https://mark-a-spot.com',
     'platform.tenant_frontend_base_template' => 'https://{slug}.civicspot.io',
   ];
+
+  /**
+   * Reset the operating-mode env var between tests so SaaS-mode setUp
+   * in one test does not leak into a later test that expects the
+   * self-hosted default.
+   */
+  protected function tearDown(): void {
+    putenv('MARKASPOT_OPERATING_MODE');
+    parent::tearDown();
+  }
+
+  /**
+   *
+   */
   public function testPlatformModeReturnsDefaults(): void {
+    putenv('MARKASPOT_OPERATING_MODE=saas');
     $service = $this->buildService(NULL);
     $branding = $service->getBranding(NULL, 'platform', 'en');
 
@@ -55,6 +73,30 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertStringContainsString('Civic Patches GmbH', $branding['platform_footer']['copyright']);
   }
 
+  /**
+   * Default operating mode is self_hosted; in this mode the Kommune is
+   * the sole legal contact, so no Civic-Patches branding may appear.
+   */
+  public function testSelfHostedModeIsDefaultAndDropsCivicPatchesFallbacks(): void {
+    // No env var set -> default self_hosted.
+    $service = $this->buildService(NULL);
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    // Configured platform_name still surfaces; brand attribution does not.
+    $this->assertSame('Mark-a-Spot', $branding['platform_name']);
+    // Configured legal/privacy URLs still surface (they're just URLs);
+    // the civicpatches.de FALLBACK does not.
+    $this->assertSame('https://civicpatches.de/impressum', $branding['legal_notice_url']);
+    $this->assertSame('https://civicpatches.de/datenschutz', $branding['privacy_url']);
+    // Platform footer (Zone 2: MaS-Logo + Civic-Patches Impressum) is
+    // forced off regardless of the legacy show_platform_footer flag.
+    $this->assertNull($branding['platform_footer']);
+    $this->assertFalse($branding['show_platform_footer']);
+  }
+
+  /**
+   *
+   */
   public function testJurisdictionAmsterdamMapsBlueToHex(): void {
     $group = $this->buildGroup([
       'id' => 1,
@@ -87,6 +129,9 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertStringContainsString('<br', $footerHtml);
   }
 
+  /**
+   *
+   */
   public function testJurisdictionBcpMapsEmeraldToHex(): void {
     $group = $this->buildGroup([
       'id' => 8,
@@ -104,6 +149,9 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('bcp-council', $branding['jurisdiction_slug']);
   }
 
+  /**
+   *
+   */
   public function testJurisdictionSlugBuildsLegalUrlsWhenFieldsContainContent(): void {
     $group = $this->buildGroup([
       'id' => 5,
@@ -128,6 +176,9 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('https://rotterdam.civicspot.io', $branding['frontend_base_url']);
   }
 
+  /**
+   *
+   */
   public function testMissingJurisdictionFallsBackAndLogsWarning(): void {
     $storage = $this->createMock(EntityStorageInterface::class);
     $storage->method('load')->willReturn(NULL);
@@ -145,6 +196,9 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('https://civicpatches.de/impressum', $branding['legal_notice_url']);
   }
 
+  /**
+   *
+   */
   public function testUnknownColorFallsBackToDefault(): void {
     $group = $this->buildGroup([
       'id' => 9,
@@ -159,6 +213,9 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('#004ced', $branding['primary_color']);
   }
 
+  /**
+   *
+   */
   public function testHexColorPassesThrough(): void {
     $group = $this->buildGroup([
       'id' => 7,
@@ -204,7 +261,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * features.show_platform_footer = false suppresses the Civic Patches
+   * Features.show_platform_footer = false suppresses the Civic Patches
    * attribution bundle. Self-hosted enterprise installations opt out so
    * no civicpatches.de/impressum or copyright line ships in their mails.
    */
@@ -224,10 +281,12 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Flag defaults to TRUE when markaspot_mail.settings has no entry,
-   * so shipping config behavior stays backwards-compatible.
+   * In SaaS mode the legacy features.show_platform_footer flag defaults
+   * to TRUE when markaspot_mail.settings has no entry, so shipping
+   * SaaS-tenant behavior stays backwards-compatible.
    */
-  public function testShowPlatformFooterDefaultsToTrueWhenMissing(): void {
+  public function testShowPlatformFooterDefaultsToTrueWhenMissingInSaasMode(): void {
+    putenv('MARKASPOT_OPERATING_MODE=saas');
     // Settings config without any features.show_platform_footer key.
     $service = $this->buildService(NULL);
 
@@ -239,8 +298,15 @@ final class MailBrandingServiceTest extends UnitTestCase {
 
   /**
    * S3: javascript: in legal_notice_url config falls back to the safe URL.
+   *
+   * In SaaS mode the safe default is civicpatches.de (Civic Patches IS
+   * the operator); in self_hosted mode the safe default is the empty
+   * string so no Civic-Patches link appears in a Kommune-operated mail.
+   * Both branches block the javascript: scheme — the security promise
+   * holds either way.
    */
   public function testJavascriptUrlInPlatformConfigFallsBackToSafeDefault(): void {
+    putenv('MARKASPOT_OPERATING_MODE=saas');
     $overrides = self::PLATFORM_SETTINGS;
     $overrides['platform.legal_notice_url'] = 'javascript:alert(1)';
     $service = $this->buildService(NULL, NULL, NULL, $overrides);
@@ -248,6 +314,22 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $branding = $service->getBranding(NULL, 'platform', 'en');
 
     $this->assertSame('https://civicpatches.de/impressum', $branding['legal_notice_url']);
+  }
+
+  /**
+   * Self-hosted equivalent: javascript: still rejected, but the safe
+   * default is empty so Twig's `{% if branding.legal_notice_url %}`
+   * suppresses the link entirely.
+   */
+  public function testJavascriptUrlInSelfHostedFallsBackToEmptyString(): void {
+    // No env var -> self_hosted.
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.legal_notice_url'] = 'javascript:alert(1)';
+    $service = $this->buildService(NULL, NULL, NULL, $overrides);
+
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertSame('', $branding['legal_notice_url']);
   }
 
   /**

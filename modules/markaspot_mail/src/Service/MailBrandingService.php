@@ -141,15 +141,23 @@ class MailBrandingService {
   private function computeBranding(?int $jurisdictionId, string $mode, string $langcode): array {
     $platformDefaults = $this->getPlatformDefaults();
 
-    // features.show_platform_footer is the opt-out switch for self-hosted
-    // enterprise installations and paid CivicSpot tiers. When false, Zone 2
-    // (MaS logo + Docs/civicspot.io + civicpatches.de Impressum + copyright)
-    // disappears entirely, the top Mark-a-Spot inline SVG in platform mode
-    // disappears too. Zone 1 (jurisdiction contact + legal links) is
-    // unaffected: the Kommune remains the DSGVO-Verantwortliche.
-    $showPlatformFooter = (bool) (
-      $this->configFactory->get('markaspot_mail.settings')->get('features.show_platform_footer') ?? TRUE
-    );
+    // Operating mode is the master switch for whether Civic-Patches /
+    // Mark-a-Spot branding is allowed to surface in mail at all. SaaS
+    // tenants (running under civicspot.io) are entitled to the platform
+    // promo; self-hosted Kommunen are NOT — they are the sole legal
+    // contact and any Civic-Patches link in their citizen mail would
+    // misrepresent the service provider. The mode is set via the
+    // MARKASPOT_OPERATING_MODE env var at deploy time and defaults to
+    // self_hosted when unset, so a fresh install ships clean.
+    $isSaas = $this->getOperatingMode() === 'saas';
+    // The legacy features.show_platform_footer flag still wins when
+    // explicitly set; in SaaS mode it defaults true (current behaviour),
+    // in self_hosted mode it is forced false regardless of config so a
+    // Civic-Patches footer cannot bleed through accidentally.
+    $configFlag = $this->configFactory->get('markaspot_mail.settings')->get('features.show_platform_footer');
+    $showPlatformFooter = $isSaas
+      ? ($configFlag === NULL ? TRUE : (bool) $configFlag)
+      : FALSE;
 
     $branding = [
       'mode' => $mode,
@@ -322,13 +330,18 @@ class MailBrandingService {
 
     // Validate all URL-ish config against an http(s) allowlist so a bad
     // setting can never inject javascript: / data: / file: into a mail.
+    // The civicpatches.de fallback is only legitimate when the platform
+    // runs in SaaS mode (Civic Patches IS the operator); a self-hosted
+    // Kommune must surface its own URLs or none at all so it doesn't
+    // misrepresent its legal contact.
+    $isSaas = $this->getOperatingMode() === 'saas';
     $legalNotice = $this->validateHttpUrl(
       (string) ($settings->get('platform.legal_notice_url') ?? ''),
-      'https://civicpatches.de/impressum',
+      $isSaas ? 'https://civicpatches.de/impressum' : '',
     );
     $privacy = $this->validateHttpUrl(
       (string) ($settings->get('platform.privacy_url') ?? ''),
-      'https://civicpatches.de/datenschutz',
+      $isSaas ? 'https://civicpatches.de/datenschutz' : '',
     );
 
     // Logo: platform logo ships inside the module as a PNG asset. If the
@@ -752,6 +765,31 @@ class MailBrandingService {
       }
     }
     return $this->ensureAbsolute('/' . $modulePath . '/' . $relative) ?? ('/' . $modulePath . '/' . $relative);
+  }
+
+  /**
+   * Returns the platform operating mode.
+   *
+   * Read from the MARKASPOT_OPERATING_MODE env var so the value is
+   * pinned at deploy time and cannot be flipped via cim. Two values:
+   *
+   * - "saas": platform runs under civicspot.io / mark-a-spot.com,
+   *   Civic Patches GmbH is the legal operator. The CivicSpot promo
+   *   footer + Civic-Patches Impressum/Datenschutz fallbacks are
+   *   appropriate.
+   * - "self_hosted": a Kommune (or any other independent operator)
+   *   runs the platform on their own infrastructure. Civic Patches is
+   *   neither operator nor data processor for this deployment, so any
+   *   Civic-Patches link in citizen-facing mail would misrepresent the
+   *   service provider. Default when the env var is unset, so a fresh
+   *   install ships clean.
+   *
+   * Anything other than the literal "saas" (case-insensitive) falls
+   * back to self_hosted on the safer-default principle.
+   */
+  private function getOperatingMode(): string {
+    $raw = strtolower(trim((string) (getenv('MARKASPOT_OPERATING_MODE') ?: '')));
+    return $raw === 'saas' ? 'saas' : 'self_hosted';
   }
 
 }
