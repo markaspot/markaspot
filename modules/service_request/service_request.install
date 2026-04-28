@@ -832,3 +832,46 @@ function service_request_update_11010(): string {
 
   return implode("\n", $messages);
 }
+
+/**
+ * Imports the German "Status changed." translation for existing tenants.
+ *
+ * The translation file ships with the module (translations/de.po) and is
+ * picked up automatically on a fresh install, but tenants that upgrade
+ * an already-installed module need an explicit import. The string is
+ * emitted by service_request.module:_service_request_status_change()
+ * as the fallback body for an auto-generated status_note paragraph
+ * when the manager triggers a transition without writing a Rückmeldung.
+ * Surfaced in citizen mails via [node:latest_status_note], so leaving
+ * it untranslated leaves "Status changed." in German citizen mails.
+ */
+function service_request_update_11011(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('locale')) {
+    return 'locale module not installed, skipping translation import.';
+  }
+
+  $modulePath = \Drupal::service('extension.list.module')->getPath('service_request');
+  $poFile = \Drupal::root() . '/' . $modulePath . '/translations/de.po';
+
+  if (!is_readable($poFile)) {
+    return 'No de.po shipped with service_request, skipping.';
+  }
+
+  // Use the same import path Drupal core uses for module translations
+  // so the strings land in the locales_source/locales_target tables.
+  $file = (object) [
+    'uri' => $poFile,
+    'filename' => basename($poFile),
+    'langcode' => 'de',
+    'project' => 'service_request',
+  ];
+  $options = [
+    'overwrite_options' => ['not_customized' => TRUE, 'customized' => FALSE],
+    'customized' => 0,
+    'finish_feedback' => FALSE,
+  ];
+  \Drupal::moduleHandler()->loadInclude('locale', 'inc', 'locale.bulk');
+  \Drupal\locale\Gettext::fileToDatabase($file, $options);
+
+  return 'Imported service_request/translations/de.po.';
+}
