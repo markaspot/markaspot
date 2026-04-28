@@ -717,14 +717,28 @@ class MailBrandingService {
   }
 
   /**
-   * Builds an absolute URL to a module-local asset path.
+   * Resolves a logo asset reference to an absolute URL.
    *
-   * Falls back to a relative URL when RequestStack / ModuleExtensionList
-   * are not available (e.g., under unit tests). Mail clients treat
-   * relative URLs poorly, so production code always runs with both
-   * services wired via the service container.
+   * Accepts two input shapes:
+   * - Absolute http(s) URL (e.g. a tenant-uploaded wappen served from the
+   *   public file system). Passed through after the standard allowlist
+   *   check; mail-client-incompatible schemes (data:, javascript:, ...)
+   *   are not detected here and fall into the module-asset branch where
+   *   they render as a broken URL — caller validates source.
+   * - Module-relative asset path (e.g. images/mark-a-spot-logo@2x.png).
+   *   Resolved to an absolute URL via ModuleExtensionList + RequestStack;
+   *   falls back to a relative URL when those services are unavailable
+   *   (e.g. under unit tests). Mail clients treat relative URLs poorly,
+   *   so production always runs with both services wired.
    */
   private function buildModuleAssetUrl(string $relative): string {
+    // Allow tenants to point platform.logo_path at an absolute URL (e.g. a
+    // jurisdiction wappen served from the file system). Pass through after
+    // the same allowlist validation used elsewhere; reject schemes we cannot
+    // safely embed in mail (data:, javascript:, etc.).
+    if (preg_match('#^https?://#i', $relative)) {
+      return $this->ensureAbsolute($relative) ?? $relative;
+    }
     $relative = ltrim($relative, '/');
     $modulePath = 'modules/contrib/markaspot/modules/markaspot_mail';
     if ($this->moduleExtensionList !== NULL) {
