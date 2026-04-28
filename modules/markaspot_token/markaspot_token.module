@@ -52,6 +52,10 @@ function markaspot_token_token_info() {
     'name' => t("Initial Status Note"),
     'description' => t('The text of the first status note on the service request.'),
   ];
+  $node['latest_status_note'] = [
+    'name' => t("Latest Status Note"),
+    'description' => t('The text of the most recent status note on the service request. Use this in citizen-facing mails to deliver the manager-written feedback for the current status transition.'),
+  ];
 
   return [
     'types' => ['node' => $type],
@@ -98,6 +102,18 @@ function markaspot_token_tokens(
             }
           }
           $replacements[$original] = '';
+          break;
+
+        case 'latest_status_note':
+          $replacements[$original] = '';
+          if ($node->hasField('field_status_notes') && !$node->get('field_status_notes')->isEmpty()) {
+            $items = $node->get('field_status_notes');
+            $last = $items->get($items->count() - 1)?->entity;
+            if ($last && $last->hasField('field_status_note') && !$last->get('field_status_note')->isEmpty()) {
+              $replacements[$original] = Html::escape($last->get('field_status_note')->value);
+              $bubbleable_metadata->addCacheableDependency($last);
+            }
+          }
           break;
       }
     }
