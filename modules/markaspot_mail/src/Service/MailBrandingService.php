@@ -12,6 +12,7 @@ use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Render\Markup;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\Url;
 use enshrined\svgSanitize\Sanitizer;
 use Psr\Log\LoggerInterface;
@@ -87,6 +88,17 @@ class MailBrandingService {
    */
   private array $brandingCache = [];
 
+  /**
+   * Memoized operating mode value.
+   *
+   * Resolved on first read from $settings['markaspot_operating_mode'] and
+   * reused for all subsequent calls within the same request. Avoids the
+   * duplicated Settings::get + strtolower roundtrip across getPlatformDefaults
+   * and computeBranding, and removes the drift risk of patching one call
+   * site without the other.
+   */
+  private ?string $operatingMode = NULL;
+
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
@@ -146,9 +158,10 @@ class MailBrandingService {
     // tenants (running under civicspot.io) are entitled to the platform
     // promo; self-hosted Kommunen are NOT — they are the sole legal
     // contact and any Civic-Patches link in their citizen mail would
-    // misrepresent the service provider. The mode is set via the
-    // MARKASPOT_OPERATING_MODE env var at deploy time and defaults to
-    // self_hosted when unset, so a fresh install ships clean.
+    // misrepresent the service provider. The mode is read from the
+    // markaspot_operating_mode setting (mapped from MARKASPOT_OPERATING_MODE
+    // in markaspot-cloud/docker/settings.php) and defaults to self_hosted
+    // when unset, so a fresh install ships clean.
     $isSaas = $this->getOperatingMode() === 'saas';
     // The legacy features.show_platform_footer flag still wins when
     // explicitly set; in SaaS mode it defaults true (current behaviour),
@@ -351,11 +364,15 @@ class MailBrandingService {
     $logoPath = (string) ($settings->get('platform.logo_path') ?? 'images/mark-a-spot-logo@2x.png');
     $logoUrl = $this->buildModuleAssetUrl($logoPath);
 
-    // Frontend base: prefer an explicit setting, otherwise fall back to
-    // mark-a-spot.com. Still validate to keep the allowlist promise.
+    // Frontend base: prefer an explicit setting. The mark-a-spot.com
+    // fallback is only legitimate in SaaS mode (Civic Patches IS the
+    // operator); a self-hosted Kommune must surface its own URL or none
+    // at all so a missing setting doesn't silently link citizens to a
+    // foreign domain. Mirrors the SaaS-gated legal/privacy fallbacks
+    // above. Still validate to keep the allowlist promise.
     $frontendBase = $this->validateHttpUrl(
       (string) ($settings->get('platform.frontend_base_url') ?? ''),
-      'https://mark-a-spot.com',
+      $isSaas ? 'https://mark-a-spot.com' : '',
     );
 
     // Tenant template: used in jurisdiction mode to build
@@ -770,8 +787,15 @@ class MailBrandingService {
   /**
    * Returns the platform operating mode.
    *
-   * Read from the MARKASPOT_OPERATING_MODE env var so the value is
-   * pinned at deploy time and cannot be flipped via cim. Two values:
+   * Read from $settings['markaspot_operating_mode'] so the value is
+   * pinned at bootstrap time and cannot be flipped via cim. The cloud
+   * image maps the MARKASPOT_OPERATING_MODE env var to this setting in
+   * markaspot-cloud/docker/settings.php; reading via Settings::get()
+   * keeps the service free of putenv/getenv globalstate that bleeds
+   * across paratest workers and lets Kernel tests override the value
+   * via new Settings([...]).
+   *
+   * Two values:
    *
    * - "saas": platform runs under civicspot.io / mark-a-spot.com,
    *   Civic Patches GmbH is the legal operator. The CivicSpot promo
@@ -781,15 +805,18 @@ class MailBrandingService {
    *   runs the platform on their own infrastructure. Civic Patches is
    *   neither operator nor data processor for this deployment, so any
    *   Civic-Patches link in citizen-facing mail would misrepresent the
-   *   service provider. Default when the env var is unset, so a fresh
+   *   service provider. Default when the setting is unset, so a fresh
    *   install ships clean.
    *
    * Anything other than the literal "saas" (case-insensitive) falls
    * back to self_hosted on the safer-default principle.
    */
   private function getOperatingMode(): string {
-    $raw = strtolower(trim((string) (getenv('MARKASPOT_OPERATING_MODE') ?: '')));
-    return $raw === 'saas' ? 'saas' : 'self_hosted';
+    if ($this->operatingMode !== NULL) {
+      return $this->operatingMode;
+    }
+    $raw = strtolower(trim((string) Settings::get('markaspot_operating_mode', '')));
+    return $this->operatingMode = $raw === 'saas' ? 'saas' : 'self_hosted';
   }
 
 }

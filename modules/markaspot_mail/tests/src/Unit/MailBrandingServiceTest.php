@@ -15,6 +15,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Site\Settings;
 use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -43,12 +44,22 @@ final class MailBrandingServiceTest extends UnitTestCase {
   ];
 
   /**
-   * Reset the operating-mode env var between tests so SaaS-mode setUp
-   * in one test does not leak into a later test that expects the
-   * self-hosted default.
+   * Resets Drupal Settings so operating-mode flips do not leak between tests.
+   *
+   * MailBrandingService reads the mode via Settings::get(); the Settings
+   * constructor pins itself as the singleton, so re-instantiating with an
+   * empty array is the canonical reset (no putenv globalstate).
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    new Settings([]);
+  }
+
+  /**
+   * Resets Drupal Settings on tear-down to mirror the setUp() reset.
    */
   protected function tearDown(): void {
-    putenv('MARKASPOT_OPERATING_MODE');
+    new Settings([]);
     parent::tearDown();
   }
 
@@ -56,7 +67,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
    *
    */
   public function testPlatformModeReturnsDefaults(): void {
-    putenv('MARKASPOT_OPERATING_MODE=saas');
+    new Settings(['markaspot_operating_mode' => 'saas']);
     $service = $this->buildService(NULL);
     $branding = $service->getBranding(NULL, 'platform', 'en');
 
@@ -78,7 +89,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
    * the sole legal contact, so no Civic-Patches branding may appear.
    */
   public function testSelfHostedModeIsDefaultAndDropsCivicPatchesFallbacks(): void {
-    // No env var set -> default self_hosted.
+    // setUp() resets Settings to empty -> default self_hosted.
     $service = $this->buildService(NULL);
     $branding = $service->getBranding(NULL, 'platform', 'en');
 
@@ -286,7 +297,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
    * SaaS-tenant behavior stays backwards-compatible.
    */
   public function testShowPlatformFooterDefaultsToTrueWhenMissingInSaasMode(): void {
-    putenv('MARKASPOT_OPERATING_MODE=saas');
+    new Settings(['markaspot_operating_mode' => 'saas']);
     // Settings config without any features.show_platform_footer key.
     $service = $this->buildService(NULL);
 
@@ -306,7 +317,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
    * holds either way.
    */
   public function testJavascriptUrlInPlatformConfigFallsBackToSafeDefault(): void {
-    putenv('MARKASPOT_OPERATING_MODE=saas');
+    new Settings(['markaspot_operating_mode' => 'saas']);
     $overrides = self::PLATFORM_SETTINGS;
     $overrides['platform.legal_notice_url'] = 'javascript:alert(1)';
     $service = $this->buildService(NULL, NULL, NULL, $overrides);
@@ -322,13 +333,87 @@ final class MailBrandingServiceTest extends UnitTestCase {
    * suppresses the link entirely.
    */
   public function testJavascriptUrlInSelfHostedFallsBackToEmptyString(): void {
-    // No env var -> self_hosted.
+    // setUp() resets Settings to empty -> default self_hosted.
     $overrides = self::PLATFORM_SETTINGS;
     $overrides['platform.legal_notice_url'] = 'javascript:alert(1)';
     $service = $this->buildService(NULL, NULL, NULL, $overrides);
 
     $branding = $service->getBranding(NULL, 'platform', 'en');
 
+    $this->assertSame('', $branding['legal_notice_url']);
+  }
+
+  /**
+   * Missing platform.frontend_base_url in SaaS mode falls back to
+   * mark-a-spot.com — the platform IS the operator, so the brand URL
+   * is the legitimate default.
+   */
+  public function testFrontendBaseUrlSaasFallbackIsMarkASpot(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+    $overrides = self::PLATFORM_SETTINGS;
+    unset($overrides['platform.frontend_base_url']);
+    $service = $this->buildService(NULL, NULL, NULL, $overrides);
+
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertSame('https://mark-a-spot.com', $branding['frontend_base_url']);
+  }
+
+  /**
+   * Missing platform.frontend_base_url in self_hosted mode falls back
+   * to '' rather than mark-a-spot.com so a Kommune-operated mail does
+   * not silently link citizens to a foreign domain. Mirrors the
+   * SaaS-gated legal/privacy fallbacks.
+   */
+  public function testFrontendBaseUrlSelfHostedFallsBackToEmptyString(): void {
+    // setUp() resets Settings to empty -> default self_hosted.
+    $overrides = self::PLATFORM_SETTINGS;
+    unset($overrides['platform.frontend_base_url']);
+    $service = $this->buildService(NULL, NULL, NULL, $overrides);
+
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertSame('', $branding['frontend_base_url']);
+  }
+
+  /**
+   * Self-hosted jurisdiction with non-URL legal content + empty tenant
+   * template + empty platform frontend_base_url MUST NOT produce a
+   * path-only legal_notice_url. resolveLegalUrl()'s frontendBase guard
+   * (line ~614) catches this; the test pins the invariant so a future
+   * refactor cannot silently emit a relative URL into a mail body where
+   * mail clients would fail to resolve it.
+   */
+  public function testSelfHostedSlugLegalUrlSuppressedWhenNoFrontendBase(): void {
+    // setUp() resets Settings to empty -> default self_hosted.
+    $overrides = self::PLATFORM_SETTINGS;
+    // No platform frontend base AND no tenant template -> nothing to
+    // anchor a slug-built legal URL to.
+    unset($overrides['platform.frontend_base_url']);
+    unset($overrides['platform.tenant_frontend_base_template']);
+    // Legal notice URL itself is also unset so the platform fallback ('')
+    // becomes the assertion target.
+    unset($overrides['platform.legal_notice_url']);
+
+    $group = $this->buildGroup([
+      'id' => 42,
+      'label' => 'Self-Hosted Kommune',
+      'field_slug' => 'kommune',
+      'field_platform_name' => 'Kommune',
+      'field_nuxt_config' => json_encode(['theme' => ['primary' => 'blue']]),
+      // Non-URL content forces the slug-builder branch in resolveLegalUrl.
+      'field_legal_notice' => 'Some prose, definitely not a URL.',
+    ]);
+    $service = $this->buildService($group, NULL, NULL, $overrides);
+
+    $branding = $service->getBranding(42, 'jurisdiction', 'en');
+
+    // Empty frontend base flows through to legal_notice_url. Without the
+    // guard, resolveLegalUrl would build "" . "/" . slug . "/legal-notice"
+    // and produce "/kommune/legal-notice" — a path-only string mail
+    // clients cannot resolve. assertSame('', ...) fails loudly on that
+    // exact regression with a meaningful diff.
+    $this->assertSame('', $branding['frontend_base_url']);
     $this->assertSame('', $branding['legal_notice_url']);
   }
 
