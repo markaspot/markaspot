@@ -32,12 +32,6 @@ markaspot_open311.settings:
     status_note_auto_create:
       type: boolean
       label: 'Auto-create status notes'
-    status_note_created:
-      type: string
-      label: 'Status note on creation'
-    status_note_changed:
-      type: string
-      label: 'Status note on status change'
 
     # Field Access Configuration
     field_access:

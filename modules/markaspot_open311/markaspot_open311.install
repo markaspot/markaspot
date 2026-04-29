@@ -5,6 +5,8 @@
  * Install, update and uninstall functions for the markaspot_open311 module.
  */
 
+use Drupal\Core\StringTranslation\TranslatableMarkup;
+
 /**
  * Implements hook_install().
  */
@@ -238,4 +240,37 @@ function markaspot_open311_update_11806(): void {
   if (isset($field_storage_definitions['field_address'])) {
     $manager->updateFieldStorageDefinition($field_storage_definitions['field_address']);
   }
+}
+
+/**
+ * Drop dead status_note_created + status_note_changed config keys.
+ *
+ * Both keys were exposed in the Open311 settings form and persisted on
+ * save, but no consumer ever read them — the citizen-facing note bodies
+ * are produced by service_request.module via translatable t() defaults
+ * (with status-term description and field_initial_boilerplate as the
+ * customisation path). Leaving the keys in tenant config after removing
+ * their schema declarations would surface as schema warnings on every
+ * cex/cim, so this hook clears them defensively. Tenants that never
+ * touched the form already have no entries; nothing is lost in either
+ * direction.
+ */
+function markaspot_open311_update_11807(): TranslatableMarkup {
+  $config = \Drupal::configFactory()->getEditable('markaspot_open311.settings');
+  $cleared = [];
+  foreach (['status_note_created', 'status_note_changed'] as $key) {
+    if ($config->get($key) !== NULL) {
+      $config->clear($key);
+      $cleared[] = $key;
+    }
+  }
+  if ($cleared !== []) {
+    // Plain save() — the cleared keys are no longer in the data array, so
+    // schema validation iterates only over the remaining (well-schemaed)
+    // keys. Avoid save(TRUE), whose trusted-data flag would mask future
+    // schema regressions in unrelated keys.
+    $config->save();
+    return t('Cleared dead config keys: @keys.', ['@keys' => implode(', ', $cleared)]);
+  }
+  return t('No dead status_note_* config keys present; nothing to clear.');
 }

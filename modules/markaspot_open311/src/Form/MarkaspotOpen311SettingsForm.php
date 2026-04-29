@@ -146,30 +146,6 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       '#description' => $this->t('When enabled, automatically creates a status note when the status changes. Disable if the frontend handles status notes.'),
     ];
 
-    $form['markaspot_open311']['status_notes']['status_note_created'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Initial Status Note Text'),
-      '#default_value' => $config->get('status_note_created') ?? 'The service request has been created.',
-      '#description' => $this->t('Default text for the initial status note when a new request is created. Leave empty to skip.'),
-      '#states' => [
-        'visible' => [
-          ':input[name="status_note_auto_create"]' => ['checked' => TRUE],
-        ],
-      ],
-    ];
-
-    $form['markaspot_open311']['status_notes']['status_note_changed'] = [
-      '#type' => 'textfield',
-      '#title' => $this->t('Status Changed Note Text'),
-      '#default_value' => $config->get('status_note_changed') ?? 'Status changed.',
-      '#description' => $this->t('Default text for status notes when status changes. Leave empty to skip auto-creation on status change.'),
-      '#states' => [
-        'visible' => [
-          ':input[name="status_note_auto_create"]' => ['checked' => TRUE],
-        ],
-      ],
-    ];
-
     // Field Access Configuration.
     $form['markaspot_open311']['field_access'] = [
       '#type' => 'fieldset',
@@ -356,10 +332,16 @@ class MarkaspotOpen311SettingsForm extends ConfigFormBase {
       ->set('status_open_start', $values['status_open_start'])
       ->set('status_open', $values['status_open'])
       ->set('status_closed', $values['status_closed'])
-      // Status Notes Configuration.
+      // Status Notes Configuration. Only the auto-create kill-switch is
+      // config-driven here. The user-facing note bodies live in
+      // service_request.module as t()-translatable defaults; per-tenant
+      // customisation flows through field_initial_boilerplate on the
+      // jurisdiction (markaspot_boilerplate) and the status taxonomy
+      // term description, NOT through this form. Do not re-add
+      // status_note_created / status_note_changed text fields here:
+      // they were dead config from 2024 and were dropped via
+      // markaspot_open311_update_11807().
       ->set('status_note_auto_create', $values['status_note_auto_create'])
-      ->set('status_note_created', $values['status_note_created'])
-      ->set('status_note_changed', $values['status_note_changed'])
       // Field Access.
       ->set('field_access.public_fields', $values['public_fields'])
       ->set('field_access.user_fields', $values['user_fields'])
