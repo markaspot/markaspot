@@ -849,6 +849,9 @@ function service_request_update_11011(): string {
   if (!\Drupal::moduleHandler()->moduleExists('locale')) {
     return 'locale module not installed, skipping translation import.';
   }
+  if (!\Drupal::languageManager()->getLanguage('de')) {
+    return 'No de language enabled on this site, skipping.';
+  }
 
   $modulePath = \Drupal::service('extension.list.module')->getPath('service_request');
   $poFile = \Drupal::root() . '/' . $modulePath . '/translations/de.po';
