@@ -1,5 +1,25 @@
 # Changelog
 
+## [11.9.69](https://github.com/markaspot/markaspot/compare/11.9.68...11.9.69) (2026-04-29)
+
+### Features
+
+* **mail:** add MARKASPOT_OPERATING_MODE env-driven branding kill-switch ([5054bd5](https://github.com/markaspot/markaspot/commit/5054bd567a2221b5b61b708618ce71093058391f))
+* **token:** add [node:latest_status_note] for citizen mail personalisation ([82f8b77](https://github.com/markaspot/markaspot/commit/82f8b772884b4c84c79bd897f96da53577fb1075))
+
+### Bug Fixes
+
+* **i18n:** skip status_note translation import on non-DE sites ([e5f3119](https://github.com/markaspot/markaspot/commit/e5f31191aaaf326ced53f341b83753a4285b88e3))
+* **i18n:** translate 'Status changed.' fallback for citizen mails ([3b24ff8](https://github.com/markaspot/markaspot/commit/3b24ff84292c32f138852e52739ce552b7d45915))
+* **mail:** correct Markup namespace and align builder test assertions ([6994863](https://github.com/markaspot/markaspot/commit/699486354c6eb39f1dead8a7990bb408e42f5d94))
+* register feature flag access service ([b3a9926](https://github.com/markaspot/markaspot/commit/b3a9926dfcd867dd660716d4b9ea172c1702e0cc))
+* **token:** harden status_note token resolution ([6eb524b](https://github.com/markaspot/markaspot/commit/6eb524bdb5761114c0bb09f13387c05491436186))
+
+### Refactoring
+
+* **mail:** pass absolute URLs through buildModuleAssetUrl ([a9c77e1](https://github.com/markaspot/markaspot/commit/a9c77e15fb794c16a94fcdaf10cbba03dcc4dc5a))
+* **mail:** read operating mode via Settings::get with memoization ([937797b](https://github.com/markaspot/markaspot/commit/937797b91bef0121a07bf5558794ca4a6d218bba))
+
 ## [11.9.68](https://github.com/markaspot/markaspot/compare/11.9.67...11.9.68) (2026-04-27)
 
 ### Bug Fixes
