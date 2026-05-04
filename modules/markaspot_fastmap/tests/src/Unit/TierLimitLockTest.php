@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_fastmap\Unit;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityStorageInterface;
@@ -188,6 +190,15 @@ class TierLimitLockTest extends UnitTestCase {
       ->with('markaspot_fastmap')
       ->willReturn($logger);
 
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')->willReturnCallback(
+      fn(string $key) => $key === 'jurisdiction_group_type' ? 'jur' : NULL,
+    );
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturnCallback(
+      fn(string $name) => $name === 'markaspot_open311.settings' ? $open311Config : $this->createMock(ImmutableConfig::class),
+    );
+
     $container = new ContainerBuilder();
     $container->set('current_user', $currentUser);
     $container->set('entity_type.manager', $entityTypeManager);
@@ -195,6 +206,7 @@ class TierLimitLockTest extends UnitTestCase {
     $container->set('lock', $lock);
     $container->set('request_stack', $requestStack);
     $container->set('logger.factory', $loggerFactory);
+    $container->set('config.factory', $configFactory);
     \Drupal::setContainer($container);
   }
 
