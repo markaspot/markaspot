@@ -17,6 +17,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
@@ -105,6 +106,11 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   protected EntityStorageInterface $langStorage;
 
   /**
+   * Inspectable lock backend used by the service.
+   */
+  protected LockBackendInterface $lock;
+
+  /**
    * The service under test.
    *
    * @var \Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService
@@ -169,14 +175,80 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         'demo_expiry_days' => 5,
         default => NULL,
       });
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'jurisdiction_group_type' => 'jur',
+        default => NULL,
+      });
     $configFactory->method('get')
-      ->with('markaspot_fastmap.settings')
-      ->willReturn($immutableConfig);
+      ->willReturnCallback(fn(string $name) => match ($name) {
+        'markaspot_fastmap.settings' => $immutableConfig,
+        'markaspot_open311.settings' => $open311Config,
+        default => $this->createMock(ImmutableConfig::class),
+      });
     $container->set('config.factory', $configFactory);
 
     $time = $this->createMock(TimeInterface::class);
     $time->method('getRequestTime')->willReturn(1700000000);
     $container->set('datetime.time', $time);
+
+    $this->lock = new class implements LockBackendInterface {
+
+      /**
+       * Whether acquire() should succeed.
+       */
+      public bool $acquireResult = TRUE;
+
+      /**
+       * Recorded lock events.
+       *
+       * @var array<int, array<int, mixed>>
+       */
+      public array $events = [];
+
+      /**
+       * {@inheritdoc}
+       */
+      public function acquire($name, $timeout = 30.0): bool {
+        $this->events[] = ['acquire', $name, $timeout];
+        return $this->acquireResult;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function lockMayBeAvailable($name): bool {
+        return $this->acquireResult;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function wait($name, $delay = 30): bool {
+        return !$this->acquireResult;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function release($name): void {
+        $this->events[] = ['release', $name];
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function releaseAll($lockId = NULL): void {}
+
+      /**
+       * {@inheritdoc}
+       */
+      public function getLockId(): string {
+        return 'workspace-provisioning-test-lock';
+      }
+
+    };
 
     \Drupal::setContainer($container);
 
@@ -187,6 +259,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       $this->languageManager,
       $configFactory,
       $time,
+      $this->lock,
     );
   }
 
@@ -276,6 +349,41 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $statusQuery->method('condition')->willReturnSelf();
     $statusQuery->method('execute')->willReturn([]);
     $this->termStorage->method('getQuery')->willReturn($statusQuery);
+  }
+
+  /**
+   * @covers ::addGroupMembership
+   */
+  public function testTenantAdminProvisioningKeepsMemberBaseRole(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+
+    $this->relationshipStorage->expects($this->once())
+      ->method('loadByProperties')
+      ->with([
+        'gid' => 42,
+        'entity_id' => 10,
+        'plugin_id' => 'group_membership',
+      ])
+      ->willReturn([]);
+
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->expects($this->once())
+      ->method('set')
+      ->with('group_roles', ['jur-member', 'jur-tenant_admin'])
+      ->willReturnSelf();
+    $membership->expects($this->once())->method('save')->willReturn(1);
+
+    $group->expects($this->once())
+      ->method('addRelationship')
+      ->with($user, 'group_membership')
+      ->willReturn($membership);
+
+    $method = new \ReflectionMethod($this->service, 'addGroupMembership');
+    $method->invoke($this->service, $group, $user);
   }
 
   /**
@@ -401,6 +509,29 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $this->expectExceptionMessage('Slug already taken');
 
     $this->service->provisionWorkspace($this->validData());
+  }
+
+  /**
+   * Tests that concurrent provisioning for the same slug is rejected.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testProvisionWorkspaceRejectsConcurrentSlugLock(): void {
+    $this->lock->acquireResult = FALSE;
+    $this->groupStorage->expects($this->never())->method('loadByProperties');
+
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('Slug already taken');
+
+    try {
+      $this->service->provisionWorkspace($this->validData());
+    }
+    finally {
+      $this->assertCount(1, $this->lock->events);
+      $this->assertSame('acquire', $this->lock->events[0][0]);
+      $this->assertStringStartsWith('markaspot_fastmap:workspace_slug:', $this->lock->events[0][1]);
+      $this->assertSame(300.0, $this->lock->events[0][2]);
+    }
   }
 
   /**

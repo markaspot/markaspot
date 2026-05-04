@@ -8,6 +8,163 @@
 use Drupal\user\Entity\Role;
 
 /**
+ * Implements hook_requirements().
+ */
+function markaspot_group_requirements(string $phase): array {
+  $requirements = [];
+
+  if ($phase !== 'runtime') {
+    return $requirements;
+  }
+
+  $issues = _markaspot_group_obsolete_eca_runtime_issues();
+  $requirements['markaspot_group_obsolete_eca'] = [
+    'title' => t('Mark-a-Spot obsolete ECA models'),
+    'value' => empty($issues) ? t('Disabled') : t('@count issue(s)', [
+      '@count' => count($issues),
+    ]),
+    'severity' => empty($issues)
+      ? \Drupal\Core\Extension\Requirement\RequirementSeverity::OK
+      : \Drupal\Core\Extension\Requirement\RequirementSeverity::Warning,
+  ];
+
+  if (!empty($issues)) {
+    $requirements['markaspot_group_obsolete_eca']['description'] = t('Obsolete ECA models replaced by code-based group assignment are active or still subscribed: @issues', [
+      '@issues' => implode('; ', $issues),
+    ]);
+  }
+
+  return $requirements;
+}
+
+/**
+ * Gets runtime issues for obsolete ECA models.
+ *
+ * @return string[]
+ *   Human-readable issue summaries.
+ */
+function _markaspot_group_obsolete_eca_runtime_issues(): array {
+  $issues = [];
+  foreach (['process_apply_group'] as $eca_id) {
+    $config = \Drupal::configFactory()->get("eca.eca.{$eca_id}");
+    if (!$config->isNew() && $config->get('status') !== FALSE) {
+      $issues[] = "eca.eca.{$eca_id} is enabled";
+    }
+
+    $subscribed = \Drupal::state()->get('eca.subscribed', []);
+    if (_markaspot_group_eca_subscription_contains($subscribed, $eca_id)) {
+      $issues[] = "eca.subscribed references {$eca_id}";
+    }
+  }
+
+  return $issues;
+}
+
+/**
+ * Checks whether an ECA subscribed-events state tree contains an ECA ID.
+ *
+ * @param mixed $subscribed
+ *   ECA subscribed-events state.
+ * @param string $eca_id
+ *   ECA config entity ID.
+ *
+ * @return bool
+ *   TRUE if the state tree references the ECA ID.
+ */
+function _markaspot_group_eca_subscription_contains(mixed $subscribed, string $eca_id): bool {
+  if (!is_array($subscribed)) {
+    return FALSE;
+  }
+
+  foreach ($subscribed as $key => $value) {
+    if ((string) $key === $eca_id) {
+      return TRUE;
+    }
+    if (_markaspot_group_eca_subscription_contains($value, $eca_id)) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Removes obsolete ECA IDs from ECA subscribed-events state.
+ *
+ * @return int
+ *   Number of obsolete ECA IDs that were found and pruned.
+ */
+function _markaspot_group_prune_obsolete_eca_subscriptions(): int {
+  $state = \Drupal::state();
+  $subscribed = $state->get('eca.subscribed', []);
+  if (!is_array($subscribed)) {
+    return 0;
+  }
+
+  $pruned = 0;
+  foreach (['process_apply_group'] as $eca_id) {
+    if (_markaspot_group_eca_subscription_contains($subscribed, $eca_id)) {
+      $pruned++;
+      $subscribed = _markaspot_group_prune_eca_subscription_id($subscribed, $eca_id);
+    }
+  }
+
+  if ($pruned > 0) {
+    $state->set('eca.subscribed', $subscribed);
+  }
+
+  return $pruned;
+}
+
+/**
+ * Removes a single ECA ID from a subscribed-events state tree.
+ *
+ * @param mixed $subscribed
+ *   ECA subscribed-events state tree.
+ * @param string $eca_id
+ *   ECA config entity ID.
+ *
+ * @return mixed
+ *   Pruned subscribed-events state tree.
+ */
+function _markaspot_group_prune_eca_subscription_id(mixed $subscribed, string $eca_id): mixed {
+  if (!is_array($subscribed)) {
+    return $subscribed;
+  }
+
+  foreach ($subscribed as $key => $value) {
+    if ((string) $key === $eca_id) {
+      unset($subscribed[$key]);
+      continue;
+    }
+
+    $subscribed[$key] = _markaspot_group_prune_eca_subscription_id($value, $eca_id);
+    if (is_array($subscribed[$key]) && $subscribed[$key] === []) {
+      unset($subscribed[$key]);
+    }
+  }
+
+  return $subscribed;
+}
+
+/**
+ * Rebuilds ECA subscribed-events state when the ECA module is available.
+ */
+function _markaspot_group_rebuild_eca_subscribed_events(): bool {
+  if (!\Drupal::moduleHandler()->moduleExists('eca')) {
+    return FALSE;
+  }
+
+  $storage = \Drupal::entityTypeManager()->getStorage('eca');
+  if (!method_exists($storage, 'rebuildSubscribedEvents')) {
+    return FALSE;
+  }
+
+  $storage->rebuildSubscribedEvents();
+  return TRUE;
+}
+
+/**
  * Implements hook_schema().
  */
 function markaspot_group_schema(): array {
@@ -264,6 +421,8 @@ function markaspot_group_update_11901(array &$sandbox): void {
     $sandbox['phase'] = 'init';
     $sandbox['root_jur_id'] = NULL;
     $sandbox['processed'] = 0;
+    $sandbox['added'] = 0;
+    $sandbox['skipped_existing'] = 0;
     $sandbox['total'] = 0;
   }
 
@@ -373,6 +532,7 @@ function markaspot_group_update_11901(array &$sandbox): void {
     $batch_size = 100;
     $root_jur = $group_storage->load($sandbox['root_jur_id']);
     $plugin_id = 'group_node:service_request';
+    $db = \Drupal::database();
 
     $offset = $sandbox['processed'];
     $chunk = array_slice($sandbox['missing_nids'], $offset, $batch_size);
@@ -383,12 +543,28 @@ function markaspot_group_update_11901(array &$sandbox): void {
     }
 
     $nodes = $etm->getStorage('node')->loadMultiple($chunk);
+    $existing_nids = [];
+    if ($chunk !== []) {
+      $existing_nids = $db->select('group_relationship_field_data', 'gr')
+        ->fields('gr', ['entity_id'])
+        ->condition('gid', $sandbox['root_jur_id'])
+        ->condition('plugin_id', $plugin_id)
+        ->condition('entity_id', $chunk, 'IN')
+        ->execute()
+        ->fetchAllKeyed(0, 0);
+    }
     $added = 0;
 
     foreach ($nodes as $node) {
+      if (isset($existing_nids[(int) $node->id()])) {
+        $sandbox['skipped_existing']++;
+        continue;
+      }
+
       try {
         $root_jur->addRelationship($node, $plugin_id);
         $added++;
+        $sandbox['added']++;
       }
       catch (\Exception $e) {
         // Cardinality constraint or other issue. Log and continue.
@@ -410,9 +586,11 @@ function markaspot_group_update_11901(array &$sandbox): void {
       : 1;
 
     if ($sandbox['#finished'] >= 1) {
-      $logger->info('Backfill complete: added @count of @total nodes to jurisdiction.', [
-        '@count' => $sandbox['processed'],
+      $logger->info('Backfill complete: processed @processed of @total nodes; added @added and skipped @skipped_existing already-existing relationships.', [
+        '@processed' => $sandbox['processed'],
         '@total' => $sandbox['total'],
+        '@added' => $sandbox['added'],
+        '@skipped_existing' => $sandbox['skipped_existing'],
       ]);
     }
   }
@@ -2663,4 +2841,806 @@ function markaspot_group_update_11920(): string {
     ->set('actions.Activiy_save_group.configuration.method', 'append')
     ->save();
   return "Flipped Activiy_save_group method from 'set:clear' to 'append'.";
+}
+
+/**
+ * Ensure jur-tenant_admin is owned by markaspot_group.
+ */
+function markaspot_group_update_11921(): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('group_role');
+  $role = $storage->load('jur-tenant_admin');
+  $base_permissions = [
+    'administer members',
+    'create group_node:service_request entity',
+    'create group_node:service_request relationship',
+    'update any group_node:service_request entity',
+    'update own group_node:service_request entity',
+    'view group',
+    'view group_node:service_request entity',
+    'view group_node:service_request relationship',
+    'view own unpublished group_node:service_request entity',
+    'view unpublished group_node:service_request entity',
+  ];
+  $allowed_permissions = $base_permissions;
+
+  if (\Drupal::moduleHandler()->moduleExists('markaspot_fastmap')) {
+    $allowed_permissions = array_merge($allowed_permissions, [
+      'create group_node:page entity',
+      'create group_node:page relationship',
+      'update any group_node:page entity',
+      'view group_node:page entity',
+      'view group_node:page relationship',
+      'delete any group_node:page entity',
+    ]);
+  }
+
+  if (\Drupal::moduleHandler()->moduleExists('markaspot_boilerplate')) {
+    $allowed_permissions = array_merge($allowed_permissions, [
+      'create group_node:boilerplate entity',
+      'create group_node:boilerplate relationship',
+      'delete any group_node:boilerplate entity',
+      'update any group_node:boilerplate entity',
+      'view group_node:boilerplate entity',
+      'view group_node:boilerplate relationship',
+    ]);
+  }
+
+  if (!$role) {
+    $storage->create([
+      'id' => 'jur-tenant_admin',
+      'label' => 'Tenant Admin',
+      'weight' => -1,
+      'admin' => FALSE,
+      'scope' => 'individual',
+      'global_role' => NULL,
+      'group_type' => 'jur',
+      'permissions' => $allowed_permissions,
+    ])->save();
+    return 'Created jur-tenant_admin group role.';
+  }
+
+  $changed = FALSE;
+  if ($role->isAdmin()) {
+    $role->set('admin', FALSE);
+    $changed = TRUE;
+  }
+  if ($role->label() !== 'Tenant Admin') {
+    $role->set('label', 'Tenant Admin');
+    $changed = TRUE;
+  }
+  if ($role->getScope() !== 'individual') {
+    $role->set('scope', 'individual');
+    $changed = TRUE;
+  }
+  if ($role->get('global_role') !== NULL) {
+    $role->set('global_role', NULL);
+    $changed = TRUE;
+  }
+
+  $permissions = $role->getPermissions();
+  $normalized_permissions = array_values(array_intersect($allowed_permissions, $permissions));
+  foreach ($allowed_permissions as $permission) {
+    if (!in_array($permission, $normalized_permissions, TRUE)) {
+      $normalized_permissions[] = $permission;
+    }
+  }
+  if ($permissions !== $normalized_permissions) {
+    $permissions = $normalized_permissions;
+    $changed = TRUE;
+  }
+
+  if ($changed) {
+    $role->set('permissions', $permissions);
+    $role->save();
+    return 'Updated jur-tenant_admin group role.';
+  }
+
+  return 'jur-tenant_admin group role already exists.';
+}
+
+/**
+ * Require jurisdiction assignment on org groups.
+ */
+function markaspot_group_update_11922(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('field.field.group.org.field_jurisdiction');
+
+  if ($config->isNew()) {
+    return 'group.org.field_jurisdiction field config not found - nothing to do.';
+  }
+
+  $changed = FALSE;
+  if ($config->get('required') !== TRUE) {
+    $config->set('required', TRUE)->save();
+    $changed = TRUE;
+  }
+
+  $database = \Drupal::database();
+  $query = $database->select('groups', 'g');
+  $query->leftJoin('group__field_jurisdiction', 'fj', 'fj.entity_id = g.id AND fj.deleted = 0');
+  $orphan_count = (int) $query
+    ->condition('g.type', 'org')
+    ->isNull('fj.field_jurisdiction_target_id')
+    ->countQuery()
+    ->execute()
+    ->fetchField();
+
+  $message = $changed
+    ? 'Set group.org.field_jurisdiction required.'
+    : 'group.org.field_jurisdiction was already required.';
+
+  if ($orphan_count > 0) {
+    $message .= " Existing orphan org groups still require manual jurisdiction assignment: {$orphan_count}.";
+  }
+
+  return $message;
+}
+
+/**
+ * Add category-change idempotency to the optional process_apply_group ECA.
+ */
+function markaspot_group_update_11923(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('eca.eca.process_apply_group');
+
+  if ($config->isNew()) {
+    return 'eca.eca.process_apply_group not installed on this tenant - nothing to do.';
+  }
+
+  $module_dependencies = $config->get('dependencies.module') ?? [];
+  if (!in_array('eca_base', $module_dependencies, TRUE)) {
+    $module_dependencies[] = 'eca_base';
+    $config->set('dependencies.module', array_values($module_dependencies));
+  }
+
+  $config
+    ->set('events.Update_Service_Request', [
+      'plugin' => 'content_entity:update',
+      'label' => 'Update Service Request',
+      'configuration' => [
+        'type' => 'node service_request',
+      ],
+      'successors' => [
+        [
+          'id' => 'Activy_Set_Current_User_For_Update',
+          'condition' => 'Condition_category_changed',
+        ],
+      ],
+    ])
+    ->set('conditions.Condition_category_gid_exists', [
+      'plugin' => 'eca_token_exists',
+      'configuration' => [
+        'token_name' => 'node:field_category:entity:field_category_gid:target_id',
+        'negate' => FALSE,
+      ],
+    ])
+    ->set('conditions.Condition_category_gid_missing', [
+      'plugin' => 'eca_token_exists',
+      'configuration' => [
+        'token_name' => 'node:field_category:entity:field_category_gid:target_id',
+        'negate' => TRUE,
+      ],
+    ])
+    ->set('conditions.Condition_original_category_gid_exists', [
+      'plugin' => 'eca_token_exists',
+      'configuration' => [
+        'token_name' => 'original_service_request:field_category:entity:field_category_gid:target_id',
+        'negate' => FALSE,
+      ],
+    ])
+    ->set('conditions.Condition_original_category_gid_missing', [
+      'plugin' => 'eca_token_exists',
+      'configuration' => [
+        'token_name' => 'original_service_request:field_category:entity:field_category_gid:target_id',
+        'negate' => TRUE,
+      ],
+    ])
+    ->set('conditions.Condition_category_changed', [
+      'plugin' => 'eca_entity_field_value_changed',
+      'configuration' => [
+        'field_name' => 'field_category',
+        'negate' => FALSE,
+      ],
+    ])
+    ->set('actions.Activity_1yd51fx.successors', [
+      [
+        'id' => 'Activity_Apply_Group',
+        'condition' => 'Condition_category_gid_exists',
+      ],
+    ])
+    ->set('actions.Activity_Apply_Group.configuration.group_id', '[node:field_category:entity:field_category_gid:target_id]')
+    ->set('actions.Activity_Apply_Group.configuration.add_method', 'skip_existing')
+    ->set('actions.Activiy_save_group.configuration.field_name', 'field_organisation.target_id')
+    ->set('actions.Activiy_save_group.configuration.field_value', '[node:field_category:entity:field_category_gid:target_id]')
+    ->set('actions.Activiy_save_group.configuration.method', 'append')
+    ->set('actions.Activy_Set_Current_User_For_Update', [
+      'label' => 'Set Current User For Update',
+      'plugin' => 'eca_switch_account',
+      'configuration' => [
+        'user_id' => '1',
+      ],
+      'successors' => [
+        [
+          'id' => 'Activity_Load_Service_Request_For_Update',
+          'condition' => '',
+        ],
+      ],
+    ])
+    ->set('actions.Activity_Load_Service_Request_For_Update', [
+      'label' => 'Load Service Request For Update',
+      'plugin' => 'eca_token_load_entity',
+      'configuration' => [
+        'token_name' => 'service_request',
+        'from' => 'current',
+        'entity_type' => '_none',
+        'entity_id' => '',
+        'revision_id' => '',
+        'properties' => '',
+        'langcode' => '_interface',
+        'latest_revision' => FALSE,
+        'unchanged' => FALSE,
+        'object' => '',
+      ],
+      'successors' => [
+        [
+          'id' => 'Activity_Load_Original_Service_Request',
+          'condition' => '',
+        ],
+      ],
+    ])
+    ->set('actions.Activity_Load_Original_Service_Request', [
+      'label' => 'Load Original Service Request',
+      'plugin' => 'eca_token_load_entity',
+      'configuration' => [
+        'token_name' => 'original_service_request',
+        'from' => 'current',
+        'entity_type' => '_none',
+        'entity_id' => '',
+        'revision_id' => '',
+        'properties' => '',
+        'langcode' => '_interface',
+        'latest_revision' => FALSE,
+        'unchanged' => TRUE,
+        'object' => '',
+      ],
+      'successors' => [
+        [
+          'id' => 'Activity_Remove_Old_Group',
+          'condition' => 'Condition_original_category_gid_exists',
+        ],
+        [
+          'id' => 'Activity_Apply_Group_Update',
+          'condition' => 'Condition_original_category_gid_missing',
+        ],
+      ],
+    ])
+    ->set('actions.Activity_Remove_Old_Group', [
+      'label' => 'Remove Old Group',
+      'plugin' => 'group_remove_content',
+      'configuration' => [
+        'replace_tokens' => TRUE,
+        'values' => [],
+        'operation' => 'delete',
+        'content_plugin' => 'group_node:service_request',
+        'group_id' => '[original_service_request:field_category:entity:field_category_gid:target_id]',
+        'entity_id' => '',
+        'object' => '',
+      ],
+      'successors' => [
+        [
+          'id' => 'Activity_Remove_Old_Organisation_Field_Value',
+          'condition' => '',
+        ],
+      ],
+    ])
+    ->set('actions.Activity_Remove_Old_Organisation_Field_Value', [
+      'label' => 'Remove Old Organisation Field Value',
+      'plugin' => 'eca_set_field_value',
+      'configuration' => [
+        'field_name' => 'field_organisation.target_id',
+        'field_value' => '[original_service_request:field_category:entity:field_category_gid:target_id]',
+        'method' => 'remove',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'save_entity' => FALSE,
+        'object' => 'node',
+      ],
+      'successors' => [
+        [
+          'id' => 'Activity_Apply_Group_Update',
+          'condition' => 'Condition_category_gid_exists',
+        ],
+        [
+          'id' => 'Activity_Save_Service_Request_After_Group_Update',
+          'condition' => 'Condition_category_gid_missing',
+        ],
+      ],
+    ])
+    ->set('actions.Activity_Apply_Group_Update', [
+      'label' => 'Apply Group On Update',
+      'plugin' => 'group_add_content',
+      'configuration' => [
+        'replace_tokens' => TRUE,
+        'values' => [],
+        'operation' => 'create',
+        'content_plugin' => 'group_node:service_request',
+        'group_id' => '[node:field_category:entity:field_category_gid:target_id]',
+        'entity_id' => '',
+        'add_method' => 'skip_existing',
+        'object' => '',
+      ],
+      'successors' => [
+        [
+          'id' => 'Activity_Append_Current_Organisation_Field_Value',
+          'condition' => 'Condition_category_gid_exists',
+        ],
+      ],
+    ])
+    ->set('actions.Activity_Append_Current_Organisation_Field_Value', [
+      'label' => 'Append Current Organisation Field Value',
+      'plugin' => 'eca_set_field_value',
+      'configuration' => [
+        'field_name' => 'field_organisation.target_id',
+        'field_value' => '[node:field_category:entity:field_category_gid:target_id]',
+        'method' => 'append',
+        'strip_tags' => FALSE,
+        'trim' => FALSE,
+        'save_entity' => FALSE,
+        'object' => 'node',
+      ],
+      'successors' => [
+        [
+          'id' => 'Activity_Save_Service_Request_After_Group_Update',
+          'condition' => '',
+        ],
+      ],
+    ])
+    ->set('actions.Activity_Save_Service_Request_After_Group_Update', [
+      'label' => 'Save Service Request After Group Update',
+      'plugin' => 'eca_save_entity',
+      'configuration' => [
+        'object' => 'node',
+      ],
+      'successors' => [],
+    ])
+    ->save();
+
+  return 'Added category-change idempotency branch to eca.eca.process_apply_group.';
+}
+
+/**
+ * Normalize org jurisdiction references from child jurisdictions to roots.
+ */
+function markaspot_group_update_11924(): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('group');
+  $logger = \Drupal::logger('markaspot_group');
+  $ids = $storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'org')
+    ->exists('field_jurisdiction')
+    ->execute();
+
+  if (empty($ids)) {
+    return 'No organisation jurisdiction references found.';
+  }
+
+  $updated_groups = 0;
+  $updated_values = 0;
+  $skipped_groups = 0;
+
+  foreach ($storage->loadMultiple($ids) as $org) {
+    if (!$org->hasField('field_jurisdiction')) {
+      continue;
+    }
+
+    $changed_values = 0;
+    foreach (array_keys($org->getTranslationLanguages()) as $langcode) {
+      $translation = $org->getTranslation($langcode);
+      if ($translation->get('field_jurisdiction')->isEmpty()) {
+        continue;
+      }
+
+      $current_id = (int) $translation->get('field_jurisdiction')->target_id;
+      $root_id = markaspot_group_update_11924_root_jurisdiction_id($current_id);
+      if ($root_id === NULL || $root_id === $current_id) {
+        continue;
+      }
+
+      $translation->set('field_jurisdiction', ['target_id' => $root_id]);
+      $changed_values++;
+    }
+
+    if ($changed_values === 0) {
+      continue;
+    }
+
+    try {
+      $org->save();
+      $updated_groups++;
+      $updated_values += $changed_values;
+    }
+    catch (\Throwable $e) {
+      $skipped_groups++;
+      $logger->warning('Skipped normalizing org @gid field_jurisdiction: @message', [
+        '@gid' => $org->id(),
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  return sprintf(
+    'Normalized org field_jurisdiction child references: %d values on %d groups, %d groups skipped.',
+    $updated_values,
+    $updated_groups,
+    $skipped_groups,
+  );
+}
+
+/**
+ * Resolves a jurisdiction group ID to its root ancestor.
+ */
+function markaspot_group_update_11924_root_jurisdiction_id(int $jurisdiction_id): ?int {
+  static $root_cache = [];
+
+  if (array_key_exists($jurisdiction_id, $root_cache)) {
+    return $root_cache[$jurisdiction_id];
+  }
+
+  $storage = \Drupal::entityTypeManager()->getStorage('group');
+  $current_id = $jurisdiction_id;
+  $seen = [];
+
+  while ($current_id > 0) {
+    if (isset($seen[$current_id])) {
+      $root_cache[$jurisdiction_id] = NULL;
+      return NULL;
+    }
+    $seen[$current_id] = TRUE;
+
+    $group = $storage->load($current_id);
+    if (!$group || $group->bundle() !== 'jur') {
+      $root_cache[$jurisdiction_id] = NULL;
+      return NULL;
+    }
+
+    if (!$group->hasField('field_parent_jurisdiction')
+      || $group->get('field_parent_jurisdiction')->isEmpty()) {
+      $root_cache[$jurisdiction_id] = $current_id;
+      return $current_id;
+    }
+
+    $current_id = (int) $group->get('field_parent_jurisdiction')->target_id;
+  }
+
+  $root_cache[$jurisdiction_id] = NULL;
+  return NULL;
+}
+
+/**
+ * Ensures jur tenant-admin memberships also carry the jur-member role.
+ */
+function markaspot_group_update_11925(): string {
+  $connection = \Drupal::database();
+  $query = $connection->select('group_relationship_field_data', 'fd');
+  $query->distinct();
+  $query->fields('fd', ['id']);
+  $query->innerJoin(
+    'group_relationship__group_roles',
+    'admin_role',
+    'admin_role.entity_id = fd.id AND admin_role.deleted = 0 AND admin_role.langcode = fd.langcode AND admin_role.group_roles_target_id = :admin_role',
+    [':admin_role' => 'jur-tenant_admin']
+  );
+  $query->leftJoin(
+    'group_relationship__group_roles',
+    'member_role',
+    'member_role.entity_id = fd.id AND member_role.deleted = 0 AND member_role.langcode = fd.langcode AND member_role.group_roles_target_id = :member_role',
+    [':member_role' => 'jur-member']
+  );
+  $ids = $query
+    ->condition('fd.plugin_id', 'group_membership')
+    ->condition('fd.type', 'jur-group_membership')
+    ->isNull('member_role.entity_id')
+    ->execute()
+    ->fetchCol();
+
+  if (empty($ids)) {
+    return 'No jur tenant-admin memberships missing jur-member.';
+  }
+
+  $storage = \Drupal::entityTypeManager()->getStorage('group_relationship');
+  $updated = 0;
+  foreach ($storage->loadMultiple($ids) as $relationship) {
+    if (!$relationship->hasField('group_roles')) {
+      continue;
+    }
+    $role_ids = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+    $relationship->set('group_roles', \Drupal\markaspot_group\MembershipRoleNormalizer::normalize($role_ids, 'jur'));
+    $relationship->save();
+    $updated++;
+  }
+
+  return sprintf('Added jur-member to %d jur tenant-admin membership(s).', $updated);
+}
+
+/**
+ * Keep obsolete process_apply_group ECA disabled if active config exists.
+ */
+function markaspot_group_update_11926(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('eca')) {
+    $config = \Drupal::configFactory()
+      ->getEditable('eca.eca.process_apply_group');
+    if ($config->isNew()) {
+      return 'eca module not installed and eca.eca.process_apply_group active config not found.';
+    }
+    if ($config->get('status') === FALSE) {
+      return 'eca module not installed and eca.eca.process_apply_group is already disabled.';
+    }
+    $config->set('status', FALSE)->save();
+    return 'Disabled obsolete eca.eca.process_apply_group raw config because eca module is not installed.';
+  }
+
+  $eca = \Drupal::entityTypeManager()
+    ->getStorage('eca')
+    ->load('process_apply_group');
+
+  if (!$eca) {
+    if (_markaspot_group_rebuild_eca_subscribed_events()) {
+      return 'eca.eca.process_apply_group not installed on this tenant - rebuilt ECA subscribed-events state.';
+    }
+    return 'eca.eca.process_apply_group not installed on this tenant and ECA subscribed-events state was not rebuilt.';
+  }
+
+  if (!method_exists($eca, 'status') || !$eca->status()) {
+    _markaspot_group_rebuild_eca_subscribed_events();
+    return 'eca.eca.process_apply_group is already disabled.';
+  }
+
+  $eca->setStatus(FALSE);
+  $eca->save();
+  _markaspot_group_rebuild_eca_subscribed_events();
+  return 'Disabled obsolete eca.eca.process_apply_group.';
+}
+
+/**
+ * Rebuild ECA subscriptions after removing obsolete process_apply_group.
+ */
+function markaspot_group_update_11927(): string {
+  if (!_markaspot_group_rebuild_eca_subscribed_events()) {
+    $pruned = _markaspot_group_prune_obsolete_eca_subscriptions();
+    return sprintf(
+      'ECA module unavailable or storage does not support rebuilding subscribed events; pruned %d obsolete ECA model(s) from subscribed-events state.',
+      $pruned
+    );
+  }
+
+  $issues = _markaspot_group_obsolete_eca_runtime_issues();
+  if (empty($issues)) {
+    return 'Rebuilt ECA subscribed-events state; no obsolete process_apply_group references remain.';
+  }
+
+  return 'Rebuilt ECA subscribed-events state; remaining obsolete process_apply_group issues: ' . implode('; ', $issues);
+}
+
+/**
+ * Backfill jurisdiction memberships implied by organisation memberships.
+ */
+function markaspot_group_update_11928(): string {
+  _markaspot_group_ensure_derived_jurisdiction_role();
+
+  $relationship_ids = \Drupal::entityTypeManager()
+    ->getStorage('group_relationship')
+    ->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('plugin_id', 'group_membership')
+    ->condition('type', 'org-group_membership')
+    ->execute();
+
+  if (empty($relationship_ids)) {
+    return 'No organisation memberships found for derived jurisdiction backfill.';
+  }
+
+  $relationship_storage = \Drupal::entityTypeManager()->getStorage('group_relationship');
+  $created = 0;
+  $marked = 0;
+  $skipped = 0;
+  foreach ($relationship_storage->loadMultiple($relationship_ids) as $relationship) {
+    if (!$relationship instanceof \Drupal\group\Entity\GroupRelationshipInterface) {
+      $skipped++;
+      continue;
+    }
+
+    $org_group = $relationship->getGroup();
+    $user = $relationship->getEntity();
+    $jur_group = _markaspot_group_resolve_org_backfill_jurisdiction($org_group);
+
+    if (!$user instanceof \Drupal\user\UserInterface || !$jur_group) {
+      $skipped++;
+      continue;
+    }
+
+    $member = $jur_group->getMember($user);
+    if ($member) {
+      $jur_relationship = $member->getGroupRelationship();
+      if ($jur_relationship->bundle() !== _markaspot_group_update_jurisdiction_membership_bundle($jur_group)) {
+        \Drupal::logger('markaspot_group')->error(
+          'Skipped derived jurisdiction backfill for org membership @relationship because existing group membership @jur_relationship on jurisdiction @gid has bundle @bundle.',
+          [
+            '@relationship' => $relationship->id(),
+            '@jur_relationship' => $jur_relationship->id(),
+            '@gid' => $jur_group->id(),
+            '@bundle' => $jur_relationship->bundle(),
+          ]
+        );
+        $skipped++;
+        continue;
+      }
+      if (!$jur_relationship->hasField('group_roles')) {
+        $skipped++;
+        continue;
+      }
+      $role_ids = array_column($jur_relationship->get('group_roles')->getValue(), 'target_id');
+      $derived_role_id = _markaspot_group_update_derived_jurisdiction_role_id($jur_group);
+      if (in_array($derived_role_id, $role_ids, TRUE)) {
+        continue;
+      }
+      $role_ids = array_values(array_filter(
+        $role_ids,
+        static fn(string $role_id): bool => $role_id !== \Drupal\markaspot_group\MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID
+          || $derived_role_id === \Drupal\markaspot_group\MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID
+      ));
+      $role_ids[] = $derived_role_id;
+      $jur_relationship->set('group_roles', array_values(array_unique($role_ids)));
+      $jur_relationship->save();
+      $marked++;
+      continue;
+    }
+
+    try {
+      $jur_group->addMember($user, [
+        'group_roles' => [
+          _markaspot_group_update_derived_jurisdiction_role_id($jur_group),
+        ],
+      ]);
+      $created++;
+    }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_group')->error(
+        'Failed to backfill jurisdiction membership for user @uid and jurisdiction @gid from organisation membership @relationship: @message',
+        [
+          '@uid' => $user->id(),
+          '@gid' => $jur_group->id(),
+          '@relationship' => $relationship->id(),
+          '@message' => $e->getMessage(),
+        ]
+      );
+      $skipped++;
+    }
+  }
+
+  return sprintf(
+    'Backfilled %d and marked %d derived jurisdiction membership(s) implied by organisation memberships; skipped %d unresolved row(s).',
+    $created,
+    $marked,
+    $skipped
+  );
+}
+
+/**
+ * Ensures the internal derived jur role exists before backfilling.
+ */
+function _markaspot_group_ensure_derived_jurisdiction_role(): void {
+  $group_type = _markaspot_group_update_jurisdiction_group_type();
+  $role_id = \Drupal\markaspot_group\MembershipRoleNormalizer::orgDerivedJurRoleId($group_type);
+  $role_storage = \Drupal::entityTypeManager()->getStorage('group_role');
+  $permissions = [
+    'view group',
+    'view group_node:page entity',
+  ];
+
+  /** @var \Drupal\group\Entity\GroupRoleInterface|null $role */
+  $role = $role_storage->load($role_id);
+  if ($role) {
+    if ($role->getGroupTypeId() !== $group_type) {
+      \Drupal::logger('markaspot_group')->error(
+        'Existing derived jurisdiction role @role belongs to group type @type and was not changed.',
+        [
+          '@role' => $role_id,
+          '@type' => $role->getGroupTypeId(),
+        ]
+      );
+      return;
+    }
+
+    $changed = FALSE;
+    $expected_values = [
+      'label' => 'Organisation member',
+      'weight' => 1,
+      'admin' => FALSE,
+      'scope' => 'individual',
+      'global_role' => NULL,
+      'permissions' => $permissions,
+    ];
+    foreach ($expected_values as $field => $expected_value) {
+      if ($role->get($field) !== $expected_value) {
+        $role->set($field, $expected_value);
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $role->save();
+    }
+    return;
+  }
+
+  $role_storage->create([
+    'id' => $role_id,
+    'label' => 'Organisation member',
+    'weight' => 1,
+    'admin' => FALSE,
+    'scope' => 'individual',
+    'global_role' => NULL,
+    'group_type' => $group_type,
+    'permissions' => $permissions,
+  ])->save();
+}
+
+/**
+ * Gets the configured jurisdiction group type for update hooks.
+ */
+function _markaspot_group_update_jurisdiction_group_type(): string {
+  $configured = \Drupal::config('markaspot_open311.settings')
+    ->get('jurisdiction_group_type');
+
+  return is_string($configured) && $configured !== '' ? $configured : 'jur';
+}
+
+/**
+ * Gets the membership relationship bundle for a jurisdiction group.
+ */
+function _markaspot_group_update_jurisdiction_membership_bundle($group = NULL): string {
+  $group_type = $group instanceof \Drupal\group\Entity\GroupInterface
+    ? $group->bundle()
+    : _markaspot_group_update_jurisdiction_group_type();
+
+  return $group_type . '-group_membership';
+}
+
+/**
+ * Gets the internal derived org-member role ID for a jurisdiction group.
+ */
+function _markaspot_group_update_derived_jurisdiction_role_id($group = NULL): string {
+  $group_type = $group instanceof \Drupal\group\Entity\GroupInterface
+    ? $group->bundle()
+    : _markaspot_group_update_jurisdiction_group_type();
+
+  return \Drupal\markaspot_group\MembershipRoleNormalizer::orgDerivedJurRoleId($group_type);
+}
+
+/**
+ * Resolves an org group's root jurisdiction for update 11928.
+ */
+function _markaspot_group_resolve_org_backfill_jurisdiction($org_group): ?\Drupal\group\Entity\GroupInterface {
+  if (!$org_group instanceof \Drupal\group\Entity\GroupInterface
+    || $org_group->bundle() !== 'org'
+    || !$org_group->hasField('field_jurisdiction')
+    || $org_group->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  $jurisdiction_id = (int) $org_group->get('field_jurisdiction')->target_id;
+  if ($jurisdiction_id <= 0) {
+    return NULL;
+  }
+
+  $root_jurisdiction_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+    ->getRootJurisdictionId($jurisdiction_id);
+  if ($root_jurisdiction_id === NULL) {
+    return NULL;
+  }
+
+  $jur_group = \Drupal\group\Entity\Group::load($root_jurisdiction_id);
+  return $jur_group instanceof \Drupal\group\Entity\GroupInterface
+    && $jur_group->bundle() === _markaspot_group_update_jurisdiction_group_type()
+    ? $jur_group
+    : NULL;
 }

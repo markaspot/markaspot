@@ -3,6 +3,8 @@
 namespace Drupal\Tests\markaspot_tenant_admin\Unit;
 
 use Drupal\Core\Cache\CacheBackendInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Database\Query\ConditionInterface;
 use Drupal\Core\Database\Query\SelectInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
@@ -13,6 +15,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_tenant_admin\TenantAdminHelper;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
 
@@ -45,13 +48,27 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
    *
    * @param \Drupal\Core\Session\AccountInterface $currentUser
    *   The mocked current user.
+   * @param string $jurisdictionGroupType
+   *   The configured jurisdiction group type.
    *
    * @return \Drupal\Core\DependencyInjection\ContainerBuilder
    *   The container for further service registration.
    */
-  protected function setUpContainer(AccountInterface $currentUser): ContainerBuilder {
+  protected function setUpContainer(
+    AccountInterface $currentUser,
+    string $jurisdictionGroupType = 'jur',
+  ): ContainerBuilder {
     $container = new ContainerBuilder();
     $container->set('current_user', $currentUser);
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturn($jurisdictionGroupType);
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_open311.settings')
+      ->willReturn($config);
+    $container->set('config.factory', $configFactory);
     \Drupal::setContainer($container);
     return $container;
   }
@@ -125,6 +142,19 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
     $cache = $this->createMock(CacheBackendInterface::class);
     $cache->method('get')->willReturn($cacheData);
     $container->set('cache.group_memberships_chained', $cache);
+  }
+
+  /**
+   * Tests configured tenant-admin role IDs include legacy compatibility.
+   */
+  public function testConfiguredTenantAdminRoleIdsIncludeLegacyRole(): void {
+    $currentUser = $this->createMock(AccountInterface::class);
+    $this->setUpContainer($currentUser, 'jurisdiction');
+
+    $this->assertSame(
+      ['jurisdiction-tenant_admin', 'jur-tenant_admin'],
+      TenantAdminHelper::getTenantAdminRoleIds()
+    );
   }
 
   /**

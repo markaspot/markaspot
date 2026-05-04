@@ -78,10 +78,19 @@ class WorkspaceVisibilityService {
   }
 
   /**
-   * Resets the static cache (useful in tests or after entity saves).
+   * Resets cached visibility values.
+   *
+   * @param int|null $groupId
+   *   Optional group ID to invalidate. When omitted, the full request-local
+   *   cache is cleared.
    */
-  public function resetCache(): void {
-    $this->cache = [];
+  public function resetCache(?int $groupId = NULL): void {
+    if ($groupId === NULL) {
+      $this->cache = [];
+      return;
+    }
+
+    unset($this->cache[$groupId]);
   }
 
 }

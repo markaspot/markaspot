@@ -41,12 +41,12 @@ class TenantAdminHelper {
     }
 
     // loadByUser with roles filter queries group_roles field directly.
-    $memberships = GroupMembership::loadByUser($user, [self::GROUP_ROLE_ID]);
+    $memberships = GroupMembership::loadByUser($user, self::getTenantAdminRoleIds());
 
     $jur_ids = [];
     foreach ($memberships as $membership) {
       assert($membership instanceof GroupRelationshipInterface);
-      if ($membership->getGroup()->bundle() === 'jur') {
+      if (self::isJurisdictionGroup($membership->getGroup())) {
         $jur_ids[] = (int) $membership->getGroupId();
       }
     }
@@ -71,19 +71,68 @@ class TenantAdminHelper {
       return FALSE;
     }
 
-    $memberships = GroupMembership::loadByUser($user, [self::GROUP_ROLE_ID]);
+    $memberships = GroupMembership::loadByUser($user, self::getTenantAdminRoleIds());
 
     foreach ($memberships as $membership) {
       assert($membership instanceof GroupRelationshipInterface);
       if ($exclude_relationship_id && (int) $membership->id() === $exclude_relationship_id) {
         continue;
       }
-      if ($membership->getGroup()->bundle() === 'jur') {
+      if (self::isJurisdictionGroup($membership->getGroup())) {
         return TRUE;
       }
     }
 
     return FALSE;
+  }
+
+  /**
+   * Gets tenant-admin role IDs for the configured and legacy jur bundles.
+   *
+   * @return string[]
+   *   Unique group role IDs that represent tenant administration.
+   */
+  public static function getTenantAdminRoleIds(): array {
+    return array_values(array_unique([
+      self::getJurisdictionGroupType() . '-tenant_admin',
+      self::GROUP_ROLE_ID,
+    ]));
+  }
+
+  /**
+   * Checks whether a group uses the configured jurisdiction group type.
+   *
+   * @param mixed $group
+   *   The candidate group.
+   *
+   * @return bool
+   *   TRUE when the group bundle is the configured jurisdiction type.
+   */
+  protected static function isJurisdictionGroup(mixed $group): bool {
+    return is_object($group)
+      && method_exists($group, 'bundle')
+      && $group->bundle() === self::getJurisdictionGroupType();
+  }
+
+  /**
+   * Gets the configured jurisdiction group type.
+   *
+   * @return string
+   *   The configured jurisdiction group type machine name.
+   */
+  protected static function getJurisdictionGroupType(): string {
+    try {
+      if (\Drupal::hasService('config.factory')) {
+        $configured = \Drupal::config('markaspot_open311.settings')
+          ->get('jurisdiction_group_type');
+        return is_string($configured) && $configured !== '' ? $configured : 'jur';
+      }
+    }
+    catch (\Throwable) {
+      // Unit tests may provide a reduced container without config services.
+    }
+
+    return 'jur';
   }
 
 }

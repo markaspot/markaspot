@@ -6,15 +6,22 @@ namespace Drupal\markaspot_group\Controller;
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Flood\FloodInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
+use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -30,10 +37,37 @@ use Symfony\Component\HttpFoundation\Request;
  */
 class GroupInvitationController extends ControllerBase {
 
+  use JurisdictionIdResolverTrait;
+
   /**
    * Invitation token expiry: 7 days in seconds.
    */
   protected const TOKEN_EXPIRY_SECONDS = 7 * 86400;
+
+  /**
+   * Claim endpoint flood event name.
+   */
+  protected const CLAIM_FLOOD_EVENT = 'markaspot_group.invitation_claim';
+
+  /**
+   * Maximum claim attempts per IP per flood window.
+   */
+  protected const CLAIM_FLOOD_LIMIT = 5;
+
+  /**
+   * Claim flood window in seconds.
+   */
+  protected const CLAIM_FLOOD_WINDOW = 3600;
+
+  /**
+   * Lock TTL for one user's membership mutations.
+   */
+  protected const MEMBERSHIP_UPDATE_LOCK_TTL = 120.0;
+
+  /**
+   * Lock TTL for email identity mutations.
+   */
+  protected const USER_EMAIL_LOCK_TTL = 120.0;
 
   /**
    * Constructs a GroupInvitationController.
@@ -54,8 +88,14 @@ class GroupInvitationController extends ControllerBase {
    *   The jurisdiction hierarchy resolver.
    * @param \Drupal\Core\Session\AccountInterface $currentUser
    *   The current user.
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   The flood service.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The lock backend.
    * @param object|null $tierConfigService
    *   The tier config service (from markaspot_fastmap), or NULL.
+   * @param \Drupal\Core\Entity\EntityRepositoryInterface|null $entityRepository
+   *   The entity repository service.
    */
   public function __construct(
     protected readonly Connection $database,
@@ -66,7 +106,10 @@ class GroupInvitationController extends ControllerBase {
     protected readonly GroupMembershipLoaderInterface $membershipLoader,
     protected readonly JurisdictionHierarchyResolverInterface $hierarchyResolver,
     AccountInterface $currentUser,
+    protected readonly FloodInterface $flood,
+    protected readonly LockBackendInterface $lock,
     protected readonly ?object $tierConfigService = NULL,
+    protected readonly ?EntityRepositoryInterface $entityRepository = NULL,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->moduleHandler = $moduleHandler;
@@ -86,9 +129,12 @@ class GroupInvitationController extends ControllerBase {
       $container->get('group.membership_loader'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('current_user'),
+      $container->get('flood'),
+      $container->get('lock'),
       $container->get('module_handler')->moduleExists('markaspot_fastmap')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
+      $container->get('entity.repository'),
     );
   }
 
@@ -113,9 +159,11 @@ class GroupInvitationController extends ControllerBase {
       return AccessResult::allowed()->addCacheContexts(['user.roles']);
     }
 
-    $memberships = $this->membershipLoader->loadByUser($account, ['jur-tenant_admin']);
-    if (!empty($memberships)) {
-      return AccessResult::allowed()->addCacheContexts(['user']);
+    $memberships = $this->membershipLoader->loadByUser($account, $this->jurisdictionRoleIds('tenant_admin'));
+    foreach ($memberships as $membership) {
+      if ($this->isJurisdictionGroup($membership->getGroup())) {
+        return AccessResult::allowed()->addCacheContexts(['user']);
+      }
     }
 
     return AccessResult::forbidden('User is not an administrator or tenant admin.')
@@ -164,10 +212,19 @@ class GroupInvitationController extends ControllerBase {
     if (!$isDrupalAdmin && !$this->isGroupInAdminScope($group, $currentAccount)) {
       return new JsonResponse(['error' => 'Access denied to this group.'], 403);
     }
+    foreach ($roles as $role) {
+      if (!is_string($role) || $role === '') {
+        return new JsonResponse(['error' => 'Invalid role ID.'], 400);
+      }
+    }
+    if ($this->isJurisdictionGroup($group)) {
+      $roles = $this->storageJurisdictionRoleIds($roles);
+    }
+    $roles = MembershipRoleNormalizer::normalize($roles, $group->bundle());
 
     // Validate roles against permitted set to prevent privilege escalation.
     if (!empty($roles)) {
-      $permittedRoles = $this->getPermittedRoles($isDrupalAdmin);
+      $permittedRoles = $this->getPermittedRoles($isDrupalAdmin, $group);
       $invalidRoles = array_diff($roles, $permittedRoles);
       if (!empty($invalidRoles)) {
         return new JsonResponse(['error' => 'One or more requested roles are not permitted.'], 403);
@@ -211,7 +268,7 @@ class GroupInvitationController extends ControllerBase {
       ->execute();
 
     // Send invitation email.
-    $langcode = $this->languageManager()->getCurrentLanguage()->getId();
+    $langcode = $this->resolveInvitationLangcode($email);
     $this->sendInvitationEmail($email, $token, $group, $langcode, $request);
 
     $this->logger->notice('User @admin invited @email to group @group (id=@gid).', [
@@ -271,11 +328,18 @@ class GroupInvitationController extends ControllerBase {
 
     $invitations = [];
     foreach ($results as $row) {
+      $roles = json_decode($row['roles'], TRUE) ?? [];
+      if ($this->isJurisdictionGroup($group)) {
+        $roles = array_values(array_map(
+          fn(string $roleId): string => $this->canonicalizeJurisdictionRoleId($roleId),
+          array_filter($roles, 'is_string')
+        ));
+      }
       $invitations[] = [
         'id' => (int) $row['id'],
         'email' => $row['email'],
         'group_id' => (int) $row['group_id'],
-        'roles' => json_decode($row['roles'], TRUE) ?? [],
+        'roles' => $roles,
         'invited_by' => (int) $row['invited_by'],
         'created' => (int) $row['created'],
         'expires' => (int) $row['expires'],
@@ -352,8 +416,17 @@ class GroupInvitationController extends ControllerBase {
    *   JSON response with claim result.
    */
   public function claimInvitation(string $token, Request $request): JsonResponse {
+    $ip = $request->getClientIp() ?? 'unknown';
+    if (!$this->flood->isAllowed(self::CLAIM_FLOOD_EVENT, self::CLAIM_FLOOD_LIMIT, self::CLAIM_FLOOD_WINDOW, $ip)) {
+      return new JsonResponse(['error' => 'Too many attempts. Try again later.'], 429);
+    }
+    $this->flood->register(self::CLAIM_FLOOD_EVENT, self::CLAIM_FLOOD_WINDOW, $ip);
+
     // Atomically mark as claimed to prevent double-claim.
     $now = time();
+    // Tokens stay SQL-compared intentionally: they are 256-bit random values,
+    // this path is flood-limited above, and hashing existing tokens would need
+    // a disruptive schema migration for a low-risk side channel.
     $affected = $this->database->update('markaspot_group_invitations')
       ->fields(['claimed' => $now])
       ->condition('token', $token)
@@ -394,11 +467,7 @@ class GroupInvitationController extends ControllerBase {
     if (!$currentAccount->isAnonymous()) {
       $currentEmail = $currentAccount->getEmail();
       if ($currentEmail && strtolower($currentEmail) !== strtolower($invitation['email'])) {
-        // Unclaim - this invitation is for a different email.
-        $this->database->update('markaspot_group_invitations')
-          ->fields(['claimed' => NULL])
-          ->condition('id', (int) $invitation['id'])
-          ->execute();
+        $this->unclaimInvitation((int) $invitation['id']);
         return new JsonResponse([
           'error' => 'This invitation is for a different email address. Please log in with the correct account.',
         ], 403);
@@ -409,58 +478,158 @@ class GroupInvitationController extends ControllerBase {
     /** @var \Drupal\group\Entity\GroupInterface|null $group */
     $group = $this->entityTypeManager()->getStorage('group')->load($groupId);
     if (!$group) {
+      $this->unclaimInvitation((int) $invitation['id']);
       return new JsonResponse(['error' => 'The target group no longer exists.'], 404);
     }
 
-    // Re-check member limit (race condition guard).
-    $limitError = $this->checkMemberLimit($group);
-    if ($limitError !== NULL) {
-      return new JsonResponse(['error' => $limitError], 409);
+    $jurGroup = $this->resolveJurisdictionGroup($group);
+    $groupLockName = $this->buildMembershipGroupLockName((int) ($jurGroup?->id() ?? $groupId));
+    if (!$this->lock->acquire($groupLockName, self::MEMBERSHIP_UPDATE_LOCK_TTL)) {
+      $this->unclaimInvitation((int) $invitation['id']);
+      return new JsonResponse(['error' => 'Group membership update already in progress.'], 409);
     }
 
-    $email = $invitation['email'];
-    $roles = json_decode($invitation['roles'], TRUE) ?? [];
-    $langcode = $this->languageManager()->getCurrentLanguage()->getId();
-
-    // Find existing user by email or auto-create.
-    $user = $this->findOrCreateUser($email, $langcode);
-    if (!$user) {
-      return new JsonResponse(['error' => 'Failed to create user account.'], 500);
-    }
-
-    // Check if user is already a member.
-    $existingMember = $group->getMember($user);
-    if ($existingMember) {
-      return new JsonResponse([
-        'status' => 'already_member',
-        'redirect' => '/dashboard',
-      ]);
-    }
-
-    // Add user to group with specified roles.
     try {
-      $group->addMember($user, ['group_roles' => $roles]);
+      // Re-check member limit while the group mutation lock is held.
+      $limitError = $this->checkMemberLimit($group);
+      if ($limitError !== NULL) {
+        $this->unclaimInvitation((int) $invitation['id']);
+        return new JsonResponse(['error' => $limitError], 409);
+      }
+
+      $email = $invitation['email'];
+      $roles = json_decode($invitation['roles'], TRUE) ?? [];
+      if ($this->isJurisdictionGroup($group)) {
+        $roles = $this->storageJurisdictionRoleIds($roles);
+      }
+      $roles = MembershipRoleNormalizer::normalize($roles, $group->bundle());
+      $langcode = $this->languageManager()->getCurrentLanguage()->getId();
+
+      $emailLockName = $this->buildUserEmailLockName($email);
+      if (!$this->lock->acquire($emailLockName, self::USER_EMAIL_LOCK_TTL)) {
+        $this->unclaimInvitation((int) $invitation['id']);
+        return new JsonResponse(['error' => 'Email update already in progress.'], 409);
+      }
+
+      try {
+        // Find existing user by email or auto-create.
+        $user = $this->findOrCreateUser($email, $langcode);
+        if (!$user) {
+          $this->unclaimInvitation((int) $invitation['id']);
+          return new JsonResponse(['error' => 'Failed to create user account.'], 500);
+        }
+
+        $lockName = $this->buildMembershipUpdateLockName((int) $user->id());
+        if (!$this->lock->acquire($lockName, self::MEMBERSHIP_UPDATE_LOCK_TTL)) {
+          $this->unclaimInvitation((int) $invitation['id']);
+          return new JsonResponse(['error' => 'Membership update already in progress for this user.'], 409);
+        }
+
+        try {
+          // Check if user is already a member.
+          $existingMember = $group->getMember($user);
+          if ($existingMember) {
+            return new JsonResponse([
+              'status' => 'already_member',
+              'redirect' => '/dashboard',
+              'group_name' => $group->label(),
+              'jurisdiction_slug' => $this->getJurisdictionSlug($group),
+            ]);
+          }
+
+          // Add user to group with specified roles.
+          try {
+            $group->addMember($user, ['group_roles' => $roles]);
+          }
+          catch (\Exception $e) {
+            $this->unclaimInvitation((int) $invitation['id']);
+            $this->logger->error('Failed to add user @uid to group @gid: @msg', [
+              '@uid' => $user->id(),
+              '@gid' => $groupId,
+              '@msg' => $e->getMessage(),
+            ]);
+            return new JsonResponse(['error' => 'Failed to add member to group.'], 500);
+          }
+
+          // Invitation was already marked as claimed atomically at the top.
+          $this->logger->notice('Invitation claimed: @email joined group @group (id=@gid).', [
+            '@email' => $email,
+            '@group' => $group->label(),
+            '@gid' => $groupId,
+          ]);
+
+          return new JsonResponse([
+            'status' => 'claimed',
+            'redirect' => '/dashboard',
+            'group_name' => $group->label(),
+            'jurisdiction_slug' => $this->getJurisdictionSlug($group),
+          ]);
+        }
+        finally {
+          $this->lock->release($lockName);
+        }
+      }
+      finally {
+        $this->lock->release($emailLockName);
+      }
     }
-    catch (\Exception $e) {
-      $this->logger->error('Failed to add user @uid to group @gid: @msg', [
-        '@uid' => $user->id(),
-        '@gid' => $groupId,
-        '@msg' => $e->getMessage(),
-      ]);
-      return new JsonResponse(['error' => 'Failed to add member to group.'], 500);
+    finally {
+      $this->lock->release($groupLockName);
+    }
+  }
+
+  /**
+   * Builds a bounded lock name for membership updates on one user account.
+   */
+  protected function buildMembershipUpdateLockName(int $uid): string {
+    return 'markaspot_group:membership_update:' . $uid;
+  }
+
+  /**
+   * Builds a bounded lock name for membership mutations in one group.
+   */
+  protected function buildMembershipGroupLockName(int $groupId): string {
+    return 'markaspot_group:membership_group:' . $groupId;
+  }
+
+  /**
+   * Builds a bounded lock name for a user email identity value.
+   */
+  protected function buildUserEmailLockName(string $email): string {
+    return 'markaspot_group:user_email:' . hash('sha256', mb_strtolower(trim($email)));
+  }
+
+  /**
+   * Marks a previously claimed invitation as claimable again.
+   */
+  protected function unclaimInvitation(int $invitationId): void {
+    $this->database->update('markaspot_group_invitations')
+      ->fields(['claimed' => NULL])
+      ->condition('id', $invitationId)
+      ->execute();
+  }
+
+  /**
+   * Resolves the frontend jurisdiction slug for a group.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The claimed group.
+   *
+   * @return string|null
+   *   The jurisdiction slug, or NULL when it cannot be resolved.
+   */
+  protected function getJurisdictionSlug(GroupInterface $group): ?string {
+    $jurGroup = $this->resolveJurisdictionGroup($group);
+    if (!$jurGroup || !$jurGroup->hasField('field_slug') || $jurGroup->get('field_slug')->isEmpty()) {
+      return NULL;
     }
 
-    // Invitation was already marked as claimed atomically at the top.
-    $this->logger->notice('Invitation claimed: @email joined group @group (id=@gid).', [
-      '@email' => $email,
-      '@group' => $group->label(),
-      '@gid' => $groupId,
-    ]);
+    $slug = trim((string) $jurGroup->get('field_slug')->value);
+    if (!preg_match('/^[a-z0-9_-]{1,64}$/', $slug)) {
+      return NULL;
+    }
 
-    return new JsonResponse([
-      'status' => 'claimed',
-      'redirect' => '/dashboard',
-    ]);
+    return $slug !== '' ? $slug : NULL;
   }
 
   /**
@@ -494,10 +663,9 @@ class GroupInvitationController extends ControllerBase {
       return NULL;
     }
 
-    $currentMembers = $this->tierConfigService->countMembers((int) $jurGroup->id());
-
-    // Count pending invitations across all groups in this jurisdiction
-    // (jur + all org sub-groups) to prevent limit bypass via multiple orgs.
+    // Count active members and pending invitations across all groups in this
+    // jurisdiction (jur + all org sub-groups) to prevent limit bypass via
+    // multiple orgs.
     $allGroupIds = [(int) $jurGroup->id()];
     $orgGroups = $this->entityTypeManager()->getStorage('group')->loadByProperties([
       'type' => 'org',
@@ -505,6 +673,12 @@ class GroupInvitationController extends ControllerBase {
     ]);
     foreach ($orgGroups as $orgGroup) {
       $allGroupIds[] = (int) $orgGroup->id();
+    }
+    $allGroupIds = array_values(array_unique($allGroupIds));
+
+    $currentMembers = 0;
+    foreach ($allGroupIds as $groupId) {
+      $currentMembers += $this->tierConfigService->countMembers((int) $groupId);
     }
 
     $pendingInvites = (int) $this->database->select('markaspot_group_invitations', 'i')
@@ -535,7 +709,7 @@ class GroupInvitationController extends ControllerBase {
    *   The jurisdiction group, or NULL if unresolvable.
    */
   protected function resolveJurisdictionGroup(GroupInterface $group): ?GroupInterface {
-    if ($group->bundle() === 'jur') {
+    if ($this->isJurisdictionGroup($group)) {
       return $group;
     }
 
@@ -645,7 +819,7 @@ class GroupInvitationController extends ControllerBase {
     $siteName = $this->config('system.site')->get('name') ?: 'Mark-a-Spot';
 
     $params = [
-      'group_name' => $group->label(),
+      'group_name' => $this->getEntityLabelForLangcode($group, $langcode),
       'claim_url' => $claimUrl,
       'site_name' => $siteName,
       'langcode' => $langcode,
@@ -670,6 +844,79 @@ class GroupInvitationController extends ControllerBase {
   }
 
   /**
+   * Resolves the invitation mail language for an email address.
+   */
+  protected function resolveInvitationLangcode(string $email): string {
+    $fallback = $this->languageManager()->getCurrentLanguage()->getId();
+
+    try {
+      $users = $this->entityTypeManager()
+        ->getStorage('user')
+        ->loadByProperties(['mail' => $email]);
+      $user = reset($users);
+      if ($user instanceof UserInterface) {
+        $preferred = (string) $user->getPreferredLangcode(FALSE);
+        if ($preferred !== '') {
+          return $preferred;
+        }
+      }
+    }
+    catch (\Exception) {
+      // Existing invitation behavior is request-language fallback when the
+      // recipient account cannot be loaded.
+    }
+
+    return $fallback;
+  }
+
+  /**
+   * Gets an entity label in a specific language when available.
+   */
+  protected function getEntityLabelForLangcode(EntityInterface $entity, string $langcode): string {
+    if ($entity instanceof ConfigEntityInterface) {
+      return $this->getConfigEntityLabelForLangcode($entity, $langcode);
+    }
+
+    if ($langcode !== '' && $this->entityRepository !== NULL) {
+      try {
+        $translated = $this->entityRepository
+          ->getTranslationFromContext($entity, $langcode);
+        if ($translated instanceof EntityInterface) {
+          return (string) $translated->label();
+        }
+      }
+      catch (\Exception) {
+        // Fall back to the entity's default label when translation services are
+        // unavailable or the entity has no requested translation.
+      }
+    }
+
+    return (string) $entity->label();
+  }
+
+  /**
+   * Gets a config entity label in a specific language when available.
+   */
+  protected function getConfigEntityLabelForLangcode(ConfigEntityInterface $entity, string $langcode): string {
+    $languageManager = $this->languageManager();
+    if ($langcode !== '' && method_exists($languageManager, 'getLanguageConfigOverride')) {
+      try {
+        $label = $languageManager
+          ->getLanguageConfigOverride($langcode, $entity->getConfigDependencyName())
+          ->get('label');
+        if (is_string($label) && trim($label) !== '') {
+          return $label;
+        }
+      }
+      catch (\Exception) {
+        // Fall back to the entity's default config label.
+      }
+    }
+
+    return (string) $entity->label();
+  }
+
+  /**
    * Builds the set of jurisdiction IDs a tenant admin can manage.
    *
    * @param \Drupal\Core\Session\AccountInterface $account
@@ -679,14 +926,18 @@ class GroupInvitationController extends ControllerBase {
    *   Array of jurisdiction group IDs (including descendants).
    */
   protected function getAdminJurisdictionIds(AccountInterface $account): array {
-    $tenantMemberships = $this->membershipLoader->loadByUser($account, ['jur-tenant_admin']);
+    $tenantMemberships = $this->membershipLoader->loadByUser($account, $this->jurisdictionRoleIds('tenant_admin'));
     if (empty($tenantMemberships)) {
       return [];
     }
 
     $adminJurIds = [];
     foreach ($tenantMemberships as $membership) {
-      $jurId = (int) $membership->getGroup()->id();
+      $group = $membership->getGroup();
+      if (!$this->isJurisdictionGroup($group)) {
+        continue;
+      }
+      $jurId = (int) $group->id();
       $adminJurIds[] = $jurId;
       $adminJurIds = array_merge($adminJurIds, $this->hierarchyResolver->getDescendantIds($jurId));
     }
@@ -701,26 +952,46 @@ class GroupInvitationController extends ControllerBase {
    *
    * @param bool $isDrupalAdmin
    *   Whether the inviting user is a Drupal administrator.
+   * @param \Drupal\group\Entity\GroupInterface|null $group
+   *   The target group, when tier-scoped role limits should be applied.
    *
    * @return string[]
    *   Array of permitted group role IDs.
    */
-  protected function getPermittedRoles(bool $isDrupalAdmin): array {
+  protected function getPermittedRoles(bool $isDrupalAdmin, ?GroupInterface $group = NULL): array {
     // Base roles any tenant admin may assign.
+    $jurisdictionGroupType = $this->getJurisdictionGroupType();
     $permitted = [
-      'jur-member',
-      'jur-moderator',
+      $jurisdictionGroupType . '-member',
+      $jurisdictionGroupType . '-moderator',
       'org-member',
       'org-moderator',
     ];
 
     // Only Drupal admins may create new tenant admins.
     if ($isDrupalAdmin) {
-      $permitted[] = 'jur-tenant_admin';
+      $permitted[] = $jurisdictionGroupType . '-tenant_admin';
       $permitted[] = 'org-tenant_admin';
     }
 
-    return $permitted;
+    if ($group && $this->tierConfigService && method_exists($this->tierConfigService, 'getAssignableRoleIds')) {
+      $jurGroup = $this->resolveJurisdictionGroup($group);
+      if ($jurGroup && $jurGroup->hasField('field_tier')) {
+        $tier = $jurGroup->get('field_tier')->isEmpty()
+          ? 'free'
+          : (string) $jurGroup->get('field_tier')->value;
+        $tierRoles = $this->tierConfigService->getAssignableRoleIds($tier);
+        if (is_array($tierRoles)) {
+          $tierRoles = array_map(
+            fn(string $roleId): string => $this->storageJurisdictionRoleId($roleId),
+            array_filter($tierRoles, 'is_string')
+          );
+          $permitted = array_values(array_intersect($permitted, $tierRoles));
+        }
+      }
+    }
+
+    return array_values(array_unique($permitted));
   }
 
   /**
@@ -740,7 +1011,7 @@ class GroupInvitationController extends ControllerBase {
       return FALSE;
     }
 
-    if ($group->bundle() === 'jur') {
+    if ($this->isJurisdictionGroup($group)) {
       return in_array((int) $group->id(), $adminJurIds, TRUE);
     }
 

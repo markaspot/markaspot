@@ -10,7 +10,9 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
@@ -138,6 +140,11 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   private const DEMO_REQUEST_COUNT = 5;
 
   /**
+   * Lock lifetime while provisioning a workspace slug.
+   */
+  private const WORKSPACE_SLUG_LOCK_TTL = 300.0;
+
+  /**
    * Demo request templates per language.
    *
    * Each entry provides a title and description. The templates are cycled
@@ -146,35 +153,80 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    */
   private const DEMO_TEMPLATES = [
     'en' => [
-      ['title' => 'Broken street light', 'description' => 'The street light at this location has been out for several days.'],
-      ['title' => 'Pothole on main road', 'description' => 'A large pothole has formed on the road surface, causing problems for traffic.'],
-      ['title' => 'Damaged sidewalk', 'description' => 'The sidewalk tiles are cracked and uneven, creating a tripping hazard.'],
-      ['title' => 'Overflowing waste bin', 'description' => 'The public waste bin at this location is overflowing and needs to be emptied.'],
-      ['title' => 'Graffiti on building', 'description' => 'There is graffiti on the facade of the building at this location.'],
+      [
+        'title' => 'Broken street light',
+        'description' => 'The street light at this location has been out for several days.',
+      ],
+      [
+        'title' => 'Pothole on main road',
+        'description' => 'A large pothole has formed on the road surface, causing problems for traffic.',
+      ],
+      [
+        'title' => 'Damaged sidewalk',
+        'description' => 'The sidewalk tiles are cracked and uneven, creating a tripping hazard.',
+      ],
+      [
+        'title' => 'Overflowing waste bin',
+        'description' => 'The public waste bin at this location is overflowing and needs to be emptied.',
+      ],
+      [
+        'title' => 'Graffiti on building',
+        'description' => 'There is graffiti on the facade of the building at this location.',
+      ],
     ],
     'de' => [
-      ['title' => 'Defekte Straßenlaterne', 'description' => 'Die Straßenlaterne an diesem Standort ist seit mehreren Tagen ausgefallen.'],
-      ['title' => 'Schlagloch auf der Hauptstraße', 'description' => 'Auf der Fahrbahn hat sich ein großes Schlagloch gebildet.'],
-      ['title' => 'Beschädigter Gehweg', 'description' => 'Die Gehwegplatten sind gerissen und uneben, es besteht Stolpergefahr.'],
-      ['title' => 'Überfüllter Mülleimer', 'description' => 'Der öffentliche Mülleimer an diesem Standort ist überfüllt und muss geleert werden.'],
+      [
+        'title' => 'Defekte Straßenlaterne',
+        'description' => 'Die Straßenlaterne an diesem Standort ist seit mehreren Tagen ausgefallen.',
+      ],
+      [
+        'title' => 'Schlagloch auf der Hauptstraße',
+        'description' => 'Auf der Fahrbahn hat sich ein großes Schlagloch gebildet.',
+      ],
+      [
+        'title' => 'Beschädigter Gehweg',
+        'description' => 'Die Gehwegplatten sind gerissen und uneben, es besteht Stolpergefahr.',
+      ],
+      [
+        'title' => 'Überfüllter Mülleimer',
+        'description' => 'Der öffentliche Mülleimer an diesem Standort ist überfüllt und muss geleert werden.',
+      ],
       ['title' => 'Graffiti an Gebäude', 'description' => 'An der Fassade des Gebäudes befindet sich Graffiti.'],
     ],
     'cs' => [
-      ['title' => 'Rozbitá pouliční lampa', 'description' => 'Pouliční lampa na tomto místě již několik dní nesvítí.'],
-      ['title' => 'Výtluk na hlavní silnici', 'description' => 'Na vozovce se vytvořil velký výtluk, který komplikuje dopravu.'],
+      [
+        'title' => 'Rozbitá pouliční lampa',
+        'description' => 'Pouliční lampa na tomto místě již několik dní nesvítí.',
+      ],
+      [
+        'title' => 'Výtluk na hlavní silnici',
+        'description' => 'Na vozovce se vytvořil velký výtluk, který komplikuje dopravu.',
+      ],
       ['title' => 'Poškozený chodník', 'description' => 'Dlaždice chodníku jsou popraskané a nerovné, hrozí zakopnutí.'],
-      ['title' => 'Přeplněný odpadkový koš', 'description' => 'Veřejný odpadkový koš na tomto místě je přeplněný a je třeba jej vyprázdnit.'],
+      [
+        'title' => 'Přeplněný odpadkový koš',
+        'description' => 'Veřejný odpadkový koš na tomto místě je přeplněný a je třeba jej vyprázdnit.',
+      ],
       ['title' => 'Graffiti na budově', 'description' => 'Na fasádě budovy na tomto místě je graffiti.'],
     ],
     'nl' => [
-      ['title' => 'Kapotte straatlantaarn', 'description' => 'De straatlantaarn op deze locatie is al meerdere dagen kapot.'],
+      [
+        'title' => 'Kapotte straatlantaarn',
+        'description' => 'De straatlantaarn op deze locatie is al meerdere dagen kapot.',
+      ],
       ['title' => 'Gat in de weg', 'description' => 'Er is een groot gat in het wegdek ontstaan.'],
-      ['title' => 'Beschadigd trottoir', 'description' => 'De stoeptegels zijn gebarsten en ongelijk, er is struikelgevaar.'],
+      [
+        'title' => 'Beschadigd trottoir',
+        'description' => 'De stoeptegels zijn gebarsten en ongelijk, er is struikelgevaar.',
+      ],
       ['title' => 'Overvolle prullenbak', 'description' => 'De openbare prullenbak op deze locatie is overvol.'],
       ['title' => 'Graffiti op gebouw', 'description' => 'Er is graffiti aangebracht op de gevel van het gebouw.'],
     ],
     'fr' => [
-      ['title' => 'Lampadaire en panne', 'description' => "Le lampadaire a cet endroit est en panne depuis plusieurs jours."],
+      [
+        'title' => 'Lampadaire en panne',
+        'description' => "Le lampadaire a cet endroit est en panne depuis plusieurs jours.",
+      ],
       ['title' => 'Nid-de-poule sur la route', 'description' => 'Un grand nid-de-poule est apparu sur la chaussee.'],
       ['title' => 'Trottoir endommage', 'description' => 'Les dalles du trottoir sont fissurees et inegales.'],
       ['title' => 'Poubelle debordante', 'description' => 'La poubelle publique a cet endroit deborde.'],
@@ -225,6 +277,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     protected readonly LanguageManagerInterface $languageManager,
     protected readonly ConfigFactoryInterface $configFactory,
     protected readonly TimeInterface $time,
+    protected readonly LockBackendInterface $lock,
   ) {}
 
   /**
@@ -274,117 +327,138 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       throw new \RuntimeException('Maximum ' . self::MAX_CATEGORIES . ' categories allowed');
     }
 
-    // Slug uniqueness check.
     $groupStorage = $this->entityTypeManager->getStorage('group');
-    $existing = $groupStorage->loadByProperties(['field_slug' => $slug]);
-    if (!empty($existing)) {
+    $slugLockName = $this->buildWorkspaceSlugLockName($slug);
+    if (!$this->lock->acquire($slugLockName, self::WORKSPACE_SLUG_LOCK_TTL)) {
       throw new \RuntimeException('Slug already taken');
     }
 
-    $transaction = $this->database->startTransaction();
-
     try {
-      $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
-      // English must always be available (used as fallback for term machine names).
-      $availableLanguages = array_unique(array_merge(['en', $defaultLang], array_keys($multilingualCategories)));
-
-      // 0. Ensure all requested languages are installed in Drupal.
-      $this->ensureLanguagesExist($availableLanguages);
-
-      // 1. Create Group entity.
-      $nuxtConfig = $this->buildNuxtConfig($name, $slug, $lat, $lng, $zoom, $template, $availableLanguages, $defaultLang);
-      $boundaryJson = $this->buildBoundaryJson($boundary, $name);
-
-      $groupFields = [
-        'type' => 'jur',
-        'label' => $name,
-        'uid' => 1,
-        'field_slug' => $slug,
-        'field_platform_name' => $name,
-        'field_nuxt_config' => json_encode($nuxtConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-      ];
-      if ($aiSystemPrompt) {
-        $groupFields['field_ai_system_prompt'] = $aiSystemPrompt;
-      }
-      if ($boundaryJson) {
-        $groupFields['field_boundary'] = $boundaryJson;
-      }
-      elseif ($lat && $lng) {
-        // Generate a 1km radius circle as default boundary.
-        $groupFields['field_boundary'] = json_encode(
-          $this->generateCircleBoundary($lat, $lng, 1.0),
-          JSON_UNESCAPED_UNICODE
-        );
-      }
-      $group = $groupStorage->create($groupFields);
-      $group->save();
-
-      // All new workspaces start with an expiry date. The expiry is cleared
-      // later when the Stripe webhook confirms successful payment.
-      $config = $this->configFactory->get('markaspot_fastmap.settings');
-      if (!empty($data['selected_tier'])) {
-        // User selected a tier from pricing: longer grace period for checkout.
-        $graceDays = (int) ($config->get('checkout_grace_days') ?? 14);
-      }
-      else {
-        // Demo/test ride: shorter expiry.
-        $graceDays = (int) ($config->get('demo_expiry_days') ?? 5);
-      }
-      $group->set('field_expiry_date', $this->time->getRequestTime() + ($graceDays * 86400));
-      $group->save();
-
-      $groupId = (int) $group->id();
-
-      // 2. Create status terms (custom or default).
-      if (is_array($customStatuses) && !empty($customStatuses)) {
-        $this->createCustomStatusTerms($termStorage, $groupId, $defaultLang, $customStatuses, $statusTranslations, $availableLanguages);
-      }
-      else {
-        $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages);
+      // Slug uniqueness check.
+      $existing = $groupStorage->loadByProperties(['field_slug' => $slug]);
+      if (!empty($existing)) {
+        throw new \RuntimeException('Slug already taken');
       }
 
-      // 3. Create category terms.
-      $categoryTermIds = $this->createCategoryTerms($termStorage, $groupId, $multilingualCategories, $defaultLang);
+      $transaction = $this->database->startTransaction();
 
-      // 4. Assign categories to group.
-      $group->set('field_service_categories', array_map(fn($tid) => ['target_id' => $tid], $categoryTermIds));
-      $group->save();
-
-      // 5. Create tenant admin user.
-      $user = $this->createTenantAdmin($email, $name);
-
-      // 6. Add user as group member with admin role.
-      $this->addGroupMembership($group, $user);
-
-      // 7. Create demo service requests.
-      $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang);
-
-      // 8. Create welcome start page.
       try {
-        $this->createStartPage($group, $name, $defaultLang, $startPageContent, $startPageTranslations, $availableLanguages);
+        $termStorage = $this->entityTypeManager->getStorage('taxonomy_term');
+        // English must always be available (used as fallback for term machine names).
+        $availableLanguages = array_unique(array_merge(['en', $defaultLang], array_keys($multilingualCategories)));
+
+        // 0. Ensure all requested languages are installed in Drupal.
+        $this->ensureLanguagesExist($availableLanguages);
+
+        // 1. Create Group entity.
+        $nuxtConfig = $this->buildNuxtConfig($name, $slug, $lat, $lng, $zoom, $template, $availableLanguages, $defaultLang);
+        $boundaryJson = $this->buildBoundaryJson($boundary, $name);
+
+        $jurisdictionType = $this->jurisdictionGroupType();
+        $groupFields = [
+          'type' => $jurisdictionType,
+          'label' => $name,
+          'uid' => 1,
+          'field_slug' => $slug,
+          'field_platform_name' => $name,
+          'field_nuxt_config' => json_encode($nuxtConfig, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        ];
+        if ($aiSystemPrompt) {
+          $groupFields['field_ai_system_prompt'] = $aiSystemPrompt;
+        }
+        if ($boundaryJson) {
+          $groupFields['field_boundary'] = $boundaryJson;
+        }
+        elseif ($lat && $lng) {
+          // Generate a 1km radius circle as default boundary.
+          $groupFields['field_boundary'] = json_encode(
+            $this->generateCircleBoundary($lat, $lng, 1.0),
+            JSON_UNESCAPED_UNICODE
+          );
+        }
+        $group = $groupStorage->create($groupFields);
+        $group->save();
+
+        // All new workspaces start with an expiry date. The expiry is cleared
+        // later when the Stripe webhook confirms successful payment.
+        $config = $this->configFactory->get('markaspot_fastmap.settings');
+        if (!empty($data['selected_tier'])) {
+          // User selected a tier from pricing: longer grace period for checkout.
+          $graceDays = (int) ($config->get('checkout_grace_days') ?? 14);
+        }
+        else {
+          // Demo/test ride: shorter expiry.
+          $graceDays = (int) ($config->get('demo_expiry_days') ?? 5);
+        }
+        $group->set('field_expiry_date', $this->time->getRequestTime() + ($graceDays * 86400));
+        $group->save();
+
+        $groupId = (int) $group->id();
+
+        // 2. Create status terms (custom or default).
+        if (is_array($customStatuses) && !empty($customStatuses)) {
+          $this->createCustomStatusTerms($termStorage, $groupId, $defaultLang, $customStatuses, $statusTranslations, $availableLanguages);
+        }
+        else {
+          $this->createStatusTerms($termStorage, $groupId, $defaultLang, $availableLanguages);
+        }
+
+        // 3. Create category terms.
+        $categoryTermIds = $this->createCategoryTerms($termStorage, $groupId, $multilingualCategories, $defaultLang);
+
+        // 4. Assign categories to group.
+        $group->set('field_service_categories', array_map(fn($tid) => ['target_id' => $tid], $categoryTermIds));
+        $group->save();
+
+        // 5. Create tenant admin user.
+        $user = $this->createTenantAdmin($email, $name);
+
+        // 6. Add user as group member with admin role.
+        $this->addGroupMembership($group, $user);
+
+        // 7. Create demo service requests.
+        $this->createDemoRequests($data, $group, $categoryTermIds, $groupId, $defaultLang);
+
+        // 8. Create welcome start page.
+        try {
+          $this->createStartPage($group, $name, $defaultLang, $startPageContent, $startPageTranslations, $availableLanguages);
+        }
+        catch (\Exception $e) {
+          $this->logger->error('Failed to create start page for @name: @msg', [
+            '@name' => $name,
+            '@msg' => $e->getMessage(),
+          ]);
+          // Don't rethrow - workspace is still usable without a start page.
+        }
+
+        $result = [
+          'group_id' => $groupId,
+          'slug' => $slug,
+          'name' => $name,
+          'url' => '/' . $slug,
+          'categories' => count($categoryTermIds),
+          'user_id' => (int) $user->id(),
+        ];
+
+        unset($transaction);
+        return $result;
       }
       catch (\Exception $e) {
-        $this->logger->error('Failed to create start page for @name: @msg', [
-          '@name' => $name,
-          '@msg' => $e->getMessage(),
-        ]);
-        // Don't rethrow - workspace is still usable without a start page.
+        $transaction->rollBack();
+        $this->logger->error('Workspace provisioning failed: @msg', ['@msg' => $e->getMessage()]);
+        throw new \RuntimeException('Workspace provisioning failed: ' . $e->getMessage(), 0, $e);
       }
+    }
+    finally {
+      $this->lock->release($slugLockName);
+    }
+  }
 
-      return [
-        'group_id' => $groupId,
-        'slug' => $slug,
-        'name' => $name,
-        'url' => '/' . $slug,
-        'categories' => count($categoryTermIds),
-        'user_id' => (int) $user->id(),
-      ];
-    }
-    catch (\Exception $e) {
-      $transaction->rollBack();
-      $this->logger->error('Workspace provisioning failed: @msg', ['@msg' => $e->getMessage()]);
-      throw new \RuntimeException('Workspace provisioning failed: ' . $e->getMessage(), 0, $e);
-    }
+  /**
+   * Builds a bounded lock name for a workspace slug.
+   */
+  private function buildWorkspaceSlugLockName(string $slug): string {
+    return 'markaspot_fastmap:workspace_slug:' . hash('sha256', $slug);
   }
 
   /**
@@ -639,8 +713,17 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    *   Optional translations keyed by language code, each containing an array
    *   of translated status names in the same order as $statuses.
    *   Example: ['de' => ['Erstellt', 'Offen', 'Erledigt']].
+   * @param array $availableLanguages
+   *   Available language codes.
    */
-  private function createCustomStatusTerms(EntityStorageInterface $termStorage, int $groupId, string $defaultLang, array $statuses, array $statusTranslations = [], array $availableLanguages = []): void {
+  private function createCustomStatusTerms(
+    EntityStorageInterface $termStorage,
+    int $groupId,
+    string $defaultLang,
+    array $statuses,
+    array $statusTranslations = [],
+    array $availableLanguages = [],
+  ): void {
     $weight = 0;
     $index = 0;
     foreach ($statuses as $status) {
@@ -846,9 +929,21 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       return;
     }
 
+    $jurisdictionType = $this->jurisdictionGroupType();
     $membership = $group->addRelationship($user, 'group_membership');
-    $membership->set('group_roles', ['jur-tenant_admin']);
+    $membership->set('group_roles', MembershipRoleNormalizer::normalize([$jurisdictionType . '-tenant_admin'], $jurisdictionType));
     $membership->save();
+  }
+
+  /**
+   * Returns the configured jurisdiction group bundle.
+   */
+  private function jurisdictionGroupType(): string {
+    $configured = $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
   /**
@@ -1280,6 +1375,8 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
    *
    * @param array $coords
    *   Nested coordinate array from GeoJSON geometry.
+   * @param int $depth
+   *   Current recursion depth.
    *
    * @return array<array{float, float}>
    *   Flat list of [lng, lat] pairs.

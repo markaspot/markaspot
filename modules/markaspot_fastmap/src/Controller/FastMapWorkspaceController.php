@@ -5,12 +5,17 @@ declare(strict_types=1);
 namespace Drupal\markaspot_fastmap\Controller;
 
 use Drupal\Component\Utility\Xss;
+use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -24,6 +29,8 @@ use Symfony\Component\HttpFoundation\Request;
  * email -> GET verify/{token} -> provisions workspace -> redirects to dashboard.
  */
 class FastMapWorkspaceController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * Verification token time-to-live in seconds (48 hours).
@@ -42,6 +49,31 @@ class FastMapWorkspaceController extends ControllerBase {
    * HTML tags permitted in body fields after XSS filtering.
    */
   private const BODY_ALLOWED_TAGS = ['p', 'strong', 'em', 'a', 'br', 'ul', 'ol', 'li'];
+
+  /**
+   * Workspace creation endpoint flood event name.
+   */
+  protected const CREATE_WORKSPACE_FLOOD_EVENT = 'fastmap_create_workspace';
+
+  /**
+   * Maximum workspace creation attempts per IP per flood window.
+   */
+  protected const CREATE_WORKSPACE_FLOOD_LIMIT = 5;
+
+  /**
+   * Workspace creation flood window in seconds.
+   */
+  protected const CREATE_WORKSPACE_FLOOD_WINDOW = 3600;
+
+  /**
+   * Lock lifetime while reserving a pending workspace slug.
+   */
+  private const WORKSPACE_SLUG_LOCK_TTL = 30.0;
+
+  /**
+   * Lock lifetime while verifying and provisioning a pending token.
+   */
+  private const VERIFY_TOKEN_LOCK_TTL = 300.0;
 
   /**
    * The database connection.
@@ -86,11 +118,21 @@ class FastMapWorkspaceController extends ControllerBase {
   protected FloodInterface $flood;
 
   /**
+   * Lock backend for slug reservation.
+   */
+  protected LockBackendInterface $lock;
+
+  /**
    * The group membership loader (NULL if group module not installed).
    *
    * @var mixed|null
    */
   protected mixed $membershipLoader = NULL;
+
+  /**
+   * Entity repository for translated labels.
+   */
+  protected ?EntityRepositoryInterface $entityRepository = NULL;
 
   /**
    * {@inheritdoc}
@@ -103,8 +145,12 @@ class FastMapWorkspaceController extends ControllerBase {
     $instance->fastmapLogger = $container->get('logger.channel.markaspot_fastmap');
     $instance->keyValueExpirable = $container->get('keyvalue.expirable');
     $instance->flood = $container->get('flood');
+    $instance->lock = $container->get('lock');
     if ($container->has('group.membership_loader')) {
       $instance->membershipLoader = $container->get('group.membership_loader');
+    }
+    if ($container->has('entity.repository')) {
+      $instance->entityRepository = $container->get('entity.repository');
     }
     return $instance;
   }
@@ -120,6 +166,12 @@ class FastMapWorkspaceController extends ControllerBase {
     $data = json_decode($content, TRUE);
 
     if (!$data) {
+      $floodIdentifier = $this->getCreateWorkspaceFloodIdentifier($request, FALSE);
+      if (!$this->flood->isAllowed(self::CREATE_WORKSPACE_FLOOD_EVENT, self::CREATE_WORKSPACE_FLOOD_LIMIT, self::CREATE_WORKSPACE_FLOOD_WINDOW, $floodIdentifier)) {
+        return new JsonResponse(['error' => 'Too many attempts. Try again later.'], 429);
+      }
+      $this->flood->register(self::CREATE_WORKSPACE_FLOOD_EVENT, self::CREATE_WORKSPACE_FLOOD_WINDOW, $floodIdentifier);
+
       return new JsonResponse(['error' => 'Invalid JSON body'], 400);
     }
 
@@ -127,7 +179,15 @@ class FastMapWorkspaceController extends ControllerBase {
     $config = $this->config('markaspot_fastmap.settings');
     $expectedKey = $config->get('service_key');
     $apiKey = $data['service_key'] ?? $request->headers->get('X-Service-Key');
-    if (!$expectedKey || !$apiKey || !hash_equals($expectedKey, (string) $apiKey)) {
+    $hasValidServiceKey = $expectedKey && $apiKey && hash_equals($expectedKey, (string) $apiKey);
+
+    $floodIdentifier = $this->getCreateWorkspaceFloodIdentifier($request, (bool) $hasValidServiceKey);
+    if (!$this->flood->isAllowed(self::CREATE_WORKSPACE_FLOOD_EVENT, self::CREATE_WORKSPACE_FLOOD_LIMIT, self::CREATE_WORKSPACE_FLOOD_WINDOW, $floodIdentifier)) {
+      return new JsonResponse(['error' => 'Too many attempts. Try again later.'], 429);
+    }
+    $this->flood->register(self::CREATE_WORKSPACE_FLOOD_EVENT, self::CREATE_WORKSPACE_FLOOD_WINDOW, $floodIdentifier);
+
+    if (!$hasValidServiceKey) {
       return new JsonResponse(['error' => 'Invalid API key'], 403);
     }
 
@@ -153,136 +213,146 @@ class FastMapWorkspaceController extends ControllerBase {
       return new JsonResponse(['error' => 'categories must be provided'], 400);
     }
 
-    // Check slug uniqueness early.
-    $groupStorage = $this->entityTypeManager()->getStorage('group');
-    $existing = $groupStorage->loadByProperties(['field_slug' => $slug]);
-    if (!empty($existing)) {
-      return new JsonResponse(['error' => 'Slug already taken'], 409);
+    $slugLockName = $this->buildWorkspaceSlugLockName($slug);
+    if (!$this->lock->acquire($slugLockName, self::WORKSPACE_SLUG_LOCK_TTL)) {
+      return new JsonResponse(['error' => 'A pending request for this slug is already being created'], 409);
     }
 
-    // Check for existing pending request with same slug.
-    $pendingExists = $this->database->select('markaspot_fastmap_pending', 'p')
-      ->fields('p', ['id'])
-      ->where("JSON_UNQUOTE(JSON_EXTRACT(p.workspace_data, '$.slug')) = :slug", [':slug' => $slug])
-      ->range(0, 1)
-      ->execute()
-      ->fetchField();
-
-    if ($pendingExists) {
-      return new JsonResponse(['error' => 'A pending request for this slug already exists'], 409);
-    }
-
-    // Generate verification token.
-    $token = bin2hex(random_bytes(32));
-
-    // Validate optional custom statuses.
-    $statuses = $data['statuses'] ?? NULL;
-    if ($statuses !== NULL) {
-      if (!is_array($statuses)) {
-        $statuses = NULL;
+    try {
+      // Check slug uniqueness early.
+      $groupStorage = $this->entityTypeManager()->getStorage('group');
+      $existing = $groupStorage->loadByProperties(['field_slug' => $slug]);
+      if (!empty($existing)) {
+        return new JsonResponse(['error' => 'Slug already taken'], 409);
       }
-      else {
-        $validMappings = ['initial', 'open', 'closed'];
-        $statuses = array_filter($statuses, function ($s) use ($validMappings) {
-          return is_array($s)
-            && !empty($s['name']) && is_string($s['name'])
-            && !empty($s['hex']) && is_string($s['hex']) && preg_match('/^#[0-9a-fA-F]{6}$/', $s['hex'])
-            && !empty($s['icon']) && is_string($s['icon']) && preg_match('/^i-[a-z0-9-]+$/', $s['icon'])
-            && !empty($s['mapping']) && in_array($s['mapping'], $validMappings, TRUE);
-        });
-        $mappingsPresent = array_unique(array_column($statuses, 'mapping'));
-        if (count(array_intersect($validMappings, $mappingsPresent)) < 3) {
+
+      // Check for existing pending request with same slug.
+      $pendingExists = $this->database->select('markaspot_fastmap_pending', 'p')
+        ->fields('p', ['id'])
+        ->where("JSON_UNQUOTE(JSON_EXTRACT(p.workspace_data, '$.slug')) = :slug", [':slug' => $slug])
+        ->range(0, 1)
+        ->execute()
+        ->fetchField();
+
+      if ($pendingExists) {
+        return new JsonResponse(['error' => 'A pending request for this slug already exists'], 409);
+      }
+
+      // Generate verification token.
+      $token = bin2hex(random_bytes(32));
+
+      // Validate optional custom statuses.
+      $statuses = $data['statuses'] ?? NULL;
+      if ($statuses !== NULL) {
+        if (!is_array($statuses)) {
           $statuses = NULL;
         }
         else {
-          $statuses = array_values(array_slice($statuses, 0, 10));
-        }
-      }
-    }
-
-    // Validate optional status translations: Record<lang, string[]>.
-    $statusTranslations = [];
-    if (isset($data['status_translations']) && is_array($data['status_translations'])) {
-      foreach ($data['status_translations'] as $lang => $names) {
-        if (!in_array($lang, self::ALLOWED_LANGS, TRUE) || !is_array($names)) {
-          continue;
-        }
-        $sanitized = [];
-        foreach ($names as $statusName) {
-          if (is_string($statusName)) {
-            $sanitized[] = mb_substr(strip_tags(trim($statusName)), 0, 255);
+          $validMappings = ['initial', 'open', 'closed'];
+          $statuses = array_filter($statuses, function ($s) use ($validMappings) {
+            return is_array($s)
+              && !empty($s['name']) && is_string($s['name'])
+              && !empty($s['hex']) && is_string($s['hex']) && preg_match('/^#[0-9a-fA-F]{6}$/', $s['hex'])
+              && !empty($s['icon']) && is_string($s['icon']) && preg_match('/^i-[a-z0-9-]+$/', $s['icon'])
+              && !empty($s['mapping']) && in_array($s['mapping'], $validMappings, TRUE);
+          });
+          $mappingsPresent = array_unique(array_column($statuses, 'mapping'));
+          if (count(array_intersect($validMappings, $mappingsPresent)) < 3) {
+            $statuses = NULL;
+          }
+          else {
+            $statuses = array_values(array_slice($statuses, 0, 10));
           }
         }
-        if (!empty($sanitized)) {
-          $statusTranslations[$lang] = $sanitized;
+      }
+
+      // Validate optional status translations: Record<lang, string[]>.
+      $statusTranslations = [];
+      if (isset($data['status_translations']) && is_array($data['status_translations'])) {
+        foreach ($data['status_translations'] as $lang => $names) {
+          if (!in_array($lang, self::ALLOWED_LANGS, TRUE) || !is_array($names)) {
+            continue;
+          }
+          $sanitized = [];
+          foreach ($names as $statusName) {
+            if (is_string($statusName)) {
+              $sanitized[] = mb_substr(strip_tags(trim($statusName)), 0, 255);
+            }
+          }
+          if (!empty($sanitized)) {
+            $statusTranslations[$lang] = $sanitized;
+          }
         }
       }
-    }
 
-    // Validate optional start page translations: Record<lang, {title, body}>.
-    $startPageTranslations = [];
-    if (isset($data['start_page_translations']) && is_array($data['start_page_translations'])) {
-      foreach ($data['start_page_translations'] as $lang => $content) {
-        if (!in_array($lang, self::ALLOWED_LANGS, TRUE) || !is_array($content)) {
-          continue;
-        }
-        $transTitle = mb_substr(strip_tags(trim((string) ($content['title'] ?? ''))), 0, 255);
-        $transBody = Xss::filter(
-          mb_substr(trim((string) ($content['body'] ?? '')), 0, 2000),
-          self::BODY_ALLOWED_TAGS
-        );
-        if ($transTitle && $transBody) {
-          $startPageTranslations[$lang] = [
-            'title' => $transTitle,
-            'body' => $transBody,
-          ];
-        }
-      }
-    }
-
-    // Store all workspace data for later provisioning.
-    $workspaceData = [
-      'name' => $name,
-      'slug' => $slug,
-      'email' => $email,
-      'categories' => $categories,
-      'lat' => max(-90.0, min(90.0, (float) ($data['lat'] ?? 0))),
-      'lng' => max(-180.0, min(180.0, (float) ($data['lng'] ?? 0))),
-      'zoom' => (int) ($data['zoom'] ?? 13),
-      'template' => $data['template'] ?? 'civic-report',
-      'language' => $data['language'] ?? '',
-      'boundary' => $this->validateBoundarySize($data['boundary'] ?? NULL),
-      'statuses' => $statuses,
-      'status_translations' => $statusTranslations ?: NULL,
-      'start_page' => isset($data['start_page']) && is_array($data['start_page'])
-        ? [
-          'title' => mb_substr((string) ($data['start_page']['title'] ?? ''), 0, 255),
-          'body' => Xss::filter(
-            mb_substr((string) ($data['start_page']['body'] ?? ''), 0, 2000),
+      // Validate optional start page translations: Record<lang, {title, body}>.
+      $startPageTranslations = [];
+      if (isset($data['start_page_translations']) && is_array($data['start_page_translations'])) {
+        foreach ($data['start_page_translations'] as $lang => $content) {
+          if (!in_array($lang, self::ALLOWED_LANGS, TRUE) || !is_array($content)) {
+            continue;
+          }
+          $transTitle = mb_substr(strip_tags(trim((string) ($content['title'] ?? ''))), 0, 255);
+          $transBody = Xss::filter(
+            mb_substr(trim((string) ($content['body'] ?? '')), 0, 2000),
             self::BODY_ALLOWED_TAGS
-          ),
-        ]
-        : NULL,
-      'start_page_translations' => $startPageTranslations ?: NULL,
-      'demo' => !empty($data['demo']),
-      'ai_system_prompt' => isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt'])
-        ? mb_substr(trim($data['ai_system_prompt']), 0, 2000)
-        : '',
-    ];
+          );
+          if ($transTitle && $transBody) {
+            $startPageTranslations[$lang] = [
+              'title' => $transTitle,
+              'body' => $transBody,
+            ];
+          }
+        }
+      }
 
-    try {
-      $this->database->insert('markaspot_fastmap_pending')
-        ->fields([
-          'token' => $token,
-          'email' => $email,
-          'workspace_data' => json_encode($workspaceData, JSON_UNESCAPED_UNICODE),
-          'created' => time(),
-        ])
-        ->execute();
+      // Store all workspace data for later provisioning.
+      $workspaceData = [
+        'name' => $name,
+        'slug' => $slug,
+        'email' => $email,
+        'categories' => $categories,
+        'lat' => max(-90.0, min(90.0, (float) ($data['lat'] ?? 0))),
+        'lng' => max(-180.0, min(180.0, (float) ($data['lng'] ?? 0))),
+        'zoom' => (int) ($data['zoom'] ?? 13),
+        'template' => $data['template'] ?? 'civic-report',
+        'language' => $data['language'] ?? '',
+        'boundary' => $this->validateBoundarySize($data['boundary'] ?? NULL),
+        'statuses' => $statuses,
+        'status_translations' => $statusTranslations ?: NULL,
+        'start_page' => isset($data['start_page']) && is_array($data['start_page'])
+          ? [
+            'title' => mb_substr((string) ($data['start_page']['title'] ?? ''), 0, 255),
+            'body' => Xss::filter(
+              mb_substr((string) ($data['start_page']['body'] ?? ''), 0, 2000),
+              self::BODY_ALLOWED_TAGS
+            ),
+          ]
+          : NULL,
+        'start_page_translations' => $startPageTranslations ?: NULL,
+        'demo' => !empty($data['demo']),
+        'ai_system_prompt' => isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt'])
+          ? mb_substr(trim($data['ai_system_prompt']), 0, 2000)
+          : '',
+      ];
+
+      try {
+        $this->database->insert('markaspot_fastmap_pending')
+          ->fields([
+            'token' => $token,
+            'email' => $email,
+            'workspace_data' => json_encode($workspaceData, JSON_UNESCAPED_UNICODE),
+            'created' => time(),
+          ])
+          ->execute();
+      }
+      catch (\Exception $e) {
+        $this->fastmapLogger->error('Failed to store pending workspace: @msg', ['@msg' => $e->getMessage()]);
+        return new JsonResponse(['error' => 'Failed to create pending workspace'], 500);
+      }
     }
-    catch (\Exception $e) {
-      $this->fastmapLogger->error('Failed to store pending workspace: @msg', ['@msg' => $e->getMessage()]);
-      return new JsonResponse(['error' => 'Failed to create pending workspace'], 500);
+    finally {
+      $this->lock->release($slugLockName);
     }
 
     // Build verify URL: prefer frontend_base_url from request (set by Nuxt
@@ -335,80 +405,143 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
+   * Builds the flood identifier for workspace creation attempts.
+   *
+   * The public Nuxt route calls this endpoint server-side with the service key.
+   * In that trusted path Drupal may only see the Nuxt container IP, so Nuxt
+   * forwards its already-derived client IP in X-Markaspot-Client-IP. Direct or
+   * invalid service-key requests never get to choose this identifier.
+   */
+  protected function getCreateWorkspaceFloodIdentifier(Request $request, bool $allowForwardedClient): string {
+    if ($allowForwardedClient) {
+      $forwardedIp = trim((string) $request->headers->get('X-Markaspot-Client-IP', ''));
+      if ($forwardedIp !== '' && filter_var($forwardedIp, FILTER_VALIDATE_IP)) {
+        return 'client:' . $forwardedIp;
+      }
+    }
+
+    return 'origin:' . ($request->getClientIp() ?? 'unknown');
+  }
+
+  /**
+   * Builds a bounded lock name for a workspace slug.
+   */
+  protected function buildWorkspaceSlugLockName(string $slug): string {
+    return 'markaspot_fastmap:workspace_slug:' . hash('sha256', $slug);
+  }
+
+  /**
+   * Builds a bounded lock name for a verification token.
+   */
+  protected function buildVerifyTokenLockName(string $token): string {
+    return 'markaspot_fastmap:verify_token:' . hash('sha256', $token);
+  }
+
+  /**
    * GET /start/verify/{token}.
    *
    * Looks up the pending record, provisions the workspace, then redirects.
    */
   public function verifyWorkspace(string $token): JsonResponse|TrustedRedirectResponse {
     $wantsJsonResponse = $this->wantsJsonVerifyResponse();
-    $record = $this->database->select('markaspot_fastmap_pending', 'p')
-      ->fields('p')
-      ->condition('token', $token)
-      ->range(0, 1)
-      ->execute()
-      ->fetchAssoc();
+    $tokenLockName = $this->buildVerifyTokenLockName($token);
+    if (!$this->lock->acquire($tokenLockName, self::VERIFY_TOKEN_LOCK_TTL)) {
+      $this->lock->wait($tokenLockName, 5);
+      if (!$this->lock->acquire($tokenLockName, self::VERIFY_TOKEN_LOCK_TTL)) {
+        return new JsonResponse(['error' => 'Workspace verification is already in progress'], 409);
+      }
+    }
 
-    if (!$record) {
-      // Token may have been consumed by a prefetch/preload from the email
-      // client. Check if the workspace was already provisioned by looking
-      // for a verified record or matching group.
-      $verified = $this->database->select('markaspot_fastmap_verified', 'v')
-        ->fields('v', ['slug'])
+    $provisionedGroupId = NULL;
+
+    try {
+      $record = $this->database->select('markaspot_fastmap_pending', 'p')
+        ->fields('p')
         ->condition('token', $token)
         ->range(0, 1)
+        ->forUpdate()
         ->execute()
-        ->fetchField();
+        ->fetchAssoc();
 
-      if ($verified) {
-        $baseUrl = $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
-        $loginToken = $this->createLoginTokenForVerifiedWorkspace($verified);
+      if (!$record) {
+        // Token may have been consumed by a prefetch/preload from the email
+        // client. Check if the workspace was already provisioned by looking
+        // for a verified record or matching group.
+        $verified = $this->database->select('markaspot_fastmap_verified', 'v')
+          ->fields('v', ['slug'])
+          ->condition('token', $token)
+          ->range(0, 1)
+          ->execute()
+          ->fetchField();
 
-        if ($baseUrl && !$wantsJsonResponse) {
-          return $this->buildWorkspaceRedirectResponse($verified, NULL, $loginToken);
+        if ($verified) {
+          $baseUrl = $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
+          $loginToken = $this->createLoginTokenForVerifiedWorkspace($verified);
+
+          if ($baseUrl && !$wantsJsonResponse) {
+            return $this->buildWorkspaceRedirectResponse($verified, NULL, $loginToken);
+          }
+
+          $response = ['slug' => $verified];
+          if ($loginToken) {
+            $response['login_token'] = $loginToken;
+          }
+          return new JsonResponse($response, 200);
         }
 
-        $response = ['slug' => $verified];
-        if ($loginToken) {
-          $response['login_token'] = $loginToken;
-        }
-        return new JsonResponse($response, 200);
+        return new JsonResponse(['error' => 'Invalid or expired verification token'], 404);
       }
 
-      return new JsonResponse(['error' => 'Invalid or expired verification token'], 404);
-    }
+      // Check expiration using a fixed 48-hour security window.
+      $config = $this->config('markaspot_fastmap.settings');
 
-    // Check expiration using a fixed 48-hour security window.
-    $config = $this->config('markaspot_fastmap.settings');
+      if ((time() - (int) $record['created']) > self::VERIFICATION_TTL) {
+        $this->database->delete('markaspot_fastmap_pending')
+          ->condition('id', $record['id'])
+          ->execute();
+        return new JsonResponse(['error' => 'Verification token has expired'], 410);
+      }
 
-    if ((time() - (int) $record['created']) > self::VERIFICATION_TTL) {
-      $this->database->delete('markaspot_fastmap_pending')
-        ->condition('id', $record['id'])
-        ->execute();
-      return new JsonResponse(['error' => 'Verification token has expired'], 410);
-    }
+      $workspaceData = json_decode($record['workspace_data'], TRUE);
+      if (!$workspaceData) {
+        return new JsonResponse(['error' => 'Corrupted workspace data'], 500);
+      }
 
-    $workspaceData = json_decode($record['workspace_data'], TRUE);
-    if (!$workspaceData) {
-      return new JsonResponse(['error' => 'Corrupted workspace data'], 500);
-    }
-
-    // Wrap verify-provision-delete in a transaction to prevent race conditions.
-    $transaction = $this->database->startTransaction();
-    try {
-      $result = $this->provisioning->provisionWorkspace($workspaceData);
+      try {
+        $result = $this->provisioning->provisionWorkspace($workspaceData);
+        $provisionedGroupId = (int) $result['group_id'];
+      }
+      catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'Slug already taken') {
+          return new JsonResponse(['error' => $e->getMessage()], 409);
+        }
+        $this->fastmapLogger->error('Workspace provisioning failed during verification: @msg', [
+          '@msg' => $e->getMessage(),
+        ]);
+        return new JsonResponse(['error' => 'Workspace provisioning failed'], 500);
+      }
 
       // Move from pending to verified (allows re-verify after prefetch).
-      $this->database->delete('markaspot_fastmap_pending')
-        ->condition('id', $record['id'])
-        ->execute();
+      $moveTransaction = $this->database->startTransaction();
+      try {
+        $this->database->delete('markaspot_fastmap_pending')
+          ->condition('id', $record['id'])
+          ->execute();
 
-      $this->database->merge('markaspot_fastmap_verified')
-        ->keys(['token' => $token])
-        ->fields([
-          'slug' => $result['slug'],
-          'created' => time(),
-        ])
-        ->execute();
+        $this->database->merge('markaspot_fastmap_verified')
+          ->keys(['token' => $token])
+          ->fields([
+            'slug' => $result['slug'],
+            'created' => time(),
+          ])
+          ->execute();
+
+        unset($moveTransaction);
+      }
+      catch (\Throwable $e) {
+        $moveTransaction->rollBack();
+        throw $e;
+      }
 
       $this->fastmapLogger->info('Workspace provisioned via email verification: @slug (group @id)', [
         '@slug' => $result['slug'],
@@ -446,10 +579,24 @@ class FastMapWorkspaceController extends ControllerBase {
 
       return new JsonResponse($response, 201);
     }
-    catch (\RuntimeException $e) {
-      $transaction->rollBack();
-      // Slug taken race condition or other provisioning error.
-      return new JsonResponse(['error' => $e->getMessage()], 409);
+    catch (\Throwable $e) {
+      if ($provisionedGroupId !== NULL) {
+        try {
+          $this->provisioning->teardownWorkspace($provisionedGroupId);
+        }
+        catch (\Throwable $teardownException) {
+          $this->fastmapLogger->error('Workspace cleanup after verification failure failed: @msg', [
+            '@msg' => $teardownException->getMessage(),
+          ]);
+        }
+      }
+      $this->fastmapLogger->error('Workspace verification failed: @msg', [
+        '@msg' => $e->getMessage(),
+      ]);
+      return new JsonResponse(['error' => 'Workspace verification failed'], 500);
+    }
+    finally {
+      $this->lock->release($tokenLockName);
     }
   }
 
@@ -542,7 +689,7 @@ class FastMapWorkspaceController extends ControllerBase {
       }
 
       $roleIds = array_column($membership->get('group_roles')->getValue(), 'target_id');
-      if (!in_array('jur-tenant_admin', $roleIds, TRUE)) {
+      if (array_intersect($this->jurisdictionRoleIds('tenant_admin'), $roleIds) === []) {
         continue;
       }
 
@@ -649,12 +796,15 @@ class FastMapWorkspaceController extends ControllerBase {
             $group = $membership->getGroup();
             $groupRoles = [];
             foreach ($membership->getRoles() as $role) {
-              $groupRoles[] = ['id' => $role->id(), 'label' => $role->label()];
+              $groupRoles[] = [
+                'id' => $role->id(),
+                'label' => $this->getEntityLabelForUserLanguage($role, $user),
+              ];
             }
             $groups[] = [
               'id' => $group->id(),
               'uuid' => $group->uuid(),
-              'label' => $group->label(),
+              'label' => $this->getEntityLabelForUserLanguage($group, $user),
               'type' => $group->bundle(),
               'roles' => $groupRoles,
             ];
@@ -676,7 +826,7 @@ class FastMapWorkspaceController extends ControllerBase {
           'email' => $user->getEmail(),
           'roles' => $user->getRoles(),
           'groups' => $groups,
-        ],
+        ] + $this->getTosAcceptancePayload($user),
       ]);
     }
     catch (\Exception $e) {
@@ -686,6 +836,92 @@ class FastMapWorkspaceController extends ControllerBase {
       ]);
       return new JsonResponse(['error' => 'Login failed'], 500);
     }
+  }
+
+  /**
+   * Gets an entity label in the user's preferred language when available.
+   */
+  protected function getEntityLabelForUserLanguage(EntityInterface $entity, $user): string {
+    $langcode = method_exists($user, 'getPreferredLangcode')
+      ? (string) $user->getPreferredLangcode(FALSE)
+      : '';
+
+    if ($entity instanceof ConfigEntityInterface) {
+      return $this->getConfigEntityLabelForLangcode($entity, $langcode);
+    }
+
+    if ($langcode !== '' && $this->entityRepository !== NULL) {
+      try {
+        $translated = $this->entityRepository
+          ->getTranslationFromContext($entity, $langcode);
+        if ($translated instanceof EntityInterface) {
+          return (string) $translated->label();
+        }
+      }
+      catch (\Exception) {
+        // Keep default labels when translation services are unavailable.
+      }
+    }
+
+    return (string) $entity->label();
+  }
+
+  /**
+   * Gets Terms of Service acceptance state from the user entity.
+   *
+   * @param object|null $user
+   *   The user entity.
+   *
+   * @return array{tos_accepted: bool, tos_accepted_at: int|null}
+   *   ToS acceptance payload for frontend auth state.
+   */
+  protected function getTosAcceptancePayload($user): array {
+    if (
+      !$user ||
+      !method_exists($user, 'hasField') ||
+      !$user->hasField('field_tos_accepted_at') ||
+      !method_exists($user, 'get')
+    ) {
+      return [
+        'tos_accepted' => FALSE,
+        'tos_accepted_at' => NULL,
+      ];
+    }
+
+    $field = $user->get('field_tos_accepted_at');
+    $value = $field->value ?? NULL;
+    if (($value === NULL || $value === '') && method_exists($field, 'getString')) {
+      $value = $field->getString();
+    }
+
+    $accepted_at = ($value !== NULL && $value !== '') ? (int) $value : NULL;
+
+    return [
+      'tos_accepted' => $accepted_at !== NULL,
+      'tos_accepted_at' => $accepted_at,
+    ];
+  }
+
+  /**
+   * Gets a config entity label in a specific language when available.
+   */
+  protected function getConfigEntityLabelForLangcode(ConfigEntityInterface $entity, string $langcode): string {
+    $languageManager = $this->languageManager();
+    if ($langcode !== '' && method_exists($languageManager, 'getLanguageConfigOverride')) {
+      try {
+        $label = $languageManager
+          ->getLanguageConfigOverride($langcode, $entity->getConfigDependencyName())
+          ->get('label');
+        if (is_string($label) && trim($label) !== '') {
+          return $label;
+        }
+      }
+      catch (\Exception) {
+        // Fall back to the entity's default config label.
+      }
+    }
+
+    return (string) $entity->label();
   }
 
   /**

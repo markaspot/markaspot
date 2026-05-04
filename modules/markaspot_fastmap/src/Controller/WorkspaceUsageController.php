@@ -59,7 +59,7 @@ class WorkspaceUsageController extends ControllerBase {
     $group = $this->entityTypeManager()
       ->getStorage('group')
       ->load($resolved_id);
-    if (!$group || $group->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($group)) {
       return NULL;
     }
 
@@ -87,10 +87,15 @@ class WorkspaceUsageController extends ControllerBase {
         ->addCacheContexts(['url.path']);
     }
 
-    // Admins can view any workspace usage.
-    if ($account->hasPermission('administer nodes')) {
+    // Site administrators can view any workspace usage.
+    if ((int) $account->id() === 1) {
       return AccessResult::allowed()
-        ->cachePerPermissions()
+        ->addCacheContexts(['user'])
+        ->addCacheableDependency($entity);
+    }
+    if (in_array('administrator', $account->getRoles(), TRUE)) {
+      return AccessResult::allowed()
+        ->addCacheContexts(['user.roles'])
         ->addCacheableDependency($entity);
     }
 
@@ -106,18 +111,26 @@ class WorkspaceUsageController extends ControllerBase {
     // Non-admins must be a tenant_admin of this group. Regular members
     // (invited moderators) must not access billing or usage data.
     $membership = $entity->getMember($account);
+    $membership_cache_tags = [
+      'group_relationship_list:plugin:group_membership:group:' . $entity->id(),
+      'group_relationship_list:plugin:group_membership:entity:' . $account->id(),
+    ];
     $isTenantAdmin = FALSE;
     if ($membership) {
       foreach ($membership->getRoles() as $role) {
-        if ($role->id() === 'jur-tenant_admin') {
+        if ($this->isJurisdictionRole($role, 'tenant_admin')) {
           $isTenantAdmin = TRUE;
           break;
         }
       }
     }
     $isOwner = AccessResult::allowedIf($isTenantAdmin)
-      ->cachePerUser()
-      ->addCacheableDependency($entity);
+      ->addCacheContexts(['user'])
+      ->addCacheableDependency($entity)
+      ->addCacheTags($membership_cache_tags);
+    if ($membership) {
+      $isOwner->addCacheableDependency($membership);
+    }
 
     return $hasPermission->andIf($isOwner);
   }
@@ -137,6 +150,12 @@ class WorkspaceUsageController extends ControllerBase {
       return new JsonResponse(
         ['error' => 'Jurisdiction not found'],
         404
+      );
+    }
+    if (!$this->access($group, $this->currentUser())->isAllowed()) {
+      return new JsonResponse(
+        ['error' => 'Access denied'],
+        403
       );
     }
 

@@ -10,6 +10,22 @@ declare(strict_types=1);
 use Drupal\user\Entity\Role;
 
 /**
+ * Implements hook_update_dependencies().
+ */
+function markaspot_fastmap_update_dependencies(): array {
+  return [
+    'markaspot_fastmap' => [
+      11907 => [
+        'markaspot_group' => 11921,
+      ],
+      11916 => [
+        'markaspot_group' => 11921,
+      ],
+    ],
+  ];
+}
+
+/**
  * Implements hook_schema().
  */
 function markaspot_fastmap_schema(): array {
@@ -131,6 +147,39 @@ function markaspot_fastmap_schema(): array {
 }
 
 /**
+ * Implements hook_requirements().
+ */
+function markaspot_fastmap_requirements(string $phase): array {
+  $requirements = [];
+
+  if ($phase !== 'runtime') {
+    return $requirements;
+  }
+
+  /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
+  $tierConfig = \Drupal::service('markaspot_fastmap.tier_config');
+  $issues = $tierConfig->getTierLimitConfigIssues();
+
+  $requirements['markaspot_fastmap_tier_limits'] = [
+    'title' => t('FastMap tier limit configuration'),
+    'value' => empty($issues) ? t('Valid') : t('@count issue(s)', [
+      '@count' => count($issues),
+    ]),
+    'severity' => empty($issues)
+      ? \Drupal\Core\Extension\Requirement\RequirementSeverity::OK
+      : \Drupal\Core\Extension\Requirement\RequirementSeverity::Warning,
+  ];
+
+  if (!empty($issues)) {
+    $requirements['markaspot_fastmap_tier_limits']['description'] = t('Review markaspot_fastmap.settings:tier_limits. Detected: @issues', [
+      '@issues' => implode('; ', $issues),
+    ]);
+  }
+
+  return $requirements;
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_fastmap_install(): void {
@@ -146,6 +195,8 @@ function markaspot_fastmap_install(): void {
       $logger->info('Granted "access workspace usage" to @role role.', ['@role' => $role_id]);
     }
   }
+
+  markaspot_fastmap_update_11916();
 }
 
 /**
@@ -462,47 +513,19 @@ function markaspot_fastmap_update_11905(): void {
 }
 
 /**
- * Create jur-tenant_admin group role for workspace provisioning.
+ * Verify jur-tenant_admin group role for workspace provisioning.
  *
- * Previously lived in markaspot_tenant_admin module which has unmet
- * dependencies (content_translation, markaspot_ai, toolbar). Moved here
- * since markaspot_fastmap requires this role for workspace creation.
+ * The role is owned by markaspot_group. FastMap only adds its page-management
+ * permissions in update_11916 and hook_install().
  */
 function markaspot_fastmap_update_11907(): void {
   $storage = \Drupal::entityTypeManager()->getStorage('group_role');
-  if ($storage->load('jur-tenant_admin')) {
+  if (!$storage->load('jur-tenant_admin')) {
+    \Drupal::logger('markaspot_fastmap')->warning('Group role jur-tenant_admin not found after markaspot_group_update_11921.');
     return;
   }
 
-  $storage->create([
-    'id' => 'jur-tenant_admin',
-    'label' => 'Tenant Admin',
-    'weight' => -1,
-    'admin' => FALSE,
-    'scope' => 'individual',
-    'global_role' => NULL,
-    'group_type' => 'jur',
-    'permissions' => [
-      'administer members',
-      'create group_node:service_request entity',
-      'create group_node:service_request relationship',
-      'update any group_node:service_request entity',
-      'update own group_node:service_request entity',
-      'view group',
-      'view group_node:service_request entity',
-      'view group_node:service_request relationship',
-      'view own unpublished group_node:service_request entity',
-      'view unpublished group_node:service_request entity',
-      'create group_node:page entity',
-      'create group_node:page relationship',
-      'update any group_node:page entity',
-      'view group_node:page entity',
-      'view group_node:page relationship',
-      'delete any group_node:page entity',
-    ],
-  ])->save();
-
-  \Drupal::logger('markaspot_fastmap')->info('Created jur-tenant_admin group role.');
+  \Drupal::logger('markaspot_fastmap')->info('Verified jur-tenant_admin group role.');
 }
 
 /**
@@ -1021,4 +1044,35 @@ function markaspot_fastmap_update_11917(): void {
     ->save();
 
   $logger->info('Installed Czech fastmap mail translation.');
+}
+
+/**
+ * Add tier-scoped assignable invitation roles to FastMap settings.
+ */
+function markaspot_fastmap_update_11918(): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.settings');
+  if ($config->get('assignable_roles')) {
+    return;
+  }
+
+  $paid_roles = [
+    'jur-member',
+    'jur-moderator',
+    'org-member',
+    'org-moderator',
+    'jur-tenant_admin',
+    'org-tenant_admin',
+  ];
+
+  $config
+    ->set('assignable_roles', [
+      'free' => [
+        'jur-member',
+        'org-member',
+      ],
+      'starter' => $paid_roles,
+      'pro' => $paid_roles,
+      'heart' => $paid_roles,
+    ])
+    ->save();
 }

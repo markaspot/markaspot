@@ -45,6 +45,7 @@ markaspot_fastmap.billing_get:
     _custom_access: '\Drupal\markaspot_fastmap\Controller\BillingController::access'
     group: '[a-z0-9_-]+'
   options:
+    _auth: ['cookie']
     no_cache: 'TRUE'
 
 markaspot_fastmap.billing_update:
@@ -70,6 +71,8 @@ markaspot_fastmap.workspace_usage:
   requirements:
     _custom_access: '\Drupal\markaspot_fastmap\Controller\WorkspaceUsageController::access'
     group: '[a-z0-9_-]+'
+  options:
+    _auth: ['cookie']
 
 markaspot_fastmap.accept_tos:
   path: '/api/accept-tos'

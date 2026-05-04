@@ -249,4 +249,30 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
     $this->assertEquals(2, $loadCount, 'After resetCache, storage should be called again');
   }
 
+  /**
+   * @covers ::resetCache
+   */
+  public function testResetCacheCanTargetSingleGroup(): void {
+    $groups = [
+      7 => [$this->createMockGroup('authenticated'), $this->createMockGroup('public')],
+      8 => [$this->createMockGroup('submission_only'), $this->createMockGroup('authenticated')],
+    ];
+    $loadCountByGroup = [];
+
+    $this->groupStorage->method('load')->willReturnCallback(function (int $groupId) use (&$groups, &$loadCountByGroup) {
+      $loadCountByGroup[$groupId] = ($loadCountByGroup[$groupId] ?? 0) + 1;
+      return array_shift($groups[$groupId]);
+    });
+
+    $this->assertEquals('authenticated', $this->service->getVisibility(7));
+    $this->assertEquals('submission_only', $this->service->getVisibility(8));
+
+    $this->service->resetCache(7);
+
+    $this->assertEquals('public', $this->service->getVisibility(7));
+    $this->assertEquals('submission_only', $this->service->getVisibility(8));
+    $this->assertEquals(2, $loadCountByGroup[7]);
+    $this->assertEquals(1, $loadCountByGroup[8]);
+  }
+
 }

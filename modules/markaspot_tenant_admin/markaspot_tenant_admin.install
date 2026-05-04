@@ -99,6 +99,26 @@ function markaspot_tenant_admin_update_10003(): void {
 }
 
 /**
+ * Remove global service-category edit permission from authenticated users.
+ *
+ * Plain authenticated users must not be able to patch service_category terms
+ * through JSON:API. Tenant-scoped taxonomy management is handled by the
+ * tenant_admin and editorial roles plus markaspot_tenant_admin access hooks.
+ */
+function markaspot_tenant_admin_update_10004(): void {
+  $role = Role::load('authenticated');
+  if (!$role || !$role->hasPermission('edit terms in service_category')) {
+    return;
+  }
+
+  $role->revokePermission('edit terms in service_category');
+  $role->save();
+  \Drupal::logger('markaspot_tenant_admin')->warning(
+    'Revoked "edit terms in service_category" from authenticated role.'
+  );
+}
+
+/**
  * Implements hook_install().
  *
  * Scans existing jur-admin memberships and retroactively grants the

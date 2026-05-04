@@ -23,6 +23,31 @@ member_limits:
   starter: 5
   pro: 20
   heart: 5
+assignable_roles:
+  free:
+    - jur-member
+    - org-member
+  starter:
+    - jur-member
+    - jur-moderator
+    - org-member
+    - org-moderator
+    - jur-tenant_admin
+    - org-tenant_admin
+  pro:
+    - jur-member
+    - jur-moderator
+    - org-member
+    - org-moderator
+    - jur-tenant_admin
+    - org-tenant_admin
+  heart:
+    - jur-member
+    - jur-moderator
+    - org-member
+    - org-moderator
+    - jur-tenant_admin
+    - org-tenant_admin
 ai_budgets:
   free: 50
   starter: 200

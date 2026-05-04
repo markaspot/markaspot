@@ -17,6 +17,7 @@ markaspot_group.member_update:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     uid: \d+
   options:
     _format: 'json'
@@ -41,7 +42,20 @@ markaspot_group.member_profile_update:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     uid: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+
+markaspot_group.integrity_health:
+  path: '/api/admin/health/group-integrity'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupIntegrityHealthController::checks'
+    _title: 'Group integrity health'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupIntegrityHealthController::access'
   options:
     _format: 'json'
     _auth: ['cookie']
@@ -53,9 +67,10 @@ markaspot_group.invitation_send:
   methods: [POST]
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
   options:
     _format: 'json'
-    _auth: ['cookie', 'api_key_auth']
+    _auth: ['cookie']
 
 markaspot_group.invitation_list:
   path: '/api/group-members/invitations'
@@ -66,7 +81,7 @@ markaspot_group.invitation_list:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
   options:
     _format: 'json'
-    _auth: ['cookie', 'api_key_auth']
+    _auth: ['cookie']
 
 markaspot_group.invitation_revoke:
   path: '/api/group-members/invitations/{invitation_id}'
@@ -76,9 +91,10 @@ markaspot_group.invitation_revoke:
   requirements:
     _custom_access: '\Drupal\markaspot_group\Controller\GroupInvitationController::accessCheck'
     invitation_id: \d+
+    _csrf_request_header_token: 'TRUE'
   options:
     _format: 'json'
-    _auth: ['cookie', 'api_key_auth']
+    _auth: ['cookie']
 
 markaspot_group.invitation_claim:
   path: '/api/group-members/claim/{token}'

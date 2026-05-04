@@ -17,6 +17,8 @@ use Symfony\Component\Validator\Constraint;
  */
 class TierLimitConstraint extends Constraint {
 
+  public const JURISDICTION_MISMATCH_MESSAGE = 'The selected jurisdiction does not match the selected category.';
+
   /**
    * Violation message when total limit is reached.
    */
@@ -31,5 +33,10 @@ class TierLimitConstraint extends Constraint {
    * Violation message when published-reports limit is reached.
    */
   public string $publishedLimitMessage = 'This workspace has reached its limit of @limit published reports. Unpublish existing reports or upgrade your plan.';
+
+  /**
+   * Violation message when the submitted jurisdiction conflicts with category.
+   */
+  public string $jurisdictionMismatchMessage = self::JURISDICTION_MISMATCH_MESSAGE;
 
 }

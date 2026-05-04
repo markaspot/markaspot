@@ -27,7 +27,6 @@ permissions:
   - 'edit own field_address'
   - 'edit own field_approved'
   - 'edit own field_e_mail'
-  - 'edit terms in service_category'
   - 'restful get georeport_discovery_resource'
   - 'restful get georeport_request_index_resource'
   - 'restful get georeport_request_resource'

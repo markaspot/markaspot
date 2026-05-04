@@ -43,6 +43,15 @@ markaspot_fastmap.settings:
       sequence:
         type: integer
         label: 'Maximum number of group members'
+    assignable_roles:
+      type: sequence
+      label: 'Assignable invitation roles per tier'
+      sequence:
+        type: sequence
+        label: 'Assignable role IDs'
+        sequence:
+          type: string
+          label: 'Group role ID'
     ai_budgets:
       type: sequence
       label: 'Monthly AI analysis budgets per tier'

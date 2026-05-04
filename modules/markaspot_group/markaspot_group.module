@@ -13,12 +13,15 @@ declare(strict_types=1);
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Query\AlterableInterface;
-use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\markaspot_group\Entity\ProtectedGroup;
+use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\TenantAdminHelper;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
@@ -77,12 +80,55 @@ function markaspot_group_mail(string $key, array &$message, array $params): void
  *   correct root jurisdiction.
  */
 function markaspot_group_entity_presave(EntityInterface $entity): void {
+  _markaspot_group_presave_obsolete_eca($entity);
+
   if ($entity instanceof TermInterface) {
     _markaspot_group_presave_taxonomy_term($entity);
   }
-  if ($entity instanceof GroupInterface && $entity->bundle() === 'jur') {
+  if ($entity instanceof GroupInterface && _markaspot_group_is_jurisdiction_group($entity)) {
     _markaspot_group_presave_jur_service_categories($entity);
   }
+}
+
+/**
+ * Prevents obsolete ECA models from being re-enabled.
+ *
+ * These models were replaced by code-based jurisdiction and organisation
+ * assignment. Keeping them disabled avoids duplicate or token-derived stamps
+ * when the optional ECA config is imported on older tenants.
+ */
+function _markaspot_group_presave_obsolete_eca(EntityInterface $entity): void {
+  if ($entity->getEntityTypeId() !== 'eca') {
+    return;
+  }
+
+  if (!in_array((string) $entity->id(), _markaspot_group_obsolete_eca_ids(), TRUE)) {
+    return;
+  }
+
+  if (!method_exists($entity, 'status') || !$entity->status()) {
+    return;
+  }
+
+  if (!method_exists($entity, 'setStatus')) {
+    return;
+  }
+
+  $entity->setStatus(FALSE);
+  \Drupal::logger('markaspot_group')->warning(
+    'Prevented obsolete ECA rule @id from being enabled.',
+    ['@id' => $entity->id()]
+  );
+}
+
+/**
+ * Gets obsolete ECA models that must stay disabled.
+ *
+ * @return string[]
+ *   ECA config entity IDs.
+ */
+function _markaspot_group_obsolete_eca_ids(): array {
+  return ['process_apply_group'];
 }
 
 /**
@@ -114,7 +160,7 @@ function _markaspot_group_presave_taxonomy_term(TermInterface $entity): void {
 
   // Load the referenced jurisdiction group.
   $group = \Drupal::entityTypeManager()->getStorage('group')->load($jurisdiction_id);
-  if (!$group || $group->bundle() !== 'jur') {
+  if (!_markaspot_group_is_jurisdiction_group($group)) {
     return;
   }
 
@@ -128,6 +174,9 @@ function _markaspot_group_presave_taxonomy_term(TermInterface $entity): void {
   /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
   $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
   $root_id = $resolver->getRootJurisdictionId($jurisdiction_id);
+  if ($root_id === NULL) {
+    return;
+  }
 
   // Redirect field_jurisdiction to the root parent.
   $entity->set('field_jurisdiction', $root_id);
@@ -356,13 +405,28 @@ function markaspot_group_user_insert(UserInterface $account): void {
  * automatically add them to all groups they are not yet a member of.
  */
 function markaspot_group_user_update(UserInterface $account): void {
+  $original = $account->original ?? NULL;
+  $original_roles = $original instanceof UserInterface ? $original->getRoles() : [];
+  $new_roles = $account->getRoles();
+  if (in_array('tenant_admin', $original_roles, TRUE) && !in_array('tenant_admin', $new_roles, TRUE)) {
+    $stripped = TenantAdminHelper::stripAllGroupRoles($account);
+    if ($stripped > 0) {
+      \Drupal::logger('markaspot_group')->notice(
+        'Removed jur-tenant_admin group role from @count jurisdiction membership(s) for user @name after tenant_admin Drupal role removal.',
+        [
+          '@count' => $stripped,
+          '@name' => $account->getAccountName(),
+        ]
+      );
+    }
+  }
+
   // Check if the field exists before accessing it.
   if (!$account->hasField('field_all_groups_member')) {
     return;
   }
 
   // Check if the field value changed from FALSE to TRUE.
-  $original = $account->original ?? NULL;
   $original_value = $original?->hasField('field_all_groups_member')
     ? (bool) $original->get('field_all_groups_member')->value
     : FALSE;
@@ -375,6 +439,262 @@ function markaspot_group_user_update(UserInterface $account): void {
 }
 
 /**
+ * Implements hook_user_delete().
+ *
+ * Group membership relationships reference users through entity_id. Clean them
+ * up explicitly so deleted users do not leave orphan group memberships behind.
+ */
+function markaspot_group_user_delete(UserInterface $account): void {
+  $uid = (int) $account->id();
+  if ($uid <= 0) {
+    return;
+  }
+
+  $relationships = \Drupal::entityTypeManager()
+    ->getStorage('group_relationship')
+    ->loadByProperties([
+      'entity_id' => $uid,
+      'plugin_id' => 'group_membership',
+    ]);
+
+  foreach ($relationships as $relationship) {
+    if ($relationship instanceof GroupRelationshipInterface) {
+      $relationship->delete();
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_type_alter().
+ */
+function markaspot_group_entity_type_alter(array &$entity_types): void {
+  if (!isset($entity_types['group'])) {
+    return;
+  }
+
+  if ($entity_types['group']->getClass() === Group::class) {
+    $entity_types['group']->setClass(ProtectedGroup::class);
+  }
+
+  $entity_types['group']->addConstraint('OrgRootJurisdictionReference');
+  $entity_types['group']->addConstraint('JurisdictionParentReference');
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_access() for group entities.
+ */
+function markaspot_group_group_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  if (!$entity instanceof GroupInterface
+    || $operation !== 'delete'
+    || !_markaspot_group_is_protected_group_bundle($entity->bundle())) {
+    return AccessResult::neutral();
+  }
+
+  $blockers = _markaspot_group_delete_blockers($entity, TRUE);
+  if ($blockers === []) {
+    return AccessResult::neutral()->setCacheMaxAge(0);
+  }
+
+  return AccessResult::forbidden(_markaspot_group_delete_refusal_message($entity, $blockers))
+    ->setCacheMaxAge(0);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_predelete() for group entities.
+ *
+ * Jurisdiction and organisation groups are tenant boundaries. Refuse deleting
+ * them while references still exist instead of letting storage or Group cleanup
+ * cascade content relationships implicitly.
+ */
+function markaspot_group_group_predelete(GroupInterface $group): void {
+  if (!_markaspot_group_is_protected_group_bundle($group->bundle())) {
+    return;
+  }
+
+  $blockers = _markaspot_group_delete_blockers($group);
+  if ($blockers === []) {
+    return;
+  }
+
+  throw new EntityStorageException((string) _markaspot_group_delete_refusal_message($group, $blockers));
+}
+
+/**
+ * Builds the shared delete-refusal message.
+ *
+ * @param string[] $blockers
+ *   Blocker labels with counts.
+ */
+function _markaspot_group_delete_refusal_message(GroupInterface $group, array $blockers): string {
+  return (string) t('Cannot delete @type group "@label" (id @id) while it is still referenced by: @blockers. Reassign or remove these references first.', [
+    '@type' => $group->bundle(),
+    '@label' => $group->label() ?? '',
+    '@id' => (string) $group->id(),
+    '@blockers' => implode(', ', $blockers),
+  ]);
+}
+
+/**
+ * Collects human-readable blockers for group deletion.
+ *
+ * @param bool $include_relationships
+ *   Whether to include group content relationships. Access checks run before
+ *   Group::preDelete() removes relationships; entity predelete hooks run after.
+ *
+ * @return string[]
+ *   Blocker labels with counts.
+ */
+function _markaspot_group_delete_blockers(GroupInterface $group, bool $include_relationships = FALSE): array {
+  $group_id = (int) $group->id();
+  if ($group_id <= 0) {
+    return [];
+  }
+
+  $counts = [];
+
+  if (_markaspot_group_is_jurisdiction_group($group)) {
+    $counts['service requests via field_jurisdiction'] = _markaspot_group_count_node_field_reference('node__field_jurisdiction', 'field_jurisdiction_target_id', $group_id, 'service_request');
+    $counts['service request revisions via field_jurisdiction'] = _markaspot_group_count_node_field_reference('node_revision__field_jurisdiction', 'field_jurisdiction_target_id', $group_id, 'service_request');
+    $counts['other content via field_jurisdiction'] = _markaspot_group_count_node_field_reference('node__field_jurisdiction', 'field_jurisdiction_target_id', $group_id, NULL, ['service_request']);
+    $counts['other content revisions via field_jurisdiction'] = _markaspot_group_count_node_field_reference('node_revision__field_jurisdiction', 'field_jurisdiction_target_id', $group_id, NULL, ['service_request']);
+    $counts['service requests via field_escalation'] = _markaspot_group_count_node_field_reference('node__field_escalation', 'field_escalation_target_id', $group_id, 'service_request');
+    $counts['service request revisions via field_escalation'] = _markaspot_group_count_node_field_reference('node_revision__field_escalation', 'field_escalation_target_id', $group_id, 'service_request');
+    $counts['organisation groups'] = _markaspot_group_count_group_field_reference('group__field_jurisdiction', 'field_jurisdiction_target_id', $group_id, 'org');
+    $counts['organisation group revisions'] = _markaspot_group_count_group_field_reference('group_revision__field_jurisdiction', 'field_jurisdiction_target_id', $group_id, 'org');
+    $jur_type = _markaspot_group_jurisdiction_group_type();
+    $counts['child jurisdictions'] = _markaspot_group_count_group_field_reference('group__field_parent_jurisdiction', 'field_parent_jurisdiction_target_id', $group_id, $jur_type);
+    $counts['child jurisdiction revisions'] = _markaspot_group_count_group_field_reference('group_revision__field_parent_jurisdiction', 'field_parent_jurisdiction_target_id', $group_id, $jur_type);
+    $counts['taxonomy terms via field_jurisdiction'] = _markaspot_group_count_reference('taxonomy_term__field_jurisdiction', 'field_jurisdiction_target_id', $group_id);
+    $counts['taxonomy term revisions via field_jurisdiction'] = _markaspot_group_count_reference('taxonomy_term_revision__field_jurisdiction', 'field_jurisdiction_target_id', $group_id);
+    $counts['taxonomy terms via field_escalation_target'] = _markaspot_group_count_reference('taxonomy_term__field_escalation_target', 'field_escalation_target_id', $group_id);
+    $counts['taxonomy term revisions via field_escalation_target'] = _markaspot_group_count_reference('taxonomy_term_revision__field_escalation_target', 'field_escalation_target_id', $group_id);
+  }
+  elseif ($group->bundle() === 'org') {
+    $counts['service requests via field_organisation'] = _markaspot_group_count_node_field_reference('node__field_organisation', 'field_organisation_target_id', $group_id, 'service_request');
+    $counts['service request revisions via field_organisation'] = _markaspot_group_count_node_field_reference('node_revision__field_organisation', 'field_organisation_target_id', $group_id, 'service_request');
+    $counts['other content via field_organisation'] = _markaspot_group_count_node_field_reference('node__field_organisation', 'field_organisation_target_id', $group_id, NULL, ['service_request']);
+    $counts['other content revisions via field_organisation'] = _markaspot_group_count_node_field_reference('node_revision__field_organisation', 'field_organisation_target_id', $group_id, NULL, ['service_request']);
+    $counts['category mappings via field_category_gid'] = _markaspot_group_count_reference('taxonomy_term__field_category_gid', 'field_category_gid_target_id', $group_id);
+    $counts['category mapping revisions via field_category_gid'] = _markaspot_group_count_reference('taxonomy_term_revision__field_category_gid', 'field_category_gid_target_id', $group_id);
+  }
+
+  if ($include_relationships) {
+    $counts['group content relationships'] = _markaspot_group_count_group_content_relationships($group_id);
+  }
+
+  $blockers = [];
+  foreach ($counts as $label => $count) {
+    if ($count > 0) {
+      $blockers[] = $count . ' ' . $label;
+    }
+  }
+
+  return $blockers;
+}
+
+/**
+ * Counts node field references to a group.
+ *
+ * @param string[] $excluded_bundles
+ *   Node bundles to exclude when no positive bundle filter is supplied.
+ */
+function _markaspot_group_count_node_field_reference(string $table, string $target_column, int $group_id, ?string $bundle = NULL, array $excluded_bundles = []): int {
+  $database = \Drupal::database();
+  $schema = $database->schema();
+  if (!$schema->tableExists($table) || !$schema->fieldExists($table, $target_column)) {
+    return 0;
+  }
+
+  $query = $database->select($table, 'f');
+  $query->addExpression('COUNT(DISTINCT f.entity_id)');
+  $query->condition("f.$target_column", $group_id);
+  if ($schema->fieldExists($table, 'deleted')) {
+    $query->condition('f.deleted', 0);
+  }
+
+  if ($schema->tableExists('node_field_data')) {
+    $query->innerJoin('node_field_data', 'n', 'n.nid = f.entity_id');
+    if ($bundle !== NULL) {
+      $query->condition('n.type', $bundle);
+    }
+    elseif ($excluded_bundles !== []) {
+      $query->condition('n.type', $excluded_bundles, 'NOT IN');
+    }
+  }
+  elseif ($bundle !== NULL || $excluded_bundles !== []) {
+    return 0;
+  }
+
+  return (int) $query->execute()->fetchField();
+}
+
+/**
+ * Counts group field references to a group.
+ */
+function _markaspot_group_count_group_field_reference(string $table, string $target_column, int $group_id, ?string $bundle = NULL): int {
+  $database = \Drupal::database();
+  $schema = $database->schema();
+  if (!$schema->tableExists($table) || !$schema->fieldExists($table, $target_column)) {
+    return 0;
+  }
+
+  $query = $database->select($table, 'f');
+  $query->addExpression('COUNT(DISTINCT f.entity_id)');
+  $query->condition("f.$target_column", $group_id);
+  if ($schema->fieldExists($table, 'deleted')) {
+    $query->condition('f.deleted', 0);
+  }
+
+  if ($bundle !== NULL) {
+    if (!$schema->tableExists('groups')) {
+      return 0;
+    }
+    $query->innerJoin('groups', 'g', 'g.id = f.entity_id');
+    $query->condition('g.type', $bundle);
+  }
+
+  return (int) $query->execute()->fetchField();
+}
+
+/**
+ * Counts simple field references to a group.
+ */
+function _markaspot_group_count_reference(string $table, string $target_column, int $group_id): int {
+  $database = \Drupal::database();
+  $schema = $database->schema();
+  if (!$schema->tableExists($table) || !$schema->fieldExists($table, $target_column)) {
+    return 0;
+  }
+
+  $query = $database->select($table, 'f');
+  $query->addExpression('COUNT(DISTINCT f.entity_id)');
+  $query->condition("f.$target_column", $group_id);
+  if ($schema->fieldExists($table, 'deleted')) {
+    $query->condition('f.deleted', 0);
+  }
+
+  return (int) $query->execute()->fetchField();
+}
+
+/**
+ * Counts group content relationships for a group without blocking memberships.
+ */
+function _markaspot_group_count_group_content_relationships(int $group_id): int {
+  $database = \Drupal::database();
+  $schema = $database->schema();
+  if (!$schema->tableExists('group_relationship_field_data')) {
+    return 0;
+  }
+
+  $query = $database->select('group_relationship_field_data', 'gr');
+  $query->addExpression('COUNT(DISTINCT gr.id)');
+  $query->condition('gr.gid', $group_id);
+  $query->condition('gr.plugin_id', 'group_node:%', 'LIKE');
+
+  return (int) $query->execute()->fetchField();
+}
+
+/**
  * Implements hook_ENTITY_TYPE_insert() for group entities.
  *
  * When a new group is created, automatically add all users with
@@ -382,6 +702,295 @@ function markaspot_group_user_update(UserInterface $account): void {
  */
 function markaspot_group_group_insert(GroupInterface $group): void {
   _markaspot_group_add_all_groups_members_to_group($group);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for group entities.
+ */
+function markaspot_group_group_update(GroupInterface $group): void {
+  if ($group->bundle() !== _markaspot_group_get_org_group_type()) {
+    return;
+  }
+
+  if (!isset($group->original) || !$group->original instanceof GroupInterface) {
+    return;
+  }
+
+  $new_jurisdiction_id = _markaspot_group_group_jurisdiction_id($group);
+  $original_jurisdiction_id = _markaspot_group_group_jurisdiction_id($group->original);
+  if ($new_jurisdiction_id === $original_jurisdiction_id) {
+    return;
+  }
+
+  _markaspot_group_restamp_service_requests_for_org_move(
+    (int) $group->id(),
+    $new_jurisdiction_id,
+    $original_jurisdiction_id,
+  );
+  _markaspot_group_resync_org_memberships_for_org_move(
+    $group,
+    $new_jurisdiction_id,
+    $original_jurisdiction_id,
+  );
+}
+
+/**
+ * Gets a group's field_jurisdiction target ID.
+ */
+function _markaspot_group_group_jurisdiction_id(GroupInterface $group): ?int {
+  if (!$group->hasField('field_jurisdiction') || $group->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  return (int) $group->get('field_jurisdiction')->target_id;
+}
+
+/**
+ * Checks whether a jurisdiction ID points at a root jurisdiction.
+ */
+function _markaspot_group_is_root_jurisdiction_id(int $jurisdiction_id): bool {
+  $group = \Drupal::entityTypeManager()->getStorage('group')->load($jurisdiction_id);
+
+  return $group instanceof GroupInterface
+    && _markaspot_group_is_jurisdiction_group($group)
+    && !_markaspot_group_group_has_parent_jurisdiction($group);
+}
+
+/**
+ * Checks whether a jurisdiction group has a parent jurisdiction.
+ */
+function _markaspot_group_group_has_parent_jurisdiction(GroupInterface $group): bool {
+  return $group->hasField('field_parent_jurisdiction') && !$group->get('field_parent_jurisdiction')->isEmpty();
+}
+
+/**
+ * Re-stamps service requests when their organisation moves jurisdiction.
+ */
+function _markaspot_group_restamp_service_requests_for_org_move(
+  int $org_group_id,
+  ?int $new_jurisdiction_id,
+  ?int $original_jurisdiction_id,
+): void {
+  if ($org_group_id <= 0) {
+    return;
+  }
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if ($new_jurisdiction_id !== NULL) {
+    $new_jurisdiction = $entity_type_manager->getStorage('group')->load($new_jurisdiction_id);
+    if (!_markaspot_group_is_jurisdiction_group($new_jurisdiction)) {
+      \Drupal::logger('markaspot_group')->error(
+        'Cannot re-stamp service requests for org @org: target jurisdiction @new does not exist or is not a jurisdiction group.',
+        [
+          '@org' => $org_group_id,
+          '@new' => $new_jurisdiction_id,
+        ]
+      );
+      return;
+    }
+    if (_markaspot_group_group_has_parent_jurisdiction($new_jurisdiction)) {
+      \Drupal::logger('markaspot_group')->error(
+        'Cannot re-stamp service requests for org @org: target jurisdiction @new is a child jurisdiction.',
+        [
+          '@org' => $org_group_id,
+          '@new' => $new_jurisdiction_id,
+        ]
+      );
+      return;
+    }
+  }
+
+  if ($original_jurisdiction_id === NULL) {
+    \Drupal::logger('markaspot_group')->warning(
+      'Cannot re-stamp service requests for org @org: original jurisdiction is empty.',
+      ['@org' => $org_group_id]
+    );
+    return;
+  }
+
+  if (!_markaspot_group_is_root_jurisdiction_id($original_jurisdiction_id)) {
+    \Drupal::logger('markaspot_group')->warning(
+      'Cannot re-stamp service requests for org @org: original jurisdiction @old is missing or not a root jurisdiction.',
+      [
+        '@org' => $org_group_id,
+        '@old' => $original_jurisdiction_id,
+      ]
+    );
+    return;
+  }
+
+  $node_storage = $entity_type_manager->getStorage('node');
+  $nids = $node_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'service_request')
+    ->condition('field_organisation', $org_group_id)
+    ->execute();
+  if (empty($nids)) {
+    return;
+  }
+
+  $restamped = 0;
+  foreach (array_chunk(array_map('intval', $nids), 50) as $chunk) {
+    foreach ($chunk as $node_id) {
+      $synced = _markaspot_group_with_service_request_sync_lock($node_id, static function () use (
+        $node_id,
+        $node_storage,
+        $org_group_id,
+        $new_jurisdiction_id,
+        $original_jurisdiction_id,
+        &$restamped,
+      ): void {
+        $node_storage->resetCache([$node_id]);
+        $node = $node_storage->load($node_id);
+        if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+          return;
+        }
+        if (!$node->hasField('field_organisation') || !$node->hasField('field_jurisdiction')) {
+          return;
+        }
+
+        $org_ids = _markaspot_group_field_target_ids($node, 'field_organisation');
+        $node_jurisdiction_id = _markaspot_group_node_jurisdiction_id($node);
+        $node_matches_original_scope = _markaspot_group_jurisdiction_matches_scope($node_jurisdiction_id, $original_jurisdiction_id);
+        if (!$node_matches_original_scope) {
+          \Drupal::logger('markaspot_group')->warning(
+            'Skipped service request @nid during org @org re-stamp because current jurisdiction @current is outside original org jurisdiction @old.',
+            [
+              '@nid' => $node->id(),
+              '@org' => $org_group_id,
+              '@current' => $node_jurisdiction_id ?? 'none',
+              '@old' => $original_jurisdiction_id ?? 'none',
+            ]
+          );
+          return;
+        }
+
+        $restamp_values = _markaspot_group_org_move_restamp_values(
+          $org_ids,
+          $org_group_id,
+          $new_jurisdiction_id,
+          $node_jurisdiction_id,
+          $node_matches_original_scope,
+        );
+        if ($restamp_values === NULL) {
+          return;
+        }
+
+        if ($restamp_values['org_ids'] !== $org_ids) {
+          $node->set(
+            'field_organisation',
+            $restamp_values['org_ids'] ? array_map(static fn(int $id) => ['target_id' => $id], $restamp_values['org_ids']) : NULL,
+          );
+        }
+        if ($restamp_values['jurisdiction_id'] !== NULL
+          && $restamp_values['jurisdiction_id'] !== $node_jurisdiction_id) {
+          $node->set('field_jurisdiction', ['target_id' => $restamp_values['jurisdiction_id']]);
+        }
+
+        try {
+          $node->save();
+          $restamped++;
+        }
+        catch (\Throwable $throwable) {
+          \Drupal::logger('markaspot_group')->error(
+            'Failed to re-stamp service request @nid after org @org moved from jurisdiction @old to @new: @error',
+            [
+              '@nid' => $node->id(),
+              '@org' => $org_group_id,
+              '@old' => $original_jurisdiction_id ?? 'none',
+              '@new' => $new_jurisdiction_id ?? 'none',
+              '@error' => $throwable->getMessage(),
+            ]
+          );
+        }
+      });
+      if (!$synced) {
+        \Drupal::logger('markaspot_group')->warning(
+          'Skipped service request @nid during org @org re-stamp because another sync still holds the node lock.',
+          [
+            '@nid' => $node_id,
+            '@org' => $org_group_id,
+          ]
+        );
+      }
+    }
+  }
+
+  if ($restamped > 0) {
+    \Drupal::logger('markaspot_group')->notice(
+      'Re-stamped @count service requests after org @org moved from jurisdiction @old to @new.',
+      [
+        '@count' => $restamped,
+        '@org' => $org_group_id,
+        '@old' => $original_jurisdiction_id ?? 'none',
+        '@new' => $new_jurisdiction_id ?? 'none',
+      ]
+    );
+  }
+}
+
+/**
+ * Determines field changes for a service request affected by an org move.
+ *
+ * @param array<int, int> $org_ids
+ *   Current service request organisation IDs.
+ * @param int $org_group_id
+ *   Moved organisation group ID.
+ * @param int|null $new_jurisdiction_id
+ *   New organisation jurisdiction ID, or NULL when the org became unresolved.
+ * @param int|null $node_jurisdiction_id
+ *   Current service request jurisdiction ID.
+ * @param bool $node_matches_original_scope
+ *   TRUE when the service request belongs to the original org jurisdiction
+ *   scope.
+ *
+ * @return array{jurisdiction_id:int|null, org_ids:array<int, int>}|null
+ *   New field values, or NULL when no restamp is needed.
+ */
+function _markaspot_group_org_move_restamp_values(
+  array $org_ids,
+  int $org_group_id,
+  ?int $new_jurisdiction_id,
+  ?int $node_jurisdiction_id,
+  bool $node_matches_original_scope,
+): ?array {
+  if (!$node_matches_original_scope || !in_array($org_group_id, $org_ids, TRUE)) {
+    return NULL;
+  }
+
+  if ($new_jurisdiction_id === NULL) {
+    return [
+      'jurisdiction_id' => $node_jurisdiction_id,
+      'org_ids' => array_values(array_diff($org_ids, [$org_group_id])),
+    ];
+  }
+
+  if ($node_jurisdiction_id === $new_jurisdiction_id) {
+    return NULL;
+  }
+
+  return [
+    'jurisdiction_id' => $new_jurisdiction_id,
+    'org_ids' => $org_ids,
+  ];
+}
+
+/**
+ * Checks whether a jurisdiction belongs to a scope jurisdiction.
+ */
+function _markaspot_group_jurisdiction_matches_scope(?int $jurisdiction_id, int $scope_jurisdiction_id): bool {
+  if ($jurisdiction_id === NULL) {
+    return FALSE;
+  }
+
+  if ($jurisdiction_id === $scope_jurisdiction_id) {
+    return TRUE;
+  }
+
+  $root_jurisdiction_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+    ->getRootJurisdictionId($jurisdiction_id);
+
+  return $root_jurisdiction_id !== NULL && $root_jurisdiction_id === $scope_jurisdiction_id;
 }
 
 /**
@@ -467,7 +1076,7 @@ function _markaspot_group_add_all_groups_members_to_group(GroupInterface $group)
  */
 function _markaspot_group_user_allowed_for_group(UserInterface $account, GroupInterface $group): bool {
   // JUR groups: only uid=1 is auto-added as member.
-  if ($group->bundle() === 'jur') {
+  if (_markaspot_group_is_jurisdiction_group($group)) {
     return (int) $account->id() === 1;
   }
   // ORG groups: all users with field_all_groups_member are added.
@@ -529,6 +1138,14 @@ function markaspot_group_node_presave(NodeInterface $node): void {
     return;
   }
 
+  if (!$node->isNew()) {
+    if (!_markaspot_group_acquire_service_request_sync_lock($node)) {
+      throw new EntityStorageException(sprintf('Cannot acquire group sync lock for service_request %d.', $node->id()));
+    }
+    $node->_markaspot_group_sync_lock_held = TRUE;
+    drupal_register_shutdown_function('_markaspot_group_release_service_request_sync_lock', (int) $node->id());
+  }
+
   // 2. Detect field_jurisdiction changes and schedule jur relationship sync.
   if (!$node->isNew() && $node->hasField('field_jurisdiction')) {
     $new_jur_id = !$node->get('field_jurisdiction')->isEmpty()
@@ -539,7 +1156,7 @@ function markaspot_group_node_presave(NodeInterface $node): void {
       $original_jur_id = (int) $node->original->get('field_jurisdiction')->target_id;
     }
 
-    if ($new_jur_id !== $original_jur_id && $new_jur_id !== NULL && $new_jur_id > 0) {
+    if ($new_jur_id !== $original_jur_id) {
       $node->_markaspot_group_jur_sync_needed = TRUE;
       $node->_markaspot_group_new_jur_id = $new_jur_id;
       $node->_markaspot_group_original_jur_id = $original_jur_id;
@@ -551,12 +1168,13 @@ function markaspot_group_node_presave(NodeInterface $node): void {
     return;
   }
 
+  _markaspot_group_rederive_org_on_category_change($node);
+  _markaspot_group_filter_organisation_field_by_jurisdiction($node, TRUE);
+
   // Get ALL new organisation group IDs from the multi-value field.
   // Cast to int as JSON:API may pass string values.
   // Deduplicate to prevent redundant relationship operations.
-  $new_group_ids = array_unique(array_filter(
-    array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'))
-  ));
+  $new_group_ids = _markaspot_group_field_target_ids($node, 'field_organisation');
 
   // Write the deduped list back so JSON:API responses and Views don't carry
   // duplicate target_ids when upstream appenders (ECA process_apply_group,
@@ -578,9 +1196,7 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   // Cast to int as JSON:API may pass string values.
   $original_group_ids = [];
   if (isset($node->original) && $node->original->hasField('field_organisation') && !$node->original->get('field_organisation')->isEmpty()) {
-    $original_group_ids = array_unique(array_filter(
-      array_map('intval', array_column($node->original->get('field_organisation')->getValue(), 'target_id'))
-    ));
+    $original_group_ids = _markaspot_group_field_target_ids($node->original, 'field_organisation');
   }
 
   // If nothing changed, skip sync.
@@ -594,6 +1210,234 @@ function markaspot_group_node_presave(NodeInterface $node): void {
   $node->_markaspot_group_sync_needed = TRUE;
   $node->_markaspot_group_added_group_ids = array_values($added);
   $node->_markaspot_group_removed_group_ids = array_values($removed);
+}
+
+/**
+ * Removes organisation references that do not match the request jurisdiction.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service request node.
+ * @param bool $clear_when_unresolved
+ *   TRUE to clear organisations when the node jurisdiction is unresolved.
+ */
+function _markaspot_group_filter_organisation_field_by_jurisdiction(
+  NodeInterface $node,
+  bool $clear_when_unresolved = FALSE,
+): void {
+  if (!$node->hasField('field_organisation') || $node->get('field_organisation')->isEmpty()) {
+    return;
+  }
+
+  $jurisdiction_id = _markaspot_group_node_jurisdiction_id($node);
+  if ($jurisdiction_id === NULL) {
+    if ($clear_when_unresolved) {
+      \Drupal::logger('markaspot_group')->warning(
+        'Node @nid: cannot resolve field_jurisdiction. Removing field_organisation to avoid cross-tenant drift.',
+        ['@nid' => $node->id() ? (int) $node->id() : 'new']
+      );
+      $node->set('field_organisation', NULL);
+    }
+    return;
+  }
+
+  $org_ids = _markaspot_group_field_target_ids($node, 'field_organisation');
+  $filtered_ids = _markaspot_group_filter_org_ids_by_jurisdiction(
+    $org_ids,
+    $jurisdiction_id,
+    $node->id() ? (int) $node->id() : NULL,
+  );
+  if ($filtered_ids === $org_ids) {
+    return;
+  }
+
+  $node->set(
+    'field_organisation',
+    $filtered_ids ? array_map(static fn(int $id) => ['target_id' => $id], $filtered_ids) : NULL,
+  );
+}
+
+/**
+ * Filters organisation IDs to those that can be assigned to a jurisdiction.
+ *
+ * @param array<int, int> $org_ids
+ *   Organisation group IDs.
+ * @param int|null $jurisdiction_id
+ *   Node jurisdiction ID.
+ * @param int|null $node_id
+ *   Node ID for logging, or NULL for new nodes.
+ *
+ * @return array<int, int>
+ *   Valid organisation group IDs.
+ */
+function _markaspot_group_filter_org_ids_by_jurisdiction(
+  array $org_ids,
+  ?int $jurisdiction_id,
+  ?int $node_id = NULL,
+): array {
+  if ($jurisdiction_id === NULL || empty($org_ids)) {
+    return $org_ids;
+  }
+
+  $groups = \Drupal::entityTypeManager()
+    ->getStorage('group')
+    ->loadMultiple($org_ids);
+
+  $valid_ids = [];
+  foreach ($org_ids as $org_id) {
+    $group = $groups[$org_id] ?? NULL;
+    if (!$group instanceof GroupInterface || $group->bundle() !== _markaspot_group_get_org_group_type()) {
+      \Drupal::logger('markaspot_group')->warning(
+        'Node @nid: field_organisation references invalid org group @gid. Removing from field.',
+        [
+          '@nid' => $node_id ?? 'new',
+          '@gid' => $org_id,
+        ]
+      );
+      continue;
+    }
+
+    if (!_markaspot_group_org_group_matches_jurisdiction($group, $jurisdiction_id)) {
+      $org_jurisdiction_id = $group->hasField('field_jurisdiction') && !$group->get('field_jurisdiction')->isEmpty()
+        ? (int) $group->get('field_jurisdiction')->target_id
+        : 'none';
+      \Drupal::logger('markaspot_group')->warning(
+        'Cross-tenant mismatch: node @nid (jur=@node_jur) assigned to org @gid (jur=@org_jur). Removing from field_organisation.',
+        [
+          '@nid' => $node_id ?? 'new',
+          '@node_jur' => $jurisdiction_id,
+          '@gid' => $org_id,
+          '@org_jur' => $org_jurisdiction_id,
+        ]
+      );
+      continue;
+    }
+
+    $valid_ids[] = $org_id;
+  }
+
+  return $valid_ids;
+}
+
+/**
+ * Re-derives field_organisation when an existing request changes category.
+ */
+function _markaspot_group_rederive_org_on_category_change(NodeInterface $node): void {
+  if ($node->isNew()
+    || !_markaspot_group_field_target_changed($node, 'field_category')
+    || _markaspot_group_field_target_changed($node, 'field_organisation')) {
+    return;
+  }
+
+  $current_jurisdiction_id = NULL;
+  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+    $current_jurisdiction_id = (int) $node->get('field_jurisdiction')->target_id;
+  }
+
+  $original_jurisdiction_id = NULL;
+  if (isset($node->original)
+    && $node->original instanceof NodeInterface
+    && $node->original->hasField('field_jurisdiction')
+    && !$node->original->get('field_jurisdiction')->isEmpty()) {
+    $original_jurisdiction_id = (int) $node->original->get('field_jurisdiction')->target_id;
+  }
+
+  $old_org_group_id = _markaspot_group_derive_org_from_category($node->original, $original_jurisdiction_id);
+  $new_org_group_id = _markaspot_group_derive_org_from_category($node, $current_jurisdiction_id);
+
+  $updated_org_ids = _markaspot_group_field_target_ids($node, 'field_organisation');
+  if ($old_org_group_id) {
+    $updated_org_ids = array_values(array_diff($updated_org_ids, [$old_org_group_id]));
+  }
+
+  if ($new_org_group_id) {
+    if (_markaspot_group_org_matches_jurisdiction($new_org_group_id, $current_jurisdiction_id)) {
+      $updated_org_ids[] = $new_org_group_id;
+    }
+    else {
+      \Drupal::logger('markaspot_group')->warning(
+        'Category change derived org @gid outside node jurisdiction @jur_id. Leaving field_organisation without that org.',
+        [
+          '@gid' => $new_org_group_id,
+          '@jur_id' => $current_jurisdiction_id ?? 'none',
+        ]
+      );
+    }
+  }
+
+  $updated_org_ids = array_values(array_unique(array_filter(array_map('intval', $updated_org_ids))));
+  $node->set('field_organisation', $updated_org_ids ? array_map(static fn(int $id) => ['target_id' => $id], $updated_org_ids) : NULL);
+}
+
+/**
+ * Gets the node's field_jurisdiction target ID.
+ */
+function _markaspot_group_node_jurisdiction_id(NodeInterface $node): ?int {
+  if (!$node->hasField('field_jurisdiction') || $node->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  return (int) $node->get('field_jurisdiction')->target_id;
+}
+
+/**
+ * Checks whether an org group can be assigned to the given jurisdiction.
+ */
+function _markaspot_group_org_matches_jurisdiction(int $org_group_id, ?int $jurisdiction_id): bool {
+  $group = \Drupal::entityTypeManager()->getStorage('group')->load($org_group_id);
+  return $group instanceof GroupInterface && _markaspot_group_org_group_matches_jurisdiction($group, $jurisdiction_id);
+}
+
+/**
+ * Checks whether an org group entity can be assigned to the jurisdiction.
+ */
+function _markaspot_group_org_group_matches_jurisdiction(GroupInterface $group, ?int $jurisdiction_id): bool {
+  if (!$group || $group->bundle() !== _markaspot_group_get_org_group_type()) {
+    return FALSE;
+  }
+
+  if ($jurisdiction_id === NULL) {
+    return FALSE;
+  }
+
+  if (!$group->hasField('field_jurisdiction') || $group->get('field_jurisdiction')->isEmpty()) {
+    return FALSE;
+  }
+
+  $org_jurisdiction_id = (int) $group->get('field_jurisdiction')->target_id;
+  if ($org_jurisdiction_id === $jurisdiction_id) {
+    return TRUE;
+  }
+
+  $root_jurisdiction_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+    ->getRootJurisdictionId($jurisdiction_id);
+
+  return $root_jurisdiction_id !== NULL && $org_jurisdiction_id === $root_jurisdiction_id;
+}
+
+/**
+ * Gets unique integer target IDs from an entity reference field.
+ */
+function _markaspot_group_field_target_ids(NodeInterface $node, string $field_name): array {
+  if (!$node->hasField($field_name) || $node->get($field_name)->isEmpty()) {
+    return [];
+  }
+
+  $ids = array_unique(array_filter(
+    array_map('intval', array_column($node->get($field_name)->getValue(), 'target_id'))
+  ));
+  sort($ids);
+  return array_values($ids);
+}
+
+/**
+ * Checks whether an entity reference field changed on an existing node.
+ */
+function _markaspot_group_field_target_changed(NodeInterface $node, string $field_name): bool {
+  if (!isset($node->original) || !$node->original instanceof NodeInterface) {
+    return FALSE;
+  }
+
+  return _markaspot_group_field_target_ids($node, $field_name) !== _markaspot_group_field_target_ids($node->original, $field_name);
 }
 
 /**
@@ -622,7 +1466,21 @@ function markaspot_group_node_insert(NodeInterface $node): void {
   // for jurisdiction-specific org assignments.
   $child_jur_id = _markaspot_group_assign_sub_jurisdictions($node);
 
-  // 2. Auto-assign to root jurisdiction group (only if no child jur was found).
+  // 2. Set field_jurisdiction based on configured strategy before any
+  // organisation-derived assignment can trust submitted field_organisation.
+  $jur_set = FALSE;
+  if ($node->hasField('field_jurisdiction') && $node->get('field_jurisdiction')->isEmpty()) {
+    $jur_set = _markaspot_group_set_jurisdiction_field($node, $child_jur_id);
+  }
+
+  // Presave can run before field_jurisdiction is derived for new nodes. Once
+  // insert has resolved it, re-apply the org guard and update pending sync.
+  if ($node->hasField('field_organisation')) {
+    _markaspot_group_filter_organisation_field_by_jurisdiction($node, TRUE);
+    $node->_markaspot_group_pending_sync = _markaspot_group_field_target_ids($node, 'field_organisation');
+  }
+
+  // 3. Auto-assign to root jurisdiction group (only if no child jur was found).
   // Skip entirely when a sub-jurisdiction was assigned: the reporting jur
   // (e.g. Noord) is the authoritative one. Adding the root (e.g. Amsterdam)
   // would make escalation meaningless because the request already belongs
@@ -631,25 +1489,29 @@ function markaspot_group_node_insert(NodeInterface $node): void {
     _markaspot_group_assign_root_jurisdiction($node);
   }
 
-  // 3. Set field_jurisdiction based on configured strategy.
-  $jur_set = FALSE;
-  if ($node->hasField('field_jurisdiction') && $node->get('field_jurisdiction')->isEmpty()) {
-    $jur_set = _markaspot_group_set_jurisdiction_field($node, $child_jur_id);
-  }
-
   // 4. Derive organisation from category if not already set.
   //    Replaces ECA rule process_apply_group which read
   //    [node:field_category:entity:field_category_gid].
-  //    Now jurisdiction-aware: if a child jur was assigned, checks for an
-  //    org in that jurisdiction that handles the category before falling
-  //    back to the root-level org from field_category_gid.
+  //    Now jurisdiction-aware: use the resolved field_jurisdiction so root
+  //    and child requests both check org field_service_categories before
+  //    falling back to the category's field_category_gid.
   $org_derived = FALSE;
   if ($node->hasField('field_organisation') && $node->get('field_organisation')->isEmpty()) {
-    $org_group_id = _markaspot_group_derive_org_from_category($node, $child_jur_id ?: NULL);
+    $org_jurisdiction_id = _markaspot_group_node_jurisdiction_id($node) ?? ($child_jur_id ?: NULL);
+    $org_group_id = _markaspot_group_derive_org_from_category($node, $org_jurisdiction_id);
     if ($org_group_id) {
       $node->set('field_organisation', ['target_id' => $org_group_id]);
       $node->_markaspot_group_pending_sync = $org_group_id;
       $org_derived = TRUE;
+    }
+  }
+
+  if ($node->hasField('field_organisation')) {
+    _markaspot_group_filter_organisation_field_by_jurisdiction($node, TRUE);
+    $filtered_org_ids = _markaspot_group_field_target_ids($node, 'field_organisation');
+    $node->_markaspot_group_pending_sync = $filtered_org_ids;
+    if ($org_derived && !in_array((int) $org_group_id, $filtered_org_ids, TRUE)) {
+      $org_derived = FALSE;
     }
   }
 
@@ -700,25 +1562,108 @@ function markaspot_group_node_update(NodeInterface $node): void {
     return;
   }
 
-  // 1. Sync jurisdiction group relationship if field_jurisdiction changed.
-  if (!empty($node->_markaspot_group_jur_sync_needed)) {
-    _markaspot_group_sync_jurisdiction_relationship(
-      $node,
-      $node->_markaspot_group_new_jur_id ?? NULL,
-      $node->_markaspot_group_original_jur_id ?? NULL,
-    );
+  try {
+    _markaspot_group_reconcile_service_request_relationships($node);
   }
+  finally {
+    if (!empty($node->_markaspot_group_sync_lock_held)) {
+      _markaspot_group_release_service_request_sync_lock($node);
+      unset($node->_markaspot_group_sync_lock_held);
+    }
+  }
+}
 
-  // 2. Sync organisation group relationships if field_organisation changed.
-  if (!empty($node->_markaspot_group_sync_needed)) {
-    $added = $node->_markaspot_group_added_group_ids ?? [];
-    $removed = $node->_markaspot_group_removed_group_ids ?? [];
-    foreach ($removed as $removed_id) {
-      _markaspot_group_sync_field_to_relationship($node, NULL, $removed_id);
+/**
+ * Reconciles service request group relationships from current node fields.
+ *
+ * The node update path must not replay presave diffs after waiting for a lock:
+ * another write may have changed the stored node meanwhile. Re-load inside the
+ * lock and make relationships match the current field_jurisdiction and
+ * field_organisation values.
+ *
+ * @param \Drupal\node\NodeInterface|int $node
+ *   The service request node or node ID to reconcile.
+ */
+function _markaspot_group_reconcile_service_request_relationships(NodeInterface|int $node): void {
+  $synced = _markaspot_group_with_service_request_sync_lock($node, static function () use ($node): void {
+    $node_id = $node instanceof NodeInterface ? (int) $node->id() : (int) $node;
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+    $node_storage->resetCache([$node_id]);
+    $fresh = $node_storage->load($node_id);
+    if (!$fresh instanceof NodeInterface || $fresh->bundle() !== 'service_request') {
+      return;
     }
-    foreach ($added as $added_id) {
-      _markaspot_group_sync_field_to_relationship($node, $added_id, NULL);
+
+    _markaspot_group_set_syncing(TRUE);
+    try {
+      $etm = \Drupal::entityTypeManager();
+      $group_storage = $etm->getStorage('group');
+      $relationship_storage = $etm->getStorage('group_relationship');
+      $plugin_id = 'group_node:service_request';
+      $desired_jur_id = _markaspot_group_node_jurisdiction_id($fresh);
+      $desired_org_ids = $fresh->hasField('field_organisation')
+        ? _markaspot_group_field_target_ids($fresh, 'field_organisation')
+        : [];
+      $desired_org_ids = _markaspot_group_filter_org_ids_by_jurisdiction(
+        $desired_org_ids,
+        $desired_jur_id,
+        (int) $fresh->id(),
+      );
+
+      $relationships = $relationship_storage->loadByProperties([
+        'entity_id' => $fresh->id(),
+        'plugin_id' => $plugin_id,
+      ]);
+      $actual_jur_ids = [];
+      $actual_org_ids = [];
+      foreach ($relationships as $relationship) {
+        $group = $relationship->getGroup();
+        if (!$group instanceof GroupInterface) {
+          continue;
+        }
+        $gid = (int) $group->id();
+        if (_markaspot_group_is_jurisdiction_group($group)) {
+          if ($desired_jur_id === NULL || $gid !== $desired_jur_id) {
+            $relationship->delete();
+            continue;
+          }
+          $actual_jur_ids[$gid] = TRUE;
+        }
+        elseif ($group->bundle() === _markaspot_group_get_org_group_type()) {
+          if (!in_array($gid, $desired_org_ids, TRUE)) {
+            $relationship->delete();
+            continue;
+          }
+          $actual_org_ids[$gid] = TRUE;
+        }
+      }
+
+      if ($desired_jur_id !== NULL && empty($actual_jur_ids[$desired_jur_id])) {
+        $group = $group_storage->load($desired_jur_id);
+        if (_markaspot_group_is_jurisdiction_group($group)) {
+          $group->addRelationship($fresh, $plugin_id);
+        }
+      }
+
+      foreach ($desired_org_ids as $org_id) {
+        if (!empty($actual_org_ids[$org_id])) {
+          continue;
+        }
+        $group = $group_storage->load($org_id);
+        if ($group instanceof GroupInterface
+          && $group->bundle() === _markaspot_group_get_org_group_type()
+          && _markaspot_group_org_group_matches_jurisdiction($group, $desired_jur_id)) {
+          $group->addRelationship($fresh, $plugin_id);
+        }
+      }
     }
+    finally {
+      _markaspot_group_set_syncing(FALSE);
+    }
+  });
+  if (!$synced) {
+    $node_id = $node instanceof NodeInterface ? (int) $node->id() : (int) $node;
+    throw new EntityStorageException(sprintf('Cannot acquire group sync lock for service_request %d.', $node_id));
   }
 }
 
@@ -731,6 +1676,7 @@ function markaspot_group_node_update(NodeInterface $node): void {
  */
 function markaspot_group_group_relationship_insert(GroupRelationshipInterface $relationship): void {
   _markaspot_group_sync_relationship_to_field($relationship, 'insert');
+  _markaspot_group_sync_org_membership_to_jurisdiction($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'insert');
 }
 
@@ -751,7 +1697,318 @@ function markaspot_group_group_relationship_update(GroupRelationshipInterface $r
  */
 function markaspot_group_group_relationship_delete(GroupRelationshipInterface $relationship): void {
   _markaspot_group_sync_relationship_to_field($relationship, 'delete');
+  _markaspot_group_cleanup_org_membership_jurisdiction($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'delete');
+}
+
+/**
+ * Materializes the jurisdiction membership implied by an org membership.
+ *
+ * Org memberships are scoped by the org group's field_jurisdiction. Persisting
+ * the matching jur membership keeps auth_user.groups and backend scope checks
+ * aligned for dashboard APIs that operate on jurisdiction ids.
+ *
+ * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
+ *   The inserted group relationship.
+ */
+function _markaspot_group_sync_org_membership_to_jurisdiction(GroupRelationshipInterface $relationship): void {
+  if ($relationship->getPluginId() !== 'group_membership') {
+    return;
+  }
+
+  $org_group = $relationship->getGroup();
+  if (!$org_group instanceof GroupInterface || $org_group->bundle() !== _markaspot_group_get_org_group_type()) {
+    return;
+  }
+
+  $user = $relationship->getEntity();
+  if (!$user instanceof UserInterface) {
+    return;
+  }
+
+  $jur_group = _markaspot_group_resolve_org_membership_jurisdiction($org_group);
+  if (!$jur_group instanceof GroupInterface) {
+    \Drupal::logger('markaspot_group')->error(
+      'Cannot sync org membership @relationship to jurisdiction membership because org group @group has no valid field_jurisdiction.',
+      [
+        '@relationship' => $relationship->id(),
+        '@group' => $org_group->id(),
+      ]
+    );
+    return;
+  }
+
+  if ($jur_group->getMember($user)) {
+    _markaspot_group_add_derived_jurisdiction_role($jur_group, $user);
+    return;
+  }
+
+  $jur_group->addMember($user, ['group_roles' => [_markaspot_group_derived_jurisdiction_role_id($jur_group)]]);
+  \Drupal::logger('markaspot_group')->notice(
+    'Added user @uid to jurisdiction group @jur_gid because they joined organisation group @org_gid.',
+    [
+      '@uid' => $user->id(),
+      '@jur_gid' => $jur_group->id(),
+      '@org_gid' => $org_group->id(),
+    ]
+  );
+}
+
+/**
+ * Cleans up derived jurisdiction membership after an org membership is removed.
+ *
+ * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
+ *   The deleted org membership relationship.
+ */
+function _markaspot_group_cleanup_org_membership_jurisdiction(GroupRelationshipInterface $relationship): void {
+  if ($relationship->getPluginId() !== 'group_membership') {
+    return;
+  }
+
+  $org_group = $relationship->getGroup();
+  if (!$org_group instanceof GroupInterface || $org_group->bundle() !== _markaspot_group_get_org_group_type()) {
+    return;
+  }
+
+  $user = $relationship->getEntity();
+  if (!$user instanceof UserInterface) {
+    return;
+  }
+
+  $jur_group = _markaspot_group_resolve_org_membership_jurisdiction($org_group);
+  if (!$jur_group instanceof GroupInterface) {
+    return;
+  }
+
+  if (_markaspot_group_user_has_org_membership_for_jurisdiction($user, (int) $jur_group->id(), (int) $relationship->id())) {
+    return;
+  }
+
+  _markaspot_group_remove_derived_jurisdiction_role($jur_group, $user);
+}
+
+/**
+ * Re-syncs derived memberships when an org group moves jurisdictions.
+ *
+ * @param \Drupal\group\Entity\GroupInterface $org_group
+ *   The moved organisation group.
+ * @param int|null $new_jurisdiction_id
+ *   The new jurisdiction id.
+ * @param int|null $original_jurisdiction_id
+ *   The previous jurisdiction id.
+ */
+function _markaspot_group_resync_org_memberships_for_org_move(GroupInterface $org_group, ?int $new_jurisdiction_id, ?int $original_jurisdiction_id): void {
+  $relationship_ids = \Drupal::entityTypeManager()
+    ->getStorage('group_relationship')
+    ->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('gid', (int) $org_group->id())
+    ->condition('plugin_id', 'group_membership')
+    ->execute();
+  if (empty($relationship_ids)) {
+    return;
+  }
+
+  $relationships = \Drupal::entityTypeManager()
+    ->getStorage('group_relationship')
+    ->loadMultiple($relationship_ids);
+  $old_root_jurisdiction_id = $original_jurisdiction_id !== NULL
+    ? \Drupal::service('markaspot_group.hierarchy_resolver')->getRootJurisdictionId($original_jurisdiction_id)
+    : NULL;
+  $old_jur_group = $old_root_jurisdiction_id !== NULL ? Group::load($old_root_jurisdiction_id) : NULL;
+  $new_jur_group = $new_jurisdiction_id !== NULL ? _markaspot_group_resolve_org_membership_jurisdiction($org_group) : NULL;
+
+  foreach ($relationships as $relationship) {
+    if (!$relationship instanceof GroupRelationshipInterface) {
+      continue;
+    }
+    $user = $relationship->getEntity();
+    if (!$user instanceof UserInterface) {
+      continue;
+    }
+
+    if ($old_jur_group instanceof GroupInterface
+      && !_markaspot_group_user_has_org_membership_for_jurisdiction($user, (int) $old_jur_group->id())) {
+      _markaspot_group_remove_derived_jurisdiction_role($old_jur_group, $user);
+    }
+
+    if ($new_jur_group instanceof GroupInterface) {
+      if ($new_jur_group->getMember($user)) {
+        _markaspot_group_add_derived_jurisdiction_role($new_jur_group, $user);
+      }
+      else {
+        $new_jur_group->addMember($user, ['group_roles' => [_markaspot_group_derived_jurisdiction_role_id($new_jur_group)]]);
+      }
+    }
+  }
+}
+
+/**
+ * Adds the internal derived role to an existing jurisdiction membership.
+ *
+ * @param \Drupal\group\Entity\GroupInterface $jur_group
+ *   The jurisdiction group.
+ * @param \Drupal\user\UserInterface $user
+ *   The user account.
+ */
+function _markaspot_group_add_derived_jurisdiction_role(GroupInterface $jur_group, UserInterface $user): void {
+  $member = $jur_group->getMember($user);
+  if (!$member) {
+    return;
+  }
+
+  $relationship = $member->getGroupRelationship();
+  if ($relationship->bundle() !== _markaspot_group_jurisdiction_membership_bundle($jur_group)) {
+    \Drupal::logger('markaspot_group')->error(
+      'Refusing to add derived jur role to mismatched relationship @relationship with bundle @bundle on jurisdiction group @gid.',
+      [
+        '@relationship' => $relationship->id(),
+        '@bundle' => $relationship->bundle(),
+        '@gid' => $jur_group->id(),
+      ]
+    );
+    return;
+  }
+  if (!$relationship->hasField('group_roles')) {
+    return;
+  }
+
+  $role_ids = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+  $derived_role_id = _markaspot_group_derived_jurisdiction_role_id($jur_group);
+  if (in_array($derived_role_id, $role_ids, TRUE)) {
+    return;
+  }
+
+  $role_ids = array_values(array_filter(
+    $role_ids,
+    static fn(string $role_id): bool => $role_id !== MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID
+      || $derived_role_id === MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID
+  ));
+  $role_ids[] = $derived_role_id;
+  $relationship->set('group_roles', array_values(array_unique($role_ids)));
+  $relationship->save();
+}
+
+/**
+ * Removes the internal derived role and drops empty derived memberships.
+ *
+ * @param \Drupal\group\Entity\GroupInterface $jur_group
+ *   The jurisdiction group.
+ * @param \Drupal\user\UserInterface $user
+ *   The user account.
+ */
+function _markaspot_group_remove_derived_jurisdiction_role(GroupInterface $jur_group, UserInterface $user): void {
+  $member = $jur_group->getMember($user);
+  if (!$member) {
+    return;
+  }
+
+  $relationship = $member->getGroupRelationship();
+  if ($relationship->bundle() !== _markaspot_group_jurisdiction_membership_bundle($jur_group)) {
+    \Drupal::logger('markaspot_group')->error(
+      'Refusing to remove derived jur role from mismatched relationship @relationship with bundle @bundle on jurisdiction group @gid.',
+      [
+        '@relationship' => $relationship->id(),
+        '@bundle' => $relationship->bundle(),
+        '@gid' => $jur_group->id(),
+      ]
+    );
+    return;
+  }
+  if (!$relationship->hasField('group_roles')) {
+    return;
+  }
+
+  $role_ids = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+  $derived_role_ids = _markaspot_group_derived_jurisdiction_role_ids($jur_group);
+  if (empty(array_intersect($derived_role_ids, $role_ids))) {
+    return;
+  }
+
+  $remaining_roles = array_values(array_filter(
+    $role_ids,
+    static fn(string $role_id): bool => !in_array($role_id, $derived_role_ids, TRUE)
+  ));
+
+  if (empty($remaining_roles)) {
+    $jur_group->removeMember($user);
+    return;
+  }
+
+  $relationship->set('group_roles', $remaining_roles);
+  $relationship->save();
+}
+
+/**
+ * Checks whether a user has another org membership in a jurisdiction.
+ *
+ * @param \Drupal\user\UserInterface $user
+ *   The user account.
+ * @param int $jurisdiction_id
+ *   The jurisdiction group id.
+ * @param int|null $exclude_relationship_id
+ *   Optional relationship id to ignore.
+ *
+ * @return bool
+ *   TRUE when another org membership still implies the jurisdiction.
+ */
+function _markaspot_group_user_has_org_membership_for_jurisdiction(UserInterface $user, int $jurisdiction_id, ?int $exclude_relationship_id = NULL): bool {
+  if (!\Drupal::getContainer()->has('group.membership_loader')) {
+    return FALSE;
+  }
+
+  $memberships = \Drupal::service('group.membership_loader')->loadByUser($user);
+  foreach ($memberships as $membership) {
+    $relationship = $membership->getGroupRelationship();
+    if ($exclude_relationship_id !== NULL && (int) $relationship->id() === $exclude_relationship_id) {
+      continue;
+    }
+
+    $group = $membership->getGroup();
+    if (!$group instanceof GroupInterface || $group->bundle() !== _markaspot_group_get_org_group_type()) {
+      continue;
+    }
+
+    $jur_group = _markaspot_group_resolve_org_membership_jurisdiction($group);
+    if ($jur_group instanceof GroupInterface && (int) $jur_group->id() === $jurisdiction_id) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Resolves the jurisdiction group for an organisation group membership.
+ *
+ * @param \Drupal\group\Entity\GroupInterface $org_group
+ *   The organisation group.
+ *
+ * @return \Drupal\group\Entity\GroupInterface|null
+ *   The referenced jurisdiction group, or NULL when unresolved.
+ */
+function _markaspot_group_resolve_org_membership_jurisdiction(GroupInterface $org_group): ?GroupInterface {
+  if (!$org_group->hasField('field_jurisdiction') || $org_group->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  $jurisdiction_id = (int) $org_group->get('field_jurisdiction')->target_id;
+  if ($jurisdiction_id <= 0) {
+    return NULL;
+  }
+
+  $root_jurisdiction_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+    ->getRootJurisdictionId($jurisdiction_id);
+  if ($root_jurisdiction_id === NULL) {
+    return NULL;
+  }
+
+  $jur_group = Group::load($root_jurisdiction_id);
+  if (!_markaspot_group_is_jurisdiction_group($jur_group)) {
+    return NULL;
+  }
+
+  return $jur_group;
 }
 
 /**
@@ -765,42 +2022,57 @@ function markaspot_group_group_relationship_delete(GroupRelationshipInterface $r
  *   The original group ID to remove the relationship from, or NULL.
  */
 function _markaspot_group_sync_field_to_relationship(NodeInterface $node, ?int $new_group_id, ?int $original_group_id): void {
-  // Set syncing flag to prevent loops.
-  _markaspot_group_set_syncing(TRUE);
+  $synced = _markaspot_group_with_service_request_sync_lock($node, function () use ($node, $new_group_id, $original_group_id): void {
+    // Set syncing flag to prevent loops.
+    _markaspot_group_set_syncing(TRUE);
 
-  try {
-    $entity_type_manager = \Drupal::entityTypeManager();
-    $relationship_storage = $entity_type_manager->getStorage('group_relationship');
-    $group_type = _markaspot_group_get_org_group_type();
-    $plugin_id = 'group_node:service_request';
+    try {
+      $entity_type_manager = \Drupal::entityTypeManager();
+      $relationship_storage = $entity_type_manager->getStorage('group_relationship');
+      $group_type = _markaspot_group_get_org_group_type();
+      $plugin_id = 'group_node:service_request';
 
-    // Remove existing relationship if group changed or was cleared.
-    if ($original_group_id !== NULL) {
-      // Find and delete the old relationship.
-      $old_relationships = $relationship_storage->loadByProperties([
-        'entity_id' => $node->id(),
-        'gid' => $original_group_id,
-        'plugin_id' => $plugin_id,
-      ]);
+      // Remove existing relationship if group changed or was cleared.
+      if ($original_group_id !== NULL) {
+        // Find and delete the old relationship.
+        $old_relationships = $relationship_storage->loadByProperties([
+          'entity_id' => $node->id(),
+          'gid' => $original_group_id,
+          'plugin_id' => $plugin_id,
+        ]);
 
-      foreach ($old_relationships as $relationship) {
-        $relationship->delete();
+        foreach ($old_relationships as $relationship) {
+          $group = $relationship->getGroup();
+          if ($group instanceof GroupInterface && $group->bundle() === $group_type) {
+            $relationship->delete();
+          }
+        }
       }
-    }
 
-    // Create new relationship if a group was set.
-    if ($new_group_id !== NULL) {
-      // Load the target group.
-      $group = $entity_type_manager->getStorage('group')->load($new_group_id);
+      // Create new relationship if a group was set.
+      if ($new_group_id !== NULL) {
+        // Load the target group.
+        $group = $entity_type_manager->getStorage('group')->load($new_group_id);
 
-      if ($group && $group->bundle() === $group_type) {
-        // Cross-tenant guard: verify the org belongs to the same jurisdiction
-        // as the node. Prevents accidental assignment across tenants.
-        if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()
-            && $group->hasField('field_jurisdiction') && !$group->get('field_jurisdiction')->isEmpty()) {
-          $node_jur_id = (int) $node->get('field_jurisdiction')->target_id;
-          $org_jur_id = (int) $group->get('field_jurisdiction')->target_id;
-          if ($node_jur_id !== $org_jur_id) {
+        if ($group && $group->bundle() === $group_type) {
+          // Cross-tenant guard: verify the org belongs to the same jurisdiction
+          // as the node. Prevents accidental assignment across tenants.
+          $node_jur_id = _markaspot_group_node_jurisdiction_id($node);
+          if ($node_jur_id === NULL) {
+            \Drupal::logger('markaspot_group')->warning(
+              'Node @nid: cannot sync org group @gid because field_jurisdiction is unresolved.',
+              [
+                '@nid' => $node->id(),
+                '@gid' => $new_group_id,
+              ]
+            );
+            return;
+          }
+
+          if (!_markaspot_group_org_group_matches_jurisdiction($group, $node_jur_id)) {
+            $org_jur_id = $group->hasField('field_jurisdiction') && !$group->get('field_jurisdiction')->isEmpty()
+              ? (int) $group->get('field_jurisdiction')->target_id
+              : 'none';
             \Drupal::logger('markaspot_group')->warning(
               'Cross-tenant mismatch: node @nid (jur=@node_jur) assigned to org @gid (jur=@org_jur). Skipping relationship.',
               [
@@ -812,44 +2084,47 @@ function _markaspot_group_sync_field_to_relationship(NodeInterface $node, ?int $
             );
             return;
           }
+
+          // Check if relationship already exists.
+          $existing = $relationship_storage->loadByProperties([
+            'entity_id' => $node->id(),
+            'gid' => $new_group_id,
+            'plugin_id' => $plugin_id,
+          ]);
+
+          if (empty($existing)) {
+            // Create the relationship.
+            $group->addRelationship($node, $plugin_id);
+
+            \Drupal::logger('markaspot_group')->notice(
+              'Created group relationship for node @nid in group @group (synced from field_organisation).',
+              [
+                '@nid' => $node->id(),
+                '@group' => $group->label(),
+              ]
+            );
+          }
         }
-
-        // Check if relationship already exists.
-        $existing = $relationship_storage->loadByProperties([
-          'entity_id' => $node->id(),
-          'gid' => $new_group_id,
-          'plugin_id' => $plugin_id,
-        ]);
-
-        if (empty($existing)) {
-          // Create the relationship.
-          $group->addRelationship($node, $plugin_id);
-
-          \Drupal::logger('markaspot_group')->notice(
-            'Created group relationship for node @nid in group @group (synced from field_organisation).',
+        elseif ($group) {
+          \Drupal::logger('markaspot_group')->error(
+            'Node @nid: field_organisation references group @gid with bundle "@bundle", expected "@expected". Skipping sync.',
             [
               '@nid' => $node->id(),
-              '@group' => $group->label(),
+              '@gid' => $new_group_id,
+              '@bundle' => $group->bundle(),
+              '@expected' => $group_type,
             ]
           );
         }
       }
-      elseif ($group) {
-        \Drupal::logger('markaspot_group')->error(
-          'Node @nid: field_organisation references group @gid with bundle "@bundle", expected "@expected". Skipping sync.',
-          [
-            '@nid' => $node->id(),
-            '@gid' => $new_group_id,
-            '@bundle' => $group->bundle(),
-            '@expected' => $group_type,
-          ]
-        );
-      }
     }
-  }
-  finally {
-    // Always reset syncing flag.
-    _markaspot_group_set_syncing(FALSE);
+    finally {
+      // Always reset syncing flag.
+      _markaspot_group_set_syncing(FALSE);
+    }
+  });
+  if (!$synced) {
+    throw new EntityStorageException(sprintf('Cannot acquire group sync lock for service_request %d.', $node->id()));
   }
 }
 
@@ -868,70 +2143,75 @@ function _markaspot_group_sync_field_to_relationship(NodeInterface $node, ?int $
  *   The previous jurisdiction group ID, or NULL if none was set.
  */
 function _markaspot_group_sync_jurisdiction_relationship(NodeInterface $node, ?int $new_jur_id, ?int $original_jur_id): void {
-  _markaspot_group_set_syncing(TRUE);
+  $synced = _markaspot_group_with_service_request_sync_lock($node, function () use ($node, $new_jur_id, $original_jur_id): void {
+    _markaspot_group_set_syncing(TRUE);
 
-  try {
-    $etm = \Drupal::entityTypeManager();
-    $group_storage = $etm->getStorage('group');
-    $relationship_storage = $etm->getStorage('group_relationship');
-    $plugin_id = 'group_node:service_request';
+    try {
+      $etm = \Drupal::entityTypeManager();
+      $group_storage = $etm->getStorage('group');
+      $relationship_storage = $etm->getStorage('group_relationship');
+      $plugin_id = 'group_node:service_request';
 
-    // Remove the old jurisdiction relationship if it exists.
-    if ($original_jur_id !== NULL) {
-      $old_relationships = $relationship_storage->loadByProperties([
-        'entity_id' => $node->id(),
-        'gid' => $original_jur_id,
-        'plugin_id' => $plugin_id,
-      ]);
-      foreach ($old_relationships as $relationship) {
-        // Only delete if the group is a jur group (not an org relationship).
-        $group = $relationship->getGroup();
-        if ($group && $group->bundle() === 'jur') {
-          $relationship->delete();
+      // Remove the old jurisdiction relationship if it exists.
+      if ($original_jur_id !== NULL) {
+        $old_relationships = $relationship_storage->loadByProperties([
+          'entity_id' => $node->id(),
+          'gid' => $original_jur_id,
+          'plugin_id' => $plugin_id,
+        ]);
+        foreach ($old_relationships as $relationship) {
+          // Only delete if the group is a jur group (not an org relationship).
+          $group = $relationship->getGroup();
+          if (_markaspot_group_is_jurisdiction_group($group)) {
+            $relationship->delete();
+          }
+        }
+      }
+
+      // Create the new jurisdiction relationship.
+      if ($new_jur_id !== NULL) {
+        $new_group = $group_storage->load($new_jur_id);
+        if (!_markaspot_group_is_jurisdiction_group($new_group)) {
+          \Drupal::logger('markaspot_group')->warning(
+            'Cannot sync jurisdiction relationship for node @nid: group @gid does not exist or is not a jurisdiction group.',
+            ['@nid' => $node->id(), '@gid' => $new_jur_id]
+          );
+          return;
+        }
+
+        // Check if relationship already exists (idempotent).
+        $existing = $relationship_storage->loadByProperties([
+          'entity_id' => $node->id(),
+          'gid' => $new_jur_id,
+          'plugin_id' => $plugin_id,
+        ]);
+
+        if (empty($existing)) {
+          $new_group->addRelationship($node, $plugin_id);
+          \Drupal::logger('markaspot_group')->notice(
+            'Synced jurisdiction relationship for node @nid: moved from group @old to group @new (@label).',
+            [
+              '@nid' => $node->id(),
+              '@old' => $original_jur_id ?? 'none',
+              '@new' => $new_jur_id,
+              '@label' => $new_group->label(),
+            ]
+          );
         }
       }
     }
-
-    // Create the new jurisdiction relationship.
-    if ($new_jur_id !== NULL) {
-      $new_group = $group_storage->load($new_jur_id);
-      if (!$new_group || $new_group->bundle() !== 'jur') {
-        \Drupal::logger('markaspot_group')->warning(
-          'Cannot sync jurisdiction relationship for node @nid: group @gid does not exist or is not type jur.',
-          ['@nid' => $node->id(), '@gid' => $new_jur_id]
-        );
-        return;
-      }
-
-      // Check if relationship already exists (idempotent).
-      $existing = $relationship_storage->loadByProperties([
-        'entity_id' => $node->id(),
-        'gid' => $new_jur_id,
-        'plugin_id' => $plugin_id,
-      ]);
-
-      if (empty($existing)) {
-        $new_group->addRelationship($node, $plugin_id);
-        \Drupal::logger('markaspot_group')->notice(
-          'Synced jurisdiction relationship for node @nid: moved from group @old to group @new (@label).',
-          [
-            '@nid' => $node->id(),
-            '@old' => $original_jur_id ?? 'none',
-            '@new' => $new_jur_id,
-            '@label' => $new_group->label(),
-          ]
-        );
-      }
+    catch (\Exception $e) {
+      \Drupal::logger('markaspot_group')->error(
+        'Failed to sync jurisdiction relationship for node @nid: @error',
+        ['@nid' => $node->id(), '@error' => $e->getMessage()]
+      );
     }
-  }
-  catch (\Exception $e) {
-    \Drupal::logger('markaspot_group')->error(
-      'Failed to sync jurisdiction relationship for node @nid: @error',
-      ['@nid' => $node->id(), '@error' => $e->getMessage()]
-    );
-  }
-  finally {
-    _markaspot_group_set_syncing(FALSE);
+    finally {
+      _markaspot_group_set_syncing(FALSE);
+    }
+  });
+  if (!$synced) {
+    throw new EntityStorageException(sprintf('Cannot acquire group sync lock for service_request %d.', $node->id()));
   }
 }
 
@@ -965,61 +2245,151 @@ function _markaspot_group_sync_relationship_to_field(GroupRelationshipInterface 
     return;
   }
 
-  // Get the node.
-  $entity = $relationship->getEntity();
-  if (!$entity || !($entity instanceof NodeInterface)) {
+  $entity_id = (int) $relationship->getEntityId();
+  if ($entity_id <= 0) {
     return;
   }
 
-  // Check if node has the field.
-  if (!$entity->hasField('field_organisation')) {
-    return;
-  }
+  $synced = _markaspot_group_with_service_request_sync_lock($entity_id, function () use ($relationship, $operation, $group): void {
+    // Re-load the node inside the lock. The relationship entity can carry a
+    // stale node instance when a node PATCH races the relationship hook.
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+    $node_storage->resetCache([$relationship->getEntityId()]);
+    $entity = $node_storage->load($relationship->getEntityId());
+    if (!$entity instanceof NodeInterface) {
+      return;
+    }
 
-  // Set syncing flag.
-  _markaspot_group_set_syncing(TRUE);
+    // Check if node has the field.
+    if (!$entity->hasField('field_organisation')) {
+      return;
+    }
 
-  try {
-    $current_ids = array_map('intval', array_column($entity->get('field_organisation')->getValue(), 'target_id'));
-    $group_id = (int) $group->id();
+    // Set syncing flag.
+    _markaspot_group_set_syncing(TRUE);
 
-    if ($operation === 'insert') {
-      // Append the group if not already present.
-      if (!in_array($group_id, $current_ids, TRUE)) {
-        $current_ids[] = $group_id;
-        $entity->set('field_organisation', array_map(static fn(int $id) => ['target_id' => $id], $current_ids));
-        $entity->save();
+    try {
+      $current_ids = array_map('intval', array_column($entity->get('field_organisation')->getValue(), 'target_id'));
+      $group_id = (int) $group->id();
 
-        \Drupal::logger('markaspot_group')->notice(
-          'Appended group @group to field_organisation on node @nid (synced from relationship).',
-          [
-            '@nid' => $entity->id(),
-            '@group' => $group->label(),
-          ]
-        );
+      if ($operation === 'insert') {
+        $node_jur_id = _markaspot_group_node_jurisdiction_id($entity);
+        if ($node_jur_id === NULL || !_markaspot_group_org_group_matches_jurisdiction($group, $node_jur_id)) {
+          $org_jur_id = $group->hasField('field_jurisdiction') && !$group->get('field_jurisdiction')->isEmpty()
+            ? (int) $group->get('field_jurisdiction')->target_id
+            : 'none';
+          \Drupal::logger('markaspot_group')->warning(
+            'Cross-tenant mismatch: relationship @rid org @gid (jur=@org_jur) cannot be synced to node @nid (jur=@node_jur). Deleting relationship.',
+            [
+              '@rid' => $relationship->id() ?? 'new',
+              '@gid' => $group_id,
+              '@org_jur' => $org_jur_id,
+              '@nid' => $entity->id(),
+              '@node_jur' => $node_jur_id ?? 'none',
+            ]
+          );
+          $relationship->delete();
+          return;
+        }
+
+        // Append the group if not already present.
+        if (!in_array($group_id, $current_ids, TRUE)) {
+          $current_ids[] = $group_id;
+          $entity->set('field_organisation', array_map(static fn(int $id) => ['target_id' => $id], $current_ids));
+          $entity->save();
+
+          \Drupal::logger('markaspot_group')->notice(
+            'Appended group @group to field_organisation on node @nid (synced from relationship).',
+            [
+              '@nid' => $entity->id(),
+              '@group' => $group->label(),
+            ]
+          );
+        }
+      }
+      elseif ($operation === 'delete') {
+        // Remove only this group from the multi-value field.
+        $updated_ids = array_values(array_diff($current_ids, [$group_id]));
+        if (count($updated_ids) !== count($current_ids)) {
+          $value = empty($updated_ids) ? NULL : array_map(static fn(int $id) => ['target_id' => $id], $updated_ids);
+          $entity->set('field_organisation', $value);
+          $entity->save();
+
+          \Drupal::logger('markaspot_group')->notice(
+            'Removed group @group from field_organisation on node @nid (synced from relationship deletion).',
+            [
+              '@nid' => $entity->id(),
+              '@group' => $group->label(),
+            ]
+          );
+        }
       }
     }
-    elseif ($operation === 'delete') {
-      // Remove only this group from the multi-value field.
-      $updated_ids = array_values(array_diff($current_ids, [$group_id]));
-      if (count($updated_ids) !== count($current_ids)) {
-        $value = empty($updated_ids) ? NULL : array_map(static fn(int $id) => ['target_id' => $id], $updated_ids);
-        $entity->set('field_organisation', $value);
-        $entity->save();
-
-        \Drupal::logger('markaspot_group')->notice(
-          'Removed group @group from field_organisation on node @nid (synced from relationship deletion).',
-          [
-            '@nid' => $entity->id(),
-            '@group' => $group->label(),
-          ]
-        );
-      }
+    finally {
+      _markaspot_group_set_syncing(FALSE);
     }
+  });
+  if (!$synced) {
+    throw new EntityStorageException(sprintf('Cannot acquire group sync lock for service_request %d.', $entity_id));
   }
-  finally {
-    _markaspot_group_set_syncing(FALSE);
-  }
+}
+
+/**
+ * Gets the configured jurisdiction group type.
+ */
+function _markaspot_group_jurisdiction_group_type(): string {
+  return \Drupal::config('markaspot_open311.settings')
+    ->get('jurisdiction_group_type') ?: 'jur';
+}
+
+/**
+ * Gets the membership relationship bundle for a jurisdiction group.
+ */
+function _markaspot_group_jurisdiction_membership_bundle(?GroupInterface $group = NULL): string {
+  $group_type = $group instanceof GroupInterface
+    ? $group->bundle()
+    : _markaspot_group_jurisdiction_group_type();
+
+  return $group_type . '-group_membership';
+}
+
+/**
+ * Gets the internal derived org-member role ID for a jurisdiction group.
+ */
+function _markaspot_group_derived_jurisdiction_role_id(?GroupInterface $group = NULL): string {
+  $group_type = $group instanceof GroupInterface
+    ? $group->bundle()
+    : _markaspot_group_jurisdiction_group_type();
+
+  return MembershipRoleNormalizer::orgDerivedJurRoleId($group_type);
+}
+
+/**
+ * Gets accepted derived role IDs, including the legacy default role ID.
+ */
+function _markaspot_group_derived_jurisdiction_role_ids(?GroupInterface $group = NULL): array {
+  return array_values(array_unique([
+    _markaspot_group_derived_jurisdiction_role_id($group),
+    MembershipRoleNormalizer::ORG_DERIVED_JUR_ROLE_ID,
+  ]));
+}
+
+/**
+ * Checks whether a group uses the configured jurisdiction group type.
+ */
+function _markaspot_group_is_jurisdiction_group(mixed $group): bool {
+  return $group instanceof GroupInterface
+    && $group->bundle() === _markaspot_group_jurisdiction_group_type();
+}
+
+/**
+ * Checks whether a group bundle carries tenant-boundary protections.
+ */
+function _markaspot_group_is_protected_group_bundle(string $bundle): bool {
+  return in_array($bundle, [
+    _markaspot_group_jurisdiction_group_type(),
+    _markaspot_group_get_org_group_type(),
+  ], TRUE);
 }
 
 /**
@@ -1034,6 +2404,119 @@ function _markaspot_group_sync_relationship_to_field(GroupRelationshipInterface 
  */
 function _markaspot_group_get_org_group_type(): string {
   return 'org';
+}
+
+/**
+ * Runs a callback under the per-service-request group sync lock.
+ *
+ * @param \Drupal\node\NodeInterface|int $node
+ *   The service request node or node ID to lock.
+ * @param callable $callback
+ *   Callback to execute after the lock is acquired.
+ *
+ * @return bool
+ *   TRUE when the callback ran, FALSE when the lock could not be acquired.
+ */
+function _markaspot_group_with_service_request_sync_lock(NodeInterface|int $node, callable $callback): bool {
+  $lock_name = _markaspot_group_service_request_sync_lock_name($node);
+  if ($lock_name === NULL) {
+    $callback();
+    return TRUE;
+  }
+
+  $held_locks = &drupal_static('_markaspot_group_service_request_sync_locks', []);
+  if (!empty($held_locks[$lock_name])) {
+    $callback();
+    return TRUE;
+  }
+
+  if (!_markaspot_group_acquire_service_request_sync_lock($node)) {
+    return FALSE;
+  }
+
+  try {
+    $callback();
+  }
+  finally {
+    _markaspot_group_release_service_request_sync_lock($node);
+  }
+  return TRUE;
+}
+
+/**
+ * Builds the lock name for a service request sync.
+ *
+ * @param \Drupal\node\NodeInterface|int $node
+ *   The service request node or node ID to lock.
+ *
+ * @return string|null
+ *   Lock name, or NULL when no valid node ID is available.
+ */
+function _markaspot_group_service_request_sync_lock_name(NodeInterface|int $node): ?string {
+  $node_id = $node instanceof NodeInterface ? (int) $node->id() : (int) $node;
+  if ($node_id <= 0) {
+    return NULL;
+  }
+
+  return 'markaspot_group:service_request_sync:' . $node_id;
+}
+
+/**
+ * Acquires the per-service-request group sync lock.
+ *
+ * @param \Drupal\node\NodeInterface|int $node
+ *   The service request node or node ID to lock.
+ *
+ * @return bool
+ *   TRUE when the lock is held by this request.
+ */
+function _markaspot_group_acquire_service_request_sync_lock(NodeInterface|int $node): bool {
+  $node_id = $node instanceof NodeInterface ? (int) $node->id() : (int) $node;
+  $lock_name = _markaspot_group_service_request_sync_lock_name($node);
+  if ($lock_name === NULL) {
+    return TRUE;
+  }
+
+  $held_locks = &drupal_static('_markaspot_group_service_request_sync_locks', []);
+  if (!empty($held_locks[$lock_name])) {
+    return TRUE;
+  }
+
+  $lock = \Drupal::lock();
+  if (!$lock->acquire($lock_name, 30.0)) {
+    $lock->wait($lock_name, 1);
+    if (!$lock->acquire($lock_name, 30.0)) {
+      \Drupal::logger('markaspot_group')->warning(
+        'Skipped group sync for service_request @nid because another sync still holds the node lock.',
+        ['@nid' => $node_id]
+      );
+      return FALSE;
+    }
+  }
+
+  $held_locks[$lock_name] = TRUE;
+  return TRUE;
+}
+
+/**
+ * Releases the per-service-request group sync lock if held by this request.
+ *
+ * @param \Drupal\node\NodeInterface|int $node
+ *   The service request node or node ID to unlock.
+ */
+function _markaspot_group_release_service_request_sync_lock(NodeInterface|int $node): void {
+  $lock_name = _markaspot_group_service_request_sync_lock_name($node);
+  if ($lock_name === NULL) {
+    return;
+  }
+
+  $held_locks = &drupal_static('_markaspot_group_service_request_sync_locks', []);
+  if (empty($held_locks[$lock_name])) {
+    return;
+  }
+
+  unset($held_locks[$lock_name]);
+  \Drupal::lock()->release($lock_name);
 }
 
 /**
@@ -1062,21 +2545,21 @@ function _markaspot_group_set_syncing(bool $syncing): void {
 /**
  * Derives the organisation group from a node's category term.
  *
- * When a child jurisdiction ID is provided, first searches for an org in
- * that jurisdiction that declares the category in its field_service_categories.
- * If no jurisdiction-specific org is found, falls back to the root-level org
- * from field_category_gid on the category term.
+ * When a jurisdiction ID is provided, first searches for an org in that
+ * jurisdiction that declares the category in its field_service_categories.
+ * If no jurisdiction-specific org is found, falls back to the legacy
+ * root-level org from field_category_gid on the category term.
  *
  * @param \Drupal\node\NodeInterface $node
  *   The service_request node.
- * @param int|null $child_jur_id
- *   Optional child jurisdiction group ID. When provided, the function first
- *   checks for an org in this jurisdiction that handles the node's category.
+ * @param int|null $jurisdiction_id
+ *   Optional jurisdiction group ID. When provided, the function first checks
+ *   for an org in this jurisdiction that handles the node's category.
  *
  * @return int|null
  *   The org group ID, or NULL if no mapping exists.
  */
-function _markaspot_group_derive_org_from_category(NodeInterface $node, ?int $child_jur_id = NULL): ?int {
+function _markaspot_group_derive_org_from_category(NodeInterface $node, ?int $jurisdiction_id = NULL): ?int {
   if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
     return NULL;
   }
@@ -1090,24 +2573,24 @@ function _markaspot_group_derive_org_from_category(NodeInterface $node, ?int $ch
   $group_storage = \Drupal::entityTypeManager()->getStorage('group');
 
   // Strategy 1: Jurisdiction-aware lookup.
-  // If the node was assigned to a child jurisdiction, look for an org in that
-  // jurisdiction that declares this category in field_service_categories.
-  if ($child_jur_id) {
+  // Look for an org in the resolved request jurisdiction that declares this
+  // category in field_service_categories.
+  if ($jurisdiction_id) {
     $org_ids = $group_storage->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'org')
-      ->condition('field_jurisdiction', $child_jur_id)
+      ->condition('field_jurisdiction', $jurisdiction_id)
       ->condition('field_service_categories', $category_tid)
       ->execute();
 
     if (!empty($org_ids)) {
       $org_id = (int) reset($org_ids);
       \Drupal::logger('markaspot_group')->notice(
-        'Jurisdiction-aware org derivation: category TID=@tid matched org @org_id in child jur @jur_id.',
+        'Jurisdiction-aware org derivation: category TID=@tid matched org @org_id in jurisdiction @jur_id.',
         [
           '@tid' => $category_tid,
           '@org_id' => $org_id,
-          '@jur_id' => $child_jur_id,
+          '@jur_id' => $jurisdiction_id,
         ]
       );
       return $org_id;
@@ -1116,6 +2599,14 @@ function _markaspot_group_derive_org_from_category(NodeInterface $node, ?int $ch
 
   // Strategy 2: Fallback to root-level org via field_category_gid.
   if (!$term->hasField('field_category_gid') || $term->get('field_category_gid')->isEmpty()) {
+    \Drupal::logger('markaspot_group')->warning(
+      'Cannot derive organisation for service request @nid: category term @tid has no org mapping for jurisdiction @jur_id and field_category_gid is empty.',
+      [
+        '@nid' => $node->id() ?? 'new',
+        '@tid' => $category_tid,
+        '@jur_id' => $jurisdiction_id ?? 'none',
+      ]
+    );
     return NULL;
   }
 
@@ -1233,8 +2724,18 @@ function _markaspot_group_assign_root_jurisdiction(NodeInterface $node): void {
 
   $root_jur = NULL;
 
-  // Strategy 1: Derive from field_organisation -> org group -> field_jurisdiction.
-  if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+  // Strategy 1: Trust the already resolved request jurisdiction.
+  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+    $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+      ->getRootJurisdictionId((int) $node->get('field_jurisdiction')->target_id);
+    if ($root_id === NULL) {
+      return;
+    }
+    $root_jur = $group_storage->load($root_id);
+  }
+
+  // Strategy 2: Derive from field_organisation -> org group -> field_jurisdiction.
+  if (!$root_jur && $node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
     $org_id = (int) $node->get('field_organisation')->target_id;
     $org_group = $group_storage->load($org_id);
     if ($org_group && $org_group->hasField('field_jurisdiction') && !$org_group->get('field_jurisdiction')->isEmpty()) {
@@ -1242,11 +2743,14 @@ function _markaspot_group_assign_root_jurisdiction(NodeInterface $node): void {
       // Resolve upward to root using the hierarchy resolver service.
       $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
         ->getRootJurisdictionId($jur_id);
+      if ($root_id === NULL) {
+        return;
+      }
       $root_jur = $group_storage->load($root_id);
     }
   }
 
-  // Strategy 2: Derive from category term's field_jurisdiction.
+  // Strategy 3: Derive from category term's field_jurisdiction.
   // Category terms reference their root jurisdiction, so this resolves
   // correctly even when field_organisation is not yet set.
   if (!$root_jur && $node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
@@ -1254,15 +2758,18 @@ function _markaspot_group_assign_root_jurisdiction(NodeInterface $node): void {
     if ($term && $term->hasField('field_jurisdiction') && !$term->get('field_jurisdiction')->isEmpty()) {
       $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
         ->getRootJurisdictionId((int) $term->get('field_jurisdiction')->target_id);
+      if ($root_id === NULL) {
+        return;
+      }
       $root_jur = $group_storage->load($root_id);
     }
   }
 
-  // Strategy 3: Fallback to the single root jur (no parent jurisdiction).
+  // Strategy 4: Fallback to the single root jur (no parent jurisdiction).
   if (!$root_jur) {
     $root_ids = $group_storage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('type', 'jur')
+      ->condition('type', _markaspot_group_jurisdiction_group_type())
       ->notExists('field_parent_jurisdiction')
       ->execute();
 
@@ -1277,7 +2784,7 @@ function _markaspot_group_assign_root_jurisdiction(NodeInterface $node): void {
 
       if ($default_jur_id > 0) {
         $default_jur = $group_storage->load($default_jur_id);
-        if ($default_jur && $default_jur->bundle() === 'jur' && $default_jur->get('field_parent_jurisdiction')->isEmpty()) {
+        if (_markaspot_group_is_jurisdiction_group($default_jur) && $default_jur->get('field_parent_jurisdiction')->isEmpty()) {
           $root_jur = $default_jur;
           \Drupal::logger('markaspot_group')->notice(
             'Using default jurisdiction "@group" (id=@gid) for node @nid (multiple roots, no org context).',
@@ -1382,7 +2889,7 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|fal
   $group_storage = \Drupal::entityTypeManager()->getStorage('group');
   $group_ids = $group_storage->getQuery()
     ->accessCheck(FALSE)
-    ->condition('type', 'jur')
+    ->condition('type', _markaspot_group_jurisdiction_group_type())
     ->exists('field_boundary')
     ->execute();
 
@@ -1523,6 +3030,9 @@ function _markaspot_group_set_jurisdiction_field(NodeInterface $node, int|false 
     /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
     $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
     $jur_id = $resolver->getRootJurisdictionId($child_jur_id);
+    if ($jur_id === NULL) {
+      return FALSE;
+    }
   }
 
   // No child jur (or strategy is 'root' without child): find root via lookup.
@@ -1557,6 +3067,9 @@ function _markaspot_group_set_jurisdiction_field(NodeInterface $node, int|false 
           /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
           $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
           $jur_id = $resolver->getRootJurisdictionId((int) $term->get('field_jurisdiction')->target_id);
+          if ($jur_id === NULL) {
+            return FALSE;
+          }
         }
       }
     }
@@ -1581,7 +3094,7 @@ function _markaspot_group_set_jurisdiction_field(NodeInterface $node, int|false 
 }
 
 /**
- * Syncs the jur-tenant_admin group role to the tenant_admin Drupal role.
+ * Syncs the jurisdiction tenant-admin group role to the Drupal role.
  *
  * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
  *   The group relationship entity.
@@ -1589,11 +3102,14 @@ function _markaspot_group_set_jurisdiction_field(NodeInterface $node, int|false 
  *   One of 'insert', 'update', or 'delete'.
  */
 function _markaspot_group_tenant_admin_sync_role(GroupRelationshipInterface $relationship, string $operation): void {
-  // Only process membership relationships in jur groups.
+  // Only process membership relationships in jurisdiction groups.
   if ($relationship->getPluginId() !== 'group_membership') {
     return;
   }
-  if ($relationship->getGroup()->bundle() !== 'jur') {
+  $group = $relationship->getGroup();
+  $jur_type = \Drupal::config('markaspot_open311.settings')
+    ->get('jurisdiction_group_type') ?? 'jur';
+  if (!$group || $group->bundle() !== $jur_type) {
     return;
   }
 
@@ -1608,16 +3124,19 @@ function _markaspot_group_tenant_admin_sync_role(GroupRelationshipInterface $rel
     return;
   }
 
-  // Check if this membership has the jur-tenant_admin role.
+  // Check if this membership has the configured tenant-admin role.
   $group_roles = array_column(
     $relationship->get('group_roles')->getValue(),
     'target_id'
   );
-  $has_jur_admin = in_array(TenantAdminHelper::GROUP_ROLE_ID, $group_roles, TRUE);
+  $has_jur_admin = (bool) array_intersect(
+    TenantAdminHelper::getTenantAdminRoleIds(),
+    $group_roles
+  );
 
   if ($operation === 'delete' || ($operation === 'update' && !$has_jur_admin)) {
-    // Membership removed or jur-admin role removed from membership.
-    // Check if user still has jur-admin in any other jur group.
+    // Membership removed or tenant-admin role removed from membership.
+    // Check if user still has tenant-admin in any other jurisdiction group.
     $exclude_id = ($operation === 'delete') ? (int) $relationship->id() : NULL;
     $still_has_admin = TenantAdminHelper::userHasJurAdminInAnyGroup($user, $exclude_id);
 
@@ -1625,7 +3144,7 @@ function _markaspot_group_tenant_admin_sync_role(GroupRelationshipInterface $rel
       $user->removeRole('tenant_admin');
       $user->save();
       \Drupal::logger('markaspot_group')->notice(
-        'Removed tenant_admin role from user @name (no remaining jur-tenant_admin memberships).',
+        'Removed tenant_admin role from user @name (no remaining jurisdiction tenant-admin memberships).',
         ['@name' => $user->getAccountName()]
       );
     }
@@ -1634,10 +3153,10 @@ function _markaspot_group_tenant_admin_sync_role(GroupRelationshipInterface $rel
     $user->addRole('tenant_admin');
     $user->save();
     \Drupal::logger('markaspot_group')->notice(
-      'Granted tenant_admin role to user @name (jur-tenant_admin in @group).',
+      'Granted tenant_admin role to user @name (jurisdiction tenant-admin in @group).',
       [
         '@name' => $user->getAccountName(),
-        '@group' => $relationship->getGroup()->label(),
+        '@group' => $group->label(),
       ]
     );
   }
@@ -1679,7 +3198,7 @@ function markaspot_group_query_taxonomy_term_access_alter(AlterableInterface $qu
     $user = User::load($current_user->id());
     if ($user) {
       foreach (\Drupal\group\Entity\GroupMembership::loadByUser($user) as $membership) {
-        if ($membership->getGroup()->bundle() === 'jur') {
+        if (_markaspot_group_is_jurisdiction_group($membership->getGroup())) {
           $jur_ids[] = (int) $membership->getGroupId();
         }
       }

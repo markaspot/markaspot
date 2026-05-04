@@ -4,14 +4,22 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_fastmap\Unit;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Plugin\Validation\Constraint\TierLimitConstraint;
 use Drupal\markaspot_fastmap\Plugin\Validation\Constraint\TierLimitConstraintValidator;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
+use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 
 /**
@@ -76,11 +84,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->willReturn(FALSE);
   }
 
-  // ---------------------------------------------------------------
-  // Published period: new node creation is NOT blocked by validator.
-  // (presave hook handles silent unpublish instead.)
-  // ---------------------------------------------------------------
-
   /**
    * Tests that new nodes are NOT rejected for published period.
    *
@@ -113,10 +116,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $this->createValidator()->validate($node, $this->constraint);
   }
 
-  // ---------------------------------------------------------------
-  // Published period: unpublished -> published transition.
-  // ---------------------------------------------------------------
-
   /**
    * Tests that publish transition is blocked when at limit.
    *
@@ -134,6 +133,22 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       );
 
     $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests configured jurisdiction bundle is accepted for tier validation.
+   *
+   * @covers ::validate
+   */
+  public function testConfiguredJurisdictionBundleIsAccepted(): void {
+    $node = $this->createPublishTransitionNode(1, 'free', 'jurisdiction');
+    $this->mockRequestCount(30);
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    $this->createValidator(jurisdictionGroupType: 'jurisdiction')
+      ->validate($node, $this->constraint);
   }
 
   /**
@@ -200,10 +215,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $this->createValidator()->validate($node, $this->constraint);
   }
 
-  // ---------------------------------------------------------------
-  // Unlimited tiers (heart only).
-  // ---------------------------------------------------------------
-
   /**
    * Tests that unlimited tiers skip validation entirely.
    *
@@ -220,10 +231,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
 
     $this->createValidator()->validate($node, $this->constraint);
   }
-
-  // ---------------------------------------------------------------
-  // Starter/Pro monthly limits.
-  // ---------------------------------------------------------------
 
   /**
    * Tests that starter tier blocks at 500 monthly limit.
@@ -316,10 +323,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
 
     $this->createValidator()->validate($node, $this->constraint);
   }
-
-  // ---------------------------------------------------------------
-  // Legacy monthly/total periods (backwards compatibility).
-  // ---------------------------------------------------------------
 
   /**
    * Tests that monthly period blocks new node creation at limit.
@@ -427,10 +430,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
 
     $this->createValidator()->validate($node, $this->constraint);
   }
-
-  // ---------------------------------------------------------------
-  // Edge cases and bypass.
-  // ---------------------------------------------------------------
 
   /**
    * Tests that unknown tier falls back to free limits (fail-closed).
@@ -549,7 +548,6 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $node->method('bundle')->willReturn('service_request');
     $node->method('isNew')->willReturn(TRUE);
     $node->method('hasField')
-      ->with('field_jurisdiction')
       ->willReturn(FALSE);
 
     $this->executionContext->expects($this->never())
@@ -571,8 +569,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $node->method('bundle')->willReturn('service_request');
     $node->method('isNew')->willReturn(TRUE);
     $node->method('hasField')
-      ->with('field_jurisdiction')
-      ->willReturn(TRUE);
+      ->willReturnCallback(fn(string $field) => $field === 'field_jurisdiction');
     $node->method('get')
       ->with('field_jurisdiction')
       ->willReturn($jurisdictionField);
@@ -584,15 +581,369 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
+   * Tests that JSON:API-style creates use category jurisdiction before insert.
+   *
+   * @covers ::validate
+   */
+  public function testCategoryJurisdictionFallbackBlocksMonthlyCreation(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('starter')
+      ->willReturn(['limit' => 500, 'period' => 'monthly']);
+    $this->tierConfig->expects($this->once())
+      ->method('countRequests')
+      ->with(9, 'monthly')
+      ->willReturn(500);
+
+    $node = $this->createNodeWithEmptyJurisdictionAndCategory(9);
+    $group = $this->createGroupMock(9, 'starter');
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->monthlyLimitMessage,
+        ['@limit' => 500]
+      );
+
+    $this->createValidator($this->createEntityTypeManagerWithGroup($group))
+      ->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that API request jurisdiction_id is validated before insert.
+   *
+   * @covers ::validate
+   */
+  public function testRequestJurisdictionFallbackBlocksMonthlyCreation(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('pro')
+      ->willReturn(['limit' => 2000, 'period' => 'monthly']);
+    $this->tierConfig->expects($this->once())
+      ->method('countRequests')
+      ->with(10, 'monthly')
+      ->willReturn(2000);
+
+    $node = $this->createNodeWithEmptyJurisdictionAndCategory(NULL);
+    $group = $this->createGroupMock(10, 'pro');
+
+    $request = new Request([], ['jurisdiction_id' => 10]);
+    $requestStack = new RequestStack();
+    $requestStack->push($request);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->monthlyLimitMessage,
+        ['@limit' => 2000]
+      );
+
+    $this->createValidator($this->createEntityTypeManagerWithGroup($group), $requestStack)
+      ->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that JSON request bodies are used for jurisdiction resolution.
+   *
+   * @covers ::validate
+   */
+  public function testJsonBodyJurisdictionFallbackBlocksMonthlyCreation(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('starter')
+      ->willReturn(['limit' => 500, 'period' => 'monthly']);
+    $this->tierConfig->expects($this->once())
+      ->method('countRequests')
+      ->with(11, 'monthly')
+      ->willReturn(500);
+
+    $node = $this->createNodeWithEmptyJurisdictionAndCategory(NULL);
+    $group = $this->createGroupMock(11, 'starter');
+
+    $request = new Request([], [], [], [], [], [], json_encode(['jurisdiction_id' => 11]));
+    $requestStack = new RequestStack();
+    $requestStack->push($request);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->monthlyLimitMessage,
+        ['@limit' => 500]
+      );
+
+    $this->createValidator($this->createEntityTypeManagerWithGroup($group), $requestStack)
+      ->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that child jurisdictions are matched to the category root.
+   *
+   * @covers ::validate
+   */
+  public function testChildRequestJurisdictionMatchesCategoryRoot(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('starter')
+      ->willReturn(['limit' => 500, 'period' => 'monthly']);
+    $this->tierConfig->expects($this->once())
+      ->method('countRequests')
+      ->with(10, 'monthly')
+      ->willReturn(500);
+
+    $node = $this->createNodeWithEmptyJurisdictionAndCategory(8);
+    $group = $this->createGroupMock(10, 'starter');
+
+    $resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $resolver->expects($this->exactly(2))
+      ->method('getRootJurisdictionId')
+      ->willReturnMap([
+        [8, 8],
+        [10, 8],
+      ]);
+    $request = new Request([], ['jurisdiction_id' => 10]);
+    $requestStack = new RequestStack();
+    $requestStack->push($request);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->monthlyLimitMessage,
+        ['@limit' => 500]
+      );
+
+    $this->createValidator($this->createEntityTypeManagerWithGroup($group), $requestStack, $resolver)
+      ->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that client-supplied cross-tree jurisdiction is rejected.
+   *
+   * @covers ::validate
+   */
+  public function testClientSuppliedJurisdictionMustMatchCategoryRoot(): void {
+    $this->tierConfig->expects($this->never())
+      ->method('countRequests');
+
+    $fieldGroup = $this->createGroupMock(99, 'heart');
+    $node = $this->createNodeWithJurisdictionAndCategory($fieldGroup, 8);
+
+    $resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $resolver->expects($this->exactly(2))
+      ->method('getRootJurisdictionId')
+      ->willReturnMap([
+        [8, 8],
+        [99, 99],
+      ]);
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+
+    $this->createValidator(NULL, NULL, $resolver)->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that invalid category hierarchy fails closed.
+   *
+   * @covers ::validate
+   */
+  public function testInvalidCategoryHierarchyRejectsValidation(): void {
+    $this->tierConfig->expects($this->never())
+      ->method('countRequests');
+
+    $node = $this->createNodeWithEmptyJurisdictionAndCategory(8);
+
+    $resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $resolver->expects($this->once())
+      ->method('getRootJurisdictionId')
+      ->with(8)
+      ->willReturn(NULL);
+
+    $request = new Request([], ['jurisdiction_id' => 10]);
+    $requestStack = new RequestStack();
+    $requestStack->push($request);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+
+    $this->createValidator(NULL, $requestStack, $resolver)->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that same-root sibling request jurisdiction falls back to root.
+   *
+   * @covers ::validate
+   */
+  public function testBoundaryMatchOverridesSiblingRequestJurisdiction(): void {
+    $this->tierConfig = $this->createMock(TierConfigService::class);
+    $this->tierConfig->method('getLimits')
+      ->with('free')
+      ->willReturn(['limit' => 500, 'period' => 'monthly']);
+    $this->tierConfig->expects($this->once())
+      ->method('countRequests')
+      ->with(10, 'monthly')
+      ->willReturn(500);
+
+    $node = $this->createNodeWithEmptyJurisdictionAndCategory(8);
+    $rootGroup = $this->createGroupMock(8, 'starter');
+    $siblingGroup = $this->createGroupMock(9, 'pro');
+    $boundaryGroup = $this->createGroupMock(10, 'free');
+
+    $resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $resolver->method('getRootJurisdictionId')
+      ->willReturnMap([
+        [8, 8],
+        [9, 8],
+        [10, 8],
+      ]);
+
+    $request = new Request([], ['jurisdiction_id' => 9]);
+    $requestStack = new RequestStack();
+    $requestStack->push($request);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        $this->constraint->monthlyLimitMessage,
+        ['@limit' => 500]
+      );
+
+    $this->createValidator($this->createEntityTypeManagerWithGroup($rootGroup, $siblingGroup, $boundaryGroup), $requestStack, $resolver, 10)
+      ->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that boundary matches must stay in the category root.
+   *
+   * @covers ::validate
+   */
+  public function testBoundaryMatchMustMatchCategoryRoot(): void {
+    $this->tierConfig->expects($this->never())
+      ->method('countRequests');
+
+    $node = $this->createNodeWithEmptyJurisdictionAndCategory(8);
+
+    $resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $resolver->method('getRootJurisdictionId')
+      ->willReturnMap([
+        [8, 8],
+        [10, 99],
+      ]);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+
+    $this->createValidator(NULL, NULL, $resolver, 10)->validate($node, $this->constraint);
+  }
+
+  /**
+   * Tests that invalid boundary hierarchies fail closed.
+   *
+   * @covers ::validate
+   */
+  public function testBoundaryMatchRejectsInvalidHierarchy(): void {
+    $this->tierConfig->expects($this->never())
+      ->method('countRequests');
+
+    $node = $this->createNodeWithEmptyJurisdictionAndCategory(8);
+
+    $resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $resolver->method('getRootJurisdictionId')
+      ->willReturnMap([
+        [8, 8],
+        [10, NULL],
+      ]);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(TierLimitConstraint::JURISDICTION_MISMATCH_MESSAGE);
+
+    $this->createValidator(NULL, NULL, $resolver, 10)->validate($node, $this->constraint);
+  }
+
+  /**
    * Creates the validator with mocked context.
    */
-  protected function createValidator(): TierLimitConstraintValidator {
-    $validator = new TierLimitConstraintValidator(
-      $this->currentUser,
-      $this->tierConfig,
-    );
+  protected function createValidator(
+    ?EntityTypeManagerInterface $entityTypeManager = NULL,
+    ?RequestStack $requestStack = NULL,
+    ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
+    int|false|null $boundaryJurisdictionId = NULL,
+    string $jurisdictionGroupType = 'jur',
+  ): TierLimitConstraintValidator {
+    $configFactory = $this->createConfigFactory($jurisdictionGroupType);
+    if ($boundaryJurisdictionId !== NULL) {
+      $validator = new class(
+        $this->currentUser,
+        $this->tierConfig,
+        $entityTypeManager,
+        $requestStack,
+        $hierarchyResolver,
+        $configFactory,
+        $boundaryJurisdictionId,
+      ) extends TierLimitConstraintValidator {
+
+        /**
+         * Constructs a test validator with a fixed boundary jurisdiction.
+         */
+        public function __construct(
+          AccountInterface $currentUser,
+          TierConfigService $tierConfig,
+          ?EntityTypeManagerInterface $entityTypeManager,
+          ?RequestStack $requestStack,
+          ?JurisdictionHierarchyResolverInterface $hierarchyResolver,
+          ?ConfigFactoryInterface $configFactory,
+          private readonly int|false $testBoundaryJurisdictionId,
+        ) {
+          parent::__construct(
+            $currentUser,
+            $tierConfig,
+            $entityTypeManager,
+            $requestStack,
+            $hierarchyResolver,
+            $configFactory,
+          );
+        }
+
+        /**
+         * {@inheritdoc}
+         */
+        protected function resolveBoundaryJurisdictionId(NodeInterface $node): int|false {
+          return $this->testBoundaryJurisdictionId;
+        }
+
+      };
+    }
+    else {
+      $validator = new TierLimitConstraintValidator(
+        $this->currentUser,
+        $this->tierConfig,
+        $entityTypeManager,
+        $requestStack,
+        $hierarchyResolver,
+        $configFactory,
+      );
+    }
     $validator->initialize($this->executionContext);
     return $validator;
+  }
+
+  /**
+   * Creates a config factory mock for jurisdiction group type.
+   */
+  protected function createConfigFactory(string $jurisdictionGroupType): ConfigFactoryInterface {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturn($jurisdictionGroupType);
+
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_open311.settings')
+      ->willReturn($config);
+
+    return $configFactory;
   }
 
   /**
@@ -619,6 +970,7 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     // Mock the group entity.
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn($groupId);
+    $group->method('bundle')->willReturn('jur');
     $group->method('hasField')
       ->willReturnCallback(fn(string $name) => $name === 'field_tier' && $hasTierField);
 
@@ -634,20 +986,14 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
         ->willReturn($tierField);
     }
 
-    // Mock the jurisdiction field on the node.
-    $jurisdictionField = $this->createMock(FieldItemListInterface::class);
-    $jurisdictionField->method('isEmpty')->willReturn(FALSE);
-    $jurisdictionField->method('__get')
-      ->with('entity')
-      ->willReturn($group);
+    $jurisdictionField = $this->createJurisdictionField($group);
 
     // Mock the node.
     $node = $this->createMock(NodeInterface::class);
     $node->method('bundle')->willReturn($bundle);
     $node->method('isNew')->willReturn($isNew);
     $node->method('hasField')
-      ->with('field_jurisdiction')
-      ->willReturn(TRUE);
+      ->willReturnCallback(fn(string $field) => $field === 'field_jurisdiction');
     $node->method('get')
       ->with('field_jurisdiction')
       ->willReturn($jurisdictionField);
@@ -662,9 +1008,11 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
    *   The jurisdiction group ID.
    * @param string $tier
    *   The tier value.
+   * @param string $groupBundle
+   *   The jurisdiction group bundle.
    */
-  protected function createPublishTransitionNode(int $groupId, string $tier = 'free'): NodeInterface {
-    $group = $this->createGroupMock($groupId, $tier);
+  protected function createPublishTransitionNode(int $groupId, string $tier = 'free', string $groupBundle = 'jur'): NodeInterface {
+    $group = $this->createGroupMock($groupId, $tier, $groupBundle);
     $jurisdictionField = $this->createJurisdictionField($group);
 
     // Original node was unpublished.
@@ -677,15 +1025,12 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $node->method('isNew')->willReturn(FALSE);
     $node->method('isPublished')->willReturn(TRUE);
     $node->method('hasField')
-      ->with('field_jurisdiction')
-      ->willReturn(TRUE);
+      ->willReturnCallback(fn(string $field) => $field === 'field_jurisdiction');
     $node->method('get')
       ->with('field_jurisdiction')
       ->willReturn($jurisdictionField);
 
-    // PHP 8.4 deprecation: dynamic property on mock. Acceptable in test code
-    // until PHPUnit mocks support declared properties natively.
-    @$node->original = $original;
+    $node->method('getOriginal')->willReturn($original);
 
     return $node;
   }
@@ -712,13 +1057,12 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $node->method('isNew')->willReturn(FALSE);
     $node->method('isPublished')->willReturn(FALSE);
     $node->method('hasField')
-      ->with('field_jurisdiction')
-      ->willReturn(TRUE);
+      ->willReturnCallback(fn(string $field) => $field === 'field_jurisdiction');
     $node->method('get')
       ->with('field_jurisdiction')
       ->willReturn($jurisdictionField);
 
-    @$node->original = $original;
+    $node->method('getOriginal')->willReturn($original);
 
     return $node;
   }
@@ -744,13 +1088,12 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $node->method('isNew')->willReturn(FALSE);
     $node->method('isPublished')->willReturn(TRUE);
     $node->method('hasField')
-      ->with('field_jurisdiction')
-      ->willReturn(TRUE);
+      ->willReturnCallback(fn(string $field) => $field === 'field_jurisdiction');
     $node->method('get')
       ->with('field_jurisdiction')
       ->willReturn($jurisdictionField);
 
-    @$node->original = $original;
+    $node->method('getOriginal')->willReturn($original);
 
     return $node;
   }
@@ -758,9 +1101,10 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   /**
    * Creates a mocked group entity.
    */
-  protected function createGroupMock(int $groupId, string $tier = 'free'): GroupInterface {
+  protected function createGroupMock(int $groupId, string $tier = 'free', string $bundle = 'jur'): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn($groupId);
+    $group->method('bundle')->willReturn($bundle);
     $group->method('hasField')
       ->willReturnCallback(fn(string $name) => $name === 'field_tier');
 
@@ -784,9 +1128,117 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     $field = $this->createMock(FieldItemListInterface::class);
     $field->method('isEmpty')->willReturn(FALSE);
     $field->method('__get')
-      ->with('entity')
-      ->willReturn($group);
+      ->willReturnCallback(fn(string $name) => match ($name) {
+        'entity' => $group,
+        'target_id' => $group->id(),
+        default => NULL,
+      });
     return $field;
+  }
+
+  /**
+   * Creates a service request node with empty field_jurisdiction.
+   */
+  protected function createNodeWithEmptyJurisdictionAndCategory(?int $categoryJurisdictionId): NodeInterface {
+    $jurisdictionField = $this->createMock(FieldItemListInterface::class);
+    $jurisdictionField->method('isEmpty')->willReturn(TRUE);
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('isNew')->willReturn(TRUE);
+    $node->method('hasField')
+      ->willReturnCallback(fn(string $field) => in_array($field, ['field_jurisdiction', 'field_category'], TRUE));
+    $node->method('get')
+      ->willReturnCallback(function (string $field) use ($jurisdictionField, $categoryJurisdictionId): FieldItemListInterface {
+        if ($field === 'field_jurisdiction') {
+          return $jurisdictionField;
+        }
+        if ($field === 'field_category' && $categoryJurisdictionId !== NULL) {
+          return $this->createCategoryField($categoryJurisdictionId);
+        }
+
+        $emptyField = $this->createMock(FieldItemListInterface::class);
+        $emptyField->method('isEmpty')->willReturn(TRUE);
+        return $emptyField;
+      });
+
+    return $node;
+  }
+
+  /**
+   * Creates a service request node with submitted field_jurisdiction.
+   */
+  protected function createNodeWithJurisdictionAndCategory(GroupInterface $group, int $categoryJurisdictionId): NodeInterface {
+    $jurisdictionField = $this->createJurisdictionField($group);
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('isNew')->willReturn(TRUE);
+    $node->method('hasField')
+      ->willReturnCallback(fn(string $field) => in_array($field, ['field_jurisdiction', 'field_category'], TRUE));
+    $node->method('get')
+      ->willReturnCallback(function (string $field) use ($jurisdictionField, $categoryJurisdictionId): FieldItemListInterface {
+        if ($field === 'field_jurisdiction') {
+          return $jurisdictionField;
+        }
+        if ($field === 'field_category') {
+          return $this->createCategoryField($categoryJurisdictionId);
+        }
+
+        $emptyField = $this->createMock(FieldItemListInterface::class);
+        $emptyField->method('isEmpty')->willReturn(TRUE);
+        return $emptyField;
+      });
+
+    return $node;
+  }
+
+  /**
+   * Creates a category field pointing to a jurisdiction-scoped term.
+   */
+  protected function createCategoryField(int $jurisdictionId): FieldItemListInterface {
+    $termJurisdictionField = $this->createMock(FieldItemListInterface::class);
+    $termJurisdictionField->method('isEmpty')->willReturn(FALSE);
+    $termJurisdictionField->method('__get')
+      ->with('target_id')
+      ->willReturn($jurisdictionId);
+
+    $term = $this->createMock(TermInterface::class);
+    $term->method('hasField')
+      ->with('field_jurisdiction')
+      ->willReturn(TRUE);
+    $term->method('get')
+      ->with('field_jurisdiction')
+      ->willReturn($termJurisdictionField);
+
+    $categoryField = $this->createMock(FieldItemListInterface::class);
+    $categoryField->method('isEmpty')->willReturn(FALSE);
+    $categoryField->method('__get')
+      ->with('entity')
+      ->willReturn($term);
+
+    return $categoryField;
+  }
+
+  /**
+   * Creates an entity type manager that can load one jurisdiction group.
+   */
+  protected function createEntityTypeManagerWithGroup(GroupInterface ...$groups): EntityTypeManagerInterface {
+    $groupsById = [];
+    foreach ($groups as $group) {
+      $groupsById[(int) $group->id()] = $group;
+    }
+
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')
+      ->willReturnCallback(fn(int|string $id) => $groupsById[(int) $id] ?? NULL);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($groupStorage);
+
+    return $entityTypeManager;
   }
 
   /**

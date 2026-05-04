@@ -12,6 +12,8 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRoleInterface;
+use Drupal\group\GroupMembership;
 use Drupal\markaspot_fastmap\Controller\WorkspaceUsageController;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\Tests\UnitTestCase;
@@ -47,6 +49,27 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
   protected EntityStorageInterface $groupStorage;
 
   /**
+   * The mocked current user.
+   *
+   * @var \Drupal\Core\Session\AccountInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected AccountInterface $currentUser;
+
+  /**
+   * Current user ID returned by the current user mock.
+   *
+   * @var int
+   */
+  protected int $currentUserId = 1;
+
+  /**
+   * Current user roles returned by the current user mock.
+   *
+   * @var string[]
+   */
+  protected array $currentUserRoles = ['authenticated', 'administrator'];
+
+  /**
    * The controller under test.
    *
    * @var \Drupal\markaspot_fastmap\Controller\WorkspaceUsageController
@@ -75,6 +98,11 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
     // Set up container for Cache::mergeContexts() used by AccessResult.
     $cacheContextsManager = $this->createMock(CacheContextsManager::class);
     $cacheContextsManager->method('assertValidTokens')->willReturn(TRUE);
+    $this->currentUser = $this->createMock(AccountInterface::class);
+    $this->currentUser->method('id')
+      ->willReturnCallback(fn() => $this->currentUserId);
+    $this->currentUser->method('getRoles')
+      ->willReturnCallback(fn() => $this->currentUserRoles);
 
     // Set up the Drupal container.
     $container = new ContainerBuilder();
@@ -82,6 +110,7 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
     $container->set('entity_type.manager', $this->entityTypeManager);
     $container->set('markaspot_fastmap.tier_config', $this->tierConfig);
     $container->set('cache_contexts_manager', $cacheContextsManager);
+    $container->set('current_user', $this->currentUser);
     \Drupal::setContainer($container);
 
     $this->controller = WorkspaceUsageController::create($container);
@@ -152,6 +181,32 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
   }
 
   /**
+   * Creates a tenant admin account for a usage group.
+   */
+  protected function createTenantAdminAccountForGroup(GroupInterface $group): AccountInterface {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(3);
+    $account->method('getRoles')->willReturn(['authenticated']);
+    $account->method('hasPermission')
+      ->willReturnCallback(fn(string $permission) => $permission === 'access workspace usage');
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jur-tenant_admin');
+
+    $membership = $this->createMock(GroupMembership::class);
+    $membership->method('getRoles')->willReturn([$role]);
+    $membership->method('getCacheTags')->willReturn(['group_relationship:99']);
+    $membership->method('getCacheContexts')->willReturn([]);
+    $membership->method('getCacheMaxAge')->willReturn(-1);
+
+    $group->method('getMember')
+      ->with($account)
+      ->willReturn($membership);
+
+    return $account;
+  }
+
+  /**
    * Tests access() returns forbidden when group is not found.
    *
    * @covers ::access
@@ -166,7 +221,7 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests access() grants access to admin users.
+   * Tests access() grants access to administrator users.
    *
    * @covers ::access
    */
@@ -175,12 +230,63 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
     $account = $this->createMock(AccountInterface::class);
-    $account->method('hasPermission')
-      ->willReturnCallback(fn(string $perm) => $perm === 'administer nodes');
+    $account->method('id')->willReturn(3);
+    $account->method('getRoles')->willReturn(['authenticated', 'administrator']);
 
     $result = $this->controller->access('14', $account);
 
     $this->assertTrue($result->isAllowed());
+  }
+
+  /**
+   * Tests access() denies non-owner users with broad node administration.
+   *
+   * @covers ::access
+   */
+  public function testAccessDeniedForAdministerNodesWithoutMembership(): void {
+    $group = $this->createMockGroup([]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(3);
+    $account->method('getRoles')->willReturn(['authenticated', 'editorial_board']);
+    $account->method('hasPermission')->willReturn(TRUE);
+
+    $result = $this->controller->access('14', $account);
+
+    $this->assertFalse($result->isAllowed());
+    $this->assertContains(
+      'group_relationship_list:plugin:group_membership:group:14',
+      $result->getCacheTags()
+    );
+    $this->assertContains(
+      'group_relationship_list:plugin:group_membership:entity:3',
+      $result->getCacheTags()
+    );
+  }
+
+  /**
+   * Tests access() grants tenant admins for their own jurisdiction.
+   *
+   * @covers ::access
+   */
+  public function testAccessAllowedForTenantAdminMembership(): void {
+    $group = $this->createMockGroup([]);
+    $account = $this->createTenantAdminAccountForGroup($group);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $result = $this->controller->access('14', $account);
+
+    $this->assertTrue($result->isAllowed());
+    $this->assertContains(
+      'group_relationship_list:plugin:group_membership:group:14',
+      $result->getCacheTags()
+    );
+    $this->assertContains(
+      'group_relationship_list:plugin:group_membership:entity:3',
+      $result->getCacheTags()
+    );
+    $this->assertContains('group_relationship:99', $result->getCacheTags());
   }
 
   /**
@@ -193,11 +299,32 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
     $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(3);
+    $account->method('getRoles')->willReturn(['authenticated']);
     $account->method('hasPermission')->willReturn(FALSE);
 
     $result = $this->controller->access('14', $account);
 
     $this->assertFalse($result->isAllowed());
+  }
+
+  /**
+   * Tests usage() denies direct calls without scoped access.
+   *
+   * @covers ::usage
+   */
+  public function testUsageReturns403WithoutScopedAccess(): void {
+    $this->currentUserId = 3;
+    $this->currentUserRoles = ['authenticated'];
+
+    $group = $this->createMockGroup([]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->usage('14');
+
+    $this->assertEquals(403, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('Access denied', $data['error']);
   }
 
   /**

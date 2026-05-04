@@ -18,6 +18,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Controller\FastMapWorkspaceController;
@@ -87,6 +88,20 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   protected KeyValueExpirableFactoryInterface $keyValueExpirable;
 
   /**
+   * The mocked flood service.
+   *
+   * @var \Drupal\Core\Flood\FloodInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected FloodInterface $flood;
+
+  /**
+   * The mocked lock backend.
+   *
+   * @var \Drupal\Core\Lock\LockBackendInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected LockBackendInterface $lock;
+
+  /**
    * The request stack used by verifyWorkspace().
    */
   protected RequestStack $requestStack;
@@ -95,6 +110,11 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
    * Mutable workspace base URL for config callbacks.
    */
   protected ?string $workspaceBaseUrl = NULL;
+
+  /**
+   * Transaction stub used by verifyWorkspace() tests.
+   */
+  protected object $transaction;
 
   /**
    * The controller under test.
@@ -112,12 +132,16 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->database = $this->createMock(Connection::class);
     // startTransaction() must return an object with rollBack() for the
     // transaction wrapper in verifyWorkspace().
-    $transactionStub = new class {
+    $this->transaction = new class {
 
-      public function rollBack(): void {}
+      public int $rollbacks = 0;
+
+      public function rollBack(): void {
+        $this->rollbacks++;
+      }
 
     };
-    $this->database->method('startTransaction')->willReturn($transactionStub);
+    $this->database->method('startTransaction')->willReturn($this->transaction);
     $this->provisioning = $this->createMock(WorkspaceProvisioningServiceInterface::class);
     $this->mailManager = $this->createMock(MailManagerInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
@@ -179,9 +203,12 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $container->set('logger.channel.markaspot_fastmap', $this->logger);
     $container->set('keyvalue.expirable', $this->keyValueExpirable);
     $container->set('request_stack', $this->requestStack);
-    $flood = $this->createMock(FloodInterface::class);
-    $flood->method('isAllowed')->willReturn(TRUE);
-    $container->set('flood', $flood);
+    $this->flood = $this->createMock(FloodInterface::class);
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+    $container->set('flood', $this->flood);
+    $this->lock = $this->createMock(LockBackendInterface::class);
+    $this->lock->method('acquire')->willReturn(TRUE);
+    $container->set('lock', $this->lock);
     \Drupal::setContainer($container);
 
     $this->controller = FastMapWorkspaceController::create($container);
@@ -206,6 +233,14 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       ['CONTENT_TYPE' => 'application/json'],
       json_encode($data)
     );
+  }
+
+  /**
+   * Replaces the flood service used by the controller under test.
+   */
+  protected function setFlood(FloodInterface $flood): void {
+    \Drupal::getContainer()->set('flood', $flood);
+    $this->controller = FastMapWorkspaceController::create(\Drupal::getContainer());
   }
 
   /**
@@ -295,6 +330,119 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $data = json_decode($response->getContent(), TRUE);
     $this->assertEquals('Invalid JSON body', $data['error']);
+  }
+
+  /**
+   * Tests that malformed JSON attempts are registered against origin IP.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceInvalidJsonRegistersFloodAttempt(): void {
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->expects($this->once())
+      ->method('isAllowed')
+      ->with('fastmap_create_workspace', 5, 3600, 'origin:203.0.113.12')
+      ->willReturn(TRUE);
+    $flood->expects($this->once())
+      ->method('register')
+      ->with('fastmap_create_workspace', 3600, 'origin:203.0.113.12');
+    $this->setFlood($flood);
+
+    $request = Request::create(
+      '/api/fastmap/create-workspace',
+      'POST',
+      [],
+      [],
+      [],
+      [
+        'CONTENT_TYPE' => 'application/json',
+        'REMOTE_ADDR' => '203.0.113.12',
+      ],
+      'not-json'
+    );
+
+    $response = $this->controller->createWorkspace($request);
+
+    $this->assertEquals(400, $response->getStatusCode());
+  }
+
+  /**
+   * Tests that workspace creation is rate-limited by IP.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceFloodLimitExceeded(): void {
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->expects($this->once())
+      ->method('isAllowed')
+      ->with('fastmap_create_workspace', 5, 3600, 'client:203.0.113.10')
+      ->willReturn(FALSE);
+    $flood->expects($this->never())->method('register');
+    $this->setFlood($flood);
+
+    $request = $this->createJsonRequest($this->validRequestData());
+    $request->server->set('REMOTE_ADDR', '172.18.0.20');
+    $request->headers->set('X-Markaspot-Client-IP', '203.0.113.10');
+
+    $response = $this->controller->createWorkspace($request);
+
+    $this->assertEquals(429, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('Too many attempts. Try again later.', $data['error']);
+  }
+
+  /**
+   * Tests that allowed workspace creation attempts are registered.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceRegistersFloodAttempt(): void {
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->expects($this->once())
+      ->method('isAllowed')
+      ->with('fastmap_create_workspace', 5, 3600, 'origin:203.0.113.11')
+      ->willReturn(TRUE);
+    $flood->expects($this->once())
+      ->method('register')
+      ->with('fastmap_create_workspace', 3600, 'origin:203.0.113.11');
+    $this->setFlood($flood);
+
+    $request = $this->createJsonRequest($this->validRequestData([
+      'service_key' => 'wrong-key',
+    ]));
+    $request->server->set('REMOTE_ADDR', '203.0.113.11');
+    $request->headers->set('X-Markaspot-Client-IP', '198.51.100.200');
+
+    $response = $this->controller->createWorkspace($request);
+
+    $this->assertEquals(403, $response->getStatusCode());
+  }
+
+  /**
+   * Tests that forwarded client IP is trusted only after service-key auth.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceUsesForwardedClientIpForValidServiceKey(): void {
+    $flood = $this->createMock(FloodInterface::class);
+    $flood->expects($this->once())
+      ->method('isAllowed')
+      ->with('fastmap_create_workspace', 5, 3600, 'client:198.51.100.8')
+      ->willReturn(TRUE);
+    $flood->expects($this->once())
+      ->method('register')
+      ->with('fastmap_create_workspace', 3600, 'client:198.51.100.8');
+    $this->setFlood($flood);
+
+    $request = $this->createJsonRequest($this->validRequestData([
+      'name' => '',
+    ]));
+    $request->server->set('REMOTE_ADDR', '172.18.0.20');
+    $request->headers->set('X-Markaspot-Client-IP', '198.51.100.8');
+
+    $response = $this->controller->createWorkspace($request);
+
+    $this->assertEquals(400, $response->getStatusCode());
   }
 
   /**
@@ -490,6 +638,32 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests that a concurrent pending slug reservation returns 409.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceConcurrentSlugReservation(): void {
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->once())
+      ->method('acquire')
+      ->with($this->stringStartsWith('markaspot_fastmap:workspace_slug:'), 30.0)
+      ->willReturn(FALSE);
+    $lock->expects($this->never())->method('release');
+
+    $container = \Drupal::getContainer();
+    $container->set('lock', $lock);
+    $this->controller = FastMapWorkspaceController::create($container);
+
+    $request = $this->createJsonRequest($this->validRequestData());
+
+    $response = $this->controller->createWorkspace($request);
+
+    $this->assertEquals(409, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertStringContainsString('already being created', $data['error']);
+  }
+
+  /**
    * Tests successful workspace creation returns 202 pending.
    *
    * @covers ::createWorkspace
@@ -609,6 +783,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $select->method('fields')->willReturnSelf();
     $select->method('condition')->willReturnSelf();
     $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
     $select->method('execute')->willReturn($statement);
 
     $this->database->method('select')->willReturn($select);
@@ -619,6 +794,37 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals(404, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertStringContainsString('Invalid or expired', $data['error']);
+  }
+
+  /**
+   * Tests verify returns 409 while the same token is already being processed.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceConcurrentTokenLock(): void {
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->expects($this->exactly(2))
+      ->method('acquire')
+      ->with($this->stringStartsWith('markaspot_fastmap:verify_token:'), 300.0)
+      ->willReturn(FALSE);
+    $lock->expects($this->once())
+      ->method('wait')
+      ->with($this->stringStartsWith('markaspot_fastmap:verify_token:'), 5)
+      ->willReturn(TRUE);
+    $lock->expects($this->never())->method('release');
+
+    $container = \Drupal::getContainer();
+    $container->set('lock', $lock);
+    $this->controller = FastMapWorkspaceController::create($container);
+
+    $this->database->expects($this->never())->method('select');
+
+    $response = $this->controller->verifyWorkspace('valid-token');
+
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertEquals(409, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertStringContainsString('already in progress', $data['error']);
   }
 
   /**
@@ -643,6 +849,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $select->method('fields')->willReturnSelf();
     $select->method('condition')->willReturnSelf();
     $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
     $select->method('execute')->willReturn($statement);
 
     $delete = $this->createMock(Delete::class);
@@ -688,6 +895,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $select->method('fields')->willReturnSelf();
     $select->method('condition')->willReturnSelf();
     $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
     $select->method('execute')->willReturn($statement);
 
     $delete = $this->createMock(Delete::class);
@@ -765,6 +973,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $select->method('fields')->willReturnSelf();
     $select->method('condition')->willReturnSelf();
     $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
     $select->method('execute')->willReturn($statement);
 
     $delete = $this->createMock(Delete::class);
@@ -830,6 +1039,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $select->method('fields')->willReturnSelf();
     $select->method('condition')->willReturnSelf();
     $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
     $select->method('execute')->willReturn($statement);
 
     $delete = $this->createMock(Delete::class);
@@ -884,6 +1094,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $pendingSelect->method('fields')->willReturnSelf();
     $pendingSelect->method('condition')->willReturnSelf();
     $pendingSelect->method('range')->willReturnSelf();
+    $pendingSelect->method('forUpdate')->willReturnSelf();
     $pendingSelect->method('execute')->willReturn($pendingStatement);
 
     $verifiedSelect = $this->createMock(SelectInterface::class);
@@ -970,6 +1181,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $select->method('fields')->willReturnSelf();
     $select->method('condition')->willReturnSelf();
     $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
     $select->method('execute')->willReturn($statement);
 
     $this->database->method('select')->willReturn($select);
@@ -1010,6 +1222,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $select->method('fields')->willReturnSelf();
     $select->method('condition')->willReturnSelf();
     $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
     $select->method('execute')->willReturn($statement);
 
     $this->database->method('select')->willReturn($select);
@@ -1023,6 +1236,120 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals(409, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertEquals('Slug already taken', $data['error']);
+    $this->assertSame(0, $this->transaction->rollbacks);
+  }
+
+  /**
+   * Tests verify hides internal provisioning failures.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceGenericProvisioningFailureIsNotExposed(): void {
+    $workspaceData = [
+      'name' => 'Test',
+      'slug' => 'test-ws',
+      'email' => 'user@example.com',
+      'categories' => ['Cat A'],
+    ];
+
+    $record = [
+      'id' => 1,
+      'token' => 'valid-token',
+      'email' => 'user@example.com',
+      'workspace_data' => json_encode($workspaceData),
+      'created' => time() - 3600,
+    ];
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAssoc')->willReturn($record);
+
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $this->database->method('select')->willReturn($select);
+
+    $this->provisioning->method('provisionWorkspace')
+      ->willThrowException(new \RuntimeException('Workspace provisioning failed: SQLSTATE[23000]'));
+
+    $response = $this->controller->verifyWorkspace('valid-token');
+
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertEquals(500, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('Workspace provisioning failed', $data['error']);
+    $this->assertStringNotContainsString('SQLSTATE', $response->getContent());
+    $this->assertSame(0, $this->transaction->rollbacks);
+  }
+
+  /**
+   * Tests verify rolls back when persistence fails after provisioning.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceRollsBackPostProvisionFailure(): void {
+    $workspaceData = [
+      'name' => 'Test',
+      'slug' => 'test-ws',
+      'email' => 'user@example.com',
+      'categories' => ['Cat A'],
+    ];
+
+    $record = [
+      'id' => 1,
+      'token' => 'valid-token',
+      'email' => 'user@example.com',
+      'workspace_data' => json_encode($workspaceData),
+      'created' => time() - 3600,
+    ];
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAssoc')->willReturn($record);
+
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('forUpdate')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(1);
+
+    $merge = $this->createMock(Merge::class);
+    $merge->method('keys')->willReturnSelf();
+    $merge->method('fields')->willReturnSelf();
+    $merge->method('execute')->willThrowException(new \Exception('Verified insert failed'));
+
+    $this->database->method('select')->willReturn($select);
+    $this->database->method('delete')->willReturn($delete);
+    $this->database->method('merge')->willReturn($merge);
+
+    $this->provisioning->method('provisionWorkspace')
+      ->with($workspaceData)
+      ->willReturn([
+        'group_id' => 42,
+        'slug' => 'test-ws',
+        'name' => 'Test',
+        'url' => '/test-ws',
+        'categories' => 1,
+        'user_id' => 7,
+      ]);
+    $this->provisioning->expects($this->once())
+      ->method('teardownWorkspace')
+      ->with(42);
+
+    $response = $this->controller->verifyWorkspace('valid-token');
+
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertEquals(500, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('Workspace verification failed', $data['error']);
+    $this->assertSame(1, $this->transaction->rollbacks);
   }
 
   // =========================================================================

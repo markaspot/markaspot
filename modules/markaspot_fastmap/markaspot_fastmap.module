@@ -7,11 +7,13 @@
 
 declare(strict_types=1);
 
-use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Drupal\user\EntityOwnerInterface;
 
@@ -171,15 +173,13 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
 }
 
 /**
- * Implements hook_entity_update().
+ * Implements hook_ENTITY_TYPE_update() for group entities.
  *
- * Invalidates the workspace visibility static cache when a group is saved,
+ * Invalidates the workspace visibility cache entry when a group is saved,
  * ensuring visibility changes take effect immediately within the same request.
  */
-function markaspot_fastmap_entity_update(EntityInterface $entity): void {
-  if ($entity->getEntityTypeId() === 'group') {
-    \Drupal::service('markaspot_fastmap.workspace_visibility')->resetCache();
-  }
+function markaspot_fastmap_group_update(GroupInterface $group): void {
+  \Drupal::service('markaspot_fastmap.workspace_visibility')->resetCache((int) $group->id());
 }
 
 /**
@@ -189,9 +189,28 @@ function markaspot_fastmap_entity_update(EntityInterface $entity): void {
  * jurisdiction's published-reports limit is reached. This avoids rejecting
  * anonymous submissions with a validation error. The report is still created
  * but stays unpublished until a slot is freed.
+ *
+ * Existing request publish transitions are still validated by the TierLimit
+ * constraint. This hook also acts as a race-safe backstop and throws before
+ * saving when the published limit is reached.
  */
 function markaspot_fastmap_node_presave(NodeInterface $node): void {
-  if ($node->bundle() !== 'service_request' || !$node->isNew() || !$node->isPublished()) {
+  if ($node->bundle() !== 'service_request' || !$node->isPublished()) {
+    return;
+  }
+
+  $is_new = $node->isNew();
+  $is_publish_transition = FALSE;
+  if (!$is_new) {
+    $original = $node->getOriginal()
+      ?: \Drupal::entityTypeManager()->getStorage('node')->loadUnchanged($node->id());
+    if (!$original instanceof NodeInterface || $original->isPublished()) {
+      return;
+    }
+    $is_publish_transition = TRUE;
+  }
+
+  if (!$is_new && !$is_publish_transition) {
     return;
   }
 
@@ -202,62 +221,37 @@ function markaspot_fastmap_node_presave(NodeInterface $node): void {
     return;
   }
 
-  // Resolve the jurisdiction group for tier-limit enforcement.
-  // Priority: 1) field_jurisdiction on the node (set by form/JSON:API creates),
-  // 2) jurisdiction_id from the current GeoReport API request (child jur),
-  // 3) category term's field_jurisdiction (always the ROOT jurisdiction).
-  // The API request fallback (#2) is critical for child jurisdictions: without
-  // it, the category-term fallback resolves to the root (e.g., BCP Council)
-  // instead of the child (e.g., Queens Park Ward), bypassing child tier limits.
+  // Resolve the jurisdiction group for tier-limit enforcement. The API request
+  // fallback is critical for child jurisdictions: without it, category fallback
+  // resolves to the root (e.g., BCP Council) instead of the child workspace.
   $group = NULL;
-  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
-    $group = $node->get('field_jurisdiction')->entity;
+  $categoryRootId = _markaspot_fastmap_resolve_category_root_jurisdiction_id($node);
+  $boundaryJurisdictionId = _markaspot_fastmap_resolve_boundary_jurisdiction_id($node);
+  if ($boundaryJurisdictionId) {
+    $group = \Drupal::entityTypeManager()
+      ->getStorage('group')
+      ->load($boundaryJurisdictionId);
   }
-  else {
-    // Derive root jurisdiction from category term (authoritative).
-    $categoryRootId = NULL;
-    if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
-      $categoryTerm = $node->get('field_category')->entity;
-      if ($categoryTerm && $categoryTerm->hasField('field_jurisdiction') && !$categoryTerm->get('field_jurisdiction')->isEmpty()) {
-        $categoryRootId = (int) $categoryTerm->get('field_jurisdiction')->target_id;
-      }
-    }
 
-    // Try to get jurisdiction_id from the current HTTP request (GeoReport API).
-    // Validate against the category term's root jurisdiction to prevent
-    // cross-tenant spoofing (attacker sending a Pro-tier jurisdiction_id).
-    $request = \Drupal::request();
-    $jurisdictionId = $request->request->get('jurisdiction_id')
-      ?? $request->query->get('jurisdiction_id');
-    if ($jurisdictionId) {
-      $candidate = \Drupal::entityTypeManager()
-        ->getStorage('group')
-        ->load((int) $jurisdictionId);
-      if ($candidate && $candidate->bundle() === 'jur') {
-        // Only trust the request jurisdiction if it matches the category root
-        // or is a child of it (same hierarchy).
-        $candidateId = (int) $candidate->id();
-        if ($categoryRootId === NULL || $candidateId === $categoryRootId) {
-          $group = $candidate;
-        }
-        else {
-          // Check if candidate is a child of the category root.
-          /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolver|null $resolver */
-          $resolver = \Drupal::hasService('markaspot_group.jurisdiction_hierarchy_resolver')
-            ? \Drupal::service('markaspot_group.jurisdiction_hierarchy_resolver')
-            : NULL;
-          if ($resolver && $resolver->getRootJurisdictionId($candidateId) === $categoryRootId) {
-            $group = $candidate;
-          }
-        }
-      }
+  // Prefer explicit request jurisdiction over a pre-stamped field. Open311
+  // carries the selected workspace in request data, while field_jurisdiction
+  // may still be root/default before group insert hooks run.
+  if (!$group && $jurisdictionId = _markaspot_fastmap_get_request_jurisdiction_id()) {
+    $group = _markaspot_fastmap_load_allowed_jurisdiction_group((int) $jurisdictionId, $categoryRootId, $boundaryJurisdictionId);
+  }
+
+  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+    $fieldJurisdictionId = (int) $node->get('field_jurisdiction')->target_id;
+    if (!$group && $fieldJurisdictionId && _markaspot_fastmap_resolve_allowed_jurisdiction_id($fieldJurisdictionId, $categoryRootId, $boundaryJurisdictionId)) {
+      $group = $node->get('field_jurisdiction')->entity;
     }
-    // Final fallback: use the category root jurisdiction directly.
-    if (!$group && $categoryRootId) {
-      $group = \Drupal::entityTypeManager()
-        ->getStorage('group')
-        ->load($categoryRootId);
-    }
+  }
+
+  // Final fallback: use the category root jurisdiction directly.
+  if (!$group && $categoryRootId) {
+    $group = \Drupal::entityTypeManager()
+      ->getStorage('group')
+      ->load($categoryRootId);
   }
 
   if (!$group || !$group->hasField('field_tier')) {
@@ -281,18 +275,310 @@ function markaspot_fastmap_node_presave(NodeInterface $node): void {
     return;
   }
 
-  $count = $tierConfig->countRequests((int) $group->id(), 'published');
-  if ($count >= $tierLimits['limit']) {
-    $node->setUnpublished();
-    \Drupal::logger('markaspot_fastmap')->notice(
-      'New service request silently unpublished: jurisdiction @jid has @count/@limit published reports.',
-      [
-        '@jid' => $group->id(),
-        '@count' => $count,
-        '@limit' => $tierLimits['limit'],
-      ]
-    );
+  $group_id = (int) $group->id();
+  if (!_markaspot_fastmap_acquire_tier_limit_lock($group_id)) {
+    throw new EntityStorageException(sprintf('Cannot acquire tier limit lock for jurisdiction %d.', $group_id));
   }
+  _markaspot_fastmap_track_node_tier_limit_lock($node, $group_id);
+  // Release after SqlContentEntityStorage::save() has returned. Releasing in
+  // hook_node_insert()/hook_node_update() can expose an uncommitted row with
+  // non-transactional lock backends.
+  drupal_register_shutdown_function('_markaspot_fastmap_release_node_tier_limit_lock', $node);
+
+  $count = $tierConfig->countRequests($group_id, 'published');
+  if ($count >= $tierLimits['limit']) {
+    if ($is_new) {
+      $node->setUnpublished();
+      _markaspot_fastmap_release_node_tier_limit_lock($node);
+      \Drupal::logger('markaspot_fastmap')->notice(
+        'New service request silently unpublished: jurisdiction @jid has @count/@limit published reports.',
+        [
+          '@jid' => $group_id,
+          '@count' => $count,
+          '@limit' => $tierLimits['limit'],
+        ]
+      );
+      return;
+    }
+
+    _markaspot_fastmap_release_node_tier_limit_lock($node);
+    throw new EntityStorageException(sprintf(
+      'Cannot publish service request: jurisdiction %d has reached the published report limit of %d.',
+      $group_id,
+      (int) $tierLimits['limit'],
+    ));
+  }
+}
+
+/**
+ * Builds the lock name for a jurisdiction tier limit check.
+ */
+function _markaspot_fastmap_tier_limit_lock_name(int $group_id): ?string {
+  if ($group_id <= 0) {
+    return NULL;
+  }
+
+  return 'markaspot_fastmap:tier_limit:' . $group_id;
+}
+
+/**
+ * Acquires a jurisdiction tier limit lock.
+ */
+function _markaspot_fastmap_acquire_tier_limit_lock(int $group_id): bool {
+  $lock_name = _markaspot_fastmap_tier_limit_lock_name($group_id);
+  if ($lock_name === NULL) {
+    return FALSE;
+  }
+
+  $held_locks = &drupal_static('_markaspot_fastmap_tier_limit_locks', []);
+  if (!empty($held_locks[$lock_name])) {
+    return TRUE;
+  }
+
+  $lock = \Drupal::lock();
+  if (!$lock->acquire($lock_name, 30.0)) {
+    $lock->wait($lock_name, 1);
+    if (!$lock->acquire($lock_name, 30.0)) {
+      return FALSE;
+    }
+  }
+
+  $held_locks[$lock_name] = TRUE;
+  return TRUE;
+}
+
+/**
+ * Releases a jurisdiction tier limit lock.
+ */
+function _markaspot_fastmap_release_tier_limit_lock(int $group_id): void {
+  $lock_name = _markaspot_fastmap_tier_limit_lock_name($group_id);
+  if ($lock_name === NULL) {
+    return;
+  }
+
+  $held_locks = &drupal_static('_markaspot_fastmap_tier_limit_locks', []);
+  if (empty($held_locks[$lock_name])) {
+    return;
+  }
+
+  unset($held_locks[$lock_name]);
+  \Drupal::lock()->release($lock_name);
+}
+
+/**
+ * Tracks the tier limit lock held for a node save.
+ */
+function _markaspot_fastmap_track_node_tier_limit_lock(NodeInterface $node, int $group_id): void {
+  $node_locks = &drupal_static('_markaspot_fastmap_tier_limit_node_locks', []);
+  $node_locks[spl_object_id($node)] = $group_id;
+}
+
+/**
+ * Releases the tier limit lock held by a node save operation.
+ */
+function _markaspot_fastmap_release_node_tier_limit_lock(NodeInterface $node): void {
+  $node_locks = &drupal_static('_markaspot_fastmap_tier_limit_node_locks', []);
+  $node_key = spl_object_id($node);
+  if (empty($node_locks[$node_key])) {
+    return;
+  }
+
+  $group_id = (int) $node_locks[$node_key];
+  unset($node_locks[$node_key]);
+  _markaspot_fastmap_release_tier_limit_lock($group_id);
+}
+
+/**
+ * Loads a jurisdiction group only when it belongs to the category tree.
+ */
+function _markaspot_fastmap_load_allowed_jurisdiction_group(int $jurisdictionId, ?int $categoryRootId, int|false $boundaryJurisdictionId): ?GroupInterface {
+  $allowedJurisdictionId = _markaspot_fastmap_resolve_allowed_jurisdiction_id($jurisdictionId, $categoryRootId, $boundaryJurisdictionId);
+  if (!$allowedJurisdictionId) {
+    return NULL;
+  }
+
+  $group = \Drupal::entityTypeManager()
+    ->getStorage('group')
+    ->load($allowedJurisdictionId);
+
+  return _markaspot_fastmap_is_jurisdiction_group($group)
+    ? $group
+    : NULL;
+}
+
+/**
+ * Resolves an allowed tier jurisdiction from request or field input.
+ */
+function _markaspot_fastmap_resolve_allowed_jurisdiction_id(int $jurisdictionId, ?int $categoryRootId, int|false $boundaryJurisdictionId): ?int {
+  $group = \Drupal::entityTypeManager()
+    ->getStorage('group')
+    ->load($jurisdictionId);
+  if (!_markaspot_fastmap_is_jurisdiction_group($group)) {
+    return NULL;
+  }
+
+  if ($categoryRootId === NULL || $jurisdictionId === $categoryRootId) {
+    return $jurisdictionId;
+  }
+
+  if (!_markaspot_fastmap_jurisdiction_matches_category_root($jurisdictionId, $categoryRootId)) {
+    return NULL;
+  }
+
+  return $boundaryJurisdictionId === FALSE || $boundaryJurisdictionId === $jurisdictionId
+    ? $jurisdictionId
+    : NULL;
+}
+
+/**
+ * Resolves the root jurisdiction from a service request category.
+ */
+function _markaspot_fastmap_resolve_category_root_jurisdiction_id(NodeInterface $node): ?int {
+  if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+    return NULL;
+  }
+
+  $categoryTerm = $node->get('field_category')->entity;
+  if (!$categoryTerm || !$categoryTerm->hasField('field_jurisdiction') || $categoryTerm->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  $jurisdictionId = (int) $categoryTerm->get('field_jurisdiction')->target_id;
+  if ($jurisdictionId <= 0) {
+    return NULL;
+  }
+
+  if (\Drupal::hasService('markaspot_group.hierarchy_resolver')) {
+    /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+    $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+    return $resolver->getRootJurisdictionId($jurisdictionId);
+  }
+
+  return $jurisdictionId;
+}
+
+/**
+ * Resolves the most specific boundary jurisdiction for a node location.
+ */
+function _markaspot_fastmap_resolve_boundary_jurisdiction_id(NodeInterface $node): int|false {
+  if (!$node->hasField('field_geolocation') || $node->get('field_geolocation')->isEmpty()) {
+    return FALSE;
+  }
+
+  $geolocation = $node->get('field_geolocation')->first();
+  $lat = (float) $geolocation->get('lat')->getValue();
+  $lng = (float) $geolocation->get('lng')->getValue();
+  if ($lat === 0.0 && $lng === 0.0) {
+    return FALSE;
+  }
+
+  $groupStorage = \Drupal::entityTypeManager()->getStorage('group');
+  $groupIds = $groupStorage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', _markaspot_fastmap_jurisdiction_group_type())
+    ->exists('field_boundary')
+    ->execute();
+
+  if (empty($groupIds)) {
+    return FALSE;
+  }
+
+  $matchedIds = [];
+  $groups = $groupStorage->loadMultiple($groupIds);
+  foreach ($groups as $group) {
+    if (!_markaspot_fastmap_is_jurisdiction_group($group)) {
+      continue;
+    }
+    if (!$group->hasField('field_parent_jurisdiction') || $group->get('field_parent_jurisdiction')->isEmpty()) {
+      continue;
+    }
+    if (!$group->hasField('field_boundary') || $group->get('field_boundary')->isEmpty()) {
+      continue;
+    }
+
+    $boundary = GeoJsonBoundary::fromJson((string) $group->get('field_boundary')->value);
+    if ($boundary && $boundary->contains($lng, $lat)) {
+      $matchedIds[] = (int) $group->id();
+    }
+  }
+
+  return _markaspot_fastmap_resolve_deepest_boundary_jurisdiction_id($matchedIds, $groups);
+}
+
+/**
+ * Returns the deepest jurisdiction ID from matching boundary groups.
+ *
+ * @param int[] $matchedIds
+ *   Matching jurisdiction IDs.
+ * @param array<int, \Drupal\group\Entity\GroupInterface> $groups
+ *   Loaded group entities keyed by ID.
+ */
+function _markaspot_fastmap_resolve_deepest_boundary_jurisdiction_id(array $matchedIds, array $groups): int|false {
+  if (empty($matchedIds)) {
+    return FALSE;
+  }
+  if (count($matchedIds) === 1) {
+    return $matchedIds[0];
+  }
+
+  $parentIdsInSet = [];
+  foreach ($groups as $group) {
+    if (!$group instanceof GroupInterface || !in_array((int) $group->id(), $matchedIds, TRUE)) {
+      continue;
+    }
+    if ($group->hasField('field_parent_jurisdiction') && !$group->get('field_parent_jurisdiction')->isEmpty()) {
+      $parentIdsInSet[(int) $group->get('field_parent_jurisdiction')->target_id] = TRUE;
+    }
+  }
+
+  foreach ($matchedIds as $id) {
+    if (!isset($parentIdsInSet[$id])) {
+      return $id;
+    }
+  }
+
+  return $matchedIds[0];
+}
+
+/**
+ * Gets a jurisdiction_id from query, form data, or JSON request content.
+ */
+function _markaspot_fastmap_get_request_jurisdiction_id(): ?int {
+  $request = \Drupal::request();
+  $jurisdictionId = $request->request->get('jurisdiction_id')
+    ?? $request->query->get('jurisdiction_id');
+
+  if (!$jurisdictionId) {
+    $content = $request->getContent();
+    if ($content) {
+      $data = json_decode($content, TRUE);
+      if (is_array($data)) {
+        $jurisdictionId = $data['jurisdiction_id']
+          ?? $data['jurisdiction']
+          ?? $data['gid']
+          ?? NULL;
+      }
+    }
+  }
+
+  return $jurisdictionId ? (int) $jurisdictionId : NULL;
+}
+
+/**
+ * Checks that a jurisdiction is in the same tree as the category root.
+ */
+function _markaspot_fastmap_jurisdiction_matches_category_root(int $jurisdictionId, ?int $categoryRootId): bool {
+  if ($categoryRootId === NULL || $jurisdictionId === $categoryRootId) {
+    return TRUE;
+  }
+
+  if (!\Drupal::hasService('markaspot_group.hierarchy_resolver')) {
+    return FALSE;
+  }
+
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  return $resolver->getRootJurisdictionId($jurisdictionId) === $categoryRootId;
 }
 
 /**
@@ -379,7 +665,7 @@ function markaspot_fastmap_cron(): void {
 
     $groupIds = $entityTypeManager->getStorage('group')->getQuery()
       ->accessCheck(FALSE)
-      ->condition('type', 'jur')
+      ->condition('type', _markaspot_fastmap_jurisdiction_group_type())
       ->exists('field_tier')
       ->execute();
 
@@ -460,7 +746,7 @@ function markaspot_fastmap_cron(): void {
     $reminderThreshold = $now + 86400;
     $reminderIds = $groupStorage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('type', 'jur')
+      ->condition('type', _markaspot_fastmap_jurisdiction_group_type())
       ->condition('field_expiry_date', $now, '>')
       ->condition('field_expiry_date', $reminderThreshold, '<=')
       ->execute();
@@ -498,7 +784,7 @@ function markaspot_fastmap_cron(): void {
     // Delete expired workspaces.
     $expiredIds = $groupStorage->getQuery()
       ->accessCheck(FALSE)
-      ->condition('type', 'jur')
+      ->condition('type', _markaspot_fastmap_jurisdiction_group_type())
       ->condition('field_expiry_date', $now, '<=')
       ->execute();
 
@@ -528,4 +814,20 @@ function markaspot_fastmap_cron(): void {
       ]);
     }
   }
+}
+
+/**
+ * Gets the configured jurisdiction group type.
+ */
+function _markaspot_fastmap_jurisdiction_group_type(): string {
+  return \Drupal::config('markaspot_open311.settings')
+    ->get('jurisdiction_group_type') ?: 'jur';
+}
+
+/**
+ * Checks whether a group uses the configured jurisdiction type.
+ */
+function _markaspot_fastmap_is_jurisdiction_group(mixed $group): bool {
+  return $group instanceof GroupInterface
+    && $group->bundle() === _markaspot_fastmap_jurisdiction_group_type();
 }

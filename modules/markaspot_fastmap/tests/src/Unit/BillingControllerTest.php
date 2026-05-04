@@ -6,16 +6,21 @@ namespace Drupal\Tests\markaspot_fastmap\Unit;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRoleInterface;
+use Drupal\group\GroupMembership;
 use Drupal\markaspot_fastmap\Controller\BillingController;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Tests the BillingController.
@@ -47,11 +52,46 @@ class BillingControllerTest extends UnitTestCase {
   protected LoggerInterface $logger;
 
   /**
+   * The mocked database connection.
+   *
+   * @var \Drupal\Core\Database\Connection|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected Connection $database;
+
+  /**
    * The mocked group storage.
    *
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected EntityStorageInterface $groupStorage;
+
+  /**
+   * The mocked current user.
+   *
+   * @var \Drupal\Core\Session\AccountInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected AccountInterface $currentUser;
+
+  /**
+   * Request stack used by route access tests.
+   *
+   * @var \Symfony\Component\HttpFoundation\RequestStack
+   */
+  protected RequestStack $requestStack;
+
+  /**
+   * Current user ID returned by the current user mock.
+   *
+   * @var int
+   */
+  protected int $currentUserId = 1;
+
+  /**
+   * Current user roles returned by the current user mock.
+   *
+   * @var string[]
+   */
+  protected array $currentUserRoles = ['authenticated', 'administrator'];
 
   /**
    * The controller under test.
@@ -90,12 +130,35 @@ class BillingControllerTest extends UnitTestCase {
       });
 
     $this->logger = $this->createMock(LoggerInterface::class);
+    $this->database = $this->createMock(Connection::class);
+    $transaction = new class() {
+
+      /**
+       * Records rollback requests in tests.
+       */
+      public function rollBack(): void {
+      }
+
+    };
+    $this->database->method('startTransaction')->willReturn($transaction);
+    $this->currentUser = $this->createMock(AccountInterface::class);
+    $this->currentUser->method('id')
+      ->willReturnCallback(fn() => $this->currentUserId);
+    $this->currentUser->method('getRoles')
+      ->willReturnCallback(fn() => $this->currentUserRoles);
+    $this->requestStack = new RequestStack();
+    $cacheContextsManager = $this->createMock(CacheContextsManager::class);
+    $cacheContextsManager->method('assertValidTokens')->willReturn(TRUE);
 
     // Set up the Drupal container.
     $container = new ContainerBuilder();
     $container->set('config.factory', $this->configFactory);
     $container->set('entity_type.manager', $this->entityTypeManager);
     $container->set('logger.channel.markaspot_fastmap', $this->logger);
+    $container->set('database', $this->database);
+    $container->set('current_user', $this->currentUser);
+    $container->set('request_stack', $this->requestStack);
+    $container->set('cache_contexts_manager', $cacheContextsManager);
     \Drupal::setContainer($container);
 
     $this->controller = BillingController::create($container);
@@ -119,7 +182,7 @@ class BillingControllerTest extends UnitTestCase {
     }
     return Request::create(
       '/api/billing/14',
-      'POST',
+      'PATCH',
       [],
       [],
       [],
@@ -141,6 +204,9 @@ class BillingControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('getCacheContexts')->willReturn([]);
+    $group->method('getCacheTags')->willReturn(['group:14']);
+    $group->method('getCacheMaxAge')->willReturn(-1);
 
     $group->method('hasField')
       ->willReturnCallback(fn(string $name) => array_key_exists($name, $fields));
@@ -188,41 +254,136 @@ class BillingControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests get() returns 403 when service key is missing.
+   * Creates a writable group mock for PATCH tests.
+   */
+  protected function createWritableGroup(?string $storedCustomer = 'cus_existing'): GroupInterface {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('hasField')->willReturn(TRUE);
+    $group->method('get')
+      ->willReturnCallback(fn(string $name) => $name === 'field_stripe_customer_id'
+        ? $this->createFieldItem($storedCustomer)
+        : $this->createFieldItem(NULL));
+
+    return $group;
+  }
+
+  /**
+   * Creates a minimal field item list stub.
+   */
+  protected function createFieldItem($value): object {
+    return new class ($value) {
+
+      /**
+       * The first field item value.
+       *
+       * @var mixed
+       */
+      public $value;
+
+      /**
+       * Constructs the field item stub.
+       */
+      public function __construct($value) {
+        $this->value = $value;
+      }
+
+      /**
+       * Returns whether the field item is empty.
+       */
+      public function isEmpty(): bool {
+        return $this->value === NULL || $this->value === '';
+      }
+
+    };
+  }
+
+  /**
+   * Creates a tenant admin account for a billing group.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The billing group.
+   *
+   * @return \Drupal\Core\Session\AccountInterface
+   *   The tenant admin account.
+   */
+  protected function createTenantAdminAccountForGroup(GroupInterface $group): AccountInterface {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(3);
+    $account->method('getRoles')->willReturn(['authenticated']);
+    $account->method('hasPermission')->willReturn(FALSE);
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jur-tenant_admin');
+
+    $membership = $this->createMock(GroupMembership::class);
+    $membership->method('getRoles')->willReturn([$role]);
+
+    $group->method('getMember')
+      ->with($account)
+      ->willReturn($membership);
+
+    return $account;
+  }
+
+  /**
+   * Tests get() allows authenticated admin access without service key.
    *
    * @covers ::get
    */
-  public function testGetReturns403WithoutServiceKey(): void {
+  public function testGetAllowsAdminWithoutServiceKey(): void {
     $request = Request::create('/api/billing/14', 'GET');
 
-    $this->groupStorage->method('load')->willReturn(NULL);
+    $group = $this->createMockGroup([]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
 
     $response = $this->controller->get('14', $request);
 
     $this->assertInstanceOf(JsonResponse::class, $response);
-    $this->assertEquals(403, $response->getStatusCode());
+    $this->assertEquals(200, $response->getStatusCode());
   }
 
   /**
-   * Tests get() returns 403 when service key is wrong.
+   * Tests service-key-only GET access is denied for anonymous users.
    *
-   * @covers ::get
+   * @covers ::access
    */
-  public function testGetReturns403WithWrongServiceKey(): void {
+  public function testAccessDeniesReadWithOnlyServiceKey(): void {
     $request = Request::create(
       '/api/billing/14',
       'GET',
       [],
       [],
       [],
-      ['HTTP_X_SERVICE_KEY' => 'wrong-key']
+      ['HTTP_X_SERVICE_KEY' => 'test-service-key-456']
     );
+    $this->requestStack->push($request);
 
-    $response = $this->controller->get('14', $request);
+    $group = $this->createMockGroup([]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
 
-    $this->assertEquals(403, $response->getStatusCode());
-    $data = json_decode($response->getContent(), TRUE);
-    $this->assertEquals('Invalid service key', $data['error']);
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(3);
+    $account->method('getRoles')->willReturn(['authenticated']);
+
+    $this->assertFalse($this->controller->access('14', $account)->isAllowed());
+  }
+
+  /**
+   * Tests tenant admins can read billing for their own jurisdiction.
+   *
+   * @covers ::access
+   */
+  public function testAccessAllowsTenantAdminReadForOwnJurisdiction(): void {
+    $request = Request::create('/api/billing/14', 'GET');
+    $this->requestStack->push($request);
+
+    $group = $this->createMockGroup([]);
+    $account = $this->createTenantAdminAccountForGroup($group);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $this->assertTrue($this->controller->access('14', $account)->isAllowed());
   }
 
   /**
@@ -342,11 +503,14 @@ class BillingControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests get() accepts service key from JSON body.
+   * Tests valid service key in JSON body does not authorize billing reads.
    *
    * @covers ::get
    */
-  public function testGetAcceptsServiceKeyFromBody(): void {
+  public function testGetDeniesValidServiceKeyFromBodyWithoutMembership(): void {
+    $this->currentUserId = 3;
+    $this->currentUserRoles = ['authenticated'];
+
     $request = $this->createJsonRequest(
       ['service_key' => 'test-service-key-456'],
     );
@@ -356,7 +520,9 @@ class BillingControllerTest extends UnitTestCase {
 
     $response = $this->controller->get('14', $request);
 
-    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertEquals(403, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('Access denied', $data['error']);
   }
 
   /**
@@ -369,6 +535,10 @@ class BillingControllerTest extends UnitTestCase {
       ['tier' => 'pro'],
       'wrong-key'
     );
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with($this->stringContains('billing.access_invalid_key'));
 
     $response = $this->controller->update('14', $request);
 
@@ -430,13 +600,11 @@ class BillingControllerTest extends UnitTestCase {
    */
   public function testUpdateReturns400ForInvalidTier(): void {
     $request = $this->createJsonRequest(
-      ['tier' => 'diamond'],
+      ['tier' => 'diamond', 'stripe_customer_id' => 'cus_existing'],
       'test-service-key-456'
     );
 
-    $group = $this->createMockGroup([
-      'field_tier' => 'free',
-    ]);
+    $group = $this->createWritableGroup();
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
     $response = $this->controller->update('14', $request);
@@ -453,11 +621,11 @@ class BillingControllerTest extends UnitTestCase {
    */
   public function testUpdateReturns400WhenNoValidFields(): void {
     $request = $this->createJsonRequest(
-      ['unknown_field' => 'value'],
+      ['unknown_field' => 'value', 'stripe_customer_id' => 'cus_existing'],
       'test-service-key-456'
     );
 
-    $group = $this->createMockGroup([]);
+    $group = $this->createWritableGroup();
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
     $response = $this->controller->update('14', $request);
@@ -465,6 +633,79 @@ class BillingControllerTest extends UnitTestCase {
     $this->assertEquals(400, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertEquals('No valid fields to update', $data['error']);
+  }
+
+  /**
+   * Tests update() requires a claimed Stripe customer.
+   *
+   * @covers ::update
+   */
+  public function testUpdateRequiresStripeCustomer(): void {
+    $request = $this->createJsonRequest(
+      ['tier' => 'pro'],
+      'test-service-key-456'
+    );
+
+    $group = $this->createWritableGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->update('14', $request);
+
+    $this->assertEquals(400, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('stripe_customer_id required for billing update', $data['error']);
+  }
+
+  /**
+   * Tests update() rejects a mismatched Stripe customer.
+   *
+   * @covers ::update
+   */
+  public function testUpdateRejectsStripeCustomerMismatch(): void {
+    $request = $this->createJsonRequest(
+      ['tier' => 'pro', 'stripe_customer_id' => 'cus_other'],
+      'test-service-key-456'
+    );
+
+    $group = $this->createWritableGroup('cus_existing');
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with($this->stringContains('billing.scope_violation'));
+
+    $response = $this->controller->update('14', $request);
+
+    $this->assertEquals(403, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('Stripe customer mismatch', $data['error']);
+  }
+
+  /**
+   * Tests update() logs matching Stripe customer claims.
+   *
+   * @covers ::update
+   */
+  public function testUpdateLogsStripeCustomerMatch(): void {
+    $request = $this->createJsonRequest(
+      ['tier' => 'pro', 'stripe_customer_id' => 'cus_existing'],
+      'test-service-key-456'
+    );
+
+    $group = $this->createWritableGroup('cus_existing');
+    $group->method('save');
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $messages = [];
+    $this->logger->method('info')
+      ->willReturnCallback(static function (string $message) use (&$messages): void {
+        $messages[] = $message;
+      });
+
+    $response = $this->controller->update('14', $request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertTrue((bool) array_filter($messages, static fn(string $message): bool => str_contains($message, 'billing.match')));
   }
 
   /**
@@ -476,20 +717,14 @@ class BillingControllerTest extends UnitTestCase {
     $request = $this->createJsonRequest(
       [
         'tier' => 'pro',
-        'stripe_customer_id' => 'cus_new',
+        'stripe_customer_id' => 'cus_existing',
         'billing_name' => 'Updated Name',
       ],
       'test-service-key-456'
     );
 
-    $group = $this->createMock(GroupInterface::class);
-    $group->method('id')->willReturn('14');
-    $group->method('bundle')->willReturn('jur');
-    $group->method('hasField')->willReturn(TRUE);
-
-    $fieldItem = $this->createMock(FieldItemListInterface::class);
-    $group->method('get')->willReturn($fieldItem);
-    $group->expects($this->atLeast(3))->method('set');
+    $group = $this->createWritableGroup();
+    $group->expects($this->atLeast(2))->method('set');
     $group->expects($this->once())->method('save');
 
     $this->groupStorage->method('load')->with(14)->willReturn($group);
@@ -499,7 +734,6 @@ class BillingControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertContains('tier', $data['updated']);
-    $this->assertContains('stripe_customer_id', $data['updated']);
     $this->assertContains('billing_name', $data['updated']);
     $this->assertEquals(14, $data['group_id']);
   }
@@ -511,17 +745,11 @@ class BillingControllerTest extends UnitTestCase {
    */
   public function testUpdateAllowsNullToClearFields(): void {
     $request = $this->createJsonRequest(
-      ['expiry_date' => NULL],
+      ['expiry_date' => NULL, 'stripe_customer_id' => 'cus_existing'],
       'test-service-key-456'
     );
 
-    $group = $this->createMock(GroupInterface::class);
-    $group->method('id')->willReturn('14');
-    $group->method('bundle')->willReturn('jur');
-    $group->method('hasField')->willReturn(TRUE);
-
-    $fieldItem = $this->createMock(FieldItemListInterface::class);
-    $group->method('get')->willReturn($fieldItem);
+    $group = $this->createWritableGroup();
     $group->expects($this->once())
       ->method('set')
       ->with('field_expiry_date', NULL);
@@ -543,17 +771,11 @@ class BillingControllerTest extends UnitTestCase {
    */
   public function testUpdateReturns500WhenSaveFails(): void {
     $request = $this->createJsonRequest(
-      ['tier' => 'starter'],
+      ['tier' => 'starter', 'stripe_customer_id' => 'cus_existing'],
       'test-service-key-456'
     );
 
-    $group = $this->createMock(GroupInterface::class);
-    $group->method('id')->willReturn('14');
-    $group->method('bundle')->willReturn('jur');
-    $group->method('hasField')->willReturn(TRUE);
-
-    $fieldItem = $this->createMock(FieldItemListInterface::class);
-    $group->method('get')->willReturn($fieldItem);
+    $group = $this->createWritableGroup();
     $group->method('save')->willThrowException(new \Exception('DB error'));
 
     $this->groupStorage->method('load')->with(14)->willReturn($group);
@@ -580,17 +802,11 @@ class BillingControllerTest extends UnitTestCase {
   public function testUpdateTruncatesLongValues(): void {
     $longCountry = 'DEU';
     $request = $this->createJsonRequest(
-      ['billing_country' => $longCountry],
+      ['billing_country' => $longCountry, 'stripe_customer_id' => 'cus_existing'],
       'test-service-key-456'
     );
 
-    $group = $this->createMock(GroupInterface::class);
-    $group->method('id')->willReturn('14');
-    $group->method('bundle')->willReturn('jur');
-    $group->method('hasField')->willReturn(TRUE);
-
-    $fieldItem = $this->createMock(FieldItemListInterface::class);
-    $group->method('get')->willReturn($fieldItem);
+    $group = $this->createWritableGroup();
 
     // billing_country max length is 2 characters.
     $group->expects($this->once())
@@ -612,17 +828,11 @@ class BillingControllerTest extends UnitTestCase {
    */
   public function testUpdateStoresExpiryDateAsInteger(): void {
     $request = $this->createJsonRequest(
-      ['expiry_date' => '1700000000'],
+      ['expiry_date' => '1700000000', 'stripe_customer_id' => 'cus_existing'],
       'test-service-key-456'
     );
 
-    $group = $this->createMock(GroupInterface::class);
-    $group->method('id')->willReturn('14');
-    $group->method('bundle')->willReturn('jur');
-    $group->method('hasField')->willReturn(TRUE);
-
-    $fieldItem = $this->createMock(FieldItemListInterface::class);
-    $group->method('get')->willReturn($fieldItem);
+    $group = $this->createWritableGroup();
 
     $group->expects($this->once())
       ->method('set')
@@ -645,17 +855,11 @@ class BillingControllerTest extends UnitTestCase {
    */
   public function testUpdateAcceptsValidTiers(string $tier): void {
     $request = $this->createJsonRequest(
-      ['tier' => $tier],
+      ['tier' => $tier, 'stripe_customer_id' => 'cus_existing'],
       'test-service-key-456'
     );
 
-    $group = $this->createMock(GroupInterface::class);
-    $group->method('id')->willReturn('14');
-    $group->method('bundle')->willReturn('jur');
-    $group->method('hasField')->willReturn(TRUE);
-
-    $fieldItem = $this->createMock(FieldItemListInterface::class);
-    $group->method('get')->willReturn($fieldItem);
+    $group = $this->createWritableGroup();
     $group->method('save');
 
     $this->groupStorage->method('load')->with(14)->willReturn($group);

@@ -82,6 +82,13 @@ class TierConfigServiceTest extends UnitTestCase {
   protected ?array $memberLimits = NULL;
 
   /**
+   * The assignable role config used in tests.
+   *
+   * @var array|null
+   */
+  protected ?array $assignableRoles = NULL;
+
+  /**
    * The AI budgets config used in tests.
    *
    * @var array|null
@@ -101,6 +108,7 @@ class TierConfigServiceTest extends UnitTestCase {
       'heart' => ['limit' => NULL, 'period' => 'published'],
     ];
     $this->memberLimits = NULL;
+    $this->assignableRoles = NULL;
     $this->aiBudgets = NULL;
 
     $config = $this->createMock(ImmutableConfig::class);
@@ -108,6 +116,7 @@ class TierConfigServiceTest extends UnitTestCase {
       ->willReturnCallback(fn(string $key) => match ($key) {
         'tier_limits' => $this->tierLimits,
         'member_limits' => $this->memberLimits,
+        'assignable_roles' => $this->assignableRoles,
         'ai_budgets' => $this->aiBudgets,
         default => $this->resolveDottedKey($key),
       });
@@ -329,6 +338,54 @@ class TierConfigServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests getTierLimitConfigIssues() returns no issues for valid config.
+   *
+   * @covers ::getTierLimitConfigIssues
+   * @covers ::validateTierLimitConfig
+   * @covers ::isValidLimitValue
+   */
+  public function testGetTierLimitConfigIssuesReturnsEmptyForValidConfig(): void {
+    $this->assertSame([], $this->service->getTierLimitConfigIssues());
+  }
+
+  /**
+   * Tests getTierLimitConfigIssues() reports missing config.
+   *
+   * @covers ::getTierLimitConfigIssues
+   */
+  public function testGetTierLimitConfigIssuesReportsMissingConfig(): void {
+    $this->tierLimits = NULL;
+
+    $this->assertSame([
+      'tier_limits is missing or empty.',
+    ], $this->service->getTierLimitConfigIssues());
+  }
+
+  /**
+   * Tests getTierLimitConfigIssues() reports drift from field_tier values.
+   *
+   * @covers ::getTierLimitConfigIssues
+   * @covers ::validateTierLimitConfig
+   * @covers ::isValidLimitValue
+   */
+  public function testGetTierLimitConfigIssuesReportsConfigDrift(): void {
+    $this->tierLimits = [
+      'free' => ['limit' => 'invalid', 'period' => 'published'],
+      'starter' => ['period' => 'monthly'],
+      'pro' => ['limit' => 2000, 'period' => 'weekly'],
+      'enterprise' => ['limit' => 9999, 'period' => 'published'],
+    ];
+
+    $this->assertSame([
+      'tier_limits.free.limit must be a non-negative integer or null.',
+      'tier_limits.starter.limit is missing.',
+      'tier_limits.pro.period must be one of: published, monthly, total.',
+      'tier_limits.heart is missing.',
+      'tier_limits.enterprise is not a supported field_tier value.',
+    ], $this->service->getTierLimitConfigIssues());
+  }
+
+  /**
    * Tests countRequests() with 'published' period uses status=1 condition.
    *
    * @covers ::countRequests
@@ -463,6 +520,49 @@ class TierConfigServiceTest extends UnitTestCase {
    */
   public function testGetMemberLimitUnknownTier(): void {
     $this->assertNull($this->service->getMemberLimit('nonexistent'));
+  }
+
+  /**
+   * Tests getAssignableRoleIds() returns hardcoded defaults.
+   *
+   * @covers ::getAssignableRoleIds
+   * @covers ::normalizeRoleIds
+   */
+  public function testGetAssignableRoleIdsHardcodedDefaults(): void {
+    $this->assertSame(['jur-member', 'org-member'], $this->service->getAssignableRoleIds('free'));
+    $this->assertSame([
+      'jur-member',
+      'jur-moderator',
+      'org-member',
+      'org-moderator',
+      'jur-tenant_admin',
+      'org-tenant_admin',
+    ], $this->service->getAssignableRoleIds('starter'));
+  }
+
+  /**
+   * Tests getAssignableRoleIds() returns configured values.
+   *
+   * @covers ::getAssignableRoleIds
+   * @covers ::normalizeRoleIds
+   */
+  public function testGetAssignableRoleIdsFromConfig(): void {
+    $this->assignableRoles = [
+      'free' => ['jur-member', '', 'jur-member', ' org-member '],
+      'starter' => ['jur-member', 'jur-moderator'],
+    ];
+
+    $this->assertSame(['jur-member', 'org-member'], $this->service->getAssignableRoleIds('free'));
+    $this->assertSame(['jur-member', 'jur-moderator'], $this->service->getAssignableRoleIds('starter'));
+  }
+
+  /**
+   * Tests getAssignableRoleIds() falls back to free roles for unknown tiers.
+   *
+   * @covers ::getAssignableRoleIds
+   */
+  public function testGetAssignableRoleIdsUnknownTierFallsBackToFree(): void {
+    $this->assertSame(['jur-member', 'org-member'], $this->service->getAssignableRoleIds('nonexistent'));
   }
 
   /**

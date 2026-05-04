@@ -15,6 +15,10 @@ declare(strict_types=1);
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityPublishedInterface;
+use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\Group;
@@ -53,7 +57,7 @@ function markaspot_tenant_admin_group_relationship_delete(GroupRelationshipInter
 }
 
 /**
- * Syncs the jur-admin group role to the tenant_admin Drupal role.
+ * Syncs the jurisdiction tenant-admin group role to the Drupal role.
  *
  * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
  *   The group relationship entity.
@@ -61,11 +65,13 @@ function markaspot_tenant_admin_group_relationship_delete(GroupRelationshipInter
  *   One of 'insert', 'update', or 'delete'.
  */
 function _markaspot_tenant_admin_sync_role(GroupRelationshipInterface $relationship, string $operation): void {
-  // Only process membership relationships in jur groups.
+  // Only process membership relationships in jurisdiction groups.
   if ($relationship->getPluginId() !== 'group_membership') {
     return;
   }
-  if ($relationship->getGroup()->bundle() !== 'jur') {
+  $jur_type = \Drupal::config('markaspot_open311.settings')
+    ->get('jurisdiction_group_type') ?? 'jur';
+  if ($relationship->getGroup()->bundle() !== $jur_type) {
     return;
   }
 
@@ -80,16 +86,19 @@ function _markaspot_tenant_admin_sync_role(GroupRelationshipInterface $relations
     return;
   }
 
-  // Check if this membership has the jur-tenant_admin role.
+  // Check if this membership has the configured tenant-admin role.
   $group_roles = array_column(
     $relationship->get('group_roles')->getValue(),
     'target_id'
   );
-  $has_jur_admin = in_array(TenantAdminHelper::GROUP_ROLE_ID, $group_roles, TRUE);
+  $has_jur_admin = (bool) array_intersect(
+    TenantAdminHelper::getTenantAdminRoleIds(),
+    $group_roles
+  );
 
   if ($operation === 'delete' || ($operation === 'update' && !$has_jur_admin)) {
-    // Membership removed or jur-admin role removed from membership.
-    // Check if user still has jur-admin in any other jur group.
+    // Membership removed or tenant-admin role removed from membership.
+    // Check if user still has tenant-admin in any other jurisdiction group.
     $exclude_id = ($operation === 'delete') ? (int) $relationship->id() : NULL;
     $still_has_admin = TenantAdminHelper::userHasJurAdminInAnyGroup($user, $exclude_id);
 
@@ -97,7 +106,7 @@ function _markaspot_tenant_admin_sync_role(GroupRelationshipInterface $relations
       $user->removeRole('tenant_admin');
       $user->save();
       \Drupal::logger('markaspot_tenant_admin')->notice(
-        'Removed tenant_admin role from user @name (no remaining jur-tenant_admin memberships).',
+        'Removed tenant_admin role from user @name (no remaining jurisdiction tenant-admin memberships).',
         ['@name' => $user->getAccountName()]
       );
     }
@@ -106,7 +115,7 @@ function _markaspot_tenant_admin_sync_role(GroupRelationshipInterface $relations
     $user->addRole('tenant_admin');
     $user->save();
     \Drupal::logger('markaspot_tenant_admin')->notice(
-      'Granted tenant_admin role to user @name (jur-tenant_admin in @group).',
+      'Granted tenant_admin role to user @name (jurisdiction tenant-admin in @group).',
       [
         '@name' => $user->getAccountName(),
         '@group' => $relationship->getGroup()->label(),
@@ -334,7 +343,7 @@ function _markaspot_tenant_admin_validate_jurisdiction(array &$form, FormStateIn
  * 'administer node published status' is not granted globally (which would
  * be a cross-tenant security risk).
  */
-function markaspot_tenant_admin_entity_field_access(string $operation, \Drupal\Core\Field\FieldDefinitionInterface $field_definition, AccountInterface $account, ?\Drupal\Core\Field\FieldItemListInterface $items = NULL): AccessResult {
+function markaspot_tenant_admin_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
   // Only handle edit operations on the status field.
   if ($operation !== 'edit' || $field_definition->getName() !== 'status') {
     return AccessResult::neutral();
@@ -356,7 +365,7 @@ function markaspot_tenant_admin_entity_field_access(string $operation, \Drupal\C
   if ($items === NULL || $items->getEntity()->isNew()) {
     return AccessResult::allowedIf($account->hasPermission('create page content'))
       ->cachePerPermissions()
-      ->addCacheContexts(['user.group_memberships']);
+      ->addCacheContexts(['user.group_permissions']);
   }
 
   // For existing nodes (PATCH), check jurisdiction membership.
@@ -372,21 +381,21 @@ function markaspot_tenant_admin_entity_field_access(string $operation, \Drupal\C
       return AccessResult::allowed()
         ->addCacheableDependency($check_node)
         ->cachePerPermissions()
-        ->addCacheContexts(['user.group_memberships']);
+        ->addCacheContexts(['user.group_permissions']);
     }
 
     // Node belongs to a different jurisdiction: deny explicitly.
     return AccessResult::forbidden('Node belongs to a different jurisdiction.')
       ->addCacheableDependency($check_node)
       ->cachePerPermissions()
-      ->addCacheContexts(['user.group_memberships']);
+      ->addCacheContexts(['user.group_permissions']);
   }
 
   // Node has no jurisdiction: deny. Unassigned pages are shared/system
   // content; only site admins may change their published status.
   return AccessResult::forbidden('Page has no jurisdiction; only site admins may change status.')
     ->cachePerPermissions()
-    ->addCacheContexts(['user.group_memberships']);
+    ->addCacheContexts(['user.group_permissions']);
 }
 
 /**
@@ -399,13 +408,26 @@ function markaspot_tenant_admin_entity_field_access(string $operation, \Drupal\C
  * link from appearing.
  */
 function markaspot_tenant_admin_taxonomy_term_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
-  // Only handle the 'view' operation for managed vocabularies.
-  if ($operation !== 'view') {
+  $managed_vocabs = ['service_category', 'service_status'];
+  if (!in_array($entity->bundle(), $managed_vocabs, TRUE)) {
     return AccessResult::neutral();
   }
 
-  $managed_vocabs = ['service_category', 'service_status'];
-  if (!in_array($entity->bundle(), $managed_vocabs, TRUE)) {
+  if (in_array($operation, ['create', 'update', 'delete'], TRUE)) {
+    $scope_access = _markaspot_tenant_admin_taxonomy_write_scope_access($entity, $account);
+    if ($scope_access->isForbidden()) {
+      return $scope_access;
+    }
+
+    if ($operation === 'delete' && $entity->bundle() === 'service_status') {
+      return $scope_access->andIf(_markaspot_tenant_admin_service_status_delete_access($entity));
+    }
+
+    return $scope_access;
+  }
+
+  // Only handle the 'view' operation for managed vocabularies.
+  if ($operation !== 'view') {
     return AccessResult::neutral();
   }
 
@@ -429,9 +451,384 @@ function markaspot_tenant_admin_taxonomy_term_access(EntityInterface $entity, st
       return AccessResult::allowed()
         ->addCacheableDependency($entity)
         ->cachePerPermissions()
-        ->addCacheContexts(['user.roles']);
+        ->addCacheContexts(['user.roles', 'user.group_permissions']);
     }
   }
 
   return AccessResult::neutral();
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for taxonomy_term entities.
+ *
+ * Entity access protects UI and JSON:API updates. This presave hook protects
+ * programmatic writes that bypass entity access.
+ *
+ * @throws \Drupal\Core\Entity\EntityStorageException
+ *   Thrown when a tenant admin writes taxonomy outside their direct
+ *   jurisdiction ownership scope.
+ */
+function markaspot_tenant_admin_taxonomy_term_presave(EntityInterface $entity): void {
+  if (!in_array($entity->bundle(), ['service_category', 'service_status'], TRUE)) {
+    return;
+  }
+
+  $account = \Drupal::currentUser();
+  if (!$entity->isNew()) {
+    $original = $entity->getOriginal();
+    if (!$original instanceof EntityInterface && $entity->id()) {
+      try {
+        $original = \Drupal::entityTypeManager()
+          ->getStorage($entity->getEntityTypeId())
+          ->loadUnchanged($entity->id());
+      }
+      catch (\Throwable $exception) {
+        \Drupal::logger('markaspot_tenant_admin')->warning(
+          'Could not load original taxonomy term before write-scope check: @message',
+          ['@message' => $exception->getMessage()]
+        );
+        throw new EntityStorageException(
+          'Could not verify existing taxonomy ownership before save.'
+        );
+      }
+    }
+
+    if (!$original instanceof EntityInterface) {
+      throw new EntityStorageException(
+        'Could not verify existing taxonomy ownership before save.'
+      );
+    }
+
+    $original_reason = _markaspot_tenant_admin_taxonomy_write_scope_block_reason(
+      $original,
+      $account
+    );
+    if ($original_reason !== NULL) {
+      throw new EntityStorageException($original_reason);
+    }
+  }
+
+  $reason = _markaspot_tenant_admin_taxonomy_write_scope_block_reason(
+    $entity,
+    $account
+  );
+  if ($reason !== NULL) {
+    throw new EntityStorageException($reason);
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_predelete() for taxonomy_term entities.
+ *
+ * Access checks protect UI and JSON:API deletes. This predelete hook protects
+ * programmatic deletes that bypass entity access.
+ *
+ * @throws \Drupal\Core\Entity\EntityStorageException
+ *   Thrown when deleting a service_status term would break request data or
+ *   the required Open311 status mapping set.
+ */
+function markaspot_tenant_admin_taxonomy_term_predelete(EntityInterface $entity): void {
+  if (!in_array($entity->bundle(), ['service_category', 'service_status'], TRUE)) {
+    return;
+  }
+
+  $scope_reason = _markaspot_tenant_admin_taxonomy_write_scope_block_reason(
+    $entity,
+    \Drupal::currentUser()
+  );
+  if ($scope_reason !== NULL) {
+    throw new EntityStorageException($scope_reason);
+  }
+
+  if ($entity->bundle() !== 'service_status') {
+    return;
+  }
+
+  $reason = _markaspot_tenant_admin_service_status_delete_block_reason($entity);
+  if ($reason !== NULL) {
+    throw new EntityStorageException($reason);
+  }
+}
+
+/**
+ * Restricts managed taxonomy writes to direct jurisdiction ownership.
+ */
+function _markaspot_tenant_admin_taxonomy_write_scope_access(
+  EntityInterface $entity,
+  AccountInterface $account,
+): AccessResult {
+  if ($account->hasPermission('administer taxonomy')) {
+    return AccessResult::neutral()
+      ->addCacheableDependency($entity)
+      ->cachePerPermissions();
+  }
+
+  if (!_markaspot_tenant_admin_account_has_managed_taxonomy_write_permission($account)) {
+    return AccessResult::neutral()
+      ->addCacheableDependency($entity)
+      ->cachePerPermissions();
+  }
+
+  $reason = _markaspot_tenant_admin_taxonomy_write_scope_block_reason($entity, $account);
+  if ($reason !== NULL) {
+    return AccessResult::forbidden($reason)
+      ->addCacheableDependency($entity)
+      ->cachePerPermissions()
+      ->addCacheContexts(['user.group_permissions']);
+  }
+
+  return AccessResult::neutral()
+    ->addCacheableDependency($entity)
+    ->cachePerPermissions()
+    ->addCacheContexts(['user.group_permissions']);
+}
+
+/**
+ * Returns a reason when an account writes outside its taxonomy scope.
+ */
+function _markaspot_tenant_admin_taxonomy_write_scope_block_reason(
+  EntityInterface $entity,
+  AccountInterface $account,
+): ?string {
+  if ($account->hasPermission('administer taxonomy')) {
+    return NULL;
+  }
+
+  if (!_markaspot_tenant_admin_account_has_managed_taxonomy_write_permission($account)) {
+    return NULL;
+  }
+
+  if (
+    !$entity->hasField('field_jurisdiction')
+    || $entity->get('field_jurisdiction')->isEmpty()
+  ) {
+    return 'Shared taxonomy terms can only be changed by site administrators.';
+  }
+
+  $allowed_jur_ids = _markaspot_tenant_admin_get_accessible_term_jurisdiction_ids($account);
+  if ($allowed_jur_ids === []) {
+    return 'No manageable jurisdiction could be resolved for this account.';
+  }
+
+  $term_jur_id = (int) $entity->get('field_jurisdiction')->target_id;
+  if (!in_array($term_jur_id, $allowed_jur_ids, TRUE)) {
+    return 'Taxonomy term belongs to a different jurisdiction.';
+  }
+
+  return NULL;
+}
+
+/**
+ * Checks whether an account has non-admin write rights for managed taxonomy.
+ */
+function _markaspot_tenant_admin_account_has_managed_taxonomy_write_permission(
+  AccountInterface $account,
+): bool {
+  if (in_array('tenant_admin', $account->getRoles(), TRUE)) {
+    return TRUE;
+  }
+
+  foreach (['service_category', 'service_status'] as $vocabulary) {
+    foreach (['create', 'edit', 'delete'] as $operation) {
+      if ($account->hasPermission("$operation terms in $vocabulary")) {
+        return TRUE;
+      }
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Resolves direct tenant-admin jurisdictions for write ownership checks.
+ *
+ * Write scoping intentionally uses only direct jurisdiction memberships.
+ * Child admins may view inherited parent terms, but they must not change
+ * taxonomy owned by parent or sibling jurisdictions.
+ *
+ * @return int[]
+ *   Jurisdiction group IDs the account may manage for taxonomy purposes.
+ */
+function _markaspot_tenant_admin_get_accessible_term_jurisdiction_ids(AccountInterface $account): array {
+  $jur_ids = TenantAdminHelper::getUserJurisdictionIds($account);
+  if ($jur_ids === []) {
+    return [];
+  }
+
+  return array_values(array_unique(array_map('intval', $jur_ids)));
+}
+
+/**
+ * Blocks unsafe deletes for service_status taxonomy terms.
+ *
+ * Status terms are part of the Open311 contract and are referenced from
+ * service requests and status history paragraphs. Deleting a referenced term
+ * or the last term for a required Open311 mapping would leave request data in
+ * an invalid or unrecoverable state.
+ */
+function _markaspot_tenant_admin_service_status_delete_access(
+  EntityInterface $entity,
+): AccessResult {
+  $reason = _markaspot_tenant_admin_service_status_delete_block_reason($entity);
+  if ($reason !== NULL) {
+    return AccessResult::forbidden($reason)
+      ->addCacheableDependency($entity)
+      ->setCacheMaxAge(0);
+  }
+
+  return AccessResult::neutral()
+    ->addCacheableDependency($entity)
+    ->setCacheMaxAge(0);
+}
+
+/**
+ * Returns a reason when a service_status term must not be deleted.
+ */
+function _markaspot_tenant_admin_service_status_delete_block_reason(
+  EntityInterface $entity,
+): ?string {
+  $is_referenced = _markaspot_tenant_admin_status_term_is_referenced($entity);
+  if ($is_referenced === NULL) {
+    return 'Could not verify service status references; deletion is blocked.';
+  }
+  if ($is_referenced) {
+    return 'This status is used by service requests or status history and '
+      . 'cannot be deleted.';
+  }
+
+  $is_last_mapping = _markaspot_tenant_admin_status_term_is_last_required_mapping($entity);
+  if ($is_last_mapping === NULL) {
+    return 'Could not verify required Open311 status mappings; deletion is blocked.';
+  }
+  if ($is_last_mapping) {
+    return 'At least one status for each required Open311 mapping must remain.';
+  }
+
+  return NULL;
+}
+
+/**
+ * Checks whether a status term is still referenced by current or history data.
+ */
+function _markaspot_tenant_admin_status_term_is_referenced(
+  EntityInterface $entity,
+): ?bool {
+  $tid = (int) $entity->id();
+  if ($tid <= 0) {
+    return FALSE;
+  }
+
+  $node_references = _markaspot_tenant_admin_entity_reference_exists(
+    'node',
+    'type',
+    'service_request',
+    'field_status',
+    $tid
+  );
+  if ($node_references === TRUE) {
+    return TRUE;
+  }
+
+  $history_references = _markaspot_tenant_admin_entity_reference_exists(
+    'paragraph',
+    'type',
+    'status',
+    'field_status_term',
+    $tid
+  );
+  if ($history_references === TRUE) {
+    return TRUE;
+  }
+
+  if ($node_references === NULL || $history_references === NULL) {
+    return NULL;
+  }
+
+  return FALSE;
+}
+
+/**
+ * Checks whether deleting a term would remove a required Open311 mapping.
+ */
+function _markaspot_tenant_admin_status_term_is_last_required_mapping(
+  EntityInterface $entity,
+): ?bool {
+  if (
+    !$entity->hasField('field_open311_mapping')
+    || $entity->get('field_open311_mapping')->isEmpty()
+  ) {
+    return FALSE;
+  }
+
+  if ($entity instanceof EntityPublishedInterface && !$entity->isPublished()) {
+    return FALSE;
+  }
+
+  $mapping = (string) $entity->get('field_open311_mapping')->value;
+  if (!in_array($mapping, ['initial', 'open', 'closed'], TRUE)) {
+    return FALSE;
+  }
+
+  $query = \Drupal::entityQuery('taxonomy_term')
+    ->accessCheck(FALSE)
+    ->condition('vid', 'service_status')
+    ->condition('status', 1)
+    ->condition('field_open311_mapping', $mapping)
+    ->condition('tid', (int) $entity->id(), '<>')
+    ->count();
+
+  if (
+    $entity->hasField('field_jurisdiction')
+    && !$entity->get('field_jurisdiction')->isEmpty()
+  ) {
+    $query->condition(
+      'field_jurisdiction',
+      (int) $entity->get('field_jurisdiction')->target_id
+    );
+  }
+
+  try {
+    return (int) $query->execute() === 0;
+  }
+  catch (\Throwable $exception) {
+    \Drupal::logger('markaspot_tenant_admin')->warning(
+      'Could not check service status Open311 mapping before delete: @message',
+      ['@message' => $exception->getMessage()]
+    );
+    return NULL;
+  }
+}
+
+/**
+ * Checks whether an entity reference field points at a target ID.
+ */
+function _markaspot_tenant_admin_entity_reference_exists(
+  string $entity_type,
+  string $bundle_key,
+  string $bundle,
+  string $field_name,
+  int $target_id,
+): ?bool {
+  try {
+    $count = \Drupal::entityQuery($entity_type)
+      ->accessCheck(FALSE)
+      ->condition($bundle_key, $bundle)
+      ->condition($field_name, $target_id)
+      ->count()
+      ->execute();
+  }
+  catch (\Throwable $exception) {
+    \Drupal::logger('markaspot_tenant_admin')->warning(
+      'Could not check @entity_type references for @field_name before '
+      . 'service status delete: @message',
+      [
+        '@entity_type' => $entity_type,
+        '@field_name' => $field_name,
+        '@message' => $exception->getMessage(),
+      ]
+    );
+    return NULL;
+  }
+
+  return (int) $count > 0;
 }

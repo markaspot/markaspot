@@ -4,16 +4,20 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_group\Controller;
 
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Database;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\group\PermissionScopeInterface;
+use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\user\UserInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -27,6 +31,23 @@ use Symfony\Component\HttpFoundation\Request;
  * tenant administrators (users with jur-tenant_admin group role).
  */
 class GroupMembersController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
+
+  /**
+   * Lock TTL for a single user's membership batch update.
+   */
+  private const MEMBERSHIP_UPDATE_LOCK_TTL = 120.0;
+
+  /**
+   * Maximum membership changes accepted in a single PATCH request.
+   */
+  private const MAX_MEMBERSHIP_UPDATE_ITEMS = 50;
+
+  /**
+   * Lock TTL for email identity mutations.
+   */
+  private const USER_EMAIL_LOCK_TTL = 120.0;
 
   /**
    * The membership loader service.
@@ -43,6 +64,13 @@ class GroupMembersController extends ControllerBase {
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * Lock backend for per-user membership mutations.
+   *
+   * @var \Drupal\Core\Lock\LockBackendInterface
+   */
+  protected LockBackendInterface $lock;
+
+  /**
    * Constructs a GroupMembersController.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -53,17 +81,21 @@ class GroupMembersController extends ControllerBase {
    *   The jurisdiction hierarchy resolver.
    * @param \Drupal\Core\Session\AccountInterface $currentUser
    *   The current user.
+   * @param \Drupal\Core\Lock\LockBackendInterface $lock
+   *   The lock backend.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
     GroupMembershipLoaderInterface $membershipLoader,
     JurisdictionHierarchyResolverInterface $hierarchyResolver,
     AccountInterface $currentUser,
+    LockBackendInterface $lock,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->membershipLoader = $membershipLoader;
     $this->hierarchyResolver = $hierarchyResolver;
     $this->currentUser = $currentUser;
+    $this->lock = $lock;
   }
 
   /**
@@ -75,6 +107,7 @@ class GroupMembersController extends ControllerBase {
       $container->get('group.membership_loader'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('current_user'),
+      $container->get('lock'),
     );
   }
 
@@ -101,10 +134,12 @@ class GroupMembersController extends ControllerBase {
       return AccessResult::allowed()->addCacheContexts(['user.roles']);
     }
 
-    // Check if user has jur-tenant_admin role in any jur group.
-    $memberships = $this->membershipLoader->loadByUser($account, ['jur-tenant_admin']);
-    if (!empty($memberships)) {
-      return AccessResult::allowed()->addCacheContexts(['user']);
+    // Check if user has tenant-admin membership in a configured jurisdiction.
+    $memberships = $this->membershipLoader->loadByUser($account, $this->jurisdictionRoleIds('tenant_admin'));
+    foreach ($memberships as $membership) {
+      if ($this->isJurisdictionGroup($membership->getGroup())) {
+        return AccessResult::allowed()->addCacheContexts(['user']);
+      }
     }
 
     return AccessResult::forbidden('User is not an administrator or tenant admin.')
@@ -130,31 +165,30 @@ class GroupMembersController extends ControllerBase {
       $includeInactive = $request->query->has('include_inactive');
       $groups = $this->loadVisibleGroups($groupTypeFilter);
       $availableRolesByType = $this->loadAvailableRoles($groups);
-      $isDrupalAdmin = in_array('administrator', $this->currentUser()->getRoles(), TRUE);
+      $isDrupalAdmin = $this->isDrupalAdminAccount($this->currentUser());
       [$users, $totalUsers] = $this->loadUsers($page, $pageSize, $search, $groups, $isDrupalAdmin, $includeInactive);
 
       // Build group data with hierarchy metadata.
       $groupsData = [];
       foreach ($groups as $group) {
-        $groupType = $group->bundle();
+        $actualGroupType = $group->bundle();
+        $groupType = $this->isJurisdictionGroup($group) ? 'jur' : $actualGroupType;
         $entry = [
           'id' => (int) $group->id(),
           'label' => $group->label(),
           'type' => $groupType,
-          'available_roles' => $availableRolesByType[$groupType] ?? [],
+          'available_roles' => $availableRolesByType[$actualGroupType] ?? [],
           'parent_id' => NULL,
           'depth' => 0,
           'jurisdiction_id' => NULL,
         ];
 
-        if ($groupType === 'jur') {
+        if ($this->isJurisdictionGroup($group)) {
           // Read parent from field_parent_jurisdiction.
           if ($group->hasField('field_parent_jurisdiction')
               && !$group->get('field_parent_jurisdiction')->isEmpty()) {
             $entry['parent_id'] = (int) $group->get('field_parent_jurisdiction')->target_id;
           }
-          // Calculate depth by traversing parent chain.
-          $entry['depth'] = $this->calculateJurisdictionDepth($group);
         }
         elseif ($groupType === 'org') {
           // Read jurisdiction reference.
@@ -166,6 +200,11 @@ class GroupMembersController extends ControllerBase {
 
         $groupsData[] = $entry;
       }
+
+      $groupsData = $this->addJurisdictionDepths(
+        $groupsData,
+        $this->loadJurisdictionParentMap($groupsData),
+      );
 
       // Sort jur groups in tree order (depth-first).
       $groupsData = $this->sortGroupsTreeOrder($groupsData);
@@ -208,8 +247,119 @@ class GroupMembersController extends ControllerBase {
       return new JsonResponse(['error' => 'Invalid request body. Expected "memberships" object.'], 400);
     }
 
+    if (count($content['memberships']) > self::MAX_MEMBERSHIP_UPDATE_ITEMS) {
+      return new JsonResponse(['error' => 'Too many membership updates in one request.'], 413);
+    }
+
+    $preflight = $this->prepareMembershipUpdateContext($uid);
+    if ($preflight instanceof JsonResponse) {
+      return $preflight;
+    }
+
+    $lockName = $this->buildMembershipUpdateLockName($uid);
+    if (!$this->lock->acquire($lockName, self::MEMBERSHIP_UPDATE_LOCK_TTL)) {
+      return new JsonResponse(['error' => 'Membership update already in progress for this user.'], 409);
+    }
+
+    try {
+      return $this->doUpdateMemberships($content, $uid);
+    }
+    finally {
+      $this->lock->release($lockName);
+    }
+  }
+
+  /**
+   * Applies a validated membership update batch.
+   *
+   * @param array $content
+   *   Decoded PATCH body with a memberships object.
+   * @param int $uid
+   *   The user ID to update memberships for.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON response with the update result.
+   */
+  protected function doUpdateMemberships(array $content, int $uid): JsonResponse {
+    $context = $this->prepareMembershipUpdateContext($uid);
+    if ($context instanceof JsonResponse) {
+      return $context;
+    }
+
+    $currentAccount = $context['current_account'];
+    $isDrupalAdmin = $context['is_drupal_admin'];
+    $targetUser = $context['target_user'];
+    $isAllGroupsMember = $context['is_all_groups_member'];
+    $groupStorage = $context['group_storage'];
+    $adminJurIds = $context['admin_jur_ids'];
+
+    $updated = [];
+    $errors = [];
+
+    foreach ($content['memberships'] as $groupId => $update) {
+      $groupId = (int) $groupId;
+      $action = $update['action'] ?? '';
+
+      /** @var \Drupal\group\Entity\GroupInterface|null $group */
+      $group = $groupStorage->load($groupId);
+      if (!$group) {
+        $errors[] = $this->getMembershipGroupRejectedMessage($groupId);
+        continue;
+      }
+
+      // Verify requesting user has admin scope over this group.
+      if (!$isDrupalAdmin && !$this->isGroupInAdminScopeWith($group, $adminJurIds)) {
+        $errors[] = $this->getMembershipGroupRejectedMessage($groupId);
+        continue;
+      }
+
+      if ($action === 'remove') {
+        $result = $this->handleRemoveMembership($group, $targetUser, $isAllGroupsMember, $currentAccount);
+      }
+      elseif ($action === 'set') {
+        $roles = $update['roles'] ?? [];
+        $result = $this->handleSetMembership($group, $targetUser, $roles, $currentAccount, $isDrupalAdmin);
+      }
+      else {
+        $errors[] = "Invalid action '$action' for group $groupId.";
+        continue;
+      }
+
+      if ($result['success']) {
+        $updated[$groupId] = $result['data'];
+      }
+      else {
+        $errors[] = $result['error'];
+      }
+    }
+
+    $response = $this->buildMembershipUpdateResponse($updated, $errors);
+
+    $this->getLogger('markaspot_group')->notice(
+      'User @admin updated memberships for user @target: @updates',
+      [
+        '@admin' => preg_replace('/[\r\n\t]/', ' ', $currentAccount->getDisplayName()),
+        '@target' => preg_replace('/[\r\n\t]/', ' ', $targetUser->getDisplayName()),
+        '@updates' => json_encode($updated),
+      ]
+    );
+
+    return new JsonResponse($response);
+  }
+
+  /**
+   * Loads the target user and checks caller scope for a membership mutation.
+   *
+   * This is intentionally run before and after acquiring the per-user lock:
+   * before, to avoid lock contention as a UID probe, and after, to
+   * prevent stale scope checks from authorizing the mutation.
+   *
+   * @return array|\Symfony\Component\HttpFoundation\JsonResponse
+   *   Context needed by the update loop, or an error response.
+   */
+  protected function prepareMembershipUpdateContext(int $uid): array|JsonResponse {
     $currentAccount = $this->currentUser();
-    $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
+    $isDrupalAdmin = $this->isDrupalAdminAccount($currentAccount);
 
     $userStorage = $this->entityTypeManager()->getStorage('user');
     /** @var \Drupal\user\UserInterface|null $targetUser */
@@ -242,61 +392,61 @@ class GroupMembersController extends ControllerBase {
       $adminJurIds = $this->getAdminJurisdictionIds($currentAccount);
     }
 
-    $updated = [];
-    $errors = [];
+    return [
+      'current_account' => $currentAccount,
+      'is_drupal_admin' => $isDrupalAdmin,
+      'target_user' => $targetUser,
+      'is_all_groups_member' => $isAllGroupsMember,
+      'group_storage' => $groupStorage,
+      'admin_jur_ids' => $adminJurIds,
+    ];
+  }
 
-    foreach ($content['memberships'] as $groupId => $update) {
-      $groupId = (int) $groupId;
-      $action = $update['action'] ?? '';
+  /**
+   * Builds a bounded lock name for membership updates on one user account.
+   */
+  protected function buildMembershipUpdateLockName(int $uid): string {
+    return 'markaspot_group:membership_update:' . $uid;
+  }
 
-      /** @var \Drupal\group\Entity\GroupInterface|null $group */
-      $group = $groupStorage->load($groupId);
-      if (!$group) {
-        $errors[] = "Group $groupId not found.";
-        continue;
-      }
+  /**
+   * Builds the membership update response status.
+   *
+   * @param array $updated
+   *   Successful update results keyed by group ID.
+   * @param string[] $errors
+   *   Error messages for rejected update items.
+   *
+   * @return array
+   *   Response data with status ok, partial, or error.
+   */
+  protected function buildMembershipUpdateResponse(array $updated, array $errors): array {
+    $status = match (TRUE) {
+      empty($errors) => 'ok',
+      empty($updated) => 'error',
+      default => 'partial',
+    };
 
-      // Verify requesting user has admin scope over this group.
-      if (!$isDrupalAdmin && !$this->isGroupInAdminScopeWith($group, $adminJurIds)) {
-        $errors[] = "No access to group $groupId.";
-        continue;
-      }
+    $response = [
+      'status' => $status,
+      'updated' => $updated,
+    ];
 
-      if ($action === 'remove') {
-        $result = $this->handleRemoveMembership($group, $targetUser, $isAllGroupsMember, $currentAccount);
-      }
-      elseif ($action === 'set') {
-        $roles = $update['roles'] ?? [];
-        $result = $this->handleSetMembership($group, $targetUser, $roles, $currentAccount, $isDrupalAdmin);
-      }
-      else {
-        $errors[] = "Invalid action '$action' for group $groupId.";
-        continue;
-      }
-
-      if ($result['success']) {
-        $updated[$groupId] = $result['data'];
-      }
-      else {
-        $errors[] = $result['error'];
-      }
-    }
-
-    $response = ['status' => 'ok', 'updated' => $updated];
     if (!empty($errors)) {
       $response['errors'] = $errors;
     }
 
-    $this->getLogger('markaspot_group')->notice(
-      'User @admin updated memberships for user @target: @updates',
-      [
-        '@admin' => preg_replace('/[\r\n\t]/', ' ', $currentAccount->getDisplayName()),
-        '@target' => preg_replace('/[\r\n\t]/', ' ', $targetUser->getDisplayName()),
-        '@updates' => json_encode($updated),
-      ]
-    );
+    return $response;
+  }
 
-    return new JsonResponse($response);
+  /**
+   * Gets a generic group-level rejection message.
+   *
+   * Keeps missing-group and out-of-scope-group failures indistinguishable for
+   * tenant admins, so direct batch requests cannot probe group ID existence.
+   */
+  protected function getMembershipGroupRejectedMessage(int $groupId): string {
+    return "Membership update rejected for group $groupId.";
   }
 
   /**
@@ -310,7 +460,7 @@ class GroupMembersController extends ControllerBase {
    */
   public function getUserDetail(int $uid): JsonResponse {
     $currentAccount = $this->currentUser();
-    $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
+    $isDrupalAdmin = $this->isDrupalAdminAccount($currentAccount);
 
     // Non-admin callers cannot view superadmin or Drupal administrator details.
     if (!$isDrupalAdmin && ($uid === 1)) {
@@ -348,8 +498,13 @@ class GroupMembersController extends ControllerBase {
       }
       $roles = [];
       foreach ($membership->getRoles(FALSE) as $role) {
-        if ($role->getScope() === PermissionScopeInterface::INDIVIDUAL_ID) {
-          $roles[] = $role->id();
+        $roleId = $role->id();
+        if ($this->isJurisdictionGroup($group)) {
+          $roleId = $this->canonicalizeJurisdictionRoleId($roleId);
+        }
+        if ($role->getScope() === PermissionScopeInterface::INDIVIDUAL_ID
+          && !MembershipRoleNormalizer::isInternalRoleId($roleId)) {
+          $roles[] = $roleId;
         }
       }
       $memberships[(string) $groupId] = [
@@ -398,8 +553,38 @@ class GroupMembersController extends ControllerBase {
       return new JsonResponse(['error' => 'Invalid request body.'], 400);
     }
 
+    $preflight = $this->prepareProfileUpdateContext($uid);
+    if ($preflight instanceof JsonResponse) {
+      return $preflight;
+    }
+
+    $lockName = $this->buildMembershipUpdateLockName($uid);
+    if (!$this->lock->acquire($lockName, self::MEMBERSHIP_UPDATE_LOCK_TTL)) {
+      return new JsonResponse(['error' => 'Membership update already in progress for this user.'], 409);
+    }
+
+    try {
+      return $this->doUpdateUserProfile($content, $uid);
+    }
+    finally {
+      $this->lock->release($lockName);
+    }
+  }
+
+  /**
+   * Applies a validated profile update while the target user lock is held.
+   *
+   * @param array $content
+   *   Decoded PATCH body.
+   * @param int $uid
+   *   The user ID to update.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON response with the updated user data or error.
+   */
+  protected function doUpdateUserProfile(array $content, int $uid): JsonResponse {
     $currentAccount = $this->currentUser();
-    $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
+    $isDrupalAdmin = $this->isDrupalAdminAccount($currentAccount);
 
     $userStorage = $this->entityTypeManager()->getStorage('user');
     /** @var \Drupal\user\UserInterface|null $targetUser */
@@ -420,6 +605,8 @@ class GroupMembersController extends ControllerBase {
 
     $isSelf = (int) $currentAccount->id() === $uid;
     $changes = [];
+    $emailLockName = NULL;
+    $emailLockAcquired = FALSE;
 
     try {
       // Handle anonymization (irreversible, must be processed first).
@@ -427,6 +614,7 @@ class GroupMembersController extends ControllerBase {
         if ($isSelf) {
           return new JsonResponse(['error' => 'Cannot anonymize your own account.'], 400);
         }
+
         if (str_starts_with($targetUser->getAccountName(), 'anonymized_')) {
           return new JsonResponse(['error' => 'User is already anonymized.'], 409);
         }
@@ -497,6 +685,11 @@ class GroupMembersController extends ControllerBase {
           if (!\Drupal::service('email.validator')->isValid($newEmail)) {
             return new JsonResponse(['error' => 'Invalid email address format.'], 400);
           }
+          $emailLockName = $this->buildUserEmailLockName($newEmail);
+          if (!$this->lock->acquire($emailLockName, self::USER_EMAIL_LOCK_TTL)) {
+            return new JsonResponse(['error' => 'Email update already in progress.'], 409);
+          }
+          $emailLockAcquired = TRUE;
           // Check email uniqueness.
           $existing = $userStorage->getQuery()
             ->accessCheck(FALSE)
@@ -580,6 +773,53 @@ class GroupMembersController extends ControllerBase {
       );
       return new JsonResponse(['error' => 'Failed to update user profile.'], 500);
     }
+    finally {
+      if ($emailLockAcquired && $emailLockName !== NULL) {
+        $this->lock->release($emailLockName);
+      }
+    }
+  }
+
+  /**
+   * Loads the target user and checks caller scope for a profile mutation.
+   *
+   * This is run before locking to avoid lock contention as a UID probe, then
+   * repeated inside the lock before applying changes.
+   */
+  protected function prepareProfileUpdateContext(int $uid): array|JsonResponse {
+    $currentAccount = $this->currentUser();
+    $isDrupalAdmin = $this->isDrupalAdminAccount($currentAccount);
+
+    $userStorage = $this->entityTypeManager()->getStorage('user');
+    /** @var \Drupal\user\UserInterface|null $targetUser */
+    $targetUser = $userStorage->load($uid);
+    if (!$targetUser) {
+      return new JsonResponse(['error' => 'User not found.'], 404);
+    }
+
+    // Non-admin callers cannot modify Drupal administrators.
+    if (!$isDrupalAdmin && in_array('administrator', $targetUser->getRoles(), TRUE)) {
+      return new JsonResponse(['error' => 'Cannot modify administrator accounts.'], 403);
+    }
+
+    // Verify the target user is within the caller's admin scope.
+    if (!$isDrupalAdmin && !$this->isUserInAdminScope($targetUser, $currentAccount)) {
+      return new JsonResponse(['error' => 'Access denied to this user.'], 403);
+    }
+
+    return [
+      'current_account' => $currentAccount,
+      'is_drupal_admin' => $isDrupalAdmin,
+      'target_user' => $targetUser,
+      'user_storage' => $userStorage,
+    ];
+  }
+
+  /**
+   * Builds a bounded lock name for a user email identity value.
+   */
+  protected function buildUserEmailLockName(string $email): string {
+    return 'markaspot_group:user_email:' . hash('sha256', mb_strtolower(trim($email)));
   }
 
   /**
@@ -617,11 +857,15 @@ class GroupMembersController extends ControllerBase {
   protected function loadVisibleGroups(string $groupTypeFilter): array {
     $groupStorage = $this->entityTypeManager()->getStorage('group');
     $currentAccount = $this->currentUser();
-    $isDrupalAdmin = in_array('administrator', $currentAccount->getRoles(), TRUE);
+    $isDrupalAdmin = $this->isDrupalAdminAccount($currentAccount);
 
-    $allowedTypes = ['jur', 'org'];
-    if ($groupTypeFilter && in_array($groupTypeFilter, $allowedTypes, TRUE)) {
-      $allowedTypes = [$groupTypeFilter];
+    $jurisdictionType = $this->getJurisdictionGroupType();
+    $allowedTypes = [$jurisdictionType, 'org'];
+    if ($groupTypeFilter === 'jur' || $groupTypeFilter === $jurisdictionType) {
+      $allowedTypes = [$jurisdictionType];
+    }
+    elseif ($groupTypeFilter === 'org') {
+      $allowedTypes = ['org'];
     }
 
     if ($isDrupalAdmin) {
@@ -635,7 +879,7 @@ class GroupMembersController extends ControllerBase {
     }
 
     // Tenant admin: scope to their jurisdiction hierarchy.
-    $tenantMemberships = $this->membershipLoader->loadByUser($currentAccount, ['jur-tenant_admin']);
+    $tenantMemberships = $this->membershipLoader->loadByUser($currentAccount, $this->jurisdictionRoleIds('tenant_admin'));
     if (empty($tenantMemberships)) {
       return [];
     }
@@ -652,10 +896,10 @@ class GroupMembersController extends ControllerBase {
     $groups = [];
 
     // Load jur groups if type filter allows.
-    if (in_array('jur', $allowedTypes, TRUE) && !empty($visibleGroupIds)) {
+    if (in_array($jurisdictionType, $allowedTypes, TRUE) && !empty($visibleGroupIds)) {
       $jurGroups = $groupStorage->loadMultiple($visibleGroupIds);
       foreach ($jurGroups as $group) {
-        if ($group->bundle() === 'jur') {
+        if ($this->isJurisdictionGroup($group)) {
           $groups[] = $group;
         }
       }
@@ -709,8 +953,14 @@ class GroupMembersController extends ControllerBase {
         /** @var \Drupal\group\Entity\GroupRoleInterface[] $roleEntities */
         $roleEntities = $roleStorage->loadMultiple($roleIds);
         foreach ($roleEntities as $role) {
+          if (MembershipRoleNormalizer::isInternalRoleId($role->id())) {
+            continue;
+          }
+          $roleId = $groupType === $this->getJurisdictionGroupType()
+            ? $this->canonicalizeJurisdictionRoleId($role->id())
+            : $role->id();
           $roles[] = [
-            'id' => $role->id(),
+            'id' => $roleId,
             'label' => $role->label(),
           ];
         }
@@ -745,6 +995,10 @@ class GroupMembersController extends ControllerBase {
    *   Tuple of [users array, total count].
    */
   protected function loadUsers(int $page, int $pageSize, string $search, array $groups, bool $isDrupalAdmin = FALSE, bool $includeInactive = FALSE): array {
+    if (!$isDrupalAdmin && empty($groups)) {
+      return [[], 0];
+    }
+
     $userStorage = $this->entityTypeManager()->getStorage('user');
 
     // Build user query.
@@ -791,11 +1045,11 @@ class GroupMembersController extends ControllerBase {
     // jurisdiction scope.
     if (!$isDrupalAdmin && !empty($groups)) {
       $groupIds = array_map(fn($g) => (int) $g->id(), $groups);
-      $connection = Database::getConnection();
+      $connection = $this->getDatabaseConnection();
       $memberUids = $connection->select('group_relationship_field_data', 'gr')
         ->fields('gr', ['entity_id'])
         ->condition('gid', $groupIds, 'IN')
-        ->condition('type', ['jur-group_membership', 'org-group_membership'], 'IN')
+        ->condition('type', $this->membershipRelationshipTypes(), 'IN')
         ->distinct()
         ->execute()
         ->fetchCol();
@@ -827,6 +1081,8 @@ class GroupMembersController extends ControllerBase {
       $groupIds[(int) $group->id()] = $group;
     }
 
+    $membershipsByUser = $this->loadUserMembershipsBatch($userEntities, $groupIds);
+
     $users = [];
     foreach ($userEntities as $user) {
       $isAllGroupsMember = $user->hasField('field_all_groups_member')
@@ -846,13 +1102,21 @@ class GroupMembersController extends ControllerBase {
         'status' => (int) $user->isActive(),
         'created' => (int) $user->getCreatedTime(),
         'drupal_roles' => $exposedRoles,
-        'memberships' => $this->loadUserMemberships($user, $groupIds),
+        'memberships' => $membershipsByUser[(int) $user->id()] ?? [],
         'all_groups_member' => $isAllGroupsMember,
       ];
       $users[] = $userData;
     }
 
     return [$users, $totalUsers];
+  }
+
+  /**
+   * Checks whether an account has Drupal administrator privileges.
+   */
+  protected function isDrupalAdminAccount(AccountInterface $account): bool {
+    return (int) $account->id() === 1
+      || in_array('administrator', $account->getRoles(), TRUE);
   }
 
   /**
@@ -878,9 +1142,15 @@ class GroupMembersController extends ControllerBase {
 
       // Only include individual-scope roles.
       $roles = [];
+      $group = $membership->getGroup();
       foreach ($membership->getRoles(FALSE) as $role) {
-        if ($role->getScope() === PermissionScopeInterface::INDIVIDUAL_ID) {
-          $roles[] = $role->id();
+        $roleId = $role->id();
+        if ($this->isJurisdictionGroup($group)) {
+          $roleId = $this->canonicalizeJurisdictionRoleId($roleId);
+        }
+        if ($role->getScope() === PermissionScopeInterface::INDIVIDUAL_ID
+          && !MembershipRoleNormalizer::isInternalRoleId($roleId)) {
+          $roles[] = $roleId;
         }
       }
 
@@ -888,6 +1158,113 @@ class GroupMembersController extends ControllerBase {
     }
 
     return $result;
+  }
+
+  /**
+   * Loads visible memberships for many users without per-user loadByUser().
+   *
+   * @param \Drupal\user\UserInterface[] $users
+   *   User entities keyed by any value.
+   * @param array $groupIds
+   *   Associative array of group ID => group entity for visible groups.
+   *
+   * @return array
+   *   Memberships keyed by user ID, then group ID.
+   */
+  protected function loadUserMembershipsBatch(array $users, array $groupIds): array {
+    if (empty($users) || empty($groupIds)) {
+      return [];
+    }
+
+    $uids = [];
+    foreach ($users as $user) {
+      $uids[] = (int) $user->id();
+    }
+    $uids = array_values(array_unique(array_filter($uids)));
+    if (empty($uids)) {
+      return [];
+    }
+
+    $query = $this->getDatabaseConnection()->select('group_relationship_field_data', 'gr');
+    $query->fields('gr', ['id', 'gid', 'entity_id']);
+    $query->leftJoin(
+      'group_relationship__group_roles',
+      'gr_roles',
+      'gr_roles.entity_id = gr.id AND gr_roles.deleted = 0 AND gr_roles.langcode = gr.langcode'
+    );
+    $query->addField('gr_roles', 'group_roles_target_id', 'role_id');
+    $query->condition('gr.entity_id', $uids, 'IN')
+      ->condition('gr.gid', array_keys($groupIds), 'IN')
+      ->condition('gr.type', $this->membershipRelationshipTypes(), 'IN');
+
+    $rows = $query->execute()->fetchAll();
+    if (empty($rows)) {
+      return [];
+    }
+
+    $memberships = [];
+    $roleIds = [];
+    foreach ($rows as $row) {
+      $uid = (int) $row->entity_id;
+      $groupId = (int) $row->gid;
+      if (!isset($groupIds[$groupId])) {
+        continue;
+      }
+
+      $groupKey = (string) $groupId;
+      $memberships[$uid][$groupKey] ??= ['roles' => []];
+
+      if (!empty($row->role_id)) {
+        $roleId = (string) $row->role_id;
+        $memberships[$uid][$groupKey]['roles'][] = $roleId;
+        $roleIds[$roleId] = $roleId;
+      }
+    }
+
+    if (empty($roleIds)) {
+      return $memberships;
+    }
+
+    $individualRoleIds = [];
+    $roleStorage = $this->entityTypeManager()->getStorage('group_role');
+    foreach ($roleStorage->loadMultiple($roleIds) as $role) {
+      if ($role->getScope() === PermissionScopeInterface::INDIVIDUAL_ID
+        && !MembershipRoleNormalizer::isInternalRoleId($role->id())) {
+        $individualRoleIds[$role->id()] = $this->canonicalizeJurisdictionRoleId($role->id());
+      }
+    }
+
+    foreach ($memberships as &$groups) {
+      foreach ($groups as &$membership) {
+        $membership['roles'] = array_values(array_unique(array_filter(array_map(
+          fn(string $roleId): ?string => $individualRoleIds[$roleId] ?? NULL,
+          $membership['roles']
+        ))));
+      }
+    }
+    unset($membership, $groups);
+
+    return $memberships;
+  }
+
+  /**
+   * Returns the active database connection.
+   */
+  protected function getDatabaseConnection(): Connection {
+    return Database::getConnection();
+  }
+
+  /**
+   * Returns membership relationship bundles exposed by the matrix APIs.
+   *
+   * @return string[]
+   *   Group relationship bundle IDs.
+   */
+  protected function membershipRelationshipTypes(): array {
+    return array_values(array_unique([
+      $this->getJurisdictionGroupType() . '-group_membership',
+      'org-group_membership',
+    ]));
   }
 
   /**
@@ -917,6 +1294,14 @@ class GroupMembersController extends ControllerBase {
       return [
         'success' => FALSE,
         'error' => "Cannot remove user from group $groupId: user has all-groups-member flag set.",
+      ];
+    }
+
+    if ($this->isJurisdictionGroup($group)
+      && \_markaspot_group_user_has_org_membership_for_jurisdiction($targetUser, $groupId)) {
+      return [
+        'success' => FALSE,
+        'error' => "Cannot remove user from jurisdiction group $groupId while organisation membership still implies this jurisdiction.",
       ];
     }
 
@@ -954,6 +1339,8 @@ class GroupMembersController extends ControllerBase {
    *   Array of group role IDs to set.
    * @param \Drupal\Core\Session\AccountInterface $currentAccount
    *   The requesting user account.
+   * @param bool $isDrupalAdmin
+   *   Whether the requesting user has Drupal administrator privileges.
    *
    * @return array
    *   Result array with 'success' bool and 'data' or 'error'.
@@ -968,6 +1355,25 @@ class GroupMembersController extends ControllerBase {
     $groupId = (int) $group->id();
     $groupType = $group->bundle();
 
+    foreach ($roleIds as $roleId) {
+      if (!is_string($roleId) || $roleId === '') {
+        return [
+          'success' => FALSE,
+          'error' => 'Invalid role ID.',
+        ];
+      }
+      if (MembershipRoleNormalizer::isInternalRoleId($roleId)) {
+        return [
+          'success' => FALSE,
+          'error' => "Role '$roleId' is managed internally.",
+        ];
+      }
+    }
+
+    if ($this->isJurisdictionGroup($group)) {
+      $roleIds = $this->storageJurisdictionRoleIds($roleIds);
+    }
+
     // Prevent tenant_admin from assigning tenant_admin role.
     if (!$isDrupalAdmin) {
       foreach ($roleIds as $roleId) {
@@ -979,6 +1385,7 @@ class GroupMembersController extends ControllerBase {
         }
       }
     }
+    $roleIds = MembershipRoleNormalizer::normalize($roleIds, $groupType);
 
     // Validate that all roles are individual-scope roles for this group type.
     $roleStorage = $this->entityTypeManager()->getStorage('group_role');
@@ -1036,46 +1443,156 @@ class GroupMembersController extends ControllerBase {
     else {
       // Update existing membership roles.
       $relationship = $existingMember->getGroupRelationship();
+      $existingRoleIds = array_column($relationship->get('group_roles')->getValue(), 'target_id');
+      foreach ($existingRoleIds as $existingRoleId) {
+        if (is_string($existingRoleId) && MembershipRoleNormalizer::isInternalRoleId($existingRoleId)) {
+          $roleIds[] = $existingRoleId;
+        }
+      }
+      $roleIds = array_values(array_unique($roleIds));
       $relationship->set('group_roles', $roleIds);
       $relationship->save();
     }
 
+    $responseRoleIds = array_values(array_filter(
+      array_map(
+        fn(string $roleId): string => $this->isJurisdictionGroup($group)
+          ? $this->canonicalizeJurisdictionRoleId($roleId)
+          : $roleId,
+        $roleIds
+      ),
+      static fn(string $roleId): bool => !MembershipRoleNormalizer::isInternalRoleId($roleId)
+    ));
+
     return [
       'success' => TRUE,
-      'data' => ['action' => 'set', 'group_id' => $groupId, 'roles' => $roleIds],
+      'data' => ['action' => 'set', 'group_id' => $groupId, 'roles' => $responseRoleIds],
     ];
   }
 
   /**
-   * Calculates the depth of a jurisdiction in its hierarchy.
+   * Adds jurisdiction depth values without loading parent entities per group.
    *
-   * @param \Drupal\group\Entity\GroupInterface $group
-   *   The jurisdiction group entity.
+   * @param array $groupsData
+   *   Flat array of group data entries.
+   * @param array<int, int|null> $parentById
+   *   Jurisdiction parent IDs keyed by jurisdiction ID.
+   *
+   * @return array
+   *   Group data with map-computed jurisdiction depth values.
+   */
+  protected function addJurisdictionDepths(array $groupsData, array $parentById): array {
+    $depthCache = [];
+    foreach ($groupsData as &$entry) {
+      if ($entry['type'] === 'jur') {
+        $entry['depth'] = $this->calculateJurisdictionDepth((int) $entry['id'], $parentById, $depthCache);
+      }
+    }
+    unset($entry);
+
+    return $groupsData;
+  }
+
+  /**
+   * Loads jurisdiction parent references in one query for depth calculation.
+   *
+   * @param array $groupsData
+   *   Flat array of group data entries.
+   *
+   * @return array<int, int|null>
+   *   Jurisdiction parent IDs keyed by jurisdiction ID.
+   */
+  protected function loadJurisdictionParentMap(array $groupsData): array {
+    $parentById = [];
+    foreach ($groupsData as $entry) {
+      if ($entry['type'] === 'jur') {
+        $parentById[(int) $entry['id']] = $entry['parent_id'] === NULL
+          ? NULL
+          : (int) $entry['parent_id'];
+      }
+    }
+
+    if (empty($parentById)) {
+      return [];
+    }
+
+    $query = $this->getDatabaseConnection()->select('groups_field_data', 'g');
+    $query->leftJoin(
+      'group__field_parent_jurisdiction',
+      'p',
+      'p.entity_id = g.id AND p.deleted = 0'
+    );
+    $query->fields('g', ['id']);
+    $query->addField('p', 'field_parent_jurisdiction_target_id', 'parent_id');
+    $query->condition('g.type', $this->getJurisdictionGroupType());
+
+    foreach ($query->execute() as $row) {
+      $parentById[(int) $row->id] = $row->parent_id === NULL
+        ? NULL
+        : (int) $row->parent_id;
+    }
+
+    return $parentById;
+  }
+
+  /**
+   * Calculates a jurisdiction depth from a precomputed parent map.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param array<int, int|null> $parentById
+   *   Jurisdiction parent IDs keyed by jurisdiction ID.
+   * @param array<int, int> $depthCache
+   *   Memoized depth values keyed by jurisdiction ID.
    *
    * @return int
    *   Depth level: 0 for root, 1 for child, 2 for grandchild, etc.
    */
-  protected function calculateJurisdictionDepth(GroupInterface $group): int {
-    $depth = 0;
-    $visited = [(int) $group->id()];
-    $current = $group;
-
-    while ($current->hasField('field_parent_jurisdiction')
-           && !$current->get('field_parent_jurisdiction')->isEmpty()) {
-      $parentId = (int) $current->get('field_parent_jurisdiction')->target_id;
-      if (in_array($parentId, $visited, TRUE)) {
-        break;
-      }
-      $visited[] = $parentId;
-      $depth++;
-      $parent = $this->entityTypeManager()->getStorage('group')->load($parentId);
-      if (!$parent || $parent->bundle() !== 'jur') {
-        break;
-      }
-      $current = $parent;
+  protected function calculateJurisdictionDepth(int $groupId, array $parentById, array &$depthCache): int {
+    if (isset($depthCache[$groupId])) {
+      return $depthCache[$groupId];
     }
 
-    return $depth;
+    $path = [];
+    $currentId = $groupId;
+    $baseDepth = 0;
+    $attachToCachedParent = FALSE;
+
+    while (TRUE) {
+      if (isset($depthCache[$currentId])) {
+        $baseDepth = $depthCache[$currentId];
+        $attachToCachedParent = TRUE;
+        break;
+      }
+
+      if (isset($path[$currentId])) {
+        foreach (array_keys($path) as $pathId) {
+          $depthCache[$pathId] = 0;
+        }
+        return $depthCache[$groupId] ?? 0;
+      }
+
+      $path[$currentId] = TRUE;
+      $parentId = $parentById[$currentId] ?? NULL;
+      if ($parentId === NULL) {
+        break;
+      }
+
+      if (!array_key_exists($parentId, $parentById)) {
+        $path[$parentId] = TRUE;
+        break;
+      }
+
+      $currentId = $parentId;
+    }
+
+    $depth = $baseDepth + ($attachToCachedParent ? 1 : 0);
+    foreach (array_reverse(array_keys($path)) as $pathId) {
+      $depthCache[$pathId] = $depth;
+      $depth++;
+    }
+
+    return $depthCache[$groupId] ?? 0;
   }
 
   /**
@@ -1150,14 +1667,18 @@ class GroupMembersController extends ControllerBase {
    *   Array of jurisdiction group IDs (including descendants).
    */
   protected function getAdminJurisdictionIds(AccountInterface $account): array {
-    $tenantMemberships = $this->membershipLoader->loadByUser($account, ['jur-tenant_admin']);
+    $tenantMemberships = $this->membershipLoader->loadByUser($account, $this->jurisdictionRoleIds('tenant_admin'));
     if (empty($tenantMemberships)) {
       return [];
     }
 
     $adminJurIds = [];
     foreach ($tenantMemberships as $membership) {
-      $jurId = (int) $membership->getGroup()->id();
+      $group = $membership->getGroup();
+      if (!$this->isJurisdictionGroup($group)) {
+        continue;
+      }
+      $jurId = (int) $group->id();
       $adminJurIds[] = $jurId;
       $adminJurIds = array_merge($adminJurIds, $this->hierarchyResolver->getDescendantIds($jurId));
     }
@@ -1181,7 +1702,7 @@ class GroupMembersController extends ControllerBase {
     }
 
     // Jur group: must be in the administered set.
-    if ($group->bundle() === 'jur') {
+    if ($this->isJurisdictionGroup($group)) {
       return in_array((int) $group->id(), $adminJurIds, TRUE);
     }
 
