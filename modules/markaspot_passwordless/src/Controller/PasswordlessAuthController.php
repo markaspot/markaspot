@@ -4,12 +4,16 @@ namespace Drupal\markaspot_passwordless\Controller;
 
 use Symfony\Component\HttpFoundation\Cookie;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
+use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_passwordless\Service\OtpService;
@@ -91,6 +95,8 @@ class PasswordlessAuthController extends ControllerBase {
    *   The expirable key-value store factory.
    * @param \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $feature_flag_checker
    *   The feature flag checker.
+   * @param \Drupal\Core\Entity\EntityRepositoryInterface|null $entityRepository
+   *   The entity repository service.
    */
   public function __construct(
     OtpService $otp_service,
@@ -100,6 +106,7 @@ class PasswordlessAuthController extends ControllerBase {
     SessionConfigurationInterface $session_configuration,
     KeyValueExpirableFactoryInterface $key_value_expirable,
     FeatureFlagChecker $feature_flag_checker,
+    protected ?EntityRepositoryInterface $entityRepository = NULL,
   ) {
     $this->otpService = $otp_service;
     $this->currentUser = $current_user;
@@ -121,7 +128,8 @@ class PasswordlessAuthController extends ControllerBase {
       $container->get('config.factory'),
       $container->get('session_configuration'),
       $container->get('keyvalue.expirable'),
-      $container->get('markaspot_nuxt.feature_flag_checker')
+      $container->get('markaspot_nuxt.feature_flag_checker'),
+      $container->get('entity.repository'),
     );
   }
 
@@ -175,7 +183,7 @@ class PasswordlessAuthController extends ControllerBase {
     // tenants.
     if ($resolved > 0) {
       $group = $this->entityTypeManager()->getStorage('group')->load($resolved);
-      if (!$group || $group->bundle() !== 'jur') {
+      if (!$this->isJurisdictionGroup($group)) {
         return FALSE;
       }
     }
@@ -531,7 +539,7 @@ class PasswordlessAuthController extends ControllerBase {
           'roles' => $account->getRoles(),
           'groups' => $this->getUserGroups($user),
           'preferred_langcode' => $user->getPreferredLangcode(FALSE),
-        ],
+        ] + $this->getTosAcceptancePayload($user),
       ]);
     }
 
@@ -599,7 +607,7 @@ class PasswordlessAuthController extends ControllerBase {
           'roles' => $user->getRoles(),
           'groups' => $this->getUserGroups($user),
           'preferred_langcode' => $user->getPreferredLangcode(FALSE),
-        ],
+        ] + $this->getTosAcceptancePayload($user),
       ]);
     }
     catch (\Exception $e) {
@@ -704,7 +712,7 @@ class PasswordlessAuthController extends ControllerBase {
           'email' => $target_user->getEmail(),
           'roles' => $target_user->getRoles(),
           'groups' => $this->getUserGroups($target_user),
-        ],
+        ] + $this->getTosAcceptancePayload($target_user),
       ]);
     }
     catch (\Exception $e) {
@@ -956,7 +964,7 @@ class PasswordlessAuthController extends ControllerBase {
           'email' => $target_user->getEmail(),
           'roles' => $target_user->getRoles(),
           'groups' => $this->getUserGroups($target_user),
-        ],
+        ] + $this->getTosAcceptancePayload($target_user),
       ]);
     }
     catch (\Exception $e) {
@@ -996,20 +1004,28 @@ class PasswordlessAuthController extends ControllerBase {
       foreach ($memberships as $membership) {
         $group = $membership->getGroup();
         $group_roles = [];
+        $is_jurisdiction_group = $this->isJurisdictionGroup($group);
 
         // Get group roles for this membership.
         foreach ($membership->getRoles() as $role) {
+          $role_id = $role->id();
+          if ($is_jurisdiction_group) {
+            $role_id = $this->canonicalizeJurisdictionRoleId($role_id);
+          }
+          if (MembershipRoleNormalizer::isInternalRoleId($role_id)) {
+            continue;
+          }
           $group_roles[] = [
-            'id' => $role->id(),
-            'label' => $role->label(),
+            'id' => $role_id,
+            'label' => $this->getEntityLabelForUserLanguage($role, $user),
           ];
         }
 
         $groups[] = [
           'id' => $group->id(),
           'uuid' => $group->uuid(),
-          'label' => $group->label(),
-          'type' => $group->bundle(),
+          'label' => $this->getEntityLabelForUserLanguage($group, $user),
+          'type' => $is_jurisdiction_group ? 'jur' : $group->bundle(),
           'roles' => $group_roles,
         ];
       }
@@ -1021,6 +1037,96 @@ class PasswordlessAuthController extends ControllerBase {
     }
 
     return $groups;
+  }
+
+  /**
+   * Gets Terms of Service acceptance state from the user entity.
+   *
+   * The field is provided by markaspot_fastmap, so passwordless auth treats it
+   * as optional and exposes a stable false/null shape when it is unavailable.
+   *
+   * @param object|null $user
+   *   The user entity.
+   *
+   * @return array{tos_accepted: bool, tos_accepted_at: int|null}
+   *   ToS acceptance payload for frontend auth state.
+   */
+  protected function getTosAcceptancePayload($user): array {
+    if (
+      !$user ||
+      !method_exists($user, 'hasField') ||
+      !$user->hasField('field_tos_accepted_at') ||
+      !method_exists($user, 'get')
+    ) {
+      return [
+        'tos_accepted' => FALSE,
+        'tos_accepted_at' => NULL,
+      ];
+    }
+
+    $field = $user->get('field_tos_accepted_at');
+    $value = $field->value ?? NULL;
+    if (($value === NULL || $value === '') && method_exists($field, 'getString')) {
+      $value = $field->getString();
+    }
+
+    $accepted_at = ($value !== NULL && $value !== '') ? (int) $value : NULL;
+
+    return [
+      'tos_accepted' => $accepted_at !== NULL,
+      'tos_accepted_at' => $accepted_at,
+    ];
+  }
+
+  /**
+   * Gets an entity label in the user's preferred language when available.
+   */
+  protected function getEntityLabelForUserLanguage(EntityInterface $entity, $user): string {
+    $langcode = method_exists($user, 'getPreferredLangcode')
+      ? (string) $user->getPreferredLangcode(FALSE)
+      : '';
+
+    if ($entity instanceof ConfigEntityInterface) {
+      return $this->getConfigEntityLabelForLangcode($entity, $langcode);
+    }
+
+    if ($langcode !== '' && $this->entityRepository !== NULL) {
+      try {
+        $translated = $this->entityRepository
+          ->getTranslationFromContext($entity, $langcode);
+        if ($translated instanceof EntityInterface) {
+          return (string) $translated->label();
+        }
+      }
+      catch (\Exception) {
+        // Fall back to the entity's default label when translation lookup is
+        // unavailable, e.g. in minimal test containers.
+      }
+    }
+
+    return (string) $entity->label();
+  }
+
+  /**
+   * Gets a config entity label in a specific language when available.
+   */
+  protected function getConfigEntityLabelForLangcode(ConfigEntityInterface $entity, string $langcode): string {
+    $languageManager = $this->languageManager();
+    if ($langcode !== '' && method_exists($languageManager, 'getLanguageConfigOverride')) {
+      try {
+        $label = $languageManager
+          ->getLanguageConfigOverride($langcode, $entity->getConfigDependencyName())
+          ->get('label');
+        if (is_string($label) && trim($label) !== '') {
+          return $label;
+        }
+      }
+      catch (\Exception) {
+        // Fall back to the entity's default config label.
+      }
+    }
+
+    return (string) $entity->label();
   }
 
 }

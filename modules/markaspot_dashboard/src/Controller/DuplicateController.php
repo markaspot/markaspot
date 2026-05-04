@@ -170,7 +170,7 @@ class DuplicateController extends ControllerBase {
         "m.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
       $counts_query->innerJoin('groups_field_data', 'grp',
         'gr.gid = grp.id AND grp.default_langcode = 1');
-      $counts_query->condition('grp.type', 'jur');
+      $counts_query->condition('grp.type', $this->getJurisdictionGroupType());
       $counts_query->condition('grp.id', $jurisdictionId);
     }
 
@@ -196,7 +196,7 @@ class DuplicateController extends ControllerBase {
         "m.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
       $query->innerJoin('groups_field_data', 'grp',
         'gr.gid = grp.id AND grp.default_langcode = 1');
-      $query->condition('grp.type', 'jur');
+      $query->condition('grp.type', $this->getJurisdictionGroupType());
       $query->condition('grp.id', $jurisdictionId);
     }
 

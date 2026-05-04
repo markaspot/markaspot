@@ -99,6 +99,56 @@ class GeoreportCacheSubscriberTest extends UnitTestCase {
     $this->subscriber->onResponse($event);
 
     $this->assertStringContainsString('max-age=60', $response->headers->get('Cache-Control'));
+    $this->assertSame('public, max-age=60', $response->headers->get('X-Cache-Policy'));
+  }
+
+  /**
+   * @covers ::onResponse
+   */
+  public function testApiKeyRequestsArePrivateNoStore(): void {
+    $request = Request::create('/georeport/v2/requests.json?api_key=secret', 'GET');
+    $response = new Response('content', 200);
+    $event = new ResponseEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response);
+
+    $this->subscriber->onResponse($event);
+
+    $this->assertStringContainsString('private', $response->headers->get('Cache-Control'));
+    $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+    $this->assertSame('private, no-store', $response->headers->get('X-Cache-Policy'));
+  }
+
+  /**
+   * @covers ::onResponse
+   */
+  public function testCredentialHeadersArePrivateNoStore(): void {
+    $request = Request::create('/georeport/v2/requests.json', 'GET');
+    $request->headers->set('api-key', 'secret');
+    $response = new Response('content', 200);
+    $event = new ResponseEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response);
+
+    $this->subscriber->onResponse($event);
+
+    $this->assertStringContainsString('private', $response->headers->get('Cache-Control'));
+    $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+    $this->assertContains('Authorization', $response->getVary());
+    $this->assertContains('Cookie', $response->getVary());
+  }
+
+  /**
+   * @covers ::onResponse
+   */
+  public function testConfiguredUnderscoreHeaderServerVariableIsPrivateNoStore(): void {
+    $request = Request::create('/georeport/v2/requests.json', 'GET', [], [], [], [
+      'HTTP_API_KEY' => 'secret',
+    ]);
+    $response = new Response('content', 200);
+    $event = new ResponseEvent($this->kernel, $request, HttpKernelInterface::MAIN_REQUEST, $response);
+
+    $this->subscriber->onResponse($event);
+
+    $this->assertStringContainsString('private', $response->headers->get('Cache-Control'));
+    $this->assertStringContainsString('no-store', $response->headers->get('Cache-Control'));
+    $this->assertSame('private, no-store', $response->headers->get('X-Cache-Policy'));
   }
 
   /**

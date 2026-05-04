@@ -179,7 +179,7 @@ class DuplicateDetectionService {
           "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
         $query->innerJoin('groups_field_data', 'grp',
           'gr.gid = grp.id AND grp.default_langcode = 1');
-        $query->condition('grp.type', 'jur');
+        $query->condition('grp.type', $this->jurisdictionGroupType());
         $jurisdictionIds = $this->hierarchyResolver
           ? $this->hierarchyResolver->getDescendantIds((int) $options['jurisdiction_id'])
           : [(int) $options['jurisdiction_id']];
@@ -640,7 +640,7 @@ class DuplicateDetectionService {
           "d.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
         $query->innerJoin('groups_field_data', 'grp',
           'gr.gid = grp.id AND grp.default_langcode = 1');
-        $query->condition('grp.type', 'jur');
+        $query->condition('grp.type', $this->jurisdictionGroupType());
         $jurisdictionIds = $this->hierarchyResolver
           ? $this->hierarchyResolver->getDescendantIds((int) $jurisdictionId)
           : [(int) $jurisdictionId];
@@ -676,7 +676,7 @@ class DuplicateDetectionService {
           "d.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
         $query->innerJoin('groups_field_data', 'grp',
           'gr.gid = grp.id AND grp.default_langcode = 1');
-        $query->condition('grp.type', 'jur');
+        $query->condition('grp.type', $this->jurisdictionGroupType());
         $jurisdictionIds = $this->hierarchyResolver
           ? $this->hierarchyResolver->getDescendantIds((int) $jurisdictionId)
           : [(int) $jurisdictionId];
@@ -740,6 +740,17 @@ class DuplicateDetectionService {
       ]);
       return 0;
     }
+  }
+
+  /**
+   * Gets the configured jurisdiction group type.
+   */
+  protected function jurisdictionGroupType(): string {
+    $configured = $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
 }

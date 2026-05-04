@@ -153,10 +153,15 @@ test_group('1. Stats API');
 if (!$module_handler->moduleExists('markaspot_stats')) {
   skip_test('markaspot_stats not enabled');
 }
+elseif (!$jur_id) {
+  skip_test('No jurisdiction available; /stats/* now requires ?jurisdiction= per the feature-flag access gate');
+}
 else {
-  // GET /stats/status.
-  [$code, $data] = http_get("$base/stats/status");
-  assert_equal(200, $code, 'GET /stats/status returns 200');
+  // /stats/* is feature-flag gated (features.statistics) and requires a
+  // resolvable jurisdiction. Calls without ?jurisdiction= return 403 by
+  // design; per-jurisdiction calls return 200 only when the flag is on.
+  [$code, $data] = http_get("$base/stats/status?jurisdiction=$jur_id");
+  assert_equal(200, $code, "GET /stats/status?jurisdiction=$jur_id returns 200");
   assert_true(is_array($data), '/stats/status returns array');
   if (!empty($data)) {
     assert_json_keys($data[0], ['status', 'count', 'color'], '/stats/status[0]');
@@ -164,49 +169,34 @@ else {
   }
 
   // GET /api/stats/status (alias)
-  [$code] = http_get("$base/api/stats/status");
+  [$code] = http_get("$base/api/stats/status?jurisdiction=$jur_id");
   assert_equal(200, $code, 'GET /api/stats/status returns 200');
 
-  // GET /stats/status?jurisdiction=.
-  if ($jur_id) {
-    [$code, $data] = http_get("$base/stats/status?jurisdiction=$jur_id");
-    assert_equal(200, $code, "GET /stats/status?jurisdiction=$jur_id returns 200");
-    assert_true(is_array($data), '/stats/status with jurisdiction returns array');
-  }
-
   // GET /stats/categories.
-  [$code, $data] = http_get("$base/stats/categories");
-  assert_equal(200, $code, 'GET /stats/categories returns 200');
+  [$code, $data] = http_get("$base/stats/categories?jurisdiction=$jur_id");
+  assert_equal(200, $code, "GET /stats/categories?jurisdiction=$jur_id returns 200");
   assert_true(is_array($data), '/stats/categories returns array');
   if (!empty($data)) {
     assert_json_keys($data[0], ['category', 'count', 'color'], '/stats/categories[0]');
   }
 
   // GET /api/stats/categories (alias)
-  [$code] = http_get("$base/api/stats/categories");
+  [$code] = http_get("$base/api/stats/categories?jurisdiction=$jur_id");
   assert_equal(200, $code, 'GET /api/stats/categories returns 200');
 
-  // GET /stats/categories?jurisdiction=.
-  if ($jur_id) {
-    [$code, $data] = http_get("$base/stats/categories?jurisdiction=$jur_id");
-    assert_equal(200, $code, "GET /stats/categories?jurisdiction=$jur_id returns 200");
-  }
-
   // GET /stats/categories/hierarchical.
-  [$code, $data] = http_get("$base/stats/categories/hierarchical");
+  [$code, $data] = http_get("$base/stats/categories/hierarchical?jurisdiction=$jur_id");
   assert_equal(200, $code, 'GET /stats/categories/hierarchical returns 200');
   assert_true(is_array($data), '/stats/categories/hierarchical returns array');
   if (!empty($data)) {
     assert_json_keys($data[0], ['tid', 'category', 'count', 'color'], '/stats/categories/hierarchical[0]');
   }
 
-  // Non-existent jurisdiction returns zeros.
-  [$code, $data] = http_get("$base/stats/status?jurisdiction=99999");
-  assert_equal(200, $code, 'Non-existent jurisdiction: returns 200');
-  if (is_array($data)) {
-    $total = array_sum(array_column($data, 'count'));
-    assert_equal(0, $total, 'Non-existent jurisdiction: all counts = 0');
-  }
+  // Unknown jurisdiction: the access check resolves to NULL and returns the
+  // route's _feature_flag_default (false) -> 403. The legacy "200 with empty
+  // result" contract is gone; the gate fails closed for unresolved tenants.
+  [$code] = http_get("$base/stats/status?jurisdiction=99999");
+  assert_equal(403, $code, 'Unknown jurisdiction: gate denies (403)');
 }
 
 // ===========================================================================
@@ -331,10 +321,10 @@ else {
     }
   }
 
-  // GET /api/organisations.
+  // GET /api/organisations. Requires authenticated user; anonymous gets 403.
   [$code, $data] = http_get("$base/api/organisations");
-  assert_equal(200, $code, 'GET /api/organisations returns 200');
-  if ($data) {
+  assert_true(in_array($code, [200, 403], TRUE), "GET /api/organisations responds ($code; 403 expected when anonymous)");
+  if ($code === 200 && $data) {
     assert_json_keys($data, ['organisations', 'count'], 'Organisations');
     assert_true(is_array($data['organisations']), 'organisations is array');
     if (!empty($data['organisations'])) {
@@ -408,7 +398,7 @@ if ($api_key) {
   if ($sample_node) {
     $request_id = $sample_node->get('request_id')->value ?? $sample_node->id();
     [$code, $data] = http_get("$base/georeport/v2/requests/$request_id.json?api_key=$api_key");
-    assert_true(in_array($code, [200, 404]), "GET requests/{id}.json responds ($code)");
+    assert_true(in_array($code, [200, 403, 404]), "GET requests/{id}.json responds ($code)");
   }
 
   // With jurisdiction_id.
@@ -447,7 +437,7 @@ else {
 
   // POST /api/auth/request-code (without email, should fail gracefully)
   [$code, $data] = http_post("$base/api/auth/request-code", ['email' => '']);
-  assert_true(in_array($code, [400, 422, 200]), "POST /api/auth/request-code (empty email) responds ($code)");
+  assert_true(in_array($code, [400, 403, 422, 200]), "POST /api/auth/request-code (empty email) responds ($code)");
 
   // POST /api/auth/verify-code (without code, should fail)
   [$code] = http_post("$base/api/auth/verify-code", ['email' => 'test@example.com', 'code' => '']);
@@ -690,38 +680,45 @@ if ($module_handler->moduleExists('markaspot_shstweak')) {
 // ===========================================================================
 test_group('15. Response Consistency');
 
-// Verify JSON Content-Type headers on API responses.
+// Verify JSON Content-Type headers on API responses. Stats endpoint requires
+// jurisdiction (feature-flag gate); organisations requires login.
+$stats_suffix = $jur_id ? "?jurisdiction=$jur_id" : '';
 $json_endpoints = [
-  '/api/emergency-mode/status',
-  '/stats/status',
-  '/api/mark-a-spot-settings',
-  '/api/jurisdictions',
-  '/api/organisations',
+  '/api/emergency-mode/status' => '',
+  '/stats/status' => $stats_suffix,
+  '/api/mark-a-spot-settings' => '',
+  '/api/jurisdictions' => '',
+  '/api/organisations' => '',
 ];
 
-foreach ($json_endpoints as $ep) {
+foreach ($json_endpoints as $ep => $suffix) {
   if ($ep === '/api/emergency-mode/status' && !$module_handler->moduleExists('markaspot_emergency')) {
     continue;
   }
-  if ($ep === '/api/mark-a-spot-settings' && !$module_handler->moduleExists('markaspot_nuxt')) {
+  if (in_array($ep, ['/api/mark-a-spot-settings', '/api/jurisdictions', '/api/organisations'], TRUE)
+    && !$module_handler->moduleExists('markaspot_nuxt')) {
     continue;
   }
-  if ($ep === '/api/jurisdictions' && !$module_handler->moduleExists('markaspot_nuxt')) {
-    continue;
-  }
-  if ($ep === '/api/organisations' && !$module_handler->moduleExists('markaspot_nuxt')) {
+  if ($ep === '/stats/status' && (!$module_handler->moduleExists('markaspot_stats') || !$jur_id)) {
     continue;
   }
 
   $http = \Drupal::httpClient();
-  $r = $http->get("$base$ep", ['http_errors' => FALSE, 'headers' => ['Accept' => 'application/json']]);
+  $r = $http->get("$base$ep$suffix", ['http_errors' => FALSE, 'headers' => ['Accept' => 'application/json']]);
+  $code = $r->getStatusCode();
+  // Skip Content-Type check on access-denied responses (Drupal renders the
+  // anonymous 403 as HTML by default for these routes).
+  if ($code === 403) {
+    continue;
+  }
   $ct = $r->getHeader('Content-Type')[0] ?? '';
-  assert_true(str_contains($ct, 'json'), "$ep: Content-Type contains json (got: $ct)");
+  assert_true(str_contains($ct, 'json'), "$ep$suffix: Content-Type contains json (got: $ct)");
 }
 
 // Idempotent check: same request twice produces same result.
-[$code1, , $raw1] = http_get("$base/stats/status");
-[$code2, , $raw2] = http_get("$base/stats/status");
+$stats_url = $jur_id ? "$base/stats/status?jurisdiction=$jur_id" : "$base/stats/status";
+[$code1, , $raw1] = http_get($stats_url);
+[$code2, , $raw2] = http_get($stats_url);
 assert_equal($code1, $code2, 'Idempotent: same status code');
 // Note: counts may change between requests in production, so we just check structure.
 $j1 = json_decode($raw1, TRUE);

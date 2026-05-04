@@ -208,7 +208,7 @@ class MailBrandingService {
       ]);
     }
 
-    if (!$group instanceof ContentEntityInterface || $group->bundle() !== 'jur') {
+    if (!$group instanceof ContentEntityInterface || $group->bundle() !== $this->jurisdictionGroupType()) {
       $this->logger->warning('Mail branding requested for jurisdiction @id in mode "jurisdiction", but no jur group could be resolved. Falling back to platform branding.', [
         '@id' => $jurisdictionId,
       ]);
@@ -317,6 +317,16 @@ class MailBrandingService {
     }
 
     return $branding;
+  }
+
+  /**
+   * Returns the configured jurisdiction group bundle.
+   */
+  private function jurisdictionGroupType(): string {
+    $config = $this->configFactory->get('markaspot_open311.settings');
+    $configured = $config ? $config->get('jurisdiction_group_type') : NULL;
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
   /**

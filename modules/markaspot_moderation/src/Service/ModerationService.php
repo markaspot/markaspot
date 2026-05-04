@@ -11,8 +11,8 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Component\Utility\Html;
-use Drupal\Core\Site\Settings;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -24,6 +24,7 @@ use Psr\Log\LoggerInterface;
  */
 class ModerationService implements ModerationServiceInterface {
 
+  use JurisdictionIdResolverTrait;
   use StringTranslationTrait;
 
   /**
@@ -353,7 +354,7 @@ class ModerationService implements ModerationServiceInterface {
 
     foreach ($relationships as $relationship) {
       $group = $relationship->getGroup();
-      if ($group && $group->bundle() === 'jur') {
+      if ($this->isJurisdictionGroup($group)) {
         return (int) $group->id();
       }
     }

@@ -165,7 +165,7 @@ class MarkASpotSettingsController extends ControllerBase {
       $resolved_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
       if ($resolved_id !== NULL) {
         $group = $this->entityTypeManager->getStorage('group')->load($resolved_id);
-        if ($group && $group->isPublished()) {
+        if ($this->isJurisdictionGroup($group) && $group->isPublished()) {
           $cache_metadata->addCacheTags(['group:' . $group->id()]);
         }
         else {
@@ -207,6 +207,11 @@ class MarkASpotSettingsController extends ControllerBase {
     $taxonomyJurisdictionId = $group
       ? $this->hierarchyResolver->getRootJurisdictionId((int) $group->id())
       : NULL;
+    if ($group && $taxonomyJurisdictionId === NULL) {
+      $error_response = new CacheableJsonResponse(['error' => 'Jurisdiction hierarchy invalid'], 409);
+      $error_response->addCacheableDependency($cache_metadata);
+      return $error_response;
+    }
 
     if ($group && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
       $nuxt_json = $group->get('field_nuxt_config')->value;
@@ -231,6 +236,7 @@ class MarkASpotSettingsController extends ControllerBase {
         // from the canonical field_facilities field on the jurisdiction group.
         $config_keys = [
           'client',
+          'branding',
           'theme',
           'features',
           'languages',
@@ -1132,6 +1138,16 @@ class MarkASpotSettingsController extends ControllerBase {
     // Supports both numeric IDs and slugs (e.g. "amsterdam").
     $jurisdiction_param = $request->query->get('jurisdiction');
     $jurisdiction_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
+    $has_jurisdiction_filter = $jurisdiction_param !== NULL && $jurisdiction_param !== '';
+
+    if ($has_jurisdiction_filter && $jurisdiction_id === NULL) {
+      $response = new CacheableJsonResponse([
+        'organisations' => [],
+        'count' => 0,
+      ]);
+      $response->addCacheableDependency($cache_metadata);
+      return $response;
+    }
 
     // Validate jurisdiction: must be a published group of the correct jur type.
     // Prevents cross-tenant enumeration by rejecting unknown or invalid IDs.
@@ -1227,11 +1243,19 @@ class MarkASpotSettingsController extends ControllerBase {
     $organisations = [];
 
     foreach ($groups as $group) {
-      $organisations[] = [
+      $organisation = [
         'id' => $group->uuid(),
         'numericId' => (int) $group->id(),
         'label' => $group->label(),
       ];
+
+      if ($jurisdiction_id !== NULL) {
+        $jurisdictionId = $this->getOrganisationJurisdictionId($group);
+        $organisation['jurisdictionId'] = $jurisdictionId;
+        $organisation['orphan'] = $jurisdictionId === NULL;
+      }
+
+      $organisations[] = $organisation;
 
       $cache_metadata->addCacheableDependency($group);
     }
@@ -1244,6 +1268,29 @@ class MarkASpotSettingsController extends ControllerBase {
     $response->addCacheableDependency($cache_metadata);
 
     return $response;
+  }
+
+  /**
+   * Gets a valid jurisdiction ID from an organisation group.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The organisation group.
+   *
+   * @return int|null
+   *   The jurisdiction group ID, or NULL when missing or invalid.
+   */
+  protected function getOrganisationJurisdictionId(GroupInterface $group): ?int {
+    if (!$group->hasField('field_jurisdiction')
+      || $group->get('field_jurisdiction')->isEmpty()) {
+      return NULL;
+    }
+
+    $jurisdiction = $group->get('field_jurisdiction')->entity;
+    if (!$this->isJurisdictionGroup($jurisdiction)) {
+      return NULL;
+    }
+
+    return (int) $jurisdiction->id();
   }
 
   /**
@@ -1270,7 +1317,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $resolved_id = $this->resolveJurisdictionId($jurisdiction_param, $jur_type);
     if ($resolved_id !== NULL) {
       $loaded_group = $this->entityTypeManager->getStorage('group')->load($resolved_id);
-      if ($loaded_group && $loaded_group->isPublished()) {
+      if ($this->isJurisdictionGroup($loaded_group) && $loaded_group->isPublished()) {
         $group = $loaded_group;
       }
     }

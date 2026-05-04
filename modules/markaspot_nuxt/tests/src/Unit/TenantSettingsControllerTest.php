@@ -267,6 +267,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     // The tenant_admin manages group 14.
     $memberGroup = $this->createMock(GroupInterface::class);
     $memberGroup->method('id')->willReturn('14');
+    $memberGroup->method('bundle')->willReturn('jur');
 
     $membership = $this->createMock(GroupMembership::class);
     $membership->method('getGroup')->willReturn($memberGroup);
@@ -298,6 +299,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     // The tenant_admin manages group 10 (parent of 14).
     $parentGroup = $this->createMock(GroupInterface::class);
     $parentGroup->method('id')->willReturn('10');
+    $parentGroup->method('bundle')->willReturn('jur');
 
     $membership = $this->createMock(GroupMembership::class);
     $membership->method('getGroup')->willReturn($parentGroup);
@@ -329,6 +331,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     // The tenant_admin manages group 20 (unrelated to 14).
     $otherGroup = $this->createMock(GroupInterface::class);
     $otherGroup->method('id')->willReturn('20');
+    $otherGroup->method('bundle')->willReturn('jur');
 
     $membership = $this->createMock(GroupMembership::class);
     $membership->method('getGroup')->willReturn($otherGroup);
@@ -341,6 +344,35 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->hierarchyResolver->method('getDescendantIds')
       ->with(20)
       ->willReturn([20, 21]);
+
+    $result = $this->controller->accessCheck($account, '14');
+
+    $this->assertFalse($result->isAllowed());
+  }
+
+  /**
+   * Tests accessCheck() skips stale tenant_admin memberships on non-jur groups.
+   *
+   * @covers ::accessCheck
+   */
+  public function testAccessCheckSkipsStaleTenantAdminMembershipWrongBundle(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn('3');
+    $account->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $orgGroup = $this->createMock(GroupInterface::class);
+    $orgGroup->method('id')->willReturn('14');
+    $orgGroup->method('bundle')->willReturn('org');
+
+    $membership = $this->createMock(GroupMembership::class);
+    $membership->method('getGroup')->willReturn($orgGroup);
+
+    $this->membershipLoader->method('loadByUser')
+      ->with($account, ['jur-tenant_admin'])
+      ->willReturn([$membership]);
+
+    $this->hierarchyResolver->expects($this->never())
+      ->method('getDescendantIds');
 
     $result = $this->controller->accessCheck($account, '14');
 
@@ -792,6 +824,87 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests updateBrandingSettings() preserves top-level branding config.
+   *
+   * @covers ::updateBrandingSettings
+   */
+  public function testUpdateBrandingPreservesPoweredByFlag(): void {
+    $storedNuxtConfig = json_encode([
+      'branding' => ['hidePoweredBy' => TRUE],
+      'theme' => [
+        'primary' => 'blue',
+        'secondary' => 'teal',
+        'neutral' => 'slate',
+      ],
+    ]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name) => in_array($name, [
+        'field_nuxt_config',
+        'field_custom_css',
+      ], TRUE));
+    $group->method('get')
+      ->willReturnCallback(static function (string $name) use (&$storedNuxtConfig) {
+        $value = $name === 'field_nuxt_config' ? $storedNuxtConfig : '';
+        return new class ($value) {
+
+          /**
+           * The field value.
+           *
+           * @var string
+           */
+          public string $value;
+
+          /**
+           * Constructs a field item stub.
+           */
+          public function __construct(string $value) {
+            $this->value = $value;
+          }
+
+          /**
+           * Returns whether the field is empty.
+           */
+          public function isEmpty(): bool {
+            return $this->value === '';
+          }
+
+        };
+      });
+    $group->method('set')
+      ->willReturnCallback(function (string $field, string $value) use (&$storedNuxtConfig, $group) {
+        if ($field === 'field_nuxt_config') {
+          $storedNuxtConfig = $value;
+        }
+        return $group;
+      });
+    $group->method('save');
+
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/branding',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['theme' => ['primary' => 'cyan']])
+    );
+
+    $response = $this->controller->updateBrandingSettings($request, '14');
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertTrue($updatedConfig['branding']['hidePoweredBy']);
+    $this->assertEquals('cyan', $updatedConfig['theme']['primary']);
+  }
+
+  /**
    * Tests updateBrandingSettings() rejects invalid color value.
    *
    * @covers ::updateBrandingSettings
@@ -1110,6 +1223,34 @@ class TenantSettingsControllerTest extends UnitTestCase {
 
     $this->assertSame($expected, $available);
     $this->assertSame($expected, $default);
+  }
+
+  /**
+   * Tests getFeatureSettings() normalises object-shaped feature flags.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsNormalisesObjectFeatures(): void {
+    $nuxtConfig = json_encode([
+      'features' => [
+        'pwaInstallPrompt' => ['enabled' => FALSE],
+        'formFirst' => ['enabled' => FALSE],
+        'dashboard' => ['enabled' => TRUE],
+      ],
+    ]);
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtConfig,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['pwaInstallPrompt']);
+    $this->assertFalse($data['features']['formFirst']);
+    $this->assertTrue($data['features']['dashboard']);
   }
 
   /**

@@ -7,6 +7,7 @@ namespace Drupal\markaspot_dashboard\Controller;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -56,7 +57,10 @@ final class AdminStatsController extends ControllerBase {
   public function __construct(
     private readonly Connection $database,
     private readonly TimeInterface $time,
-  ) {}
+    ConfigFactoryInterface $config_factory,
+  ) {
+    $this->configFactory = $config_factory;
+  }
 
   /**
    * {@inheritdoc}
@@ -65,6 +69,7 @@ final class AdminStatsController extends ControllerBase {
     return new static(
       $container->get('database'),
       $container->get('datetime.time'),
+      $container->get('config.factory'),
     );
   }
 
@@ -94,7 +99,7 @@ final class AdminStatsController extends ControllerBase {
     $cache = (new CacheableMetadata())
       ->addCacheTags([
         'node_list:service_request',
-        'group_list:jur',
+        'group_list:' . $this->jurisdictionGroupType(),
       ])
       ->setCacheMaxAge(60)
       ->addCacheContexts(['user.permissions']);
@@ -108,7 +113,7 @@ final class AdminStatsController extends ControllerBase {
    *
    * Recent jurisdiction creations — the closest proxy we have to a
    * "signup feed" without building a dedicated audit log. The endpoint
-   * streams the most recent N `jur` groups along with the data that is
+   * streams the most recent N jurisdiction groups along with the data that is
    * safe to expose on a platform admin surface (no tenant PII).
    */
   public function signups(): CacheableJsonResponse {
@@ -117,7 +122,7 @@ final class AdminStatsController extends ControllerBase {
     $query = $this->database
       ->select('groups_field_data', 'g')
       ->fields('g', ['id', 'label', 'created'])
-      ->condition('g.type', 'jur')
+      ->condition('g.type', $this->jurisdictionGroupType())
       ->condition('g.default_langcode', 1)
       ->orderBy('g.created', 'DESC')
       ->range(0, self::SIGNUPS_FEED_LIMIT);
@@ -139,7 +144,7 @@ final class AdminStatsController extends ControllerBase {
     $response = new CacheableJsonResponse(['signups' => $signups]);
     $response->addCacheableDependency(
       (new CacheableMetadata())
-        ->addCacheTags(['group_list:jur'])
+        ->addCacheTags(['group_list:' . $this->jurisdictionGroupType()])
         ->setCacheMaxAge(60)
         ->addCacheContexts(['user.permissions'])
     );
@@ -148,12 +153,12 @@ final class AdminStatsController extends ControllerBase {
   }
 
   /**
-   * Count published jurisdictions (groups of type `jur` with status = 1).
+   * Count published jurisdictions with status = 1.
    */
   private function countPublishedJurisdictions(): int {
     return (int) $this->database
       ->select('groups_field_data', 'g')
-      ->condition('g.type', 'jur')
+      ->condition('g.type', $this->jurisdictionGroupType())
       ->condition('g.status', 1)
       ->condition('g.default_langcode', 1)
       ->countQuery()
@@ -177,12 +182,12 @@ final class AdminStatsController extends ControllerBase {
     $with_reports = $this->database
       ->select('group_relationship_field_data', 'gr')
       ->fields('gr', ['gid'])
-      ->condition('gr.type', 'jur-group_node-service_request')
+      ->condition('gr.type', $this->jurisdictionGroupType() . '-group_node-service_request')
       ->distinct();
 
     return (int) $this->database
       ->select('groups_field_data', 'g')
-      ->condition('g.type', 'jur')
+      ->condition('g.type', $this->jurisdictionGroupType())
       ->condition('g.status', 1)
       ->condition('g.default_langcode', 1)
       ->condition('g.id', $with_reports, 'NOT IN')
@@ -219,16 +224,27 @@ final class AdminStatsController extends ControllerBase {
   }
 
   /**
-   * Count jurisdictions (jur groups) created since the given timestamp.
+   * Count jurisdictions created since the given timestamp.
    */
   private function countJurisdictionsCreatedSince(int $since): int {
     return (int) $this->database
       ->select('groups_field_data', 'g')
-      ->condition('g.type', 'jur')
+      ->condition('g.type', $this->jurisdictionGroupType())
       ->condition('g.created', $since, '>=')
       ->countQuery()
       ->execute()
       ->fetchField();
+  }
+
+  /**
+   * Gets the configured jurisdiction group type.
+   */
+  private function jurisdictionGroupType(): string {
+    $configured = $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
 }

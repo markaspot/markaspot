@@ -1,0 +1,10 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.org
+id: group--org
+disabled: false
+path: group/org
+resourceType: group--org
+resourceFields: {  }

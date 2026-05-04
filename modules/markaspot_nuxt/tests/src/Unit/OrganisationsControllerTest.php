@@ -204,11 +204,13 @@ class OrganisationsControllerTest extends UnitTestCase {
    *   The group label.
    * @param string $uuid
    *   The group UUID.
+   * @param int|null $jurisdictionId
+   *   The optional jurisdiction group ID.
    *
    * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked group entity.
    */
-  protected function createMockOrgGroup(int $id, string $label, string $uuid): GroupInterface {
+  protected function createMockOrgGroup(int $id, string $label, string $uuid, ?int $jurisdictionId = NULL): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn((string) $id);
     $group->method('bundle')->willReturn('org');
@@ -218,6 +220,38 @@ class OrganisationsControllerTest extends UnitTestCase {
     $group->method('getCacheTags')->willReturn(['group:' . $id]);
     $group->method('getCacheMaxAge')->willReturn(-1);
     $group->method('getCacheContexts')->willReturn([]);
+    $jurisdiction = NULL;
+    if ($jurisdictionId !== NULL) {
+      $jurisdiction = $this->createMock(GroupInterface::class);
+      $jurisdiction->method('id')->willReturn((string) $jurisdictionId);
+      $jurisdiction->method('bundle')->willReturn('jur');
+    }
+    $group->method('hasField')
+      ->willReturnCallback(fn(string $field): bool => $field === 'field_jurisdiction');
+    $group->method('get')
+      ->willReturnCallback(static function (string $field) use ($jurisdictionId, $jurisdiction) {
+        if ($field !== 'field_jurisdiction') {
+          return NULL;
+        }
+        return new class($jurisdictionId, $jurisdiction) {
+
+          /**
+           * Constructs a jurisdiction reference field stub.
+           */
+          public function __construct(
+            public ?int $targetId,
+            public ?object $entity,
+          ) {}
+
+          /**
+           * Checks whether the field is empty.
+           */
+          public function isEmpty(): bool {
+            return $this->targetId === NULL;
+          }
+
+        };
+      });
     return $group;
   }
 
@@ -328,6 +362,79 @@ class OrganisationsControllerTest extends UnitTestCase {
 
     $data = json_decode($response->getContent(), TRUE);
     $this->assertCount(1, $data['organisations']);
+  }
+
+  /**
+   * Tests that organisation responses expose jurisdiction metadata.
+   *
+   * @covers ::getOrganisations
+   */
+  public function testOrganisationResponseIncludesJurisdictionMetadata(): void {
+    $account = $this->createMockUser(['authenticated', 'administrator'], 1);
+    $controller = $this->createController($account);
+
+    $org1 = $this->createMockOrgGroup(100, 'Org Alpha', 'uuid-alpha', 14);
+    $jurGroup = $this->createMock(GroupInterface::class);
+    $jurGroup->method('id')->willReturn('14');
+    $jurGroup->method('bundle')->willReturn('jur');
+    $jurGroup->method('isPublished')->willReturn(TRUE);
+    $jurGroup->method('getCacheTags')->willReturn(['group:14']);
+    $jurGroup->method('getCacheMaxAge')->willReturn(-1);
+    $jurGroup->method('getCacheContexts')->willReturn([]);
+
+    $this->groupStorage->method('load')
+      ->with(14)
+      ->willReturn($jurGroup);
+
+    $groupQuery = $this->createMockQuery([100]);
+    $this->groupStorage->method('getQuery')->willReturn($groupQuery);
+    $this->groupStorage->method('loadMultiple')
+      ->with([100])
+      ->willReturn([100 => $org1]);
+
+    $request = Request::create('/api/organisations?jurisdiction=14', 'GET');
+    $response = $controller->getOrganisations($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(14, $data['organisations'][0]['jurisdictionId']);
+    $this->assertFalse($data['organisations'][0]['orphan']);
+  }
+
+  /**
+   * Tests organisation jurisdiction validation uses configured group type.
+   *
+   * @covers ::getOrganisationJurisdictionId
+   */
+  public function testOrganisationJurisdictionValidationUsesConfiguredGroupType(): void {
+    $moduleRoot = dirname(__DIR__, 3);
+    $source = file_get_contents($moduleRoot . '/src/Controller/MarkASpotSettingsController.php');
+
+    $this->assertStringContainsString('$this->isJurisdictionGroup($jurisdiction)', $source);
+  }
+
+  /**
+   * Tests unfiltered responses do not expose jurisdiction topology.
+   *
+   * @covers ::getOrganisations
+   */
+  public function testUnfilteredOrganisationResponseOmitsJurisdictionMetadata(): void {
+    $account = $this->createMockUser(['authenticated', 'administrator'], 1);
+    $controller = $this->createController($account);
+
+    $org1 = $this->createMockOrgGroup(100, 'Org Alpha', 'uuid-alpha', 14);
+
+    $groupQuery = $this->createMockQuery([100]);
+    $this->groupStorage->method('getQuery')->willReturn($groupQuery);
+    $this->groupStorage->method('loadMultiple')
+      ->with([100])
+      ->willReturn([100 => $org1]);
+
+    $request = Request::create('/api/organisations', 'GET');
+    $response = $controller->getOrganisations($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertArrayNotHasKey('jurisdictionId', $data['organisations'][0]);
+    $this->assertArrayNotHasKey('orphan', $data['organisations'][0]);
   }
 
   /**
@@ -518,6 +625,26 @@ class OrganisationsControllerTest extends UnitTestCase {
       ->willReturn(NULL);
 
     $request = Request::create('/api/organisations?jurisdiction=999', 'GET');
+    $response = $controller->getOrganisations($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEmpty($data['organisations']);
+    $this->assertEquals(0, $data['count']);
+  }
+
+  /**
+   * Tests invalid jurisdiction slugs return an empty response.
+   *
+   * @covers ::getOrganisations
+   */
+  public function testInvalidJurisdictionSlugReturnsEmptyResponse(): void {
+    $account = $this->createMockUser(['authenticated', 'moderator'], 3);
+    $controller = $this->createController($account);
+
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+    $this->groupStorage->expects($this->never())->method('getQuery');
+
+    $request = Request::create('/api/organisations?jurisdiction=unknown-slug', 'GET');
     $response = $controller->getOrganisations($request);
 
     $data = json_decode($response->getContent(), TRUE);

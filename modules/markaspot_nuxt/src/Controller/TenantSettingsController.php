@@ -315,11 +315,18 @@ class TenantSettingsController extends ControllerBase {
 
     // tenant_admin role: allow access if the requested jurisdiction falls
     // within the hierarchy (self + descendants) of any jurisdiction where
-    // the user holds jur-tenant_admin membership.
+    // the user holds tenant_admin membership.
     if (in_array('tenant_admin', $account->getRoles(), TRUE)) {
-      $memberships = $this->membershipLoader->loadByUser($account, ['jur-tenant_admin']);
+      $memberships = $this->membershipLoader->loadByUser($account, array_values(array_unique([
+        $this->getJurisdictionGroupType() . '-tenant_admin',
+        'jur-tenant_admin',
+      ])));
       foreach ($memberships as $membership) {
-        $managedJurId = (int) $membership->getGroup()->id();
+        $managedGroup = $membership->getGroup();
+        if (!$this->isJurisdictionGroup($managedGroup)) {
+          continue;
+        }
+        $managedJurId = (int) $managedGroup->id();
         $scopeIds = $this->hierarchyResolver->getDescendantIds($managedJurId);
         if (in_array($resolved_id, $scopeIds, TRUE)) {
           return AccessResult::allowed()->addCacheContexts(['user']);
@@ -347,7 +354,7 @@ class TenantSettingsController extends ControllerBase {
     }
 
     $group = $this->entityTypeManager()->getStorage('group')->load($resolved_id);
-    if (!$group || $group->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($group)) {
       return NULL;
     }
 
@@ -377,6 +384,35 @@ class TenantSettingsController extends ControllerBase {
       }
     }
     return [];
+  }
+
+  /**
+   * Normalises a stored feature flag to the boolean dashboard API shape.
+   *
+   * Field_nuxt_config may store selected features either as a bare boolean or
+   * as an object with an enabled value. The dashboard feature endpoint exposes
+   * the compact boolean representation so existing controls keep their shape.
+   *
+   * @param array $features
+   *   The decoded features config.
+   * @param string $key
+   *   The feature key to read.
+   * @param bool $default
+   *   The fallback value when the feature is not set or has an unsupported
+   *   shape.
+   *
+   * @return bool
+   *   The normalised boolean value.
+   */
+  private function getBooleanFeatureValue(array $features, string $key, bool $default): bool {
+    $value = $features[$key] ?? NULL;
+    if (is_bool($value)) {
+      return $value;
+    }
+    if (is_array($value) && is_bool($value['enabled'] ?? NULL)) {
+      return $value['enabled'];
+    }
+    return $default;
   }
 
   /**
@@ -1262,11 +1298,11 @@ class TenantSettingsController extends ControllerBase {
         'passwordless' => $features['passwordless'] ?? FALSE,
         'aiAnalysis' => $features['aiAnalysis'] ?? FALSE,
         'feedback' => $features['feedback'] ?? FALSE,
-        'pwaInstallPrompt' => $features['pwaInstallPrompt'] ?? FALSE,
+        'pwaInstallPrompt' => $this->getBooleanFeatureValue($features, 'pwaInstallPrompt', FALSE),
         'objectId' => $features['objectId'] ?? FALSE,
         'party' => $features['party'] ?? FALSE,
-        'formFirst' => !empty($features['formFirst']),
-        'dashboard' => $features['dashboard'] ?? TRUE,
+        'formFirst' => $this->getBooleanFeatureValue($features, 'formFirst', FALSE),
+        'dashboard' => $this->getBooleanFeatureValue($features, 'dashboard', TRUE),
         'contactForm' => $features['contactForm'] ?? FALSE,
         'emergency' => ['enabled' => $features['emergency']['enabled'] ?? FALSE],
         'funFacts' => ['enabled' => $features['funFacts']['enabled'] ?? FALSE],

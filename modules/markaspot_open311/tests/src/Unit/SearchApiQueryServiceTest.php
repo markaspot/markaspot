@@ -4,6 +4,7 @@ namespace Drupal\Tests\markaspot_open311\Unit;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\markaspot_open311\Service\SearchApiQueryService;
@@ -161,6 +162,64 @@ class SearchApiQueryServiceTest extends UnitTestCase {
     $this->service->reindexNode(42);
     // If we reach here without exception, the test passes.
     $this->assertTrue(TRUE);
+  }
+
+  /**
+   * Tests fallback search applies exact request ID lookup.
+   *
+   * @covers ::applySafeFallbackSearch
+   */
+  public function testApplySafeFallbackSearchExactRequestId(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->expects($this->once())
+      ->method('condition')
+      ->with('request_id', '123-2026', NULL)
+      ->willReturnSelf();
+
+    $this->assertTrue($this->service->applySafeFallbackSearch($query, '#123-2026'));
+  }
+
+  /**
+   * Tests fallback search applies numeric request ID lookup as exact match.
+   *
+   * @covers ::applySafeFallbackSearch
+   */
+  public function testApplySafeFallbackSearchNumericRequestIdExact(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->expects($this->once())
+      ->method('condition')
+      ->with('request_id', '123', NULL)
+      ->willReturnSelf();
+
+    $this->assertTrue($this->service->applySafeFallbackSearch($query, '123'));
+  }
+
+  /**
+   * Tests fallback search applies custom request ID formats as exact matches.
+   *
+   * @covers ::applySafeFallbackSearch
+   */
+  public function testApplySafeFallbackSearchCustomRequestIdExact(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->expects($this->once())
+      ->method('condition')
+      ->with('request_id', 'SR_2026:0001', NULL)
+      ->willReturnSelf();
+
+    $this->assertTrue($this->service->applySafeFallbackSearch($query, 'SR_2026:0001'));
+  }
+
+  /**
+   * Tests fallback search refuses general full-text queries.
+   *
+   * @covers ::applySafeFallbackSearch
+   */
+  public function testApplySafeFallbackSearchRejectsGeneralText(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->expects($this->never())
+      ->method('condition');
+
+    $this->assertFalse($this->service->applySafeFallbackSearch($query, 'graffiti wall'));
   }
 
 }

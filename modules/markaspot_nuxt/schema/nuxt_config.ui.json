@@ -183,7 +183,7 @@
         "properties": {
           "providers": {
             "ui:options": {
-              "description": "Available providers: photon (Komoot, free), mapbox (requires API key), nominatim (OSM)"
+              "description": "Available providers: photon (Komoot, free), mapbox (requires API key)"
             }
           },
           "default": {

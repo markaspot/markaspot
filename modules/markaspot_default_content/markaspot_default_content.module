@@ -27,4 +27,22 @@ function markaspot_default_content_migration_plugins_alter(&$definitions) {
       $definitions[$migration_id]['source']['path'] = $path . $definitions[$migration_id]['source']['path'];
     }
   }
+
+  if (isset($definitions['markaspot_migrate_default_content_group_organisation'])) {
+    markaspot_default_content_normalize_organisation_migration_definition($definitions['markaspot_migrate_default_content_group_organisation']);
+  }
+}
+
+/**
+ * Normalizes the organisation group migration to the current org bundle.
+ *
+ * @param array $definition
+ *   The migration plugin definition.
+ */
+function markaspot_default_content_normalize_organisation_migration_definition(array &$definition): void {
+  $definition['destination']['default_bundle'] = 'org';
+  $definition['process']['type'] = [
+    'plugin' => 'default_value',
+    'default_value' => 'org',
+  ];
 }

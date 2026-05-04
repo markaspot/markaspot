@@ -14,6 +14,8 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\markaspot_service_provider\Event\ServiceProviderResponseEvent;
+use Drupal\markaspot_service_provider\ServiceProviderOrganisationScopeHelper;
+use Drupal\taxonomy\TermInterface;
 
 /**
  * Controller for service provider response requests.
@@ -161,7 +163,33 @@ class ServiceProviderController extends ControllerBase {
       }
 
       // Normalize email verification from either JSON body or query param.
-      $email_verification = $data['email_verification'] ?? $request->query->get('email_verification');
+      $email_verification = trim((string) ($data['email_verification'] ?? $request->query->get('email_verification', '')));
+      if ($email_verification === '') {
+        $logger->warning('Missing service provider email verification for node @nid', ['@nid' => $node->id()]);
+        return new JsonResponse(
+              [
+                'message' => $this->t('Email is required'),
+                'error_code' => 'EMAIL_REQUIRED',
+              ], 400
+          );
+      }
+
+      $validation_result = $this->validateServiceProviderEmail($node, $email_verification);
+      if ($validation_result !== TRUE) {
+        $logger->warning(
+              'Service provider validation failed for @email on node @nid: @reason', [
+                '@email' => $email_verification,
+                '@nid' => $node->id(),
+                '@reason' => $validation_result,
+              ]
+          );
+        return new JsonResponse(
+              [
+                'message' => $validation_result,
+                'error_code' => 'EMAIL_NOT_AUTHORIZED',
+              ], 403
+          );
+      }
 
       // Check if multiple completions are allowed.
       $existing_completions = $node->get('field_service_provider_notes')->getValue();
@@ -197,27 +225,6 @@ class ServiceProviderController extends ControllerBase {
                 [
                   'message' => $this->t('Service request already completed. Contact administrator for reassignment.'),
                   'error_code' => 'ALREADY_COMPLETED',
-                ], 403
-            );
-        }
-      }
-
-      // Validate email against service provider field.
-      if (!empty($email_verification)) {
-        $validation_result = $this->validateServiceProviderEmail($node, $email_verification);
-
-        if ($validation_result !== TRUE) {
-          $logger->warning(
-                'Service provider validation failed for @email on node @nid: @reason', [
-                  '@email' => $email_verification,
-                  '@nid' => $node->id(),
-                  '@reason' => $validation_result,
-                ]
-            );
-          return new JsonResponse(
-                [
-                  'message' => $validation_result,
-                  'error_code' => 'EMAIL_NOT_AUTHORIZED',
                 ], 403
             );
         }
@@ -673,8 +680,12 @@ class ServiceProviderController extends ControllerBase {
 
     // Get the referenced service provider taxonomy term.
     $service_provider_term = $node->get('field_service_provider')->entity;
-    if (!$service_provider_term) {
+    if (!$service_provider_term instanceof TermInterface) {
       return $this->t('Service provider configuration error');
+    }
+
+    if (!ServiceProviderOrganisationScopeHelper::providerMatchesRequest($service_provider_term, $node)) {
+      return $this->t('Service provider is not authorized for this service request');
     }
 
     // Check if the service provider has an email field.
@@ -727,7 +738,11 @@ class ServiceProviderController extends ControllerBase {
     }
 
     $service_provider_term = $node->get('field_service_provider')->entity;
-    if (!$service_provider_term) {
+    if (!$service_provider_term instanceof TermInterface) {
+      return $valid_emails;
+    }
+
+    if (!ServiceProviderOrganisationScopeHelper::providerMatchesRequest($service_provider_term, $node)) {
       return $valid_emails;
     }
 

@@ -2,7 +2,7 @@
 
 /**
  * @file
- * Install, update and uninstall functions for the markaspot_service_provider module.
+ * Install hooks for markaspot_service_provider.
  */
 
 use Drupal\field\Entity\FieldConfig;
@@ -18,7 +18,14 @@ function markaspot_service_provider_install() {
   // Create all required fields.
   _markaspot_service_provider_create_service_provider_notes_field();
   _markaspot_service_provider_create_reassign_sp_field();
+  _markaspot_service_provider_create_sp_boilerplates_field();
   _markaspot_service_provider_create_sp_email_field();
+  _markaspot_service_provider_create_sp_organisation_field();
+  _markaspot_service_provider_ensure_org_group_jsonapi();
+  _markaspot_service_provider_ensure_sp_boilerplates_jsonapi();
+  _markaspot_service_provider_ensure_management_form_mode();
+  _markaspot_service_provider_remove_reassign_sp_from_management_form_mode();
+  _markaspot_service_provider_remove_sp_fields_from_public_form_modes();
 
   \Drupal::logger('markaspot_service_provider')->notice('Mark-a-Spot Service Provider module installed successfully.');
   \Drupal::messenger()->addStatus(t('Mark-a-Spot Service Provider module installed successfully. All fields and vocabulary have been created.'));
@@ -127,6 +134,26 @@ function markaspot_service_provider_requirements($phase) {
       }
     }
 
+    // Check for optional service provider organisation scope field.
+    $field_sp_organisation = $field_storage->load('taxonomy_term.field_organisation');
+    $field_sp_organisation_instance = FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_organisation');
+
+    if (!$field_sp_organisation || !$field_sp_organisation_instance) {
+      $requirements['markaspot_service_provider_organisation_field'] = [
+        'title' => t('Service Provider Organisation Scope Field'),
+        'value' => t('Missing'),
+        'description' => t('The optional field_organisation field is missing on the service_provider taxonomy vocabulary. Service providers cannot be limited to specific organisations until update hooks are run.'),
+        'severity' => REQUIREMENT_WARNING,
+      ];
+    }
+    else {
+      $requirements['markaspot_service_provider_organisation_field'] = [
+        'title' => t('Service Provider Organisation Scope Field'),
+        'value' => t('Installed'),
+        'severity' => REQUIREMENT_OK,
+      ];
+    }
+
     // Check if service_provider vocabulary exists.
     $vocabulary_storage = $entity_type_manager->getStorage('taxonomy_vocabulary');
     $service_provider_vocab = $vocabulary_storage->load('service_provider');
@@ -161,11 +188,11 @@ function markaspot_service_provider_uninstall() {
   // Clean up configuration.
   \Drupal::configFactory()->getEditable('markaspot_service_provider.settings')->delete();
 
-  // Note: We intentionally do NOT delete fields or the service_provider vocabulary.
-  // This follows Drupal best practices: fields and vocabularies are content/data
-  // and should be preserved when modules are uninstalled. Site administrators can
-  // manually delete them via the UI if desired.
-  \Drupal::logger('markaspot_service_provider')->notice('Module uninstalled. Fields (field_service_provider_notes, field_reassign_sp, field_sp_email) and service_provider vocabulary have been preserved.');
+  // Note: We intentionally do NOT delete fields or the service_provider
+  // vocabulary. This follows Drupal best practices: fields and vocabularies
+  // are content/data and should be preserved when modules are uninstalled.
+  // Site administrators can manually delete them via the UI if desired.
+  \Drupal::logger('markaspot_service_provider')->notice('Module uninstalled. Fields (field_service_provider_notes, field_boilerplates_sp, field_reassign_sp, field_sp_email, field_organisation) and service_provider vocabulary have been preserved.');
 
   \Drupal::messenger()->addStatus(t('Mark-a-Spot Service Provider module uninstalled. All fields and the service_provider vocabulary have been preserved. To remove fields, use the Field UI or drush field:delete commands. To remove the vocabulary, visit /admin/structure/taxonomy.'));
 }
@@ -270,22 +297,6 @@ function _markaspot_service_provider_create_service_provider_notes_field() {
     /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
     $display_repo = \Drupal::service('entity_display.repository');
 
-    // Add to form display (default).
-    $form_display = $display_repo->getFormDisplay('node', 'service_request', 'default');
-    if (!$form_display->getComponent('field_service_provider_notes')) {
-      $form_display->setComponent('field_service_provider_notes', [
-        'type' => 'text_textarea',
-        'weight' => 60,
-        'region' => 'content',
-        'settings' => [
-          'rows' => 5,
-          'placeholder' => '',
-        ],
-        'third_party_settings' => [],
-      ])->save();
-      \Drupal::logger('markaspot_service_provider')->notice('Added field_service_provider_notes to service_request form display.');
-    }
-
     // Add to view display (default).
     $view_display = $display_repo->getViewDisplay('node', 'service_request', 'default');
     if (!$view_display->getComponent('field_service_provider_notes')) {
@@ -381,21 +392,6 @@ function _markaspot_service_provider_create_reassign_sp_field() {
     /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
     $display_repo = \Drupal::service('entity_display.repository');
 
-    // Add to form display (default).
-    $form_display = $display_repo->getFormDisplay('node', 'service_request', 'default');
-    if (!$form_display->getComponent('field_reassign_sp')) {
-      $form_display->setComponent('field_reassign_sp', [
-        'type' => 'boolean_checkbox',
-        'weight' => 61,
-        'region' => 'content',
-        'settings' => [
-          'display_label' => TRUE,
-        ],
-        'third_party_settings' => [],
-      ])->save();
-      \Drupal::logger('markaspot_service_provider')->notice('Added field_reassign_sp to service_request form display.');
-    }
-
     // Add to view display (default).
     $view_display = $display_repo->getViewDisplay('node', 'service_request', 'default');
     if (!$view_display->getComponent('field_reassign_sp')) {
@@ -415,9 +411,90 @@ function _markaspot_service_provider_create_reassign_sp_field() {
 }
 
 /**
+ * Create field_boilerplates_sp on service requests.
+ *
+ * The dashboard persists the selected service-provider boilerplate so agents
+ * can see which template populated the provider notes.
+ */
+function _markaspot_service_provider_create_sp_boilerplates_field() {
+  if (!\Drupal::entityTypeManager()->getStorage('node_type')->load('boilerplate')) {
+    \Drupal::logger('markaspot_service_provider')->warning('Skipped field_boilerplates_sp creation because the boilerplate content type is missing.');
+    return;
+  }
+
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_boilerplates_sp');
+  if (!$field_storage) {
+    FieldStorageConfig::create([
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'node',
+        ],
+      ],
+      'id' => 'node.field_boilerplates_sp',
+      'field_name' => 'field_boilerplates_sp',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'node',
+      ],
+      'module' => 'core',
+      'locked' => FALSE,
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ])->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_boilerplates_sp field storage on node entity type.');
+  }
+
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_boilerplates_sp');
+  if (!$field_instance) {
+    FieldConfig::create([
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.node.field_boilerplates_sp',
+          'node.type.boilerplate',
+          'node.type.service_request',
+        ],
+      ],
+      'id' => 'node.service_request.field_boilerplates_sp',
+      'field_name' => 'field_boilerplates_sp',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Service Provider Boilerplate',
+      'description' => 'Selected boilerplate used to populate service provider notes.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [
+        'handler' => 'default:node',
+        'handler_settings' => [
+          'target_bundles' => [
+            'boilerplate' => 'boilerplate',
+          ],
+          'sort' => [
+            'field' => 'title',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+        ],
+      ],
+      'field_type' => 'entity_reference',
+    ])->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_boilerplates_sp field instance on service_request content type.');
+  }
+}
+
+/**
  * Helper function to create field_sp_email field.
  *
- * Creates an email field with unlimited cardinality on taxonomy_term.service_provider.
+ * Creates an email field with unlimited cardinality on service_provider terms.
  */
 function _markaspot_service_provider_create_sp_email_field() {
   // Check if field storage already exists.
@@ -521,6 +598,453 @@ function _markaspot_service_provider_create_sp_email_field() {
 }
 
 /**
+ * Helper function to create field_organisation on service_provider terms.
+ *
+ * Creates an optional group reference with unlimited cardinality so external
+ * service providers can be limited to one or more organisation groups.
+ */
+function _markaspot_service_provider_create_sp_organisation_field() {
+  // Check if field storage already exists.
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_organisation');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'group',
+          'taxonomy',
+        ],
+      ],
+      'id' => 'taxonomy_term.field_organisation',
+      'field_name' => 'field_organisation',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'group',
+      ],
+      'module' => 'core',
+      'locked' => FALSE,
+      // Unlimited.
+      'cardinality' => -1,
+      'translatable' => FALSE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    FieldStorageConfig::create($field_storage_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_organisation field storage on taxonomy_term entity type.');
+  }
+
+  // Check if field instance already exists.
+  $field_instance = FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_organisation');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.taxonomy_term.field_organisation',
+          'group.type.org',
+          'taxonomy.vocabulary.service_provider',
+        ],
+        'module' => [
+          'group',
+        ],
+      ],
+      'id' => 'taxonomy_term.service_provider.field_organisation',
+      'field_name' => 'field_organisation',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => 'service_provider',
+      'label' => 'Organisations',
+      'description' => 'Limit this service provider to specific organisations. Leave empty to make the provider available across the jurisdiction.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => [
+            'org' => 'org',
+          ],
+          'sort' => [
+            'field' => 'label',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+          'auto_create_bundle' => '',
+        ],
+      ],
+      'field_type' => 'entity_reference',
+    ];
+
+    FieldConfig::create($field_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_organisation field instance on service_provider vocabulary.');
+  }
+
+  // Add field to entity displays if it exists.
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_organisation');
+  $field_instance = FieldConfig::loadByName('taxonomy_term', 'service_provider', 'field_organisation');
+
+  if ($field_storage && $field_instance) {
+    /** @var \Drupal\Core\Entity\EntityDisplayRepositoryInterface $display_repo */
+    $display_repo = \Drupal::service('entity_display.repository');
+
+    // Add to form display (default).
+    $form_display = $display_repo->getFormDisplay('taxonomy_term', 'service_provider', 'default');
+    if (!$form_display->getComponent('field_organisation')) {
+      $form_display->setComponent('field_organisation', [
+        'type' => 'entity_reference_autocomplete',
+        'weight' => 2,
+        'region' => 'content',
+        'settings' => [
+          'match_operator' => 'CONTAINS',
+          'match_limit' => 10,
+          'size' => 60,
+          'placeholder' => '',
+        ],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_service_provider')->notice('Added field_organisation to service_provider form display.');
+    }
+
+    // Add to view display (default).
+    $view_display = $display_repo->getViewDisplay('taxonomy_term', 'service_provider', 'default');
+    if (!$view_display->getComponent('field_organisation')) {
+      $view_display->setComponent('field_organisation', [
+        'type' => 'entity_reference_label',
+        'weight' => 2,
+        'region' => 'content',
+        'label' => 'above',
+        'settings' => [
+          'link' => TRUE,
+        ],
+        'third_party_settings' => [],
+      ])->save();
+      \Drupal::logger('markaspot_service_provider')->notice('Added field_organisation to service_provider view display.');
+    }
+  }
+}
+
+/**
+ * Ensure service provider fields are available in the management form mode.
+ */
+function _markaspot_service_provider_ensure_management_form_mode() {
+  $display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if (!$display) {
+    return FALSE;
+  }
+
+  $changed = FALSE;
+  $components = [
+    'field_service_provider' => [
+      'type' => 'options_select',
+      'weight' => 19,
+      'region' => 'content',
+      'settings' => [],
+      'third_party_settings' => [],
+    ],
+    'field_boilerplates_sp' => [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 20,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+      'third_party_settings' => [],
+    ],
+    'field_service_provider_status' => [
+      'type' => 'options_select',
+      'weight' => 21,
+      'region' => 'content',
+      'settings' => [],
+      'third_party_settings' => [],
+    ],
+    'field_service_provider_notes' => [
+      'type' => 'text_textarea',
+      'weight' => 22,
+      'region' => 'content',
+      'settings' => [
+        'rows' => 4,
+        'placeholder' => '',
+      ],
+      'third_party_settings' => [],
+    ],
+    'field_service_provider_feedback' => [
+      'type' => 'text_textarea',
+      'weight' => 23,
+      'region' => 'content',
+      'settings' => [
+        'rows' => 4,
+        'placeholder' => '',
+      ],
+      'third_party_settings' => [],
+    ],
+    'field_sp_attachment' => [
+      'type' => 'file_generic',
+      'weight' => 24,
+      'region' => 'content',
+      'settings' => [
+        'progress_indicator' => 'throbber',
+      ],
+      'third_party_settings' => [],
+    ],
+  ];
+
+  foreach ($components as $field_name => $component) {
+    if (!FieldConfig::loadByName('node', 'service_request', $field_name)) {
+      continue;
+    }
+    if ($display->getComponent($field_name)) {
+      continue;
+    }
+
+    $display->setComponent($field_name, $component);
+    $changed = TRUE;
+  }
+
+  $field_group_settings = $display->getThirdPartySettings('field_group');
+  $service_provider_children = array_values(array_filter(array_keys($components), function ($field_name) {
+    return (bool) FieldConfig::loadByName('node', 'service_request', $field_name);
+  }));
+
+  if ($service_provider_children) {
+    if (!isset($field_group_settings['group_service_provider'])) {
+      $field_group_settings['group_service_provider'] = [
+        'parent_name' => 'group_administration',
+        'children' => $service_provider_children,
+        'format_type' => 'details',
+        'label' => 'Dienstleister',
+        'weight' => 15,
+        'format_settings' => [
+          'open' => FALSE,
+          'required_fields' => TRUE,
+        ],
+      ];
+      $changed = TRUE;
+    }
+    else {
+      $existing_children = $field_group_settings['group_service_provider']['children'] ?? [];
+      $merged_children = array_values(array_unique(array_merge($existing_children, $service_provider_children)));
+      if ($merged_children !== $existing_children) {
+        $field_group_settings['group_service_provider']['children'] = $merged_children;
+        $changed = TRUE;
+      }
+    }
+
+    if (isset($field_group_settings['group_administration'])) {
+      $administration_children = $field_group_settings['group_administration']['children'] ?? [];
+      if (!in_array('group_service_provider', $administration_children, TRUE)) {
+        $administration_children[] = 'group_service_provider';
+        $field_group_settings['group_administration']['children'] = $administration_children;
+        $changed = TRUE;
+      }
+    }
+
+    foreach ($field_group_settings as $group_id => $group_settings) {
+      $display->setThirdPartySetting('field_group', $group_id, $group_settings);
+    }
+  }
+
+  if ($changed) {
+    $display->save();
+  }
+
+  return $changed;
+}
+
+/**
+ * Ensure field_boilerplates_sp is exposed in JSON:API resource config.
+ */
+function _markaspot_service_provider_ensure_sp_boilerplates_jsonapi() {
+  $config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.node--service_request');
+  if ($config->isNew()) {
+    return FALSE;
+  }
+
+  $resource_fields = $config->get('resourceFields') ?: [];
+  $existing_field = $resource_fields['field_boilerplates_sp'] ?? [];
+
+  $resource_fields['field_boilerplates_sp'] = [
+    'disabled' => FALSE,
+    'fieldName' => 'field_boilerplates_sp',
+    'publicName' => 'field_boilerplates_sp',
+    'enhancer' => [
+      'id' => '',
+    ],
+  ];
+  if ($existing_field === $resource_fields['field_boilerplates_sp']) {
+    return FALSE;
+  }
+
+  $config->set('resourceFields', $resource_fields)->save(TRUE);
+
+  return TRUE;
+}
+
+/**
+ * Expose org groups so boilerplate organisation references include UUIDs.
+ */
+function _markaspot_service_provider_ensure_org_group_jsonapi() {
+  $config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.group--org');
+
+  $data = [
+    'langcode' => 'en',
+    'status' => TRUE,
+    'dependencies' => [
+      'config' => [
+        'group.type.org',
+      ],
+    ],
+    'id' => 'group--org',
+    'disabled' => FALSE,
+    'path' => 'group/org',
+    'resourceType' => 'group--org',
+    'resourceFields' => [],
+  ];
+
+  if ($config->isNew()) {
+    $config->setData($data)->save(TRUE);
+    return TRUE;
+  }
+
+  $changed = FALSE;
+  foreach (['status', 'disabled', 'path', 'resourceType'] as $key) {
+    if ($config->get($key) !== $data[$key]) {
+      $config->set($key, $data[$key]);
+      $changed = TRUE;
+    }
+  }
+  if ($config->get('resourceFields') === NULL) {
+    $config->set('resourceFields', []);
+    $changed = TRUE;
+  }
+
+  if ($changed) {
+    $config->save(TRUE);
+  }
+
+  return $changed;
+}
+
+/**
+ * Remove the internal reassign trigger from the management form mode.
+ */
+function _markaspot_service_provider_remove_reassign_sp_from_management_form_mode() {
+  $display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if (!$display) {
+    return FALSE;
+  }
+
+  $changed = FALSE;
+  if ($display->getComponent('field_reassign_sp')) {
+    $display->removeComponent('field_reassign_sp');
+    $changed = TRUE;
+  }
+
+  $field_group_settings = $display->getThirdPartySettings('field_group');
+  foreach ($field_group_settings as $group_id => $group_settings) {
+    $children = $group_settings['children'] ?? NULL;
+    if (!is_array($children) || !in_array('field_reassign_sp', $children, TRUE)) {
+      continue;
+    }
+
+    $group_settings['children'] = array_values(array_diff($children, ['field_reassign_sp']));
+    $display->setThirdPartySetting('field_group', $group_id, $group_settings);
+    $changed = TRUE;
+  }
+
+  if ($changed) {
+    $display->save();
+  }
+
+  return $changed;
+}
+
+/**
+ * Keep service provider assignment fields out of public request form modes.
+ *
+ * These fields are managed through the dashboard management form mode. Exposing
+ * them through public request form modes makes scoped providers selectable
+ * before a service request has an organisation, which the backend correctly
+ * rejects.
+ */
+function _markaspot_service_provider_remove_sp_fields_from_public_form_modes() {
+  $changed = FALSE;
+  $service_provider_fields = [
+    'field_service_provider',
+    'field_boilerplates_sp',
+    'field_service_provider_status',
+    'field_service_provider_notes',
+    'field_service_provider_feedback',
+    'field_reassign_sp',
+    'field_sp_attachment',
+  ];
+
+  foreach (['default', 'nuxt'] as $form_mode) {
+    $display = \Drupal::entityTypeManager()
+      ->getStorage('entity_form_display')
+      ->load("node.service_request.$form_mode");
+
+    if (!$display) {
+      continue;
+    }
+
+    $display_changed = FALSE;
+    foreach ($service_provider_fields as $field_name) {
+      if ($display->getComponent($field_name)) {
+        $display->removeComponent($field_name);
+        $display_changed = TRUE;
+      }
+    }
+
+    $field_group_settings = $display->getThirdPartySettings('field_group');
+    if (isset($field_group_settings['group_service_provider'])) {
+      $display->unsetThirdPartySetting('field_group', 'group_service_provider');
+      unset($field_group_settings['group_service_provider']);
+      $display_changed = TRUE;
+    }
+
+    $removed_children = array_merge(['group_service_provider'], $service_provider_fields);
+    foreach ($field_group_settings as $group_id => $group_settings) {
+      $children = $group_settings['children'] ?? NULL;
+      if (!is_array($children)) {
+        continue;
+      }
+
+      $filtered_children = array_values(array_diff($children, $removed_children));
+      if ($filtered_children === $children) {
+        continue;
+      }
+
+      $group_settings['children'] = $filtered_children;
+      $display->setThirdPartySetting('field_group', $group_id, $group_settings);
+      $display_changed = TRUE;
+    }
+
+    if ($display_changed) {
+      $display->save();
+      $changed = TRUE;
+    }
+  }
+
+  return $changed;
+}
+
+/**
  * Update hook to fix field_reassign_sp cardinality from unlimited to 1.
  */
 function markaspot_service_provider_update_9001() {
@@ -585,4 +1109,44 @@ function markaspot_service_provider_update_9003() {
   }
 
   return implode(' ', $messages);
+}
+
+/**
+ * Add optional organisation scoping to service provider terms.
+ */
+function markaspot_service_provider_update_9004() {
+  _markaspot_service_provider_create_sp_organisation_field();
+  return t('Ensured service_provider terms can be scoped to organisation groups.');
+}
+
+/**
+ * Move service provider assignment fields out of public request form modes.
+ */
+function markaspot_service_provider_update_9005() {
+  $management_changed = _markaspot_service_provider_ensure_management_form_mode();
+  $public_changed = _markaspot_service_provider_remove_sp_fields_from_public_form_modes();
+
+  if ($management_changed || $public_changed) {
+    return t('Moved service provider assignment fields to the management form mode.');
+  }
+
+  return t('Service provider assignment fields are already limited to the management form mode.');
+}
+
+/**
+ * Add service-provider boilerplate assignment and hide reassign trigger.
+ */
+function markaspot_service_provider_update_9006() {
+  _markaspot_service_provider_create_sp_boilerplates_field();
+  $org_group_jsonapi_changed = _markaspot_service_provider_ensure_org_group_jsonapi();
+  $jsonapi_changed = _markaspot_service_provider_ensure_sp_boilerplates_jsonapi();
+  $management_changed = _markaspot_service_provider_ensure_management_form_mode();
+  $reassign_removed = _markaspot_service_provider_remove_reassign_sp_from_management_form_mode();
+  $public_changed = _markaspot_service_provider_remove_sp_fields_from_public_form_modes();
+
+  if ($org_group_jsonapi_changed || $jsonapi_changed || $management_changed || $reassign_removed || $public_changed) {
+    return t('Enabled service-provider boilerplates in the management form mode and removed the reassign trigger field from it.');
+  }
+
+  return t('Service-provider boilerplate form mode configuration already up to date.');
 }

@@ -139,10 +139,16 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
     // Add cache headers for GET requests to improve client-side caching.
     $response = new Response();
     if ($method === 'get' && !isset($query_params['debug'])) {
-      // Cache for 3 minutes.
-      $response->setMaxAge(180);
-      $response->setSharedMaxAge(180);
-      $response->headers->set('X-Cache-Policy', 'public, max-age=180');
+      if ($this->isCredentialedRequest($request)) {
+        $response->headers->set('Cache-Control', 'private, no-store');
+        $response->headers->set('X-Cache-Policy', 'private, no-store');
+      }
+      else {
+        // Cache for 3 minutes.
+        $response->setMaxAge(180);
+        $response->setSharedMaxAge(180);
+        $response->headers->set('X-Cache-Policy', 'public, max-age=180');
+      }
     }
 
     // Serialize response.
@@ -170,6 +176,30 @@ class GeoreportRequestHandler implements ContainerInjectionInterface {
     $response->headers->set('X-API-Execution-Time', $executionTime . 'ms');
 
     return $response;
+  }
+
+  /**
+   * Detects requests whose response must not be stored by shared caches.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request object.
+   *
+   * @return bool
+   *   TRUE when credentials are present.
+   */
+  protected function isCredentialedRequest(Request $request): bool {
+    $queryString = $request->getQueryString() ?: '';
+
+    return str_contains($queryString, 'api_key')
+      || $request->query->has('api_key')
+      || $request->request->has('api_key')
+      || $request->headers->has('api_key')
+      || $request->headers->has('api-key')
+      || $request->headers->has('apikey')
+      || $request->headers->has('x-api-key')
+      || $request->headers->has('authorization')
+      || $request->headers->has('cookie')
+      || $request->server->has('HTTP_API_KEY');
   }
 
 }

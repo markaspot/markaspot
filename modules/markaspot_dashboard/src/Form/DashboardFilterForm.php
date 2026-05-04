@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_dashboard\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
@@ -23,13 +24,24 @@ class DashboardFilterForm extends FormBase {
   protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
+   * The config factory.
+   */
+  protected ConfigFactoryInterface $configFactory;
+
+  /**
    * Constructs a DashboardFilterForm object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
    *   The entity type manager.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The config factory.
    */
-  public function __construct(EntityTypeManagerInterface $entity_type_manager) {
+  public function __construct(
+    EntityTypeManagerInterface $entity_type_manager,
+    ConfigFactoryInterface $config_factory,
+  ) {
     $this->entityTypeManager = $entity_type_manager;
+    $this->configFactory = $config_factory;
   }
 
   /**
@@ -38,6 +50,7 @@ class DashboardFilterForm extends FormBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('entity_type.manager'),
+      $container->get('config.factory'),
     );
   }
 
@@ -125,7 +138,7 @@ class DashboardFilterForm extends FormBase {
     try {
       $storage = $this->entityTypeManager->getStorage('group');
       $groups = $storage->loadByProperties([
-        'type' => 'jur',
+        'type' => $this->jurisdictionGroupType(),
         'status' => 1,
       ]);
 
@@ -139,6 +152,17 @@ class DashboardFilterForm extends FormBase {
 
     asort($options);
     return $options;
+  }
+
+  /**
+   * Gets the configured jurisdiction group type.
+   */
+  protected function jurisdictionGroupType(): string {
+    $configured = $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
   /**

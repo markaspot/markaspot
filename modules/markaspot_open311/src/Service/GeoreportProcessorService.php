@@ -3,12 +3,14 @@
 namespace Drupal\markaspot_open311\Service;
 
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\media\MediaInterface;
 use Drupal\Core\File\Exception\InvalidStreamWrapperException;
 use Drupal\Core\File\Exception\FileException;
 use GuzzleHttp\Exception\TransferException;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\user\Entity\User;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -40,6 +42,23 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  */
 class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   use StringTranslationTrait;
+
+  /**
+   * Sort fields supported by the request list endpoint.
+   */
+  protected const REQUEST_LIST_SORT_FIELDS = [
+    'created' => 'created',
+    'updated' => 'changed',
+    'status' => 'field_status',
+    'service_code' => 'field_category',
+    'request_id' => 'request_id',
+    'nid' => 'nid',
+  ];
+
+  /**
+   * Cursor payload version for request list pagination.
+   */
+  protected const REQUEST_LIST_CURSOR_VERSION = 1;
 
   /**
    * The config factory service.
@@ -538,7 +557,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $properties = ['field_service_code' => trim($code)];
       if ($jurisdictionId) {
         // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
-        $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+        $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+        if ($effectiveId === NULL) {
+          return NULL;
+        }
+        $properties['field_jurisdiction'] = $effectiveId;
       }
       $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties($properties);
       $term = reset($terms);
@@ -607,7 +630,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $originalJurisdictionId = $jurisdictionId;
     if ($jurisdictionId && $this->hierarchyResolver) {
       // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
-      $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+      $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+      if ($effectiveId === NULL) {
+        return [];
+      }
+      $properties['field_jurisdiction'] = $effectiveId;
     }
     $tree = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadByProperties($properties);
@@ -714,24 +741,38 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $totalCount = 0;
     $limit = 0;
     $offset = 0;
+    $requestListPagination = $parameters['_request_list_pagination'] ?? [];
+    $requestListSort = $parameters['_request_list_sort'] ?? NULL;
+    $requestListTotal = $parameters['_request_list_total'] ?? NULL;
 
     if ($includeMetadata) {
       // Extract limit/offset from parameters (they were set before query creation).
-      $limit = isset($parameters['limit']) ? (int) $parameters['limit'] : 100;
-
-      // Support both 'page' (1-based) and 'offset' (0-based) parameters.
-      if (isset($parameters['page']) && $parameters['page'] > 0) {
-        $page = (int) $parameters['page'];
-        $offset = ($page - 1) * $limit;
+      if (!empty($requestListPagination)) {
+        $limit = (int) $requestListPagination['limit'];
+        $offset = (int) $requestListPagination['offset'];
       }
-      elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
-        $offset = (int) $parameters['offset'];
+      else {
+        $limit = isset($parameters['limit']) ? (int) $parameters['limit'] : 100;
+
+        // Support both 'page' (1-based) and 'offset' (0-based) parameters.
+        if (isset($parameters['page']) && $parameters['page'] > 0) {
+          $page = (int) $parameters['page'];
+          $offset = ($page - 1) * $limit;
+        }
+        elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
+          $offset = (int) $parameters['offset'];
+        }
       }
 
-      // Clone query to get total count without range.
-      $countQuery = clone $query;
-      $countQuery->range(NULL, NULL);
-      $totalCount = (int) $countQuery->count()->execute();
+      if ($requestListTotal !== NULL) {
+        $totalCount = (int) $requestListTotal;
+      }
+      else {
+        // Clone query to get total count without range.
+        $countQuery = clone $query;
+        $countQuery->range(NULL, NULL);
+        $totalCount = (int) $countQuery->count()->execute();
+      }
     }
 
     $nids = $query->execute();
@@ -741,11 +782,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       if ($includeMetadata) {
         return [
           'requests' => [],
-          'meta' => [
-            'total' => 0,
-            'limit' => $limit,
-            'offset' => $offset,
-          ],
+          'meta' => $this->buildRequestListMetadata(
+            $totalCount,
+            $limit,
+            $offset,
+            $parameters
+          ),
         ];
       }
       return [];
@@ -791,6 +833,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
     }
 
+    $nodes = $this->orderLoadedNodes($nodes, $nids);
+
     // Use the proper role determination method.
     $extendedRole = $this->determineExtendedRole($user);
 
@@ -798,23 +842,385 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $this->preloadTaxonomyTerms($nodes);
 
     $serviceRequests = [];
+    $lastNode = NULL;
     foreach ($nodes as $node) {
       $serviceRequests[] = $this->mapNodeToServiceRequest($node, $extendedRole, $parameters);
+      $lastNode = $node;
     }
 
     // Return structured response with metadata if extensions enabled.
     if ($includeMetadata) {
+      $meta = $this->buildRequestListMetadata(
+        $totalCount,
+        $limit,
+        $offset,
+        $parameters,
+        $lastNode,
+        $requestListSort
+      );
+
       return [
         'requests' => $serviceRequests,
-        'meta' => [
-          'total' => $totalCount,
-          'limit' => $limit,
-          'offset' => $offset,
-        ],
+        'meta' => $meta,
       ];
     }
 
     return $serviceRequests;
+  }
+
+  /**
+   * Reorders loaded entities to match the entity query result order.
+   *
+   * EntityStorage::loadMultiple() returns keyed entities, but storage backends
+   * do not guarantee that the returned array keeps the query order.
+   *
+   * @param array $nodes
+   *   Loaded node entities keyed by node ID.
+   * @param array $nids
+   *   Node IDs in query result order.
+   *
+   * @return array
+   *   Loaded nodes in query result order.
+   */
+  protected function orderLoadedNodes(array $nodes, array $nids): array {
+    $ordered = [];
+    foreach ($nids as $nid) {
+      if (isset($nodes[$nid])) {
+        $ordered[$nid] = $nodes[$nid];
+      }
+    }
+    return $ordered;
+  }
+
+  /**
+   * Normalizes request-list pagination parameters.
+   *
+   * Offset and page stay supported for backwards compatibility. When a cursor
+   * is supplied, keyset pagination starts from offset 0 because the cursor
+   * itself defines the continuation point.
+   *
+   * @param array $parameters
+   *   Request query parameters.
+   * @param array $sort
+   *   Normalized request-list sort metadata.
+   *
+   * @return array
+   *   Pagination metadata with limit, offset, and optional decoded cursor.
+   */
+  public function normalizeRequestListPagination(array $parameters, array $sort): array {
+    $limit = isset($parameters['limit']) ? (int) $parameters['limit'] : 100;
+    $offset = 0;
+
+    // Support both 'page' (1-based) and 'offset' (0-based) parameters.
+    if (isset($parameters['page']) && (int) $parameters['page'] > 0) {
+      $page = (int) $parameters['page'];
+      $offset = ($page - 1) * $limit;
+    }
+    elseif (isset($parameters['offset']) && (int) $parameters['offset'] >= 0) {
+      $offset = (int) $parameters['offset'];
+    }
+
+    // Performance protection: require explicit limits for queries without
+    // date filters.
+    if (!isset($parameters['start_date']) && !isset($parameters['updated'])) {
+      $limit = min($limit, 100);
+    }
+    else {
+      // Apply limit for date-filtered queries. These can be larger since
+      // they are more specific.
+      $limit = min($limit, 500);
+    }
+
+    if (!empty($parameters['cursor']) && !empty($parameters['q'])) {
+      throw new GeoreportException('Cursor pagination is not available for text search.', 400);
+    }
+
+    $cursor = $this->decodeRequestListCursor($parameters['cursor'] ?? NULL, $sort);
+    if ($cursor !== NULL) {
+      $offset = 0;
+    }
+
+    return [
+      'limit' => $limit,
+      'offset' => $offset,
+      'cursor' => $cursor,
+    ];
+  }
+
+  /**
+   * Normalizes request-list sort parameters.
+   *
+   * @param array $parameters
+   *   Request query parameters.
+   *
+   * @return array
+   *   Sort metadata with API field, entity field, and direction.
+   */
+  public function normalizeRequestListSort(array $parameters): array {
+    // The updated filter is the legacy "changes since" path and always sorts
+    // newest changed entities first.
+    if (isset($parameters['updated'])) {
+      return [
+        'api_field' => 'updated',
+        'field' => 'changed',
+        'direction' => 'DESC',
+      ];
+    }
+
+    $apiField = 'created';
+    $sortField = 'created';
+    $sortDirection = 'ASC';
+
+    if (isset($parameters['sort'])) {
+      $sortParam = (string) $parameters['sort'];
+
+      // DEPRECATED: Legacy sort=DESC or sort=ASC (backward compatibility).
+      // Maps to 'created' field only. Use JSON:API style for other fields.
+      if (strcasecmp($sortParam, 'DESC') === 0) {
+        $sortDirection = 'DESC';
+      }
+      elseif (strcasecmp($sortParam, 'ASC') === 0) {
+        $sortDirection = 'ASC';
+      }
+      else {
+        // JSON:API style: '-' prefix indicates descending order.
+        if (str_starts_with($sortParam, '-')) {
+          $sortDirection = 'DESC';
+          $sortParam = substr($sortParam, 1);
+        }
+        else {
+          $sortDirection = 'ASC';
+        }
+
+        if (isset(static::REQUEST_LIST_SORT_FIELDS[$sortParam])) {
+          $apiField = $sortParam;
+          $sortField = static::REQUEST_LIST_SORT_FIELDS[$sortParam];
+        }
+      }
+    }
+
+    return [
+      'api_field' => $apiField,
+      'field' => $sortField,
+      'direction' => $sortDirection,
+    ];
+  }
+
+  /**
+   * Applies stable request-list sorting to an entity query.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The query to sort.
+   * @param array $sort
+   *   Normalized sort metadata.
+   */
+  public function applyRequestListSort(QueryInterface $query, array $sort): void {
+    $query->sort($sort['field'], $sort['direction']);
+
+    // EntityQuery order for equal timestamps/reference values is undefined.
+    // Add nid as a deterministic tie-breaker so offset callers stop drifting
+    // across rows that share the primary sort value.
+    if ($sort['field'] !== 'nid') {
+      $query->sort('nid', $sort['direction']);
+    }
+  }
+
+  /**
+   * Applies a decoded request-list cursor to an entity query.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The query to constrain.
+   * @param array|null $cursor
+   *   Decoded cursor metadata.
+   * @param array $sort
+   *   Normalized sort metadata.
+   */
+  public function applyRequestListCursor(QueryInterface $query, ?array $cursor, array $sort): void {
+    if ($cursor === NULL) {
+      return;
+    }
+
+    $operator = $sort['direction'] === 'DESC' ? '<' : '>';
+
+    if ($sort['field'] === 'nid') {
+      $query->condition('nid', $cursor['nid'], $operator);
+      return;
+    }
+
+    $cursorGroup = $query->orConditionGroup();
+    $cursorGroup->condition($sort['field'], $cursor['value'], $operator);
+
+    $tieGroup = $query->andConditionGroup();
+    $tieGroup->condition($sort['field'], $cursor['value']);
+    $tieGroup->condition('nid', $cursor['nid'], $operator);
+    $cursorGroup->condition($tieGroup);
+
+    $query->condition($cursorGroup);
+  }
+
+  /**
+   * Builds an opaque cursor for the last node in a response page.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $node
+   *   The last returned node.
+   * @param array $sort
+   *   Normalized sort metadata.
+   *
+   * @return string|null
+   *   URL-safe opaque cursor, or NULL when the sort value cannot be read.
+   */
+  public function buildRequestListCursor(ContentEntityInterface $node, array $sort): ?string {
+    $value = $this->getRequestListCursorValue($node, $sort['field']);
+    if ($value === NULL) {
+      return NULL;
+    }
+
+    $payload = [
+      'v' => static::REQUEST_LIST_CURSOR_VERSION,
+      'field' => $sort['field'],
+      'direction' => $sort['direction'],
+      'value' => $value,
+      'nid' => (int) $node->id(),
+    ];
+
+    return rtrim(strtr(base64_encode(json_encode($payload)), '+/', '-_'), '=');
+  }
+
+  /**
+   * Decodes and validates an opaque request-list cursor.
+   *
+   * @param string|null $cursor
+   *   Cursor query parameter.
+   * @param array $sort
+   *   Normalized sort metadata.
+   *
+   * @return array|null
+   *   Decoded cursor metadata, or NULL when no cursor was supplied.
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Thrown when the supplied cursor is invalid for the current sort.
+   */
+  public function decodeRequestListCursor(?string $cursor, array $sort): ?array {
+    if ($cursor === NULL || $cursor === '') {
+      return NULL;
+    }
+
+    $normalized = strtr($cursor, '-_', '+/');
+    $normalized .= str_repeat('=', (4 - strlen($normalized) % 4) % 4);
+    $decoded = base64_decode($normalized, TRUE);
+    if ($decoded === FALSE) {
+      throw new GeoreportException('Invalid pagination cursor.', 400);
+    }
+
+    $payload = json_decode($decoded, TRUE);
+    if (!is_array($payload)
+      || ($payload['v'] ?? NULL) !== static::REQUEST_LIST_CURSOR_VERSION
+      || ($payload['field'] ?? NULL) !== $sort['field']
+      || ($payload['direction'] ?? NULL) !== $sort['direction']
+      || !array_key_exists('value', $payload)
+      || empty($payload['nid'])
+      || !is_scalar($payload['value'])
+      || !is_numeric($payload['nid'])
+    ) {
+      throw new GeoreportException('Invalid pagination cursor.', 400);
+    }
+
+    $value = $payload['value'];
+    if (in_array($sort['field'], ['created', 'changed', 'field_status', 'field_category', 'nid'], TRUE)) {
+      if (!is_numeric($value)) {
+        throw new GeoreportException('Invalid pagination cursor.', 400);
+      }
+      $value = (int) $value;
+    }
+    else {
+      $value = (string) $value;
+    }
+
+    return [
+      'value' => $value,
+      'nid' => (int) $payload['nid'],
+    ];
+  }
+
+  /**
+   * Builds metadata for request-list responses.
+   *
+   * @param int $totalCount
+   *   Total result count for the current query.
+   * @param int $limit
+   *   Effective page limit.
+   * @param int $offset
+   *   Effective offset.
+   * @param array $parameters
+   *   Request query parameters.
+   * @param \Drupal\Core\Entity\ContentEntityInterface|null $lastNode
+   *   Last node in the returned page.
+   * @param array|null $requestListSort
+   *   Normalized request-list sort metadata.
+   *
+   * @return array
+   *   Response metadata.
+   */
+  protected function buildRequestListMetadata(
+    int $totalCount,
+    int $limit,
+    int $offset,
+    array $parameters,
+    ?ContentEntityInterface $lastNode = NULL,
+    ?array $requestListSort = NULL,
+  ): array {
+    $meta = [
+      'total' => $totalCount,
+      'limit' => $limit,
+      'offset' => $offset,
+    ];
+
+    if (!empty($parameters['cursor'])) {
+      $meta['cursor'] = $parameters['cursor'];
+    }
+
+    if ($lastNode !== NULL && $requestListSort !== NULL && empty($parameters['q'])) {
+      $nextCursor = $this->buildRequestListCursor($lastNode, $requestListSort);
+      if ($nextCursor !== NULL) {
+        $meta['next_cursor'] = $nextCursor;
+      }
+    }
+
+    return $meta;
+  }
+
+  /**
+   * Reads the cursor value for a node and sort field.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $node
+   *   The node to inspect.
+   * @param string $sortField
+   *   Entity field used as primary sort.
+   *
+   * @return int|string|null
+   *   Cursor value, or NULL when unavailable.
+   */
+  protected function getRequestListCursorValue(ContentEntityInterface $node, string $sortField): int|string|null {
+    if ($sortField === 'nid') {
+      return (int) $node->id();
+    }
+
+    if (!$node->hasField($sortField) || $node->get($sortField)->isEmpty()) {
+      return NULL;
+    }
+
+    $field = $node->get($sortField);
+    if (isset($field->target_id)) {
+      return (int) $field->target_id;
+    }
+    if (isset($field->value)) {
+      if (in_array($sortField, ['created', 'changed'], TRUE)) {
+        return (int) $field->value;
+      }
+      return (string) $field->value;
+    }
+
+    return NULL;
   }
 
   /**
@@ -1013,12 +1419,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Load jurisdiction group type from config (supports legacy 'jurisdiction' naming).
-    $config = $this->configFactory->get('markaspot_open311.settings');
-    $jur_type = $config->get('jurisdiction_group_type') ?? 'jur';
-
     // Lookup by slug.
     $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
-      'type' => $jur_type,
+      'type' => $this->jurisdictionGroupType(),
       'field_slug' => $value,
     ]);
     $group = reset($groups);
@@ -1402,16 +1805,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // visible to all users when configured via response_visibility.
     $visibilityConfig = $this->configFactory->get('markaspot_open311.settings')->get('response_visibility') ?? [];
 
-    $showOrganisation = $extendedRole === 'manager' || !empty($visibilityConfig['public_organisation']);
+    $showOrganisation = $extendedRole === 'manager'
+      || !empty($visibilityConfig['public_organisation']);
+    $includeOrganisationJurisdiction = $extendedRole === 'manager'
+      || !empty($visibilityConfig['public_jurisdiction']);
     if ($showOrganisation && $node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
       $organisations = [];
       foreach ($node->get('field_organisation')->referencedEntities() as $organisationEntity) {
-        $organisations[] = [
-          'id' => (string) $organisationEntity->id(),
-          'uuid' => $organisationEntity->uuid(),
-          'label' => $organisationEntity->label(),
-          'name' => $organisationEntity->label(),
-        ];
+        if ($organisationEntity instanceof GroupInterface) {
+          $organisations[] = $this->buildOrganisationReference(
+            $organisationEntity,
+            $includeOrganisationJurisdiction,
+          );
+        }
       }
       if (!empty($organisations)) {
         // Backward compatibility: single-value key uses the first org.
@@ -1751,7 +2157,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $properties = ['vid' => 'service_status', 'status' => 1];
     if ($jurisdictionId) {
       // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
-      $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+      $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+      if ($effectiveId === NULL) {
+        return [];
+      }
+      $properties['field_jurisdiction'] = $effectiveId;
     }
 
     if ($status === 'open') {
@@ -1799,7 +2209,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     ];
     if ($jurisdictionId) {
       // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
-      $properties['field_jurisdiction'] = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+      $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+      if ($effectiveId === NULL) {
+        return NULL;
+      }
+      $properties['field_jurisdiction'] = $effectiveId;
     }
     $terms = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadByProperties($properties);
@@ -1825,6 +2239,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       return NULL;
     }
     $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+    if ($effectiveId === NULL) {
+      return NULL;
+    }
     $group = $this->entityTypeManager->getStorage('group')->load($effectiveId);
     if (!$group || !$group->hasField('field_initial_boilerplate') || $group->get('field_initial_boilerplate')->isEmpty()) {
       return NULL;
@@ -1887,7 +2304,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Verify it's a jurisdiction group type.
-    if ($group->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($group)) {
       throw new AccessDeniedHttpException(
         'Invalid jurisdiction_id: not a jurisdiction group.'
       );
@@ -1914,6 +2331,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   public function getCategoryTidsForJurisdiction(int $jurisdictionId): array {
     // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
     $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+    if ($effectiveId === NULL) {
+      return [];
+    }
 
     $terms = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadByProperties([
@@ -1986,7 +2406,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $jurGroups = [];
     foreach ($relationships as $relationship) {
       $group = $relationship->getGroup();
-      if ($group && $group->bundle() === 'jur') {
+      if ($group && $this->isJurisdictionGroup($group)) {
         $jurGroups[(int) $group->id()] = $group;
       }
     }
@@ -2020,6 +2440,61 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return NULL;
+  }
+
+  /**
+   * Builds a stable organisation reference for API responses.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $organisationEntity
+   *   The organisation group.
+   * @param bool $includeJurisdictionContext
+   *   Whether to include jurisdiction context.
+   *
+   * @return array<string, mixed>
+   *   Serialized organisation reference.
+   */
+  protected function buildOrganisationReference(
+    GroupInterface $organisationEntity,
+    bool $includeJurisdictionContext,
+  ): array {
+    $reference = [
+      'id' => (string) $organisationEntity->id(),
+      'uuid' => $organisationEntity->uuid(),
+      'label' => $organisationEntity->label(),
+      'name' => $organisationEntity->label(),
+    ];
+
+    if ($includeJurisdictionContext) {
+      $jurisdictionId = $this->getOrganisationJurisdictionId($organisationEntity);
+      $reference['jurisdiction_id'] = $jurisdictionId;
+      $reference['orphan'] = $jurisdictionId === NULL;
+    }
+
+    return $reference;
+  }
+
+  /**
+   * Gets a valid jurisdiction ID from an organisation group.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $organisationEntity
+   *   The organisation group.
+   *
+   * @return int|null
+   *   The jurisdiction group ID, or NULL when missing or invalid.
+   */
+  protected function getOrganisationJurisdictionId(GroupInterface $organisationEntity): ?int {
+    if (!$organisationEntity->hasField('field_jurisdiction')
+      || $organisationEntity->get('field_jurisdiction')->isEmpty()) {
+      return NULL;
+    }
+
+    $jurisdiction = $organisationEntity->get('field_jurisdiction')->entity;
+    if (!$jurisdiction instanceof GroupInterface
+      || !$this->isJurisdictionGroup($jurisdiction)) {
+      return NULL;
+    }
+
+    return (int) $jurisdiction->id();
   }
 
   /**
@@ -2059,7 +2534,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
           && !$group->get('field_parent_jurisdiction')->isEmpty()) {
         $parentId = (int) $group->get('field_parent_jurisdiction')->target_id;
         $group = $this->entityTypeManager->getStorage('group')->load($parentId);
-        if (!$group || $group->bundle() !== 'jur') {
+        if (!$group || !$this->isJurisdictionGroup($group)) {
           break;
         }
       }
@@ -2070,6 +2545,24 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Reverse so root comes first.
     return array_reverse($chain);
+  }
+
+  /**
+   * Checks whether a group is the configured jurisdiction bundle.
+   */
+  protected function isJurisdictionGroup(GroupInterface $group): bool {
+    return $group->bundle() === $this->jurisdictionGroupType();
+  }
+
+  /**
+   * Returns the configured jurisdiction group bundle.
+   */
+  protected function jurisdictionGroupType(): string {
+    $configured = $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
   /**

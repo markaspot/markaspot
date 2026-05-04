@@ -8,6 +8,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Site\Settings;
 use Drupal\markaspot_moderation\Service\ModerationServiceInterface;
 use Drupal\markaspot_group\Service\TenantAdminHelper;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -19,6 +20,8 @@ use Symfony\Component\HttpFoundation\Request;
  * and performing moderation actions (dismiss, hide, delete).
  */
 class ModerationController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The moderation service.
@@ -384,7 +387,7 @@ class ModerationController extends ControllerBase {
       $groupStorage = $this->entityTypeManager()->getStorage('group');
       $ids = $groupStorage->getQuery()
         ->accessCheck(FALSE)
-        ->condition('type', 'jur')
+        ->condition('type', $this->getJurisdictionGroupType())
         ->execute();
       return array_map('intval', $ids);
     }
@@ -429,7 +432,7 @@ class ModerationController extends ControllerBase {
 
     foreach ($relationships as $relationship) {
       $group = $relationship->getGroup();
-      if ($group && $group->bundle() === 'jur') {
+      if ($this->isJurisdictionGroup($group)) {
         if (in_array((int) $group->id(), $jurisdictionIds, TRUE)) {
           return NULL;
         }

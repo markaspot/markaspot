@@ -80,3 +80,9 @@ resourceFields:
     publicName: field_sp_email
     enhancer:
       id: ''
+  field_organisation:
+    disabled: false
+    fieldName: field_organisation
+    publicName: field_organisation
+    enhancer:
+      id: ''

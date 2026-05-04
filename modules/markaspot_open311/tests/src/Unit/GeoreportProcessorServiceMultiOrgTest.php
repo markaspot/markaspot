@@ -174,10 +174,6 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
     );
   }
 
-  // =========================================================================
-  // Helper: create mock organisation group entity.
-  // =========================================================================
-
   /**
    * Creates a mock organisation group entity.
    *
@@ -187,22 +183,52 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
    *   The group UUID.
    * @param string $label
    *   The group label.
+   * @param int|null $jurisdictionId
+   *   The optional jurisdiction group ID.
    *
    * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked group entity.
    */
-  protected function createMockOrgEntity(int $id, string $uuid, string $label): GroupInterface {
+  protected function createMockOrgEntity(int $id, string $uuid, string $label, ?int $jurisdictionId = NULL): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn($id);
     $group->method('uuid')->willReturn($uuid);
     $group->method('label')->willReturn($label);
     $group->method('bundle')->willReturn('org');
+    $jurisdiction = NULL;
+    if ($jurisdictionId !== NULL) {
+      $jurisdiction = $this->createMock(GroupInterface::class);
+      $jurisdiction->method('id')->willReturn((string) $jurisdictionId);
+      $jurisdiction->method('bundle')->willReturn('jur');
+    }
+    $group->method('hasField')
+      ->willReturnCallback(fn(string $field): bool => $field === 'field_jurisdiction');
+    $group->method('get')
+      ->willReturnCallback(static function (string $field) use ($jurisdictionId, $jurisdiction) {
+        if ($field !== 'field_jurisdiction') {
+          return NULL;
+        }
+        return new class($jurisdictionId, $jurisdiction) {
+
+          /**
+           * Constructs a jurisdiction reference field stub.
+           */
+          public function __construct(
+            public ?int $targetId,
+            public ?object $entity,
+          ) {}
+
+          /**
+           * Checks whether the field is empty.
+           */
+          public function isEmpty(): bool {
+            return $this->targetId === NULL;
+          }
+
+        };
+      });
     return $group;
   }
-
-  // =========================================================================
-  // Helper: create mock node for mapNodeToServiceRequest().
-  // =========================================================================
 
   /**
    * Auto-incrementing node ID to avoid static cache collisions.
@@ -411,10 +437,6 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
     return $node;
   }
 
-  // =========================================================================
-  // Multi-org response tests.
-  // =========================================================================
-
   /**
    * Tests that a node with 2 orgs produces both keys in the response.
    *
@@ -456,6 +478,37 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
 
     $this->assertArrayHasKey('organisation', $result);
     $this->assertEquals($result['organisations'][0], $result['organisation']);
+  }
+
+  /**
+   * Tests manager response exposes valid organisation jurisdiction metadata.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testManagerResponseIncludesOrganisationJurisdictionMetadata(): void {
+    $org = $this->createMockOrgEntity(10, 'uuid-org-10', 'Department A', 5);
+    $node = $this->createMockNode([$org]);
+
+    $result = $this->processor->mapNodeToServiceRequest($node, 'manager', []);
+
+    $this->assertSame(5, $result['organisation']['jurisdiction_id']);
+    $this->assertFalse($result['organisation']['orphan']);
+    $this->assertSame($result['organisation'], $result['organisations'][0]);
+  }
+
+  /**
+   * Tests manager response marks orphan organisations explicitly.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testManagerResponseMarksOrphanOrganisation(): void {
+    $org = $this->createMockOrgEntity(10, 'uuid-org-10', 'Department A');
+    $node = $this->createMockNode([$org]);
+
+    $result = $this->processor->mapNodeToServiceRequest($node, 'manager', []);
+
+    $this->assertNull($result['organisation']['jurisdiction_id']);
+    $this->assertTrue($result['organisation']['orphan']);
   }
 
   /**

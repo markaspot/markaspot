@@ -6,6 +6,7 @@ namespace Drupal\markaspot_nuxt\Access;
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Routing\Access\AccessInterface;
@@ -53,6 +54,7 @@ final class FeatureFlagAccessCheck implements AccessInterface, ContainerInjectio
     private readonly FeatureFlagChecker $featureFlagChecker,
     private readonly RequestStack $requestStack,
     private readonly EntityTypeManagerInterface $entityTypeManager,
+    private readonly ConfigFactoryInterface $configFactory,
   ) {}
 
   /**
@@ -63,6 +65,7 @@ final class FeatureFlagAccessCheck implements AccessInterface, ContainerInjectio
       $container->get('markaspot_nuxt.feature_flag_checker'),
       $container->get('request_stack'),
       $container->get('entity_type.manager'),
+      $container->get('config.factory'),
     );
   }
 
@@ -139,11 +142,11 @@ final class FeatureFlagAccessCheck implements AccessInterface, ContainerInjectio
         return NULL;
       }
       $group = $storage->load($gid);
-      return ($group instanceof GroupInterface && $group->bundle() === 'jur') ? $group : NULL;
+      return $this->isJurisdictionGroup($group) ? $group : NULL;
     }
     if (is_int($raw) && $raw > 0) {
       $group = $storage->load($raw);
-      return ($group instanceof GroupInterface && $group->bundle() === 'jur') ? $group : NULL;
+      return $this->isJurisdictionGroup($group) ? $group : NULL;
     }
 
     // Slug: alphanumeric + hyphen/underscore, max 64 chars.
@@ -151,12 +154,29 @@ final class FeatureFlagAccessCheck implements AccessInterface, ContainerInjectio
       return NULL;
     }
     $groups = $storage->loadByProperties([
-      'type' => 'jur',
+      'type' => $this->getJurisdictionGroupType(),
       'field_slug' => $raw,
       'status' => 1,
     ]);
     $group = reset($groups);
     return $group instanceof GroupInterface ? $group : NULL;
+  }
+
+  /**
+   * Checks whether a group uses the configured jurisdiction type.
+   */
+  private function isJurisdictionGroup(mixed $group): bool {
+    return $group instanceof GroupInterface
+      && $group->bundle() === $this->getJurisdictionGroupType();
+  }
+
+  /**
+   * Gets the configured jurisdiction group type.
+   */
+  private function getJurisdictionGroupType(): string {
+    return $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type') ?: 'jur';
   }
 
 }

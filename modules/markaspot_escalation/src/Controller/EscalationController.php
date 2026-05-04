@@ -5,6 +5,7 @@ namespace Drupal\markaspot_escalation\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\markaspot_escalation\Service\EscalationServiceInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
@@ -20,6 +21,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * Handles escalation and delegation of service requests.
  */
 class EscalationController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * Maximum allowed length for escalation/delegation notes.
@@ -325,7 +328,7 @@ class EscalationController extends ControllerBase {
       $found = FALSE;
       while ($maxDepth-- > 0) {
         $current = $this->entityTypeManager()->getStorage('group')->load($currentId);
-        if (!$current || $current->bundle() !== 'jur') {
+        if (!$this->isJurisdictionGroup($current)) {
           break;
         }
         if ((int) $current->id() === (int) $nodeJurId) {

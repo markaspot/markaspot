@@ -260,6 +260,12 @@ resourceFields:
     publicName: field_service_provider
     enhancer:
       id: ''
+  field_boilerplates_sp:
+    disabled: false
+    fieldName: field_boilerplates_sp
+    publicName: field_boilerplates_sp
+    enhancer:
+      id: ''
   field_service_provider_notes:
     disabled: false
     fieldName: field_service_provider_notes

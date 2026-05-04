@@ -9,6 +9,7 @@ use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
@@ -25,6 +26,7 @@ use Psr\Log\LoggerInterface;
  */
 class EscalationService implements EscalationServiceInterface {
 
+  use JurisdictionIdResolverTrait;
   use StringTranslationTrait;
 
   /**
@@ -131,7 +133,7 @@ class EscalationService implements EscalationServiceInterface {
 
     // Load and validate the target jurisdiction group.
     $jurGroup = $groupStorage->load($targetJurId);
-    if (!$jurGroup || $jurGroup->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($jurGroup)) {
       throw new \InvalidArgumentException(
         sprintf('Target group %d does not exist or is not a jurisdiction.', $targetJurId)
       );
@@ -197,7 +199,7 @@ class EscalationService implements EscalationServiceInterface {
       ]);
       foreach ($existing as $relationship) {
         $group = $relationship->getGroup();
-        if ($group->bundle() === 'jur' && (int) $group->id() !== $targetJurId) {
+        if ($this->isJurisdictionGroup($group) && (int) $group->id() !== $targetJurId) {
           $relationship->delete();
         }
       }
@@ -256,7 +258,7 @@ class EscalationService implements EscalationServiceInterface {
         if ($currentEscalation !== $targetGroupId) {
           // Verify the target group still exists and is a jurisdiction.
           $targetGroup = $groupStorage->load($targetGroupId);
-          if ($targetGroup && $targetGroup->bundle() === 'jur') {
+          if ($this->isJurisdictionGroup($targetGroup)) {
             return $targetGroupId;
           }
           $this->logger->warning('Category escalation target @gid is invalid for node @nid.', [
@@ -504,7 +506,7 @@ class EscalationService implements EscalationServiceInterface {
     $groupStorage = $this->entityTypeManager->getStorage('group');
     $jurGroup = $groupStorage->load($jurId);
 
-    if (!$jurGroup || $jurGroup->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($jurGroup)) {
       return NULL;
     }
 
@@ -518,7 +520,7 @@ class EscalationService implements EscalationServiceInterface {
 
     // Verify parent exists and is a jurisdiction.
     $parentGroup = $groupStorage->load($parentId);
-    if (!$parentGroup || $parentGroup->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($parentGroup)) {
       $this->logger->warning('Parent jurisdiction @pid referenced by @jid does not exist or is invalid.', [
         '@pid' => $parentId,
         '@jid' => $jurId,
@@ -557,7 +559,7 @@ class EscalationService implements EscalationServiceInterface {
     $rootJurId = NULL;
     foreach ($relationships as $relationship) {
       $group = $relationship->getGroup();
-      if ($group->bundle() !== 'jur') {
+      if (!$this->isJurisdictionGroup($group)) {
         continue;
       }
       $gid = (int) $group->id();

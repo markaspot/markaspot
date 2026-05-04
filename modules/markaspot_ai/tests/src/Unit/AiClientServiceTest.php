@@ -67,10 +67,17 @@ class AiClientServiceTest extends UnitTestCase {
   protected array $savedEnv = [];
 
   /**
-   * ENV variable names touched by resolveApiKey() across providers.
+   * ENV variable names AiClientService consults at runtime.
+   *
+   * Includes both the credential-resolution variants (resolveApiKey) and
+   * the endpoint overrides (api_url / api_version) so that ambient host
+   * ENV (e.g. DDEV exporting MARKASPOT_AI_API_URL=...) cannot bleed into
+   * the unit tests and overwrite mocked provider configuration.
    */
-  private const RESOLVE_API_KEY_ENV_KEYS = [
+  private const AI_ENV_KEYS_TO_ISOLATE = [
     'MARKASPOT_AI_API_KEY',
+    'MARKASPOT_AI_API_URL',
+    'MARKASPOT_AI_API_VERSION',
     'OPENAI_API_KEY',
     'MARKASPOT_AI_OPENAI_KEY',
     'AZURE_OPENAI_API_KEY',
@@ -88,7 +95,7 @@ class AiClientServiceTest extends UnitTestCase {
     parent::setUp();
 
     // Isolate tests from host ENV: save and clear ai-related variables.
-    foreach (self::RESOLVE_API_KEY_ENV_KEYS as $key) {
+    foreach (self::AI_ENV_KEYS_TO_ISOLATE as $key) {
       $this->savedEnv[$key] = getenv($key);
       putenv($key);
     }

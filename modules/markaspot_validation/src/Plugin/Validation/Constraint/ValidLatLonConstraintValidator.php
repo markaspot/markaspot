@@ -16,7 +16,7 @@ use Symfony\Component\Validator\ConstraintValidator;
  * Validates that coordinates fall within the configured boundary.
  *
  * Resolution order:
- * 1. Jurisdiction-specific GeoJSON boundary (from the jur group's
+ * 1. Jurisdiction-specific GeoJSON boundary (from the jurisdiction group's
  *    field_boundary, resolved via group membership or category term).
  * 2. Global WKT polygon from markaspot_validation.settings.wkt.
  * 3. No boundary configured: validation passes.
@@ -86,7 +86,7 @@ class ValidLatLonConstraintValidator extends ConstraintValidator implements Cont
   /**
    * Resolves the jurisdiction ID from the validated entity.
    *
-   * Primary: entity -> group_relationship (jur-group_node-service_request).
+   * Primary: entity -> group_relationship for service requests.
    * Fallback: entity -> field_category -> term -> field_jurisdiction.
    *
    * The group membership approach is preferred because it returns the actual
@@ -124,9 +124,8 @@ class ValidLatLonConstraintValidator extends ConstraintValidator implements Cont
   /**
    * Resolves jurisdiction ID from the entity's group relationship.
    *
-   * Queries group_relationship storage for an existing relationship of type
-   * jur-group_node-service_request, which directly links the node to its
-   * assigned jurisdiction group.
+   * Queries group_relationship storage for an existing service request
+   * relationship that directly links the node to its assigned jurisdiction.
    *
    * @param \Drupal\Core\Entity\ContentEntityInterface $entity
    *   The entity being validated.
@@ -144,7 +143,7 @@ class ValidLatLonConstraintValidator extends ConstraintValidator implements Cont
       ->getStorage('group_relationship')
       ->loadByProperties([
         'entity_id' => $entity->id(),
-        'type' => 'jur-group_node-service_request',
+        'type' => $this->jurisdictionGroupType() . '-group_node-service_request',
       ]);
 
     if (empty($relationships)) {
@@ -157,6 +156,17 @@ class ValidLatLonConstraintValidator extends ConstraintValidator implements Cont
       return NULL;
     }
     return (int) $group->id();
+  }
+
+  /**
+   * Gets the configured jurisdiction group type.
+   */
+  private function jurisdictionGroupType(): string {
+    $configured = $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
   /**

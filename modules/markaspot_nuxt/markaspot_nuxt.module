@@ -6,7 +6,9 @@
  */
 
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Cache\Cache;
 use Drupal\file\Entity\File;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\node\NodeInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Session\AccountInterface;
@@ -120,6 +122,29 @@ function markaspot_nuxt_node_presave(NodeInterface $node): void {
   throw new UnprocessableEntityHttpException(
     'Privacy notice consent (field_gdpr) is required for this jurisdiction but was not accepted.'
   );
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for group entities.
+ */
+function markaspot_nuxt_group_update(GroupInterface $group): void {
+  if (!$group->hasField('field_slug')) {
+    return;
+  }
+
+  $original = $group->getOriginal();
+  if (!$original instanceof GroupInterface || !$original->hasField('field_slug')) {
+    Cache::invalidateTags(['group:' . $group->id(), 'group_list']);
+    return;
+  }
+
+  $previous_slug = trim($original->get('field_slug')->getString());
+  $current_slug = trim($group->get('field_slug')->getString());
+  if ($previous_slug === $current_slug) {
+    return;
+  }
+
+  Cache::invalidateTags(['group:' . $group->id(), 'group_list']);
 }
 
 /**

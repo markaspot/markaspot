@@ -12,6 +12,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Psr\Log\LoggerInterface;
@@ -25,6 +26,8 @@ use Psr\Log\LoggerInterface;
  * citizens left empty when submitting their report.
  */
 class AttributeFillingService {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The AI client service.
@@ -1381,7 +1384,7 @@ class AttributeFillingService {
       $groupRelationships = GroupRelationship::loadByEntity($node);
       foreach ($groupRelationships as $relationship) {
         $group = $relationship->getGroup();
-        if ($group && $group->bundle() === 'jur') {
+        if ($this->isJurisdictionGroup($group)) {
           $jurisdictionId = (int) $group->id();
           break;
         }
@@ -1464,12 +1467,15 @@ class AttributeFillingService {
       $groupRelationships = GroupRelationship::loadByEntity($node);
       foreach ($groupRelationships as $relationship) {
         $group = $relationship->getGroup();
-        if ($group && $group->bundle() === 'jur') {
+        if ($this->isJurisdictionGroup($group)) {
           $directId = (int) $group->id();
           // Resolve to root jurisdiction (status terms live on the root).
           $jurisdictionId = $this->hierarchyResolver
             ? $this->hierarchyResolver->getRootJurisdictionId($directId)
             : $directId;
+          if ($jurisdictionId === NULL) {
+            return '';
+          }
           break;
         }
       }
@@ -1525,7 +1531,7 @@ class AttributeFillingService {
       $groupRelationships = GroupRelationship::loadByEntity($node);
       foreach ($groupRelationships as $relationship) {
         $group = $relationship->getGroup();
-        if ($group && $group->bundle() === 'jur'
+        if ($this->isJurisdictionGroup($group)
             && $group->hasField('field_ai_system_prompt')
             && !$group->get('field_ai_system_prompt')->isEmpty()) {
           $raw = $group->get('field_ai_system_prompt')->value;

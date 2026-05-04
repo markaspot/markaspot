@@ -9,6 +9,7 @@ use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\Pager\PagerManagerInterface;
 use Drupal\Core\Url;
 use Drupal\markaspot_group\Service\TenantAdminHelper;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_moderation\Service\ModerationServiceInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -20,6 +21,8 @@ use Symfony\Component\HttpFoundation\Request;
  * and operation links for dismiss, hide, and delete actions.
  */
 class ModerationAdminController extends ControllerBase {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The moderation service.
@@ -203,7 +206,7 @@ class ModerationAdminController extends ControllerBase {
       $groupStorage = $this->entityTypeManager()->getStorage('group');
       $ids = $groupStorage->getQuery()
         ->accessCheck(FALSE)
-        ->condition('type', 'jur')
+        ->condition('type', $this->getJurisdictionGroupType())
         ->execute();
       return array_map('intval', $ids);
     }

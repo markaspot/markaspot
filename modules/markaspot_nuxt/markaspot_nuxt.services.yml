@@ -9,7 +9,7 @@ services:
     class: Drupal\markaspot_nuxt\Service\FeatureFlagChecker
   markaspot_nuxt.feature_flag_access_check:
     class: Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck
-    arguments: ['@markaspot_nuxt.feature_flag_checker', '@request_stack', '@entity_type.manager']
+    arguments: ['@markaspot_nuxt.feature_flag_checker', '@request_stack', '@entity_type.manager', '@config.factory']
 
   # Note: Boolean helper and json_form.* service overrides are registered
   # dynamically via MarkaspotNuxtServiceProvider when json_form_widget is active.

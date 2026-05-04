@@ -154,7 +154,7 @@ class MetricsCalculatorService {
     if (!empty($filters['jurisdiction_id'])) {
       $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
       $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
-      $query->condition('g.type', 'jur');
+      $query->condition('g.type', $this->jurisdictionGroupType());
       $jurisdictionIds = $this->hierarchyResolver
         ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
         : [(int) $filters['jurisdiction_id']];
@@ -665,7 +665,7 @@ class MetricsCalculatorService {
     if (!empty($filters['jurisdiction_id'])) {
       $closed_query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
       $closed_query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
-      $closed_query->condition('g.type', 'jur');
+      $closed_query->condition('g.type', $this->jurisdictionGroupType());
       $jurisdictionIds = $this->hierarchyResolver
         ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
         : [(int) $filters['jurisdiction_id']];
@@ -783,10 +783,11 @@ class MetricsCalculatorService {
     if (!empty($filters['jurisdiction_id'])) {
       $joins .= "
         INNER JOIN {group_relationship_field_data} gr ON n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'
-        INNER JOIN {groups_field_data} g ON gr.gid = g.id AND g.type = 'jur' AND g.default_langcode = 1
+        INNER JOIN {groups_field_data} g ON gr.gid = g.id AND g.type = :jurisdiction_group_type AND g.default_langcode = 1
       ";
       $conditions .= ' AND g.id = :jurisdiction_id';
       $args[':jurisdiction_id'] = $filters['jurisdiction_id'];
+      $args[':jurisdiction_group_type'] = $this->jurisdictionGroupType();
     }
 
     // Category filter.
@@ -842,6 +843,17 @@ class MetricsCalculatorService {
       'granularity' => $granularity,
       'filters_applied' => $this->getAppliedFiltersInfo($filters),
     ];
+  }
+
+  /**
+   * Returns the configured jurisdiction group bundle.
+   */
+  protected function jurisdictionGroupType(): string {
+    $configured = $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
   /**
@@ -1085,7 +1097,7 @@ class MetricsCalculatorService {
     if (!empty($filters['jurisdiction_id'])) {
       $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
       $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
-      $query->condition('g.type', 'jur');
+      $query->condition('g.type', $this->jurisdictionGroupType());
       $jurisdictionIds = $this->hierarchyResolver
         ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
         : [(int) $filters['jurisdiction_id']];

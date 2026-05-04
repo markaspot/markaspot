@@ -10,6 +10,7 @@ use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
+use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
 use Drupal\markaspot_mail\Service\AttachmentResolver;
 use Psr\Log\LoggerInterface;
@@ -43,6 +44,7 @@ use Psr\Log\LoggerInterface;
  */
 final class EcaActionEmailBuilder implements MailBuilderInterface {
 
+  use ResolveJurisdictionFromNodeTrait;
   use SplitParagraphsTrait;
 
   public function __construct(
@@ -240,7 +242,7 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
     if (!$target instanceof ContentEntityInterface || $target->getEntityTypeId() !== 'group') {
       return ['platform', NULL];
     }
-    if ($target->bundle() !== 'jur') {
+    if (!$this->isResolvedJurisdictionGroup($target)) {
       return ['platform', NULL];
     }
     return ['jurisdiction', (int) $target->id()];

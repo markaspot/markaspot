@@ -633,7 +633,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
    * @covers ::getJurisdictionIdFromNode
    */
   public function testGetJurisdictionIdFromNodeWithCategory(): void {
-    // Use anonymous classes to provide target_id and entity as real properties.
+    // Use anonymous classes to provide target_id and entity-like properties.
     // PHPUnit mocks of interfaces don't support dynamic properties in PHP 8.2+.
     $jurisdictionField = new class() {
 
@@ -643,15 +643,20 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       public int $targetId = 42;
 
       /**
-       * The target entity ID (Drupal field item property name).
-       */
-      public int $target_id = 42;
-
-      /**
        * Checks if the field is empty.
        */
       public function isEmpty(): bool {
         return FALSE;
+      }
+
+      /**
+       * Provides Drupal-style snake_case field item properties.
+       */
+      public function __get(string $name): mixed {
+        if ($name === 'target_id') {
+          return $this->targetId;
+        }
+        return NULL;
       }
 
     };
@@ -1277,6 +1282,291 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertEquals('no-group-uuid', $result['bautyp']);
   }
 
+  // =========================================================================
+  // Request list pagination tests.
+  // =========================================================================
+
+  /**
+   * @covers ::normalizeRequestListSort
+   */
+  public function testNormalizeRequestListSortKeepsLegacyValues(): void {
+    $this->assertSame(
+      [
+        'api_field' => 'created',
+        'field' => 'created',
+        'direction' => 'DESC',
+      ],
+      $this->processor->normalizeRequestListSort(['sort' => 'DESC'])
+    );
+
+    $this->assertSame(
+      [
+        'api_field' => 'created',
+        'field' => 'created',
+        'direction' => 'ASC',
+      ],
+      $this->processor->normalizeRequestListSort(['sort' => 'ASC'])
+    );
+  }
+
+  /**
+   * @covers ::normalizeRequestListSort
+   */
+  public function testNormalizeRequestListSortMapsJsonApiStyleFields(): void {
+    $this->assertSame(
+      [
+        'api_field' => 'updated',
+        'field' => 'changed',
+        'direction' => 'DESC',
+      ],
+      $this->processor->normalizeRequestListSort(['sort' => '-updated'])
+    );
+
+    $this->assertSame(
+      [
+        'api_field' => 'nid',
+        'field' => 'nid',
+        'direction' => 'ASC',
+      ],
+      $this->processor->normalizeRequestListSort(['sort' => 'nid'])
+    );
+  }
+
+  /**
+   * @covers ::normalizeRequestListSort
+   */
+  public function testUpdatedFilterKeepsChangedDescSort(): void {
+    $this->assertSame(
+      [
+        'api_field' => 'updated',
+        'field' => 'changed',
+        'direction' => 'DESC',
+      ],
+      $this->processor->normalizeRequestListSort([
+        'updated' => '2026-05-01',
+        'sort' => 'created',
+      ])
+    );
+  }
+
+  /**
+   * @covers ::normalizeRequestListPagination
+   */
+  public function testNormalizeRequestListPaginationCapsUnfilteredLimit(): void {
+    $sort = $this->processor->normalizeRequestListSort([]);
+
+    $pagination = $this->processor->normalizeRequestListPagination([
+      'limit' => 250,
+      'page' => 3,
+    ], $sort);
+
+    $this->assertSame(100, $pagination['limit']);
+    $this->assertSame(500, $pagination['offset']);
+    $this->assertNull($pagination['cursor']);
+  }
+
+  /**
+   * @covers ::normalizeRequestListPagination
+   * @covers ::buildRequestListCursor
+   * @covers ::decodeRequestListCursor
+   */
+  public function testCursorPaginationResetsOffset(): void {
+    $sort = $this->processor->normalizeRequestListSort(['sort' => '-created']);
+    $cursor = $this->processor->buildRequestListCursor(
+      $this->createRequestListCursorNode(99, 'created', 1777777777),
+      $sort
+    );
+
+    $pagination = $this->processor->normalizeRequestListPagination([
+      'limit' => 25,
+      'offset' => 50,
+      'cursor' => $cursor,
+    ], $sort);
+
+    $this->assertSame(25, $pagination['limit']);
+    $this->assertSame(0, $pagination['offset']);
+    $this->assertSame([
+      'value' => 1777777777,
+      'nid' => 99,
+    ], $pagination['cursor']);
+  }
+
+  /**
+   * @covers ::buildRequestListCursor
+   * @covers ::decodeRequestListCursor
+   */
+  public function testRequestListCursorRoundTrip(): void {
+    $sort = $this->processor->normalizeRequestListSort(['sort' => '-created']);
+    $cursor = $this->processor->buildRequestListCursor(
+      $this->createRequestListCursorNode(42, 'created', 1700000000),
+      $sort
+    );
+
+    $this->assertIsString($cursor);
+    $this->assertSame(
+      [
+        'value' => 1700000000,
+        'nid' => 42,
+      ],
+      $this->processor->decodeRequestListCursor($cursor, $sort)
+    );
+  }
+
+  /**
+   * @covers ::decodeRequestListCursor
+   */
+  public function testRequestListCursorRejectsSortMismatch(): void {
+    $sort = $this->processor->normalizeRequestListSort(['sort' => '-created']);
+    $cursor = $this->processor->buildRequestListCursor(
+      $this->createRequestListCursorNode(42, 'created', 1700000000),
+      $sort
+    );
+
+    $this->expectException(GeoreportException::class);
+    $this->processor->decodeRequestListCursor(
+      $cursor,
+      $this->processor->normalizeRequestListSort(['sort' => 'created'])
+    );
+  }
+
+  /**
+   * @covers ::decodeRequestListCursor
+   */
+  public function testRequestListCursorRejectsNonScalarValue(): void {
+    $sort = $this->processor->normalizeRequestListSort(['sort' => '-created']);
+    $cursor = $this->encodeRequestListCursor([
+      'v' => 1,
+      'field' => 'created',
+      'direction' => 'DESC',
+      'value' => ['bad'],
+      'nid' => 42,
+    ]);
+
+    $this->expectException(GeoreportException::class);
+    $this->processor->decodeRequestListCursor($cursor, $sort);
+  }
+
+  /**
+   * @covers ::decodeRequestListCursor
+   */
+  public function testRequestListCursorRejectsNonNumericDateValue(): void {
+    $sort = $this->processor->normalizeRequestListSort(['sort' => '-created']);
+    $cursor = $this->encodeRequestListCursor([
+      'v' => 1,
+      'field' => 'created',
+      'direction' => 'DESC',
+      'value' => 'not-a-timestamp',
+      'nid' => 42,
+    ]);
+
+    $this->expectException(GeoreportException::class);
+    $this->processor->decodeRequestListCursor($cursor, $sort);
+  }
+
+  /**
+   * @covers ::normalizeRequestListPagination
+   */
+  public function testCursorPaginationRejectsTextSearch(): void {
+    $sort = $this->processor->normalizeRequestListSort(['sort' => '-created']);
+    $cursor = $this->processor->buildRequestListCursor(
+      $this->createRequestListCursorNode(42, 'created', 1700000000),
+      $sort
+    );
+
+    $this->expectException(GeoreportException::class);
+    $this->processor->normalizeRequestListPagination([
+      'cursor' => $cursor,
+      'q' => 'graffiti',
+    ], $sort);
+  }
+
+  /**
+   * @covers ::buildRequestListMetadata
+   */
+  public function testRequestListMetadataDoesNotAdvertiseCursorForTextSearch(): void {
+    $sort = $this->processor->normalizeRequestListSort(['sort' => '-created']);
+
+    $meta = $this->invokeMethod($this->processor, 'buildRequestListMetadata', [
+      20,
+      10,
+      0,
+      ['q' => 'graffiti'],
+      $this->createRequestListCursorNode(42, 'created', 1700000000),
+      $sort,
+    ]);
+
+    $this->assertSame([
+      'total' => 20,
+      'limit' => 10,
+      'offset' => 0,
+    ], $meta);
+  }
+
+  /**
+   * @covers ::applyRequestListSort
+   */
+  public function testApplyRequestListSortAddsStableTieBreaker(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $sortCalls = [];
+    $query->method('sort')
+      ->willReturnCallback(function ($field, $direction) use (&$sortCalls, $query) {
+        $sortCalls[] = [$field, $direction];
+        return $query;
+      });
+
+    $this->processor->applyRequestListSort($query, [
+      'api_field' => 'created',
+      'field' => 'created',
+      'direction' => 'DESC',
+    ]);
+
+    $this->assertSame([
+      ['created', 'DESC'],
+      ['nid', 'DESC'],
+    ], $sortCalls);
+  }
+
+  /**
+   * @covers ::applyRequestListSort
+   */
+  public function testApplyRequestListSortDoesNotDuplicateNidTieBreaker(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $sortCalls = [];
+    $query->method('sort')
+      ->willReturnCallback(function ($field, $direction) use (&$sortCalls, $query) {
+        $sortCalls[] = [$field, $direction];
+        return $query;
+      });
+
+    $this->processor->applyRequestListSort($query, [
+      'api_field' => 'nid',
+      'field' => 'nid',
+      'direction' => 'ASC',
+    ]);
+
+    $this->assertSame([
+      ['nid', 'ASC'],
+    ], $sortCalls);
+  }
+
+  /**
+   * @covers ::orderLoadedNodes
+   */
+  public function testOrderLoadedNodesKeepsQueryResultOrder(): void {
+    $result = $this->invokeMethod($this->processor, 'orderLoadedNodes', [
+      [
+        3 => 'third',
+        1 => 'first',
+      ],
+      [1, 3, 2],
+    ]);
+
+    $this->assertSame([
+      1 => 'first',
+      3 => 'third',
+    ], $result);
+  }
+
   /**
    * Creates a mock term with a field_service_definition containing JSON.
    *
@@ -1322,6 +1612,71 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->willReturn($fieldItem);
 
     return $term;
+  }
+
+  /**
+   * Creates a mock node for request-list cursor tests.
+   *
+   * @param int $nid
+   *   Node ID.
+   * @param string $fieldName
+   *   Field name used for the cursor.
+   * @param int|string $value
+   *   Field value.
+   *
+   * @return \Drupal\Core\Entity\ContentEntityInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   Cursor node mock.
+   */
+  protected function createRequestListCursorNode(int $nid, string $fieldName, int|string $value): ContentEntityInterface {
+    $fieldItem = new class($value) {
+
+      /**
+       * Field scalar value.
+       */
+      public int|string $value;
+
+      /**
+       * Constructs the field item stub.
+       */
+      public function __construct(int|string $value) {
+        $this->value = $value;
+      }
+
+      /**
+       * Checks if the field is empty.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $node = $this->createMock(ContentEntityInterface::class);
+    $node->method('id')->willReturn($nid);
+    $node->method('hasField')
+      ->willReturnCallback(fn($requestedField) => $requestedField === $fieldName);
+    $node->method('get')
+      ->willReturnCallback(function ($requestedField) use ($fieldName, $fieldItem) {
+        if ($requestedField !== $fieldName) {
+          throw new \InvalidArgumentException("Unexpected field $requestedField");
+        }
+        return $fieldItem;
+      });
+
+    return $node;
+  }
+
+  /**
+   * Encodes a request-list cursor payload for forged cursor tests.
+   *
+   * @param array $payload
+   *   Cursor payload.
+   *
+   * @return string
+   *   URL-safe encoded cursor.
+   */
+  protected function encodeRequestListCursor(array $payload): string {
+    return rtrim(strtr(base64_encode(json_encode($payload)), '+/', '-_'), '=');
   }
 
   // =========================================================================

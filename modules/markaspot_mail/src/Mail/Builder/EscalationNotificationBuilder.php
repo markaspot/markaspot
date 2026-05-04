@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail\Builder;
 
-use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
@@ -113,7 +112,7 @@ final class EscalationNotificationBuilder implements MailBuilderInterface {
    */
   private function resolveJurisdiction(array $params): array {
     $jur = $params['jurisdiction'] ?? NULL;
-    if ($jur instanceof ContentEntityInterface && $jur->getEntityTypeId() === 'group' && $jur->bundle() === 'jur') {
+    if ($this->isResolvedJurisdictionGroup($jur)) {
       return ['jurisdiction', (int) $jur->id()];
     }
     $node = $params['node'] ?? NULL;

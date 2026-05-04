@@ -6,6 +6,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\node\NodeInterface;
+use Drupal\taxonomy\TermInterface;
 
 /**
  * Service for processing service provider workflows.
@@ -70,7 +71,11 @@ class ServiceProviderService {
     }
 
     $service_provider_term = $node->get('field_service_provider')->entity;
-    if (!$service_provider_term) {
+    if (!$service_provider_term instanceof TermInterface) {
+      return $valid_emails;
+    }
+
+    if (!ServiceProviderOrganisationScopeHelper::providerMatchesRequest($service_provider_term, $node)) {
       return $valid_emails;
     }
 

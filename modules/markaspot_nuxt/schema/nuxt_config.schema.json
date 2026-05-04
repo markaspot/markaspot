@@ -35,6 +35,19 @@
       },
       "required": ["name"]
     },
+    "branding": {
+      "type": "object",
+      "title": "Branding Options",
+      "description": "Tenant branding controls outside of theme colors and logos.",
+      "properties": {
+        "hidePoweredBy": {
+          "type": "boolean",
+          "title": "Hide Powered-by Attribution",
+          "description": "Hide the public footer attribution link for approved white-label self-host tenants.",
+          "default": false
+        }
+      }
+    },
     "theme": {
       "type": "object",
       "title": "Theme",
@@ -146,78 +159,93 @@
           "default": true
         },
         "offline": {
-          "type": "object",
           "title": "Offline Mode",
           "description": "Enable offline support with IndexedDB queue",
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "title": "Enable Offline Mode",
-              "default": true
-            },
-            "draftRetentionDays": {
-              "type": "integer",
-              "title": "Draft Retention (Days)",
-              "description": "How long to keep offline drafts",
-              "default": 7,
-              "minimum": 1,
-              "maximum": 90
-            },
-            "mediaRetentionHours": {
-              "type": "integer",
-              "title": "Media Retention (Hours)",
-              "description": "How long to keep offline media files",
-              "default": 48,
-              "minimum": 1,
-              "maximum": 720
-            },
-            "maxRetries": {
-              "type": "integer",
-              "title": "Max Retries",
-              "description": "Maximum sync retry attempts",
-              "default": 3,
-              "minimum": 1,
-              "maximum": 10
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "title": "Enable Offline Mode",
+                  "default": true
+                },
+                "draftRetentionDays": {
+                  "type": "integer",
+                  "title": "Draft Retention (Days)",
+                  "description": "How long to keep offline drafts",
+                  "default": 7,
+                  "minimum": 1,
+                  "maximum": 90
+                },
+                "mediaRetentionHours": {
+                  "type": "integer",
+                  "title": "Media Retention (Hours)",
+                  "description": "How long to keep offline media files",
+                  "default": 48,
+                  "minimum": 1,
+                  "maximum": 720
+                },
+                "maxRetries": {
+                  "type": "integer",
+                  "title": "Max Retries",
+                  "description": "Maximum sync retry attempts",
+                  "default": 3,
+                  "minimum": 1,
+                  "maximum": 10
+                }
+              }
             }
-          }
+          ]
         },
         "formFirst": {
-          "type": "object",
           "title": "Form-First Mobile",
           "description": "Show form before map on mobile devices",
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "title": "Enable Form-First",
-              "default": false
-            },
-            "mobileLayout": {
-              "type": "string",
-              "title": "Mobile Layout",
-              "description": "Layout style for mobile form view",
-              "enum": ["bottomSheet", "tabs"],
-              "default": "bottomSheet"
-            },
-            "defaultTab": {
-              "type": "string",
-              "title": "Default Tab",
-              "description": "Which tab to show first",
-              "enum": ["photo", "classic"],
-              "default": "photo"
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "title": "Enable Form-First",
+                  "default": false
+                },
+                "mobileLayout": {
+                  "type": "string",
+                  "title": "Mobile Layout",
+                  "description": "Layout style for mobile form view",
+                  "enum": ["bottomSheet", "tabs"],
+                  "default": "bottomSheet"
+                },
+                "defaultTab": {
+                  "type": "string",
+                  "title": "Default Tab",
+                  "description": "Which tab to show first",
+                  "enum": ["photo", "classic"],
+                  "default": "photo"
+                }
+              }
             }
-          }
+          ]
         },
         "pwaInstallPrompt": {
-          "type": "object",
           "title": "PWA Install Prompt",
           "description": "Configure the PWA install prompt behavior",
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "title": "Enable PWA Install Prompt",
-              "default": false
+          "oneOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "title": "Enable PWA Install Prompt",
+                  "default": false
+                }
+              }
             }
-          }
+          ]
         },
         "contactForm": {
           "type": "boolean",
@@ -524,7 +552,7 @@
               "description": "Geocoding providers in priority order",
               "items": {
                 "type": "string",
-                "enum": ["photon", "mapbox", "nominatim"]
+                "enum": ["photon", "mapbox"]
               },
               "default": ["photon", "mapbox"],
               "uniqueItems": true
@@ -533,7 +561,7 @@
               "type": "string",
               "title": "Default Provider",
               "description": "Primary geocoding provider",
-              "enum": ["photon", "mapbox", "nominatim"],
+              "enum": ["photon", "mapbox"],
               "default": "photon"
             },
             "country": {
@@ -662,7 +690,7 @@
           "title": "Allowed File Types",
           "description": "MIME types allowed for upload",
           "items": { "type": "string" },
-          "default": ["image/jpeg", "image/png"]
+          "default": ["image/jpeg", "image/png", "image/webp", "image/jfif", "image/heic", "image/heif"]
         }
       }
     },
@@ -1046,15 +1074,13 @@
               "photoButton": { "type": "boolean", "description": "Show photo report button" },
               "classicButton": { "type": "boolean", "description": "Show classic report button" },
               "logo": { "type": "boolean", "description": "Show logo in header" },
-              "slogan": { "type": "boolean", "description": "Show slogan text" }
+              "slogan": { "type": "boolean", "description": "Show slogan text" },
+              "reportButton": { "type": "boolean", "description": "Show persistent report button overlay" },
+              "loginButton": { "type": "boolean", "description": "Show login button for anonymous users" },
+              "photoLabel": { "type": "string", "description": "Custom photo report button label" },
+              "classicLabel": { "type": "string", "description": "Custom classic report button label" }
             }
           }
-        },
-        "allowedOrigins": {
-          "type": "array",
-          "title": "Allowed Origins",
-          "description": "Origins allowed to embed this workspace (CSP frame-ancestors). Empty array means allow all.",
-          "items": { "type": "string" }
         }
       }
     },

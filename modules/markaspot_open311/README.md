@@ -21,6 +21,7 @@ Retrieve service requests with optional filtering.
 |-----------|------|-------------|
 | `limit` | int | Maximum results to return |
 | `offset` | int | Pagination offset |
+| `cursor` | string | Optional keyset cursor from `meta.next_cursor` |
 | `status` | string | Filter by status (comma-separated) |
 | `service_code` | string | Filter by category code |
 | `start_date` | string | Filter by date range start |
@@ -157,7 +158,7 @@ GET /georeport/v2/requests.json?sort=ASC   # Deprecated, same as sort=created
 
 ## Mark-a-Spot Extensions
 
-Enable with `extensions=true` to get:
+Enable with `extensions=true&meta=true` to get:
 
 ```json
 {
@@ -165,10 +166,17 @@ Enable with `extensions=true` to get:
   "meta": {
     "total": 1234,
     "limit": 20,
-    "offset": 0
+    "offset": 0,
+    "next_cursor": "eyJ2IjoxLCJmaWVsZCI6ImNyZWF0ZWQiLCJkaXJlY3Rpb24iOiJBU0MiLCJ2YWx1ZSI6MTc3Nzc3Nzc3NywibmlkIjo0Mn0"
   }
 }
 ```
+
+`limit`, `offset`, and `page` stay backwards compatible. New clients that
+need stable paging while requests are edited can pass the returned
+`meta.next_cursor` as `cursor` on the next request. Cursor pagination is not
+available with the text-search `q` parameter; keep using offset pagination for
+search result pages.
 
 ## Dependencies
 

@@ -4,6 +4,7 @@ namespace Drupal\markaspot_open311\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Psr\Log\LoggerInterface;
@@ -45,6 +46,13 @@ class SearchApiQueryService {
    * @var \Psr\Log\LoggerInterface
    */
   protected LoggerInterface $logger;
+
+  /**
+   * Whether the last Search API query failed at backend/runtime level.
+   *
+   * @var bool
+   */
+  protected bool $lastSearchFailed = FALSE;
 
   /**
    * The Search API index ID for service requests.
@@ -134,6 +142,8 @@ class SearchApiQueryService {
    *   Array of node IDs matching the search query.
    */
   public function search(string $query_string, AccountInterface $user, array $options = []): array {
+    $this->lastSearchFailed = FALSE;
+
     // Check minimum query length.
     if (strlen(trim($query_string)) < self::MIN_QUERY_LENGTH) {
       return [];
@@ -178,7 +188,7 @@ class SearchApiQueryService {
 
       // Language filtering is intentionally NOT applied to Search API queries.
       // The search should find content across all languages, and the entity
-      // query / result processing will handle returning the correct translation.
+      // query / result processing returns the correct translation.
       // If strict language filtering is needed in the future, it can be enabled
       // via an option like 'filter_by_language' => TRUE.
       // Execute the query.
@@ -205,11 +215,72 @@ class SearchApiQueryService {
       return $nids;
     }
     catch (\Exception $e) {
+      $this->lastSearchFailed = TRUE;
       $this->logger->error('Search API query failed: @message', [
         '@message' => $e->getMessage(),
       ]);
       return [];
     }
+  }
+
+  /**
+   * Checks whether the last Search API query failed.
+   *
+   * Empty Search API results are not failures. This flag is only TRUE when the
+   * backend threw while Search API was otherwise enabled and selected.
+   *
+   * @return bool
+   *   TRUE if the last search threw an exception.
+   */
+  public function didLastSearchFail(): bool {
+    return $this->lastSearchFailed;
+  }
+
+  /**
+   * Applies the bounded fallback search used when Search API is unavailable.
+   *
+   * The fallback intentionally does not provide full-text semantics. It only
+   * supports exact, ID-shaped request ID lookup so the API never falls back to
+   * LIKE scans over request, title, body, or address tables.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The entity query to constrain.
+   * @param string $query_string
+   *   The incoming search query string.
+   *
+   * @return bool
+   *   TRUE when a safe fallback condition was applied, FALSE otherwise.
+   */
+  public function applySafeFallbackSearch(QueryInterface $query, string $query_string): bool {
+    $request_id = $this->normalizeRequestIdQuery($query_string);
+    if ($request_id === NULL) {
+      return FALSE;
+    }
+
+    $query->condition('request_id', $request_id);
+    return TRUE;
+  }
+
+  /**
+   * Normalizes search input to an exact request ID.
+   *
+   * @param string $query_string
+   *   The incoming search query string.
+   *
+   * @return string|null
+   *   Normalized request ID, or NULL when unsupported.
+   */
+  protected function normalizeRequestIdQuery(string $query_string): ?string {
+    $query_string = trim($query_string);
+    if (str_starts_with($query_string, '#')) {
+      $query_string = substr($query_string, 1);
+    }
+
+    if (preg_match('/^[A-Za-z0-9][A-Za-z0-9._:-]{1,63}$/', $query_string) !== 1) {
+      return NULL;
+    }
+
+    return $query_string;
   }
 
   /**

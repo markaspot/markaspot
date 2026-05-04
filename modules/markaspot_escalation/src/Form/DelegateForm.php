@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_escalation\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
@@ -56,15 +57,19 @@ class DelegateForm extends FormBase {
    *   The entity type manager.
    * @param \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor
    *   The GeoReport processor service.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   The config factory.
    */
   public function __construct(
     EscalationServiceInterface $escalationService,
     EntityTypeManagerInterface $entityTypeManager,
     GeoreportProcessorServiceInterface $processor,
+    ConfigFactoryInterface $configFactory,
   ) {
     $this->escalationService = $escalationService;
     $this->entityTypeManager = $entityTypeManager;
     $this->processor = $processor;
+    $this->configFactory = $configFactory;
   }
 
   /**
@@ -75,6 +80,7 @@ class DelegateForm extends FormBase {
       $container->get('markaspot_escalation.service'),
       $container->get('entity_type.manager'),
       $container->get('markaspot_open311.processor'),
+      $container->get('config.factory'),
     );
   }
 
@@ -280,7 +286,7 @@ class DelegateForm extends FormBase {
 
     $groupStorage = $this->entityTypeManager->getStorage('group');
     $children = $groupStorage->loadByProperties([
-      'type' => 'jur',
+      'type' => $this->jurisdictionGroupType(),
       'field_parent_jurisdiction' => $parentJurId,
     ]);
 
@@ -291,6 +297,17 @@ class DelegateForm extends FormBase {
         $this->collectChildJurisdictions($childId, $jurIds, $maxDepth - 1);
       }
     }
+  }
+
+  /**
+   * Gets the configured jurisdiction group type.
+   */
+  protected function jurisdictionGroupType(): string {
+    $configured = $this->configFactory
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
   }
 
 }

@@ -3,12 +3,17 @@
 namespace Drupal\markaspot_passwordless\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\markaspot_group\MembershipRoleNormalizer;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\user\Entity\User;
 use Psr\Log\LoggerInterface;
 
@@ -16,6 +21,8 @@ use Psr\Log\LoggerInterface;
  * Service for generating and validating OTP codes.
  */
 class OtpService {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * OTP code length (6 digits).
@@ -106,6 +113,8 @@ class OtpService {
    *   The language manager.
    * @param \Drupal\Core\Extension\ModuleHandlerInterface $module_handler
    *   The module handler.
+   * @param \Drupal\Core\Entity\EntityRepositoryInterface|null $entityRepository
+   *   The entity repository service.
    */
   public function __construct(
     Connection $database,
@@ -116,6 +125,7 @@ class OtpService {
     EntityTypeManagerInterface $entity_type_manager,
     LanguageManagerInterface $language_manager,
     ModuleHandlerInterface $module_handler,
+    protected ?EntityRepositoryInterface $entityRepository = NULL,
   ) {
     $this->database = $database;
     $this->mailManager = $mail_manager;
@@ -366,7 +376,7 @@ class OtpService {
             'roles' => $user->getRoles(),
             'groups' => $this->getUserGroups($user),
             'preferred_langcode' => $user->getPreferredLangcode(FALSE),
-          ],
+          ] + $this->getTosAcceptancePayload($user),
         ];
       }
 
@@ -575,20 +585,28 @@ class OtpService {
       foreach ($memberships as $membership) {
         $group = $membership->getGroup();
         $group_roles = [];
+        $is_jurisdiction_group = $this->isJurisdictionGroup($group);
 
         // Get group roles for this membership.
         foreach ($membership->getRoles() as $role) {
+          $role_id = $role->id();
+          if ($is_jurisdiction_group) {
+            $role_id = $this->canonicalizeJurisdictionRoleId($role_id);
+          }
+          if (MembershipRoleNormalizer::isInternalRoleId($role_id)) {
+            continue;
+          }
           $group_roles[] = [
-            'id' => $role->id(),
-            'label' => $role->label(),
+            'id' => $role_id,
+            'label' => $this->getEntityLabelForUserLanguage($role, $user),
           ];
         }
 
         $groups[] = [
           'id' => $group->id(),
           'uuid' => $group->uuid(),
-          'label' => $group->label(),
-          'type' => $group->bundle(),
+          'label' => $this->getEntityLabelForUserLanguage($group, $user),
+          'type' => $is_jurisdiction_group ? 'jur' : $group->bundle(),
           'roles' => $group_roles,
         ];
       }
@@ -600,6 +618,91 @@ class OtpService {
     }
 
     return $groups;
+  }
+
+  /**
+   * Gets Terms of Service acceptance state from the user entity.
+   *
+   * The field is provided by markaspot_fastmap, so passwordless auth treats it
+   * as optional and exposes a stable false/null shape when it is unavailable.
+   *
+   * @param \Drupal\user\Entity\User|null $user
+   *   The user entity.
+   *
+   * @return array{tos_accepted: bool, tos_accepted_at: int|null}
+   *   ToS acceptance payload for frontend auth state.
+   */
+  protected function getTosAcceptancePayload(?User $user): array {
+    if (
+      !$user ||
+      !$user->hasField('field_tos_accepted_at')
+    ) {
+      return [
+        'tos_accepted' => FALSE,
+        'tos_accepted_at' => NULL,
+      ];
+    }
+
+    $field = $user->get('field_tos_accepted_at');
+    $value = $field->value ?? NULL;
+    if (($value === NULL || $value === '') && method_exists($field, 'getString')) {
+      $value = $field->getString();
+    }
+
+    $accepted_at = ($value !== NULL && $value !== '') ? (int) $value : NULL;
+
+    return [
+      'tos_accepted' => $accepted_at !== NULL,
+      'tos_accepted_at' => $accepted_at,
+    ];
+  }
+
+  /**
+   * Gets an entity label in the user's preferred language when available.
+   */
+  protected function getEntityLabelForUserLanguage(EntityInterface $entity, User $user): string {
+    $langcode = (string) $user->getPreferredLangcode(FALSE);
+
+    if ($entity instanceof ConfigEntityInterface) {
+      return $this->getConfigEntityLabelForLangcode($entity, $langcode);
+    }
+
+    if ($langcode !== '' && $this->entityRepository !== NULL) {
+      try {
+        $translated = $this->entityRepository
+          ->getTranslationFromContext($entity, $langcode);
+        if ($translated instanceof EntityInterface) {
+          return (string) $translated->label();
+        }
+      }
+      catch (\Exception) {
+        // Minimal containers may not expose entity.repository. In that case,
+        // keep the existing default-label behavior.
+      }
+    }
+
+    return (string) $entity->label();
+  }
+
+  /**
+   * Gets a config entity label in a specific language when available.
+   */
+  protected function getConfigEntityLabelForLangcode(ConfigEntityInterface $entity, string $langcode): string {
+    if ($langcode !== '' && method_exists($this->languageManager, 'getLanguageConfigOverride')) {
+      try {
+        $label = $this->languageManager
+          ->getLanguageConfigOverride($langcode, $entity->getConfigDependencyName())
+          ->get('label');
+        if (is_string($label) && trim($label) !== '') {
+          return $label;
+        }
+      }
+      catch (\Exception) {
+        // Fall back to the entity's default config label.
+      }
+    }
+
+    return (string) $entity->label();
   }
 
 }

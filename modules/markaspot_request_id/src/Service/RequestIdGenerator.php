@@ -196,13 +196,23 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
     // Resolve to root jurisdiction if hierarchy resolver is available.
     if ($this->hierarchyResolver) {
       try {
-        return $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+        $rootJurisdictionId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+        if ($rootJurisdictionId === NULL) {
+          throw new \UnexpectedValueException(sprintf(
+            'Invalid jurisdiction hierarchy for category jurisdiction %d.',
+            $jurisdictionId
+          ));
+        }
+        return $rootJurisdictionId;
       }
       catch (\Exception $e) {
         $this->logger->warning('Could not resolve root jurisdiction for @jid: @message', [
           '@jid' => $jurisdictionId,
           '@message' => $e->getMessage(),
         ]);
+        if ($e instanceof \UnexpectedValueException) {
+          throw $e;
+        }
       }
     }
 

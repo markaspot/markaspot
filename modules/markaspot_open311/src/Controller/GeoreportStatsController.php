@@ -7,12 +7,16 @@ namespace Drupal\markaspot_open311\Controller;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_open311\Traits\LanguageNegotiationTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
 /**
  * Controller for GeoReport v2 statistics endpoint.
@@ -23,6 +27,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
 class GeoreportStatsController extends ControllerBase {
 
   use JurisdictionIdResolverTrait;
+  use LanguageNegotiationTrait;
 
   /**
    * The database connection.
@@ -46,23 +51,38 @@ class GeoreportStatsController extends ControllerBase {
   protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * The jurisdiction scope validator.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionScopeValidator|null
+   */
+  protected ?JurisdictionScopeValidator $jurisdictionScopeValidator;
+
+  /**
    * Constructs a GeoreportStatsController object.
    *
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
    * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
    *   The request stack.
+   * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
+   *   The language manager.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
    *   The jurisdiction hierarchy resolver (optional).
+   * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator|null $jurisdiction_scope_validator
+   *   The jurisdiction scope validator.
    */
   public function __construct(
     Connection $database,
     RequestStack $request_stack,
+    LanguageManagerInterface $language_manager,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
+    ?JurisdictionScopeValidator $jurisdiction_scope_validator = NULL,
   ) {
     $this->database = $database;
     $this->requestStack = $request_stack;
+    $this->languageManager = $language_manager;
     $this->hierarchyResolver = $hierarchy_resolver;
+    $this->jurisdictionScopeValidator = $jurisdiction_scope_validator;
   }
 
   /**
@@ -72,8 +92,12 @@ class GeoreportStatsController extends ControllerBase {
     return new static(
       $container->get('database'),
       $container->get('request_stack'),
+      $container->get('language_manager'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
+        : NULL,
+      $container->has('markaspot_group.jurisdiction_scope_validator')
+        ? $container->get('markaspot_group.jurisdiction_scope_validator')
         : NULL
     );
   }
@@ -93,12 +117,18 @@ class GeoreportStatsController extends ControllerBase {
     $request = $this->requestStack->getCurrentRequest();
     $group_filter = $request->query->get('group_filter');
     $jurisdiction_id = $this->resolveJurisdictionIdFromRequest($request);
+    $uses_api_key = $this->currentRequestUsesApiKey($request);
+    $api_key_node_ids = $this->getApiKeyScopedNodeIds($request, $jurisdiction_id);
 
     // Check if group filtering is requested and user is authenticated.
     $use_group_filter = FALSE;
     $node_ids = [];
 
-    if ($group_filter && !$this->currentUser()->isAnonymous()) {
+    if ($api_key_node_ids !== NULL) {
+      $use_group_filter = TRUE;
+      $node_ids = $api_key_node_ids;
+    }
+    elseif ($group_filter && !$this->currentUser()->isAnonymous()) {
       $config = $this->config('markaspot_open311.settings');
       $group_filter_enabled = $config->get('group_filter_enabled') ?? FALSE;
 
@@ -226,10 +256,8 @@ class GeoreportStatsController extends ControllerBase {
       'group_filter' => $use_group_filter,
     ]);
 
-    // Add cache headers - cache for 3 minutes to match other georeport endpoints.
-    $response->setMaxAge(180);
-    $response->setSharedMaxAge(180);
-    $response->headers->set('X-Cache-Policy', 'public, max-age=180');
+    // Cache for 3 minutes to match other georeport endpoints.
+    $this->applyStatsCachePolicy($response, $uses_api_key);
 
     return $response;
   }
@@ -363,6 +391,7 @@ class GeoreportStatsController extends ControllerBase {
    */
   private function resolveJurisdictionIdFromRequest(Request $request): ?int {
     $value = $request->query->get('jurisdiction_id')
+      ?? $request->query->get('jurisdiction')
       ?? $request->query->get('gid');
     if ($request->query->has('gid') && !$request->query->has('jurisdiction_id')) {
       $this->getLogger('markaspot_open311')->notice(
@@ -370,6 +399,68 @@ class GeoreportStatsController extends ControllerBase {
       );
     }
     return $this->resolveJurisdictionId($value);
+  }
+
+  /**
+   * Gets scoped node IDs when a stats request uses API-key authentication.
+   *
+   * @return int[]|null
+   *   Scoped node IDs for API-key requests, or NULL for non-API-key requests.
+   */
+  protected function getApiKeyScopedNodeIds(Request $request, ?int $jurisdiction_id): ?array {
+    if (!$this->currentRequestUsesApiKey($request) || !$this->jurisdictionScopeValidator) {
+      return NULL;
+    }
+
+    if ($this->requestHasJurisdictionClaim($request)) {
+      if (!$jurisdiction_id) {
+        throw new BadRequestHttpException('Invalid jurisdiction_id.');
+      }
+
+      $this->jurisdictionScopeValidator
+        ->resolveSubmissionJurisdiction((int) $jurisdiction_id, $this->currentUser());
+      return $this->getNodeIdsForJurisdiction((int) $jurisdiction_id);
+    }
+
+    $allowedJurisdictionIds = $this->jurisdictionScopeValidator
+      ->getAllowedJurisdictionIds($this->currentUser());
+    $nodeIds = [];
+    foreach ($allowedJurisdictionIds as $jurisdictionId) {
+      $nodeIds = array_merge($nodeIds, $this->getNodeIdsForJurisdiction($jurisdictionId));
+    }
+
+    return array_values(array_unique(array_map('intval', $nodeIds)));
+  }
+
+  /**
+   * Checks whether a request contains a jurisdiction claim.
+   */
+  protected function requestHasJurisdictionClaim(Request $request): bool {
+    foreach (['jurisdiction_id', 'jurisdiction', 'gid'] as $key) {
+      if ($request->query->has($key) && trim((string) $request->query->get($key)) !== '') {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Checks whether the request contains an API key.
+   */
+  protected function currentRequestUsesApiKey(Request $request): bool {
+    $settings = $this->config('services_api_key_auth.settings');
+    $headerName = $settings->get('api_key_request_header_name');
+    $postName = $settings->get('api_key_post_parameter_name');
+    $queryName = $settings->get('api_key_get_parameter_name');
+
+    return ($queryName && $request->query->has($queryName))
+      || ($postName && $request->request->has($postName))
+      || ($headerName && $request->headers->has($headerName))
+      || $request->query->has('api_key')
+      || $request->request->has('api_key')
+      || $request->headers->has('apikey')
+      || $request->headers->has('x-api-key');
   }
 
   /**
@@ -383,15 +474,22 @@ class GeoreportStatsController extends ControllerBase {
    */
   public function getCategoryStats(): JsonResponse {
     $request = $this->requestStack->getCurrentRequest();
+    $langcode = $this->resolveLanguageCode($request->query->all());
     $group_filter = $request->query->get('group_filter');
     $limit = min(100, max(1, (int) ($request->query->get('limit') ?? 10)));
     $jurisdiction_id = $this->resolveJurisdictionIdFromRequest($request);
+    $uses_api_key = $this->currentRequestUsesApiKey($request);
+    $api_key_node_ids = $this->getApiKeyScopedNodeIds($request, $jurisdiction_id);
 
     // Check if group filtering is requested and user is authenticated.
     $use_group_filter = FALSE;
     $node_ids = [];
 
-    if ($group_filter && !$this->currentUser()->isAnonymous()) {
+    if ($api_key_node_ids !== NULL) {
+      $use_group_filter = TRUE;
+      $node_ids = $api_key_node_ids;
+    }
+    elseif ($group_filter && !$this->currentUser()->isAnonymous()) {
       $config = $this->config('markaspot_open311.settings');
       $group_filter_enabled = $config->get('group_filter_enabled') ?? FALSE;
 
@@ -495,7 +593,7 @@ class GeoreportStatsController extends ControllerBase {
       $total += $count;
       $output[] = [
         'tid' => (int) $row->tid,
-        'category' => $row->category,
+        'category' => $this->getTranslatedTermLabel((int) $row->tid, (string) $row->category, $langcode),
         'count' => $count,
         'color' => $row->color,
         'icon' => $row->icon,
@@ -508,10 +606,48 @@ class GeoreportStatsController extends ControllerBase {
       'group_filter' => $use_group_filter,
     ]);
 
-    $response->setMaxAge(180);
-    $response->setSharedMaxAge(180);
+    $this->applyStatsCachePolicy($response, $uses_api_key);
 
     return $response;
+  }
+
+  /**
+   * Resolves a taxonomy term label in the requested language.
+   *
+   * The stats queries intentionally aggregate against default-language term
+   * rows so counts stay stable. Label translation happens only for output.
+   */
+  protected function getTranslatedTermLabel(int $tid, string $fallback, string $langcode): string {
+    $term = $this->entityTypeManager()
+      ->getStorage('taxonomy_term')
+      ->load($tid);
+    if (!$term) {
+      return $fallback;
+    }
+
+    if ($term->hasTranslation($langcode)) {
+      $term = $term->getTranslation($langcode);
+    }
+
+    $label = trim((string) $term->label());
+    return $label !== '' ? $label : $fallback;
+  }
+
+  /**
+   * Applies cache policy for public and API-key scoped stats responses.
+   */
+  protected function applyStatsCachePolicy(JsonResponse $response, bool $uses_api_key): void {
+    if ($uses_api_key) {
+      $response->setPrivate();
+      $response->headers->set('Cache-Control', 'private, no-store');
+      $response->headers->set('X-Cache-Policy', 'private, no-store');
+      return;
+    }
+
+    // Cache public aggregate stats for 3 minutes.
+    $response->setMaxAge(180);
+    $response->setSharedMaxAge(180);
+    $response->headers->set('X-Cache-Policy', 'public, max-age=180');
   }
 
 }

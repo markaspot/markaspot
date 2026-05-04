@@ -116,7 +116,7 @@ class FacilitySettingsController extends ControllerBase {
     }
 
     $group = $this->entityTypeManager()->getStorage('group')->load($resolved_id);
-    if (!$group instanceof GroupInterface || $group->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($group)) {
       return NULL;
     }
 

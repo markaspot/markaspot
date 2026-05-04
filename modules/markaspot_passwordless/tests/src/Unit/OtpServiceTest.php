@@ -13,15 +13,23 @@ use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\Query\Update;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\Database\Transaction;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRoleInterface;
+use Drupal\group\GroupMembershipLoaderInterface;
+use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Drupal\Tests\UnitTestCase;
+use Drupal\user\Entity\User;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -46,7 +54,13 @@ class OtpServiceTest extends UnitTestCase {
   /**
    * Builds an OtpService with a database mock and sensible stubs.
    */
-  protected function buildService(Connection $database): OtpService {
+  protected function buildService(
+    Connection $database,
+    ?ModuleHandlerInterface $moduleHandler = NULL,
+    ?EntityRepositoryInterface $entityRepository = NULL,
+    ?LanguageManagerInterface $languageManager = NULL,
+    string $jurisdictionGroupType = 'jur',
+  ): OtpService {
     $mail = $this->createMock(MailManagerInterface::class);
     $mail->method('mail')->willReturn(['result' => TRUE]);
 
@@ -65,10 +79,16 @@ class OtpServiceTest extends UnitTestCase {
       ['name', 'Mark-a-Spot'],
     ]);
 
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')->willReturnMap([
+      ['jurisdiction_group_type', $jurisdictionGroupType],
+    ]);
+
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')->willReturnMap([
       ['markaspot_passwordless.settings', $settings],
       ['system.site', $siteConfig],
+      ['markaspot_open311.settings', $open311Config],
     ]);
 
     // Group storage: load() returns NULL so sendCode falls back to the
@@ -79,12 +99,14 @@ class OtpServiceTest extends UnitTestCase {
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')->willReturn($groupStorage);
 
-    $language = $this->createMock(LanguageInterface::class);
-    $language->method('getId')->willReturn('en');
-    $languageManager = $this->createMock(LanguageManagerInterface::class);
-    $languageManager->method('getCurrentLanguage')->willReturn($language);
+    if ($languageManager === NULL) {
+      $language = $this->createMock(LanguageInterface::class);
+      $language->method('getId')->willReturn('en');
+      $languageManager = $this->createMock(LanguageManagerInterface::class);
+      $languageManager->method('getCurrentLanguage')->willReturn($language);
+    }
 
-    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler ??= $this->createMock(ModuleHandlerInterface::class);
 
     return new OtpService(
       $database,
@@ -95,6 +117,7 @@ class OtpServiceTest extends UnitTestCase {
       $entityTypeManager,
       $languageManager,
       $moduleHandler,
+      $entityRepository,
     );
   }
 
@@ -117,6 +140,239 @@ class OtpServiceTest extends UnitTestCase {
       }
 
     };
+  }
+
+  /**
+   * Tests group payload labels use the user's preferred language.
+   *
+   * @covers ::getUserGroups
+   * @covers ::getEntityLabelForUserLanguage
+   */
+  public function testGetUserGroupsTranslatesLabelsForPreferredLangcode(): void {
+    $user = $this->createMock(User::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('de');
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(5);
+    $group->method('uuid')->willReturn('group-uuid');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('label')->willReturn('Roads');
+    $translatedGroup = $this->createMock(GroupInterface::class);
+    $translatedGroup->method('label')->willReturn('Strassen');
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jur-member');
+    $role->method('label')->willReturn('Member');
+    $role->method('getConfigDependencyName')->willReturn('group.role.jur-member');
+
+    $membership = new class($group, $role) {
+
+      public function __construct(
+        private readonly GroupInterface $group,
+        private readonly GroupRoleInterface $role,
+      ) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets the membership roles.
+       */
+      public function getRoles(): array {
+        return [$this->role];
+      }
+
+    };
+
+    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $membershipLoader->expects($this->once())
+      ->method('loadByUser')
+      ->with($user)
+      ->willReturn([$membership]);
+
+    $entityRepository = $this->createMock(EntityRepositoryInterface::class);
+    $entityRepository->expects($this->once())
+      ->method('getTranslationFromContext')
+      ->willReturnCallback(static function ($entity, $langcode) use ($group, $translatedGroup) {
+        self::assertSame('de', $langcode);
+        self::assertSame($group, $entity);
+        return $translatedGroup;
+      });
+
+    $override = new class {
+
+      /**
+       * Gets a language config override value.
+       */
+      public function get(string $key): ?string {
+        return $key === 'label' ? 'Mitglied' : NULL;
+      }
+
+    };
+    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
+    $languageManager->expects($this->once())
+      ->method('getLanguageConfigOverride')
+      ->with('de', 'group.role.jur-member')
+      ->willReturn($override);
+
+    $container = new ContainerBuilder();
+    $container->set('group.membership_loader', $membershipLoader);
+    \Drupal::setContainer($container);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
+    $service = $this->buildService($this->createMock(Connection::class), $moduleHandler, $entityRepository, $languageManager);
+
+    $method = new \ReflectionMethod($service, 'getUserGroups');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame([
+      [
+        'id' => 5,
+        'uuid' => 'group-uuid',
+        'label' => 'Strassen',
+        'type' => 'jur',
+        'roles' => [
+          [
+            'id' => 'jur-member',
+            'label' => 'Mitglied',
+          ],
+        ],
+      ],
+    ], $method->invoke($service, $user));
+  }
+
+  /**
+   * Tests OTP login payload keeps the canonical jurisdiction auth contract.
+   *
+   * @covers ::getUserGroups
+   */
+  public function testGetUserGroupsCanonicalizesConfiguredJurisdictionType(): void {
+    $user = $this->createMock(User::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('');
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(5);
+    $group->method('uuid')->willReturn('group-uuid');
+    $group->method('bundle')->willReturn('jurisdiction');
+    $group->method('label')->willReturn('Roads');
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jurisdiction-tenant_admin');
+    $role->method('label')->willReturn('Tenant admin');
+
+    $membership = new class($group, $role) {
+
+      public function __construct(
+        private readonly GroupInterface $group,
+        private readonly GroupRoleInterface $role,
+      ) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets the membership roles.
+       */
+      public function getRoles(): array {
+        return [$this->role];
+      }
+
+    };
+
+    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $membershipLoader->expects($this->once())
+      ->method('loadByUser')
+      ->with($user)
+      ->willReturn([$membership]);
+
+    $container = new ContainerBuilder();
+    $container->set('group.membership_loader', $membershipLoader);
+    \Drupal::setContainer($container);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
+    $service = $this->buildService(
+      $this->createMock(Connection::class),
+      $moduleHandler,
+      NULL,
+      NULL,
+      'jurisdiction',
+    );
+
+    $method = new \ReflectionMethod($service, 'getUserGroups');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame([
+      [
+        'id' => 5,
+        'uuid' => 'group-uuid',
+        'label' => 'Roads',
+        'type' => 'jur',
+        'roles' => [
+          [
+            'id' => 'jur-tenant_admin',
+            'label' => 'Tenant admin',
+          ],
+        ],
+      ],
+    ], $method->invoke($service, $user));
+  }
+
+  /**
+   * Tests ToS acceptance payload reads the optional FastMap user field.
+   *
+   * @covers ::getTosAcceptancePayload
+   */
+  public function testGetTosAcceptancePayloadReadsTimestamp(): void {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('getString')->willReturn('1714567890');
+
+    $user = $this->createMock(User::class);
+    $user->method('hasField')
+      ->with('field_tos_accepted_at')
+      ->willReturn(TRUE);
+    $user->method('get')
+      ->with('field_tos_accepted_at')
+      ->willReturn($field);
+
+    $service = $this->buildService($this->createMock(Connection::class));
+    $method = new \ReflectionMethod($service, 'getTosAcceptancePayload');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame([
+      'tos_accepted' => TRUE,
+      'tos_accepted_at' => 1714567890,
+    ], $method->invoke($service, $user));
+  }
+
+  /**
+   * Tests ToS payload fails closed when the optional field is absent.
+   *
+   * @covers ::getTosAcceptancePayload
+   */
+  public function testGetTosAcceptancePayloadHandlesMissingField(): void {
+    $user = $this->createMock(User::class);
+    $user->method('hasField')
+      ->with('field_tos_accepted_at')
+      ->willReturn(FALSE);
+
+    $service = $this->buildService($this->createMock(Connection::class));
+    $method = new \ReflectionMethod($service, 'getTosAcceptancePayload');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame([
+      'tos_accepted' => FALSE,
+      'tos_accepted_at' => NULL,
+    ], $method->invoke($service, $user));
   }
 
   /**

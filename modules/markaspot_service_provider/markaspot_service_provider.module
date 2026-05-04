@@ -35,6 +35,15 @@ function markaspot_service_provider_help($route_name, RouteMatchInterface $route
 }
 
 /**
+ * Implements hook_entity_type_alter().
+ */
+function markaspot_service_provider_entity_type_alter(array &$entity_types): void {
+  if (isset($entity_types['node'])) {
+    $entity_types['node']->addConstraint('ServiceProviderOrganisationScope');
+  }
+}
+
+/**
  * Implements hook_ENTITY_TYPE_presave() for node entities.
  *
  * Automatically formats moderator notes added to field_service_provider_notes.

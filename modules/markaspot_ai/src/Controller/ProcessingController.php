@@ -352,7 +352,7 @@ class ProcessingController extends ControllerBase {
     // Validate group exists and is a jurisdiction type.
     // Prevents cross-tenant leakage by rejecting org/other group types.
     $group = $this->entityTypeManager()->getStorage('group')->load($group_id);
-    if (!$group || $group->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($group)) {
       return [];
     }
 

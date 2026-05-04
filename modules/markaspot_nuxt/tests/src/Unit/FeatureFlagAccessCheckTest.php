@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_nuxt\Unit;
 
 use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -52,7 +54,11 @@ class FeatureFlagAccessCheckTest extends UnitTestCase {
   /**
    * Builds a FeatureFlagAccessCheck with a request carrying the given query.
    */
-  protected function buildCheck(array $query, ?GroupInterface $groupToLoad = NULL): FeatureFlagAccessCheck {
+  protected function buildCheck(
+    array $query,
+    ?GroupInterface $groupToLoad = NULL,
+    string $jurisdictionGroupType = 'jur',
+  ): FeatureFlagAccessCheck {
     $request = new Request($query);
     $stack = new RequestStack();
     $stack->push($request);
@@ -64,10 +70,24 @@ class FeatureFlagAccessCheckTest extends UnitTestCase {
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')->with('group')->willReturn($groupStorage);
 
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturn($jurisdictionGroupType);
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_open311.settings')
+      ->willReturn($config);
+
     // Real FeatureFlagChecker (final class, no deps). Groups without a
     // field_nuxt_config yield NULL config, which makes isEnabled() return
     // the caller-supplied default.
-    return new FeatureFlagAccessCheck(new FeatureFlagChecker(), $stack, $entityTypeManager);
+    return new FeatureFlagAccessCheck(
+      new FeatureFlagChecker(),
+      $stack,
+      $entityTypeManager,
+      $configFactory,
+    );
   }
 
   /**
@@ -177,6 +197,22 @@ class FeatureFlagAccessCheckTest extends UnitTestCase {
   public function testSlugJurisdictionResolves(): void {
     $group = $this->stubGroup('jur');
     $check = $this->buildCheck(['jurisdiction_id' => 'amsterdam'], $group);
+    $result = $check->check($this->buildRoute('features.statistics', TRUE), $this->createMock(AccountInterface::class));
+    $this->assertTrue($result->isAllowed());
+  }
+
+  /**
+   * Configured jurisdiction type resolves numeric IDs and slugs.
+   *
+   * @covers ::check
+   */
+  public function testConfiguredJurisdictionTypeResolves(): void {
+    $group = $this->stubGroup('jurisdiction');
+    $check = $this->buildCheck(
+      ['jurisdiction_id' => 'amsterdam'],
+      $group,
+      'jurisdiction',
+    );
     $result = $check->check($this->buildRoute('features.statistics', TRUE), $this->createMock(AccountInterface::class));
     $this->assertTrue($result->isAllowed());
   }

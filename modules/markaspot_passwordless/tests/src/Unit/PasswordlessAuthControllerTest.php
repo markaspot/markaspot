@@ -6,9 +6,11 @@ use Psr\Log\LoggerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreExpirableInterface;
@@ -16,10 +18,15 @@ use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRoleInterface;
+use Drupal\group\GroupMembershipLoaderInterface;
+use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Drupal\Tests\UnitTestCase;
+use Drupal\user\UserInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -124,10 +131,16 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         ['verify_lockout_attempts', 5],
         ['verify_lockout_duration', 900],
       ]);
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')
+      ->willReturnMap([
+        ['jurisdiction_group_type', 'jur'],
+      ]);
 
     $this->configFactory->method('get')
       ->willReturnMap([
         ['markaspot_passwordless.settings', $passwordlessConfig],
+        ['markaspot_open311.settings', $open311Config],
       ]);
 
     // Default: all flood checks pass.
@@ -179,6 +192,214 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $response = $this->controller->requestCode($request);
 
     $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
+  }
+
+  /**
+   * Tests group payload labels use the user's preferred language.
+   *
+   * @covers ::getUserGroups
+   * @covers ::getEntityLabelForUserLanguage
+   */
+  public function testGetUserGroupsTranslatesLabelsForPreferredLangcode(): void {
+    $user = $this->createMock(UserInterface::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('de');
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(5);
+    $group->method('uuid')->willReturn('group-uuid');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('label')->willReturn('Roads');
+    $translatedGroup = $this->createMock(GroupInterface::class);
+    $translatedGroup->method('label')->willReturn('Strassen');
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jur-member');
+    $role->method('label')->willReturn('Member');
+    $role->method('getConfigDependencyName')->willReturn('group.role.jur-member');
+
+    $membership = new class($group, $role) {
+
+      public function __construct(
+        private readonly GroupInterface $group,
+        private readonly GroupRoleInterface $role,
+      ) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets the membership roles.
+       */
+      public function getRoles(): array {
+        return [$this->role];
+      }
+
+    };
+
+    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $membershipLoader->expects($this->once())
+      ->method('loadByUser')
+      ->with($user)
+      ->willReturn([$membership]);
+
+    $entityRepository = $this->createMock(EntityRepositoryInterface::class);
+    $entityRepository->expects($this->once())
+      ->method('getTranslationFromContext')
+      ->willReturnCallback(static function ($entity, $langcode) use ($group, $translatedGroup) {
+        self::assertSame('de', $langcode);
+        self::assertSame($group, $entity);
+        return $translatedGroup;
+      });
+
+    $override = new class {
+
+      /**
+       * Gets a language config override value.
+       */
+      public function get(string $key): ?string {
+        return $key === 'label' ? 'Mitglied' : NULL;
+      }
+
+    };
+    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
+    $languageManager->expects($this->once())
+      ->method('getLanguageConfigOverride')
+      ->with('de', 'group.role.jur-member')
+      ->willReturn($override);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
+
+    $container = \Drupal::getContainer();
+    $container->set('module_handler', $moduleHandler);
+    $container->set('group.membership_loader', $membershipLoader);
+    $container->set('language_manager', $languageManager);
+
+    $controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $this->configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+      $entityRepository,
+    );
+
+    $method = new \ReflectionMethod($controller, 'getUserGroups');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame([
+      [
+        'id' => 5,
+        'uuid' => 'group-uuid',
+        'label' => 'Strassen',
+        'type' => 'jur',
+        'roles' => [
+          [
+            'id' => 'jur-member',
+            'label' => 'Mitglied',
+          ],
+        ],
+      ],
+    ], $method->invoke($controller, $user));
+  }
+
+  /**
+   * Tests configured jurisdiction groups keep the canonical auth contract.
+   *
+   * @covers ::getUserGroups
+   */
+  public function testGetUserGroupsCanonicalizesConfiguredJurisdictionType(): void {
+    $user = $this->createMock(UserInterface::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('');
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(5);
+    $group->method('uuid')->willReturn('group-uuid');
+    $group->method('bundle')->willReturn('jurisdiction');
+    $group->method('label')->willReturn('Roads');
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jurisdiction-tenant_admin');
+    $role->method('label')->willReturn('Tenant admin');
+
+    $membership = new class($group, $role) {
+
+      public function __construct(
+        private readonly GroupInterface $group,
+        private readonly GroupRoleInterface $role,
+      ) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets the membership roles.
+       */
+      public function getRoles(): array {
+        return [$this->role];
+      }
+
+    };
+
+    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $membershipLoader->expects($this->once())
+      ->method('loadByUser')
+      ->with($user)
+      ->willReturn([$membership]);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
+
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturn('jurisdiction');
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_open311.settings')
+      ->willReturn($open311Config);
+
+    $container = \Drupal::getContainer();
+    $container->set('module_handler', $moduleHandler);
+    $container->set('group.membership_loader', $membershipLoader);
+
+    $controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+    );
+
+    $method = new \ReflectionMethod($controller, 'getUserGroups');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame([
+      [
+        'id' => 5,
+        'uuid' => 'group-uuid',
+        'label' => 'Roads',
+        'type' => 'jur',
+        'roles' => [
+          [
+            'id' => 'jur-tenant_admin',
+            'label' => 'Tenant admin',
+          ],
+        ],
+      ],
+    ], $method->invoke($controller, $user));
   }
 
   /**
@@ -444,6 +665,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
           'email' => 'user@example.com',
           'roles' => ['authenticated'],
           'groups' => [],
+          'tos_accepted' => TRUE,
+          'tos_accepted_at' => 1714567890,
         ],
       ]);
 
@@ -457,6 +680,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['success']);
     $this->assertEquals(5, $data['user']['uid']);
+    $this->assertTrue($data['user']['tos_accepted']);
+    $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
   }
 
   // ===========================================================================
@@ -477,6 +702,47 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertFalse($data['authenticated']);
+  }
+
+  /**
+   * Tests status exposes ToS acceptance from the authenticated user entity.
+   *
+   * @covers ::status
+   * @covers ::getTosAcceptancePayload
+   */
+  public function testStatusAuthenticatedIncludesTosAcceptance(): void {
+    $this->currentUser->method('isAuthenticated')->willReturn(TRUE);
+    $this->currentUser->method('id')->willReturn(42);
+    $this->currentUser->method('getAccountName')->willReturn('alice');
+    $this->currentUser->method('getEmail')->willReturn('alice@example.com');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated']);
+
+    $tosField = $this->createMock(FieldItemListInterface::class);
+    $tosField->method('getString')->willReturn('1714567890');
+
+    $userEntity = $this->createMock(UserInterface::class);
+    $userEntity->method('getPreferredLangcode')->with(FALSE)->willReturn('en');
+    $userEntity->method('hasField')
+      ->with('field_tos_accepted_at')
+      ->willReturn(TRUE);
+    $userEntity->method('get')
+      ->with('field_tos_accepted_at')
+      ->willReturn($tosField);
+
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->method('load')->with(42)->willReturn($userEntity);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')->with('user')->willReturn($userStorage);
+    \Drupal::getContainer()->set('entity_type.manager', $entityTypeManager);
+
+    $response = $this->controller->status(new Request());
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['authenticated']);
+    $this->assertTrue($data['user']['tos_accepted']);
+    $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
   }
 
   // ===========================================================================

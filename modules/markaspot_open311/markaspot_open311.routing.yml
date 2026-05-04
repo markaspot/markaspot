@@ -16,6 +16,7 @@ markaspot_open311.georeport_stats:
     _access: 'TRUE'
   options:
     no_cache: FALSE
+    _auth: ['cookie', 'api_key_auth']
 
 markaspot_open311.georeport_category_stats:
   path: '/georeport/v2/stats/categories.json'
@@ -27,3 +28,4 @@ markaspot_open311.georeport_category_stats:
     _access: 'TRUE'
   options:
     no_cache: FALSE
+    _auth: ['cookie', 'api_key_auth']

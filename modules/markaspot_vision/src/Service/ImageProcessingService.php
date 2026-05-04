@@ -7,6 +7,7 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\media\MediaInterface;
 use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
@@ -18,6 +19,8 @@ use Psr\Log\LoggerInterface;
  * including OpenAI, Azure OpenAI, Qwen Vision, Ollama, and others.
  */
 class ImageProcessingService {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The HTTP client.
@@ -362,7 +365,7 @@ class ImageProcessingService {
       $system_prompt = '';
       if ($jurisdictionId) {
         $group = $this->entityTypeManager->getStorage('group')->load($jurisdictionId);
-        if ($group && $group->bundle() === 'jur' && $group->hasField('field_ai_system_prompt') && !$group->get('field_ai_system_prompt')->isEmpty()) {
+        if ($this->isJurisdictionGroup($group) && $group->hasField('field_ai_system_prompt') && !$group->get('field_ai_system_prompt')->isEmpty()) {
           $system_prompt = trim($group->get('field_ai_system_prompt')->value);
         }
       }

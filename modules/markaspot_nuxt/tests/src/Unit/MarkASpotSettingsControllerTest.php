@@ -337,6 +337,38 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests getMarkASpotSettings() fails closed for invalid hierarchies.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsReturns409ForInvalidJurisdictionHierarchy(): void {
+    $group = $this->createMockGroup([], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchyResolver->expects($this->once())
+      ->method('getRootJurisdictionId')
+      ->with(14)
+      ->willReturn(NULL);
+
+    $controller = new MarkASpotSettingsController(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->streamWrapperManager,
+      $hierarchyResolver,
+    );
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(409, $response->getStatusCode());
+    $this->assertSame(
+      ['error' => 'Jurisdiction hierarchy invalid'],
+      json_decode($response->getContent(), TRUE)
+    );
+  }
+
+  /**
    * Tests getMarkASpotSettings() merges jurisdiction config correctly.
    *
    * @covers ::getMarkASpotSettings
@@ -348,6 +380,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     // settings alter hook (covered by FacilityManagerTest).
     $nuxtJson = json_encode([
       'client' => ['name' => 'Stadt Bonn', 'shortName' => 'Bonn'],
+      'branding' => ['hidePoweredBy' => TRUE],
       'theme' => ['primary' => 'cyan', 'secondary' => 'teal'],
       'features' => ['voting' => TRUE],
       'facilities' => [
@@ -386,6 +419,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
 
     // Merged config keys.
     $this->assertEquals('Stadt Bonn', $data['client']['name']);
+    $this->assertTrue($data['branding']['hidePoweredBy']);
     $this->assertEquals('cyan', $data['theme']['primary']);
     $this->assertTrue($data['features']['voting']);
 

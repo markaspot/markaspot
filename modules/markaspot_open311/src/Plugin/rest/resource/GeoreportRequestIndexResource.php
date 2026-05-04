@@ -4,6 +4,7 @@ namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -21,10 +22,13 @@ use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\markaspot_open311\Service\SearchApiQueryService;
 use Drupal\markaspot_open311\Traits\LanguageNegotiationTrait;
+use Drupal\markaspot_validation\Service\BoundaryValidator;
+use Drupal\user\Entity\Role;
 
 /**
  * Provides a resource to get view modes by entity and bundle.
@@ -81,6 +85,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
   protected $config;
 
   /**
+   * The services_api_key_auth.settings config object.
+   *
+   * @var \Drupal\Core\Config\Config
+   */
+  protected $apiKeyAuthConfig;
+
+  /**
    * The Georeport Processor.
    *
    * @var \Drupal\markaspot_open311\Service\GeoreportProcessorService
@@ -123,6 +134,20 @@ class GeoreportRequestIndexResource extends ResourceBase {
   protected $workspaceVisibility;
 
   /**
+   * The jurisdiction scope validator.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionScopeValidator
+   */
+  protected $jurisdictionScopeValidator;
+
+  /**
+   * The boundary validator.
+   *
+   * @var \Drupal\markaspot_validation\Service\BoundaryValidator
+   */
+  protected $boundaryValidator;
+
+  /**
    * Rate limit: max requests per window for regular users.
    */
   protected const RATE_LIMIT_THRESHOLD = 60;
@@ -146,6 +171,11 @@ class GeoreportRequestIndexResource extends ResourceBase {
     'api_editor',
     'api_municipality',
   ];
+
+  /**
+   * Maximum Search API candidate IDs loaded before EntityQuery pagination.
+   */
+  protected const SEARCH_API_CANDIDATE_LIMIT = 10000;
 
   /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
@@ -184,6 +214,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   The jurisdiction hierarchy resolver.
    * @param object|null $workspace_visibility
    *   The workspace visibility service (optional).
+   * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator $jurisdiction_scope_validator
+   *   The jurisdiction scope validator.
+   * @param \Drupal\markaspot_validation\Service\BoundaryValidator $boundary_validator
+   *   The boundary validator.
    */
   public function __construct(
     array $configuration,
@@ -203,10 +237,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
     FloodInterface $flood,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
     ?object $workspace_visibility = NULL,
+    ?JurisdictionScopeValidator $jurisdiction_scope_validator = NULL,
+    ?BoundaryValidator $boundary_validator = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
     $this->config = $config->get('markaspot_open311.settings');
+    $this->apiKeyAuthConfig = $config->get('services_api_key_auth.settings');
     $this->time = $time;
     $this->requestStack = $request_stack;
     $this->entityTypeManager = $entity_type_manager;
@@ -216,6 +253,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $this->flood = $flood;
     $this->hierarchyResolver = $hierarchy_resolver;
     $this->workspaceVisibility = $workspace_visibility;
+    $this->jurisdictionScopeValidator = $jurisdiction_scope_validator;
+    $this->boundaryValidator = $boundary_validator;
   }
 
   /**
@@ -239,7 +278,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $container->get('markaspot_open311.search_api_query'),
       $container->get('flood'),
       $container->get('markaspot_group.hierarchy_resolver'),
-      $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL
+      $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL,
+      $container->get('markaspot_group.jurisdiction_scope_validator'),
+      $container->get('markaspot_validation.boundary_validator')
     );
   }
 
@@ -338,7 +379,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
    * Search behavior:
    * - Base fields (title, body, request_id): Available to all users
    * - Public fields (field_address): Available to all users
-   * - Custom permission fields: Only searched if user has 'view [field_name]' permission
+   * - Custom permission fields: Only searched with 'view [field_name]'.
    * - Private fields: Only searched by admins or entity owners
    *
    * @throws \Symfony\Component\HttpKernel\Exception\HttpException
@@ -388,22 +429,28 @@ class GeoreportRequestIndexResource extends ResourceBase {
     // short-circuit inside validateJurisdictionAccess() and are
     // governed by Group module's query-level access grants.
     $resolvedJurisdictionId = $this->georeportProcessor->resolveJurisdictionId($parameters);
-    if ($resolvedJurisdictionId) {
-      $this->georeportProcessor->validateJurisdictionAccess($resolvedJurisdictionId, $this->currentUser);
+    $this->applyInvalidJurisdictionClaimScope($query, $parameters, $resolvedJurisdictionId);
+    $anonymousJurisdictionClaimIsUnreadable = $this->anonymousJurisdictionClaimIsUnreadable($parameters, $resolvedJurisdictionId);
+    if ($anonymousJurisdictionClaimIsUnreadable) {
+      $query->condition('nid', [0], 'IN');
     }
-
-    // Workspace visibility enforcement: block anonymous GET for restricted workspaces.
-    $jurisdictionId = $parameters['jurisdiction_id'] ?? NULL;
-    if ($jurisdictionId && $this->workspaceVisibility && $this->currentUser->isAnonymous()) {
-      if (!$this->workspaceVisibility->canAnonymousView((int) $jurisdictionId)) {
-        throw new GeoreportException('Authentication required to view this workspace.', 403);
+    else {
+      $this->applyApiKeyJurisdictionReadScope($query, $parameters, $resolvedJurisdictionId);
+      if ($resolvedJurisdictionId) {
+        $this->georeportProcessor->validateJurisdictionAccess($resolvedJurisdictionId, $this->currentUser);
       }
     }
+
+    $this->applyAnonymousWorkspaceReadScope($query);
 
     // Apply common filters.
     $bundle = $this->config->get('bundle') ?? 'service_request';
     $query->condition('changed', $request_time, '<')
       ->condition('type', $bundle);
+
+    if ($anonymousJurisdictionClaimIsUnreadable) {
+      return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
+    }
 
     // Optimize query for common cases - direct ID lookup is fastest.
     if (isset($parameters['id'])) {
@@ -417,28 +464,13 @@ class GeoreportRequestIndexResource extends ResourceBase {
       $query->condition('nid', $nids, 'IN');
     }
     else {
-      // Handle pagination parameters.
-      $limit = isset($parameters['limit']) ? (int) $parameters['limit'] : 100;
-      $offset = 0;
+      $sort = $this->georeportProcessor->normalizeRequestListSort($parameters);
+      $pagination = $this->georeportProcessor->normalizeRequestListPagination($parameters, $sort);
+      $parameters['_request_list_sort'] = $sort;
+      $parameters['_request_list_pagination'] = $pagination;
 
-      // Support both 'page' (1-based) and 'offset' (0-based) parameters.
-      if (isset($parameters['page']) && $parameters['page'] > 0) {
-        $page = (int) $parameters['page'];
-        $offset = ($page - 1) * $limit;
-      }
-      elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
-        $offset = (int) $parameters['offset'];
-      }
-
-      // Performance protection: require explicit limits for queries without date filters.
-      if (!isset($parameters['start_date']) && !isset($parameters['updated'])) {
-        $limit = min($limit, 100);
-      }
-      else {
-        // Apply limit for date-filtered queries (can be larger since they're more specific)
-        $limit = min($limit, 500);
-      }
-
+      $limit = $pagination['limit'];
+      $offset = $pagination['offset'];
       $query->range($offset, $limit);
 
       // Handle explicit date range filters only.
@@ -456,82 +488,9 @@ class GeoreportRequestIndexResource extends ResourceBase {
         }
       }
 
-      // -----------------------------------------------------------------------
-      // SORTING (Mark-a-Spot Extension)
-      // -----------------------------------------------------------------------
-      // Note: The Open311 GeoReport v2 standard does not define a sort
-      // parameter. This is a Mark-a-Spot extension for enhanced usability.
-      //
-      // RECOMMENDED: JSON:API style (new implementations)
-      // sort=field     Ascending order
-      // sort=-field    Descending order (prefix with minus)
-      //
-      // Available sort fields:
-      // - created      Request creation date (default)
-      // - updated      Last modification date
-      // - status       Status field
-      // - service_code Category/service type
-      // - request_id   String-based request ID
-      // - nid          Numeric node ID
-      //
-      // Examples:
-      // sort=-created  Newest first (default behavior)
-      // sort=created   Oldest first
-      // sort=-nid      Highest ID first (numeric)
-      // sort=nid       Lowest ID first (numeric)
-      //
-      // DEPRECATED (backward compatibility):
-      // sort=DESC      Equivalent to sort=-created
-      // sort=ASC       Equivalent to sort=created
-      // -----------------------------------------------------------------------
-      $sortField = 'created';
-      $sortDirection = 'ASC';
-
-      if (isset($parameters['sort'])) {
-        $sortParam = $parameters['sort'];
-
-        // DEPRECATED: Legacy sort=DESC or sort=ASC (backward compatibility).
-        // Maps to 'created' field only. Use JSON:API style for other fields.
-        if (strcasecmp($sortParam, 'DESC') === 0) {
-          $sortDirection = 'DESC';
-        }
-        elseif (strcasecmp($sortParam, 'ASC') === 0) {
-          $sortDirection = 'ASC';
-        }
-        else {
-          // JSON:API style: '-' prefix indicates descending order.
-          if (str_starts_with($sortParam, '-')) {
-            $sortDirection = 'DESC';
-            $sortParam = substr($sortParam, 1);
-          }
-          else {
-            $sortDirection = 'ASC';
-          }
-
-          // Map API sort field names to Drupal entity fields.
-          // Note: 'nid' provides numeric sorting vs 'request_id' string sorting.
-          $fieldMapping = [
-            'created' => 'created',
-            'updated' => 'changed',
-            'status' => 'field_status',
-            'service_code' => 'field_category',
-            'request_id' => 'request_id',
-            'nid' => 'nid',
-          ];
-
-          if (isset($fieldMapping[$sortParam])) {
-            $sortField = $fieldMapping[$sortParam];
-          }
-        }
-      }
-
       // Apply the updated filter if present (overrides sort for this use case).
       if (isset($parameters['updated'])) {
-        $query->condition('changed', strtotime($parameters['updated']), '>=')
-          ->sort('changed', 'DESC');
-      }
-      else {
-        $query->sort($sortField, $sortDirection);
+        $query->condition('changed', strtotime($parameters['updated']), '>=');
       }
     }
 
@@ -557,16 +516,19 @@ class GeoreportRequestIndexResource extends ResourceBase {
     }
 
     // Handle search query using Search API for full-text search.
-    // Falls back to basic LIKE search if Search API is not available.
     if (isset($parameters['q']) && strlen(trim($parameters['q'])) >= 2) {
       $searchQuery = trim($parameters['q']);
       $searchNids = [];
 
       // Try Search API first for better full-text search.
       if ($this->searchApiQueryService->isAvailable()) {
+        // Search API is only used to produce a text-match candidate set.
+        // EntityQuery applies structured filters, sorting, count, and the
+        // public offset range exactly once below. Passing the request offset
+        // into both layers would skip page 2+ results.
         $searchOptions = [
-          'limit' => $limit ?? 100,
-          'offset' => $offset ?? 0,
+          'limit' => self::SEARCH_API_CANDIDATE_LIMIT,
+          'offset' => 0,
           'langcode' => $parameters['langcode'] ?? NULL,
         ];
 
@@ -580,9 +542,19 @@ class GeoreportRequestIndexResource extends ResourceBase {
         if (!empty($searchNids)) {
           $query->condition('nid', $searchNids, 'IN');
         }
+        elseif ($this->searchApiQueryService->didLastSearchFail()) {
+          if ($this->searchApiQueryService->applySafeFallbackSearch($query, $searchQuery)) {
+            $this->logger->notice('Search API failed, using request_id fallback for query: @query', [
+              '@query' => $searchQuery,
+            ]);
+          }
+          else {
+            $this->logger->debug('Search API failed; full-text query skipped to avoid unbounded LIKE fallback.');
+            $query->condition('nid', [0], 'IN');
+          }
+        }
         else {
           // Search API found no results - return empty.
-          // Only fall back to LIKE search if Search API explicitly failed.
           $this->logger->debug('Search API returned no results for query: @query', [
             '@query' => $searchQuery,
           ]);
@@ -591,27 +563,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
         }
       }
       else {
-        // Fall back to basic LIKE search if Search API is not available.
-        $this->logger->notice('Search API not available, using LIKE fallback for query: @query', [
-          '@query' => $searchQuery,
-        ]);
-
-        $group = $query->orConditionGroup()
-          ->condition('request_id', '%' . $searchQuery . '%', 'LIKE')
-          ->condition('title', '%' . $searchQuery . '%', 'LIKE');
-
-        // Text search on body is expensive, only do if query > 3 chars.
-        if (strlen($searchQuery) > 3) {
-          $group->condition('body', '%' . $searchQuery . '%', 'LIKE');
+        // Search API is the required full-text backend. Without it, only exact
+        // request_id lookup is allowed; never fall back to broad
+        // leading-wildcard LIKE scans over title, body, or address fields.
+        if ($this->searchApiQueryService->applySafeFallbackSearch($query, $searchQuery)) {
+          $this->logger->notice('Search API not available, using request_id fallback for query: @query', [
+            '@query' => $searchQuery,
+          ]);
         }
-
-        // Search address field columns (publicly visible fields).
-        $group->condition('field_address.address_line1', '%' . $searchQuery . '%', 'LIKE')
-          ->condition('field_address.address_line2', '%' . $searchQuery . '%', 'LIKE')
-          ->condition('field_address.locality', '%' . $searchQuery . '%', 'LIKE')
-          ->condition('field_address.postal_code', '%' . $searchQuery . '%', 'LIKE');
-
-        $query->condition($group);
+        else {
+          $this->logger->debug('Search API not available; full-text query skipped to avoid unbounded LIKE fallback.');
+          $query->condition('nid', [0], 'IN');
+        }
       }
     }
 
@@ -655,6 +618,26 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
     }
 
+    // Apply keyset pagination after all filters, and preserve meta.total as
+    // the full filtered result count instead of the remaining cursor window.
+    if (!empty($parameters['_request_list_sort']) && !empty($parameters['_request_list_pagination'])) {
+      $pagination = $parameters['_request_list_pagination'];
+      $includeMetadata = !empty($parameters['meta']) &&
+        (strtolower((string) $parameters['meta']) === 'true' || $parameters['meta'] === '1');
+      if ($includeMetadata && ($pagination['cursor'] ?? NULL) !== NULL) {
+        $countQuery = clone $query;
+        $countQuery->range(NULL, NULL);
+        $parameters['_request_list_total'] = (int) $countQuery->count()->execute();
+      }
+
+      $this->georeportProcessor->applyRequestListCursor(
+        $query,
+        $pagination['cursor'],
+        $parameters['_request_list_sort']
+      );
+      $this->georeportProcessor->applyRequestListSort($query, $parameters['_request_list_sort']);
+    }
+
     return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
   }
 
@@ -672,26 +655,18 @@ class GeoreportRequestIndexResource extends ResourceBase {
     $this->checkRateLimit('georeport_api_post');
 
     try {
-      // Validate jurisdiction access for authenticated API users.
-      // Support deprecated aliases (jurisdiction, gid) for backward compat.
-      $jurisdictionId = isset($request_data['jurisdiction_id'])
-        ? (int) $request_data['jurisdiction_id']
-        : (isset($request_data['jurisdiction'])
-          ? (int) $request_data['jurisdiction']
-          : (isset($request_data['gid'])
-            ? (int) $request_data['gid']
-            : NULL));
+      $claimedJurisdictionId = $this->resolveClaimedJurisdictionId($request_data);
+      $jurisdictionId = $this->jurisdictionScopeValidator
+        ->resolveSubmissionJurisdiction($claimedJurisdictionId, $this->currentUser);
 
-      // Require jurisdiction_id when multiple root jurisdictions exist
-      // (multi-tenant setup). Without it, the request would become orphaned
-      // because group assignment cannot determine which jurisdiction to use.
-      if (empty($jurisdictionId)) {
-        $this->validateMultiTenantJurisdiction();
-      }
+      // Canonicalize deprecated aliases and implicit single-scope requests
+      // before the processor maps category, status, and group relationships.
+      $request_data['jurisdiction_id'] = $jurisdictionId;
 
-      $this->georeportProcessor->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
+      $this->enforceSubmissionBoundary($request_data, $jurisdictionId);
 
-      // Workspace visibility enforcement: block anonymous POST for authenticated-only workspaces.
+      // Workspace visibility enforcement: block anonymous POST for
+      // authenticated-only workspaces.
       if ($jurisdictionId && $this->workspaceVisibility && $this->currentUser->isAnonymous()) {
         if (!$this->workspaceVisibility->canAnonymousSubmit($jurisdictionId)) {
           throw new GeoreportException('Authentication required to submit to this workspace.', 403);
@@ -713,6 +688,310 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
       throw new HttpException(500, 'Internal Server Error', $e);
     }
+  }
+
+  /**
+   * Resolves an optional claimed jurisdiction from canonical and legacy keys.
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Throws 400 when a claim exists but cannot resolve to a jurisdiction.
+   */
+  protected function resolveClaimedJurisdictionId(array $requestData): ?int {
+    if (!$this->hasJurisdictionClaim($requestData)) {
+      return NULL;
+    }
+
+    $jurisdictionId = $this->georeportProcessor->resolveJurisdictionId($requestData);
+    if (!$jurisdictionId) {
+      $allowed = $this->jurisdictionScopeValidator
+        ? $this->jurisdictionScopeValidator->getAllowedJurisdictionIds($this->currentUser)
+        : [];
+      $this->jurisdictionScopeValidator?->logViolation(
+        (int) $this->currentUser->id(),
+        NULL,
+        $allowed,
+        400,
+        'invalid_claim'
+      );
+      throw new GeoreportException('Invalid jurisdiction_id.', 400);
+    }
+
+    return $jurisdictionId;
+  }
+
+  /**
+   * Checks if request data contains a non-empty jurisdiction claim.
+   */
+  protected function hasJurisdictionClaim(array $requestData): bool {
+    foreach (['jurisdiction_id', 'jurisdiction', 'gid'] as $key) {
+      if (array_key_exists($key, $requestData) && trim((string) $requestData[$key]) !== '') {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Enforces jurisdiction boundary on valid coordinate payloads.
+   */
+  protected function enforceSubmissionBoundary(array $requestData, int $jurisdictionId): void {
+    $coordinates = $this->getRequestCoordinates($requestData);
+    if ($coordinates === NULL || !$this->boundaryValidator) {
+      return;
+    }
+
+    [$lat, $lng] = $coordinates;
+    if ($this->boundaryValidator->isWithinJurisdictionBoundary($jurisdictionId, $lat, $lng)) {
+      return;
+    }
+
+    if ($this->hasExplicitBoundaryBypassPermission()) {
+      $this->logger->warning(
+        'submission.boundary_bypass caller_uid=@uid jurisdiction=@jurisdiction lat=@lat lng=@lng result=accepted',
+        [
+          '@uid' => (int) $this->currentUser->id(),
+          '@jurisdiction' => $jurisdictionId,
+          '@lat' => $lat,
+          '@lng' => $lng,
+        ]
+      );
+      return;
+    }
+
+    $allowed = $this->jurisdictionScopeValidator
+      ? $this->jurisdictionScopeValidator->getAllowedJurisdictionIds($this->currentUser)
+      : [];
+    $this->jurisdictionScopeValidator?->logViolation(
+      (int) $this->currentUser->id(),
+      $jurisdictionId,
+      $allowed,
+      422,
+      'outside_boundary'
+    );
+    throw new HttpException(422, 'coordinates outside jurisdiction boundary');
+  }
+
+  /**
+   * Checks role config for an explicit boundary bypass grant.
+   *
+   * This deliberately avoids AccountInterface::hasPermission(), because uid 1
+   * receives every permission implicitly through Drupal's superuser policy.
+   */
+  protected function hasExplicitBoundaryBypassPermission(): bool {
+    if ($this->currentUser->isAnonymous()) {
+      return FALSE;
+    }
+
+    foreach ($this->currentUser->getRoles(TRUE) as $roleId) {
+      $role = Role::load($roleId);
+      if ($role && in_array('bypass jurisdiction boundary', $role->getPermissions(), TRUE)) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Extracts valid latitude and longitude values for boundary checks.
+   *
+   * Invalid coordinate payloads are validated later by the processor.
+   *
+   * @return array{0: float, 1: float}|null
+   *   Latitude and longitude, or NULL when no valid pair is present.
+   */
+  protected function getRequestCoordinates(array $requestData): ?array {
+    if (!array_key_exists('lat', $requestData)) {
+      return NULL;
+    }
+
+    $lngKey = array_key_exists('long', $requestData) ? 'long' : 'lng';
+    if (!array_key_exists($lngKey, $requestData)) {
+      return NULL;
+    }
+
+    $lat = filter_var($requestData['lat'], FILTER_VALIDATE_FLOAT);
+    $lng = filter_var($requestData[$lngKey], FILTER_VALIDATE_FLOAT);
+    if ($lat === FALSE || $lng === FALSE) {
+      return NULL;
+    }
+
+    $lat = (float) $lat;
+    $lng = (float) $lng;
+    if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+      return NULL;
+    }
+
+    return [$lat, $lng];
+  }
+
+  /**
+   * Restricts API-key reads to the owner's jurisdiction memberships.
+   */
+  protected function applyApiKeyJurisdictionReadScope(QueryInterface $query, array $parameters, ?int $resolvedJurisdictionId): void {
+    if (!$this->currentRequestUsesApiKey()
+      || !$this->jurisdictionScopeValidator
+      || $this->currentUser->isAnonymous()) {
+      return;
+    }
+
+    if (!$resolvedJurisdictionId && $this->hasJurisdictionClaim($parameters)) {
+      $this->jurisdictionScopeValidator->logViolation(
+        (int) $this->currentUser->id(),
+        NULL,
+        $this->jurisdictionScopeValidator->getAllowedJurisdictionIds($this->currentUser),
+        400,
+        'invalid_claim'
+      );
+      throw new GeoreportException('Invalid jurisdiction_id.', 400);
+    }
+
+    if ($resolvedJurisdictionId) {
+      $this->jurisdictionScopeValidator
+        ->resolveSubmissionJurisdiction($resolvedJurisdictionId, $this->currentUser);
+      return;
+    }
+
+    $allowedJurisdictionIds = $this->jurisdictionScopeValidator
+      ->getAllowedJurisdictionIds($this->currentUser);
+    if ($allowedJurisdictionIds === []) {
+      $query->condition('nid', [0], 'IN');
+      return;
+    }
+
+    $nodeIds = [];
+    foreach ($allowedJurisdictionIds as $jurisdictionId) {
+      $nodeIds = array_merge(
+        $nodeIds,
+        $this->hierarchyResolver
+          ? $this->hierarchyResolver->getNodeIdsInJurisdiction($jurisdictionId)
+          : []
+      );
+    }
+
+    $nodeIds = array_values(array_unique(array_map('intval', $nodeIds)));
+    $query->condition('nid', $nodeIds ?: [0], 'IN');
+  }
+
+  /**
+   * Restricts anonymous reads to publicly visible workspaces.
+   */
+  protected function applyAnonymousWorkspaceReadScope(QueryInterface $query): void {
+    if (!$this->workspaceVisibility || !$this->currentUser->isAnonymous()) {
+      return;
+    }
+
+    $query->condition('field_jurisdiction', $this->getAnonymousVisibleJurisdictionIds() ?: [0], 'IN');
+  }
+
+  /**
+   * Gets jurisdiction IDs whose requests are visible to anonymous users.
+   *
+   * @return int[]
+   *   Public jurisdiction group IDs.
+   */
+  protected function getAnonymousVisibleJurisdictionIds(): array {
+    $ids = $this->entityTypeManager->getStorage('group')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $this->jurisdictionGroupType())
+      ->execute();
+
+    $visible = [];
+    foreach ($ids as $id) {
+      $id = (int) $id;
+      if ($this->workspaceVisibility->canAnonymousView($id)) {
+        $visible[] = $id;
+      }
+    }
+
+    return $visible;
+  }
+
+  /**
+   * Applies caller-appropriate behavior for invalid jurisdiction claims.
+   */
+  protected function applyInvalidJurisdictionClaimScope(QueryInterface $query, array $parameters, ?int $resolvedJurisdictionId): void {
+    if (!$this->hasJurisdictionClaim($parameters)) {
+      return;
+    }
+
+    $valid = $resolvedJurisdictionId !== NULL
+      && $this->isJurisdictionGroupId($resolvedJurisdictionId);
+    if ($valid) {
+      return;
+    }
+
+    if (!$this->currentUser->isAnonymous()) {
+      throw new GeoreportException('Invalid jurisdiction_id.', 400);
+    }
+
+    // Anonymous callers get an empty scoped result instead of an existence
+    // oracle for numeric tenant IDs.
+    $query->condition('nid', [0], 'IN');
+  }
+
+  /**
+   * Checks whether an anonymous jurisdiction claim must resolve as empty.
+   */
+  protected function anonymousJurisdictionClaimIsUnreadable(array $parameters, ?int $resolvedJurisdictionId): bool {
+    if (!$this->workspaceVisibility
+      || !$this->currentUser->isAnonymous()
+      || !$this->hasJurisdictionClaim($parameters)) {
+      return FALSE;
+    }
+
+    if ($resolvedJurisdictionId === NULL || !$this->isJurisdictionGroupId($resolvedJurisdictionId)) {
+      return TRUE;
+    }
+
+    return !$this->workspaceVisibility->canAnonymousView($resolvedJurisdictionId);
+  }
+
+  /**
+   * Checks whether an ID resolves to a jurisdiction group.
+   */
+  protected function isJurisdictionGroupId(int $groupId): bool {
+    $group = $this->entityTypeManager->getStorage('group')->load($groupId);
+    return $group && $this->isJurisdictionGroup($group);
+  }
+
+  /**
+   * Checks whether a group is the configured jurisdiction bundle.
+   */
+  protected function isJurisdictionGroup(object $group): bool {
+    return method_exists($group, 'bundle') && $group->bundle() === $this->jurisdictionGroupType();
+  }
+
+  /**
+   * Returns the configured jurisdiction group bundle.
+   */
+  protected function jurisdictionGroupType(): string {
+    $configured = $this->config->get('jurisdiction_group_type');
+
+    return is_string($configured) && $configured !== '' ? $configured : 'jur';
+  }
+
+  /**
+   * Checks whether the current request authenticated through an API key.
+   */
+  protected function currentRequestUsesApiKey(): bool {
+    $request = $this->requestStack->getCurrentRequest();
+    if (!$request) {
+      return FALSE;
+    }
+
+    $headerName = $this->apiKeyAuthConfig->get('api_key_request_header_name');
+    $postName = $this->apiKeyAuthConfig->get('api_key_post_parameter_name');
+    $queryName = $this->apiKeyAuthConfig->get('api_key_get_parameter_name');
+
+    return ($queryName && $request->query->has($queryName))
+      || ($postName && $request->request->has($postName))
+      || ($headerName && $request->headers->has($headerName))
+      || $request->query->has('api_key')
+      || $request->request->has('api_key')
+      || $request->headers->has('apikey')
+      || $request->headers->has('x-api-key');
   }
 
   /**
@@ -796,13 +1075,15 @@ class GeoreportRequestIndexResource extends ResourceBase {
       foreach ($violations as $violation) {
         $dotPosition = strpos($violation->getPropertyPath(), '.');
 
-        $propertyPath = $dotPosition !== FALSE ? substr($violation->getPropertyPath(), $dotPosition + 1) : $violation->getPropertyPath();
+        $propertyPath = $dotPosition !== FALSE
+          ? substr($violation->getPropertyPath(), $dotPosition + 1)
+          : $violation->getPropertyPath();
         $messages[$propertyPath] = $violation->getMessage();
         $this->logger->error('Node validation error: @message', ['@message' => $violation->getMessage()]);
 
       }
 
-      // Convert messages to a string or format that you want to show in the response.
+      // Convert messages to a string for the response.
       $detailedMessage = json_encode($messages);
       throw new GeoreportException($detailedMessage, 400);
 
@@ -826,7 +1107,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
    *   Throws 400 Bad Request when jurisdiction_id is missing in multi-tenant.
    */
   protected function validateMultiTenantJurisdiction(): void {
-    $jurType = $this->config->get('jurisdiction_group_type') ?? 'jur';
+    $jurType = $this->jurisdictionGroupType();
 
     try {
       // accessCheck(FALSE) is intentional: we check platform topology
@@ -860,7 +1141,8 @@ class GeoreportRequestIndexResource extends ResourceBase {
    * Checks if the current user is exempt from rate limiting.
    *
    * Exemptions:
-   * 1. Staff roles (admin, moderator, editorial_board, api_editor, api_municipality)
+   * 1. Staff roles: admin, moderator, editorial_board, api_editor,
+   *    api_municipality.
    * 2. Authenticated frontend users with valid session (uid > 0)
    *
    * This allows distinguishing between:

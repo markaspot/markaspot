@@ -9,7 +9,9 @@ source:
 process:
   uuid: uuid
   langcode: langcode
-  type: type
+  type:
+    plugin: default_value
+    default_value: org
   label: label
   field_head_organisation_e_mail: field_head_organisation_e_mail
   field_jurisdiction:
@@ -18,7 +20,7 @@ process:
     source: jurisdiction_uuid
 destination:
   plugin: 'entity:group'
-  default_bundle: organisation
+  default_bundle: org
 migration_dependencies:
   required:
     - markaspot_migrate_default_content_group_jurisdiction

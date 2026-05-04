@@ -486,7 +486,7 @@ class AttributeController extends ControllerBase {
     }
 
     $group = $this->entityTypeManager()->getStorage('group')->load($group_id);
-    if (!$group || $group->bundle() !== 'jur') {
+    if (!$this->isJurisdictionGroup($group)) {
       return [];
     }
 

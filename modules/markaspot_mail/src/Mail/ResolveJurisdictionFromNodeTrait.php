@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\node\NodeInterface;
@@ -44,12 +45,47 @@ trait ResolveJurisdictionFromNodeTrait {
       return ['platform', NULL];
     }
     $target = $field->referencedEntities()[0] ?? NULL;
-    if (!$target instanceof ContentEntityInterface
-      || $target->getEntityTypeId() !== 'group'
-      || $target->bundle() !== 'jur') {
+    if (!$this->isResolvedJurisdictionGroup($target)) {
       return ['platform', NULL];
     }
     return ['jurisdiction', (int) $target->id()];
+  }
+
+  /**
+   * Checks whether an entity is the configured jurisdiction group bundle.
+   */
+  protected function isResolvedJurisdictionGroup(mixed $target): bool {
+    return $target instanceof ContentEntityInterface
+      && $target->getEntityTypeId() === 'group'
+      && $target->bundle() === $this->resolvedJurisdictionGroupType();
+  }
+
+  /**
+   * Returns the configured jurisdiction group bundle.
+   */
+  protected function resolvedJurisdictionGroupType(): string {
+    if (
+      property_exists($this, 'configFactory')
+      && $this->configFactory instanceof ConfigFactoryInterface
+    ) {
+      $configured = $this->configFactory
+        ->get('markaspot_open311.settings')
+        ->get('jurisdiction_group_type');
+      return is_string($configured) && $configured !== '' ? $configured : 'jur';
+    }
+
+    try {
+      if (\Drupal::hasService('config.factory')) {
+        $configured = \Drupal::config('markaspot_open311.settings')
+          ->get('jurisdiction_group_type');
+        return is_string($configured) && $configured !== '' ? $configured : 'jur';
+      }
+    }
+    catch (\Throwable) {
+      // Unit tests may instantiate builders without a Drupal container.
+    }
+
+    return 'jur';
   }
 
 }

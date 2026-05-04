@@ -21,7 +21,7 @@ use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- *
+ * Tests transactional mail branding resolution.
  */
 #[CoversClass(\Drupal\markaspot_mail\Service\MailBrandingService::class)]
 #[Group('markaspot_mail')]
@@ -64,7 +64,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests platform defaults in platform mode.
    */
   public function testPlatformModeReturnsDefaults(): void {
     new Settings(['markaspot_operating_mode' => 'saas']);
@@ -85,8 +85,10 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Default operating mode is self_hosted; in this mode the Kommune is
-   * the sole legal contact, so no Civic-Patches branding may appear.
+   * Tests self-hosted mode as the default branding policy.
+   *
+   * In this mode the Kommune is the sole legal contact, so no Civic-Patches
+   * branding may appear.
    */
   public function testSelfHostedModeIsDefaultAndDropsCivicPatchesFallbacks(): void {
     // setUp() resets Settings to empty -> default self_hosted.
@@ -106,7 +108,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests jurisdiction branding values for an Amsterdam tenant.
    */
   public function testJurisdictionAmsterdamMapsBlueToHex(): void {
     $group = $this->buildGroup([
@@ -141,7 +143,36 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Jurisdiction footers must read the group translation for the mail language.
+   */
+  public function testJurisdictionFooterUsesRequestedTranslation(): void {
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'Amsterdam',
+      'field_slug' => 'amsterdam',
+      'field_platform_name' => 'Amsterdam',
+      'field_email_footer' => "English footer\nContact",
+    ], [
+      'de' => [
+        'label' => 'Amsterdam DE',
+        'field_platform_name' => 'Amsterdam DE',
+        'field_email_footer' => "Deutscher Footer\n<script>alert(1)</script>",
+      ],
+    ]);
+    $service = $this->buildService($group);
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'de');
+
+    $this->assertSame('Amsterdam DE', $branding['platform_name']);
+    $footerHtml = (string) $branding['email_footer_html'];
+    $this->assertStringContainsString('Deutscher Footer', $footerHtml);
+    $this->assertStringContainsString('&lt;script&gt;alert(1)&lt;/script&gt;', $footerHtml);
+    $this->assertStringNotContainsString('English footer', $footerHtml);
+    $this->assertStringNotContainsString('<script>', $footerHtml);
+  }
+
+  /**
+   * Tests Tailwind emerald color mapping for jurisdiction branding.
    */
   public function testJurisdictionBcpMapsEmeraldToHex(): void {
     $group = $this->buildGroup([
@@ -161,7 +192,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests slug-built jurisdiction legal URLs.
    */
   public function testJurisdictionSlugBuildsLegalUrlsWhenFieldsContainContent(): void {
     $group = $this->buildGroup([
@@ -188,7 +219,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests missing jurisdiction fallback and warning logging.
    */
   public function testMissingJurisdictionFallsBackAndLogsWarning(): void {
     $storage = $this->createMock(EntityStorageInterface::class);
@@ -208,7 +239,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests unknown color fallback.
    */
   public function testUnknownColorFallsBackToDefault(): void {
     $group = $this->buildGroup([
@@ -225,7 +256,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests raw hex color passthrough.
    */
   public function testHexColorPassesThrough(): void {
     $group = $this->buildGroup([
@@ -272,9 +303,10 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Features.show_platform_footer = false suppresses the Civic Patches
-   * attribution bundle. Self-hosted enterprise installations opt out so
-   * no civicpatches.de/impressum or copyright line ships in their mails.
+   * Tests disabling the optional platform footer attribution.
+   *
+   * Self-hosted enterprise installations opt out so no civicpatches.de/impressum
+   * or copyright line ships in their mails.
    */
   public function testShowPlatformFooterFalseSuppressesPlatformFooter(): void {
     $overrides = self::PLATFORM_SETTINGS;
@@ -292,9 +324,10 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * In SaaS mode the legacy features.show_platform_footer flag defaults
-   * to TRUE when markaspot_mail.settings has no entry, so shipping
-   * SaaS-tenant behavior stays backwards-compatible.
+   * Tests the SaaS default for the optional platform footer attribution.
+   *
+   * In SaaS mode the legacy features.show_platform_footer flag defaults to TRUE
+   * when markaspot_mail.settings has no entry.
    */
   public function testShowPlatformFooterDefaultsToTrueWhenMissingInSaasMode(): void {
     new Settings(['markaspot_operating_mode' => 'saas']);
@@ -328,9 +361,10 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Self-hosted equivalent: javascript: still rejected, but the safe
-   * default is empty so Twig's `{% if branding.legal_notice_url %}`
-   * suppresses the link entirely.
+   * Tests self-hosted javascript URL fallback.
+   *
+   * The unsafe URL is still rejected, but the safe default is empty so Twig's
+   * `{% if branding.legal_notice_url %}` suppresses the link entirely.
    */
   public function testJavascriptUrlInSelfHostedFallsBackToEmptyString(): void {
     // setUp() resets Settings to empty -> default self_hosted.
@@ -344,11 +378,11 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Missing platform.frontend_base_url in SaaS mode falls back to
-   * mark-a-spot.com — the platform IS the operator, so the brand URL
-   * is the legitimate default.
+   * Tests SaaS fallback when platform.frontend_base_url is missing.
+   *
+   * The platform is the operator, so mark-a-spot.com is the legitimate default.
    */
-  public function testFrontendBaseUrlSaasFallbackIsMarkASpot(): void {
+  public function testFrontendBaseUrlSaasFallbackUsesMarkaSpotDefault(): void {
     new Settings(['markaspot_operating_mode' => 'saas']);
     $overrides = self::PLATFORM_SETTINGS;
     unset($overrides['platform.frontend_base_url']);
@@ -360,10 +394,10 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Missing platform.frontend_base_url in self_hosted mode falls back
-   * to '' rather than mark-a-spot.com so a Kommune-operated mail does
-   * not silently link citizens to a foreign domain. Mirrors the
-   * SaaS-gated legal/privacy fallbacks.
+   * Tests self-hosted fallback when platform.frontend_base_url is missing.
+   *
+   * It falls back to '' rather than mark-a-spot.com so a Kommune-operated mail
+   * does not silently link citizens to a foreign domain.
    */
   public function testFrontendBaseUrlSelfHostedFallsBackToEmptyString(): void {
     // setUp() resets Settings to empty -> default self_hosted.
@@ -377,12 +411,10 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
-   * Self-hosted jurisdiction with non-URL legal content + empty tenant
-   * template + empty platform frontend_base_url MUST NOT produce a
-   * path-only legal_notice_url. resolveLegalUrl()'s frontendBase guard
-   * (line ~614) catches this; the test pins the invariant so a future
-   * refactor cannot silently emit a relative URL into a mail body where
-   * mail clients would fail to resolve it.
+   * Tests legal URL suppression when self-hosted frontend bases are empty.
+   *
+   * A self-hosted jurisdiction with non-URL legal content, empty tenant template
+   * and empty platform frontend_base_url must not produce a path-only URL.
    */
   public function testSelfHostedSlugLegalUrlSuppressedWhenNoFrontendBase(): void {
     // setUp() resets Settings to empty -> default self_hosted.
@@ -441,8 +473,13 @@ final class MailBrandingServiceTest extends UnitTestCase {
     );
     $siteConfig = $this->createMock(ImmutableConfig::class);
     $siteConfig->method('get')->willReturn(NULL);
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')->willReturnCallback(
+      static fn(string $key) => $key === 'jurisdiction_group_type' ? 'jur' : NULL,
+    );
     $configFactory->method('get')->willReturnMap([
       ['markaspot_mail.settings', $settingsConfig],
+      ['markaspot_open311.settings', $open311Config],
       ['system.site', $siteConfig],
     ]);
 
@@ -464,14 +501,24 @@ final class MailBrandingServiceTest extends UnitTestCase {
    *
    * @param array $data
    *   Keyed by field machine name. "id" and "label" are meta keys.
+   * @param array $translations
+   *   Optional translation data keyed by langcode.
    */
-  private function buildGroup(array $data): ContentEntityInterface {
+  private function buildGroup(array $data, array $translations = []): ContentEntityInterface {
     $group = $this->createMock(ContentEntityInterface::class);
     $group->method('bundle')->willReturn('jur');
     $group->method('id')->willReturn($data['id']);
     $group->method('label')->willReturn($data['label'] ?? '');
-    $group->method('hasTranslation')->willReturn(FALSE);
-    $group->method('getTranslation')->willReturnSelf();
+    $translatedGroups = [];
+    foreach ($translations as $langcode => $translationData) {
+      $translatedGroups[$langcode] = $this->buildGroup($translationData + $data);
+    }
+    $group->method('hasTranslation')->willReturnCallback(
+      static fn(string $langcode): bool => isset($translatedGroups[$langcode]),
+    );
+    $group->method('getTranslation')->willReturnCallback(
+      static fn(string $langcode): ContentEntityInterface => $translatedGroups[$langcode] ?? $group,
+    );
 
     $group->method('hasField')->willReturnCallback(
       static fn(string $name) => array_key_exists($name, $data),

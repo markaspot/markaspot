@@ -2,3 +2,7 @@ bypass mas validation:
   title: 'Bypass Mark-a-Spot validation'
   description: 'Bypass Mark-a-Spot custom validation'
   restrict access: TRUE
+bypass jurisdiction boundary:
+  title: 'Bypass jurisdiction boundary validation'
+  description: 'Allow GeoReport submissions outside the scoped jurisdiction boundary.'
+  restrict access: TRUE

@@ -125,7 +125,8 @@ class ToolbarBuilder implements TrustedCallbackInterface {
     // Get all installed modules.
     $modules = $this->moduleHandler->getModuleList();
 
-    // Additional modules that might have settings but don't follow markaspot_ prefix.
+    // Additional modules that might have settings but do not use the
+    // markaspot_ prefix.
     $additional_modules = [
       'services_api_key_auth' => 'entity.api_key.collection',
     ];
@@ -180,6 +181,10 @@ class ToolbarBuilder implements TrustedCallbackInterface {
       return;
     }
 
+    if (!$this->moduleHandler->moduleExists($module_name)) {
+      return;
+    }
+
     // Common patterns for settings routes.
     $route_patterns = [
       $module_name . '.settings',
@@ -189,7 +194,12 @@ class ToolbarBuilder implements TrustedCallbackInterface {
       $module_name . '.config',
     ];
 
-    $info = $this->moduleList->getExtensionInfo($module_name);
+    try {
+      $info = $this->moduleList->getExtensionInfo($module_name);
+    }
+    catch (\Exception $e) {
+      return;
+    }
     if (empty($info)) {
       return;
     }
