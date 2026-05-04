@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.71](https://github.com/markaspot/markaspot/compare/11.9.70...11.9.71) (2026-05-04)
+
+### Bug Fixes
+
+* add health repair guidance ([dfd7934](https://github.com/markaspot/markaspot/commit/dfd7934bd824843e4ec4166347bf9b82a848b39a))
+
 ## [11.9.70](https://github.com/markaspot/markaspot/compare/11.9.69...11.9.70) (2026-05-04)
 
 ### Features
