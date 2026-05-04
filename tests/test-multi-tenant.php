@@ -1465,12 +1465,23 @@ else {
       }
 
       // --- Test 15f: Parent jurisdiction API includes child node (hierarchical resolution) ---
-      $r = $http->get("$base/georeport/v2/requests.json?jurisdiction_id=$parent_id_val", $opts);
+      // Sort newest-first so the freshly created report is inside the default
+      // capped page even when the parent jurisdiction already has >100 reports.
+      $r = $http->get("$base/georeport/v2/requests.json?jurisdiction_id=$parent_id_val&sort=-created&_=$bust", $opts);
       $parent_reqs = json_decode($r->getBody()->getContents(), TRUE);
       $parent_req_ids = is_array($parent_reqs) ? array_column($parent_reqs, 'service_request_id') : [];
       assert_true(
         in_array($created_id, $parent_req_ids),
         "Hierarchical: request $created_id visible from parent jurisdiction_id=$parent_id_val (got " . count($parent_req_ids) . " requests)"
+      );
+
+      // A child-scoped API key must not be able to read the parent scope
+      // directly; parent visibility above is the public hierarchy view.
+      $r = $http->get("$base/georeport/v2/requests.json?jurisdiction_id=$parent_id_val&sort=-created&api_key=$child_key_value&_=$bust", $opts);
+      assert_equal(
+        403,
+        $r->getStatusCode(),
+        "Child editorial: denied read in parent {$parent_jur['label']} (HTTP " . $r->getStatusCode() . ")"
       );
 
       // --- Test 15d: Child user denied in parent jurisdiction (no membership) ---

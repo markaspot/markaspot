@@ -1543,6 +1543,13 @@ function markaspot_group_node_insert(NodeInterface $node): void {
       _markaspot_group_set_syncing(FALSE);
     }
   }
+
+  // New nodes can receive field_jurisdiction during hook_node_insert. Run the
+  // central reconciler after the optional second save so persisted field values
+  // and group relationships end in the same state as regular updates.
+  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+    _markaspot_group_reconcile_service_request_relationships($node);
+  }
 }
 
 /**
