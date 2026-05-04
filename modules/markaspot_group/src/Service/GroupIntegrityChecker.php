@@ -572,9 +572,14 @@ class GroupIntegrityChecker {
       return 0;
     }
 
+    $fallbackColumn = $this->fieldCategoryGidColumn();
+    if ($fallbackColumn === NULL) {
+      return 0;
+    }
+
     $fallback = $this->database->select('taxonomy_term__field_category_gid', 'cg');
-    $fallback->join('groups', 'g', "g.id = cg.field_category_gid_target_id AND g.type = 'org'");
-    $fallback->addField('cg', 'field_category_gid_target_id');
+    $fallback->join('groups', 'g', "g.id = cg.$fallbackColumn AND g.type = 'org'");
+    $fallback->addField('cg', $fallbackColumn);
     $fallback->condition('cg.deleted', 0);
     $fallback->condition('cg.bundle', 'service_category');
     $fallback->condition('cg.entity_id', $categoryId);
@@ -1483,9 +1488,14 @@ class GroupIntegrityChecker {
       return (int) $orgId;
     }
 
+    $fallbackColumn = $this->fieldCategoryGidColumn();
+    if ($fallbackColumn === NULL) {
+      return 0;
+    }
+
     $fallback = $this->database->select('taxonomy_term__field_category_gid', 'cg');
-    $fallback->join('groups', 'g', "g.id = cg.field_category_gid_target_id AND g.type = 'org'");
-    $fallback->addField('cg', 'field_category_gid_target_id');
+    $fallback->join('groups', 'g', "g.id = cg.$fallbackColumn AND g.type = 'org'");
+    $fallback->addField('cg', $fallbackColumn);
     $fallback->condition('cg.deleted', 0);
     $fallback->condition('cg.bundle', 'service_category');
     $fallback->condition('cg.entity_id', $categoryId);
@@ -1493,6 +1503,28 @@ class GroupIntegrityChecker {
     $fallbackOrgId = $fallback->execute()->fetchField();
 
     return $fallbackOrgId === FALSE ? 0 : (int) $fallbackOrgId;
+  }
+
+  /**
+   * Resolves the storage column for category-to-organisation mappings.
+   *
+   * Older tenants store field_category_gid as a string value even though the
+   * profile now declares it as an entity reference. Supporting both shapes
+   * lets health repair commands clean up migrated tenants before config is
+   * normalized.
+   */
+  protected function fieldCategoryGidColumn(): ?string {
+    $schema = $this->database->schema();
+    if (!$schema->tableExists('taxonomy_term__field_category_gid')) {
+      return NULL;
+    }
+    if ($schema->fieldExists('taxonomy_term__field_category_gid', 'field_category_gid_target_id')) {
+      return 'field_category_gid_target_id';
+    }
+    if ($schema->fieldExists('taxonomy_term__field_category_gid', 'field_category_gid_value')) {
+      return 'field_category_gid_value';
+    }
+    return NULL;
   }
 
   /**

@@ -76,6 +76,7 @@ dependencies:
   - markaspot_stats
   - markaspot_boilerplate
   - markaspot_feedback
+  - markaspot_health
   - markaspot_mail
   - markaspot_vision
   - markaspot_notification

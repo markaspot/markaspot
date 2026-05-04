@@ -23,7 +23,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   label = @Translation("Module schema drift"),
  *   severity = "error",
  *   description = @Translation("Lists modules in core.extension whose system.schema entry is missing or 0; update hooks never ran for these."),
- *   fix_hint = @Translation("drush en <module> --no-cache-clear or run drush updb to repair schema entries."),
+ *   fix_hint = @Translation("Run drush markaspot:health:repair-schema --apply, then drush updatedb -y."),
  * )
  */
 class ModuleSchemaDriftCheck extends HealthCheckPluginBase {

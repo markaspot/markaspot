@@ -1947,6 +1947,54 @@ function markaspot_update_11913(): string {
 }
 
 /**
+ * Enable markaspot_health on existing installations.
+ *
+ * Fresh installs get the module from markaspot.info.yml. Existing tenants need
+ * the same module enabled explicitly so the operational health checks and
+ * repair commands are available after deploy.
+ */
+function markaspot_update_11914(): string {
+  $handler = \Drupal::moduleHandler();
+  if ($handler->moduleExists('markaspot_health')) {
+    return 'markaspot_health already enabled; no action.';
+  }
+
+  \Drupal::service('module_installer')->install(['markaspot_health']);
+  return 'Enabled markaspot_health module.';
+}
+
+/**
+ * Ensure runtime mail config matches the platform default.
+ *
+ * Existing tenants may already have run markaspot_update_11913 before
+ * attachments.enabled was part of the health check. Keep this as a separate
+ * update so the drift repair is reproducible through updatedb.
+ */
+function markaspot_update_11915(): string {
+  $changes = [];
+
+  $mailsystem = \Drupal::configFactory()->getEditable('mailsystem.settings');
+  if ($mailsystem->get('defaults.sender') !== 'phpmailer_smtp') {
+    $mailsystem->set('defaults.sender', 'phpmailer_smtp');
+    $changes[] = 'mailsystem.settings defaults.sender=phpmailer_smtp';
+  }
+  if ($mailsystem->get('defaults.formatter') !== 'phpmailer_smtp') {
+    $mailsystem->set('defaults.formatter', 'phpmailer_smtp');
+    $changes[] = 'mailsystem.settings defaults.formatter=phpmailer_smtp';
+  }
+  if ($mailsystem->get('attachments.enabled') !== TRUE) {
+    $mailsystem->set('attachments.enabled', TRUE);
+    $changes[] = 'mailsystem.settings attachments.enabled=true';
+  }
+
+  if ($changes !== []) {
+    $mailsystem->save();
+  }
+
+  return $changes ? implode(', ', $changes) . '.' : 'No mail config changes needed.';
+}
+
+/**
  * Implements hook_requirements().
  */
 function markaspot_requirements($phase) {

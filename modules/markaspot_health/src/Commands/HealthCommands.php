@@ -7,6 +7,7 @@ namespace Drupal\markaspot_health\Commands;
 use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Update\UpdateHookRegistry;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_health\HealthCheckPluginManager;
 use Drupal\markaspot_health\HealthCheckResult;
@@ -26,6 +27,7 @@ class HealthCommands extends DrushCommands {
     protected HealthCheckPluginManager $pluginManager,
     protected EntityTypeManagerInterface $entityTypeManager,
     protected ConfigFactoryInterface $configFactory,
+    protected UpdateHookRegistry $updateHookRegistry,
   ) {
     parent::__construct();
   }
@@ -98,10 +100,79 @@ class HealthCommands extends DrushCommands {
         'severity' => $result->severity,
         'count' => $result->count,
         'message' => $result->message,
+        'fix' => $result->passed ? '' : ($result->fixHint ?? ''),
       ];
     }
 
     $this->maybeFail($options, $errorCount);
+    return new RowsOfFields($rows);
+  }
+
+  /**
+   * Repairs schema entries that block normal database updates.
+   *
+   * Modules with system.schema 0 or no entry are treated by Drupal as coming
+   * from an unsupported previous major version. This command only moves such
+   * already-enabled modules to Drupal's minimum supported schema baseline.
+   * Subsequent hook_update_N implementations still run via updatedb.
+   *
+   * @param array $options
+   *   Command options.
+   *
+   * @option apply
+   *   Write repaired schema baselines. Defaults to dry-run.
+   *
+   * @return \Consolidation\OutputFormatters\StructuredData\RowsOfFields
+   *   Rows describing missing schema entries and target versions.
+   */
+  #[CLI\Command(name: 'markaspot:health:repair-schema', aliases: ['mas:repair-schema'])]
+  #[CLI\Option(name: 'apply', description: 'Write repaired schema baselines. Defaults to dry-run.')]
+  #[CLI\FieldLabels(labels: [
+    'module' => 'Module',
+    'current' => 'Current',
+    'target' => 'Target',
+    'action' => 'Action',
+  ])]
+  #[CLI\Usage(name: 'drush markaspot:health:repair-schema', description: 'Dry-run schema baseline repair for already-enabled modules.')]
+  #[CLI\Usage(name: 'drush markaspot:health:repair-schema --apply', description: 'Seed the Drupal core minimum schema baseline, then run drush updatedb -y.')]
+  public function repairModuleSchema(
+    array $options = [
+      'apply' => FALSE,
+    ],
+  ): RowsOfFields {
+    $apply = !empty($options['apply']);
+    $modules = (array) $this->configFactory->get('core.extension')->get('module');
+    $target = \Drupal::CORE_MINIMUM_SCHEMA_VERSION;
+
+    $rows = [];
+    foreach (array_keys($modules) as $module) {
+      $current = $this->updateHookRegistry->getInstalledVersion($module);
+      if ($current > 0) {
+        continue;
+      }
+
+      if ($apply) {
+        $this->updateHookRegistry->setInstalledVersion($module, $target);
+      }
+
+      $rows[] = [
+        'module' => $module,
+        'current' => $current,
+        'target' => $target,
+        'action' => $apply ? 'set-baseline' : 'dry-run',
+      ];
+    }
+
+    if ($rows === []) {
+      $this->logger()->success('No missing or zero module schema entries found.');
+    }
+    elseif ($apply) {
+      $this->logger()->notice('Schema baselines repaired. Run drush updatedb -y next.');
+    }
+    else {
+      $this->logger()->warning('Dry-run only. Re-run with --apply, then run drush updatedb -y.');
+    }
+
     return new RowsOfFields($rows);
   }
 

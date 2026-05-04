@@ -22,7 +22,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   label = @Translation("Mailsystem configuration drift"),
  *   severity = "error",
  *   description = @Translation("Verifies mailsystem.settings sender is phpmailer_smtp and attachments are enabled; both flip after raw DB imports."),
- *   fix_hint = @Translation("drush cset mailsystem.settings defaults.sender phpmailer_smtp and drush cset mailsystem.settings attachments.enabled true."),
+ *   fix_hint = @Translation("Deploy the profile mail config update or set mailsystem.settings defaults.sender=phpmailer_smtp and attachments.enabled=true."),
  * )
  */
 class MailsystemDriftCheck extends HealthCheckPluginBase {
