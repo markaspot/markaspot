@@ -120,3 +120,33 @@ function markaspot_group_post_update_backfill_group_roles_field_configs(array &$
 
   return 'group_roles field_config: ' . implode('; ', $parts) . '.';
 }
+
+/**
+ * Deletes safely repairable orphan group relationships.
+ */
+function markaspot_group_post_update_cleanup_orphaned_group_relationships(array &$sandbox): string {
+  /** @var \Drupal\markaspot_group\Service\GroupIntegrityChecker $checker */
+  $checker = \Drupal::service('markaspot_group.integrity_checker');
+  $results = $checker->repairOrphanRelationships(FALSE);
+
+  $deleted = ($results['relationship_missing_node'] ?? 0)
+    + ($results['relationship_missing_user'] ?? 0);
+  $skippedMissingGroups = $results['relationship_missing_group_skipped'] ?? 0;
+
+  return sprintf(
+    'Deleted %d orphan group relationship(s): missing node=%d, missing user=%d. Skipped missing group=%d.',
+    $deleted,
+    $results['relationship_missing_node'] ?? 0,
+    $results['relationship_missing_user'] ?? 0,
+    $skippedMissingGroups,
+  );
+}
+
+/**
+ * Clears entity definitions so group delete protection class is activated.
+ */
+function markaspot_group_post_update_activate_protected_group_entity_class(array &$sandbox): string {
+  \Drupal::entityTypeManager()->clearCachedDefinitions();
+
+  return 'Cleared entity type definitions so group entities use the protected Mark-a-Spot group class.';
+}

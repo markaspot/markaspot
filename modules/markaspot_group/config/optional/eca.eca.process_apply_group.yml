@@ -1,5 +1,5 @@
 langcode: en
-status: true
+status: false
 dependencies:
   config:
     - field.field.node.article.body
@@ -15,6 +15,7 @@ dependencies:
     - field.storage.node.field_organisation
     - node.type.service_request
   module:
+    - eca_base
     - eca_content
     - eca_user
     - group_action
@@ -30,7 +31,41 @@ events:
       -
         id: Activy_Set_Current_User
         condition: ''
-conditions: {  }
+  Update_Service_Request:
+    plugin: 'content_entity:update'
+    label: 'Update Service Request'
+    configuration:
+      type: 'node service_request'
+    successors:
+      -
+        id: Activy_Set_Current_User_For_Update
+        condition: Condition_category_changed
+conditions:
+  Condition_category_gid_exists:
+    plugin: eca_token_exists
+    configuration:
+      token_name: 'node:field_category:entity:field_category_gid:target_id'
+      negate: false
+  Condition_category_gid_missing:
+    plugin: eca_token_exists
+    configuration:
+      token_name: 'node:field_category:entity:field_category_gid:target_id'
+      negate: true
+  Condition_original_category_gid_exists:
+    plugin: eca_token_exists
+    configuration:
+      token_name: 'original_service_request:field_category:entity:field_category_gid:target_id'
+      negate: false
+  Condition_original_category_gid_missing:
+    plugin: eca_token_exists
+    configuration:
+      token_name: 'original_service_request:field_category:entity:field_category_gid:target_id'
+      negate: true
+  Condition_category_changed:
+    plugin: eca_entity_field_value_changed
+    configuration:
+      field_name: field_category
+      negate: false
 gateways: {  }
 actions:
   Activy_Set_Current_User:
@@ -41,6 +76,15 @@ actions:
     successors:
       -
         id: Activity_1yd51fx
+        condition: ''
+  Activy_Set_Current_User_For_Update:
+    label: 'Set Current User For Update'
+    plugin: eca_switch_account
+    configuration:
+      user_id: '1'
+    successors:
+      -
+        id: Activity_Load_Service_Request_For_Update
         condition: ''
   Activity_1yd51fx:
     label: 'Load Service Request'
@@ -59,7 +103,79 @@ actions:
     successors:
       -
         id: Activity_Apply_Group
+        condition: Condition_category_gid_exists
+  Activity_Load_Service_Request_For_Update:
+    label: 'Load Service Request For Update'
+    plugin: eca_token_load_entity
+    configuration:
+      token_name: service_request
+      from: current
+      entity_type: _none
+      entity_id: ''
+      revision_id: ''
+      properties: ''
+      langcode: _interface
+      latest_revision: false
+      unchanged: false
+      object: ''
+    successors:
+      -
+        id: Activity_Load_Original_Service_Request
         condition: ''
+  Activity_Load_Original_Service_Request:
+    label: 'Load Original Service Request'
+    plugin: eca_token_load_entity
+    configuration:
+      token_name: original_service_request
+      from: current
+      entity_type: _none
+      entity_id: ''
+      revision_id: ''
+      properties: ''
+      langcode: _interface
+      latest_revision: false
+      unchanged: true
+      object: ''
+    successors:
+      -
+        id: Activity_Remove_Old_Group
+        condition: Condition_original_category_gid_exists
+      -
+        id: Activity_Apply_Group_Update
+        condition: Condition_original_category_gid_missing
+  Activity_Remove_Old_Group:
+    label: 'Remove Old Group'
+    plugin: group_remove_content
+    configuration:
+      replace_tokens: true
+      values: {  }
+      operation: delete
+      content_plugin: 'group_node:service_request'
+      group_id: '[original_service_request:field_category:entity:field_category_gid:target_id]'
+      entity_id: ''
+      object: ''
+    successors:
+      -
+        id: Activity_Remove_Old_Organisation_Field_Value
+        condition: ''
+  Activity_Remove_Old_Organisation_Field_Value:
+    label: 'Remove Old Organisation Field Value'
+    plugin: eca_set_field_value
+    configuration:
+      field_name: field_organisation.target_id
+      field_value: '[original_service_request:field_category:entity:field_category_gid:target_id]'
+      method: remove
+      strip_tags: false
+      trim: false
+      save_entity: false
+      object: node
+    successors:
+      -
+        id: Activity_Apply_Group_Update
+        condition: Condition_category_gid_exists
+      -
+        id: Activity_Save_Service_Request_After_Group_Update
+        condition: Condition_category_gid_missing
   Activity_Apply_Group:
     label: 'Apply Group'
     plugin: group_add_content
@@ -76,6 +192,43 @@ actions:
       -
         id: Activiy_save_group
         condition: ''
+  Activity_Apply_Group_Update:
+    label: 'Apply Group On Update'
+    plugin: group_add_content
+    configuration:
+      replace_tokens: true
+      values: {  }
+      operation: create
+      content_plugin: 'group_node:service_request'
+      group_id: '[node:field_category:entity:field_category_gid:target_id]'
+      entity_id: ''
+      add_method: skip_existing
+      object: ''
+    successors:
+      -
+        id: Activity_Append_Current_Organisation_Field_Value
+        condition: Condition_category_gid_exists
+  Activity_Append_Current_Organisation_Field_Value:
+    label: 'Append Current Organisation Field Value'
+    plugin: eca_set_field_value
+    configuration:
+      field_name: field_organisation.target_id
+      field_value: '[node:field_category:entity:field_category_gid:target_id]'
+      method: append
+      strip_tags: false
+      trim: false
+      save_entity: false
+      object: node
+    successors:
+      -
+        id: Activity_Save_Service_Request_After_Group_Update
+        condition: ''
+  Activity_Save_Service_Request_After_Group_Update:
+    label: 'Save Service Request After Group Update'
+    plugin: eca_save_entity
+    configuration:
+      object: node
+    successors: {  }
   Activiy_save_group:
     label: 'Save Group'
     plugin: eca_set_field_value

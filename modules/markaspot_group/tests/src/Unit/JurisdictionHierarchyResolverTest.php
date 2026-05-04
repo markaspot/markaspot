@@ -2,6 +2,8 @@
 
 namespace Drupal\Tests\markaspot_group\Unit;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\StatementInterface;
@@ -58,6 +60,20 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
   protected $resolver;
 
   /**
+   * Child group bundle overrides for loadMultiple() callbacks.
+   *
+   * @var array<int, string>
+   */
+  protected array $childBundleOverrides = [];
+
+  /**
+   * Configured jurisdiction group type for the service under test.
+   *
+   * @var string
+   */
+  protected string $jurisdictionGroupType = 'jur';
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -71,16 +87,38 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
     $this->entityTypeManager->method('getStorage')
       ->with('group')
       ->willReturn($this->groupStorage);
+    $this->groupStorage->method('loadMultiple')
+      ->willReturnCallback(function (array $ids): array {
+        $groups = [];
+        foreach ($ids as $id) {
+          $id = (int) $id;
+          $groups[$id] = $this->createMockGroup(
+            $id,
+            $this->childBundleOverrides[$id] ?? 'jur',
+          );
+        }
+        return $groups;
+      });
 
     $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
     $loggerFactory->method('get')
       ->with('markaspot_group')
       ->willReturn($this->logger);
 
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturnCallback(fn(): string => $this->jurisdictionGroupType);
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->with('markaspot_open311.settings')
+      ->willReturn($config);
+
     $this->resolver = new JurisdictionHierarchyResolver(
       $this->entityTypeManager,
       $this->database,
       $loggerFactory,
+      $configFactory,
     );
   }
 
@@ -103,19 +141,15 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
     $group->method('bundle')->willReturn($bundle);
 
     if ($parentId !== NULL) {
-      // Use an anonymous class to provide target_id as a real property.
-      // PHPUnit mocks of interfaces don't support dynamic properties in PHP 8.2+.
+      // Use an anonymous class to provide target_id property access.
+      // PHPUnit mocks of interfaces don't support dynamic properties in
+      // PHP 8.2+.
       $fieldItem = new class($parentId) implements \Iterator, \Countable {
 
         /**
          * The target entity ID.
          */
         public int $targetId;
-
-        /**
-         * The target entity ID (Drupal field item property name).
-         */
-        public int $target_id;
 
         /**
          * Whether the iterator is still valid.
@@ -127,8 +161,13 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
          */
         public function __construct(int $parentId) {
           $this->targetId = $parentId;
-          // @phpstan-ignore-next-line
-          $this->target_id = $parentId;
+        }
+
+        /**
+         * Provides Drupal field item property access.
+         */
+        public function __get(string $name): mixed {
+          return $name === 'target_id' ? $this->targetId : NULL;
         }
 
         /**
@@ -241,9 +280,9 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
       ->willReturn($select);
   }
 
-  // =========================================================================
-  // getRootJurisdictionId() tests
-  // =========================================================================
+  /**
+   * GetRootJurisdictionId() tests.
+   */
 
   /**
    * @covers ::getRootJurisdictionId
@@ -263,6 +302,23 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
   public function testChildResolvesToParent(): void {
     $child = $this->createMockGroup(20, 'jur', 10);
     $root = $this->createMockGroup(10);
+
+    $this->groupStorage->method('load')
+      ->willReturnMap([
+        [20, $child],
+        [10, $root],
+      ]);
+
+    $this->assertEquals(10, $this->resolver->getRootJurisdictionId(20));
+  }
+
+  /**
+   * @covers ::getRootJurisdictionId
+   */
+  public function testConfiguredJurisdictionBundleResolvesToParent(): void {
+    $this->jurisdictionGroupType = 'jurisdiction';
+    $child = $this->createMockGroup(20, 'jurisdiction', 10);
+    $root = $this->createMockGroup(10, 'jurisdiction');
 
     $this->groupStorage->method('load')
       ->willReturnMap([
@@ -312,9 +368,30 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
         $this->anything()
       );
 
-    // Should not loop forever. Returns the node where cycle was detected.
-    $result = $this->resolver->getRootJurisdictionId(1);
-    $this->assertIsInt($result);
+    // Should not loop forever and must not treat the cycled ID as a root.
+    $this->assertNull($this->resolver->getRootJurisdictionId(1));
+  }
+
+  /**
+   * @covers ::getRootJurisdictionId
+   */
+  public function testParentDepthGuardFailsClosed(): void {
+    $map = [];
+    for ($id = 1; $id <= 51; $id++) {
+      $map[] = [$id, $this->createMockGroup($id, 'jur', $id + 1)];
+    }
+
+    $this->groupStorage->method('load')
+      ->willReturnMap($map);
+
+    $this->logger->expects($this->once())
+      ->method('error')
+      ->with(
+        $this->stringContains('Maximum parent hierarchy depth exceeded'),
+        $this->anything()
+      );
+
+    $this->assertNull($this->resolver->getRootJurisdictionId(1));
   }
 
   /**
@@ -337,6 +414,13 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
       ->with(5)
       ->willReturn($org);
 
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('Expected jurisdiction group'),
+        $this->callback(fn(array $context): bool => $context['@id'] === 5 && $context['@bundle'] === 'org')
+      );
+
     $this->assertEquals(5, $this->resolver->getRootJurisdictionId(5));
   }
 
@@ -354,13 +438,20 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
         [10, $orgParent],
       ]);
 
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('Expected jurisdiction group'),
+        $this->callback(fn(array $context): bool => $context['@id'] === 10 && $context['@bundle'] === 'org')
+      );
+
     // Should stop at child because parent is wrong bundle.
     $this->assertEquals(20, $this->resolver->getRootJurisdictionId(20));
   }
 
-  // =========================================================================
-  // isChildJurisdiction() tests
-  // =========================================================================
+  /**
+   * IsChildJurisdiction() tests.
+   */
 
   /**
    * @covers ::isChildJurisdiction
@@ -406,17 +497,56 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
       ->with(5)
       ->willReturn($org);
 
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('Expected jurisdiction group'),
+        $this->callback(fn(array $context): bool => $context['@id'] === 5 && $context['@bundle'] === 'org')
+      );
+
     $this->assertFalse($this->resolver->isChildJurisdiction(5));
   }
 
-  // =========================================================================
-  // getDescendantIds() tests
-  // =========================================================================
+  /**
+   * @covers ::getAllRootJurisdictionIds
+   */
+  public function testGetAllRootJurisdictionIdsUsesDistinctIds(): void {
+    $subSelect = $this->createMock(Select::class);
+    $subSelect->method('fields')->willReturnSelf();
+    $subSelect->method('where')->willReturnSelf();
+    $subSelect->method('condition')->willReturnSelf();
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchCol')->willReturn(['1', '5']);
+
+    $select = $this->createMock(Select::class);
+    $select->expects($this->once())->method('distinct')->willReturnSelf();
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('notExists')->willReturnSelf();
+    $select->method('orderBy')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $this->database->method('select')
+      ->willReturnCallback(function ($table) use ($select, $subSelect) {
+        return $table === 'groups_field_data' ? $select : $subSelect;
+      });
+
+    $this->assertSame([1, 5], $this->resolver->getAllRootJurisdictionIds());
+  }
+
+  /**
+   * GetDescendantIds() tests.
+   */
 
   /**
    * @covers ::getDescendantIds
    */
   public function testGetDescendantIdsLeafNode(): void {
+    $root = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($root);
     $this->mockChildQuery(10, []);
 
     $result = $this->resolver->getDescendantIds(10);
@@ -427,6 +557,10 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
    * @covers ::getDescendantIds
    */
   public function testGetDescendantIdsWithChildren(): void {
+    $root = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($root);
     // Root 10 has children 20 and 30. We need to set up the mock
     // so that the first call returns children and subsequent calls return none.
     $statement1 = $this->createMock(StatementInterface::class);
@@ -468,7 +602,26 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
   /**
    * @covers ::getDescendantIds
    */
+  public function testGetDescendantIdsAcceptsConfiguredJurisdictionChildren(): void {
+    $this->jurisdictionGroupType = 'jurisdiction';
+    $root = $this->createMockGroup(10, 'jurisdiction');
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($root);
+    $this->childBundleOverrides[20] = 'jurisdiction';
+    $this->mockChildQuery(10, [20]);
+
+    $this->assertEquals([10, 20], $this->resolver->getDescendantIds(10));
+  }
+
+  /**
+   * @covers ::getDescendantIds
+   */
   public function testGetDescendantIdsCircularChildDetection(): void {
+    $root = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($root);
     // 10 -> [20], 20 -> [10] (circular).
     $conditionParentId = NULL;
 
@@ -509,9 +662,97 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
     $this->assertEquals([10, 20], $result);
   }
 
-  // =========================================================================
-  // getTermJurisdictionIds() tests
-  // =========================================================================
+  /**
+   * @covers ::getDescendantIds
+   */
+  public function testGetDescendantIdsSkipsNonJurChildren(): void {
+    $root = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($root);
+    $this->childBundleOverrides[20] = 'org';
+    $this->mockChildQuery(10, [20]);
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('Expected jurisdiction group'),
+        $this->callback(fn(array $context): bool => $context['@operation'] === 'load child jurisdiction'
+          && $context['@id'] === 20
+          && $context['@bundle'] === 'org')
+      );
+
+    $this->assertEquals([10], $this->resolver->getDescendantIds(10));
+  }
+
+  /**
+   * @covers ::getDescendantIds
+   */
+  public function testGetDescendantIdsRejectsWrongRootBundle(): void {
+    $org = $this->createMockGroup(10, 'org');
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($org);
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('Expected jurisdiction group'),
+        $this->callback(fn(array $context): bool => $context['@operation'] === 'load descendant jurisdictions'
+          && $context['@id'] === 10
+          && $context['@bundle'] === 'org')
+      );
+
+    $this->database->expects($this->never())
+      ->method('select');
+
+    $this->assertEquals([], $this->resolver->getDescendantIds(10));
+  }
+
+  /**
+   * @covers ::getDescendantIds
+   */
+  public function testGetDescendantIdsDepthGuardStopsTraversal(): void {
+    $root = $this->createMockGroup(1);
+    $this->groupStorage->method('load')
+      ->with(1)
+      ->willReturn($root);
+    $conditionParentId = NULL;
+    $select = $this->createMock(Select::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')
+      ->willReturnCallback(function ($field, $value) use ($select, &$conditionParentId) {
+        if ($field === 'field_parent_jurisdiction_target_id') {
+          $conditionParentId = (int) $value;
+        }
+        return $select;
+      });
+    $select->method('execute')
+      ->willReturnCallback(function () use (&$conditionParentId) {
+        $statement = $this->createMock(StatementInterface::class);
+        $children = $conditionParentId < 53 ? [(string) ($conditionParentId + 1)] : [];
+        $statement->method('fetchCol')->willReturn($children);
+        return $statement;
+      });
+
+    $this->database->method('select')
+      ->with('group__field_parent_jurisdiction', 'p')
+      ->willReturn($select);
+
+    $this->logger->expects($this->once())
+      ->method('error')
+      ->with(
+        $this->stringContains('Maximum child hierarchy depth exceeded'),
+        $this->anything()
+    );
+
+    $result = $this->resolver->getDescendantIds(1);
+    $this->assertSame(range(1, 51), $result);
+  }
+
+  /**
+   * GetTermJurisdictionIds() tests.
+   */
 
   /**
    * @covers ::getTermJurisdictionIds
@@ -575,15 +816,15 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
     $this->assertEquals([10, 20], $result);
   }
 
-  // =========================================================================
-  // getNodeIdsInJurisdiction() tests
-  // =========================================================================
+  /**
+   * GetNodeIdsInJurisdiction() tests.
+   */
 
   /**
    * @covers ::getNodeIdsInJurisdiction
    */
   public function testGetNodeIdsInJurisdiction(): void {
-    // Group 10 is a jur group with no children, and has 3 service request nodes.
+    // Group 10 is a jur group with no children and 3 service request nodes.
     $group = $this->createMockGroup(10);
     $this->groupStorage->method('load')
       ->with(10)
@@ -659,11 +900,45 @@ class JurisdictionHierarchyResolverTest extends UnitTestCase {
   /**
    * @covers ::getNodeIdsInJurisdiction
    */
+  public function testGetNodeIdsInJurisdictionRejectsCircularParentReference(): void {
+    // A -> B -> A (circular).
+    $groupA = $this->createMockGroup(1, 'jur', 2);
+    $groupB = $this->createMockGroup(2, 'jur', 1);
+
+    $this->groupStorage->method('load')
+      ->willReturnMap([
+        [1, $groupA],
+        [2, $groupB],
+      ]);
+
+    $this->logger->expects($this->once())
+      ->method('error')
+      ->with(
+        $this->stringContains('Circular parent reference'),
+        $this->anything()
+      );
+
+    $this->database->expects($this->never())
+      ->method('select');
+
+    $this->assertEquals([], $this->resolver->getNodeIdsInJurisdiction(1));
+  }
+
+  /**
+   * @covers ::getNodeIdsInJurisdiction
+   */
   public function testGetNodeIdsInJurisdictionRejectsNonJurGroup(): void {
     $org = $this->createMockGroup(5, 'org');
     $this->groupStorage->method('load')
       ->with(5)
       ->willReturn($org);
+
+    $this->logger->expects($this->once())
+      ->method('warning')
+      ->with(
+        $this->stringContains('Expected jurisdiction group'),
+        $this->callback(fn(array $context): bool => $context['@id'] === 5 && $context['@bundle'] === 'org')
+      );
 
     $result = $this->resolver->getNodeIdsInJurisdiction(5);
     $this->assertEquals([], $result);

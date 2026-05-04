@@ -1,0 +1,15 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - group.type.jur
+id: jur-org_member
+label: Organisation member
+weight: 1
+admin: false
+scope: individual
+global_role: null
+group_type: jur
+permissions:
+  - 'view group'
+  - 'view group_node:page entity'

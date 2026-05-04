@@ -1,0 +1,7 @@
+services:
+  markaspot_group.commands:
+    class: Drupal\markaspot_group\Commands\GroupIntegrityCommands
+    arguments:
+      - '@markaspot_group.integrity_checker'
+    tags:
+      - { name: drush.command }

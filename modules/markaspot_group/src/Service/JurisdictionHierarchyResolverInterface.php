@@ -17,10 +17,11 @@ interface JurisdictionHierarchyResolverInterface {
    * @param int $groupId
    *   A jurisdiction group ID (may be child or root).
    *
-   * @return int
-   *   The group ID of the root jurisdiction (unchanged if already root).
+   * @return int|null
+   *   The group ID of the root jurisdiction (unchanged if already root), or
+   *   NULL when traversal detects an invalid cycle.
    */
-  public function getRootJurisdictionId(int $groupId): int;
+  public function getRootJurisdictionId(int $groupId): ?int;
 
   /**
    * Checks if a jurisdiction is a child (has a parent jurisdiction).

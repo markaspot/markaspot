@@ -16,6 +16,7 @@ use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StringTranslation\TranslatableMarkup;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\taxonomy\Plugin\EntityReferenceSelection\TermSelection;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -38,6 +39,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
   weight: 5,
 )]
 class JurisdictionCategorySelection extends TermSelection {
+
+  use JurisdictionIdResolverTrait;
 
   /**
    * The jurisdiction hierarchy resolver.
@@ -133,9 +136,10 @@ class JurisdictionCategorySelection extends TermSelection {
   public function getReferenceableEntities($match = NULL, $match_operator = 'CONTAINS', $limit = 0) {
     $root_jurisdiction_id = $this->resolveRootJurisdictionId();
 
-    // If we cannot determine the jurisdiction, fall back to parent behavior.
+    // If we cannot determine the jurisdiction, fail closed to avoid exposing
+    // categories from unrelated jurisdiction trees.
     if ($root_jurisdiction_id === NULL) {
-      return parent::getReferenceableEntities($match, $match_operator, $limit);
+      return [];
     }
 
     // When searching or limiting, use the entity query approach.
@@ -199,9 +203,12 @@ class JurisdictionCategorySelection extends TermSelection {
     $query = parent::buildEntityQuery($match, $match_operator);
 
     $root_jurisdiction_id = $this->resolveRootJurisdictionId();
-    if ($root_jurisdiction_id !== NULL) {
-      $query->condition('field_jurisdiction', $root_jurisdiction_id);
+    if ($root_jurisdiction_id === NULL) {
+      $query->condition('tid', 0);
+      return $query;
     }
+
+    $query->condition('field_jurisdiction', $root_jurisdiction_id);
 
     return $query;
   }
@@ -254,14 +261,14 @@ class JurisdictionCategorySelection extends TermSelection {
     $configuration = $this->getConfiguration();
     if (!empty($configuration['entity']) && $configuration['entity'] instanceof GroupInterface) {
       $entity = $configuration['entity'];
-      if ($entity->bundle() === 'jur') {
+      if ($this->isJurisdictionGroup($entity)) {
         return $entity;
       }
     }
 
     // Fall back to the route parameter.
     $group = $this->routeMatch->getParameter('group');
-    if ($group instanceof GroupInterface && $group->bundle() === 'jur') {
+    if ($this->isJurisdictionGroup($group)) {
       return $group;
     }
 
