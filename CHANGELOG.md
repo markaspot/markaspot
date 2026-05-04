@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.70](https://github.com/markaspot/markaspot/compare/11.9.69...11.9.70) (2026-05-04)
+
+### Features
+
+* **group:** organisation-jurisdiction integrity model ([e3eafc8](https://github.com/markaspot/markaspot/commit/e3eafc8e43713df972775b4fd4d5c167ce8c56f9))
+* **health:** admin health check plugin system ([74eadf9](https://github.com/markaspot/markaspot/commit/74eadf9275a67850a9f4b585f460c87b3b097fd2))
+* tenant scope hardening + tenant-admin role lifecycle ([4e274b5](https://github.com/markaspot/markaspot/commit/4e274b5aa3c6340e0a1f49f6e2b3767df57c465f))
+* tenant-scoped open311, service-provider, nuxt config alignment ([5d892e8](https://github.com/markaspot/markaspot/commit/5d892e806950f1c38b5a995b546a2da33281fdf4))
+
+### Bug Fixes
+
+* reconcile jurisdiction relationships for new requests ([5f37b3f](https://github.com/markaspot/markaspot/commit/5f37b3f776ed2231bfd1c8001766736c0bfa2ba6))
+
 ## [11.9.69](https://github.com/markaspot/markaspot/compare/11.9.68...11.9.69) (2026-04-29)
 
 ### Features
