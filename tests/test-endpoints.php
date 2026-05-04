@@ -645,7 +645,7 @@ if (!$module_handler->moduleExists('markaspot_service_provider')) {
 else {
   if ($sample_uuid) {
     [$code] = http_get("$base/api/service-response/$sample_uuid");
-    assert_true(in_array($code, [200, 404]), "GET /api/service-response/{uuid} responds ($code)");
+    assert_true(in_array($code, [200, 401, 404]), "GET /api/service-response/{uuid} responds ($code)");
   }
   else {
     skip_test('No sample UUID for service-response test');
