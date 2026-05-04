@@ -1,0 +1,4 @@
+services:
+  plugin.manager.markaspot_health_check:
+    class: Drupal\markaspot_health\HealthCheckPluginManager
+    parent: default_plugin_manager

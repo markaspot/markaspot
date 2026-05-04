@@ -1,0 +1,11 @@
+markaspot_health.report:
+  path: '/api/admin/health-check'
+  defaults:
+    _controller: '\Drupal\markaspot_health\Controller\HealthCheckController::report'
+    _title: 'Mark-a-Spot health check report'
+  methods: [GET]
+  requirements:
+    _permission: 'view health checks'
+    _format: 'json'
+  options:
+    no_cache: TRUE

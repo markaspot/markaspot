@@ -1,0 +1,6 @@
+services:
+  markaspot_health.commands:
+    class: Drupal\markaspot_health\Commands\HealthCommands
+    arguments: ['@plugin.manager.markaspot_health_check', '@entity_type.manager', '@config.factory']
+    tags:
+      - { name: drush.command }

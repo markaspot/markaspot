@@ -1,0 +1,55 @@
+<?php
+
+/**
+ * @file
+ * Install / update hooks for the Mark-a-Spot Health module.
+ */
+
+declare(strict_types=1);
+
+use Drupal\user\Entity\Role;
+
+/**
+ * Implements hook_install().
+ *
+ * Intentionally does NOT grant "view health checks" to any non-admin role.
+ * The detector exposes cross-tenant entity ids in details[]; the
+ * permission must remain restricted to roles with is_admin: TRUE.
+ */
+function markaspot_health_install(bool $is_syncing): void {
+  // No role wiring; site administrators inherit the permission via
+  // `is_admin: true` on their role.
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_health_uninstall(): void {
+  $role = Role::load('tenant_admin');
+  if ($role !== NULL && $role->hasPermission('view health checks')) {
+    $role->revokePermission('view health checks');
+    $role->save();
+  }
+}
+
+/**
+ * Revokes "view health checks" from tenant_admin on existing installs.
+ *
+ * Earlier installs of this submodule auto-granted the permission to
+ * tenant_admin via hook_install. The detector exposes cross-tenant
+ * entity ids in details[]; the permission must remain restricted to
+ * roles with is_admin: TRUE. See markaspot_health_install() for the
+ * forward-going contract.
+ */
+function markaspot_health_update_11001(): string {
+  $role = Role::load('tenant_admin');
+  if ($role === NULL) {
+    return 'tenant_admin role not present; nothing to revoke.';
+  }
+  if (!$role->hasPermission('view health checks')) {
+    return 'tenant_admin already lacks the view-health-checks permission.';
+  }
+  $role->revokePermission('view health checks');
+  $role->save();
+  return 'Revoked view-health-checks from tenant_admin (cross-tenant disclosure mitigation).';
+}
