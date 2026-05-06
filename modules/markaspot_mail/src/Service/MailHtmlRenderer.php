@@ -136,13 +136,13 @@ class MailHtmlRenderer {
       }
       $intro = trim((string) ($content['intro'] ?? ''));
       if ($intro !== '') {
-        $lines[] = $intro;
+        $lines[] = $this->mailHtmlFragmentToPlain($intro);
         $lines[] = '';
       }
       foreach ((array) ($content['body_blocks'] ?? []) as $block) {
         $block = trim((string) $block);
         if ($block !== '') {
-          $lines[] = $block;
+          $lines[] = $this->mailHtmlFragmentToPlain($block);
           $lines[] = '';
         }
       }
@@ -195,6 +195,25 @@ class MailHtmlRenderer {
     // Collapse 3+ consecutive newlines to two.
     $text = (string) preg_replace("/\n{3,}/", "\n\n", $text);
     return trim($text) . "\n";
+  }
+
+  /**
+   * Converts a sanitized mail fragment back to plain text.
+   *
+   * Body blocks may be MarkupInterface values containing mail-safe tags
+   * such as <br>, <p> or lists. Keep the derived text/plain alternative
+   * readable instead of leaking literal tags into MIME clients.
+   */
+  private function mailHtmlFragmentToPlain(string $html): string {
+    $text = (string) preg_replace('#<br\s*/?>#i', "\n", $html);
+    $text = (string) preg_replace('#</(p|li|h2|h3)>#i', "\n", $text);
+    $text = (string) preg_replace('#<(ul|ol)[^>]*>#i', "\n", $text);
+    $text = (string) preg_replace('#</(ul|ol)>#i', "\n", $text);
+    $text = strip_tags($text);
+    $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $text = (string) preg_replace("/[ \t]+\n/", "\n", $text);
+    $text = (string) preg_replace("/\n{3,}/", "\n\n", $text);
+    return trim($text);
   }
 
   /**

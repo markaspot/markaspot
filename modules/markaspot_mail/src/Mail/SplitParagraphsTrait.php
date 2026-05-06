@@ -50,10 +50,31 @@ trait SplitParagraphsTrait {
     foreach ($raw as $paragraph) {
       $paragraph = trim($paragraph);
       if ($paragraph !== '') {
-        $out[] = Markup::create(Xss::filter($paragraph, self::MAIL_ALLOWED_TAGS));
+        $filtered = Xss::filter($paragraph, self::MAIL_ALLOWED_TAGS);
+        if ($this->shouldPreserveSingleLineBreaks($filtered)) {
+          $filtered = str_replace(["\r\n", "\r"], "\n", $filtered);
+          $filtered = str_replace("\n", '<br>', $filtered);
+        }
+        $out[] = Markup::create($filtered);
       }
     }
     return $out;
+  }
+
+  /**
+   * Determines whether plain-text line breaks should become <br> tags.
+   *
+   * ECA bodies often mix plain labels and values in one paragraph:
+   * "Address:\nStreet\nCity". HTML collapses those newlines to spaces,
+   * so we preserve them as <br>. If the operator already authored block
+   * or list HTML, we leave it alone to avoid invalid shapes like
+   * "<ul><br><li>...".
+   */
+  private function shouldPreserveSingleLineBreaks(string $html): bool {
+    if (!str_contains($html, "\n") && !str_contains($html, "\r")) {
+      return FALSE;
+    }
+    return preg_match('#<(br|/?(?:p|ul|ol|li|h2|h3))\b#i', $html) !== 1;
   }
 
 }

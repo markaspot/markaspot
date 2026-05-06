@@ -95,6 +95,26 @@ final class MailHtmlRendererTest extends UnitTestCase {
     $this->assertStringContainsString('View report: https://mark-a-spot.com/amsterdam/requests/42', $out['plain']);
   }
 
+  public function testCardTransactionalPlainConvertsMailHtmlFragments(): void {
+    $branding = $this->buildBranding();
+    $content = [
+      'headline' => 'Forwarded report',
+      'intro' => Markup::create('Address:<br>Ostwall 175<br>47798 Krefeld'),
+      'body_blocks' => [
+        Markup::create("<ul>\n<li>One</li>\n<li>Two</li>\n</ul>"),
+      ],
+      'preheader' => '',
+    ];
+
+    $renderer = $this->buildRenderer();
+    $plain = $renderer->render('card_transactional', $branding, $content, 'en')['plain'];
+
+    $this->assertStringContainsString("Address:\nOstwall 175\n47798 Krefeld", $plain);
+    $this->assertStringContainsString("One\n\nTwo", $plain);
+    $this->assertStringNotContainsString('<br>', $plain);
+    $this->assertStringNotContainsString('<li>', $plain);
+  }
+
   public function testUnsafeCtaUrlIsFlaggedAsUnsafe(): void {
     $branding = $this->buildBranding();
     $content = [

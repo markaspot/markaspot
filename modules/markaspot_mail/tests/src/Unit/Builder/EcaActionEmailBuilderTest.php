@@ -133,6 +133,55 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   /**
    *
    */
+  public function testBuildPreservesSingleLineBreaksInsideParagraphs(): void {
+    $builder = $this->buildBuilder();
+    $body = "Address:\nOstwall 175\n47798 Krefeld\n\nFooter:\nLine one\nLine two";
+
+    $ctx = new MailContext(
+      module: 'system',
+      key: 'action_send_email',
+      langcode: 'en',
+      params: ['context' => ['subject' => 'tokenized-template', 'message' => 'tokenized-template']],
+      to: 'staff@example.com',
+      subject: 'Forwarded report',
+      body: [$body],
+    );
+    $msg = $builder->build($ctx);
+
+    $this->assertNotNull($msg);
+    $this->assertSame('Address:<br>Ostwall 175<br>47798 Krefeld', (string) $msg->content['intro']);
+    $this->assertSame('Footer:<br>Line one<br>Line two', (string) $msg->content['body_blocks'][0]);
+  }
+
+  /**
+   *
+   */
+  public function testBuildLeavesStructuredHtmlBlocksUntouched(): void {
+    $builder = $this->buildBuilder();
+    $body = "Intro\nline\n\n<ul>\n<li>One</li>\n<li>Two</li>\n</ul>\n\nLine one<br>\nLine two";
+
+    $ctx = new MailContext(
+      module: 'system',
+      key: 'action_send_email',
+      langcode: 'en',
+      params: ['context' => ['subject' => 'tokenized-template', 'message' => 'tokenized-template']],
+      to: 'staff@example.com',
+      subject: 'Forwarded report',
+      body: [$body],
+    );
+    $msg = $builder->build($ctx);
+
+    $this->assertNotNull($msg);
+    $this->assertSame('Intro<br>line', (string) $msg->content['intro']);
+    $this->assertStringContainsString("<ul>\n<li>One</li>\n<li>Two</li>\n</ul>", (string) $msg->content['body_blocks'][0]);
+    $this->assertStringNotContainsString('<ul><br>', (string) $msg->content['body_blocks'][0]);
+    $this->assertSame("Line one<br>\nLine two", (string) $msg->content['body_blocks'][1]);
+    $this->assertStringNotContainsString('<br><br>', (string) $msg->content['body_blocks'][1]);
+  }
+
+  /**
+   *
+   */
   public function testBuildResolvesJurisdictionModeFromNodeContext(): void {
     $group = $this->createMock(GroupInterface::class);
     $group->method('getEntityTypeId')->willReturn('group');
