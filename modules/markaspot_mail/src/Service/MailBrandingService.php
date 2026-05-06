@@ -367,10 +367,9 @@ class MailBrandingService {
       $isSaas ? 'https://civicpatches.de/datenschutz' : '',
     );
 
-    // Logo: platform logo ships inside the module as a PNG asset. If the
-    // file doesn't exist on disk we still hand back the URL; downstream the
-    // template will render an alt-text fallback. We don't want branding
-    // resolution to hard-fail on a missing static asset.
+    // Logo: platform logo ships inside the module as a PNG asset. Only hand
+    // back module-local paths when the file exists, because PHPMailer embeds
+    // relative images and can fail formatting on unreadable files.
     $logoPath = (string) ($settings->get('platform.logo_path') ?? 'images/mark-a-spot-logo@2x.png');
     $logoUrl = $this->buildModuleAssetUrl($logoPath);
 
@@ -757,7 +756,7 @@ class MailBrandingService {
   }
 
   /**
-   * Resolves a logo asset reference to an absolute URL.
+   * Resolves a logo asset reference for mail rendering.
    *
    * Accepts two input shapes:
    * - Absolute http(s) URL (e.g. a tenant-uploaded wappen served from the
@@ -766,10 +765,13 @@ class MailBrandingService {
    *   are not detected here and fall into the module-asset branch where
    *   they render as a broken URL — caller validates source.
    * - Module-relative asset path (e.g. images/mark-a-spot-logo@2x.png).
-   *   Resolved to an absolute URL via ModuleExtensionList + RequestStack;
-   *   falls back to a relative URL when those services are unavailable
-   *   (e.g. under unit tests). Mail clients treat relative URLs poorly,
-   *   so production always runs with both services wired.
+   *   Resolved to a Drupal-root-relative URL. phpmailer_smtp passes the
+   *   rendered HTML through PHPMailer::msgHTML($html, DRUPAL_ROOT), and
+   *   PHPMailer only embeds relative local image paths. Keeping module
+   *   assets relative here lets the mailer convert them to cid: images
+   *   instead of making inbox clients fetch a public HTTP URL. Missing
+   *   module-local assets return an empty string so Twig renders the text
+   *   fallback and mail delivery still succeeds.
    */
   private function buildModuleAssetUrl(string $relative): string {
     // Allow tenants to point platform.logo_path at an absolute URL (e.g. a
@@ -780,6 +782,12 @@ class MailBrandingService {
       return $this->ensureAbsolute($relative) ?? $relative;
     }
     $relative = ltrim($relative, '/');
+    if ($relative === '' || str_contains($relative, '..')) {
+      $this->logger->warning('Rejected unsafe mail module logo path: @path', [
+        '@path' => $relative,
+      ]);
+      return '';
+    }
     $modulePath = 'modules/contrib/markaspot/modules/markaspot_mail';
     if ($this->moduleExtensionList !== NULL) {
       try {
@@ -791,7 +799,14 @@ class MailBrandingService {
         ]);
       }
     }
-    return $this->ensureAbsolute('/' . $modulePath . '/' . $relative) ?? ('/' . $modulePath . '/' . $relative);
+    $rootRelative = '/' . $modulePath . '/' . $relative;
+    if (defined('DRUPAL_ROOT') && !is_readable(DRUPAL_ROOT . $rootRelative)) {
+      $this->logger->warning('Mail module logo path is not readable: @path', [
+        '@path' => $rootRelative,
+      ]);
+      return '';
+    }
+    return $rootRelative;
   }
 
   /**

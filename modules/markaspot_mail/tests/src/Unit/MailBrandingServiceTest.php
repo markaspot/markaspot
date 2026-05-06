@@ -13,6 +13,7 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Site\Settings;
@@ -82,6 +83,82 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('https://mark-a-spot.com', $branding['platform_footer']['mas_link']);
     $this->assertSame('https://civicspot.io', $branding['platform_footer']['civicspot_link']);
     $this->assertStringContainsString('Civic Patches GmbH', $branding['platform_footer']['copyright']);
+  }
+
+  /**
+   * Module-local logos stay relative so PHPMailer embeds them as cid images.
+   */
+  public function testModuleLogoPathStaysRelativeForPhpmailerEmbedding(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $moduleList = $this->createMock(ModuleExtensionList::class);
+    $moduleList->method('getPath')
+      ->with('markaspot_mail')
+      ->willReturn('profiles/contrib/markaspot/modules/markaspot_mail');
+
+    $service = $this->buildService(
+      NULL,
+      NULL,
+      NULL,
+      $overrides,
+      $moduleList,
+    );
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertSame(
+      '/profiles/contrib/markaspot/modules/markaspot_mail/images/mark-a-spot-logo@2x.png',
+      $branding['logo_url'],
+    );
+  }
+
+  /**
+   * Missing module-local logos fall back to text instead of breaking mail.
+   */
+  public function testMissingModuleLogoPathFallsBackToTextLogo(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.logo_path'] = 'images/does-not-exist.png';
+    $moduleList = $this->createMock(ModuleExtensionList::class);
+    $moduleList->method('getPath')
+      ->with('markaspot_mail')
+      ->willReturn('profiles/contrib/markaspot/modules/markaspot_mail');
+
+    $service = $this->buildService(
+      NULL,
+      NULL,
+      NULL,
+      $overrides,
+      $moduleList,
+    );
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertSame('', $branding['logo_url']);
+  }
+
+  /**
+   * Relative logo paths may not traverse outside the mail module assets.
+   */
+  public function testTraversalModuleLogoPathIsRejected(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.logo_path'] = '../settings.php';
+    $service = $this->buildService(NULL, NULL, NULL, $overrides);
+
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertSame('', $branding['logo_url']);
+  }
+
+  /**
+   * Absolute operator-configured logo URLs still pass through as URLs.
+   */
+  public function testAbsoluteLogoPathStillPassesThrough(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.logo_path'] = 'https://assets.example.test/logo.png';
+    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $service = $this->buildService(NULL, NULL, NULL, $overrides);
+
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertSame('https://assets.example.test/logo.png', $branding['logo_url']);
   }
 
   /**
@@ -305,8 +382,8 @@ final class MailBrandingServiceTest extends UnitTestCase {
   /**
    * Tests disabling the optional platform footer attribution.
    *
-   * Self-hosted enterprise installations opt out so no civicpatches.de/impressum
-   * or copyright line ships in their mails.
+   * Self-hosted enterprise installations opt out so no civicpatches.de
+   * impressum or copyright line ships in their mails.
    */
   public function testShowPlatformFooterFalseSuppressesPlatformFooter(): void {
     $overrides = self::PLATFORM_SETTINGS;
@@ -413,8 +490,9 @@ final class MailBrandingServiceTest extends UnitTestCase {
   /**
    * Tests legal URL suppression when self-hosted frontend bases are empty.
    *
-   * A self-hosted jurisdiction with non-URL legal content, empty tenant template
-   * and empty platform frontend_base_url must not produce a path-only URL.
+   * A self-hosted jurisdiction with non-URL legal content, empty tenant
+   * template and empty platform frontend_base_url must not produce a
+   * path-only URL.
    */
   public function testSelfHostedSlugLegalUrlSuppressedWhenNoFrontendBase(): void {
     // setUp() resets Settings to empty -> default self_hosted.
@@ -457,6 +535,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     ?EntityStorageInterface $storage = NULL,
     ?LoggerInterface $logger = NULL,
     ?array $settingsOverride = NULL,
+    ?ModuleExtensionList $moduleExtensionList = NULL,
   ): MailBrandingService {
     $storage = $storage ?? $this->createMock(EntityStorageInterface::class);
     if ($group !== NULL) {
@@ -493,6 +572,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
       $languageManager,
       $fileUrlGenerator,
       $logger,
+      $moduleExtensionList,
     );
   }
 
