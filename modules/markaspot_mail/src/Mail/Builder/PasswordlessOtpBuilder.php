@@ -94,34 +94,52 @@ final class PasswordlessOtpBuilder implements MailBuilderInterface {
     $replacements = [
       '@code' => $code,
       '@expires_in' => $expiresIn,
+      '@minutes' => $expiresIn,
       '@platform_name' => $platformName,
     ];
 
-    // The subject template explicitly drops @code. Admins who customize
-    // the subject config could otherwise write "@platform_name: @code"
-    // and leak the OTP into the mail-subject header, which travels in
-    // cleartext SMTP, appears in inbox-preview notifications, gets
-    // logged at MTAs, and is often indexed by mail providers. Body +
-    // plainText keep the @code placeholder; only the header-bound slot
-    // drops it here.
+    // The subject and preheader templates explicitly drop @code. Admins who
+    // customize config could otherwise leak the OTP into headers, previews,
+    // notifications, MTA logs, and indexed provider metadata. Body +
+    // plainText keep @code; header/preview-bound slots do not.
     $subjectReplacements = array_diff_key($replacements, ['@code' => TRUE]);
     $subject = $this->resolveFromConfig('subject', $subjectReplacements, $langcode)
       ?: (string) $this->t('@platform_name: Your verification code', [
         '@platform_name' => $platformName,
       ], ['langcode' => $langcode]);
 
+    $preheader = $this->resolvePreheaderFromConfig($subjectReplacements, $langcode)
+      ?: $this->deriveLegacyBodyPreview($replacements, $langcode)
+      ?: $this->resolvePreheaderFromBaseConfig($subjectReplacements)
+      ?: (string) $this->t('Your verification code expires in @minutes minutes.', [
+        '@minutes' => $expiresIn,
+      ], ['langcode' => $langcode]);
+    $headline = $this->resolveFromConfig('headline', $replacements, $langcode, FALSE)
+      ?: $this->deriveHeadlineFromSubject($subjectReplacements, $langcode)
+      ?: $this->resolveFromConfig('headline', $replacements, $langcode)
+      ?: (string) $this->t('Verify your account', [], ['langcode' => $langcode]);
+    $subtext = $this->resolveFromConfig('subtext', $replacements, $langcode, FALSE)
+      ?: $this->deriveLegacyBodySubtext($replacements, $langcode)
+      ?: $this->resolveFromConfig('subtext', $replacements, $langcode)
+      ?: (string) $this->t('Enter this code in the next @minutes minutes. If you did not request this, you can ignore this email.', [
+        '@minutes' => $expiresIn,
+      ], ['langcode' => $langcode]);
+    $plainText = $this->resolveFromConfig('plain_text', $replacements, $langcode, FALSE)
+      ?: $this->resolveFromConfig('body', $replacements, $langcode, FALSE)
+      ?: $this->resolveFromConfig('plain_text', $replacements, $langcode)
+      ?: (string) $this->t("Your verification code: @code\n\nIt expires in @minutes minutes.", [
+        '@code' => $code,
+        '@minutes' => $expiresIn,
+      ], ['langcode' => $langcode]);
+
     return new MailMessage(
       subject: $subject,
       variant: 'hero_code',
       content: [
-        'preheader' => (string) $this->t('Your verification code: @code', [
-          '@code' => $code,
-        ], ['langcode' => $langcode]),
-        'headline' => (string) $this->t('Verify your account', [], ['langcode' => $langcode]),
+        'preheader' => $preheader,
+        'headline' => $headline,
         'code' => $this->formatCodeForDisplay($code),
-        'subtext' => (string) $this->t('Enter this code in the next @minutes minutes. If you did not request this, you can ignore this email.', [
-          '@minutes' => $expiresIn,
-        ], ['langcode' => $langcode]),
+        'subtext' => $subtext,
       ],
       mode: $mode,
       jurisdictionId: $jurisdictionId,
@@ -129,15 +147,12 @@ final class PasswordlessOtpBuilder implements MailBuilderInterface {
       // text works, but the space-separated code that looks great in the
       // monospaced hero reads awkwardly at the inbox preview / SMS
       // fallback level. Keep the plain body compact.
-      plainText: (string) $this->t("Your verification code: @code\n\nIt expires in @minutes minutes.", [
-        '@code' => $code,
-        '@minutes' => $expiresIn,
-      ], ['langcode' => $langcode]),
+      plainText: $plainText,
     );
   }
 
   /**
-   *
+   * Formats the OTP code for display in the hero block.
    */
   private function formatCodeForDisplay(string $code): string {
     return $code;
@@ -146,19 +161,131 @@ final class PasswordlessOtpBuilder implements MailBuilderInterface {
   /**
    * Reads a config template and substitutes @placeholders.
    */
-  private function resolveFromConfig(string $key, array $replacements, string $langcode): string {
+  private function resolveFromConfig(string $key, array $replacements, string $langcode, bool $fallbackToBase = TRUE): string {
+    $template = $this->readConfigTemplate($key, $langcode, $fallbackToBase);
+    return $template !== '' ? (string) strtr($template, $replacements) : '';
+  }
+
+  /**
+   * Reads a raw config template.
+   */
+  private function readConfigTemplate(string $key, string $langcode, bool $fallbackToBase = TRUE): string {
     $config = $this->languageManager
       ->getLanguageConfigOverride($langcode, 'markaspot_passwordless.mail')
       ->get('verification_code');
-    if (!is_array($config) || empty($config[$key])) {
-      $config = $this->configFactory
-        ->get('markaspot_passwordless.mail')
-        ->get('verification_code');
+    if (is_array($config) && !empty($config[$key])) {
+      return (string) $config[$key];
     }
-    if (!is_array($config) || empty($config[$key])) {
+    if (!$fallbackToBase) {
       return '';
     }
-    return (string) strtr((string) $config[$key], $replacements);
+
+    $config = $this->configFactory
+      ->get('markaspot_passwordless.mail')
+      ->get('verification_code');
+    return is_array($config) && !empty($config[$key]) ? (string) $config[$key] : '';
+  }
+
+  /**
+   * Reads preheader config without allowing @code to leak into previews.
+   */
+  private function resolvePreheaderFromConfig(array $replacements, string $langcode): string {
+    $template = $this->readConfigTemplate('preheader', $langcode, FALSE);
+    if ($template === '') {
+      return '';
+    }
+    return (string) strtr($this->stripCodePlaceholder($template), $replacements);
+  }
+
+  /**
+   * Reads the base preheader without allowing @code to leak into previews.
+   */
+  private function resolvePreheaderFromBaseConfig(array $replacements): string {
+    $config = $this->configFactory
+      ->get('markaspot_passwordless.mail')
+      ->get('verification_code');
+    if (!is_array($config) || empty($config['preheader'])) {
+      return '';
+    }
+    return (string) strtr($this->stripCodePlaceholder((string) $config['preheader']), $replacements);
+  }
+
+  /**
+   * Derives a localized headline from legacy subject config.
+   */
+  private function deriveHeadlineFromSubject(array $replacements, string $langcode): string {
+    $template = $this->readConfigTemplate('subject', $langcode, FALSE);
+    if ($template === '') {
+      return '';
+    }
+    $subject = trim((string) strtr($template, $replacements));
+    $platformName = (string) ($replacements['@platform_name'] ?? '');
+    if ($platformName !== '' && str_starts_with($subject, $platformName . ':')) {
+      return trim(substr($subject, strlen($platformName) + 1));
+    }
+    if (str_contains($subject, ':')) {
+      return trim((string) preg_replace('/^.*?:\s*/', '', $subject, 1));
+    }
+    return $subject;
+  }
+
+  /**
+   * Derives a localized inbox preview from legacy body config.
+   */
+  private function deriveLegacyBodyPreview(array $replacements, string $langcode): string {
+    $line = $this->firstLegacyBodyLineWithoutCode($langcode);
+    return $line !== '' ? (string) strtr($line, $replacements) : '';
+  }
+
+  /**
+   * Derives localized hero support text from legacy body config.
+   */
+  private function deriveLegacyBodySubtext(array $replacements, string $langcode): string {
+    $lines = $this->legacyBodyLinesWithoutCode($langcode);
+    return $lines !== [] ? (string) strtr(implode(' ', $lines), $replacements) : '';
+  }
+
+  /**
+   * Returns the first non-code line from legacy body config.
+   */
+  private function firstLegacyBodyLineWithoutCode(string $langcode): string {
+    $lines = $this->legacyBodyLinesWithoutCode($langcode);
+    return $lines[0] ?? '';
+  }
+
+  /**
+   * Returns non-empty legacy body lines that do not contain the OTP code.
+   *
+   * Older locale overrides only shipped subject/body. Reusing their non-code
+   * body lines keeps localized mails localized until a site adds the newer
+   * headline, preheader, subtext and plain_text keys.
+   *
+   * @return string[]
+   *   Body lines without @code.
+   */
+  private function legacyBodyLinesWithoutCode(string $langcode): array {
+    $template = $this->readConfigTemplate('body', $langcode, FALSE);
+    if ($template === '') {
+      return [];
+    }
+    $lines = preg_split('/\R+/', $template) ?: [];
+    $filtered = [];
+    foreach ($lines as $line) {
+      $line = trim((string) $line);
+      if ($line === '' || str_contains($line, '@code')) {
+        continue;
+      }
+      $filtered[] = $line;
+    }
+    return $filtered;
+  }
+
+  /**
+   * Removes the OTP placeholder from preview-bound templates.
+   */
+  private function stripCodePlaceholder(string $template): string {
+    $stripped = (string) preg_replace('/\s*[:-]?\s*@code\b/', '', $template);
+    return trim($stripped);
   }
 
 }

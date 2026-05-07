@@ -200,6 +200,112 @@ final class PasswordlessOtpBuilderTest extends UnitTestCase {
   }
 
   /**
+   * Configured content templates override the built-in OTP fallback copy.
+   */
+  public function testBuildAppliesConfigContentTemplates(): void {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnCallback(
+      fn (string $key): ?array => $key === 'verification_code'
+        ? [
+          'subject' => '@platform_name: Ihr Bestätigungscode',
+          'preheader' => 'Ihr Bestätigungscode ist @minutes Minuten gültig.',
+          'headline' => 'Konto bestätigen',
+          'subtext' => 'Geben Sie diesen Code innerhalb der nächsten @minutes Minuten ein.',
+          'plain_text' => "Ihr Bestätigungscode: @code\n\nEr läuft in @minutes Minuten ab.",
+        ]
+        : NULL,
+    );
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($config);
+
+    $override = $this->createMock(LanguageConfigOverride::class);
+    $override->method('get')->willReturn(NULL);
+    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
+    $languageManager->method('getLanguageConfigOverride')->willReturn($override);
+
+    $builder = $this->buildBuilder(
+      configFactory: $configFactory,
+      languageManager: $languageManager,
+    );
+    $ctx = new MailContext(
+      module: 'markaspot_passwordless',
+      key: 'verification_code',
+      langcode: 'de',
+      params: [
+        'code' => '156428',
+        'expires_in' => '10',
+        'platform_name' => 'Maak et, Krefeld!',
+      ],
+      to: 'user@example.com',
+    );
+    $msg = $builder->build($ctx);
+
+    $this->assertNotNull($msg);
+    $this->assertSame('Maak et, Krefeld!: Ihr Bestätigungscode', $msg->subject);
+    $this->assertSame('Ihr Bestätigungscode ist 10 Minuten gültig.', $msg->content['preheader']);
+    $this->assertSame('Konto bestätigen', $msg->content['headline']);
+    $this->assertSame('Geben Sie diesen Code innerhalb der nächsten 10 Minuten ein.', $msg->content['subtext']);
+    $this->assertSame("Ihr Bestätigungscode: 156428\n\nEr läuft in 10 Minuten ab.", $msg->plainText);
+  }
+
+  /**
+   * Legacy locale overrides stay localized when newer content keys are absent.
+   */
+  public function testBuildDerivesLocalizedContentFromLegacyBodyOverride(): void {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnCallback(
+      fn (string $key): ?array => $key === 'verification_code'
+        ? [
+          'subject' => '@platform_name: Your verification code',
+          'preheader' => 'Your verification code expires in @minutes minutes.',
+          'headline' => 'Verify your account',
+          'subtext' => 'Enter this code in the next @minutes minutes.',
+          'plain_text' => "Your verification code: @code\n\nIt expires in @minutes minutes.",
+        ]
+        : NULL,
+    );
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($config);
+
+    $override = $this->createMock(LanguageConfigOverride::class);
+    $override->method('get')->willReturnCallback(
+      fn (string $key): ?array => $key === 'verification_code'
+        ? [
+          'subject' => '@platform_name: Ověřovací kód',
+          'body' => "Váš ověřovací kód je: @code\n\nTento kód vyprší za @expires_in minut.\n\nPokud jste o něj nežádali, můžete tento e-mail ignorovat.\n",
+        ]
+        : NULL,
+    );
+    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
+    $languageManager->method('getLanguageConfigOverride')->willReturn($override);
+
+    $builder = $this->buildBuilder(
+      configFactory: $configFactory,
+      languageManager: $languageManager,
+    );
+    $ctx = new MailContext(
+      module: 'markaspot_passwordless',
+      key: 'verification_code',
+      langcode: 'cs',
+      params: [
+        'code' => '156428',
+        'expires_in' => '10',
+        'platform_name' => 'CivicSpot',
+      ],
+      to: 'user@example.com',
+    );
+    $msg = $builder->build($ctx);
+
+    $this->assertNotNull($msg);
+    $this->assertSame('CivicSpot: Ověřovací kód', $msg->subject);
+    $this->assertSame('Ověřovací kód', $msg->content['headline']);
+    $this->assertSame('Tento kód vyprší za 10 minut.', $msg->content['preheader']);
+    $this->assertStringContainsString('Pokud jste o něj nežádali', $msg->content['subtext']);
+    $this->assertStringContainsString('Váš ověřovací kód je: 156428', $msg->plainText);
+    $this->assertStringNotContainsString('Your verification code', $msg->plainText);
+  }
+
+  /**
    * Builds a MailContext with sensible test defaults.
    */
   private function buildContext(array $params): MailContext {

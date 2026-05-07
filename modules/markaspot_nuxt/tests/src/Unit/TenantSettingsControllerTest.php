@@ -24,6 +24,7 @@ use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\TenantSettingsController;
 use Drupal\Tests\UnitTestCase;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
@@ -54,6 +55,27 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * @var \Drupal\group\GroupMembershipLoaderInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected GroupMembershipLoaderInterface $membershipLoader;
+
+  /**
+   * The mocked stream wrapper manager.
+   *
+   * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected StreamWrapperManagerInterface $streamWrapperManager;
+
+  /**
+   * The mocked file system.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected FileSystemInterface $fileSystem;
+
+  /**
+   * The mocked file repository.
+   *
+   * @var \Drupal\file\FileRepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected FileRepositoryInterface $fileRepository;
 
   /**
    * The mocked hierarchy resolver.
@@ -92,9 +114,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
       });
 
     $this->membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
-    $streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
-    $fileSystem = $this->createMock(FileSystemInterface::class);
-    $fileRepository = $this->createMock(FileRepositoryInterface::class);
+    $this->streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
+    $this->fileSystem = $this->createMock(FileSystemInterface::class);
+    $this->fileRepository = $this->createMock(FileRepositoryInterface::class);
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->currentUser->method('getDisplayName')->willReturn('testuser');
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
@@ -113,9 +135,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $container->set('config.factory', $configFactory);
     $container->set('entity_type.manager', $this->entityTypeManager);
     $container->set('group.membership_loader', $this->membershipLoader);
-    $container->set('stream_wrapper_manager', $streamWrapperManager);
-    $container->set('file_system', $fileSystem);
-    $container->set('file.repository', $fileRepository);
+    $container->set('stream_wrapper_manager', $this->streamWrapperManager);
+    $container->set('file_system', $this->fileSystem);
+    $container->set('file.repository', $this->fileRepository);
     $container->set('current_user', $this->currentUser);
     $container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
     $container->set('email.validator', $emailValidator);
@@ -1329,6 +1351,81 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $response = $this->controller->deleteLogo($request, '14');
 
     $this->assertEquals(400, $response->getStatusCode());
+  }
+
+  /**
+   * Tests saveLogoPngFallback() writes a sibling public PNG.
+   *
+   * @covers ::saveLogoPngFallback
+   */
+  public function testSaveLogoPngFallbackWritesSiblingPublicPng(): void {
+    $tmp = tempnam(sys_get_temp_dir(), 'logo-fallback-');
+    $this->assertIsString($tmp);
+    $png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    file_put_contents($tmp, base64_decode($png, TRUE));
+    $uploaded = new UploadedFile($tmp, 'logo.png', 'image/png', NULL, TRUE);
+
+    $this->fileSystem->expects($this->once())
+      ->method('saveData')
+      ->with(
+        $this->isType('string'),
+        'public://jurisdictions/14/logos/logo.png',
+        FileSystemInterface::EXISTS_REPLACE,
+      )
+      ->willReturn('public://jurisdictions/14/logos/logo.png');
+    $method = new \ReflectionMethod($this->controller, 'saveLogoPngFallback');
+    $result = $method->invoke(
+      $this->controller,
+      $uploaded,
+      'public://jurisdictions/14/logos',
+      'logo.svg',
+      'logo_light',
+    );
+
+    $this->assertTrue($result['success']);
+    $this->assertSame('public://jurisdictions/14/logos/logo.png', $result['uri']);
+    $this->assertSame('/sites/default/files/jurisdictions/14/logos/logo.png', $result['url']);
+    unlink($tmp);
+  }
+
+  /**
+   * Tests saveLogoPngFallback() rejects files with spoofed PNG metadata.
+   *
+   * @covers ::saveLogoPngFallback
+   */
+  public function testSaveLogoPngFallbackRejectsInvalidPngData(): void {
+    $tmp = tempnam(sys_get_temp_dir(), 'logo-fallback-');
+    $this->assertIsString($tmp);
+    file_put_contents($tmp, 'not a png');
+    $uploaded = new UploadedFile($tmp, 'logo.png', 'image/png', NULL, TRUE);
+
+    $this->fileSystem->expects($this->never())
+      ->method('saveData');
+
+    $method = new \ReflectionMethod($this->controller, 'saveLogoPngFallback');
+    $result = $method->invoke(
+      $this->controller,
+      $uploaded,
+      'public://jurisdictions/14/logos',
+      'logo.svg',
+      'logo_light',
+    );
+
+    $this->assertFalse($result['success']);
+    $this->assertSame('Invalid PNG fallback for logo_light.', $result['error']);
+    unlink($tmp);
+  }
+
+  /**
+   * Tests sanitizeSvgLogoData() rejects non-SVG markup.
+   *
+   * @covers ::sanitizeSvgLogoData
+   */
+  public function testSanitizeSvgLogoDataRejectsNonSvgMarkup(): void {
+    $method = new \ReflectionMethod($this->controller, 'sanitizeSvgLogoData');
+    $result = $method->invoke($this->controller, '<script>alert(1)</script>', 'logo_light');
+
+    $this->assertNull($result);
   }
 
 }

@@ -118,15 +118,49 @@ class PasswordlessSettingsForm extends ConfigFormBase {
     $form['mail']['mail_subject'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Subject'),
-      '#description' => $this->t('Available tokens: @code, @expires_in, @platform_name'),
+      '#description' => $this->t('Available tokens: @expires_in, @minutes, @platform_name. @code is intentionally not rendered in the subject.'),
       '#default_value' => $mail_config->get('verification_code.subject') ?? '',
+      '#required' => TRUE,
+    ];
+
+    $form['mail']['mail_preheader'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Preheader'),
+      '#description' => $this->t('Inbox preview text. Available tokens: @expires_in, @minutes, @platform_name. @code is intentionally not rendered in the preheader.'),
+      '#default_value' => $mail_config->get('verification_code.preheader') ?? '',
+      '#required' => TRUE,
+    ];
+
+    $form['mail']['mail_headline'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Headline'),
+      '#description' => $this->t('Headline shown above the code. Available tokens: @code, @expires_in, @minutes, @platform_name.'),
+      '#default_value' => $mail_config->get('verification_code.headline') ?? '',
+      '#required' => TRUE,
+    ];
+
+    $form['mail']['mail_subtext'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Subtext'),
+      '#description' => $this->t('Text shown below the code. Available tokens: @code, @expires_in, @minutes, @platform_name.'),
+      '#default_value' => $mail_config->get('verification_code.subtext') ?? '',
+      '#rows' => 3,
+      '#required' => TRUE,
+    ];
+
+    $form['mail']['mail_plain_text'] = [
+      '#type' => 'textarea',
+      '#title' => $this->t('Plain text body'),
+      '#description' => $this->t('Plain text fallback. Available tokens: @code, @expires_in, @minutes, @platform_name.'),
+      '#default_value' => $mail_config->get('verification_code.plain_text') ?? '',
+      '#rows' => 5,
       '#required' => TRUE,
     ];
 
     $form['mail']['mail_body'] = [
       '#type' => 'textarea',
-      '#title' => $this->t('Body'),
-      '#description' => $this->t('Available tokens: @code, @expires_in, @platform_name. The jurisdiction email footer is appended automatically.'),
+      '#title' => $this->t('Legacy body'),
+      '#description' => $this->t('Legacy fallback for older templates and locale overrides. Available tokens: @code, @expires_in, @minutes, @platform_name. The jurisdiction email footer is appended automatically.'),
       '#default_value' => $mail_config->get('verification_code.body') ?? '',
       '#rows' => 8,
       '#required' => TRUE,
@@ -185,6 +219,10 @@ class PasswordlessSettingsForm extends ConfigFormBase {
 
     $this->config('markaspot_passwordless.mail')
       ->set('verification_code.subject', $form_state->getValue('mail_subject'))
+      ->set('verification_code.preheader', $form_state->getValue('mail_preheader'))
+      ->set('verification_code.headline', $form_state->getValue('mail_headline'))
+      ->set('verification_code.subtext', $form_state->getValue('mail_subtext'))
+      ->set('verification_code.plain_text', $form_state->getValue('mail_plain_text'))
       ->set('verification_code.body', $form_state->getValue('mail_body'))
       ->save();
 

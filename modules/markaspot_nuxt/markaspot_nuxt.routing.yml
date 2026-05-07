@@ -74,6 +74,7 @@ markaspot_nuxt.tenant_settings_logo:
   methods: [POST]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
@@ -86,6 +87,7 @@ markaspot_nuxt.tenant_settings_logo_delete:
   methods: [DELETE]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
@@ -272,4 +274,3 @@ markaspot_nuxt.content_translation_create:
   options:
     _auth: ['cookie', 'basic_auth', 'api_key_auth']
     _format: 'json'
-

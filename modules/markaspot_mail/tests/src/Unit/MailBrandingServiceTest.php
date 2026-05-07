@@ -14,6 +14,7 @@ use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Site\Settings;
@@ -159,6 +160,242 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $branding = $service->getBranding(NULL, 'platform', 'en');
 
     $this->assertSame('https://assets.example.test/logo.png', $branding['logo_url']);
+  }
+
+  /**
+   * Jurisdiction mails fall back to the frontend logo contract.
+   */
+  public function testJurisdictionLogoFallsBackToNuxtConfigPublicFile(): void {
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'KBK Krefeld',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_logo_light' => '',
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'primary' => '#276327',
+          'logos' => [
+            'light' => '/sites/default/files/logos/kbk-logo-light.svg',
+          ],
+        ],
+      ]),
+    ]);
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->expects($this->once())
+      ->method('generateAbsoluteString')
+      ->with('public://logos/kbk-logo-light.svg')
+      ->willReturn('http://cloud-drupal/sites/default/files/logos/kbk-logo-light.svg');
+    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $fileSystem->expects($this->once())
+      ->method('realpath')
+      ->with('public://logos/kbk-logo-light.png')
+      ->willReturn(FALSE);
+
+    $service = $this->buildService(
+      $group,
+      NULL,
+      NULL,
+      $overrides,
+      NULL,
+      $fileUrlGenerator,
+      $fileSystem,
+    );
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'en');
+
+    $this->assertSame(
+      'https://management.example.test/sites/default/files/logos/kbk-logo-light.svg',
+      $branding['logo_url'],
+    );
+    $this->assertNull($branding['logo_svg_inline']);
+  }
+
+  /**
+   * Jurisdiction field SVG logos prefer their stored PNG mail fallback.
+   */
+  public function testJurisdictionFieldLogoPrefersSiblingPngForSvg(): void {
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'KBK Krefeld',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_logo_light' => ['uri' => 'public://jurisdictions/1/logos/kbk-logo-light.svg'],
+    ]);
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->expects($this->once())
+      ->method('generateAbsoluteString')
+      ->with('public://jurisdictions/1/logos/kbk-logo-light.png')
+      ->willReturn('http://cloud-drupal/sites/default/files/jurisdictions/1/logos/kbk-logo-light.png');
+    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $fileSystem->expects($this->once())
+      ->method('realpath')
+      ->with('public://jurisdictions/1/logos/kbk-logo-light.png')
+      ->willReturn(__FILE__);
+
+    $service = $this->buildService(
+      $group,
+      NULL,
+      NULL,
+      $overrides,
+      NULL,
+      $fileUrlGenerator,
+      $fileSystem,
+    );
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'en');
+
+    $this->assertSame(
+      'https://management.example.test/sites/default/files/jurisdictions/1/logos/kbk-logo-light.png',
+      $branding['logo_url'],
+    );
+    $this->assertNull($branding['logo_svg_inline']);
+  }
+
+  /**
+   * SVG frontend logos prefer a sibling PNG when one is available.
+   */
+  public function testJurisdictionLogoPrefersSiblingPngForNuxtConfigSvg(): void {
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'KBK Krefeld',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_logo_light' => '',
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'logos' => [
+            'light' => 'public://logos/kbk-logo-light.svg',
+          ],
+        ],
+      ]),
+    ]);
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->expects($this->once())
+      ->method('generateAbsoluteString')
+      ->with('public://logos/kbk-logo-light.png')
+      ->willReturn('http://cloud-drupal/sites/default/files/logos/kbk-logo-light.png');
+    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $fileSystem->expects($this->once())
+      ->method('realpath')
+      ->with('public://logos/kbk-logo-light.png')
+      ->willReturn(__FILE__);
+
+    $service = $this->buildService(
+      $group,
+      NULL,
+      NULL,
+      $overrides,
+      NULL,
+      $fileUrlGenerator,
+      $fileSystem,
+    );
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'en');
+
+    $this->assertSame(
+      'https://management.example.test/sites/default/files/logos/kbk-logo-light.png',
+      $branding['logo_url'],
+    );
+    $this->assertNull($branding['logo_svg_inline']);
+  }
+
+  /**
+   * External frontend logo references are ignored for citizen mails.
+   */
+  public function testJurisdictionLogoRejectsExternalNuxtConfigReference(): void {
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'KBK Krefeld',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_logo_light' => '',
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'logos' => [
+            'light' => 'https://tracking.example.test/logo.png',
+          ],
+        ],
+      ]),
+    ]);
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->atLeastOnce())
+      ->method('warning');
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->expects($this->never())
+      ->method('generateAbsoluteString');
+    $moduleList = $this->createMock(ModuleExtensionList::class);
+    $moduleList->method('getPath')
+      ->with('markaspot_mail')
+      ->willReturn('profiles/contrib/markaspot/modules/markaspot_mail');
+
+    $service = $this->buildService(
+      $group,
+      NULL,
+      $logger,
+      self::PLATFORM_SETTINGS,
+      $moduleList,
+      $fileUrlGenerator,
+    );
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'en');
+
+    $this->assertSame(
+      '/profiles/contrib/markaspot/modules/markaspot_mail/images/mark-a-spot-logo@2x.png',
+      $branding['logo_url'],
+    );
+  }
+
+  /**
+   * Unsafe frontend logo references are ignored.
+   */
+  public function testJurisdictionLogoRejectsUnsupportedNuxtConfigReference(): void {
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'KBK Krefeld',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_logo_light' => '',
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'logos' => [
+            'light' => 'private://secret.svg',
+          ],
+        ],
+      ]),
+    ]);
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->atLeastOnce())
+      ->method('warning');
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->expects($this->never())
+      ->method('generateAbsoluteString');
+    $moduleList = $this->createMock(ModuleExtensionList::class);
+    $moduleList->method('getPath')
+      ->with('markaspot_mail')
+      ->willReturn('profiles/contrib/markaspot/modules/markaspot_mail');
+
+    $service = $this->buildService(
+      $group,
+      NULL,
+      $logger,
+      self::PLATFORM_SETTINGS,
+      $moduleList,
+      $fileUrlGenerator,
+    );
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'en');
+
+    $this->assertSame(
+      '/profiles/contrib/markaspot/modules/markaspot_mail/images/mark-a-spot-logo@2x.png',
+      $branding['logo_url'],
+    );
   }
 
   /**
@@ -536,6 +773,8 @@ final class MailBrandingServiceTest extends UnitTestCase {
     ?LoggerInterface $logger = NULL,
     ?array $settingsOverride = NULL,
     ?ModuleExtensionList $moduleExtensionList = NULL,
+    ?FileUrlGeneratorInterface $fileUrlGenerator = NULL,
+    ?FileSystemInterface $fileSystem = NULL,
   ): MailBrandingService {
     $storage = $storage ?? $this->createMock(EntityStorageInterface::class);
     if ($group !== NULL) {
@@ -563,7 +802,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     ]);
 
     $languageManager = $this->createMock(LanguageManagerInterface::class);
-    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator = $fileUrlGenerator ?? $this->createMock(FileUrlGeneratorInterface::class);
     $logger = $logger ?? $this->createMock(LoggerInterface::class);
 
     return new MailBrandingService(
@@ -573,6 +812,8 @@ final class MailBrandingServiceTest extends UnitTestCase {
       $fileUrlGenerator,
       $logger,
       $moduleExtensionList,
+      NULL,
+      $fileSystem,
     );
   }
 
@@ -635,6 +876,31 @@ final class MailBrandingServiceTest extends UnitTestCase {
       public $entity = NULL;
 
       public function __construct($value) {
+        if (is_array($value) && isset($value['uri'])) {
+          $this->value = $value['uri'];
+          $this->entity = new class ($value['uri']) {
+
+            /**
+             * Referenced file URI.
+             *
+             * @var string
+             */
+            private string $uri;
+
+            public function __construct(string $uri) {
+              $this->uri = $uri;
+            }
+
+            /**
+             * Returns the referenced file URI.
+             */
+            public function getFileUri(): string {
+              return $this->uri;
+            }
+
+          };
+          return;
+        }
         $this->value = $value;
       }
 

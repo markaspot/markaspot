@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\PublicStream;
+use Drupal\Core\StreamWrapper\StreamWrapperManager;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\file\FileRepositoryInterface;
 use Drupal\group\Entity\GroupInterface;
@@ -19,7 +20,9 @@ use Drupal\Component\Utility\EmailValidator;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
+use enshrined\svgSanitize\Sanitizer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -440,6 +443,8 @@ class TenantSettingsController extends ControllerBase {
     $uploadedFiles = $request->files;
     $logoLight = $uploadedFiles->get('logo_light');
     $logoDark = $uploadedFiles->get('logo_dark');
+    $logoLightPng = $uploadedFiles->get('logo_light_png');
+    $logoDarkPng = $uploadedFiles->get('logo_dark_png');
 
     if (!$logoLight && !$logoDark) {
       return new JsonResponse(['error' => 'No logo file provided. Use logo_light or logo_dark field.'], 400);
@@ -447,12 +452,20 @@ class TenantSettingsController extends ControllerBase {
 
     $logos = [];
     $errors = [];
+    $warnings = [];
 
     // Process logo_light.
     if ($logoLight) {
-      $result = $this->processLogoUpload($logoLight, $group, 'field_logo_light', 'logo_light');
+      $result = $this->processLogoUpload(
+        $logoLight,
+        $group,
+        'field_logo_light',
+        'logo_light',
+        $logoLightPng instanceof UploadedFile ? $logoLightPng : NULL,
+      );
       if ($result['success']) {
         $logos['light'] = $result['url'];
+        $warnings = array_merge($warnings, $result['warnings'] ?? []);
       }
       else {
         $errors[] = $result['error'];
@@ -461,9 +474,16 @@ class TenantSettingsController extends ControllerBase {
 
     // Process logo_dark.
     if ($logoDark) {
-      $result = $this->processLogoUpload($logoDark, $group, 'field_logo_dark', 'logo_dark');
+      $result = $this->processLogoUpload(
+        $logoDark,
+        $group,
+        'field_logo_dark',
+        'logo_dark',
+        $logoDarkPng instanceof UploadedFile ? $logoDarkPng : NULL,
+      );
       if ($result['success']) {
         $logos['dark'] = $result['url'];
+        $warnings = array_merge($warnings, $result['warnings'] ?? []);
       }
       else {
         $errors[] = $result['error'];
@@ -497,6 +517,9 @@ class TenantSettingsController extends ControllerBase {
     if (!empty($errors)) {
       $response['warnings'] = $errors;
     }
+    if (!empty($warnings)) {
+      $response['warnings'] = array_merge($response['warnings'] ?? [], $warnings);
+    }
 
     $this->getLogger('markaspot_nuxt')->notice(
       'User @user uploaded logo(s) for jurisdiction @id: @logos',
@@ -521,33 +544,24 @@ class TenantSettingsController extends ControllerBase {
    *   The group field name (field_logo_light or field_logo_dark).
    * @param string $fileKey
    *   Human-readable key for error messages (logo_light or logo_dark).
+   * @param \Symfony\Component\HttpFoundation\File\UploadedFile|null $pngFallbackFile
+   *   Optional client-generated PNG fallback for SVG logos.
    *
    * @return array
-   *   Result array with 'success' bool and 'url' or 'error'.
+   *   Result array with 'success' bool, 'url', optional 'warnings', or 'error'.
    */
   protected function processLogoUpload(
-    $uploadedFile,
+    UploadedFile $uploadedFile,
     $group,
     string $fieldName,
     string $fileKey,
+    ?UploadedFile $pngFallbackFile = NULL,
   ): array {
     // Validate file type: only SVG and PNG are allowed.
-    $allowedMimeTypes = ['image/svg+xml', 'image/png'];
     $allowedExtensions = ['svg', 'png'];
-    $mimeType = $uploadedFile->getMimeType();
-    $clientMimeType = $uploadedFile->getClientMimeType();
     $extension = strtolower($uploadedFile->getClientOriginalExtension());
 
-    // SVG files are often detected as application/octet-stream or text/xml
-    // by finfo on temp files. Fall back to client-reported MIME type for SVG
-    // when the extension matches, as an additional safety check.
-    if (!in_array($mimeType, $allowedMimeTypes, TRUE)
-      && in_array($clientMimeType, $allowedMimeTypes, TRUE)
-      && in_array($extension, $allowedExtensions, TRUE)) {
-      $mimeType = $clientMimeType;
-    }
-
-    if (!in_array($mimeType, $allowedMimeTypes, TRUE) || !in_array($extension, $allowedExtensions, TRUE)) {
+    if (!in_array($extension, $allowedExtensions, TRUE)) {
       return [
         'success' => FALSE,
         'error' => "Invalid file type for $fileKey. Only SVG and PNG files are allowed.",
@@ -584,6 +598,7 @@ class TenantSettingsController extends ControllerBase {
     $originalName = $uploadedFile->getClientOriginalName();
     $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $originalName);
     $destination = $uploadDir . '/' . $safeName;
+    $previousFallbackUri = $this->getExistingLogoPngFallbackUri($group, $fieldName);
 
     // Save the file using Drupal's file repository (handles managed files).
     try {
@@ -592,6 +607,22 @@ class TenantSettingsController extends ControllerBase {
         return [
           'success' => FALSE,
           'error' => "Failed to read uploaded file for $fileKey.",
+        ];
+      }
+
+      if ($extension === 'svg') {
+        $fileData = $this->sanitizeSvgLogoData($fileData, $fileKey);
+        if ($fileData === NULL) {
+          return [
+            'success' => FALSE,
+            'error' => "Invalid SVG file for $fileKey.",
+          ];
+        }
+      }
+      elseif (!$this->isPngImageData($fileData)) {
+        return [
+          'success' => FALSE,
+          'error' => "Invalid PNG file for $fileKey.",
         ];
       }
 
@@ -624,26 +655,163 @@ class TenantSettingsController extends ControllerBase {
       ];
     }
 
+    $warnings = [];
+    $mailFallbackUrl = NULL;
+    $mailFallbackUri = NULL;
+    if ($extension === 'svg' && $pngFallbackFile !== NULL) {
+      $fallback = $this->saveLogoPngFallback($pngFallbackFile, $uploadDir, $safeName, $fileKey);
+      if ($fallback['success']) {
+        $mailFallbackUrl = $fallback['url'];
+        $mailFallbackUri = $fallback['uri'] ?? NULL;
+      }
+      else {
+        $warnings[] = $fallback['error'];
+      }
+    }
+
+    if ($previousFallbackUri !== NULL && $previousFallbackUri !== $mailFallbackUri) {
+      $this->deleteFileIfReadable($previousFallbackUri);
+    }
+
     // Assign the file to the group field.
     $group->set($fieldName, ['target_id' => $file->id()]);
 
     // Build the URL for the response (relative path,
     // same pattern as getMarkASpotSettings).
     $uri = $file->getFileUri();
-    $scheme = $this->streamWrapperManager->getScheme($uri);
-    if ($scheme === 'public') {
-      $target = $this->streamWrapperManager->getTarget($uri);
-      $publicPath = PublicStream::basePath();
-      $url = '/' . $publicPath . '/' . $target;
-    }
-    else {
-      $url = '/' . str_replace('://', '/', $uri);
-    }
+    $url = $this->buildPublicFileUrl($uri);
 
     return [
       'success' => TRUE,
       'url' => $url,
+      'mail_fallback_url' => $mailFallbackUrl,
+      'warnings' => $warnings,
     ];
+  }
+
+  /**
+   * Sanitizes uploaded SVG logo data before it is stored publicly.
+   */
+  protected function sanitizeSvgLogoData(string $fileData, string $fileKey): ?string {
+    $sanitizer = new Sanitizer();
+    $sanitizer->removeRemoteReferences(TRUE);
+    try {
+      $clean = $sanitizer->sanitize($fileData);
+    }
+    catch (\Throwable) {
+      $clean = FALSE;
+    }
+    if (!is_string($clean) || trim($clean) === '' || preg_match('/<svg[\s>]/i', $clean) !== 1) {
+      $this->getLogger('markaspot_nuxt')->warning(
+        'Rejected invalid SVG logo upload for @key.',
+        ['@key' => $fileKey]
+      );
+      return NULL;
+    }
+
+    $clean = (string) preg_replace('/^<\?xml[^?]*\?>\s*/i', '', $clean);
+    $clean = (string) preg_replace('/<!DOCTYPE[^>]*>\s*/i', '', $clean);
+    $trimmed = trim($clean);
+
+    return $trimmed !== '' ? $trimmed : NULL;
+  }
+
+  /**
+   * Verifies PNG data using the file signature and image metadata.
+   */
+  protected function isPngImageData(string $fileData): bool {
+    if (!str_starts_with($fileData, "\x89PNG\r\n\x1A\n")) {
+      return FALSE;
+    }
+
+    $imageInfo = @getimagesizefromstring($fileData);
+    return is_array($imageInfo) && ($imageInfo[2] ?? NULL) === IMAGETYPE_PNG;
+  }
+
+  /**
+   * Validates and stores the client-generated PNG fallback for SVG mails.
+   *
+   * @return array
+   *   Result array with 'success' bool, 'url', or 'error'.
+   */
+  protected function saveLogoPngFallback(
+    UploadedFile $uploadedFile,
+    string $uploadDir,
+    string $safeSvgName,
+    string $fileKey,
+  ): array {
+    $extension = strtolower($uploadedFile->getClientOriginalExtension());
+    if ($extension !== 'png') {
+      return [
+        'success' => FALSE,
+        'error' => "Invalid PNG fallback for $fileKey.",
+      ];
+    }
+
+    $maxSizeBytes = 500 * 1024;
+    if ($uploadedFile->getSize() > $maxSizeBytes) {
+      return [
+        'success' => FALSE,
+        'error' => "PNG fallback too large for $fileKey. Maximum size is 500KB.",
+      ];
+    }
+
+    $fileData = file_get_contents($uploadedFile->getPathname());
+    if ($fileData === FALSE) {
+      return [
+        'success' => FALSE,
+        'error' => "Failed to read PNG fallback for $fileKey.",
+      ];
+    }
+
+    if (!$this->isPngImageData($fileData)) {
+      return [
+        'success' => FALSE,
+        'error' => "Invalid PNG fallback for $fileKey.",
+      ];
+    }
+
+    $baseName = pathinfo($safeSvgName, PATHINFO_FILENAME);
+    $destination = $uploadDir . '/' . $baseName . '.png';
+    try {
+      $uri = $this->fileSystem->saveData($fileData, $destination, FileSystemInterface::EXISTS_REPLACE);
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->warning(
+        'PNG fallback save failed for @key: @message',
+        ['@key' => $fileKey, '@message' => $e->getMessage()]
+      );
+      return [
+        'success' => FALSE,
+        'error' => "PNG fallback save error for $fileKey: " . $e->getMessage(),
+      ];
+    }
+
+    if (!is_string($uri) || $uri === '') {
+      return [
+        'success' => FALSE,
+        'error' => "Failed to save PNG fallback for $fileKey.",
+      ];
+    }
+
+    return [
+      'success' => TRUE,
+      'uri' => $uri,
+      'url' => $this->buildPublicFileUrl($uri),
+    ];
+  }
+
+  /**
+   * Builds a public-facing relative file URL from a Drupal stream URI.
+   */
+  protected function buildPublicFileUrl(string $uri): string {
+    $scheme = StreamWrapperManager::getScheme($uri);
+    if ($scheme === 'public') {
+      $target = StreamWrapperManager::getTarget($uri);
+      $publicPath = PublicStream::basePath();
+      return '/' . $publicPath . '/' . $target;
+    }
+    return '/' . str_replace('://', '/', $uri);
   }
 
   /**
@@ -685,6 +853,7 @@ class TenantSettingsController extends ControllerBase {
 
     $deleted = [];
     $filesToDelete = [];
+    $fallbackUrisToDelete = [];
     $fileStorage = $this->entityTypeManager()->getStorage('file');
 
     foreach ($fieldsToDelete as $fieldName) {
@@ -698,6 +867,10 @@ class TenantSettingsController extends ControllerBase {
         $file = $fileStorage->load($fieldValue[0]['target_id']);
         if ($file) {
           $filesToDelete[] = $file;
+          $fallbackUri = $this->getLogoPngFallbackUri((string) $file->getFileUri());
+          if ($fallbackUri !== NULL) {
+            $fallbackUrisToDelete[] = $fallbackUri;
+          }
         }
       }
 
@@ -728,6 +901,9 @@ class TenantSettingsController extends ControllerBase {
     // Delete file entities only after successful group save.
     foreach ($filesToDelete as $file) {
       $file->delete();
+    }
+    foreach (array_unique($fallbackUrisToDelete) as $uri) {
+      $this->deleteFileIfReadable($uri);
     }
 
     $this->getLogger('markaspot_nuxt')->notice(
@@ -1375,8 +1551,8 @@ class TenantSettingsController extends ControllerBase {
     }
 
     // Apply only known feature flags from the request, preserving all others.
-    // Special case: formFirst can be an object with config options. When the
-    // dashboard sends true, preserve the existing object (don't flatten to bool).
+    // Special case: formFirst can be an object with config options. Preserve
+    // the existing object when the dashboard sends true.
     $allKnownFlags = array_merge(self::SIMPLE_FEATURE_FLAGS, self::NESTED_FEATURE_FLAGS);
     foreach ($data as $key => $value) {
       if (in_array($key, $allKnownFlags, TRUE)) {
@@ -1544,7 +1720,8 @@ class TenantSettingsController extends ControllerBase {
       }
     }
 
-    // Validate controls: allowlist known sub-keys, values must be boolean or object with enabled boolean.
+    // Validate controls: allowlist known sub-keys. Values must be boolean or
+    // an object with an enabled boolean.
     $validControls = ['zoom', 'tilt', 'theme', 'geolocation', 'heatmap', 'reports', 'attribution'];
     if (array_key_exists('controls', $data)) {
       if (!is_array($data['controls'])) {
@@ -2059,6 +2236,59 @@ class TenantSettingsController extends ControllerBase {
 
     // Return the current state (same shape as GET).
     return $this->getDashboardSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns the current sidecar PNG fallback URI for a logo field.
+   */
+  protected function getExistingLogoPngFallbackUri($group, string $fieldName): ?string {
+    if (!$group->hasField($fieldName) || $group->get($fieldName)->isEmpty()) {
+      return NULL;
+    }
+
+    $field = $group->get($fieldName);
+    $file = $field->entity ?? NULL;
+    if ($file && method_exists($file, 'getFileUri')) {
+      return $this->getLogoPngFallbackUri((string) $file->getFileUri());
+    }
+
+    if (!method_exists($field, 'getValue')) {
+      return NULL;
+    }
+
+    $fieldValue = $field->getValue();
+    if (empty($fieldValue[0]['target_id'])) {
+      return NULL;
+    }
+
+    $storedFile = $this->entityTypeManager()
+      ->getStorage('file')
+      ->load($fieldValue[0]['target_id']);
+    if (!$storedFile || !method_exists($storedFile, 'getFileUri')) {
+      return NULL;
+    }
+
+    return $this->getLogoPngFallbackUri((string) $storedFile->getFileUri());
+  }
+
+  /**
+   * Returns the sidecar PNG fallback URI for an SVG logo URI.
+   */
+  protected function getLogoPngFallbackUri(string $uri): ?string {
+    if (preg_match('/\.svg$/i', $uri) !== 1) {
+      return NULL;
+    }
+    return (string) preg_replace('/\.svg$/i', '.png', $uri);
+  }
+
+  /**
+   * Deletes a file only when its stream wrapper resolves to a readable path.
+   */
+  protected function deleteFileIfReadable(string $uri): void {
+    $realpath = $this->fileSystem->realpath($uri);
+    if (is_string($realpath) && $realpath !== '' && is_readable($realpath)) {
+      $this->fileSystem->delete($uri);
+    }
   }
 
 }

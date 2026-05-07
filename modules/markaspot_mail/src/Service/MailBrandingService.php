@@ -9,6 +9,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Render\Markup;
@@ -107,6 +108,7 @@ class MailBrandingService {
     private readonly LoggerInterface $logger,
     private readonly ?ModuleExtensionList $moduleExtensionList = NULL,
     private readonly ?RequestStack $requestStack = NULL,
+    private readonly ?FileSystemInterface $fileSystem = NULL,
   ) {}
 
   /**
@@ -239,18 +241,26 @@ class MailBrandingService {
     // Logo: prefer field_logo_light; absolute URL via FileUrlGenerator.
     // SVG files are additionally inlined for email client compatibility —
     // Gmail, Outlook and iOS Mail all block SVG in <img src="...svg">.
+    $resolvedJurisdictionLogo = FALSE;
     if ($group->hasField('field_logo_light') && !$group->get('field_logo_light')->isEmpty()) {
       $logoField = $group->get('field_logo_light');
-      $logoUrl = $this->resolveFileAbsoluteUrl($logoField);
-      if ($logoUrl !== NULL) {
-        $branding['logo_url'] = $logoUrl;
-        $entity = $logoField->entity;
-        if ($entity !== NULL) {
-          $svgInline = $this->readSvgInline((string) $entity->getFileUri());
-          if ($svgInline !== NULL) {
-            $branding['logo_svg_inline'] = $svgInline;
-          }
-        }
+      $logo = $this->resolveLogoField($logoField);
+      if ($logo !== NULL) {
+        $branding['logo_url'] = $logo['url'];
+        $branding['logo_svg_inline'] = $logo['svg_inline'];
+        $resolvedJurisdictionLogo = TRUE;
+      }
+    }
+
+    // Some tenants keep their logo source in field_nuxt_config only because
+    // the shared frontend uses theme.logos.light/dark as its brand contract.
+    // Reuse that source for transactional mails when the image field is not
+    // populated, so self-hosted tenants do not fall back to the platform logo.
+    if (!$resolvedJurisdictionLogo && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $logo = $this->resolveLogoFromNuxtConfig((string) $group->get('field_nuxt_config')->value);
+      if ($logo !== NULL) {
+        $branding['logo_url'] = $logo['url'];
+        $branding['logo_svg_inline'] = $logo['svg_inline'];
       }
     }
 
@@ -437,17 +447,12 @@ class MailBrandingService {
   }
 
   /**
-   * Absolute URL for a file-reference item (field_logo_light etc.).
+   * Resolves a file-reference logo to a mail-safe logo package.
    *
-   * Mails are often rendered outside an HTTP request (queue workers, cron,
-   * CLI). In that context FileUrlGenerator::generateAbsoluteString() falls
-   * back to the global $base_url from settings.php, which on multi-tenant
-   * cloud deployments points at the wrong host or at localhost. We defend
-   * against that: if the resolved URL is not an absolute HTTP URL, prepend
-   * an explicitly configured platform.backend_base_url so inbox clients
-   * can actually fetch the asset.
+   * @return array{url: string, svg_inline: MarkupInterface|null}|null
+   *   A resolved logo package, or NULL when the file reference is unusable.
    */
-  private function resolveFileAbsoluteUrl($fieldItemList): ?string {
+  private function resolveLogoField($fieldItemList): ?array {
     try {
       $entity = $fieldItemList->entity;
       if ($entity === NULL) {
@@ -457,8 +462,16 @@ class MailBrandingService {
       if ($uri === '') {
         return NULL;
       }
-      $url = (string) $this->fileUrlGenerator->generateAbsoluteString($uri);
-      return $this->ensureAbsolute($url);
+      $mailUri = $this->preferRasterLogoUri($uri);
+      $url = $this->ensureAbsolute((string) $this->fileUrlGenerator->generateAbsoluteString($mailUri));
+      if ($url === NULL) {
+        return NULL;
+      }
+
+      return [
+        'url' => $url,
+        'svg_inline' => $mailUri === $uri ? $this->readSvgInline($uri) : NULL,
+      ];
     }
     catch (\Throwable $e) {
       $this->logger->warning('Could not resolve absolute URL for jurisdiction logo: @msg', [
@@ -541,7 +554,11 @@ class MailBrandingService {
       ->get('markaspot_mail.settings')
       ->get('platform.backend_base_url') ?? '');
     if ($configured !== '') {
-      return $configured;
+      $validated = $this->validateHttpUrl($configured, '');
+      if ($validated !== '') {
+        return rtrim($validated, '/');
+      }
+      $this->logger->warning('Ignored invalid mail backend base URL from markaspot_mail.settings.platform.backend_base_url.');
     }
     if ($this->requestStack !== NULL) {
       $request = $this->requestStack->getCurrentRequest();
@@ -589,6 +606,133 @@ class MailBrandingService {
       return NULL;
     }
     return $this->normalizeColor($raw, self::DEFAULT_PRIMARY);
+  }
+
+  /**
+   * Resolves the light logo from field_nuxt_config JSON.
+   *
+   * Tenants often already publish their frontend brand assets through
+   * theme.logos.light. Accept the same admin-managed contract for mail, but
+   * keep the resolver narrow: public files only. External http(s) URLs are
+   * intentionally ignored here so citizen mail does not embed arbitrary
+   * remote tracking pixels as tenant logos.
+   *
+   * @return array{url: string, svg_inline: MarkupInterface|null}|null
+   *   A resolved logo package, or NULL when no safe logo reference exists.
+   */
+  private function resolveLogoFromNuxtConfig(string $json): ?array {
+    $decoded = json_decode($json, TRUE);
+    if (!is_array($decoded)) {
+      return NULL;
+    }
+    $raw = $decoded['theme']['logos']['light'] ?? NULL;
+    if (!is_string($raw) || trim($raw) === '') {
+      return NULL;
+    }
+    return $this->resolveLogoReference(trim($raw));
+  }
+
+  /**
+   * Resolves an admin-managed logo reference to a mail-safe URL.
+   *
+   * @return array{url: string, svg_inline: MarkupInterface|null}|null
+   *   A resolved logo package, or NULL when the reference is unusable.
+   */
+  private function resolveLogoReference(string $raw): ?array {
+    if (preg_match('/[\r\n\0]/', $raw) === 1) {
+      $this->logger->warning('Rejected unsafe jurisdiction mail logo reference containing control bytes.');
+      return NULL;
+    }
+
+    if (preg_match('#^https?://#i', $raw) === 1) {
+      $this->logger->warning('Rejected external jurisdiction mail logo reference from frontend config.');
+      return NULL;
+    }
+
+    $uri = $this->publicFileUriFromLogoReference($raw);
+    if ($uri === NULL) {
+      $this->logger->warning('Rejected unsupported jurisdiction mail logo reference: @path', [
+        '@path' => $raw,
+      ]);
+      return NULL;
+    }
+
+    $mailUri = $this->preferRasterLogoUri($uri);
+
+    try {
+      $url = $this->ensureAbsolute((string) $this->fileUrlGenerator->generateAbsoluteString($mailUri));
+    }
+    catch (\Throwable $e) {
+      $this->logger->warning('Could not resolve jurisdiction mail logo from config: @msg', [
+        '@msg' => $e->getMessage(),
+      ]);
+      return NULL;
+    }
+    if ($url === NULL) {
+      return NULL;
+    }
+
+    return [
+      'url' => $url,
+      'svg_inline' => $mailUri === $uri ? $this->readSvgInline($uri) : NULL,
+    ];
+  }
+
+  /**
+   * Prefers a sibling PNG for SVG public-file logos.
+   */
+  private function preferRasterLogoUri(string $uri): string {
+    if (preg_match('/\.svg$/i', $uri) !== 1) {
+      return $uri;
+    }
+    $candidate = (string) preg_replace('/\.svg$/i', '.png', $uri);
+    return $this->fileExists($candidate) ? $candidate : $uri;
+  }
+
+  /**
+   * Checks file existence without triggering warnings for unresolved wrappers.
+   */
+  private function fileExists(string $uri): bool {
+    if (preg_match('/^[a-z][a-z0-9+.-]*:\/\//i', $uri) === 1) {
+      $realpath = $this->fileSystem?->realpath($uri);
+      return is_string($realpath) && $realpath !== '' && is_readable($realpath);
+    }
+
+    return is_readable($uri);
+  }
+
+  /**
+   * Maps a frontend public-files logo path to a Drupal stream wrapper URI.
+   */
+  private function publicFileUriFromLogoReference(string $raw): ?string {
+    $raw = str_replace('\\', '/', trim($raw));
+    if ($raw === '') {
+      return NULL;
+    }
+
+    if (str_starts_with($raw, 'public://')) {
+      $relative = substr($raw, strlen('public://'));
+    }
+    else {
+      $path = parse_url($raw, PHP_URL_PATH);
+      $path = is_string($path) && $path !== '' ? $path : $raw;
+      if (str_starts_with($path, '/sites/default/files/')) {
+        $relative = substr($path, strlen('/sites/default/files/'));
+      }
+      elseif (str_starts_with($path, 'sites/default/files/')) {
+        $relative = substr($path, strlen('sites/default/files/'));
+      }
+      else {
+        return NULL;
+      }
+    }
+
+    $relative = ltrim($relative, '/');
+    if ($relative === '' || str_contains($relative, '..')) {
+      return NULL;
+    }
+
+    return 'public://' . $relative;
   }
 
   /**
@@ -742,7 +886,7 @@ class MailBrandingService {
     // precedence on supporting clients.
     $clean = (string) preg_replace(
       '/<svg\b/i',
-      '<svg width="96" style="display:block; max-width:96px; height:auto; border:0; outline:none;"',
+      '<svg width="160" style="display:block; max-width:160px; height:auto; border:0; outline:none;"',
       $clean,
       1,
     );
