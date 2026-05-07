@@ -1021,11 +1021,27 @@ class PasswordlessAuthController extends ControllerBase {
           ];
         }
 
+        $slug = NULL;
+        if ($is_jurisdiction_group && $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()) {
+          $candidate = trim((string) $group->get('field_slug')->value);
+          // Reject digit-only slugs to keep the client-side scope guard
+          // (markaspot-ui#438) free of slug/numeric-id collisions, where a
+          // membership in slug "42" would otherwise grant scope access to the
+          // unrelated numeric group 42.
+          if ($candidate !== ''
+            && preg_match('/^[a-z0-9_-]{1,64}$/', $candidate)
+            && !ctype_digit($candidate)
+          ) {
+            $slug = $candidate;
+          }
+        }
+
         $groups[] = [
           'id' => $group->id(),
           'uuid' => $group->uuid(),
           'label' => $this->getEntityLabelForUserLanguage($group, $user),
           'type' => $is_jurisdiction_group ? 'jur' : $group->bundle(),
+          'slug' => $slug,
           'roles' => $group_roles,
         ];
       }

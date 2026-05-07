@@ -299,6 +299,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         'uuid' => 'group-uuid',
         'label' => 'Strassen',
         'type' => 'jur',
+        'slug' => NULL,
         'roles' => [
           [
             'id' => 'jur-member',
@@ -392,6 +393,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         'uuid' => 'group-uuid',
         'label' => 'Roads',
         'type' => 'jur',
+        'slug' => NULL,
         'roles' => [
           [
             'id' => 'jur-tenant_admin',
@@ -400,6 +402,268 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         ],
       ],
     ], $method->invoke($controller, $user));
+  }
+
+  /**
+   * Tests jur groups with field_slug emit slug for client-side scope guards.
+   *
+   * @covers ::getUserGroups
+   */
+  public function testGetUserGroupsEmitsSlugForJurisdictionGroupsWithSlug(): void {
+    $user = $this->createMock(UserInterface::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('');
+
+    $slugFieldItem = new class {
+
+      /**
+       * The field value.
+       *
+       * @var string
+       */
+      public string $value = 'amsterdam';
+
+      /**
+       * Whether the field is empty.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(5);
+    $group->method('uuid')->willReturn('group-uuid');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('label')->willReturn('Amsterdam');
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_slug');
+    $group->method('get')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_slug' ? $slugFieldItem : NULL);
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jur-tenant_admin');
+    $role->method('label')->willReturn('Tenant admin');
+
+    $membership = new class($group, $role) {
+
+      public function __construct(
+        private readonly GroupInterface $group,
+        private readonly GroupRoleInterface $role,
+      ) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets the membership roles.
+       */
+      public function getRoles(): array {
+        return [$this->role];
+      }
+
+    };
+
+    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $membershipLoader->expects($this->once())
+      ->method('loadByUser')
+      ->with($user)
+      ->willReturn([$membership]);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
+
+    $container = \Drupal::getContainer();
+    $container->set('module_handler', $moduleHandler);
+    $container->set('group.membership_loader', $membershipLoader);
+
+    $controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $this->configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+    );
+
+    $method = new \ReflectionMethod($controller, 'getUserGroups');
+    $method->setAccessible(TRUE);
+
+    $result = $method->invoke($controller, $user);
+    $this->assertSame('amsterdam', $result[0]['slug']);
+    $this->assertSame('jur', $result[0]['type']);
+  }
+
+  /**
+   * Tests digit-only slugs are rejected to avoid numeric-id collisions.
+   *
+   * @covers ::getUserGroups
+   */
+  public function testGetUserGroupsRejectsDigitOnlySlug(): void {
+    $user = $this->createMock(UserInterface::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('');
+
+    $slugFieldItem = new class {
+
+      /**
+       * The field value.
+       *
+       * @var string
+       */
+      public string $value = '42';
+
+      /**
+       * Whether the field is empty.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(5);
+    $group->method('uuid')->willReturn('group-uuid');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('label')->willReturn('Numeric Slug');
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_slug');
+    $group->method('get')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_slug' ? $slugFieldItem : NULL);
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jur-tenant_admin');
+    $role->method('label')->willReturn('Tenant admin');
+
+    $membership = new class($group, $role) {
+
+      public function __construct(
+        private readonly GroupInterface $group,
+        private readonly GroupRoleInterface $role,
+      ) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets the membership roles.
+       */
+      public function getRoles(): array {
+        return [$this->role];
+      }
+
+    };
+
+    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $membershipLoader->expects($this->once())
+      ->method('loadByUser')
+      ->with($user)
+      ->willReturn([$membership]);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
+
+    $container = \Drupal::getContainer();
+    $container->set('module_handler', $moduleHandler);
+    $container->set('group.membership_loader', $membershipLoader);
+
+    $controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $this->configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+    );
+
+    $method = new \ReflectionMethod($controller, 'getUserGroups');
+    $method->setAccessible(TRUE);
+
+    $result = $method->invoke($controller, $user);
+    $this->assertNull($result[0]['slug']);
+  }
+
+  /**
+   * Tests org groups never get a slug populated even if field is present.
+   *
+   * @covers ::getUserGroups
+   */
+  public function testGetUserGroupsEmitsNullSlugForOrgGroups(): void {
+    $user = $this->createMock(UserInterface::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('');
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(7);
+    $group->method('uuid')->willReturn('org-uuid');
+    $group->method('bundle')->willReturn('org');
+    $group->method('label')->willReturn('Roads Department');
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('org-member');
+    $role->method('label')->willReturn('Member');
+
+    $membership = new class($group, $role) {
+
+      public function __construct(
+        private readonly GroupInterface $group,
+        private readonly GroupRoleInterface $role,
+      ) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets the membership roles.
+       */
+      public function getRoles(): array {
+        return [$this->role];
+      }
+
+    };
+
+    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $membershipLoader->expects($this->once())
+      ->method('loadByUser')
+      ->with($user)
+      ->willReturn([$membership]);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
+
+    $container = \Drupal::getContainer();
+    $container->set('module_handler', $moduleHandler);
+    $container->set('group.membership_loader', $membershipLoader);
+
+    $controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $this->configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+    );
+
+    $method = new \ReflectionMethod($controller, 'getUserGroups');
+    $method->setAccessible(TRUE);
+
+    $result = $method->invoke($controller, $user);
+    $this->assertNull($result[0]['slug']);
+    $this->assertSame('org', $result[0]['type']);
   }
 
   /**
