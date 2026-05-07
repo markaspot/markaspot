@@ -500,6 +500,100 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests digit-only slugs are rejected to avoid numeric-id collisions.
+   *
+   * @covers ::getUserGroups
+   */
+  public function testGetUserGroupsRejectsDigitOnlySlug(): void {
+    $user = $this->createMock(UserInterface::class);
+    $user->method('getPreferredLangcode')->with(FALSE)->willReturn('');
+
+    $slugFieldItem = new class {
+
+      /**
+       * The field value.
+       *
+       * @var string
+       */
+      public string $value = '42';
+
+      /**
+       * Whether the field is empty.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(5);
+    $group->method('uuid')->willReturn('group-uuid');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('label')->willReturn('Numeric Slug');
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_slug');
+    $group->method('get')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_slug' ? $slugFieldItem : NULL);
+
+    $role = $this->createMock(GroupRoleInterface::class);
+    $role->method('id')->willReturn('jur-tenant_admin');
+    $role->method('label')->willReturn('Tenant admin');
+
+    $membership = new class($group, $role) {
+
+      public function __construct(
+        private readonly GroupInterface $group,
+        private readonly GroupRoleInterface $role,
+      ) {}
+
+      /**
+       * Gets the membership group.
+       */
+      public function getGroup(): GroupInterface {
+        return $this->group;
+      }
+
+      /**
+       * Gets the membership roles.
+       */
+      public function getRoles(): array {
+        return [$this->role];
+      }
+
+    };
+
+    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $membershipLoader->expects($this->once())
+      ->method('loadByUser')
+      ->with($user)
+      ->willReturn([$membership]);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
+
+    $container = \Drupal::getContainer();
+    $container->set('module_handler', $moduleHandler);
+    $container->set('group.membership_loader', $membershipLoader);
+
+    $controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $this->configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+    );
+
+    $method = new \ReflectionMethod($controller, 'getUserGroups');
+    $method->setAccessible(TRUE);
+
+    $result = $method->invoke($controller, $user);
+    $this->assertNull($result[0]['slug']);
+  }
+
+  /**
    * Tests org groups never get a slug populated even if field is present.
    *
    * @covers ::getUserGroups
