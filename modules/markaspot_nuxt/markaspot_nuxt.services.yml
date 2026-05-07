@@ -11,6 +11,14 @@ services:
     class: Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck
     arguments: ['@markaspot_nuxt.feature_flag_checker', '@request_stack', '@entity_type.manager', '@config.factory']
 
+  plugin.manager.markaspot_tenant_alert:
+    class: Drupal\markaspot_nuxt\TenantAlertPluginManager
+    parent: default_plugin_manager
+
+  markaspot_nuxt.alert_state_store:
+    class: Drupal\markaspot_nuxt\Service\AlertStateStore
+    arguments: ['@user.data', '@datetime.time']
+
   # Note: Boolean helper and json_form.* service overrides are registered
   # dynamically via MarkaspotNuxtServiceProvider when json_form_widget is active.
   # This allows updates from versions where json_form_widget was not installed.

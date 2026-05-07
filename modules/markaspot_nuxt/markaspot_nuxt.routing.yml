@@ -273,6 +273,32 @@ markaspot_nuxt.tenant_settings_dashboard_patch:
   options:
     _format: 'json'
 
+markaspot_nuxt.dashboard_alerts_list:
+  path: '/api/dashboard/alerts/{jurisdiction_id}'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\DashboardAlertsController::list'
+    _title: 'List Dashboard Alerts'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\DashboardAlertsController::accessCheck'
+    jurisdiction_id: '^[a-z0-9_-]{1,64}$'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.dashboard_alerts_set_state:
+  path: '/api/dashboard/alerts/{jurisdiction_id}/{alert_id}/state'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\DashboardAlertsController::setState'
+    _title: 'Set Dashboard Alert State'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\DashboardAlertsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
+    jurisdiction_id: '^[a-z0-9_-]{1,64}$'
+    alert_id: '^[a-z_]{1,64}$'
+  options:
+    _format: 'json'
+
 markaspot_nuxt.content_translation_create:
   path: '/api/content-translation/{entity_type}/{uuid}/{langcode}'
   defaults:
