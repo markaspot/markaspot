@@ -253,6 +253,7 @@ class MarkASpotSettingsController extends ControllerBase {
           'responseVisibility',
           'embed',
           'dashboard',
+          'setup',
         ];
         foreach ($config_keys as $key) {
           if (!empty($jurisdiction_config[$key])) {

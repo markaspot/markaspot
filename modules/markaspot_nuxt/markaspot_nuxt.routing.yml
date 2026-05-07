@@ -164,6 +164,19 @@ markaspot_nuxt.tenant_settings_branding_patch:
   options:
     _format: 'json'
 
+markaspot_nuxt.tenant_settings_setup_branding_completed:
+  path: '/api/tenant-settings/{jurisdiction_id}/setup/branding-completed'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::markBrandingSetupCompleted'
+    _title: 'Mark Branding Setup Completed'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
 markaspot_nuxt.tenant_settings_features_get:
   path: '/api/tenant-settings/{jurisdiction_id}/features'
   defaults:

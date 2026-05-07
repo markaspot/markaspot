@@ -1440,6 +1440,61 @@ class TenantSettingsController extends ControllerBase {
   }
 
   /**
+   * Marks the first-run branding setup as completed for a jurisdiction.
+   *
+   * Sets field_nuxt_config['setup']['brandingCompleted'] = TRUE on the group.
+   * Used by the FastMap dashboard first-run flow to record that an admin has
+   * finished (or explicitly completed via Save) the initial branding setup, so
+   * the redirect-to-setup gate stays off on subsequent dashboard visits.
+   *
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with the new setup state, or an error response.
+   */
+  public function markBrandingSetupCompleted(string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $config = $this->getNuxtConfig($group);
+    if (!isset($config['setup']) || !is_array($config['setup'])) {
+      $config['setup'] = [];
+    }
+    $config['setup']['brandingCompleted'] = TRUE;
+
+    $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to mark branding setup completed for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to mark setup completed.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user marked first-run branding setup completed for jurisdiction @id',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+      ]
+    );
+
+    return new JsonResponse([
+      'jurisdiction_id' => (int) $group->id(),
+      'setup' => [
+        'brandingCompleted' => TRUE,
+      ],
+    ]);
+  }
+
+  /**
    * Returns feature settings for a jurisdiction group.
    *
    * Reads the features key from the field_nuxt_config JSON blob on the group

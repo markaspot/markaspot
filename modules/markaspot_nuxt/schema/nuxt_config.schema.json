@@ -1275,6 +1275,19 @@
           "default": "neutral"
         }
       }
+    },
+    "setup": {
+      "type": "object",
+      "title": "First-Run Setup State",
+      "description": "Tracks completion of one-time onboarding flows per jurisdiction. Set by dedicated state-transition endpoints, never edited by hand.",
+      "properties": {
+        "brandingCompleted": {
+          "type": "boolean",
+          "title": "Branding Setup Completed",
+          "description": "TRUE once a tenant admin has finished the FastMap first-run branding setup. Suppresses the dashboard redirect-to-setup gate. Set via POST /api/tenant-settings/{id}/setup/branding-completed.",
+          "default": false
+        }
+      }
     }
   },
   "additionalProperties": true

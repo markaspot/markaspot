@@ -1207,6 +1207,88 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests markBrandingSetupCompleted() persists the flag and preserves siblings.
+   *
+   * @covers ::markBrandingSetupCompleted
+   */
+  public function testMarkBrandingSetupCompleted(): void {
+    $storedNuxtConfig = json_encode([
+      'branding' => ['hidePoweredBy' => TRUE],
+      'theme' => ['primary' => 'blue'],
+    ]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_nuxt_config');
+    $group->method('get')
+      ->willReturnCallback(static function (string $name) use (&$storedNuxtConfig) {
+        $value = $name === 'field_nuxt_config' ? $storedNuxtConfig : '';
+        return new class ($value) {
+
+          /**
+           * The field value.
+           *
+           * @var string
+           */
+          public string $value;
+
+          /**
+           * Constructs a field item stub.
+           */
+          public function __construct(string $value) {
+            $this->value = $value;
+          }
+
+          /**
+           * Returns whether the field is empty.
+           */
+          public function isEmpty(): bool {
+            return $this->value === '';
+          }
+
+        };
+      });
+    $group->method('set')
+      ->willReturnCallback(function (string $field, string $value) use (&$storedNuxtConfig, $group) {
+        if ($field === 'field_nuxt_config') {
+          $storedNuxtConfig = $value;
+        }
+        return $group;
+      });
+    $group->method('save');
+
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->markBrandingSetupCompleted('14');
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+    $body = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertTrue($updatedConfig['setup']['brandingCompleted']);
+    $this->assertTrue($updatedConfig['branding']['hidePoweredBy']);
+    $this->assertEquals('blue', $updatedConfig['theme']['primary']);
+    $this->assertSame(14, $body['jurisdiction_id']);
+    $this->assertTrue($body['setup']['brandingCompleted']);
+  }
+
+  /**
+   * Tests markBrandingSetupCompleted() returns 404 for unknown jurisdiction.
+   *
+   * @covers ::markBrandingSetupCompleted
+   */
+  public function testMarkBrandingSetupCompletedReturns404(): void {
+    $this->groupStorage->method('load')->willReturn(NULL);
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $response = $this->controller->markBrandingSetupCompleted('does-not-exist');
+
+    $this->assertEquals(404, $response->getStatusCode());
+  }
+
+  /**
    * Tests that SUPPORTED_LOCALES constant is complete.
    *
    * @covers ::getLanguageSettings
