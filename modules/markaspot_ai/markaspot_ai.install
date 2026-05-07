@@ -568,6 +568,36 @@ function markaspot_ai_update_10008(): void {
 }
 
 /**
+ * Disable implicit AI processing defaults for existing installations.
+ */
+function markaspot_ai_update_10009(): string {
+  $config_factory = \Drupal::configFactory();
+  $config = $config_factory->getEditable('markaspot_ai.settings');
+  $config
+    ->set('ai_processing.auto_backfill', FALSE)
+    ->set('duplicate_detection.enabled', FALSE)
+    ->set('duplicate_detection.auto_flag', FALSE)
+    ->set('sentiment_analysis.enabled', FALSE)
+    ->save();
+
+  $views = [
+    'views.view.ai_pending_duplicates',
+    'views.view.ai_sentiment_overview',
+  ];
+  foreach ($views as $view_config_name) {
+    $view = $config_factory->getEditable($view_config_name);
+    if (!$view->isNew()) {
+      $view
+        ->set('display.default.display_options.access.type', 'perm')
+        ->set('display.default.display_options.access.options.perm', 'administer markaspot ai')
+        ->save();
+    }
+  }
+
+  return 'Disabled implicit markaspot_ai processing defaults and restricted optional AI views to administer markaspot_ai. Tenants must set features.aiProcessing=true and re-enable desired AI tasks explicitly.';
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {

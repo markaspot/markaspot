@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace Drupal\markaspot_dashboard\Controller;
 
 use Drupal\Core\Cache\CacheableJsonResponse;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\group\GroupMembershipLoaderInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -50,6 +54,10 @@ class DuplicateController extends ControllerBase {
     AccountProxyInterface $current_user,
     LanguageManagerInterface $language_manager,
     TimeInterface $time,
+    protected ConfigFactoryInterface $configFactory,
+    protected GroupMembershipLoaderInterface $membershipLoader,
+    protected ModuleHandlerInterface $moduleHandler,
+    protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
@@ -67,7 +75,13 @@ class DuplicateController extends ControllerBase {
       $container->get('entity_type.manager'),
       $container->get('current_user'),
       $container->get('language_manager'),
-      $container->get('datetime.time')
+      $container->get('datetime.time'),
+      $container->get('config.factory'),
+      $container->get('group.membership_loader'),
+      $container->get('module_handler'),
+      $container->has('markaspot_group.hierarchy_resolver')
+        ? $container->get('markaspot_group.hierarchy_resolver')
+        : NULL
     );
   }
 
@@ -85,6 +99,12 @@ class DuplicateController extends ControllerBase {
     $node = $this->entityTypeManager->getStorage('node')->load($nid);
     if (!$node || $node->bundle() !== 'service_request') {
       throw new NotFoundHttpException('Service request not found');
+    }
+
+    if (!$this->isDuplicateDetectionEnabled() || !$this->canAccessNode($node, 'view')) {
+      return $this->scopedDuplicateResponse([
+        'error' => 'Duplicate data is disabled for this jurisdiction.',
+      ], 403, ['node:' . $nid]);
     }
 
     // Query for duplicate matches.
@@ -106,14 +126,17 @@ class DuplicateController extends ControllerBase {
     $duplicates = [];
     foreach ($results as $row) {
       $match_node = $this->entityTypeManager->getStorage('node')->load($row->match_nid);
-      if (!$match_node) {
+      if (!$match_node || $match_node->bundle() !== 'service_request') {
+        continue;
+      }
+      if (!$this->canAccessNode($match_node, 'view')) {
         continue;
       }
 
       $duplicates[] = $this->formatDuplicateMatch($row, $match_node);
     }
 
-    $response = new CacheableJsonResponse([
+    return $this->scopedDuplicateResponse([
       'node' => [
         'nid' => $node->id(),
         'title' => $node->getTitle(),
@@ -121,14 +144,7 @@ class DuplicateController extends ControllerBase {
       ],
       'duplicates' => $duplicates,
       'count' => count($duplicates),
-    ]);
-
-    // Add cache metadata.
-    $response->getCacheableMetadata()
-      ->addCacheTags(['node:' . $nid])
-      ->setCacheMaxAge(300);
-
-    return $response;
+    ], 200, ['node:' . $nid]);
   }
 
   /**
@@ -143,64 +159,41 @@ class DuplicateController extends ControllerBase {
   public function getPendingDuplicates(Request $request): CacheableJsonResponse {
     $limit = $request->query->get('limit', 50);
     $offset = $request->query->get('offset', 0);
+    $limit = min(max((int) $limit, 1), 100);
+    $offset = max((int) $offset, 0);
 
-    // Jurisdiction filter: admins (uid=1 or 'administer nodes') see all.
-    // Supports both numeric IDs and slugs (e.g. "amsterdam").
-    $resolvedJurisdiction = $this->resolveJurisdictionId($request->query->get('jurisdiction_id'));
-    $currentUser = $this->currentUser;
-    if ((int) $currentUser->id() === 1 || $currentUser->hasPermission('administer nodes')) {
-      // Admins can see all by omitting the parameter, or filter by choice.
-      $jurisdictionId = $resolvedJurisdiction;
-    }
-    else {
-      // Non-admin users: require jurisdiction_id. Without it, return -1
-      // to produce empty results (no group has id -1).
-      $jurisdictionId = $resolvedJurisdiction ?? -1;
-    }
-
-    // Get total counts by status.
-    $counts_query = $this->database->select('markaspot_ai_duplicate_matches', 'm')
-      ->fields('m', ['status'])
-      ->groupBy('status');
-    $counts_query->addExpression('COUNT(*)', 'count');
-
-    // Apply jurisdiction filter to counts.
-    if ($jurisdictionId !== NULL) {
-      $counts_query->innerJoin('group_relationship_field_data', 'gr',
-        "m.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
-      $counts_query->innerJoin('groups_field_data', 'grp',
-        'gr.gid = grp.id AND grp.default_langcode = 1');
-      $counts_query->condition('grp.type', $this->getJurisdictionGroupType());
-      $counts_query->condition('grp.id', $jurisdictionId);
+    if (!$this->isDuplicateDetectionEnabled()) {
+      return $this->scopedDuplicateResponse([
+        'matches' => [],
+        'total_counts' => $this->emptyMatchCounts(),
+        'limit' => $limit,
+        'offset' => $offset,
+        'jurisdiction_id' => NULL,
+      ], 200, ['markaspot_ai_duplicates'], [
+        'url.query_args:jurisdiction_id',
+        'url.query_args:limit',
+        'url.query_args:offset',
+      ]);
     }
 
-    $counts = $counts_query->execute()->fetchAllKeyed();
-
-    $total_counts = [
-      'pending' => (int) ($counts['pending'] ?? 0),
-      'confirmed' => (int) ($counts['confirmed'] ?? 0),
-      'rejected' => (int) ($counts['rejected'] ?? 0),
-      'total' => array_sum($counts),
-    ];
-
-    // Query for pending matches.
-    $query = $this->database->select('markaspot_ai_duplicate_matches', 'm')
-      ->fields('m')
-      ->condition('status', 'pending')
-      ->orderBy('created', 'DESC')
-      ->range((int) $offset, (int) $limit);
-
-    // Apply jurisdiction filter to pending matches.
-    if ($jurisdictionId !== NULL) {
-      $query->innerJoin('group_relationship_field_data', 'gr',
-        "m.source_nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
-      $query->innerJoin('groups_field_data', 'grp',
-        'gr.gid = grp.id AND grp.default_langcode = 1');
-      $query->condition('grp.type', $this->getJurisdictionGroupType());
-      $query->condition('grp.id', $jurisdictionId);
+    $jurisdictionId = $this->resolveJurisdictionFilter($request);
+    $nodeIds = $this->getAccessibleAiEnabledNodeIds($jurisdictionId, 'view');
+    if (empty($nodeIds)) {
+      return $this->scopedDuplicateResponse([
+        'matches' => [],
+        'total_counts' => $this->emptyMatchCounts(),
+        'limit' => $limit,
+        'offset' => $offset,
+        'jurisdiction_id' => $jurisdictionId,
+      ], 200, ['markaspot_ai_duplicates'], [
+        'url.query_args:jurisdiction_id',
+        'url.query_args:limit',
+        'url.query_args:offset',
+      ]);
     }
 
-    $results = $query->execute()->fetchAll();
+    $total_counts = $this->getDuplicateMatchCounts($nodeIds);
+    $results = $this->getPendingDuplicateMatches($nodeIds, $limit, $offset);
 
     // Build matches array with node data.
     $matches = [];
@@ -209,6 +202,9 @@ class DuplicateController extends ControllerBase {
       $match_node = $this->entityTypeManager->getStorage('node')->load($row->match_nid);
 
       if (!$source_node || !$match_node) {
+        continue;
+      }
+      if (!$this->canAccessNode($source_node, 'view') || !$this->canAccessNode($match_node, 'view')) {
         continue;
       }
 
@@ -225,19 +221,17 @@ class DuplicateController extends ControllerBase {
       ];
     }
 
-    $response = new CacheableJsonResponse([
+    return $this->scopedDuplicateResponse([
       'matches' => $matches,
       'total_counts' => $total_counts,
-      'limit' => (int) $limit,
-      'offset' => (int) $offset,
+      'limit' => $limit,
+      'offset' => $offset,
       'jurisdiction_id' => $jurisdictionId,
+    ], 200, ['markaspot_ai_duplicates'], [
+      'url.query_args:jurisdiction_id',
+      'url.query_args:limit',
+      'url.query_args:offset',
     ]);
-
-    $response->getCacheableMetadata()
-      ->addCacheTags(['markaspot_ai_duplicates'])
-      ->setCacheMaxAge(300);
-
-    return $response;
   }
 
   /**
@@ -288,6 +282,15 @@ class DuplicateController extends ControllerBase {
       throw new NotFoundHttpException('Source service request not found');
     }
 
+    if (!$this->isDuplicateDetectionEnabled()
+      || !$this->canAccessNode($duplicate_node, 'update')
+      || !$this->canAccessNode($source_node, 'view')) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Access denied.',
+      ], 403);
+    }
+
     // Update the match status.
     $this->database->update('markaspot_ai_duplicate_matches')
       ->fields([
@@ -308,6 +311,247 @@ class DuplicateController extends ControllerBase {
       'match_id' => $match_id,
       'status' => $new_status,
     ]);
+  }
+
+  /**
+   * Checks whether the AI duplicate feature is globally available.
+   */
+  protected function isDuplicateDetectionEnabled(): bool {
+    if (!$this->moduleHandler->moduleExists('markaspot_ai')) {
+      return FALSE;
+    }
+    $this->moduleHandler->loadInclude('markaspot_ai', 'module');
+
+    return (bool) $this->configFactory
+      ->get('markaspot_ai.settings')
+      ->get('duplicate_detection.enabled');
+  }
+
+  /**
+   * Builds a user-scoped duplicate response.
+   */
+  protected function scopedDuplicateResponse(
+    array $data,
+    int $status = 200,
+    array $tags = [],
+    array $contexts = [],
+  ): CacheableJsonResponse {
+    $response = new CacheableJsonResponse($data, $status);
+    $response->getCacheableMetadata()
+      ->addCacheContexts(array_values(array_unique(array_merge(['user'], $contexts))))
+      ->addCacheTags($tags)
+      ->setCacheMaxAge(0);
+
+    return $response;
+  }
+
+  /**
+   * Resolves the requested jurisdiction scope for the current user.
+   */
+  protected function resolveJurisdictionFilter(Request $request): ?int {
+    $resolved = $this->resolveJurisdictionId($request->query->get('jurisdiction_id'));
+    if ($this->currentUserCanSeeAllJurisdictions()) {
+      return $resolved;
+    }
+    if ($resolved === NULL) {
+      return -1;
+    }
+
+    return $this->currentUserCanAccessJurisdiction($resolved) ? $resolved : -1;
+  }
+
+  /**
+   * Checks whether the current user may see all jurisdictions.
+   */
+  protected function currentUserCanSeeAllJurisdictions(): bool {
+    return (int) $this->currentUser->id() === 1
+      || $this->currentUser->hasPermission('administer nodes');
+  }
+
+  /**
+   * Checks node access, tenant membership and tenant AI opt-in.
+   */
+  protected function canAccessNode(NodeInterface $node, string $operation): bool {
+    if (!$node->access($operation)) {
+      return FALSE;
+    }
+    if (!$this->isNodeAiProcessingEnabled($node)) {
+      return FALSE;
+    }
+
+    return $this->currentUserCanAccessJurisdiction($this->getJurisdictionIdForNode($node));
+  }
+
+  /**
+   * Checks whether a node belongs to a tenant opted in to AI text processing.
+   */
+  protected function isNodeAiProcessingEnabled(NodeInterface $node): bool {
+    if (!$this->moduleHandler->moduleExists('markaspot_ai')) {
+      return FALSE;
+    }
+    $this->moduleHandler->loadInclude('markaspot_ai', 'module');
+    if (!function_exists('_markaspot_ai_is_ai_enabled_for_node')) {
+      return FALSE;
+    }
+
+    return _markaspot_ai_is_ai_enabled_for_node($node);
+  }
+
+  /**
+   * Resolves a service request node's jurisdiction ID.
+   */
+  protected function getJurisdictionIdForNode(NodeInterface $node): ?int {
+    if (!$this->moduleHandler->moduleExists('markaspot_ai')) {
+      return NULL;
+    }
+    $this->moduleHandler->loadInclude('markaspot_ai', 'module');
+    if (!function_exists('_markaspot_ai_get_jurisdiction_id_for_node')) {
+      return NULL;
+    }
+
+    return _markaspot_ai_get_jurisdiction_id_for_node($node);
+  }
+
+  /**
+   * Checks if the current user administers the requested jurisdiction scope.
+   */
+  protected function currentUserCanAccessJurisdiction(?int $jurisdiction_id): bool {
+    if ($jurisdiction_id === NULL) {
+      return FALSE;
+    }
+    if ($this->currentUserCanSeeAllJurisdictions()) {
+      return TRUE;
+    }
+    if (!in_array('tenant_admin', $this->currentUser->getRoles(), TRUE)) {
+      return FALSE;
+    }
+
+    $memberships = $this->membershipLoader->loadByUser(
+      $this->currentUser,
+      $this->jurisdictionRoleIds('tenant_admin')
+    );
+    foreach ($memberships as $membership) {
+      $managed_group = $membership->getGroup();
+      if (!$this->isJurisdictionGroup($managed_group)) {
+        continue;
+      }
+      $managed_id = (int) $managed_group->id();
+      $scope_ids = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getDescendantIds($managed_id)
+        : [$managed_id];
+      if (in_array($jurisdiction_id, $scope_ids, TRUE)) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Gets service request IDs accessible to the current user and AI-enabled.
+   */
+  protected function getAccessibleAiEnabledNodeIds(?int $jurisdiction_id, string $operation): array {
+    if ($jurisdiction_id !== NULL && !$this->currentUserCanAccessJurisdiction($jurisdiction_id)) {
+      return [];
+    }
+
+    if ($jurisdiction_id !== NULL && $this->hierarchyResolver) {
+      $node_ids = $this->hierarchyResolver->getNodeIdsInJurisdiction($jurisdiction_id);
+    }
+    elseif ($jurisdiction_id !== NULL) {
+      $query = $this->database
+        ->select('group_relationship_field_data', 'gr')
+        ->fields('gr', ['entity_id'])
+        ->condition('gr.plugin_id', 'group_node:service_request');
+      $query->innerJoin('groups_field_data', 'grp', 'gr.gid = grp.id AND grp.default_langcode = 1');
+      $query->condition('grp.type', $this->getJurisdictionGroupType());
+      $query->condition('grp.id', $jurisdiction_id);
+      $node_ids = $query->execute()->fetchCol();
+    }
+    else {
+      if (!$this->currentUserCanSeeAllJurisdictions()) {
+        return [];
+      }
+      $node_ids = $this->entityTypeManager
+        ->getStorage('node')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', 'service_request')
+        ->execute();
+    }
+
+    if (empty($node_ids)) {
+      return [];
+    }
+
+    $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($node_ids);
+    $enabled = [];
+    foreach ($nodes as $node) {
+      if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+        continue;
+      }
+      if ($this->canAccessNode($node, $operation)) {
+        $enabled[] = (int) $node->id();
+      }
+    }
+
+    return $enabled;
+  }
+
+  /**
+   * Gets duplicate match counts for an already scoped node set.
+   */
+  protected function getDuplicateMatchCounts(array $node_ids): array {
+    if (empty($node_ids)) {
+      return $this->emptyMatchCounts();
+    }
+
+    $query = $this->database->select('markaspot_ai_duplicate_matches', 'd')
+      ->fields('d', ['status'])
+      ->condition('d.source_nid', $node_ids, 'IN')
+      ->condition('d.match_nid', $node_ids, 'IN');
+    $query->addExpression('COUNT(*)', 'count');
+    $query->groupBy('d.status');
+    $results = $query->execute()->fetchAllKeyed();
+
+    return [
+      'pending' => (int) ($results['pending'] ?? 0),
+      'confirmed' => (int) ($results['confirmed'] ?? 0),
+      'rejected' => (int) ($results['rejected'] ?? 0),
+      'total' => array_sum(array_map('intval', $results)),
+    ];
+  }
+
+  /**
+   * Gets pending duplicate matches for an already scoped node set.
+   */
+  protected function getPendingDuplicateMatches(array $node_ids, int $limit, int $offset): array {
+    if (empty($node_ids)) {
+      return [];
+    }
+
+    $query = $this->database->select('markaspot_ai_duplicate_matches', 'm')
+      ->fields('m')
+      ->condition('m.status', 'pending')
+      ->condition('m.source_nid', $node_ids, 'IN')
+      ->condition('m.match_nid', $node_ids, 'IN')
+      ->orderBy('m.similarity_score', 'DESC')
+      ->orderBy('m.created', 'DESC')
+      ->range($offset, $limit);
+
+    return $query->execute()->fetchAll();
+  }
+
+  /**
+   * Returns the empty duplicate count shape.
+   */
+  protected function emptyMatchCounts(): array {
+    return [
+      'pending' => 0,
+      'confirmed' => 0,
+      'rejected' => 0,
+      'total' => 0,
+    ];
   }
 
   /**

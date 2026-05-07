@@ -619,11 +619,13 @@ class AttributeFillingService {
    *   Maximum number of node IDs to return.
    * @param array|null $nodeIds
    *   Optional array of node IDs to filter (for jurisdiction scoping).
+   * @param int $offset
+   *   Result offset for paged scans.
    *
    * @return array
    *   Array of node IDs (integers) with missing attributes.
    */
-  public function findMissingAttributes(int $limit, ?array $nodeIds = NULL): array {
+  public function findMissingAttributes(int $limit, ?array $nodeIds = NULL, int $offset = 0): array {
     // Use direct SQL to efficiently find nodes that:
     // 1. Are service_request type
     // 2. Have a category with a non-empty service definition
@@ -652,7 +654,9 @@ class AttributeFillingService {
       $query->condition('n.nid', $nodeIds, 'IN');
     }
 
-    $query->range(0, $limit);
+    $query->orderBy('n.created', 'DESC');
+    $query->orderBy('n.nid', 'DESC');
+    $query->range($offset, $limit);
     $nids = $query->execute()->fetchCol();
 
     return array_map('intval', $nids);

@@ -327,22 +327,33 @@ class MarkASpotSettingsController extends ControllerBase {
     // of what field_nuxt_config says. This prevents the frontend from
     // exposing routes for features whose backend modules are absent.
     $module_feature_map = [
-      'markaspot_ai' => 'aiAnalysis',
-      'markaspot_stats' => 'statistics',
-      'markaspot_dashboard' => 'dashboard',
-      'markaspot_vision' => 'photoReporting',
-      'markaspot_feedback' => 'feedback',
-      'markaspot_passwordless' => 'passwordless',
-      'markaspot_emergency' => 'emergency',
-      'markaspot_contact' => 'contactForm',
+      'markaspot_ai' => ['aiProcessing', 'piiRedaction'],
+      'markaspot_stats' => ['statistics'],
+      'markaspot_dashboard' => ['dashboard'],
+      'markaspot_vision' => ['photoReporting', 'aiAnalysis'],
+      'markaspot_feedback' => ['feedback'],
+      'markaspot_passwordless' => ['passwordless'],
+      'markaspot_emergency' => ['emergency'],
+      'markaspot_contact' => ['contactForm'],
     ];
     if (!isset($settings['features'])) {
       $settings['features'] = [];
     }
+    $settings['features'] += [
+      'aiProcessing' => FALSE,
+      'piiRedaction' => FALSE,
+    ];
+    foreach (['aiProcessing', 'piiRedaction'] as $feature) {
+      $settings['features'][$feature] = $this->readBooleanFeatureFlag(
+        $settings['features'][$feature] ?? NULL
+      );
+    }
     $module_handler = $this->moduleHandler();
-    foreach ($module_feature_map as $module => $feature) {
+    foreach ($module_feature_map as $module => $features) {
       if (!$module_handler->moduleExists($module)) {
-        $settings['features'][$feature] = FALSE;
+        foreach ($features as $feature) {
+          $settings['features'][$feature] = FALSE;
+        }
       }
     }
 
@@ -1292,6 +1303,19 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     return (int) $jurisdiction->id();
+  }
+
+  /**
+   * Reads a boolean feature flag from simple or {enabled: bool} shape.
+   */
+  private function readBooleanFeatureFlag(mixed $value): bool {
+    if (is_bool($value)) {
+      return $value;
+    }
+    if (is_array($value) && array_key_exists('enabled', $value) && is_bool($value['enabled'])) {
+      return $value['enabled'];
+    }
+    return FALSE;
   }
 
   /**

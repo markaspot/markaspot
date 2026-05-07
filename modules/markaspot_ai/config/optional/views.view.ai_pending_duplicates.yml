@@ -460,7 +460,7 @@ display:
       access:
         type: perm
         options:
-          perm: 'review ai duplicates'
+          perm: 'administer markaspot ai'
       cache:
         type: none
         options: {  }

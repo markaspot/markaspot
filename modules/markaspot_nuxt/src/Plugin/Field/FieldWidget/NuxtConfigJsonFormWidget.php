@@ -79,7 +79,7 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
     $isPro = $config->get('pro_enabled') ?? FALSE;
 
     if (!$isPro && isset($cleaned_schema->properties->features->properties)) {
-      $proFeatures = ['dashboard', 'aiAnalysis', 'feedback', 'offline'];
+      $proFeatures = ['dashboard', 'aiAnalysis', 'aiProcessing', 'piiRedaction', 'feedback', 'offline'];
       foreach ($proFeatures as $feature) {
         if (isset($cleaned_schema->properties->features->properties->$feature)) {
           unset($cleaned_schema->properties->features->properties->$feature);

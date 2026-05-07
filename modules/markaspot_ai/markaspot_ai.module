@@ -10,7 +10,7 @@
 
 declare(strict_types=1);
 
-use Drupal\group\Entity\Group;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 
@@ -56,7 +56,6 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
   }
 
   // Guard: jurisdiction-level PII redaction opt-in.
-  // Checks features.piiRedaction first, falls back to features.aiAnalysis.
   if (!_markaspot_ai_is_feature_enabled_for_node($node, 'piiRedaction')) {
     return;
   }
@@ -170,6 +169,14 @@ function markaspot_ai_node_insert(NodeInterface $node): void {
     return;
   }
 
+  // GDPR gate: skip if AI processing is disabled for this jurisdiction.
+  if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+    \Drupal::logger('markaspot_ai')->debug('AI processing disabled for node @nid jurisdiction, skipping queue.', [
+      '@nid' => $node->id(),
+    ]);
+    return;
+  }
+
   // Check if AI module is properly configured (any provider).
   $config = \Drupal::config('markaspot_ai.settings');
   $provider = $config->get('default_provider') ?: 'openai';
@@ -180,14 +187,6 @@ function markaspot_ai_node_insert(NodeInterface $node): void {
     \Drupal::logger('markaspot_ai')->debug('Skipping embedding queue for node @nid - API key not configured for provider @provider.', [
       '@nid' => $node->id(),
       '@provider' => $provider,
-    ]);
-    return;
-  }
-
-  // GDPR gate: skip if AI processing is disabled for this jurisdiction.
-  if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
-    \Drupal::logger('markaspot_ai')->debug('AI processing disabled for node @nid jurisdiction, skipping queue.', [
-      '@nid' => $node->id(),
     ]);
     return;
   }
@@ -220,6 +219,11 @@ function markaspot_ai_node_update(NodeInterface $node): void {
     return;
   }
 
+  // GDPR gate: skip if AI processing is disabled for this jurisdiction.
+  if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+    return;
+  }
+
   // Check if AI module is properly configured (any provider).
   $config = \Drupal::config('markaspot_ai.settings');
   $provider = $config->get('default_provider') ?: 'openai';
@@ -227,11 +231,6 @@ function markaspot_ai_node_update(NodeInterface $node): void {
   $api_key = _markaspot_ai_resolve_provider_key($provider, $provider_config);
 
   if (empty($api_key)) {
-    return;
-  }
-
-  // GDPR gate: skip if AI processing is disabled for this jurisdiction.
-  if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
     return;
   }
 
@@ -362,8 +361,10 @@ function markaspot_ai_cron(): void {
 
   \Drupal::state()->set('markaspot_ai.last_cron', $current_time);
 
-  // Backfill: Find nodes without embeddings and queue them.
-  _markaspot_ai_backfill_embeddings();
+  if ($config->get('ai_processing.auto_backfill') === TRUE) {
+    // Backfill: Find nodes without embeddings and queue them.
+    _markaspot_ai_backfill_embeddings();
+  }
 
   // Cleanup: Remove old token usage records.
   _markaspot_ai_cleanup_token_usage();
@@ -377,33 +378,52 @@ function _markaspot_ai_backfill_embeddings(): void {
     /** @var \Drupal\markaspot_ai\Service\EmbeddingService $embedding_service */
     $embedding_service = \Drupal::service('markaspot_ai.embedding');
 
-    // Find nodes without embeddings (limit to 50 per cron run).
-    $missing = $embedding_service->findMissingEmbeddings(50, 'node', 'service_request', 'content');
-
-    if (empty($missing)) {
-      return;
-    }
-
     $queue = \Drupal::queue('markaspot_ai_embedding');
     $node_storage = \Drupal::entityTypeManager()->getStorage('node');
 
-    foreach ($missing as $nid) {
-      // GDPR gate: only backfill nodes in AI-enabled jurisdictions.
-      $node = $node_storage->load($nid);
-      if ($node && !_markaspot_ai_is_ai_enabled_for_node($node)) {
-        continue;
+    $limit = 50;
+    $batch_size = 100;
+    $offset = 0;
+    $queued = 0;
+    while ($queued < $limit) {
+      $missing = $embedding_service->findMissingEmbeddings(
+        $batch_size,
+        'node',
+        'service_request',
+        'content',
+        NULL,
+        $offset
+      );
+      if (empty($missing)) {
+        break;
       }
+      $offset += count($missing);
 
-      $queue->createItem([
-        'nid' => $nid,
-        'is_new' => FALSE,
-        'backfill' => TRUE,
-      ]);
+      foreach ($missing as $nid) {
+        // GDPR gate: only backfill nodes in AI-enabled jurisdictions.
+        $node = $node_storage->load($nid);
+        if (!$node || !_markaspot_ai_is_ai_enabled_for_node($node)) {
+          continue;
+        }
+
+        $queue->createItem([
+          'nid' => $nid,
+          'is_new' => FALSE,
+          'backfill' => TRUE,
+        ]);
+        $queued++;
+
+        if ($queued >= $limit) {
+          break 2;
+        }
+      }
     }
 
-    \Drupal::logger('markaspot_ai')->info('Queued @count service requests for embedding backfill.', [
-      '@count' => count($missing),
-    ]);
+    if ($queued > 0) {
+      \Drupal::logger('markaspot_ai')->info('Queued @count service requests for embedding backfill.', [
+        '@count' => $queued,
+      ]);
+    }
   }
   catch (\Exception $e) {
     \Drupal::logger('markaspot_ai')->error('Embedding backfill failed: @message', [
@@ -439,8 +459,9 @@ function _markaspot_ai_cleanup_token_usage(): void {
 /**
  * Resolves the jurisdiction group ID for a service request node.
  *
- * Follows the path: node -> field_category -> field_jurisdiction -> target_id.
- * This is the same pattern as GeoreportProcessorService::getJurisdictionIdFromNode().
+ * Primary: node.field_jurisdiction, which stores the effective jurisdiction.
+ * Fallback: node.field_category -> taxonomy_term.field_jurisdiction for older
+ * nodes or presave paths where the direct field is not available yet.
  *
  * @param \Drupal\node\NodeInterface $node
  *   The service request node.
@@ -449,10 +470,14 @@ function _markaspot_ai_cleanup_token_usage(): void {
  *   The jurisdiction group ID, or NULL if not resolvable.
  */
 function _markaspot_ai_get_jurisdiction_id_for_node(NodeInterface $node): ?int {
+  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+    return _markaspot_ai_get_field_target_id($node->get('field_jurisdiction'));
+  }
+
   if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
     $categoryTerm = $node->get('field_category')->entity;
     if ($categoryTerm && $categoryTerm->hasField('field_jurisdiction') && !$categoryTerm->get('field_jurisdiction')->isEmpty()) {
-      return (int) $categoryTerm->get('field_jurisdiction')->target_id;
+      return _markaspot_ai_get_field_target_id($categoryTerm->get('field_jurisdiction'));
     }
   }
   return NULL;
@@ -461,71 +486,122 @@ function _markaspot_ai_get_jurisdiction_id_for_node(NodeInterface $node): ?int {
 /**
  * Checks if AI processing is enabled for a node's jurisdiction.
  *
- * Resolves the node's jurisdiction via field_category -> field_jurisdiction,
- * then checks the group's field_nuxt_config for features.aiAnalysis.
+ * Resolves the node's jurisdiction, then checks the group's field_nuxt_config
+ * for features.aiProcessing.
  *
  * @param \Drupal\node\NodeInterface $node
  *   The service request node.
  *
  * @return bool
- *   TRUE if AI processing is allowed (default: TRUE for backwards compat).
+ *   TRUE if AI processing is explicitly allowed by tenant config.
  */
 function _markaspot_ai_is_ai_enabled_for_node(NodeInterface $node): bool {
-  return _markaspot_ai_is_feature_enabled_for_node($node, 'aiAnalysis');
+  return _markaspot_ai_is_feature_enabled_for_node($node, 'aiProcessing');
 }
 
 /**
  * Checks if a specific feature is enabled for a node's jurisdiction.
  *
  * Reads features.{feature} from the jurisdiction's field_nuxt_config.
- * Falls back to features.aiAnalysis for backwards compatibility.
+ * Missing jurisdiction, missing config, invalid JSON and missing flags all
+ * return FALSE. markaspot_ai handles citizen text and embeddings, so it must
+ * fail closed unless the tenant explicitly opts in.
  *
  * @param \Drupal\node\NodeInterface $node
  *   The service request node.
  * @param string $feature
- *   The feature key (e.g. 'piiRedaction', 'aiSentiment').
+ *   The feature key (e.g. 'aiProcessing', 'piiRedaction').
  *
  * @return bool
- *   TRUE if the feature is enabled (default: TRUE for backwards compat).
+ *   TRUE if the feature is explicitly enabled.
  */
 function _markaspot_ai_is_feature_enabled_for_node(NodeInterface $node, string $feature): bool {
-  $jurisdictionId = _markaspot_ai_get_jurisdiction_id_for_node($node);
-  if ($jurisdictionId === NULL) {
-    return TRUE;
-  }
-
   try {
-    $group = Group::load($jurisdictionId);
-    if (!$group || !$group->hasField('field_nuxt_config')) {
-      return TRUE;
-    }
-
-    $configJson = $group->get('field_nuxt_config')->value;
-    if (empty($configJson)) {
-      return TRUE;
-    }
-
-    $config = json_decode($configJson, TRUE);
-    if (json_last_error() !== JSON_ERROR_NONE) {
-      return TRUE;
-    }
-
-    // Check specific feature first, fall back to aiAnalysis for backwards
-    // compatibility. Jurisdictions should set explicit feature flags
-    // (piiRedaction, aiSentiment) to decouple from aiAnalysis.
-    if (isset($config['features'][$feature])) {
-      return (bool) $config['features'][$feature];
-    }
-    return $config['features']['aiAnalysis'] ?? TRUE;
+    return _markaspot_ai_is_feature_enabled_for_jurisdiction(
+      _markaspot_ai_load_jurisdiction_for_node($node),
+      $feature
+    );
   }
   catch (\Exception $e) {
-    \Drupal::logger('markaspot_ai')->warning('Failed to check feature @feature for jurisdiction @id: @message', [
+    \Drupal::logger('markaspot_ai')->warning('Failed to check feature @feature for node @nid: @message', [
       '@feature' => $feature,
-      '@id' => $jurisdictionId,
+      '@nid' => $node->id(),
       '@message' => $e->getMessage(),
     ]);
-    return TRUE;
+    return FALSE;
   }
+}
+
+/**
+ * Loads the jurisdiction group for a service request node.
+ */
+function _markaspot_ai_load_jurisdiction_for_node(NodeInterface $node): ?GroupInterface {
+  $jurisdictionId = _markaspot_ai_get_jurisdiction_id_for_node($node);
+  if ($jurisdictionId === NULL) {
+    return NULL;
+  }
+
+  $group = \Drupal::entityTypeManager()->getStorage('group')->load($jurisdictionId);
+  return $group instanceof GroupInterface ? $group : NULL;
+}
+
+/**
+ * Checks a feature flag on an already loaded jurisdiction group.
+ */
+function _markaspot_ai_is_feature_enabled_for_jurisdiction(?GroupInterface $group, string $feature): bool {
+  $config = _markaspot_ai_read_jurisdiction_nuxt_config($group);
+  if ($config === NULL || !isset($config['features']) || !is_array($config['features'])) {
+    return FALSE;
+  }
+
+  return _markaspot_ai_read_boolean_feature($config['features'][$feature] ?? NULL);
+}
+
+/**
+ * Reads and decodes field_nuxt_config from a jurisdiction group.
+ */
+function _markaspot_ai_read_jurisdiction_nuxt_config(?GroupInterface $group): ?array {
+  if ($group === NULL) {
+    return NULL;
+  }
+
+  $source = $group->getUntranslated();
+  if (!$source->hasField('field_nuxt_config') || $source->get('field_nuxt_config')->isEmpty()) {
+    return NULL;
+  }
+
+  $field = $source->get('field_nuxt_config');
+  $values = method_exists($field, 'getValue') ? $field->getValue() : [];
+  $raw = $values[0]['value'] ?? ($field->value ?? NULL);
+  if (!is_string($raw) || trim($raw) === '') {
+    return NULL;
+  }
+
+  $decoded = json_decode($raw, TRUE);
+  return is_array($decoded) ? $decoded : NULL;
+}
+
+/**
+ * Reads boolean feature flag values in bool or {enabled: bool} shape.
+ */
+function _markaspot_ai_read_boolean_feature(mixed $value): bool {
+  if (is_bool($value)) {
+    return $value;
+  }
+  if (is_array($value) && array_key_exists('enabled', $value) && is_bool($value['enabled'])) {
+    return $value['enabled'];
+  }
+  return FALSE;
+}
+
+/**
+ * Reads a target_id from a Drupal field list.
+ */
+function _markaspot_ai_get_field_target_id(mixed $field): ?int {
+  $values = method_exists($field, 'getValue') ? $field->getValue() : [];
+  $targetId = $values[0]['target_id'] ?? ($field->target_id ?? NULL);
+
+  return is_numeric($targetId) ? (int) $targetId : NULL;
 }
 
 /**

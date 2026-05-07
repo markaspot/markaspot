@@ -118,6 +118,26 @@ class ProcessingController extends ControllerBase {
     // Queue status.
     $embeddingQueue = $this->queueFactory->get('markaspot_ai_embedding');
     $duplicateQueue = $this->queueFactory->get('markaspot_ai_duplicate_scan');
+    $eligibleMissingEmbeddings = count($this->collectAiEnabledNodeIds(
+      fn(int $batch_limit, int $offset): array => $this->embeddingService
+        ->findMissingEmbeddings(
+          $batch_limit,
+          'node',
+          'service_request',
+          'content',
+          $node_ids,
+          $offset
+        ),
+      max(1, $total)
+    ));
+    $eligibleMissingSentiment = count($this->collectAiEnabledNodeIds(
+      fn(int $batch_limit, int $offset): array => $this->findMissingSentiment(
+        $batch_limit,
+        $node_ids,
+        $offset
+      ),
+      max(1, $total)
+    ));
 
     return new JsonResponse([
       'total_requests' => $total,
@@ -125,11 +145,13 @@ class ProcessingController extends ControllerBase {
         'count' => $embeddings,
         'percentage' => $total > 0 ? round(($embeddings / $total) * 100) : 0,
         'missing' => $total - $embeddings,
+        'eligible_missing' => $eligibleMissingEmbeddings,
       ],
       'sentiment' => [
         'count' => $sentiment,
         'percentage' => $total > 0 ? round(($sentiment / $total) * 100) : 0,
         'missing' => $total - $sentiment,
+        'eligible_missing' => $eligibleMissingSentiment,
         'breakdown' => $sentimentCounts,
       ],
       'queues' => [
@@ -162,28 +184,43 @@ class ProcessingController extends ControllerBase {
       : NULL;
 
     try {
-      // Find nodes without embeddings, scoped to jurisdiction if specified.
-      $missing = $this->embeddingService->findMissingEmbeddings(
-        $limit,
-        'node',
-        'service_request',
-        'content',
-        $jurisdiction_node_ids
+      $missing = $this->collectAiEnabledNodeIds(
+        fn(int $batch_limit, int $offset): array => $this->embeddingService
+          ->findMissingEmbeddings(
+            $batch_limit,
+            'node',
+            'service_request',
+            'content',
+            $jurisdiction_node_ids,
+            $offset
+          ),
+        $limit
       );
 
       // Also find nodes that have embeddings but no sentiment analysis.
       // The embedding queue worker handles this idempotently: it skips
       // embedding generation (hash match) but still runs analyzeSentiment().
-      $missingSentiment = $this->findMissingSentiment($limit, $jurisdiction_node_ids);
+      $missingSentiment = $this->collectAiEnabledNodeIds(
+        fn(int $batch_limit, int $offset): array => $this->findMissingSentiment(
+          $batch_limit,
+          $jurisdiction_node_ids,
+          $offset
+        ),
+        $limit
+      );
       // Exclude nodes already in the embedding-missing list to avoid duplicates.
       $missingSentiment = array_diff($missingSentiment, $missing);
 
-      $allMissing = array_merge($missing, $missingSentiment);
+      $allMissing = array_slice(
+        array_values(array_unique(array_merge($missing, $missingSentiment))),
+        0,
+        $limit
+      );
 
       if (empty($allMissing)) {
         return new JsonResponse([
           'success' => TRUE,
-          'message' => 'No missing items to queue.',
+          'message' => 'Nothing queued: no eligible missing items exist, or the matching tenants are not opted in to AI text processing.',
           'queued' => 0,
         ]);
       }
@@ -389,11 +426,13 @@ class ProcessingController extends ControllerBase {
    *   Maximum number of results.
    * @param array|null $node_ids
    *   Optional array of node IDs to scope the query (jurisdiction).
+   * @param int $offset
+   *   Result offset for paged scans.
    *
    * @return array<int>
    *   Array of node IDs missing sentiment.
    */
-  protected function findMissingSentiment(int $limit, ?array $node_ids = NULL): array {
+  protected function findMissingSentiment(int $limit, ?array $node_ids = NULL, int $offset = 0): array {
     $query = $this->database->select('markaspot_ai_embeddings', 'e');
     $query->addField('e', 'entity_id');
     $query->condition('e.entity_type', 'node');
@@ -408,10 +447,83 @@ class ProcessingController extends ControllerBase {
       $query->condition('n.nid', $node_ids, 'IN');
     }
 
-    $query->range(0, $limit);
+    $query->range($offset, $limit);
     $query->orderBy('n.created', 'DESC');
 
     return array_map('intval', $query->execute()->fetchCol());
+  }
+
+  /**
+   * Filters node IDs to tenants with explicit AI processing opt-in.
+   *
+   * @param array $node_ids
+   *   Candidate node IDs.
+   *
+   * @return array<int>
+   *   Node IDs whose jurisdiction has features.aiProcessing=true.
+   */
+  protected function filterAiEnabledNodeIds(array $node_ids): array {
+    if (empty($node_ids)) {
+      return [];
+    }
+
+    $nodes = $this->entityTypeManager()
+      ->getStorage('node')
+      ->loadMultiple($node_ids);
+    $enabled = [];
+    foreach ($nodes as $node) {
+      if ($node->bundle() !== 'service_request') {
+        continue;
+      }
+      if (_markaspot_ai_is_ai_enabled_for_node($node)) {
+        $enabled[] = (int) $node->id();
+      }
+    }
+
+    return $enabled;
+  }
+
+  /**
+   * Collects up to the requested limit after tenant opt-in filtering.
+   *
+   * @param callable $candidate_loader
+   *   Callable with signature fn(int $limit, int $offset): array.
+   * @param int $limit
+   *   Maximum number of enabled node IDs to return.
+   *
+   * @return array<int>
+   *   AI-enabled service request node IDs.
+   */
+  protected function collectAiEnabledNodeIds(callable $candidate_loader, int $limit): array {
+    $enabled = [];
+    $seen = [];
+    $offset = 0;
+    $batch_size = min(500, max(50, $limit));
+
+    while (count($enabled) < $limit) {
+      $candidates = $candidate_loader($batch_size, $offset);
+      if (empty($candidates)) {
+        break;
+      }
+      $offset += count($candidates);
+
+      foreach ($this->filterAiEnabledNodeIds($candidates) as $nid) {
+        if (isset($seen[$nid])) {
+          continue;
+        }
+        $seen[$nid] = TRUE;
+        $enabled[] = $nid;
+        if (count($enabled) >= $limit) {
+          break 2;
+        }
+      }
+
+      if (count($candidates) < $batch_size) {
+        break;
+      }
+    }
+
+    return $enabled;
   }
 
   /**

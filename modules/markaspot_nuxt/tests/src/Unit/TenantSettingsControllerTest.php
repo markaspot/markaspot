@@ -1340,6 +1340,8 @@ class TenantSettingsControllerTest extends UnitTestCase {
         'pwaInstallPrompt' => ['enabled' => FALSE],
         'formFirst' => ['enabled' => FALSE],
         'dashboard' => ['enabled' => TRUE],
+        'aiProcessing' => ['enabled' => TRUE],
+        'piiRedaction' => ['enabled' => FALSE],
       ],
     ]);
     $group = $this->createMockGroup([
@@ -1355,6 +1357,8 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['pwaInstallPrompt']);
     $this->assertFalse($data['features']['formFirst']);
     $this->assertTrue($data['features']['dashboard']);
+    $this->assertTrue($data['features']['aiProcessing']);
+    $this->assertFalse($data['features']['piiRedaction']);
   }
 
   /**

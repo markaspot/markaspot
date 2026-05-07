@@ -7,6 +7,7 @@ namespace Drupal\markaspot_ai\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Queue\QueueFactory;
+use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_ai\Service\AttributeFillingService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -30,6 +31,7 @@ class AttributeController extends ControllerBase {
     protected QueueFactory $queueFactory,
     protected AttributeFillingService $attributeFillingService,
     protected RequestStack $requestStackService,
+    protected GroupMembershipLoaderInterface $membershipLoader,
     protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {}
 
@@ -42,6 +44,7 @@ class AttributeController extends ControllerBase {
       $container->get('queue'),
       $container->get('markaspot_ai.attribute_filling'),
       $container->get('request_stack'),
+      $container->get('group.membership_loader'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
         : NULL
@@ -59,16 +62,20 @@ class AttributeController extends ControllerBase {
   public function getStatus(): JsonResponse {
     $request = $this->requestStackService->getCurrentRequest();
     $jurisdiction_id = $this->resolveJurisdictionId($request?->query->get('jurisdiction_id'));
+
+    if (!$this->currentUserCanSeeAllJurisdictions()) {
+      if ($jurisdiction_id === NULL || !$this->currentUserCanAccessJurisdiction($jurisdiction_id)) {
+        return new JsonResponse($this->buildEmptyStatus());
+      }
+    }
+
     $node_ids = $jurisdiction_id ? $this->getNodeIdsForJurisdiction($jurisdiction_id) : NULL;
+    if ($node_ids !== NULL) {
+      $node_ids = $this->filterAiEnabledNodeIds($node_ids);
+    }
 
     if ($node_ids !== NULL && empty($node_ids)) {
-      return new JsonResponse([
-        'total_with_definitions' => 0,
-        'filled' => 0,
-        'missing' => 0,
-        'percentage' => 0,
-        'queue' => 0,
-      ]);
+      return new JsonResponse($this->buildEmptyStatus());
     }
 
     // Count nodes that have a category with service definitions.
@@ -365,15 +372,16 @@ class AttributeController extends ControllerBase {
       : NULL;
 
     try {
-      $missing = $this->attributeFillingService->findMissingAttributes(
-        $limit,
-        $jurisdiction_node_ids
+      $missing = $this->collectAiEnabledNodeIds(
+        fn(int $batch_limit, int $offset): array => $this->attributeFillingService
+          ->findMissingAttributes($batch_limit, $jurisdiction_node_ids, $offset),
+        $limit
       );
 
       if (empty($missing)) {
         return new JsonResponse([
           'success' => TRUE,
-          'message' => 'No missing attributes to queue.',
+          'message' => 'Nothing queued: no eligible missing attributes exist, or the matching tenants are not opted in to AI text processing.',
           'queued' => 0,
         ]);
       }
@@ -514,6 +522,136 @@ class AttributeController extends ControllerBase {
     }
 
     return array_values(array_unique($node_ids));
+  }
+
+  /**
+   * Builds an empty attribute status response.
+   */
+  protected function buildEmptyStatus(): array {
+    return [
+      'total_with_definitions' => 0,
+      'filled' => 0,
+      'missing' => 0,
+      'percentage' => 0,
+      'queue' => 0,
+    ];
+  }
+
+  /**
+   * Checks if the current user can see all jurisdictions.
+   */
+  protected function currentUserCanSeeAllJurisdictions(): bool {
+    $currentUser = $this->currentUser();
+    return (int) $currentUser->id() === 1
+      || $currentUser->hasPermission('administer nodes');
+  }
+
+  /**
+   * Checks if the current user administers the requested jurisdiction scope.
+   */
+  protected function currentUserCanAccessJurisdiction(?int $jurisdiction_id): bool {
+    if ($jurisdiction_id === NULL) {
+      return FALSE;
+    }
+    if ($this->currentUserCanSeeAllJurisdictions()) {
+      return TRUE;
+    }
+
+    $account = $this->currentUser();
+    if (!in_array('tenant_admin', $account->getRoles(), TRUE)) {
+      return FALSE;
+    }
+
+    $memberships = $this->membershipLoader->loadByUser($account, array_values(array_unique([
+      $this->getJurisdictionGroupType() . '-tenant_admin',
+      'jur-tenant_admin',
+    ])));
+    foreach ($memberships as $membership) {
+      $managed_group = $membership->getGroup();
+      if (!$this->isJurisdictionGroup($managed_group)) {
+        continue;
+      }
+      $managed_id = (int) $managed_group->id();
+      $scope_ids = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getDescendantIds($managed_id)
+        : [$managed_id];
+      if (in_array($jurisdiction_id, $scope_ids, TRUE)) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Filters node IDs to tenants with explicit AI processing opt-in.
+   *
+   * @param array $node_ids
+   *   Candidate node IDs.
+   *
+   * @return array<int>
+   *   Node IDs whose jurisdiction has features.aiProcessing=true.
+   */
+  protected function filterAiEnabledNodeIds(array $node_ids): array {
+    if (empty($node_ids)) {
+      return [];
+    }
+
+    $nodes = $this->entityTypeManager()->getStorage('node')->loadMultiple($node_ids);
+    $enabled = [];
+    foreach ($nodes as $node) {
+      if ($node->bundle() !== 'service_request') {
+        continue;
+      }
+      if (_markaspot_ai_is_ai_enabled_for_node($node)) {
+        $enabled[] = (int) $node->id();
+      }
+    }
+
+    return $enabled;
+  }
+
+  /**
+   * Collects up to the requested limit after tenant opt-in filtering.
+   *
+   * @param callable $candidate_loader
+   *   Callable with signature fn(int $limit, int $offset): array.
+   * @param int $limit
+   *   Maximum number of enabled node IDs to return.
+   *
+   * @return array<int>
+   *   AI-enabled service request node IDs.
+   */
+  protected function collectAiEnabledNodeIds(callable $candidate_loader, int $limit): array {
+    $enabled = [];
+    $seen = [];
+    $offset = 0;
+    $batch_size = min(500, max(50, $limit));
+
+    while (count($enabled) < $limit) {
+      $candidates = $candidate_loader($batch_size, $offset);
+      if (empty($candidates)) {
+        break;
+      }
+      $offset += count($candidates);
+
+      foreach ($this->filterAiEnabledNodeIds($candidates) as $nid) {
+        if (isset($seen[$nid])) {
+          continue;
+        }
+        $seen[$nid] = TRUE;
+        $enabled[] = $nid;
+        if (count($enabled) >= $limit) {
+          break 2;
+        }
+      }
+
+      if (count($candidates) < $batch_size) {
+        break;
+      }
+    }
+
+    return $enabled;
   }
 
 }

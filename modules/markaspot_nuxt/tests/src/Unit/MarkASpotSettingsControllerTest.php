@@ -496,6 +496,8 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $nuxtJson = json_encode([
       'features' => [
         'aiAnalysis' => TRUE,
+        'aiProcessing' => TRUE,
+        'piiRedaction' => TRUE,
         'statistics' => TRUE,
         'dashboard' => TRUE,
       ],
@@ -512,8 +514,42 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     // These should be forced FALSE because the modules are not installed.
     $this->assertFalse($data['features']['aiAnalysis']);
+    $this->assertFalse($data['features']['aiProcessing']);
+    $this->assertFalse($data['features']['piiRedaction']);
     $this->assertFalse($data['features']['statistics']);
     $this->assertFalse($data['features']['dashboard']);
+  }
+
+  /**
+   * Tests that AI feature flags are exposed as booleans.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testAiFeatureFlagsAreNormalizedToBooleans(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_ai');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $nuxtJson = json_encode([
+      'features' => [
+        'aiProcessing' => ['enabled' => TRUE],
+        'piiRedaction' => ['enabled' => FALSE],
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(TRUE, $data['features']['aiProcessing']);
+    $this->assertSame(FALSE, $data['features']['piiRedaction']);
   }
 
   /**

@@ -385,14 +385,14 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $form['pii_redaction'] = [
       '#type' => 'details',
       '#title' => $this->t('PII Redaction'),
-      '#description' => $this->t('Remove personally identifiable information (names, emails, phone numbers, IBANs) from citizen reports before storing them. Two-layer pipeline: regex for structured patterns, optional LLM for unstructured names.'),
+      '#description' => $this->t('Redact personally identifiable information (names, emails, phone numbers, IBANs) from the public report body while retaining the original text in internal remarks. Requires tenant <code>features.piiRedaction=true</code>; missing tenant config is treated as opt-out.'),
       '#open' => (bool) $config->get('pii_redaction.enabled'),
     ];
 
     $form['pii_redaction']['pii_enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable PII Redaction'),
-      '#description' => $this->t('Run the PII redaction pipeline on node presave. Required for GDPR-compliant citizen reports.'),
+      '#description' => $this->t('Run the two-layer PII redaction pipeline on node presave for tenants that explicitly opted in. Regex catches structured patterns; the optional provider can detect unstructured names.'),
       '#default_value' => (bool) $config->get('pii_redaction.enabled'),
     ];
 
@@ -435,18 +435,33 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       ],
     ];
 
+    // AI Processing section.
+    $form['ai_processing'] = [
+      '#type' => 'details',
+      '#title' => $this->t('AI Processing'),
+      '#description' => $this->t('Embedding, sentiment and duplicate processing only runs for tenants with <code>features.aiProcessing=true</code> in their jurisdiction config. Missing tenant config is treated as opt-out.'),
+      '#open' => TRUE,
+    ];
+
+    $form['ai_processing']['auto_backfill'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Automatic Backfill'),
+      '#description' => $this->t('Global cron switch: queue missing embeddings automatically for all tenants with <code>features.aiProcessing=true</code>, up to 50 service requests per run. Manual Drush and dashboard backfills remain limited and still respect tenant opt-in.'),
+      '#default_value' => (bool) $config->get('ai_processing.auto_backfill'),
+    ];
+
     // Duplicate Detection section.
     $form['duplicate_detection'] = [
       '#type' => 'details',
       '#title' => $this->t('Duplicate Detection'),
-      '#open' => TRUE,
+      '#open' => (bool) $config->get('duplicate_detection.enabled'),
     ];
 
     $form['duplicate_detection']['enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable Duplicate Detection'),
-      '#description' => $this->t('Automatically scan new service requests for potential duplicates based on content similarity and location.'),
-      '#default_value' => $config->get('duplicate_detection.enabled') ?? TRUE,
+      '#description' => $this->t('Scan service requests for potential duplicates based on content similarity and location. Requires tenant <code>features.aiProcessing=true</code>.'),
+      '#default_value' => (bool) $config->get('duplicate_detection.enabled'),
     ];
 
     $form['duplicate_detection']['similarity_threshold'] = [
@@ -583,6 +598,32 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
         // Service not available, skip usage display.
       }
     }
+
+    // Sentiment Analysis section.
+    $form['sentiment_analysis'] = [
+      '#type' => 'details',
+      '#title' => $this->t('Sentiment Analysis'),
+      '#open' => (bool) $config->get('sentiment_analysis.enabled'),
+    ];
+
+    $form['sentiment_analysis']['sentiment_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable Sentiment Analysis'),
+      '#description' => $this->t('Analyze citizen report text for sentiment and text-based hazard scoring after embedding generation. Requires tenant <code>features.aiProcessing=true</code>.'),
+      '#default_value' => (bool) $config->get('sentiment_analysis.enabled'),
+    ];
+
+    $form['sentiment_analysis']['sentiment_model'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Sentiment Model'),
+      '#description' => $this->t('Chat model used for sentiment and text hazard analysis.'),
+      '#default_value' => $config->get('sentiment_analysis.model') ?? 'gpt-4.1-mini',
+      '#states' => [
+        'visible' => [
+          ':input[name="sentiment_enabled"]' => ['checked' => TRUE],
+        ],
+      ],
+    ];
 
     return parent::buildForm($form, $form_state);
   }
@@ -737,6 +778,9 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $config->set('pii_redaction.detect_names', (bool) $form_state->getValue('pii_use_llm'));
     $config->set('pii_redaction.provider', $form_state->getValue('pii_provider') ?? 'ionos');
 
+    // Save AI processing settings.
+    $config->set('ai_processing.auto_backfill', (bool) $form_state->getValue('auto_backfill'));
+
     // Save duplicate detection settings.
     $config->set('duplicate_detection.enabled', (bool) $form_state->getValue('enabled'));
     $config->set('duplicate_detection.similarity_threshold', (float) $form_state->getValue('similarity_threshold'));
@@ -748,6 +792,10 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $config->set('token_tracking.enabled', (bool) $form_state->getValue('tracking_enabled'));
     $config->set('token_tracking.daily_limit', (int) $form_state->getValue('daily_limit'));
     $config->set('token_tracking.alert_threshold', (float) $form_state->getValue('alert_threshold'));
+
+    // Save sentiment analysis settings.
+    $config->set('sentiment_analysis.enabled', (bool) $form_state->getValue('sentiment_enabled'));
+    $config->set('sentiment_analysis.model', $form_state->getValue('sentiment_model') ?: 'gpt-4.1-mini');
 
     $config->save();
 

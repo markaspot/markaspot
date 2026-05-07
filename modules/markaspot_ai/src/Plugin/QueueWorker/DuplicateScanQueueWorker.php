@@ -170,10 +170,19 @@ class DuplicateScanQueueWorker extends QueueWorkerBase implements ContainerFacto
       return;
     }
 
+    if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+      $this->logger->debug(
+        'AI disabled for node @nid jurisdiction, skipping duplicate scan.',
+        ['@nid' => $nid]
+      );
+      return;
+    }
+
     try {
       $this->logger->debug('Starting duplicate scan for node @nid...', ['@nid' => $nid]);
 
-      // Resolve jurisdiction to scope duplicate search within same jurisdiction.
+      // Resolve jurisdiction to scope duplicate search within same
+      // jurisdiction.
       $jurisdictionId = _markaspot_ai_get_jurisdiction_id_for_node($node);
 
       // Find potential duplicates (scoped to jurisdiction if available).
@@ -182,6 +191,10 @@ class DuplicateScanQueueWorker extends QueueWorkerBase implements ContainerFacto
         $options['jurisdiction_id'] = $jurisdictionId;
       }
       $duplicates = $this->duplicateDetectionService->findDuplicates($node, $options);
+      $duplicates = array_values(array_filter(
+        $duplicates,
+        fn(array $match): bool => $this->isAiEnabledCandidate((int) $match['nid'])
+      ));
 
       if (empty($duplicates)) {
         $this->logger->debug('No duplicates found for node @nid.', ['@nid' => $nid]);
@@ -223,6 +236,18 @@ class DuplicateScanQueueWorker extends QueueWorkerBase implements ContainerFacto
       // Re-throw to allow queue to retry.
       throw $e;
     }
+  }
+
+  /**
+   * Checks whether a duplicate candidate still belongs to an AI-enabled tenant.
+   */
+  protected function isAiEnabledCandidate(int $nid): bool {
+    $node = $this->entityTypeManager->getStorage('node')->load($nid);
+    if (!$node || $node->bundle() !== 'service_request') {
+      return FALSE;
+    }
+
+    return _markaspot_ai_is_ai_enabled_for_node($node);
   }
 
   /**

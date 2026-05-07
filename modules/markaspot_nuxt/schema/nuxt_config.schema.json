@@ -152,6 +152,18 @@
           "description": "Enable AI-powered image analysis",
           "default": true
         },
+        "aiProcessing": {
+          "type": "boolean",
+          "title": "AI Text Processing",
+          "description": "Explicit opt-in for markaspot_ai text processing, embeddings, duplicate detection and sentiment. Off or missing means no text AI processing.",
+          "default": false
+        },
+        "piiRedaction": {
+          "type": "boolean",
+          "title": "PII Redaction",
+          "description": "Explicit opt-in for markaspot_ai presave PII redaction. Separate from embeddings and duplicate detection.",
+          "default": false
+        },
         "feedback": {
           "type": "boolean",
           "title": "Feedback",

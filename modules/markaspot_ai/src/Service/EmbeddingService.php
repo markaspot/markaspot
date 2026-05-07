@@ -317,6 +317,8 @@ class EmbeddingService {
    * @param array|null $nodeIds
    *   Optional array of node IDs to restrict the search to (e.g. for
    *   jurisdiction scoping). NULL means no restriction.
+   * @param int $offset
+   *   Result offset for paged scans.
    *
    * @return array
    *   Array of entity IDs that are missing embeddings.
@@ -327,6 +329,7 @@ class EmbeddingService {
     ?string $bundle = 'service_request',
     string $embeddingType = 'content',
     ?array $nodeIds = NULL,
+    int $offset = 0,
   ): array {
     try {
       // Build query based on entity type.
@@ -356,7 +359,7 @@ class EmbeddingService {
         );
 
         $entity_query->isNull('e.id');
-        $entity_query->range(0, $limit);
+        $entity_query->range($offset, $limit);
         $entity_query->orderBy('n.created', 'DESC');
 
         $results = $entity_query->execute()->fetchCol();

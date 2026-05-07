@@ -36,14 +36,14 @@ class MarkaspotAiCommands extends DrushCommands {
    * Queue service requests for AI processing (embeddings + sentiment).
    */
   #[CLI\Command(name: 'mas:ai:queue', aliases: ['maiq'])]
-  #[CLI\Argument(name: 'scope', description: 'What to queue: all, missing, sentiment, or a specific node ID')]
+  #[CLI\Argument(name: 'scope', description: 'What to queue among tenants with features.aiProcessing=true: all, missing, sentiment, or a specific node ID')]
   #[CLI\Option(name: 'limit', description: 'Maximum number of nodes to queue (default: 100)')]
   #[CLI\Option(name: 'force', description: 'Force re-processing even if already processed')]
-  #[CLI\Usage(name: 'mas:ai:queue all', description: 'Queue all service requests')]
-  #[CLI\Usage(name: 'mas:ai:queue missing', description: 'Queue only requests without embeddings')]
-  #[CLI\Usage(name: 'mas:ai:queue sentiment', description: 'Queue requests with embeddings but missing sentiment')]
-  #[CLI\Usage(name: 'mas:ai:queue 64', description: 'Queue specific node ID')]
-  #[CLI\Usage(name: 'mas:ai:queue all --limit=500', description: 'Queue up to 500 requests')]
+  #[CLI\Usage(name: 'mas:ai:queue all', description: 'Queue all AI-enabled service requests')]
+  #[CLI\Usage(name: 'mas:ai:queue missing', description: 'Queue AI-enabled requests without embeddings')]
+  #[CLI\Usage(name: 'mas:ai:queue sentiment', description: 'Queue AI-enabled requests with embeddings but missing sentiment')]
+  #[CLI\Usage(name: 'mas:ai:queue 64', description: 'Queue specific node ID only if its tenant has AI text processing enabled')]
+  #[CLI\Usage(name: 'mas:ai:queue all --limit=500', description: 'Queue up to 500 AI-enabled requests')]
   public function queueRequests(string $scope = 'missing', array $options = ['limit' => 100, 'force' => FALSE]): void {
     $limit = (int) $options['limit'];
     $force = (bool) $options['force'];
@@ -59,6 +59,11 @@ class MarkaspotAiCommands extends DrushCommands {
         return;
       }
 
+      if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+        $this->logger()->warning("Node {$nid} belongs to a tenant without features.aiProcessing=true. Nothing queued.");
+        return;
+      }
+
       $queue->createItem([
         'nid' => $nid,
         'is_new' => FALSE,
@@ -69,16 +74,24 @@ class MarkaspotAiCommands extends DrushCommands {
       return;
     }
 
-    // Get node IDs based on scope.
     $nids = match ($scope) {
-      'all' => $this->getAllServiceRequestIds($limit),
-      'missing' => $this->getMissingEmbeddingIds($limit),
-      'sentiment' => $this->getMissingSentimentIds($limit),
+      'all' => $this->collectAiEnabledServiceRequestIds(
+        fn(int $batch_limit, int $offset): array => $this->getAllServiceRequestIds($batch_limit, $offset),
+        $limit
+      ),
+      'missing' => $this->collectAiEnabledServiceRequestIds(
+        fn(int $batch_limit, int $offset): array => $this->getMissingEmbeddingIds($batch_limit, $offset),
+        $limit
+      ),
+      'sentiment' => $this->collectAiEnabledServiceRequestIds(
+        fn(int $batch_limit, int $offset): array => $this->getMissingSentimentIds($batch_limit, $offset),
+        $limit
+      ),
       default => throw new \InvalidArgumentException("Invalid scope: {$scope}. Use 'all', 'missing', 'sentiment', or a node ID."),
     };
 
     if (empty($nids)) {
-      $this->logger()->notice('No service requests to queue.');
+      $this->logger()->notice('No AI-enabled service requests to queue.');
       return;
     }
 
@@ -139,12 +152,20 @@ class MarkaspotAiCommands extends DrushCommands {
     // Queue status.
     $queue = $this->queueFactory->get('markaspot_ai_embedding');
     $queueCount = $queue->numberOfItems();
+    $eligibleMissing = count($this->collectAiEnabledServiceRequestIds(
+      fn(int $batch_limit, int $offset): array => $this->getMissingEmbeddingIds(
+        $batch_limit,
+        $offset
+      ),
+      max(1, $total)
+    ));
 
     $this->io()->title('Mark-a-Spot AI Status');
 
     $this->io()->definitionList(
       ['Total Service Requests' => $total],
       ['With Embeddings' => "{$embeddings} (" . round(($embeddings / max($total, 1)) * 100) . "%)"],
+      ['AI-eligible Missing Embeddings' => $eligibleMissing],
       ['With Sentiment' => "{$sentiment} (" . round(($sentiment / max($total, 1)) * 100) . "%)"],
     );
 
@@ -160,9 +181,8 @@ class MarkaspotAiCommands extends DrushCommands {
       ['Pending Items' => $queueCount],
     );
 
-    if ($embeddings < $total) {
-      $missing = $total - $embeddings;
-      $this->io()->note("{$missing} requests need AI processing. Run: drush mas:ai:queue missing");
+    if ($eligibleMissing > 0) {
+      $this->io()->note("{$eligibleMissing} AI-enabled requests need AI processing. Run: drush mas:ai:queue missing");
     }
   }
 
@@ -244,13 +264,13 @@ class MarkaspotAiCommands extends DrushCommands {
   /**
    * Get all published service request node IDs.
    */
-  protected function getAllServiceRequestIds(int $limit): array {
+  protected function getAllServiceRequestIds(int $limit, int $offset = 0): array {
     return $this->entityTypeManager->getStorage('node')
       ->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'service_request')
       ->condition('status', 1)
-      ->range(0, $limit)
+      ->range($offset, $limit)
       ->sort('nid', 'DESC')
       ->execute();
   }
@@ -258,14 +278,21 @@ class MarkaspotAiCommands extends DrushCommands {
   /**
    * Get service request IDs that are missing embeddings.
    */
-  protected function getMissingEmbeddingIds(int $limit): array {
-    return $this->embeddingService->findMissingEmbeddings($limit, 'node', 'service_request', 'content');
+  protected function getMissingEmbeddingIds(int $limit, int $offset = 0): array {
+    return $this->embeddingService->findMissingEmbeddings(
+      $limit,
+      'node',
+      'service_request',
+      'content',
+      NULL,
+      $offset
+    );
   }
 
   /**
    * Get service request IDs that have embeddings but missing sentiment.
    */
-  protected function getMissingSentimentIds(int $limit): array {
+  protected function getMissingSentimentIds(int $limit, int $offset = 0): array {
     // Find nodes that have embeddings but no sentiment record.
     $query = $this->database->select('node_field_data', 'n');
     $query->fields('n', ['nid']);
@@ -279,10 +306,81 @@ class MarkaspotAiCommands extends DrushCommands {
     $query->leftJoin('markaspot_ai_sentiment', 's', 's.entity_id = n.nid AND s.entity_type = :stype', [':stype' => 'node']);
     $query->isNull('s.id');
 
-    $query->range(0, $limit);
+    $query->range($offset, $limit);
     $query->orderBy('n.nid', 'DESC');
 
     return array_map('intval', $query->execute()->fetchCol());
+  }
+
+  /**
+   * Filters node IDs to service requests whose tenant explicitly opted in.
+   *
+   * @param array $nids
+   *   Candidate node IDs.
+   *
+   * @return array<int>
+   *   AI-enabled service request node IDs.
+   */
+  protected function filterAiEnabledServiceRequestIds(array $nids): array {
+    if (empty($nids)) {
+      return [];
+    }
+
+    $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
+    $enabled = [];
+    foreach ($nodes as $node) {
+      if ($node->bundle() !== 'service_request') {
+        continue;
+      }
+      if (_markaspot_ai_is_ai_enabled_for_node($node)) {
+        $enabled[] = (int) $node->id();
+      }
+    }
+
+    return $enabled;
+  }
+
+  /**
+   * Collects up to the requested limit after tenant opt-in filtering.
+   *
+   * @param callable $candidate_loader
+   *   Callable with signature fn(int $limit, int $offset): array.
+   * @param int $limit
+   *   Maximum number of enabled node IDs to return.
+   *
+   * @return array<int>
+   *   AI-enabled service request node IDs.
+   */
+  protected function collectAiEnabledServiceRequestIds(callable $candidate_loader, int $limit): array {
+    $enabled = [];
+    $seen = [];
+    $offset = 0;
+    $batch_size = min(500, max(50, $limit));
+
+    while (count($enabled) < $limit) {
+      $candidates = $candidate_loader($batch_size, $offset);
+      if (empty($candidates)) {
+        break;
+      }
+      $offset += count($candidates);
+
+      foreach ($this->filterAiEnabledServiceRequestIds($candidates) as $nid) {
+        if (isset($seen[$nid])) {
+          continue;
+        }
+        $seen[$nid] = TRUE;
+        $enabled[] = $nid;
+        if (count($enabled) >= $limit) {
+          break 2;
+        }
+      }
+
+      if (count($candidates) < $batch_size) {
+        break;
+      }
+    }
+
+    return $enabled;
   }
 
 }

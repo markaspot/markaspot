@@ -75,6 +75,13 @@ markaspot_ai.settings:
             auth_type:
               type: string
               label: 'Authentication Type'
+    ai_processing:
+      type: mapping
+      label: 'AI Processing Settings'
+      mapping:
+        auto_backfill:
+          type: boolean
+          label: 'Enable Automatic Backfill'
     duplicate_detection:
       type: mapping
       label: 'Duplicate Detection Settings'

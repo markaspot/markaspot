@@ -103,6 +103,25 @@ class AiAdminController extends ControllerBase {
     // Calculate percentages.
     $embeddingPct = $total > 0 ? round(($embeddings / $total) * 100) : 0;
     $sentimentPct = $total > 0 ? round(($sentimentTotal / $total) * 100) : 0;
+    $eligibleMissingEmbeddings = count($this->collectAiEnabledNodeIds(
+      fn(int $batch_limit, int $offset): array => $this->embeddingService
+        ->findMissingEmbeddings(
+          $batch_limit,
+          'node',
+          'service_request',
+          'content',
+          NULL,
+          $offset
+        ),
+      max(1, $total)
+    ));
+    $eligibleMissingSentiment = count($this->collectAiEnabledNodeIds(
+      fn(int $batch_limit, int $offset): array => $this->findMissingSentiment(
+        $batch_limit,
+        $offset
+      ),
+      max(1, $total)
+    ));
 
     $build = [];
 
@@ -137,8 +156,13 @@ class AiAdminController extends ControllerBase {
           $this->t('@pct%', ['@pct' => $embeddingPct]),
         ],
         [
-          $this->t('Embeddings missing'),
+          $this->t('All embeddings missing'),
           $total - $embeddings,
+          '-',
+        ],
+        [
+          $this->t('AI-eligible embeddings missing'),
+          $eligibleMissingEmbeddings,
           '-',
         ],
         [
@@ -147,8 +171,13 @@ class AiAdminController extends ControllerBase {
           $this->t('@pct%', ['@pct' => $sentimentPct]),
         ],
         [
-          $this->t('Sentiment missing'),
+          $this->t('All sentiment missing'),
           $total - $sentimentTotal,
+          '-',
+        ],
+        [
+          $this->t('AI-eligible sentiment missing'),
+          $eligibleMissingSentiment,
           '-',
         ],
       ],
@@ -226,7 +255,7 @@ class AiAdminController extends ControllerBase {
     ]);
     $build['status']['actions']['queue_missing'] = [
       '#type' => 'link',
-      '#title' => $this->t('Queue missing items'),
+      '#title' => $this->t('Queue AI-eligible missing items'),
       '#url' => $queueUrl,
       '#attributes' => [
         'class' => ['button', 'button--primary'],
@@ -263,15 +292,21 @@ class AiAdminController extends ControllerBase {
     $limit = 100;
 
     try {
-      $missing = $this->embeddingService->findMissingEmbeddings(
-        $limit,
-        'node',
-        'service_request',
-        'content'
+      $missing = $this->collectAiEnabledNodeIds(
+        fn(int $batch_limit, int $offset): array => $this->embeddingService
+          ->findMissingEmbeddings(
+            $batch_limit,
+            'node',
+            'service_request',
+            'content',
+            NULL,
+            $offset
+          ),
+        $limit
       );
 
       if (empty($missing)) {
-        $this->messenger()->addStatus($this->t('No missing items to queue.'));
+        $this->messenger()->addStatus($this->t('Nothing queued: no eligible missing items exist, or the matching tenants are not opted in to AI text processing.'));
       }
       else {
         $queue = $this->queueFactory->get('markaspot_ai_embedding');
@@ -396,6 +431,101 @@ class AiAdminController extends ControllerBase {
     return new RedirectResponse(
       Url::fromRoute('markaspot_ai.admin_processing_status')->toString()
     );
+  }
+
+  /**
+   * Filters node IDs to tenants with explicit AI processing opt-in.
+   *
+   * @param array $node_ids
+   *   Candidate node IDs.
+   *
+   * @return array<int>
+   *   Node IDs whose jurisdiction has features.aiProcessing=true.
+   */
+  protected function filterAiEnabledNodeIds(array $node_ids): array {
+    if (empty($node_ids)) {
+      return [];
+    }
+
+    $nodes = $this->entityTypeManager()->getStorage('node')->loadMultiple($node_ids);
+    $enabled = [];
+    foreach ($nodes as $node) {
+      if ($node->bundle() !== 'service_request') {
+        continue;
+      }
+      if (_markaspot_ai_is_ai_enabled_for_node($node)) {
+        $enabled[] = (int) $node->id();
+      }
+    }
+
+    return $enabled;
+  }
+
+  /**
+   * Finds nodes that have embeddings but no sentiment analysis.
+   *
+   * @param int $limit
+   *   Maximum number of results.
+   * @param int $offset
+   *   Result offset for paged scans.
+   *
+   * @return array<int>
+   *   Array of node IDs missing sentiment.
+   */
+  protected function findMissingSentiment(int $limit, int $offset = 0): array {
+    $query = $this->database->select('markaspot_ai_embeddings', 'e');
+    $query->addField('e', 'entity_id');
+    $query->condition('e.entity_type', 'node');
+    $query->join('node_field_data', 'n', 'e.entity_id = n.nid AND n.type = :type', [':type' => 'service_request']);
+    $query->leftJoin('markaspot_ai_sentiment', 's', 'e.entity_id = s.entity_id');
+    $query->isNull('s.id');
+    $query->range($offset, $limit);
+    $query->orderBy('n.created', 'DESC');
+
+    return array_map('intval', $query->execute()->fetchCol());
+  }
+
+  /**
+   * Collects up to the requested limit after tenant opt-in filtering.
+   *
+   * @param callable $candidate_loader
+   *   Callable with signature fn(int $limit, int $offset): array.
+   * @param int $limit
+   *   Maximum number of enabled node IDs to return.
+   *
+   * @return array<int>
+   *   AI-enabled service request node IDs.
+   */
+  protected function collectAiEnabledNodeIds(callable $candidate_loader, int $limit): array {
+    $enabled = [];
+    $seen = [];
+    $offset = 0;
+    $batch_size = min(500, max(50, $limit));
+
+    while (count($enabled) < $limit) {
+      $candidates = $candidate_loader($batch_size, $offset);
+      if (empty($candidates)) {
+        break;
+      }
+      $offset += count($candidates);
+
+      foreach ($this->filterAiEnabledNodeIds($candidates) as $nid) {
+        if (isset($seen[$nid])) {
+          continue;
+        }
+        $seen[$nid] = TRUE;
+        $enabled[] = $nid;
+        if (count($enabled) >= $limit) {
+          break 2;
+        }
+      }
+
+      if (count($candidates) < $batch_size) {
+        break;
+      }
+    }
+
+    return $enabled;
   }
 
 }

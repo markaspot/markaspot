@@ -105,6 +105,16 @@
           "description": "AI-powered image analysis"
         }
       },
+      "aiProcessing": {
+        "ui:options": {
+          "description": "Explicit tenant opt-in for text AI processing, embeddings, duplicate detection and sentiment"
+        }
+      },
+      "piiRedaction": {
+        "ui:options": {
+          "description": "Explicit tenant opt-in for presave PII redaction"
+        }
+      },
       "feedback": {
         "ui:options": {
           "description": "Allow feedback on responses"

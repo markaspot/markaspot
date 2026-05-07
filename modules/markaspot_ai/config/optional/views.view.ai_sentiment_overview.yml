@@ -443,7 +443,7 @@ display:
       access:
         type: perm
         options:
-          perm: 'view ai sentiment'
+          perm: 'administer markaspot ai'
       cache:
         type: none
         options: {  }
