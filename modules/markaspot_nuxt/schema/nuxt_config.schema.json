@@ -71,7 +71,7 @@
           "type": "string",
           "format": "color-neutral",
           "title": "Neutral Color",
-          "description": "Background and text colors. Use a neutral preset (slate, gray, zinc, neutral, stone) or a custom HEX value.",
+          "description": "Background and text colors. Use a neutral preset (slate, gray, zinc, neutral, stone, mauve, olive, mist, taupe) or a custom HEX value.",
           "default": "slate"
         },
         "fonts": {

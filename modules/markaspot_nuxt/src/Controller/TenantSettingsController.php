@@ -170,6 +170,8 @@ class TenantSettingsController extends ControllerBase {
    */
   const VALID_TAILWIND_PALETTES = [
     'slate', 'gray', 'zinc', 'neutral', 'stone',
+    // Tailwind v4.2+ warm/organic neutrals.
+    'mauve', 'olive', 'mist', 'taupe',
     'red', 'orange', 'amber', 'yellow', 'lime',
     'green', 'emerald', 'teal', 'cyan', 'sky',
     'blue', 'indigo', 'violet', 'purple', 'fuchsia',

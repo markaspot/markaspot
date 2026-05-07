@@ -1386,6 +1386,11 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertContains('red', $palettes);
     $this->assertContains('green', $palettes);
     $this->assertContains('slate', $palettes);
+    // Tailwind v4.2+ neutrals.
+    $this->assertContains('mauve', $palettes);
+    $this->assertContains('olive', $palettes);
+    $this->assertContains('mist', $palettes);
+    $this->assertContains('taupe', $palettes);
     $this->assertNotContains('rainbow', $palettes);
   }
 
