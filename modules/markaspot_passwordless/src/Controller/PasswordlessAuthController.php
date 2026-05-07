@@ -1026,6 +1026,9 @@ class PasswordlessAuthController extends ControllerBase {
           'uuid' => $group->uuid(),
           'label' => $this->getEntityLabelForUserLanguage($group, $user),
           'type' => $is_jurisdiction_group ? 'jur' : $group->bundle(),
+          'slug' => ($is_jurisdiction_group && $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty())
+            ? (string) $group->get('field_slug')->value
+            : NULL,
           'roles' => $group_roles,
         ];
       }
