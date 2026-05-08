@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.73](https://github.com/markaspot/markaspot/compare/11.9.72...11.9.73) (2026-05-08)
+
+### Bug Fixes
+
+* **markaspot_dashboard:** drop typed configFactory promotion ([a4301f9](https://github.com/markaspot/markaspot/commit/a4301f9545bcd5a05d1a0f554119a1bb39cb1a50))
+
 ## [11.9.72](https://github.com/markaspot/markaspot/compare/11.9.71...11.9.72) (2026-05-08)
 
 ### Features
