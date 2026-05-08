@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.74](https://github.com/markaspot/markaspot/compare/11.9.73...11.9.74) (2026-05-08)
+
+### Bug Fixes
+
+* **markaspot_dashboard:** drop typed configFactory redeclaration in DashboardFilterForm ([a8ea4bf](https://github.com/markaspot/markaspot/commit/a8ea4bfc9d97fe5cad7d299b439dc5f261bac4c1))
+
 ## [11.9.73](https://github.com/markaspot/markaspot/compare/11.9.72...11.9.73) (2026-05-08)
 
 ### Bug Fixes
