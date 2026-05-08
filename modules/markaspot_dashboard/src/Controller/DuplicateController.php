@@ -46,6 +46,16 @@ class DuplicateController extends ControllerBase {
   protected TimeInterface $time;
 
   /**
+   * The group membership loader.
+   */
+  protected GroupMembershipLoaderInterface $membershipLoader;
+
+  /**
+   * The optional jurisdiction hierarchy resolver.
+   */
+  protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Constructs a DuplicateController object.
    */
   public function __construct(
@@ -54,16 +64,20 @@ class DuplicateController extends ControllerBase {
     AccountProxyInterface $current_user,
     LanguageManagerInterface $language_manager,
     TimeInterface $time,
-    protected ConfigFactoryInterface $configFactory,
-    protected GroupMembershipLoaderInterface $membershipLoader,
-    protected ModuleHandlerInterface $moduleHandler,
-    protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
+    ConfigFactoryInterface $config_factory,
+    GroupMembershipLoaderInterface $membership_loader,
+    ModuleHandlerInterface $module_handler,
+    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->database = $database;
     $this->entityTypeManager = $entity_type_manager;
     $this->currentUser = $current_user;
     $this->languageManager = $language_manager;
     $this->time = $time;
+    $this->configFactory = $config_factory;
+    $this->membershipLoader = $membership_loader;
+    $this->moduleHandler = $module_handler;
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
