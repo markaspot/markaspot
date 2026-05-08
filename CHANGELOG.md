@@ -1,5 +1,22 @@
 # Changelog
 
+## [11.9.72](https://github.com/markaspot/markaspot/compare/11.9.71...11.9.72) (2026-05-08)
+
+### Features
+
+* improve passwordless mail branding ([dd1ec46](https://github.com/markaspot/markaspot/commit/dd1ec46b87c15907844a2a36227397f4db371f90))
+* **markaspot_nuxt:** setup completion flag for first-run branding ([7c35506](https://github.com/markaspot/markaspot/commit/7c355060d7157ecddb2b6271b81ea9a72d6a084f))
+* **markaspot_nuxt:** tenant alerts API + branding alert source ([54cb2e5](https://github.com/markaspot/markaspot/commit/54cb2e5eda25cfa201897d92de39097b8207c623))
+* **passwordless:** expose jurisdiction slug on auth_user.groups ([be42583](https://github.com/markaspot/markaspot/commit/be42583ccf4413f6ec240d31793b849e527e4e59)), closes [markaspot-ui#438](https://github.com/markaspot/markaspot-ui/issues/438)
+
+### Bug Fixes
+
+* embed mail module logo assets ([efa6fb8](https://github.com/markaspot/markaspot/commit/efa6fb819764f6d62bf8a1929aee9b1c331e94a6))
+* **passwordless:** trim, regex-validate, and reject digit-only slugs ([4ec70a0](https://github.com/markaspot/markaspot/commit/4ec70a0b19a6b155e50a5948452a93d24e6c7f8d)), closes [markaspot-ui#438](https://github.com/markaspot/markaspot-ui/issues/438)
+* preserve eca mail line breaks ([0cf8d59](https://github.com/markaspot/markaspot/commit/0cf8d598da15f04841bf63063bc4215c52102bb6))
+* require explicit tenant ai opt-in ([aa5bb63](https://github.com/markaspot/markaspot/commit/aa5bb63a64e6064ef50c19717535efe23a1a23b5))
+* **theme:** allow Tailwind v4.2 warm/organic neutrals in palette whitelist ([b5d7ad4](https://github.com/markaspot/markaspot/commit/b5d7ad4c71d9aea188e8c486d98e2055c47dc720))
+
 ## [11.9.71](https://github.com/markaspot/markaspot/compare/11.9.70...11.9.71) (2026-05-04)
 
 ### Bug Fixes
