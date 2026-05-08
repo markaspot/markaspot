@@ -24,11 +24,6 @@ class DashboardFilterForm extends FormBase {
   protected EntityTypeManagerInterface $entityTypeManager;
 
   /**
-   * The config factory.
-   */
-  protected ConfigFactoryInterface $configFactory;
-
-  /**
    * Constructs a DashboardFilterForm object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
