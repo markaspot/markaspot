@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.75](https://github.com/markaspot/markaspot/compare/11.9.74...11.9.75) (2026-05-09)
+
+### Features
+
+* add Drupal session handoff endpoints ([5e45b20](https://github.com/markaspot/markaspot/commit/5e45b201deb2254e09c3ab4037071188e4c6f748))
+* **markaspot_health:** tenant API smoke suite (drush markaspot:smoke) ([d072944](https://github.com/markaspot/markaspot/commit/d072944034d89258d432feeddb858f37030fd121))
+
+### Bug Fixes
+
+* **markaspot_mail:** synthesize tenant footer when group fields empty ([caf3dff](https://github.com/markaspot/markaspot/commit/caf3dff5f99b411bd7e9aa6c75cbac7fbb02c08d))
+
 ## [11.9.74](https://github.com/markaspot/markaspot/compare/11.9.73...11.9.74) (2026-05-08)
 
 ### Bug Fixes
