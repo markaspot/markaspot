@@ -42,6 +42,9 @@ class SmokeCommands extends DrushCommands {
    *   When set, exit code equals the number of failed error-severity checks.
    * @option jurisdiction
    *   Optional jurisdiction id passed as context to plugins.
+   * @option jurisdiction-other
+   *   Optional second jurisdiction id, used by cross-tenant checks like the
+   *   F-21 scope-lock acceptance test to claim a foreign jurisdiction.
    *
    * @return \Consolidation\OutputFormatters\StructuredData\RowsOfFields|null
    *   Structured rows for table output, NULL when format is json.
@@ -53,6 +56,7 @@ class SmokeCommands extends DrushCommands {
   #[CLI\Option(name: 'format', description: 'Output format: table or json.')]
   #[CLI\Option(name: 'exit-non-zero', description: 'Exit non-zero when error-severity checks fail.')]
   #[CLI\Option(name: 'jurisdiction', description: 'Jurisdiction id passed to plugins as context.')]
+  #[CLI\Option(name: 'jurisdiction-other', description: 'Second jurisdiction id for cross-tenant checks (e.g. F-21 scope-lock).')]
   #[CLI\FieldLabels(labels: [
     'id' => 'ID',
     'label' => 'Label',
@@ -74,6 +78,7 @@ class SmokeCommands extends DrushCommands {
       'format' => 'table',
       'exit-non-zero' => FALSE,
       'jurisdiction' => NULL,
+      'jurisdiction-other' => NULL,
     ],
   ): ?RowsOfFields {
     $context = $this->buildContext($options);
@@ -153,6 +158,15 @@ class SmokeCommands extends DrushCommands {
         throw new \RuntimeException(sprintf('--jurisdiction must be a positive integer, got "%s".', (string) $jurisdiction));
       }
       $context['jurisdiction'] = $jid;
+    }
+
+    $jurisdictionOther = $options['jurisdiction-other'] ?? NULL;
+    if ($jurisdictionOther !== NULL && $jurisdictionOther !== '') {
+      $jidOther = filter_var($jurisdictionOther, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+      if ($jidOther === FALSE) {
+        throw new \RuntimeException(sprintf('--jurisdiction-other must be a positive integer, got "%s".', (string) $jurisdictionOther));
+      }
+      $context['jurisdiction_other'] = $jidOther;
     }
 
     return $context;
