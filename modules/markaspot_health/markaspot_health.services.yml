@@ -2,3 +2,6 @@ services:
   plugin.manager.markaspot_health_check:
     class: Drupal\markaspot_health\HealthCheckPluginManager
     parent: default_plugin_manager
+  plugin.manager.markaspot_smoke_check:
+    class: Drupal\markaspot_health\SmokeCheckPluginManager
+    parent: default_plugin_manager

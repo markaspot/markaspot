@@ -4,3 +4,8 @@ services:
     arguments: ['@plugin.manager.markaspot_health_check', '@entity_type.manager', '@config.factory', '@update.update_hook_registry']
     tags:
       - { name: drush.command }
+  markaspot_health.smoke_commands:
+    class: Drupal\markaspot_health\Commands\SmokeCommands
+    arguments: ['@plugin.manager.markaspot_smoke_check']
+    tags:
+      - { name: drush.command }

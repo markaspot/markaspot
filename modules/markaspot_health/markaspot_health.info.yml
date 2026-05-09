@@ -1,5 +1,5 @@
 name: Mark-a-Spot Health
 type: module
-description: Plugin-based health checks for Mark-a-Spot installations. Individual checks may require additional Mark-a-Spot submodules (the bundled OrphanedGroupsCheck requires markaspot_group).
+description: Plugin-based health checks and tenant API smoke suite for Mark-a-Spot installations. Drift detection (drush markaspot:health) plus runtime smoke gate (drush markaspot:smoke). Individual checks may require additional Mark-a-Spot submodules (the bundled OrphanedGroupsCheck requires markaspot_group).
 core_version_requirement: ^10 || ^11
 package: Mark-a-Spot

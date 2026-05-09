@@ -9,3 +9,15 @@ markaspot_health.report:
     _format: 'json'
   options:
     no_cache: TRUE
+
+markaspot_health.smoke_report:
+  path: '/api/admin/smoke-check'
+  defaults:
+    _controller: '\Drupal\markaspot_health\Controller\SmokeCheckController::report'
+    _title: 'Mark-a-Spot smoke check report'
+  methods: [GET]
+  requirements:
+    _permission: 'view smoke checks'
+    _format: 'json'
+  options:
+    no_cache: TRUE

@@ -2,3 +2,8 @@ view health checks:
   title: 'View Mark-a-Spot health checks'
   description: 'Access the health check report endpoint and Drush command.'
   restrict access: true
+
+view smoke checks:
+  title: 'View Mark-a-Spot smoke checks'
+  description: 'Access the smoke check report endpoint and Drush command.'
+  restrict access: true
