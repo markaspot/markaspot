@@ -136,6 +136,7 @@ class MailBrandingService {
    *   - frontend_base_url (string, platform-safe https URL)
    *   - jurisdiction_slug (string|null)
    *   - jurisdiction_label (string|null)
+   *   - tenant_display_name (string|null)
    *   - platform_footer (array)
    */
   public function getBranding(?int $jurisdictionId, string $mode, string $langcode): array {
@@ -189,6 +190,7 @@ class MailBrandingService {
       'frontend_base_url' => $platformDefaults['frontend_base_url'],
       'jurisdiction_slug' => NULL,
       'jurisdiction_label' => NULL,
+      'tenant_display_name' => NULL,
       'platform_footer' => $showPlatformFooter ? $this->getPlatformFooter() : NULL,
       'show_platform_footer' => $showPlatformFooter,
     ];
@@ -228,7 +230,23 @@ class MailBrandingService {
     $branding['jurisdiction_label'] = (string) $group->label();
 
     if ($group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()) {
-      $branding['jurisdiction_slug'] = (string) $group->get('field_slug')->value;
+      // The slug feeds straight into URL construction (resolveLegalUrl,
+      // resolveTenantFrontendBase). field_slug has no pattern constraint at
+      // the field level, so a malformed value like "../evil" or one with
+      // path/query metacharacters could synthesize a phishing-shaped URL
+      // into citizen mail. Restrict to URL-safe path segments here; reject
+      // by leaving jurisdiction_slug NULL, which falls back to the platform
+      // legal/privacy URLs.
+      $rawSlug = (string) $group->get('field_slug')->value;
+      if (preg_match('/^[a-z0-9](?:[a-z0-9\-]{0,126}[a-z0-9])?$/', $rawSlug) === 1) {
+        $branding['jurisdiction_slug'] = $rawSlug;
+      }
+      else {
+        $this->logger->warning('Mail branding rejected unsafe jurisdiction slug @slug for group @id; falling back to platform legal/privacy URLs.', [
+          '@slug' => $rawSlug,
+          '@id' => $jurisdictionId,
+        ]);
+      }
     }
 
     // field_platform_name overrides the display name; fall back to group label.
@@ -288,6 +306,26 @@ class MailBrandingService {
       $branding['email_footer_html'] = $this->toSafeFooterHtml($raw);
     }
 
+    // Tenant display name for the synthesized footer fallback the layout
+    // template renders when field_email_footer is empty. Resolution chain:
+    // field_platform_name (already in $branding['platform_name']) wins;
+    // otherwise field_nuxt_config.client.name, then .shortName, then the
+    // group label. Stays NULL only if the group has no usable label at all,
+    // which would already trip the soft-fail guard above.
+    $displayName = $platformName;
+    if ($displayName === '' && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $clientName = $this->resolveClientNameFromNuxtConfig((string) $group->get('field_nuxt_config')->value);
+      if ($clientName !== NULL) {
+        $displayName = $clientName;
+      }
+    }
+    if ($displayName === '') {
+      $displayName = trim((string) $group->label());
+    }
+    if ($displayName !== '') {
+      $branding['tenant_display_name'] = $displayName;
+    }
+
     // In jurisdiction mode, the tenant's privacy / legal pages live on the
     // tenant frontend, not on mark-a-spot.com. Resolve the tenant base from
     // the configurable template, falling back to the platform base when the
@@ -297,10 +335,14 @@ class MailBrandingService {
     $branding['frontend_base_url'] = $tenantBase;
     $frontendBase = rtrim($tenantBase, '/');
 
+    // Path is 'impressum' to match the Nuxt route at
+    // frontend/app/pages/[[jurisdiction]]/impressum.vue. The frontend has no
+    // /<slug>/legal-notice page, so any URL synthesized from the slug must
+    // land on /<slug>/impressum to avoid a 404 from the mail link.
     $legalNoticeUrl = $this->resolveLegalUrl(
       $group->hasField('field_legal_notice') ? $group->get('field_legal_notice') : NULL,
       $slug,
-      'legal-notice',
+      'impressum',
       $frontendBase,
     );
     if ($legalNoticeUrl !== NULL) {
@@ -609,6 +651,30 @@ class MailBrandingService {
   }
 
   /**
+   * Extracts the tenant display name from field_nuxt_config JSON.
+   *
+   * Prefers client.name (the full marketing name) over client.shortName,
+   * which is reserved for compact UI surfaces. Returns NULL when neither
+   * is a usable non-empty string.
+   */
+  private function resolveClientNameFromNuxtConfig(string $json): ?string {
+    $decoded = json_decode($json, TRUE);
+    if (!is_array($decoded)) {
+      return NULL;
+    }
+    foreach (['name', 'shortName'] as $key) {
+      $candidate = $decoded['client'][$key] ?? NULL;
+      if (is_string($candidate)) {
+        $trimmed = trim($candidate);
+        if ($trimmed !== '') {
+          return $trimmed;
+        }
+      }
+    }
+    return NULL;
+  }
+
+  /**
    * Resolves the light logo from field_nuxt_config JSON.
    *
    * Tenants often already publish their frontend brand assets through
@@ -758,22 +824,22 @@ class MailBrandingService {
   /**
    * Resolves a legal/privacy URL from a text_long field.
    *
-   * If the field contains something that looks like an absolute URL we use
-   * it as-is (after http(s) validation); otherwise we build
-   * <frontend_base>/<slug>/<path> when slug is available. Returns NULL when
-   * nothing usable exists.
+   * Priority: an absolute http(s) URL in the field always wins (after
+   * validation). Otherwise — including when the field is empty or NULL —
+   * we synthesize <frontend_base>/<slug>/<path>, which the Nuxt frontend
+   * already serves for every tenant. Tenants override the synthesized URL
+   * by populating the field with their own copy or a full URL. Returns
+   * NULL only when no slug/frontend base is available, which means the
+   * platform default has to stand in.
    */
   private function resolveLegalUrl($fieldItemList, ?string $slug, string $path, string $frontendBase): ?string {
-    if ($fieldItemList === NULL || $fieldItemList->isEmpty()) {
-      return NULL;
+    $raw = '';
+    if ($fieldItemList !== NULL && !$fieldItemList->isEmpty()) {
+      $raw = trim((string) $fieldItemList->value);
     }
-    $raw = trim((string) $fieldItemList->value);
-    if ($raw === '') {
-      return NULL;
-    }
-    // If it looks like an absolute URL, validate + return; otherwise fall
-    // through to the slug path builder.
-    if (preg_match('#^https?://#i', $raw) === 1) {
+    // An absolute URL in the field short-circuits the slug builder so
+    // tenants can point to a hand-rolled legal page on their own domain.
+    if ($raw !== '' && preg_match('#^https?://#i', $raw) === 1) {
       $validated = $this->validateHttpUrl($raw, '');
       if ($validated !== '') {
         return $validated;

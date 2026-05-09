@@ -95,6 +95,10 @@
             <td style="padding:24px 8px 0 8px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; line-height:20px; color:#475569;">
               {% if branding.email_footer_html %}
                 <div class="mas-muted" style="color:#475569;">{{ branding.email_footer_html }}</div>
+              {% elseif branding.tenant_display_name %}
+                <div class="mas-muted" style="color:#475569;">
+                  {{ 'This e-mail was sent automatically by @name via the Mark-a-Spot platform.'|trans({'@name': branding.tenant_display_name}, {'langcode': langcode}) }}
+                </div>
               {% endif %}
               <div class="mas-muted" style="margin-top:8px; color:#475569;">
                 {% if branding.support_email %}

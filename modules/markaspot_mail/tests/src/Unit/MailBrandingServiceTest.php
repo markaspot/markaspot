@@ -524,12 +524,156 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $branding = $service->getBranding(5, 'jurisdiction', 'en');
 
     $this->assertSame('#14b8a6', $branding['primary_color']);
-    // U2: slug-built URLs now come from the tenant frontend template, NOT
-    // from the platform base. Amsterdam's privacy page lives on the tenant
-    // domain, not on mark-a-spot.com.
-    $this->assertSame('https://rotterdam.civicspot.io/rotterdam/legal-notice', $branding['legal_notice_url']);
+    // Slug-built URLs come from the tenant frontend template, not from the
+    // platform base — and the legal path is /<slug>/impressum to match the
+    // Nuxt route at frontend/app/pages/[[jurisdiction]]/impressum.vue.
+    $this->assertSame('https://rotterdam.civicspot.io/rotterdam/impressum', $branding['legal_notice_url']);
     $this->assertSame('https://rotterdam.civicspot.io/rotterdam/privacy', $branding['privacy_url']);
     $this->assertSame('https://rotterdam.civicspot.io', $branding['frontend_base_url']);
+  }
+
+  /**
+   * Empty field_legal_notice still yields a tenant-scoped slug URL.
+   *
+   * The original bug: tenants on dev-2.x with empty legacy text fields
+   * silently fell back to platform legal_notice_url (civicpatches.de). The
+   * fallback now synthesizes /<slug>/impressum from the tenant template.
+   */
+  public function testJurisdictionEmptyLegalFieldStillBuildsSlugUrl(): void {
+    $group = $this->buildGroup([
+      'id' => 68,
+      'label' => 'KBK Krefeld',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_nuxt_config' => json_encode([
+        'theme' => ['primary' => 'green'],
+        'client' => ['name' => 'Maak et, Krefeld!'],
+      ]),
+      // Field exists but is empty — exactly the maak-et lokal shape.
+      'field_legal_notice' => '',
+    ]);
+    $service = $this->buildService($group);
+
+    $branding = $service->getBranding(68, 'jurisdiction', 'en');
+
+    $this->assertSame(
+      'https://krefeld.civicspot.io/krefeld/impressum',
+      $branding['legal_notice_url'],
+    );
+  }
+
+  /**
+   * Empty field_privacy_policy mirrors the legal-notice fallback path.
+   */
+  public function testJurisdictionEmptyPrivacyFieldStillBuildsSlugUrl(): void {
+    $group = $this->buildGroup([
+      'id' => 68,
+      'label' => 'KBK Krefeld',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_nuxt_config' => json_encode(['theme' => ['primary' => 'green']]),
+      'field_privacy_policy' => '',
+    ]);
+    $service = $this->buildService($group);
+
+    $branding = $service->getBranding(68, 'jurisdiction', 'en');
+
+    $this->assertSame(
+      'https://krefeld.civicspot.io/krefeld/privacy',
+      $branding['privacy_url'],
+    );
+  }
+
+  /**
+   * Tenant_display_name resolution chain: field > nuxt_config > label.
+   *
+   * Field_platform_name wins over everything; absent it, we read
+   * client.name from field_nuxt_config; absent that, client.shortName;
+   * absent that too, the group label is the last-resort label.
+   */
+  public function testTenantDisplayNamePrefersFieldPlatformNameThenNuxtConfig(): void {
+    // Case 1: field_platform_name wins.
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'Group Label',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_nuxt_config' => json_encode(['client' => ['name' => 'Nuxt Name', 'shortName' => 'Short']]),
+    ]);
+    $branding = $this->buildService($group)->getBranding(1, 'jurisdiction', 'en');
+    $this->assertSame('Maak et, Krefeld!', $branding['tenant_display_name']);
+
+    // Case 2: client.name from nuxt_config wins when field_platform_name empty.
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'Group Label',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => '',
+      'field_nuxt_config' => json_encode(['client' => ['name' => 'Nuxt Name', 'shortName' => 'Short']]),
+    ]);
+    $branding = $this->buildService($group)->getBranding(1, 'jurisdiction', 'en');
+    $this->assertSame('Nuxt Name', $branding['tenant_display_name']);
+
+    // Case 3: client.shortName when client.name is missing.
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'Group Label',
+      'field_slug' => 'krefeld',
+      'field_nuxt_config' => json_encode(['client' => ['shortName' => 'Short']]),
+    ]);
+    $branding = $this->buildService($group)->getBranding(1, 'jurisdiction', 'en');
+    $this->assertSame('Short', $branding['tenant_display_name']);
+
+    // Case 4: group label as the last resort.
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'Group Label',
+      'field_slug' => 'krefeld',
+      'field_nuxt_config' => json_encode(['theme' => ['primary' => 'blue']]),
+    ]);
+    $branding = $this->buildService($group)->getBranding(1, 'jurisdiction', 'en');
+    $this->assertSame('Group Label', $branding['tenant_display_name']);
+  }
+
+  /**
+   * Tenant_display_name stays NULL in platform mode, no jurisdiction layered.
+   */
+  public function testTenantDisplayNameNullInPlatformMode(): void {
+    $service = $this->buildService(NULL);
+    $branding = $service->getBranding(NULL, 'platform', 'en');
+
+    $this->assertNull($branding['tenant_display_name']);
+  }
+
+  /**
+   * Unsafe slugs are rejected so they cannot be smuggled into mail URLs.
+   *
+   * Field_slug feeds straight into URL synthesis. A rogue tenant admin
+   * setting field_slug='../evil' would produce a path-traversal-shaped
+   * link in citizen mail. The service must drop the slug and fall back
+   * to the platform legal/privacy URLs instead.
+   */
+  public function testUnsafeJurisdictionSlugIsRejectedAndFallsBackToPlatformUrls(): void {
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->atLeastOnce())
+      ->method('warning');
+
+    $group = $this->buildGroup([
+      'id' => 99,
+      'label' => 'Evil Tenant',
+      'field_slug' => '../evil',
+      'field_platform_name' => 'Evil Tenant',
+      'field_nuxt_config' => json_encode(['theme' => ['primary' => 'blue']]),
+      'field_legal_notice' => '',
+    ]);
+    $service = $this->buildService($group, NULL, $logger);
+
+    $branding = $service->getBranding(99, 'jurisdiction', 'en');
+
+    $this->assertNull($branding['jurisdiction_slug']);
+    // Platform fallback wins because no slug is available to synthesize.
+    $this->assertSame('https://civicpatches.de/impressum', $branding['legal_notice_url']);
+    $this->assertSame('https://civicpatches.de/datenschutz', $branding['privacy_url']);
   }
 
   /**
