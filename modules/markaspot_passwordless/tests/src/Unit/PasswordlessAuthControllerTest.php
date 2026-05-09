@@ -23,6 +23,7 @@ use Drupal\group\Entity\GroupRoleInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
+use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Drupal\Tests\UnitTestCase;
@@ -1007,6 +1008,283 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertTrue($data['authenticated']);
     $this->assertTrue($data['user']['tos_accepted']);
     $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
+  }
+
+  // ===========================================================================
+  // Tests for session handoff.
+  // ===========================================================================
+
+  /**
+   * Tests anonymous session handoff starts at Drupal login.
+   *
+   * @covers ::startSessionHandoff
+   */
+  public function testStartSessionHandoffAnonymousRedirectsToDrupalLogin(): void {
+    $this->currentUser->method('isAuthenticated')->willReturn(FALSE);
+
+    $request = Request::create('https://dev.ddev.site/api/auth/session-handoff/start?redirect=/amsterdam/dashboard');
+    $response = $this->controller->startSessionHandoff($request);
+
+    $this->assertSame(Response::HTTP_FOUND, $response->getStatusCode());
+    $location = $response->headers->get('location');
+    $this->assertIsString($location);
+    $this->assertStringStartsWith('/user/login?destination=', $location);
+    $this->assertStringContainsString(rawurlencode($request->getRequestUri()), $location);
+  }
+
+  /**
+   * Tests authenticated session handoff creates a short-lived Nuxt claim URL.
+   *
+   * @covers ::startSessionHandoff
+   * @covers ::buildSessionHandoffClaimPath
+   * @covers ::normalizeInternalRedirect
+   * @covers ::resolveFrontendBaseUrl
+   */
+  public function testStartSessionHandoffCreatesTokenAndRedirectsToNuxtClaim(): void {
+    $this->currentUser->method('isAuthenticated')->willReturn(TRUE);
+    $this->currentUser->method('id')->willReturn(42);
+
+    $store = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $store->expects($this->once())
+      ->method('setWithExpire')
+      ->with(
+        $this->matchesRegularExpression('/^[0-9a-f]{64}$/'),
+        $this->callback(static function (array $payload): bool {
+          return $payload['uid'] === 42
+            && $payload['redirect'] === '/amsterdam/dashboard';
+        }),
+        60
+      );
+    $this->keyValueExpirable->expects($this->once())
+      ->method('get')
+      ->with('markaspot_session_handoff_tokens')
+      ->willReturn($store);
+
+    $request = Request::create('https://dev.ddev.site/api/auth/session-handoff/start?redirect=/amsterdam/dashboard');
+    $response = $this->controller->startSessionHandoff($request);
+
+    $this->assertSame(Response::HTTP_FOUND, $response->getStatusCode());
+    $this->assertMatchesRegularExpression(
+      '~^https://dev\.ddev\.site:3001/amsterdam/auth/claim\?type=drupal-session#token=[0-9a-f]{64}$~',
+      (string) $response->headers->get('location')
+    );
+  }
+
+  /**
+   * Tests configured frontend base URL wins over the local DDEV fallback.
+   *
+   * @covers ::startSessionHandoff
+   * @covers ::resolveFrontendBaseUrl
+   */
+  public function testStartSessionHandoffUsesConfiguredFrontendBaseUrl(): void {
+    $this->currentUser->method('isAuthenticated')->willReturn(TRUE);
+    $this->currentUser->method('id')->willReturn(42);
+
+    $frontendUrl = $this->createMock(FrontendUrlService::class);
+    $frontendUrl->method('getFrontendBaseUrl')
+      ->willReturn('https://frontend.example.test/');
+
+    $this->controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $this->configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+      NULL,
+      $frontendUrl,
+    );
+
+    $store = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $store->expects($this->once())
+      ->method('setWithExpire');
+    $this->keyValueExpirable->method('get')
+      ->with('markaspot_session_handoff_tokens')
+      ->willReturn($store);
+
+    $request = Request::create('https://drupal.example.test/api/auth/session-handoff/start?redirect=/dashboard');
+    $response = $this->controller->startSessionHandoff($request);
+
+    $this->assertMatchesRegularExpression(
+      '~^https://frontend\.example\.test/auth/claim\?type=drupal-session#token=[0-9a-f]{64}$~',
+      (string) $response->headers->get('location')
+    );
+  }
+
+  /**
+   * Tests invalid configured frontend base URLs are rejected.
+   *
+   * @covers ::startSessionHandoff
+   * @covers ::normalizeFrontendBaseUrl
+   */
+  public function testStartSessionHandoffRejectsUnsafeFrontendBaseUrl(): void {
+    $this->currentUser->method('isAuthenticated')->willReturn(TRUE);
+
+    $frontendUrl = $this->createMock(FrontendUrlService::class);
+    $frontendUrl->method('getFrontendBaseUrl')
+      ->willReturn('javascript:alert(1)');
+
+    $this->controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $this->configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+      NULL,
+      $frontendUrl,
+    );
+
+    $request = Request::create('https://drupal.example.test/api/auth/session-handoff/start?redirect=/dashboard');
+    $response = $this->controller->startSessionHandoff($request);
+
+    $this->assertSame(Response::HTTP_CONFLICT, $response->getStatusCode());
+  }
+
+  /**
+   * Tests configured frontend base URLs with query strings are rejected.
+   *
+   * @covers ::startSessionHandoff
+   * @covers ::normalizeFrontendBaseUrl
+   */
+  public function testStartSessionHandoffRejectsFrontendBaseUrlWithQuery(): void {
+    $this->currentUser->method('isAuthenticated')->willReturn(TRUE);
+
+    $frontendUrl = $this->createMock(FrontendUrlService::class);
+    $frontendUrl->method('getFrontendBaseUrl')
+      ->willReturn('https://frontend.example.test/?x=1');
+
+    $this->controller = new PasswordlessAuthController(
+      $this->otpService,
+      $this->currentUser,
+      $this->flood,
+      $this->configFactory,
+      $this->sessionConfiguration,
+      $this->keyValueExpirable,
+      $this->featureFlagChecker,
+      NULL,
+      $frontendUrl,
+    );
+
+    $request = Request::create('https://drupal.example.test/api/auth/session-handoff/start?redirect=/dashboard');
+    $response = $this->controller->startSessionHandoff($request);
+
+    $this->assertSame(Response::HTTP_CONFLICT, $response->getStatusCode());
+  }
+
+  /**
+   * Tests session handoff redirect normalization rejects unsafe paths.
+   *
+   * @covers ::normalizeInternalRedirect
+   *
+   * @dataProvider unsafeSessionHandoffRedirectProvider
+   */
+  public function testNormalizeInternalRedirectRejectsUnsafeValues(mixed $input): void {
+    $method = new \ReflectionMethod($this->controller, 'normalizeInternalRedirect');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame('/dashboard', $method->invoke($this->controller, $input));
+  }
+
+  /**
+   * Provides unsafe redirect values.
+   */
+  public static function unsafeSessionHandoffRedirectProvider(): array {
+    return [
+      'null' => [NULL],
+      'empty' => [''],
+      'external-url' => ['https://evil.example/dashboard'],
+      'protocol-relative' => ['//evil.example/dashboard'],
+      'backslash-host' => ['/\\evil.example/dashboard'],
+      'auth-segment' => ['/amsterdam/auth/login'],
+      'oversize' => ['/' . str_repeat('a', 1025)],
+    ];
+  }
+
+  /**
+   * Tests session handoff redirect normalization preserves safe paths.
+   *
+   * @covers ::normalizeInternalRedirect
+   */
+  public function testNormalizeInternalRedirectPreservesSafeInternalPath(): void {
+    $method = new \ReflectionMethod($this->controller, 'normalizeInternalRedirect');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame('/amsterdam/dashboard?tab=requests', $method->invoke($this->controller, '/amsterdam/dashboard?tab=requests'));
+  }
+
+  /**
+   * Tests session handoff claim with missing token returns 400.
+   *
+   * @covers ::claimSessionHandoff
+   */
+  public function testClaimSessionHandoffMissingToken(): void {
+    $request = new Request([], [], [], [], [], [], '{}');
+    $response = $this->controller->claimSessionHandoff($request);
+
+    $this->assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
+  }
+
+  /**
+   * Tests session handoff claim is rate-limited by client IP.
+   *
+   * @covers ::claimSessionHandoff
+   * @covers ::assertSessionHandoffClaimAllowed
+   */
+  public function testClaimSessionHandoffRateLimited(): void {
+    $this->flood = $this->createMock(FloodInterface::class);
+    $this->flood->expects($this->once())
+      ->method('isAllowed')
+      ->with('passwordless.session_handoff_claim', 30, 300, '203.0.113.10')
+      ->willReturn(FALSE);
+    $this->flood->expects($this->never())
+      ->method('register');
+    $this->recreateController();
+
+    $request = Request::create(
+      'https://dev.ddev.site/api/auth/session-handoff/claim',
+      'POST',
+      [],
+      [],
+      [],
+      ['REMOTE_ADDR' => '203.0.113.10'],
+      json_encode(['token' => str_repeat('a', 64)])
+    );
+    $response = $this->controller->claimSessionHandoff($request);
+
+    $this->assertSame(Response::HTTP_TOO_MANY_REQUESTS, $response->getStatusCode());
+  }
+
+  /**
+   * Tests session handoff claim with invalid token format returns 400.
+   *
+   * @covers ::claimSessionHandoff
+   */
+  public function testClaimSessionHandoffInvalidFormat(): void {
+    $request = new Request([], [], [], [], [], [], '{"token":"short"}');
+    $response = $this->controller->claimSessionHandoff($request);
+
+    $this->assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
+  }
+
+  /**
+   * Tests session handoff claim with expired token returns 401.
+   *
+   * @covers ::claimSessionHandoff
+   */
+  public function testClaimSessionHandoffExpiredToken(): void {
+    $store = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $store->method('get')->willReturn(NULL);
+    $this->keyValueExpirable->method('get')
+      ->with('markaspot_session_handoff_tokens')
+      ->willReturn($store);
+
+    $request = new Request([], [], [], [], [], [], json_encode(['token' => str_repeat('a', 64)]));
+    $response = $this->controller->claimSessionHandoff($request);
+
+    $this->assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
   }
 
   // ===========================================================================

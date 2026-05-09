@@ -11,14 +11,17 @@ use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Routing\TrustedRedirectResponse;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
+use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -28,6 +31,14 @@ use Symfony\Component\HttpFoundation\Response;
 class PasswordlessAuthController extends ControllerBase {
 
   use JurisdictionIdResolverTrait;
+
+  protected const SESSION_HANDOFF_TOKEN_STORE = 'markaspot_session_handoff_tokens';
+
+  protected const SESSION_HANDOFF_TOKEN_TTL = 60;
+
+  protected const SESSION_HANDOFF_CLAIM_LIMIT = 30;
+
+  protected const SESSION_HANDOFF_CLAIM_WINDOW = 300;
 
   /**
    * The OTP service.
@@ -97,6 +108,8 @@ class PasswordlessAuthController extends ControllerBase {
    *   The feature flag checker.
    * @param \Drupal\Core\Entity\EntityRepositoryInterface|null $entityRepository
    *   The entity repository service.
+   * @param \Drupal\markaspot_nuxt\Service\FrontendUrlService|null $frontendUrlService
+   *   The frontend URL service.
    */
   public function __construct(
     OtpService $otp_service,
@@ -107,6 +120,7 @@ class PasswordlessAuthController extends ControllerBase {
     KeyValueExpirableFactoryInterface $key_value_expirable,
     FeatureFlagChecker $feature_flag_checker,
     protected ?EntityRepositoryInterface $entityRepository = NULL,
+    protected ?FrontendUrlService $frontendUrlService = NULL,
   ) {
     $this->otpService = $otp_service;
     $this->currentUser = $current_user;
@@ -130,6 +144,7 @@ class PasswordlessAuthController extends ControllerBase {
       $container->get('keyvalue.expirable'),
       $container->get('markaspot_nuxt.feature_flag_checker'),
       $container->get('entity.repository'),
+      $container->get('markaspot_nuxt.frontend_url'),
     );
   }
 
@@ -532,20 +547,315 @@ class PasswordlessAuthController extends ControllerBase {
 
       return new JsonResponse([
         'authenticated' => TRUE,
-        'user' => [
-          'uid' => $account->id(),
-          'name' => $account->getAccountName(),
-          'email' => $account->getEmail(),
-          'roles' => $account->getRoles(),
-          'groups' => $this->getUserGroups($user),
-          'preferred_langcode' => $user->getPreferredLangcode(FALSE),
-        ] + $this->getTosAcceptancePayload($user),
+        'user' => $this->buildAuthUserPayload($account, $user),
       ]);
     }
 
     return new JsonResponse([
       'authenticated' => FALSE,
     ]);
+  }
+
+  /**
+   * Starts a Drupal-to-Nuxt session handoff for the current user.
+   *
+   * GET /api/auth/session-handoff/start?redirect=/amsterdam/dashboard
+   *
+   * If the caller has no Drupal session yet, redirect them to Drupal's login
+   * form and preserve this endpoint as the login destination. Once logged in,
+   * a short-lived one-time token is minted and the browser is sent to Nuxt's
+   * claim page.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request object.
+   *
+   * @return \Symfony\Component\HttpFoundation\Response
+   *   Redirect response or a JSON error when no frontend base URL is configured.
+   */
+  public function startSessionHandoff(Request $request): Response {
+    if (!$this->currentUser->isAuthenticated()) {
+      return new RedirectResponse('/user/login?destination=' . rawurlencode($request->getRequestUri()));
+    }
+
+    $redirect = $this->normalizeInternalRedirect($request->query->get('redirect'));
+    $frontend_base = $this->resolveFrontendBaseUrl($request);
+    if ($frontend_base === NULL) {
+      return new JsonResponse([
+        'error' => 'Frontend base URL is not configured for session handoff.',
+      ], Response::HTTP_CONFLICT);
+    }
+
+    try {
+      $token = bin2hex(random_bytes(32));
+      $store = $this->keyValueExpirable->get(static::SESSION_HANDOFF_TOKEN_STORE);
+      $store->setWithExpire($token, [
+        'uid' => (int) $this->currentUser->id(),
+        'redirect' => $redirect,
+      ], static::SESSION_HANDOFF_TOKEN_TTL);
+
+      $claim_path = $this->buildSessionHandoffClaimPath($token, $redirect);
+      return new TrustedRedirectResponse(rtrim($frontend_base, '/') . $claim_path);
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_passwordless')->error('Failed to start session handoff: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+
+      return new JsonResponse([
+        'error' => 'Failed to start session handoff.',
+      ], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Claims a Drupal-to-Nuxt session handoff token.
+   *
+   * POST /api/auth/session-handoff/claim
+   * Body: { "token": "abc123..." }
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The request object.
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON response with authenticated user state and the stored redirect path.
+   */
+  public function claimSessionHandoff(Request $request): JsonResponse {
+    if ($denied = $this->assertSessionHandoffClaimAllowed($request)) {
+      return $denied;
+    }
+
+    $data = json_decode($request->getContent(), TRUE);
+
+    if (empty($data['token'])) {
+      return new JsonResponse([
+        'error' => 'Token is required.',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
+    $token = trim((string) $data['token']);
+    if (!preg_match('/^[0-9a-f]{64}$/', $token)) {
+      return new JsonResponse([
+        'error' => 'Invalid token format.',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
+    try {
+      $store = $this->keyValueExpirable->get(static::SESSION_HANDOFF_TOKEN_STORE);
+      $token_data = $store->get($token);
+
+      if (!$token_data || !is_array($token_data) || empty($token_data['uid'])) {
+        return new JsonResponse([
+          'error' => 'Invalid or expired token.',
+        ], Response::HTTP_UNAUTHORIZED);
+      }
+
+      // Delete before login finalization so the token stays single-use even if
+      // a later hook fails.
+      $store->delete($token);
+
+      $target_user = $this->entityTypeManager()
+        ->getStorage('user')
+        ->load((int) $token_data['uid']);
+
+      if (!$target_user || $target_user->isBlocked()) {
+        return new JsonResponse([
+          'error' => 'Target user not available.',
+        ], Response::HTTP_FORBIDDEN);
+      }
+
+      if ($this->currentUser->isAuthenticated()) {
+        $this->moduleHandler()->invokeAll('user_logout', [$this->currentUser]);
+      }
+
+      user_login_finalize($target_user);
+
+      return new JsonResponse([
+        'success' => TRUE,
+        'authenticated' => TRUE,
+        'redirect' => $this->normalizeInternalRedirect($token_data['redirect'] ?? NULL),
+        'user' => $this->buildAuthUserPayload($target_user, $target_user),
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_passwordless')->error('Failed to claim session handoff: @message', [
+        '@message' => $e->getMessage(),
+      ]);
+
+      return new JsonResponse([
+        'error' => 'An error occurred during session handoff.',
+      ], Response::HTTP_INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  /**
+   * Rate-limits public session handoff token claim attempts.
+   */
+  protected function assertSessionHandoffClaimAllowed(Request $request): ?JsonResponse {
+    $ip = $request->getClientIp() ?: 'unknown';
+    $event = 'passwordless.session_handoff_claim';
+
+    if (!$this->flood->isAllowed($event, static::SESSION_HANDOFF_CLAIM_LIMIT, static::SESSION_HANDOFF_CLAIM_WINDOW, $ip)) {
+      return new JsonResponse([
+        'error' => 'Too many session handoff attempts. Please try again later.',
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+
+    $this->flood->register($event, static::SESSION_HANDOFF_CLAIM_WINDOW, $ip);
+    return NULL;
+  }
+
+  /**
+   * Builds the authenticated user payload returned by auth endpoints.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The account used for stable identity fields.
+   * @param object|null $user
+   *   The loaded user entity when available.
+   *
+   * @return array
+   *   The frontend auth user payload.
+   */
+  protected function buildAuthUserPayload(AccountInterface $account, $user): array {
+    $preferred_langcode = method_exists($user, 'getPreferredLangcode')
+      ? (string) $user->getPreferredLangcode(FALSE)
+      : '';
+
+    return [
+      'uid' => $account->id(),
+      'name' => $account->getAccountName(),
+      'email' => $account->getEmail(),
+      'roles' => $account->getRoles(),
+      'groups' => $user ? $this->getUserGroups($user) : [],
+      'preferred_langcode' => $preferred_langcode,
+    ] + $this->getTosAcceptancePayload($user);
+  }
+
+  /**
+   * Normalizes a client redirect to a safe internal frontend path.
+   */
+  protected function normalizeInternalRedirect(mixed $raw): string {
+    if (!is_string($raw)) {
+      return '/dashboard';
+    }
+    if (str_contains($raw, '\\')) {
+      return '/dashboard';
+    }
+
+    $value = trim(str_replace(["\r", "\n", "\0"], '', $raw));
+    if ($value === ''
+      || strlen($value) > 1024
+      || !str_starts_with($value, '/')
+      || str_starts_with($value, '//')
+    ) {
+      return '/dashboard';
+    }
+
+    $path = parse_url($value, PHP_URL_PATH);
+    if (!is_string($path) || $path === '') {
+      return '/dashboard';
+    }
+
+    $segments = explode('/', trim($path, '/'));
+    if (in_array('auth', $segments, TRUE)) {
+      return '/dashboard';
+    }
+
+    return $value;
+  }
+
+  /**
+   * Resolves the Nuxt frontend base URL for the browser redirect.
+   */
+  protected function resolveFrontendBaseUrl(Request $request): ?string {
+    $configured = $this->frontendUrlService?->getFrontendBaseUrl();
+    if (is_string($configured) && trim($configured) !== '') {
+      return $this->normalizeFrontendBaseUrl($configured);
+    }
+
+    foreach (['NUXT_PUBLIC_SITE_URL', 'NUXT_SITE_URL', 'FRONTEND_BASE_URL'] as $env_key) {
+      $env_value = getenv($env_key);
+      if (is_string($env_value) && trim($env_value) !== '') {
+        return $this->normalizeFrontendBaseUrl($env_value);
+      }
+    }
+
+    $host = $request->getHost();
+    if ($host === '' || str_contains($host, ':')) {
+      return NULL;
+    }
+
+    if ($host === 'localhost'
+      || $host === '127.0.0.1'
+      || str_ends_with($host, '.localhost')
+      || str_ends_with($host, '.ddev.site')
+    ) {
+      $scheme = $request->isSecure() ? 'https' : $request->getScheme();
+      return $scheme . '://' . $host . ':3001';
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Normalizes configured frontend base URLs to safe http(s) origins.
+   */
+  protected function normalizeFrontendBaseUrl(string $raw): ?string {
+    $value = rtrim(trim(str_replace(["\r", "\n", "\0"], '', $raw)), '/');
+    if ($value === '') {
+      return NULL;
+    }
+
+    $parts = parse_url($value);
+    if (!is_array($parts)
+      || empty($parts['scheme'])
+      || empty($parts['host'])
+      || !in_array(strtolower($parts['scheme']), ['http', 'https'], TRUE)
+      || isset($parts['user'])
+      || isset($parts['pass'])
+      || isset($parts['query'])
+      || isset($parts['fragment'])
+    ) {
+      return NULL;
+    }
+
+    return $value;
+  }
+
+  /**
+   * Builds the Nuxt claim path while preserving a jurisdiction URL prefix.
+   */
+  protected function buildSessionHandoffClaimPath(string $token, string $redirect): string {
+    $path = parse_url($redirect, PHP_URL_PATH);
+    $segments = is_string($path) ? explode('/', trim($path, '/')) : [];
+    $first_segment = $segments[0] ?? '';
+
+    $reserved = [
+      'admin',
+      'api',
+      'auth',
+      'dashboard',
+      'embed',
+      'impressum',
+      'legal',
+      'lite',
+      'privacy',
+      'report',
+      'requests',
+      'start',
+      'terms',
+      'user',
+    ];
+
+    $prefix = '';
+    if ($first_segment !== ''
+      && preg_match('/^[a-z0-9_-]{1,64}$/', $first_segment)
+      && !ctype_digit($first_segment)
+      && !in_array($first_segment, $reserved, TRUE)
+    ) {
+      $prefix = '/' . $first_segment;
+    }
+
+    return $prefix . '/auth/claim?type=drupal-session#token=' . $token;
   }
 
   /**
