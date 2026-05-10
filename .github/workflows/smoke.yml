@@ -80,7 +80,11 @@ jobs:
           # `composer install` would silently leave the lockfile pointing
           # at the original recommended-project deps, so the profile would
           # never actually be installed.
-          composer require drupal/markaspot:'*' --with-all-dependencies --no-interaction --no-progress
+          # drush/drush is requested alongside because drupal/recommended-
+          # project does not pull it transitively and the smoke step shells
+          # out via vendor/bin/drush. The mark-a-spot site template pins
+          # drush:13, mirror that here.
+          composer require drupal/markaspot:'*' drush/drush:^13 --with-all-dependencies --no-interaction --no-progress
 
       - name: Install Drupal (markaspot profile)
         working-directory: site
