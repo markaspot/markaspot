@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.76](https://github.com/markaspot/markaspot/compare/11.9.75...11.9.76) (2026-05-10)
+
+### Features
+
+* **geocoder:** add explicit forward lookup ([3b72974](https://github.com/markaspot/markaspot/commit/3b72974c445a878479f3d4a7155372c360e69db6))
+* **markaspot_health:** add F-21 scope-lock smoke acceptance test ([bc10d9e](https://github.com/markaspot/markaspot/commit/bc10d9e905bbae853d80c20f9a91ecf7cda6a0b3))
+* **markaspot_health:** smoke v2 — mutating-track, editorial readiness, pretty TTY, CI ([00e3dcf](https://github.com/markaspot/markaspot/commit/00e3dcf97f28fa12df51ec989e7f15977243741c))
+
+### Bug Fixes
+
+* **ci:** require drush in the smoke workflow bootstrap ([f409675](https://github.com/markaspot/markaspot/commit/f4096755dc2029fc350040512c11f165ff081aa0))
+* **markaspot_health:** accept 401/403 in http_frontend_public smoke ([d579a1f](https://github.com/markaspot/markaspot/commit/d579a1fd82af04747bd399eecc976c9c80f4b5ca))
+* **markaspot_health:** smoke fixtures handle WBD-style hierarchical tenants ([f9ebf7f](https://github.com/markaspot/markaspot/commit/f9ebf7f9f6125ffcd55979f3dc9daab7ae00beb9))
+* **markaspot_open311+health:** contain post-save throws + mail-failure HealthCheck ([58d1af4](https://github.com/markaspot/markaspot/commit/58d1af44a41ebf95f79d5913335a9950f51903ff))
+* **markaspot_open311:** rate-limit UPDATE endpoint + Retry-After jitter ([b9f9ed3](https://github.com/markaspot/markaspot/commit/b9f9ed3f25f9a72f47d64c53be67358043070372))
+
 ## [11.9.75](https://github.com/markaspot/markaspot/compare/11.9.74...11.9.75) (2026-05-09)
 
 ### Features
