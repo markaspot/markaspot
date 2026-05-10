@@ -1,6 +1,9 @@
 # Mark-a-Spot Geocoder
 
-Server-side reverse geocoding for Mark-a-Spot service requests. Automatically resolves coordinates to addresses on node presave.
+Server-side geocoding for Mark-a-Spot service requests. The node presave hook
+automatically resolves coordinates to addresses and district fields. Importers
+can explicitly call the service for address to coordinate lookup; address-only
+nodes are not forward-geocoded automatically.
 
 ## Providers
 
@@ -32,3 +35,24 @@ drush config:set markaspot_geocoder.settings mapbox_token pk.eyJ...
 1. ENV variable (e.g. `GEOCODER_PROVIDER`)
 2. Drupal config (`markaspot_geocoder.settings`)
 3. Default: `nominatim` provider, `de` language
+
+## Service API
+
+```php
+/** @var \Drupal\markaspot_geocoder\Service\MarkaspotGeocoderService $geocoder */
+$geocoder = \Drupal::service('markaspot_geocoder.geocoder');
+
+// Reverse geocoding: coordinates to address and district metadata.
+$address = $geocoder->getAddressFromCoordinates(51.4324, 6.7652);
+
+// Forward geocoding: address to coordinates, explicit caller opt-in.
+$coordinates = $geocoder->getCoordinatesFromAddress('Friedrich-Ebert-Strasse 134, Duisburg', [
+  'country' => 'DE',
+]);
+```
+
+The presave hook remains reverse-only by design. If an importer receives
+address-only data, it must opt into `getCoordinatesFromAddress()`. The service
+returns the provider's first coordinate candidate only; callers must decide
+whether that is acceptable for their workflow and validate boundaries before
+writing `field_geolocation`.

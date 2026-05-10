@@ -5,7 +5,9 @@ namespace Drupal\markaspot_geocoder\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotMapbox;
 use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotNominatim;
+use Geocoder\Exception\CollectionIsEmpty;
 use Geocoder\Provider\Provider;
+use Geocoder\Query\GeocodeQuery;
 use Geocoder\Query\ReverseQuery;
 use Geocoder\StatefulGeocoder;
 use GuzzleHttp\ClientInterface;
@@ -17,8 +19,24 @@ use Psr\Log\LoggerInterface;
  */
 class MarkaspotGeocoderService {
 
+  /**
+   * Maximum number of provider-specific location type filters.
+   */
+  private const MAX_LOCATION_TYPE_FILTERS = 5;
+
+  /**
+   * Geocoder configuration.
+   */
   protected ConfigFactoryInterface $configFactory;
+
+  /**
+   * HTTP client used by geocoder providers.
+   */
   protected ClientInterface $httpClient;
+
+  /**
+   * Geocoder logger.
+   */
   protected LoggerInterface $logger;
 
   /**
@@ -70,7 +88,7 @@ class MarkaspotGeocoderService {
   }
 
   /**
-   *
+   * Resolves coordinates to address fields and district metadata.
    */
   public function getAddressFromCoordinates($lat, $lng): ?array {
     $provider = $this->createProvider();
@@ -107,6 +125,127 @@ class MarkaspotGeocoderService {
       ]);
       return NULL;
     }
+  }
+
+  /**
+   * Resolves an address string to coordinates.
+   *
+   * This is an explicit forward-geocoding API for importers and queues. The
+   * node presave hook intentionally stays reverse-only, so address-only nodes
+   * are not mutated unless a caller opts in.
+   *
+   * Supported options:
+   * - country: Provider-specific country filter, used by Mapbox.
+   * - location_type: Provider-specific location type filter, used by Mapbox.
+   * - fuzzy_match: Provider-specific fuzzy match toggle, used by Mapbox.
+   */
+  public function getCoordinatesFromAddress(string $address, array $options = []): ?array {
+    $address = trim((string) preg_replace('/\s+/', ' ', $address));
+    if ($address === '') {
+      return NULL;
+    }
+
+    $provider = $this->createProvider();
+    $language = $this->getLanguage();
+    $geocoder = new StatefulGeocoder($provider, $language);
+
+    $query = $this->buildForwardGeocodeQuery($address, $options);
+
+    try {
+      $result = $geocoder->geocodeQuery($query);
+      $location = $result->first();
+      $coordinates = $location->getCoordinates();
+
+      if ($coordinates === NULL) {
+        $this->logger->warning('No coordinates found for supplied address.');
+        return NULL;
+      }
+
+      return [
+        'lat' => $coordinates->getLatitude(),
+        'lng' => $coordinates->getLongitude(),
+        'country_code' => $location->getCountry()?->getCode() ?? 'DE',
+        'locality' => $location->getLocality() ?? '',
+        'postal_code' => $location->getPostalCode() ?? '',
+        'street_name' => $location->getStreetName() ?? '',
+        'street_number' => (string) ($location->getStreetNumber() ?? ''),
+        'address_line1' => trim(($location->getStreetName() ?? '') . ' ' . ($location->getStreetNumber() ?? '')),
+        'provider' => $location->getProvidedBy(),
+        'district_properties' => $this->lastProvider?->getLastRawProperties() ?? [],
+      ];
+    }
+    catch (CollectionIsEmpty $ex) {
+      $this->logger->warning('No coordinates found for supplied address.');
+      return NULL;
+    }
+    catch (\Exception $ex) {
+      $this->logger->error('Error during forward geocoding for supplied address | Type: @type | File: @file:@line', [
+        '@type' => get_class($ex),
+        '@file' => $ex->getFile(),
+        '@line' => $ex->getLine(),
+      ]);
+      return NULL;
+    }
+  }
+
+  /**
+   * Builds a forward-geocoding query from sanitized caller options.
+   */
+  private function buildForwardGeocodeQuery(string $address, array $options): GeocodeQuery {
+    $query = GeocodeQuery::create($address)->withLimit(1);
+
+    $country = $this->normalizeCountryOption($options['country'] ?? NULL);
+    if ($country !== NULL) {
+      $query = $query->withData('country', $country);
+    }
+
+    $locationType = $this->normalizeLocationTypeOption($options['location_type'] ?? NULL);
+    if ($locationType !== NULL) {
+      $query = $query->withData('location_type', $locationType);
+    }
+
+    if (array_key_exists('fuzzy_match', $options) && is_bool($options['fuzzy_match'])) {
+      $query = $query->withData('fuzzy_match', $options['fuzzy_match']);
+    }
+
+    return $query;
+  }
+
+  /**
+   * Normalizes a provider country filter to a single ISO 3166-1 alpha-2 code.
+   */
+  private function normalizeCountryOption(mixed $country): ?string {
+    if (!is_string($country)) {
+      return NULL;
+    }
+
+    $country = strtoupper(trim($country));
+
+    return preg_match('/^[A-Z]{2}$/', $country) ? $country : NULL;
+  }
+
+  /**
+   * Normalizes Mapbox location type filters to allowed provider values.
+   */
+  private function normalizeLocationTypeOption(mixed $locationType): string|array|null {
+    $allowedTypes = MarkaspotMapbox::TYPES;
+
+    if (is_string($locationType)) {
+      $locationType = trim($locationType);
+      return in_array($locationType, $allowedTypes, TRUE) ? $locationType : NULL;
+    }
+
+    if (!is_array($locationType)) {
+      return NULL;
+    }
+
+    $types = array_values(array_filter(
+      array_map(static fn ($type) => is_string($type) ? trim($type) : '', $locationType),
+      static fn (string $type) => in_array($type, $allowedTypes, TRUE),
+    ));
+    $types = array_slice(array_values(array_unique($types)), 0, self::MAX_LOCATION_TYPE_FILTERS);
+
+    return $types === [] ? NULL : $types;
   }
 
   /**
