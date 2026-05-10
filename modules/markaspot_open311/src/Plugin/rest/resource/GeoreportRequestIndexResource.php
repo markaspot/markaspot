@@ -18,6 +18,7 @@ use Drupal\rest\Plugin\ResourceBase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -687,6 +688,28 @@ class GeoreportRequestIndexResource extends ResourceBase {
         throw $previous;
       }
       throw new HttpException(500, 'Internal Server Error', $e);
+    }
+    catch (HttpExceptionInterface $e) {
+      // Pre-mapped HTTP exceptions (GeoreportException,
+      // AccessDeniedHttpException, BadRequest…) carry intentional status
+      // codes — let them propagate verbatim.
+      throw $e;
+    }
+    catch (\Throwable $e) {
+      // post-save hooks (ECA `action_send_email`, markaspot_mail
+      // notifications) can throw long after the entity row is committed.
+      // Without this catch the throw bubbles to Drupal's REST exception
+      // subscriber which historically wrapped the message verbatim into
+      // a 4xx response — leaking implementation detail through what
+      // should be an English Open311 contract. Translate to a generic
+      // 502 with no architectural detail; operators investigate via
+      // watchdog correlating on the timestamp.
+      $this->logger->error('Unhandled @class (code @code) during POST /georeport/v2/requests.json. Message redacted in log.', [
+        '@class' => $e::class,
+        '@code' => $e->getCode(),
+      ]);
+      $headers = ['Retry-After' => '60'];
+      throw new HttpException(502, 'An unexpected error occurred. Please retry after 60 seconds; contact support if the problem persists.', $e, $headers);
     }
   }
 
