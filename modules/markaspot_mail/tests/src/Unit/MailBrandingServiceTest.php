@@ -12,6 +12,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileSystemInterface;
@@ -533,6 +534,81 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
+   * Path-only legal fields anchor at the tenant frontend base without slug.
+   */
+  public function testJurisdictionPathOnlyLegalFieldsUseFrontendRoot(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.test';
+    unset($overrides['platform.tenant_frontend_base_template']);
+
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'WBD',
+      'field_slug' => 'wbd',
+      'field_platform_name' => 'Mängelmelder',
+      'field_legal_notice' => '/impressum',
+      'field_privacy_policy' => '/privacy',
+    ]);
+    $storage = $this->buildGroupStorageWithJurisdictionCount(1);
+    $service = $this->buildService($group, $storage, NULL, $overrides);
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'de');
+
+    $this->assertSame('https://maengelmelder.example.test/impressum', $branding['legal_notice_url']);
+    $this->assertSame('https://maengelmelder.example.test/privacy', $branding['privacy_url']);
+    $this->assertSame('https://maengelmelder.example.test', $branding['frontend_base_url']);
+  }
+
+  /**
+   * Path-only legal fields remain slug-scoped for multi-tenant installs.
+   */
+  public function testJurisdictionPathOnlyLegalFieldsStaySlugScopedForMultiTenant(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.test';
+    unset($overrides['platform.tenant_frontend_base_template']);
+
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'WBD',
+      'field_slug' => 'wbd',
+      'field_platform_name' => 'Mängelmelder',
+      'field_legal_notice' => '/impressum',
+      'field_privacy_policy' => '/privacy',
+    ]);
+    $storage = $this->buildGroupStorageWithJurisdictionCount(2);
+    $service = $this->buildService($group, $storage, NULL, $overrides);
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'de');
+
+    $this->assertSame('https://maengelmelder.example.test/wbd/impressum', $branding['legal_notice_url']);
+    $this->assertSame('https://maengelmelder.example.test/wbd/privacy', $branding['privacy_url']);
+  }
+
+  /**
+   * Path-only legal fields reject control characters instead of rendering.
+   */
+  public function testJurisdictionPathOnlyLegalFieldsRejectControlCharacters(): void {
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.frontend_base_url'] = 'https://maengelmelder.example.test';
+    unset($overrides['platform.legal_notice_url']);
+    unset($overrides['platform.tenant_frontend_base_template']);
+
+    $group = $this->buildGroup([
+      'id' => 1,
+      'label' => 'WBD',
+      'field_slug' => 'wbd',
+      'field_platform_name' => 'Mängelmelder',
+      'field_legal_notice' => "/impressum\nhttps://evil.example",
+    ]);
+    $storage = $this->buildGroupStorageWithJurisdictionCount(1);
+    $service = $this->buildService($group, $storage, NULL, $overrides);
+
+    $branding = $service->getBranding(1, 'jurisdiction', 'de');
+
+    $this->assertSame('', $branding['legal_notice_url']);
+  }
+
+  /**
    * Empty field_legal_notice still yields a tenant-scoped slug URL.
    *
    * The original bug: tenants on dev-2.x with empty legacy text fields
@@ -959,6 +1035,21 @@ final class MailBrandingServiceTest extends UnitTestCase {
       NULL,
       $fileSystem,
     );
+  }
+
+  /**
+   * Builds group storage that can answer the jurisdiction count query.
+   */
+  private function buildGroupStorageWithJurisdictionCount(int $count): EntityStorageInterface {
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->with(FALSE)->willReturnSelf();
+    $query->method('condition')->with('type', 'jur')->willReturnSelf();
+    $query->method('count')->willReturnSelf();
+    $query->method('execute')->willReturn($count);
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')->willReturn($query);
+    return $storage;
   }
 
   /**

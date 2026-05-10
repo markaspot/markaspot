@@ -100,6 +100,11 @@ class MailBrandingService {
    */
   private ?string $operatingMode = NULL;
 
+  /**
+   * Memoized result for the single-jurisdiction install check.
+   */
+  private ?bool $singleJurisdictionInstall = NULL;
+
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
@@ -339,11 +344,13 @@ class MailBrandingService {
     // frontend/app/pages/[[jurisdiction]]/impressum.vue. The frontend has no
     // /<slug>/legal-notice page, so any URL synthesized from the slug must
     // land on /<slug>/impressum to avoid a 404 from the mail link.
+    $allowRootLegalPath = $this->isSingleJurisdictionInstall();
     $legalNoticeUrl = $this->resolveLegalUrl(
       $group->hasField('field_legal_notice') ? $group->get('field_legal_notice') : NULL,
       $slug,
       'impressum',
       $frontendBase,
+      $allowRootLegalPath,
     );
     if ($legalNoticeUrl !== NULL) {
       $branding['legal_notice_url'] = $legalNoticeUrl;
@@ -354,6 +361,7 @@ class MailBrandingService {
       $slug,
       'privacy',
       $frontendBase,
+      $allowRootLegalPath,
     );
     if ($privacyUrl !== NULL) {
       $branding['privacy_url'] = $privacyUrl;
@@ -825,14 +833,16 @@ class MailBrandingService {
    * Resolves a legal/privacy URL from a text_long field.
    *
    * Priority: an absolute http(s) URL in the field always wins (after
-   * validation). Otherwise — including when the field is empty or NULL —
-   * we synthesize <frontend_base>/<slug>/<path>, which the Nuxt frontend
-   * already serves for every tenant. Tenants override the synthesized URL
-   * by populating the field with their own copy or a full URL. Returns
-   * NULL only when no slug/frontend base is available, which means the
-   * platform default has to stand in.
+   * validation). A path-only value such as "/impressum" is anchored at the
+   * tenant frontend base without adding the slug only for proven
+   * single-jurisdiction installs. Multi-tenant frontends keep the path below
+   * the tenant slug. Otherwise, including when the field is empty or
+   * prose-only, we synthesize <frontend_base>/<slug>/<path>, which the Nuxt
+   * frontend already serves for every tenant. Returns NULL only when no
+   * slug/frontend base is available, which means the platform default has to
+   * stand in.
    */
-  private function resolveLegalUrl($fieldItemList, ?string $slug, string $path, string $frontendBase): ?string {
+  private function resolveLegalUrl($fieldItemList, ?string $slug, string $path, string $frontendBase, bool $allowRootPath = FALSE): ?string {
     $raw = '';
     if ($fieldItemList !== NULL && !$fieldItemList->isEmpty()) {
       $raw = trim((string) $fieldItemList->value);
@@ -844,6 +854,19 @@ class MailBrandingService {
       if ($validated !== '') {
         return $validated;
       }
+    }
+    if ($raw !== '' && str_starts_with($raw, '/')) {
+      $fieldPath = $this->normalizePathOnlyLegalUrl($raw);
+      if ($fieldPath === NULL || $frontendBase === '') {
+        return NULL;
+      }
+      if ($allowRootPath) {
+        return $frontendBase . $fieldPath;
+      }
+      if ($slug === NULL || $slug === '') {
+        return NULL;
+      }
+      return $frontendBase . '/' . $slug . $fieldPath;
     }
     if ($slug === NULL || $slug === '' || $frontendBase === '') {
       return NULL;
@@ -873,6 +896,42 @@ class MailBrandingService {
     catch (\Throwable) {
       return $fallback;
     }
+  }
+
+  /**
+   * Normalizes path-only legal URLs and rejects malformed control input.
+   */
+  private function normalizePathOnlyLegalUrl(string $url): ?string {
+    if ($url === '' || !str_starts_with($url, '/')) {
+      return NULL;
+    }
+    if (preg_match('/[\x00-\x20\x7f\\\\]/', $url) === 1) {
+      return NULL;
+    }
+    $normalized = '/' . ltrim($url, '/');
+    return $normalized === '/' ? NULL : $normalized;
+  }
+
+  /**
+   * Detects whether the install has exactly one jurisdiction group.
+   */
+  private function isSingleJurisdictionInstall(): bool {
+    if ($this->singleJurisdictionInstall !== NULL) {
+      return $this->singleJurisdictionInstall;
+    }
+    try {
+      $storage = $this->entityTypeManager->getStorage('group');
+      $count = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $this->jurisdictionGroupType())
+        ->count()
+        ->execute();
+      $this->singleJurisdictionInstall = (int) $count === 1;
+    }
+    catch (\Throwable) {
+      $this->singleJurisdictionInstall = FALSE;
+    }
+    return $this->singleJurisdictionInstall;
   }
 
   /**
