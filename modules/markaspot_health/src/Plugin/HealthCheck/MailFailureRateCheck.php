@@ -21,10 +21,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *
  * This plugin closes that gap: it counts ERROR/WARNING-severity entries
  * on the canonical mail channels (`mail`, `phpmailer_smtp`,
- * `markaspot_mail`) within a rolling time window. When the count crosses
- * the threshold the plugin fails — operators get the same release-deploy
- * gate signal they would have gotten from a 502 spike, without coupling
- * the API contract to mail config.
+ * `markaspot_mail`, `symfony_mailer`, `eca`) within a rolling time
+ * window. When the count crosses the threshold the plugin fails —
+ * operators get the same release-deploy gate signal they would have
+ * gotten from a 502 spike, without coupling the API contract to mail
+ * config.
  *
  * Relies on dblog: skips cleanly when dblog is not enabled.
  *
@@ -32,8 +33,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   id = "mail_failure_rate",
  *   label = @Translation("Elevated mail-failure rate in watchdog"),
  *   severity = "warning",
- *   description = @Translation("Counts ERROR/WARNING-severity entries on the mail / phpmailer_smtp / markaspot_mail channels in the last hour. Crosses the threshold → fail."),
- *   fix_hint = @Translation("Inspect /admin/reports/dblog?type=mail (or phpmailer_smtp / markaspot_mail). Common causes: missing recipient (field_e_mail empty on a flow that triggers a notification), SMTP relay outage, throttling by upstream provider."),
+ *   description = @Translation("Counts ERROR/WARNING-severity entries on the mail / phpmailer_smtp / markaspot_mail / symfony_mailer / eca channels in the last hour. Crosses the threshold → fail."),
+ *   fix_hint = @Translation("Inspect /admin/reports/dblog?type=mail (or phpmailer_smtp / markaspot_mail / symfony_mailer / eca). Common causes: missing recipient (field_e_mail empty on a flow that triggers a notification), SMTP relay outage, throttling by upstream provider."),
  *   fix_url = "/admin/reports/dblog",
  * )
  */

@@ -91,11 +91,17 @@ class ReportCreateViaOpen311Check extends SmokeCheckPluginBase {
 
     $runId = $this->generateRunId();
     $title = sprintf('SMOKE-%s-create-open311', $runId);
+    // Reserved per RFC 6761 — .invalid TLD never resolves, so any
+    // citizen-confirmation mail the save-hook tries to send fails fast at
+    // SMTP lookup with a tenant-greppable address instead of triggering
+    // Drupal's "You must provide at least one recipient" error from an
+    // empty field_e_mail. The runId tag keeps cleanup discoverable.
     $body = [
       'service_code' => $fixture['service_code'],
       'jurisdiction_id' => $fixture['jurisdiction_id'],
       'api_key' => $fixture['api_key_value'],
       'description' => $title,
+      'email' => sprintf('smoke-%s@example.invalid', $runId),
       'lat' => $fixture['lat'],
       'long' => $fixture['lng'],
     ];

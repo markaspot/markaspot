@@ -508,6 +508,11 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
           'lat' => $fixture['lat'],
           'lng' => $fixture['lng'],
         ],
+        // RFC 6761 reserved TLD — never resolves at SMTP lookup, so the
+        // citizen-confirmation mail trigger fails fast with a tenant-
+        // greppable address instead of Drupal's "no recipient" error
+        // from an empty field_e_mail.
+        'field_e_mail' => sprintf('smoke-%s@example.invalid', $runId),
         'status' => 1,
       ];
       $fieldDefs = $this->entityTypeManager->getStorage('field_config')

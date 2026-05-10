@@ -33,9 +33,15 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  * validators silently fail open) would otherwise pass the status check and
  * mask the regression the smoke is supposed to catch.
  *
- * Fixtures: an api_key whose owner is a member of exactly one jurisdiction
- * group. Auto-discovered from existing api_key config entities. Without a
- * usable fixture the check skips with setup hints — it never creates users.
+ * Fixtures: an api_key whose owner is a member of at least one jurisdiction
+ * group AND at least one other jurisdiction exists outside the owner's
+ * scope. Auto-discovered from existing api_key config entities. The earlier
+ * "exactly one membership" rule silently skipped hierarchical tenants
+ * (root + child jurisdictions like WBD or Bonn-Mobility) where api_keys
+ * routinely span multiple jurisdictions; the relaxed rule lets the smoke
+ * run everywhere except for true platform-admin keys whose owner spans
+ * every jurisdiction the platform knows. Without a usable fixture the
+ * check skips with setup hints — it never creates users.
  *
  * @SmokeCheck(
  *   id = "request_create_jurisdiction_scope_lock",
@@ -120,7 +126,7 @@ class RequestCreateJurisdictionScopeLockCheck extends SmokeCheckPluginBase {
     $fixture = $this->discoverFixture($context);
     if ($fixture === NULL) {
       return $this->skip(
-        'No usable fixture: need an api_key whose owner is a member of exactly one jurisdiction group, plus a second jurisdiction to test cross-scope rejection. Pass --jurisdiction-other=N or seed an api_key (see services_api_key_auth.api_key.*.yml).',
+        'No usable fixture: need an api_key whose owner has at least one jurisdiction membership AND at least one jurisdiction outside the owner scope to claim. Pass --jurisdiction-other=N to pin a foreign jurisdiction explicitly, or seed an api_key (see services_api_key_auth.api_key.*.yml). On a platform-admin api_key whose owner spans every jurisdiction, no out-of-scope candidate exists by definition.',
         ['attempted' => 'fixture auto-discovery'],
         $mode,
       );
@@ -236,14 +242,24 @@ class RequestCreateJurisdictionScopeLockCheck extends SmokeCheckPluginBase {
   /**
    * Picks a usable api_key + jurisdiction pair for the test legs.
    *
-   * Strategy: find an api_key whose owner is a direct member of exactly one
-   * jurisdiction group ("in-scope"). Then pick any other jurisdiction the
-   * owner is NOT a member of ("out-of-scope"), preferring --jurisdiction-other
-   * from context when provided.
+   * Strategy: find an api_key whose owner is a direct member of at least
+   * one jurisdiction group. Pick any of those memberships as "in-scope"
+   * (the first one is deterministic and adequate — the smoke asserts the
+   * scope-check rejects mismatches, which is symmetric across the owner's
+   * memberships). Pick any jurisdiction the owner is NOT a member of as
+   * "out-of-scope", preferring --jurisdiction-other from context.
    *
-   * Bounded scan via FIXTURE_SCAN_LIMIT — once a usable api_key is found the
-   * loop returns; tenants with only unusable keys at the head of the list
-   * still get inspected up to the cap.
+   * Hierarchical tenants (root jurisdiction + child jurisdictions, e.g.
+   * WBD or Bonn-Mobility) wire api_keys to owners with multi-jurisdiction
+   * membership. The earlier `count(allowed) === 1` constraint silently
+   * skipped exactly those tenants; the relaxation lets the smoke run
+   * everywhere except on api_keys whose owner spans every jurisdiction
+   * the platform knows (true platform-admin), where no out-of-scope
+   * candidate exists by definition.
+   *
+   * Bounded scan via FIXTURE_SCAN_LIMIT — once a usable api_key is found
+   * the loop returns; tenants with only unusable keys at the head of the
+   * list still get inspected up to the cap.
    *
    * @return array{api_key_id: string, api_key_value: string, owner_uid: int, in_scope_gid: int, out_of_scope_gid: int}|null
    *   Resolved fixture, or NULL when nothing usable exists.
@@ -279,53 +295,70 @@ class RequestCreateJurisdictionScopeLockCheck extends SmokeCheckPluginBase {
       return NULL;
     }
 
-    foreach ($apiKeyStorage->loadMultiple($apiKeyIds) as $apiKey) {
-      $userUuid = $apiKey->get('user_uuid');
-      if (!is_string($userUuid) || $userUuid === '') {
-        continue;
-      }
-      $users = $userStorage->loadByProperties(['uuid' => $userUuid]);
-      $owner = reset($users);
-      if (!$owner) {
-        continue;
-      }
-
-      $allowed = $this->getJurisdictionMemberships((int) $owner->id(), $jurisdictionType);
-      if (count($allowed) !== 1) {
-        continue;
-      }
-
-      $inScope = (int) $allowed[0];
-
-      if ($forcedOther !== NULL) {
-        if ($forcedOther === $inScope || in_array($forcedOther, $allowed, TRUE)) {
+    // Two-pass discovery: prefer api_keys whose owner is in exactly one
+    // jurisdiction (cleanest test fixture, no permission ambiguity), then
+    // fall back to multi-membership owners for hierarchical tenants. The
+    // single-jurisdiction case rules out the boundary-bypass permission
+    // ambiguity — many staff users on hierarchy tenants (root + children)
+    // also carry `bypass jurisdiction boundary`, which silently turns the
+    // boundary leg into a 404 on service-code lookup instead of the
+    // expected 422.
+    $loadedKeys = $apiKeyStorage->loadMultiple($apiKeyIds);
+    foreach (['singleton', 'multi'] as $pass) {
+      foreach ($loadedKeys as $apiKey) {
+        $userUuid = $apiKey->get('user_uuid');
+        if (!is_string($userUuid) || $userUuid === '') {
           continue;
         }
-        if (!in_array($forcedOther, $allJurisdictionIds, TRUE)) {
+        $users = $userStorage->loadByProperties(['uuid' => $userUuid]);
+        $owner = reset($users);
+        if (!$owner) {
           continue;
         }
-        $outOfScope = $forcedOther;
-      }
-      else {
-        $candidates = array_values(array_diff($allJurisdictionIds, $allowed));
-        if ($candidates === []) {
+
+        $allowed = $this->getJurisdictionMemberships((int) $owner->id(), $jurisdictionType);
+        if ($allowed === []) {
           continue;
         }
-        $outOfScope = (int) $candidates[0];
-      }
+        if ($pass === 'singleton' && count($allowed) !== 1) {
+          continue;
+        }
 
-      $keyValue = $apiKey->get('key');
-      if (!is_string($keyValue) || $keyValue === '') {
-        continue;
-      }
+        // First membership is the deterministic in-scope pick. The
+        // scope-check rejects every claim outside `$allowed`, so the
+        // assertion is symmetric across any owner-membership.
+        $inScope = (int) $allowed[0];
 
-      return [
-        'api_key_id' => (string) $apiKey->id(),
-        'api_key_value' => $keyValue,
-        'owner_uid' => (int) $owner->id(),
-        'in_scope_gid' => $inScope,
-        'out_of_scope_gid' => $outOfScope,
-      ];
+        if ($forcedOther !== NULL) {
+          if (in_array($forcedOther, $allowed, TRUE)) {
+            continue;
+          }
+          if (!in_array($forcedOther, $allJurisdictionIds, TRUE)) {
+            continue;
+          }
+          $outOfScope = $forcedOther;
+        }
+        else {
+          $candidates = array_values(array_diff($allJurisdictionIds, $allowed));
+          if ($candidates === []) {
+            continue;
+          }
+          $outOfScope = (int) $candidates[0];
+        }
+
+        $keyValue = $apiKey->get('key');
+        if (!is_string($keyValue) || $keyValue === '') {
+          continue;
+        }
+
+        return [
+          'api_key_id' => (string) $apiKey->id(),
+          'api_key_value' => $keyValue,
+          'owner_uid' => (int) $owner->id(),
+          'in_scope_gid' => $inScope,
+          'out_of_scope_gid' => $outOfScope,
+        ];
+      }
     }
 
     return NULL;
