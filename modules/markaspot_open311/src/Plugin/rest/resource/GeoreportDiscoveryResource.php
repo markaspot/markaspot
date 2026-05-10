@@ -129,7 +129,7 @@ class GeoreportDiscoveryResource extends ResourceBase {
             $format_route->addRequirements(
               [
                 '_content_type_format'
-                => implode('|', $this->serializerFormats),
+                  => implode('|', $this->serializerFormats),
               ]);
             $collection->add("$route_name.$method.$format", $format_route);
           }

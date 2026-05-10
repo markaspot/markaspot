@@ -49,6 +49,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
 
   use StringTranslationTrait;
   use LanguageNegotiationTrait;
+  use \Drupal\markaspot_open311\RateLimit\Open311RateLimitTrait;
 
   /**
    * The time service.
@@ -147,31 +148,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
    * @var \Drupal\markaspot_validation\Service\BoundaryValidator
    */
   protected $boundaryValidator;
-
-  /**
-   * Rate limit: max requests per window for regular users.
-   */
-  protected const RATE_LIMIT_THRESHOLD = 60;
-
-  /**
-   * Rate limit window in seconds (1 minute).
-   */
-  protected const RATE_LIMIT_WINDOW = 60;
-
-  /**
-   * Roles exempt from rate limiting.
-   *
-   * Staff roles that need unrestricted API access for moderation.
-   * Note: api_user is NOT exempt - we check session UID instead to
-   * distinguish frontend app users from external API consumers.
-   */
-  protected const RATE_LIMIT_EXEMPT_ROLES = [
-    'administrator',
-    'moderator',
-    'editorial_board',
-    'api_editor',
-    'api_municipality',
-  ];
 
   /**
    * Maximum Search API candidate IDs loaded before EntityQuery pagination.
@@ -708,7 +684,10 @@ class GeoreportRequestIndexResource extends ResourceBase {
         '@class' => $e::class,
         '@code' => $e->getCode(),
       ]);
-      $headers = ['Retry-After' => '60'];
+      // Retry-After carries 60-90s of randomised backoff so a fleet of
+      // Open311 clients failing simultaneously does not all retry at the
+      // same instant.
+      $headers = ['Retry-After' => (string) (60 + random_int(0, 30))];
       throw new HttpException(502, 'An unexpected error occurred. Please retry after 60 seconds; contact support if the problem persists.', $e, $headers);
     }
   }
@@ -1158,79 +1137,6 @@ class GeoreportRequestIndexResource extends ResourceBase {
         400
       );
     }
-  }
-
-  /**
-   * Checks if the current user is exempt from rate limiting.
-   *
-   * Exemptions:
-   * 1. Staff roles: admin, moderator, editorial_board, api_editor,
-   *    api_municipality.
-   * 2. Authenticated frontend users with valid session (uid > 0)
-   *
-   * This allows distinguishing between:
-   * - Nuxt frontend users (session-based) → exempt
-   * - External API consumers (api_key only, no session) → rate limited
-   *
-   * @return bool
-   *   TRUE if the user is exempt from rate limiting, FALSE otherwise.
-   */
-  protected function isExemptFromRateLimit(): bool {
-    // Check if user has any exempt staff role.
-    $userRoles = $this->currentUser->getRoles();
-    foreach (self::RATE_LIMIT_EXEMPT_ROLES as $exemptRole) {
-      if (in_array($exemptRole, $userRoles, TRUE)) {
-        return TRUE;
-      }
-    }
-
-    // Check for valid session (frontend app users).
-    // Session UID > 0 means authenticated via passwordless login.
-    $request = $this->requestStack->getCurrentRequest();
-    if ($request->hasSession()) {
-      $session = $request->getSession();
-      $uid = $session->get('uid');
-      if (!empty($uid) && $uid > 0) {
-        return TRUE;
-      }
-    }
-
-    return FALSE;
-  }
-
-  /**
-   * Checks flood control and throws exception if rate limit exceeded.
-   *
-   * @param string $name
-   *   The flood event name (e.g., 'georeport_api_get', 'georeport_api_search').
-   *
-   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
-   *   Throws 429 Too Many Requests if rate limit exceeded.
-   */
-  protected function checkRateLimit(string $name): void {
-    // Skip rate limiting for exempt users (staff roles).
-    if ($this->isExemptFromRateLimit()) {
-      return;
-    }
-
-    // Get client identifier (IP for anonymous, user ID for authenticated).
-    $identifier = $this->currentUser->isAnonymous()
-      ? $this->requestStack->getCurrentRequest()->getClientIp()
-      : (string) $this->currentUser->id();
-
-    // Check if rate limit exceeded.
-    if (!$this->flood->isAllowed($name, self::RATE_LIMIT_THRESHOLD, self::RATE_LIMIT_WINDOW, $identifier)) {
-      $this->logger->warning('Rate limit exceeded for @name by @identifier', [
-        '@name' => $name,
-        '@identifier' => $identifier,
-      ]);
-      $exception = new GeoreportException('Too many requests. Please slow down.', 429);
-      $exception->setHeaders(['Retry-After' => (string) self::RATE_LIMIT_WINDOW]);
-      throw $exception;
-    }
-
-    // Register this request.
-    $this->flood->register($name, self::RATE_LIMIT_WINDOW, $identifier);
   }
 
 }

@@ -2,6 +2,7 @@
 
 namespace Drupal\markaspot_open311\Plugin\rest\resource;
 
+use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Component\Utility\UrlHelper;
@@ -48,6 +49,7 @@ class GeoreportRequestResource extends ResourceBase {
 
   use StringTranslationTrait;
   use LanguageNegotiationTrait;
+  use \Drupal\markaspot_open311\RateLimit\Open311RateLimitTrait;
 
   /**
    * The time service.
@@ -127,6 +129,19 @@ class GeoreportRequestResource extends ResourceBase {
   protected $workspaceVisibility;
 
   /**
+   * The flood control service.
+   *
+   * Consumed by Open311RateLimitTrait::checkRateLimit() to gate POST
+   * traffic on the UPDATE endpoint per-IP / per-UID. Without it, an
+   * authenticated api-key consumer with `access open311 advanced
+   * properties` could flood the endpoint and amplify watchdog writes
+   * during a broken-mail outage (security review of 100ebc2 finding 7).
+   *
+   * @var \Drupal\Core\Flood\FloodInterface
+   */
+  protected FloodInterface $flood;
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -161,6 +176,15 @@ class GeoreportRequestResource extends ResourceBase {
    *   The jurisdiction hierarchy resolver.
    * @param object|null $workspace_visibility
    *   The workspace visibility service (optional).
+   * @param \Drupal\Core\Flood\FloodInterface|null $flood
+   *   The flood control service. Optional only for backwards compat with
+   *   constructor invocations that predate the rate-limit extension; new
+   *   callers MUST pass it. The fallback wires the core 'flood' service.
+   *
+   *   @todo Remove the NULL fallback + \Drupal::service('flood') shim
+   *     once downstream subclasses have migrated. BC hedge for one
+   *     release cycle only — not intended to ossify into permanent
+   *     service-locator usage.
    */
   public function __construct(
     array $configuration,
@@ -179,6 +203,7 @@ class GeoreportRequestResource extends ResourceBase {
     ?JurisdictionScopeValidator $jurisdiction_scope_validator = NULL,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
     ?object $workspace_visibility = NULL,
+    ?FloodInterface $flood = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -192,6 +217,7 @@ class GeoreportRequestResource extends ResourceBase {
     $this->jurisdictionScopeValidator = $jurisdiction_scope_validator;
     $this->hierarchyResolver = $hierarchy_resolver;
     $this->workspaceVisibility = $workspace_visibility;
+    $this->flood = $flood ?? \Drupal::service('flood');
   }
 
   /**
@@ -214,7 +240,8 @@ class GeoreportRequestResource extends ResourceBase {
       $container->get('language_manager'),
       $container->get('markaspot_group.jurisdiction_scope_validator'),
       $container->get('markaspot_group.hierarchy_resolver'),
-      $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL
+      $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL,
+      $container->get('flood'),
     );
   }
 
@@ -349,6 +376,14 @@ class GeoreportRequestResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function post($id, $request_data) {
+    // Per-IP / per-UID rate limit before any work happens. Closes the
+    // gap that allowed an authenticated api-key consumer to flood the
+    // UPDATE endpoint and amplify watchdog writes during a broken-mail
+    // outage (security review of 100ebc2 finding 7). Same flood key as
+    // the create endpoint so a single hostile actor cannot side-step
+    // the limit by alternating create + update calls.
+    $this->checkRateLimit('georeport_api_post');
+
     try {
       if (!$this->currentUser->hasPermission('access open311 advanced properties')) {
         throw new AccessDeniedHttpException();
@@ -390,7 +425,11 @@ class GeoreportRequestResource extends ResourceBase {
         '@code' => $e->getCode(),
         '@id' => $id,
       ]);
-      $headers = ['Retry-After' => '60'];
+      // Retry-After carries 60-90s of randomised backoff so a fleet of
+      // Open311 clients failing simultaneously does not all retry at the
+      // same instant — pure 60s would create a thundering herd against
+      // whatever upstream subsystem just went sour.
+      $headers = ['Retry-After' => (string) (60 + random_int(0, 30))];
       throw new HttpException(502, 'An unexpected error occurred. Please retry after 60 seconds; contact support if the problem persists.', $e, $headers);
     }
 
