@@ -6,6 +6,7 @@ core_version_requirement: ^10 || ^11
 
 dependencies:
   - node
+  - node_storage_body_field
   - path
   - text
   - address
