@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.77](https://github.com/markaspot/markaspot/compare/11.9.76...11.9.77) (2026-05-11)
+
+### Bug Fixes
+
+* **group:** allow jurisdiction roles to read boilerplates ([7d26863](https://github.com/markaspot/markaspot/commit/7d26863218ff4b0ea5e46fc27409847b7f60579f))
+* **mail:** fallback to single-jurisdiction branding when platform mails lack context ([28bb73b](https://github.com/markaspot/markaspot/commit/28bb73b41aefdd94375cb14f59ae9b2596fe1d75))
+* **mail:** support single-tenant legal links ([a4f3eb0](https://github.com/markaspot/markaspot/commit/a4f3eb0e0f67b16bd74441be2204e27533babd3a))
+
 ## [11.9.76](https://github.com/markaspot/markaspot/compare/11.9.75...11.9.76) (2026-05-10)
 
 ### Features
