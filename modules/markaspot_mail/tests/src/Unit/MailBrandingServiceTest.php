@@ -423,6 +423,61 @@ final class MailBrandingServiceTest extends UnitTestCase {
   }
 
   /**
+   * Platform-mode fallbacks use tenant branding on single-jurisdiction sites.
+   */
+  public function testSelfHostedPlatformFallbackUsesSingleJurisdictionBranding(): void {
+    // setUp() resets Settings to empty -> default self_hosted.
+    $group = $this->buildGroup([
+      'id' => 68,
+      'label' => 'KBK Krefeld',
+      'field_slug' => 'krefeld',
+      'field_platform_name' => 'Maak et, Krefeld!',
+      'field_logo_light' => '',
+      'field_nuxt_config' => json_encode([
+        'theme' => [
+          'primary' => '#276327',
+          'logos' => [
+            'light' => 'public://logos/kbk-logo-light.svg',
+          ],
+        ],
+      ]),
+    ]);
+    $storage = $this->buildGroupStorageWithSingleJurisdictionId(68);
+    $overrides = self::PLATFORM_SETTINGS;
+    $overrides['platform.backend_base_url'] = 'https://management.example.test';
+    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $fileUrlGenerator->expects($this->once())
+      ->method('generateAbsoluteString')
+      ->with('public://logos/kbk-logo-light.png')
+      ->willReturn('http://cloud-drupal/sites/default/files/logos/kbk-logo-light.png');
+    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $fileSystem->expects($this->once())
+      ->method('realpath')
+      ->with('public://logos/kbk-logo-light.png')
+      ->willReturn(__FILE__);
+
+    $service = $this->buildService(
+      $group,
+      $storage,
+      NULL,
+      $overrides,
+      NULL,
+      $fileUrlGenerator,
+      $fileSystem,
+    );
+
+    $branding = $service->getBranding(NULL, 'platform', 'de');
+
+    $this->assertSame('jurisdiction', $branding['mode']);
+    $this->assertSame('Maak et, Krefeld!', $branding['platform_name']);
+    $this->assertSame('#276327', $branding['primary_color']);
+    $this->assertSame(
+      'https://management.example.test/sites/default/files/logos/kbk-logo-light.png',
+      $branding['logo_url'],
+    );
+  }
+
+  /**
    * Tests jurisdiction branding values for an Amsterdam tenant.
    */
   public function testJurisdictionAmsterdamMapsBlueToHex(): void {
@@ -1049,6 +1104,28 @@ final class MailBrandingServiceTest extends UnitTestCase {
 
     $storage = $this->createMock(EntityStorageInterface::class);
     $storage->method('getQuery')->willReturn($query);
+    return $storage;
+  }
+
+  /**
+   * Builds group storage that resolves exactly one jurisdiction id.
+   */
+  private function buildGroupStorageWithSingleJurisdictionId(int $id): EntityStorageInterface {
+    $countQuery = $this->createMock(QueryInterface::class);
+    $countQuery->method('accessCheck')->with(FALSE)->willReturnSelf();
+    $countQuery->method('condition')->with('type', 'jur')->willReturnSelf();
+    $countQuery->method('count')->willReturnSelf();
+    $countQuery->method('execute')->willReturn(1);
+
+    $idQuery = $this->createMock(QueryInterface::class);
+    $idQuery->method('accessCheck')->with(FALSE)->willReturnSelf();
+    $idQuery->method('condition')->with('type', 'jur')->willReturnSelf();
+    $idQuery->method('sort')->with('id')->willReturnSelf();
+    $idQuery->method('range')->with(0, 1)->willReturnSelf();
+    $idQuery->method('execute')->willReturn([$id => $id]);
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')->willReturnOnConsecutiveCalls($countQuery, $idQuery);
     return $storage;
   }
 

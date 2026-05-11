@@ -105,6 +105,16 @@ class MailBrandingService {
    */
   private ?bool $singleJurisdictionInstall = NULL;
 
+  /**
+   * Memoized default jurisdiction id for single-jurisdiction installs.
+   */
+  private bool $singleJurisdictionIdResolved = FALSE;
+
+  /**
+   * The only jurisdiction group id, or NULL for multi-tenant/unknown installs.
+   */
+  private ?int $singleJurisdictionId = NULL;
+
   public function __construct(
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
@@ -199,6 +209,18 @@ class MailBrandingService {
       'platform_footer' => $showPlatformFooter ? $this->getPlatformFooter() : NULL,
       'show_platform_footer' => $showPlatformFooter,
     ];
+
+    // In self-hosted single-jurisdiction installs the tenant is the platform.
+    // Some mail flows, especially generic ECA action mails, can legitimately
+    // arrive without a resolved entity context. Falling back to Mark-a-Spot in
+    // that case would leak the product logo into municipal citizen mail, so
+    // layer the only jurisdiction's branding for platform-mode fallbacks.
+    if ($mode === 'platform' && $jurisdictionId === NULL && !$isSaas) {
+      $singleJurisdictionId = $this->resolveSingleJurisdictionId();
+      if ($singleJurisdictionId !== NULL) {
+        return $this->computeBranding($singleJurisdictionId, 'jurisdiction', $langcode);
+      }
+    }
 
     if ($mode === 'platform' || $jurisdictionId === NULL) {
       return $branding;
@@ -932,6 +954,50 @@ class MailBrandingService {
       $this->singleJurisdictionInstall = FALSE;
     }
     return $this->singleJurisdictionInstall;
+  }
+
+  /**
+   * Returns the only jurisdiction group id for single-jurisdiction installs.
+   */
+  private function resolveSingleJurisdictionId(): ?int {
+    if ($this->singleJurisdictionIdResolved) {
+      return $this->singleJurisdictionId;
+    }
+    $this->singleJurisdictionIdResolved = TRUE;
+
+    try {
+      $storage = $this->entityTypeManager->getStorage('group');
+      $count = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $this->jurisdictionGroupType())
+        ->count()
+        ->execute();
+      if ((int) $count !== 1) {
+        $this->singleJurisdictionInstall = FALSE;
+        return NULL;
+      }
+
+      $ids = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('type', $this->jurisdictionGroupType())
+        ->sort('id')
+        ->range(0, 1)
+        ->execute();
+      if (!is_array($ids) || $ids === []) {
+        $this->singleJurisdictionInstall = FALSE;
+        return NULL;
+      }
+
+      $id = reset($ids);
+      $this->singleJurisdictionId = is_numeric($id) ? (int) $id : NULL;
+      $this->singleJurisdictionInstall = $this->singleJurisdictionId !== NULL;
+    }
+    catch (\Throwable) {
+      $this->singleJurisdictionInstall = FALSE;
+      $this->singleJurisdictionId = NULL;
+    }
+
+    return $this->singleJurisdictionId;
   }
 
   /**
