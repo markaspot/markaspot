@@ -3526,6 +3526,47 @@ function markaspot_group_update_11928(): string {
 }
 
 /**
+ * Allows jurisdiction members to read boilerplate templates.
+ */
+function markaspot_group_update_11929(): string {
+  $role_storage = \Drupal::entityTypeManager()->getStorage('group_role');
+  $permission = 'view group_node:boilerplate entity';
+  $role_ids = [
+    _markaspot_group_update_derived_jurisdiction_role_id(),
+    'jur-moderator',
+    'jur-admin',
+  ];
+  $updated = [];
+
+  foreach ($role_ids as $role_id) {
+    /** @var \Drupal\group\Entity\GroupRoleInterface|null $role */
+    $role = $role_storage->load($role_id);
+    if (!$role || $role->getGroupTypeId() !== _markaspot_group_update_jurisdiction_group_type()) {
+      continue;
+    }
+
+    $permissions = $role->getPermissions();
+    if (in_array($permission, $permissions, TRUE)) {
+      continue;
+    }
+
+    $permissions[] = $permission;
+    $role->set('permissions', $permissions);
+    $role->save();
+    $updated[] = $role_id;
+  }
+
+  if (!$updated) {
+    return 'Jurisdiction group roles already allow boilerplate reads.';
+  }
+
+  return sprintf(
+    'Added boilerplate read permission to %s.',
+    implode(', ', $updated)
+  );
+}
+
+/**
  * Ensures the internal derived jur role exists before backfilling.
  */
 function _markaspot_group_ensure_derived_jurisdiction_role(): void {
@@ -3534,6 +3575,7 @@ function _markaspot_group_ensure_derived_jurisdiction_role(): void {
   $role_storage = \Drupal::entityTypeManager()->getStorage('group_role');
   $permissions = [
     'view group',
+    'view group_node:boilerplate entity',
     'view group_node:page entity',
   ];
 

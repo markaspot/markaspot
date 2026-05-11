@@ -49,6 +49,18 @@ class OrgMembershipJurisdictionSyncTest extends UnitTestCase {
 
     $this->assertStringContainsString('id: jur-org_member', $role_config);
     $this->assertStringContainsString('scope: individual', $role_config);
+    $this->assertStringContainsString("'view group_node:boilerplate entity'", $role_config);
+  }
+
+  /**
+   * Tests jurisdiction moderator role can read boilerplate templates.
+   */
+  public function testJurisdictionModeratorCanReadBoilerplates(): void {
+    $module_root = dirname(__DIR__, 3);
+    $role_config = file_get_contents($module_root . '/config/install/group.role.jur-moderator.yml');
+
+    $this->assertStringContainsString('id: jur-moderator', $role_config);
+    $this->assertStringContainsString("'view group_node:boilerplate entity'", $role_config);
   }
 
 }
