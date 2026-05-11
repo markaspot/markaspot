@@ -80,8 +80,11 @@ function markaspot_geocoder_node_presave(EntityInterface $node) {
     }
   }
   catch (\Exception $e) {
-    \Drupal::logger('markaspot_geocoder')->error('Fatal error in geocoder: @message at @file:@line', [
-      '@message' => $e->getMessage(),
+    // Drop $e->getMessage(): provider exception messages can carry the
+    // Mapbox access_token URL. Type + file + line is enough to triage and
+    // matches the shape used in MarkaspotGeocoderService::*.
+    \Drupal::logger('markaspot_geocoder')->error('Fatal error in geocoder | Type: @type | File: @file:@line', [
+      '@type' => get_class($e),
       '@file' => $e->getFile(),
       '@line' => $e->getLine(),
     ]);
@@ -228,14 +231,17 @@ function _markaspot_geocoder_find_or_create_term(string $name, string $vocabular
     return reset($exact);
   }
 
-  // Fallback: case-insensitive lookup via database query.
+  // Fallback: case-insensitive lookup via database query. The LIKE pattern
+  // must be escaped: a geocoder-supplied name with "_" or "%" would otherwise
+  // match unintended terms.
+  $likePattern = \Drupal::database()->escapeLike($name);
   $tids = \Drupal::entityTypeManager()
     ->getStorage('taxonomy_term')
     ->getQuery()
     ->accessCheck(FALSE)
     ->condition('vid', $vocabulary)
     ->condition('status', 1)
-    ->condition('name', $name, 'LIKE')
+    ->condition('name', $likePattern, 'LIKE')
     ->range(0, 1)
     ->execute();
 

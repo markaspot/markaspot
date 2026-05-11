@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_geocoder\Unit;
 
+use Drupal\markaspot_geocoder\Geocoder\Provider\MarkaspotNominatim;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Field\FieldItemListInterface;
@@ -120,6 +122,114 @@ final class MarkaspotGeocoderServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests reverse-geocoding never logs provider messages or stack traces.
+   *
+   * The Mapbox provider URL carries the access_token in the query string,
+   * and willdurand's InvalidServerResponse builder embeds that URL into the
+   * exception message. The service catch-all must drop both @message and.
+   *
+   * @trace so the token can never leak to watchdog.
+   */
+  public function testGetAddressFromCoordinatesDoesNotLogTokenOnProviderFailure(): void {
+    $leakedMessage = 'The geocoder server returned an invalid response (0) for query '
+      . '"https://api.mapbox.com/geocoding/v5/mapbox.places/6.0,51.0.json'
+      . '?access_token=pk.eyJ.SECRET". We could not parse it.';
+    $provider = new ReverseFailingGeocoderProvider(new \RuntimeException($leakedMessage));
+
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('error')
+      ->with(
+        $this->logicalNot($this->stringContains('access_token')),
+        $this->callback(static function (array $context): bool {
+          if (array_key_exists('@message', $context) || array_key_exists('@trace', $context)) {
+            return FALSE;
+          }
+          $payload = json_encode($context);
+          return is_string($payload)
+            && !str_contains($payload, 'pk.eyJ.SECRET')
+            && !str_contains($payload, 'access_token');
+        }),
+      );
+
+    $result = $this->createService($provider, $logger)
+      ->getAddressFromCoordinates(51.0, 6.0);
+
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests the no-result path logs rounded coordinates instead of raw values.
+   *
+   * Service-request coordinates are PII. The "no address found" branch must
+   * round to three decimals (~110 m) before writing to watchdog.
+   */
+  public function testGetAddressFromCoordinatesRoundsCoordinatesOnNoResult(): void {
+    $provider = new ReverseEmptyGeocoderProvider();
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('info')
+      ->with(
+        $this->stringContains('No address found'),
+        $this->callback(static function (array $context): bool {
+          return ($context['@lat'] ?? NULL) === 51.123
+            && ($context['@lng'] ?? NULL) === 6.789;
+        }),
+      );
+
+    $result = $this->createService($provider, $logger)
+      ->getAddressFromCoordinates(51.12345678, 6.78912345);
+
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests unknown GEOCODER_PROVIDER values log a warning and fall back.
+   *
+   * A typo in the environment variable used to switch silently to
+   * Nominatim. The service now logs once and still falls back, so
+   * presave saves never block on a config typo.
+   */
+  public function testCreateProviderLogsWarningOnUnknownProviderName(): void {
+    $originalEnv = getenv('GEOCODER_PROVIDER');
+    putenv('GEOCODER_PROVIDER=mapboxx');
+
+    try {
+      $config = $this->createMock(ImmutableConfig::class);
+      $config->method('get')->willReturn(NULL);
+      $configFactory = $this->createMock(ConfigFactoryInterface::class);
+      $configFactory->method('get')
+        ->with('markaspot_geocoder.settings')
+        ->willReturn($config);
+
+      $logger = $this->createMock(LoggerInterface::class);
+      $logger->expects($this->once())
+        ->method('warning')
+        ->with(
+          $this->stringContains('Unknown GEOCODER_PROVIDER'),
+          $this->callback(static fn (array $context): bool => ($context['@name'] ?? NULL) === 'mapboxx'),
+        );
+
+      $service = new ProviderExposingMarkaspotGeocoderService(
+        $configFactory,
+        $this->createMock(ClientInterface::class),
+        $logger,
+      );
+
+      $provider = $service->exposedCreateProvider();
+      $this->assertInstanceOf(MarkaspotNominatim::class, $provider);
+    }
+    finally {
+      if ($originalEnv === FALSE) {
+        putenv('GEOCODER_PROVIDER');
+      }
+      else {
+        putenv('GEOCODER_PROVIDER=' . $originalEnv);
+      }
+    }
+  }
+
+  /**
    * Tests address-only node saves do not trigger forward geocoding.
    */
   public function testPresaveReturnsBeforeGeocoderServiceWhenGeolocationIsEmpty(): void {
@@ -207,6 +317,25 @@ final class TestableMarkaspotGeocoderService extends MarkaspotGeocoderService {
 }
 
 /**
+ * Test double that exposes the real createProvider() for assertion.
+ *
+ * Used by the unknown-provider warning test where the production logic
+ * (ENV lookup, normalization, fallback + warning) is under test and the
+ * controlled-provider override of TestableMarkaspotGeocoderService would
+ * bypass exactly what we need to verify.
+ */
+final class ProviderExposingMarkaspotGeocoderService extends MarkaspotGeocoderService {
+
+  /**
+   * Calls the protected createProvider() from outside the class.
+   */
+  public function exposedCreateProvider(): Provider {
+    return $this->createProvider();
+  }
+
+}
+
+/**
  * Test geocoder provider that records forward-geocoding calls.
  */
 final class RecordingGeocoderProvider implements Provider {
@@ -261,6 +390,70 @@ final class RecordingGeocoderProvider implements Provider {
    */
   public function getName(): string {
     return 'recording';
+  }
+
+}
+
+/**
+ * Test geocoder provider whose reverse query throws a controlled exception.
+ */
+final class ReverseFailingGeocoderProvider implements Provider {
+
+  public function __construct(
+    private readonly \Throwable $exception,
+  ) {
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function geocodeQuery(GeocodeQuery $query): Collection {
+    return new AddressCollection();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function reverseQuery(ReverseQuery $query): Collection {
+    throw $this->exception;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getName(): string {
+    return 'reverse-failing';
+  }
+
+}
+
+/**
+ * Test geocoder provider whose reverse query returns no results.
+ *
+ * AddressCollection::first() raises CollectionIsEmpty on an empty set,
+ * which the service handles in the same branch as OutOfBoundsException.
+ */
+final class ReverseEmptyGeocoderProvider implements Provider {
+
+  /**
+   * {@inheritdoc}
+   */
+  public function geocodeQuery(GeocodeQuery $query): Collection {
+    return new AddressCollection();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function reverseQuery(ReverseQuery $query): Collection {
+    return new AddressCollection();
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function getName(): string {
+    return 'reverse-empty';
   }
 
 }

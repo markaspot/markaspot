@@ -126,6 +126,21 @@ final class MarkaspotMapbox extends AbstractHttpProvider implements Provider {
   const DEFAULT_TYPE = self::TYPE_ADDRESS;
 
   /**
+   * Placeholder substituted for the access_token in URLs.
+   *
+   * Mapbox request URLs carry the token in the query string. The willdurand
+   * InvalidServerResponse builder embeds the URL into the exception message,
+   * so any catch-all that logged that message would otherwise leak the
+   * token to watchdog.
+   */
+  private const REDACTED_PARAM = '[REDACTED]';
+
+  /**
+   * Maximum length of any sanitized Mapbox error summary surfaced to callers.
+   */
+  private const ERROR_SUMMARY_MAX = 120;
+
+  /**
    * @var \Psr\Http\Client\ClientInterface
    */
   private $client;
@@ -427,22 +442,78 @@ final class MarkaspotMapbox extends AbstractHttpProvider implements Provider {
   }
 
   /**
-   * Decode the response content and validate it to make sure it does not have any errors.
+   * Decode the response content and validate it does not carry an error.
+   *
+   * Mapbox includes the access_token in the request URL's query string. The
+   * willdurand InvalidServerResponse builder embeds the URL into its message,
+   * so callers logging $ex->getMessage() would leak the token. The URL is
+   * redacted in place before any exception is thrown.
+   *
+   * Mapbox error responses (HTTP 401, 403, 429, ...) return valid JSON with
+   * a "message" key but no "features". The base implementation treated them
+   * as "no result" and silently returned an empty collection, hiding token
+   * rotation and rate-limit issues from operators. Such responses are now
+   * surfaced as InvalidServerResponse with a sanitized summary.
    *
    * @param string $url
+   *   The request URL. May contain access_token in the query string.
    * @param string $content
+   *   The raw response body.
    *
    * @return array
+   *   The decoded JSON payload.
+   *
+   * @throws \Geocoder\Exception\InvalidServerResponse
+   *   When the response is not parseable JSON or carries a Mapbox error.
    */
   private function validateResponse(string $url, $content): array {
+    $safeUrl = preg_replace(
+      '/([?&])access_token=[^&]*/',
+      '$1access_token=' . self::REDACTED_PARAM,
+      $url
+    ) ?? $url;
+
     $json = json_decode($content, TRUE);
 
-    // API error.
     if (!isset($json) || JSON_ERROR_NONE !== json_last_error()) {
-      throw InvalidServerResponse::create($url);
+      throw InvalidServerResponse::create($safeUrl);
+    }
+
+    // Mapbox error JSON: parseable, but no features and a message string.
+    if (is_array($json) && !isset($json['features']) && isset($json['message'])) {
+      throw new InvalidServerResponse(sprintf(
+        'Mapbox API error: %s',
+        $this->sanitizeError($json)
+      ));
     }
 
     return $json;
+  }
+
+  /**
+   * Builds a short, token-free summary of a Mapbox error JSON payload.
+   *
+   * @param array $json
+   *   Decoded Mapbox error response.
+   *
+   * @return string
+   *   Sanitized "<code> <message>" summary, capped at ERROR_SUMMARY_MAX.
+   */
+  private function sanitizeError(array $json): string {
+    $parts = [];
+    if (isset($json['code']) && (is_string($json['code']) || is_int($json['code']))) {
+      $parts[] = (string) $json['code'];
+    }
+    if (isset($json['message']) && is_string($json['message'])) {
+      $parts[] = $json['message'];
+    }
+    $summary = trim(implode(' ', $parts));
+
+    // Defensive: a misconfigured Mapbox response could echo the token back.
+    $summary = preg_replace('/access_token=[^&\s"\']+/i', 'access_token=' . self::REDACTED_PARAM, $summary) ?? $summary;
+    $summary = preg_replace('/\bpk\.[A-Za-z0-9_\-\.]+/', self::REDACTED_PARAM, $summary) ?? $summary;
+
+    return mb_substr($summary, 0, self::ERROR_SUMMARY_MAX);
   }
 
   /**

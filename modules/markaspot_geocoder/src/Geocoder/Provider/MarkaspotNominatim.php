@@ -115,9 +115,18 @@ final class MarkaspotNominatim extends AbstractHttpProvider implements Provider 
       return new AddressCollection([]);
     }
 
+    // Defensive null-guards: an empty or unexpected Nominatim payload must
+    // surface as "no result" and not bubble a TypeError into the service
+    // catch-all (which would otherwise need to mask the exception message).
     $searchResult = $doc->getElementsByTagName('reversegeocode')->item(0);
+    if (!$searchResult instanceof \DOMElement) {
+      return new AddressCollection([]);
+    }
     $addressParts = $searchResult->getElementsByTagName('addressparts')->item(0);
     $result = $searchResult->getElementsByTagName('result')->item(0);
+    if (!$addressParts instanceof \DOMElement || !$result instanceof \DOMElement) {
+      return new AddressCollection([]);
+    }
 
     return new AddressCollection([$this->xmlResultToArray($result, $addressParts)]);
   }

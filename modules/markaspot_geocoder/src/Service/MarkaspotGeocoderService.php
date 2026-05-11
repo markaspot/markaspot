@@ -25,6 +25,25 @@ class MarkaspotGeocoderService {
   private const MAX_LOCATION_TYPE_FILTERS = 5;
 
   /**
+   * Placeholder used in log/exception context.
+   *
+   * Anything that would otherwise carry a provider credential is replaced
+   * with this short, all-caps marker, which keeps the redaction easy to
+   * grep for in tests and watchdog.
+   */
+  private const REDACTED = '[REDACTED]';
+
+  /**
+   * Decimal precision for coordinates logged in informational paths.
+   *
+   * Three decimals correspond to roughly 110 metres, which is sufficient to
+   * triage "no result" events without persisting precise citizen-report
+   * locations in watchdog. Service request coordinates are PII; raw values
+   * stay out of logs.
+   */
+  private const LOG_COORD_PRECISION = 3;
+
+  /**
    * Geocoder configuration.
    */
   protected ConfigFactoryInterface $configFactory;
@@ -58,22 +77,38 @@ class MarkaspotGeocoderService {
    * Creates the geocoder provider based on ENV vars or Drupal config.
    *
    * Fallback chain: ENV GEOCODER_PROVIDER > config provider > 'nominatim'.
+   *
+   * Unknown provider names log a warning and fall back to Nominatim. This is
+   * fail-open by design: the presave hook runs on every report save, and a
+   * typo in GEOCODER_PROVIDER must not block report creation. Operators get a
+   * watchdog signal instead of a silent backend switch.
    */
   protected function createProvider(): Provider {
     $config = $this->configFactory->get('markaspot_geocoder.settings');
 
-    $providerName = getenv('GEOCODER_PROVIDER') ?: $config->get('provider') ?: 'nominatim';
-    $apiKey = getenv('GEOCODER_API_KEY') ?: $config->get('mapbox_token') ?: '';
+    $providerName = strtolower(trim((string) (getenv('GEOCODER_PROVIDER') ?: $config->get('provider') ?: 'nominatim')));
+    $apiKey = trim((string) (getenv('GEOCODER_API_KEY') ?: $config->get('mapbox_token') ?: ''));
 
     // Wrap GuzzleHttp\Client in PSR-18 adapter for geocoder providers.
     $adapter = new GuzzleAdapter($this->httpClient);
 
     $this->lastProvider = match ($providerName) {
       'mapbox', 'mapbox_address' => new MarkaspotMapbox($adapter, $apiKey),
-      default => new MarkaspotNominatim($adapter, 'https://nominatim.openstreetmap.org'),
+      'nominatim' => new MarkaspotNominatim($adapter, 'https://nominatim.openstreetmap.org'),
+      default => $this->fallbackToNominatim($adapter, $providerName),
     };
 
     return $this->lastProvider;
+  }
+
+  /**
+   * Logs an unknown provider name and returns the Nominatim fallback.
+   */
+  private function fallbackToNominatim(GuzzleAdapter $adapter, string $providerName): MarkaspotNominatim {
+    $this->logger->warning('Unknown GEOCODER_PROVIDER "@name", falling back to nominatim.', [
+      '@name' => $providerName,
+    ]);
+    return new MarkaspotNominatim($adapter, 'https://nominatim.openstreetmap.org');
   }
 
   /**
@@ -84,7 +119,7 @@ class MarkaspotGeocoderService {
   protected function getLanguage(): string {
     $config = $this->configFactory->get('markaspot_geocoder.settings');
 
-    return getenv('GEOCODER_LANGUAGE') ?: $config->get('language') ?: 'de';
+    return strtolower(trim((string) (getenv('GEOCODER_LANGUAGE') ?: $config->get('language') ?: 'de')));
   }
 
   /**
@@ -108,20 +143,26 @@ class MarkaspotGeocoderService {
         'district_properties' => $this->lastProvider?->getLastRawProperties() ?? [],
       ];
     }
-    catch (\OutOfBoundsException $ex) {
-      $this->logger->warning('No address found for coordinates: @lat, @lng', [
-        '@lat' => $lat,
-        '@lng' => $lng,
+    catch (CollectionIsEmpty | \OutOfBoundsException $ex) {
+      // Empty reverse result. The willdurand AddressCollection::first()
+      // raises CollectionIsEmpty (a LogicException), older code paths
+      // raised OutOfBoundsException; both mean "no address". Coordinates
+      // are rounded to avoid persisting precise report locations in
+      // watchdog. See LOG_COORD_PRECISION.
+      $this->logger->info('No address found for coordinates near @lat, @lng.', [
+        '@lat' => is_numeric($lat) ? round((float) $lat, self::LOG_COORD_PRECISION) : self::REDACTED,
+        '@lng' => is_numeric($lng) ? round((float) $lng, self::LOG_COORD_PRECISION) : self::REDACTED,
       ]);
       return NULL;
     }
     catch (\Exception $ex) {
-      $this->logger->error('Error during geocoding: @message | Type: @type | File: @file:@line | Trace: @trace', [
-        '@message' => $ex->getMessage() ?: 'Unknown error',
+      // Never log $ex->getMessage() or the trace: provider exception messages
+      // can carry the access_token URL (Mapbox path). Type + file + line is
+      // enough to triage. Same shape as getCoordinatesFromAddress() below.
+      $this->logger->error('Error during reverse geocoding | Type: @type | File: @file:@line', [
         '@type' => get_class($ex),
         '@file' => $ex->getFile(),
         '@line' => $ex->getLine(),
-        '@trace' => substr($ex->getTraceAsString(), 0, 500),
       ]);
       return NULL;
     }
