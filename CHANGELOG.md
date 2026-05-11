@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.78](https://github.com/markaspot/markaspot/compare/11.9.77...11.9.78) (2026-05-11)
+
+### Bug Fixes
+
+* **geocoder:** security and robustness hardening ([1be3a29](https://github.com/markaspot/markaspot/commit/1be3a29f331e34eece8554e14541a298d35fc779))
+
 ## [11.9.77](https://github.com/markaspot/markaspot/compare/11.9.76...11.9.77) (2026-05-11)
 
 ### Bug Fixes
