@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.82](https://github.com/markaspot/markaspot/compare/11.9.81...11.9.82) (2026-05-12)
+
+### Features
+
+* **install:** default register=admin_only for new tenants ([a9cc944](https://github.com/markaspot/markaspot/commit/a9cc94439e850f526695d7253c16156dd33f4c0f))
+
 ## [11.9.81](https://github.com/markaspot/markaspot/compare/11.9.80...11.9.81) (2026-05-12)
 
 ### Bug Fixes
