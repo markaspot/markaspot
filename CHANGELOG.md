@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.80](https://github.com/markaspot/markaspot/compare/11.9.79...11.9.80) (2026-05-12)
+
+### Bug Fixes
+
+* **open311:** guard field_author set on status paragraph ([1dee350](https://github.com/markaspot/markaspot/commit/1dee3508659f65d73d9708866e79522827dd979e))
+* **open311:** guard field_boilerplate + log missing field_author ([38a6d45](https://github.com/markaspot/markaspot/commit/38a6d45250c3649f94243cc93cd7c91c66ecca74))
+* **service_request:** localize status note body across enabled languages ([7cbcd11](https://github.com/markaspot/markaspot/commit/7cbcd11e08daaaec6bf60f63c205f8058a4319e7))
+
 ## [11.9.79](https://github.com/markaspot/markaspot/compare/11.9.78...11.9.79) (2026-05-12)
 
 ### Bug Fixes
