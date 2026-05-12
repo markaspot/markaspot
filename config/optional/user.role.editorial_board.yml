@@ -21,6 +21,7 @@ dependencies:
     - markaspot_dashboard
     - markaspot_escalation
     - markaspot_fastmap
+    - markaspot_notification
     - markaspot_open311
     - markaspot_validation
     - media
@@ -41,6 +42,7 @@ permissions:
   - 'access content'
   - 'access content overview'
   - 'access contextual links'
+  - 'access dashboard notifications'
   - 'access files overview'
   - 'access open311 advanced properties'
   - 'access open311 extension'

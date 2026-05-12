@@ -99,7 +99,8 @@ class NotificationsResource extends ResourceBase {
   /**
    * {@inheritdoc}
    *
-   * No auto-generated REST permission — access is gated on authentication only.
+   * No auto-generated REST permission; access is gated by a staff permission
+   * on the route.
    */
   public function permissions(): array {
     return [];
@@ -108,11 +109,12 @@ class NotificationsResource extends ResourceBase {
   /**
    * {@inheritdoc}
    *
-   * Requires authentication. UUID format is enforced via route requirement.
+   * Requires dashboard notification access. UUID format is enforced via route
+   * requirement.
    */
   protected function getBaseRoute($canonical_path, $method): Route {
     $route = parent::getBaseRoute($canonical_path, $method);
-    $route->setRequirement('_user_is_logged_in', 'TRUE');
+    $route->setRequirement('_permission', 'access dashboard notifications');
     $route->setRequirement('uuid', '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}');
     return $route;
   }

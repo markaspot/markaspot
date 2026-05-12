@@ -21,6 +21,7 @@ dependencies:
     - markaspot_fastmap
     - markaspot_open311
     - markaspot_group
+    - markaspot_notification
     - markaspot_validation
     - media
     - node
@@ -40,6 +41,7 @@ permissions:
   - 'access ai insights'
   - 'access content'
   - 'access dashboard kpis'
+  - 'access dashboard notifications'
   - 'access open311 advanced properties'
   - 'access open311 extension'
   - 'access taxonomy overview'

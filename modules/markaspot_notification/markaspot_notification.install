@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Drupal\Core\Config\FileStorage;
+use Drupal\user\Entity\Role;
 
 /**
  * Installs the notifications REST resource on existing sites.
@@ -25,4 +26,28 @@ function markaspot_notification_update_10001(): string {
   \Drupal::service('router.builder')->rebuild();
 
   return 'Installed the MaS notifications REST resource.';
+}
+
+/**
+ * Grants dashboard notification access to staff roles on existing sites.
+ */
+function markaspot_notification_update_10002(): string {
+  $permission = 'access dashboard notifications';
+  $changed = [];
+  foreach (['tenant_admin', 'editorial_board', 'moderator'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role || $role->hasPermission($permission)) {
+      continue;
+    }
+    $role->grantPermission($permission)->save();
+    $changed[] = $role_id;
+  }
+
+  \Drupal::service('router.builder')->rebuild();
+
+  if ($changed === []) {
+    return 'Dashboard notification access was already configured.';
+  }
+
+  return 'Granted dashboard notification access to: ' . implode(', ', $changed) . '.';
 }

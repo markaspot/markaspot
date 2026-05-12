@@ -1,0 +1,4 @@
+access dashboard notifications:
+  title: 'Access dashboard notifications'
+  description: 'Drain side-effect notifications from dashboard operations.'
+  restrict access: true

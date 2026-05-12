@@ -6,7 +6,7 @@ services:
   markaspot_notification.mail_manager:
     class: Drupal\markaspot_notification\Mail\NotifyMailManager
     decorates: plugin.manager.mail
-    arguments: ['@markaspot_notification.mail_manager.inner', '@markaspot_notification.collector']
+    arguments: ['@markaspot_notification.mail_manager.inner', '@markaspot_notification.collector', '@entity_type.manager']
 
   markaspot_notification.request_context:
     class: Drupal\markaspot_notification\EventSubscriber\RequestContextSubscriber

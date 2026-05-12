@@ -10,6 +10,7 @@ dependencies:
     - markaspot_dashboard
     - markaspot_escalation
     - markaspot_fastmap
+    - markaspot_notification
     - markaspot_open311
     - markaspot_validation
     - media
@@ -25,6 +26,7 @@ weight: -5
 is_admin: null
 permissions:
   - 'access content'
+  - 'access dashboard notifications'
   - 'access open311 advanced properties'
   - 'access open311 extension'
   - 'access toolbar'

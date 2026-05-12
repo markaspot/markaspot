@@ -43,6 +43,9 @@
 </head>
 <body style="margin:0; padding:0; background-color:{{ branding.background_color }}; -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;">
 
+{% set legal_label = 'Legal notice'|trans({}, {'langcode': langcode}) %}
+{% set privacy_label = 'Privacy'|trans({}, {'langcode': langcode}) %}
+
 {# Preheader (hidden inbox preview snippet). #}
 {% set preheader = content.preheader|default('') %}
 {% if preheader %}
@@ -107,11 +110,11 @@
               </div>
               <div class="mas-muted" style="margin-top:4px; color:#475569;">
                 {% if branding.legal_notice_url %}
-                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ 'Legal notice'|trans({}, {'langcode': langcode}) }}</a>
+                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ legal_label }}</a>
                 {% endif %}
                 {% if branding.legal_notice_url and branding.privacy_url %} &middot; {% endif %}
                 {% if branding.privacy_url %}
-                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ 'Privacy'|trans({}, {'langcode': langcode}) }}</a>
+                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ privacy_label }}</a>
                 {% endif %}
               </div>
             </td>
@@ -133,11 +136,11 @@
             <td style="padding:24px 8px 0 8px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; font-size:13px; line-height:20px; color:#475569;">
               <div class="mas-muted" style="margin-top:4px; color:#475569;">
                 {% if branding.legal_notice_url %}
-                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ 'Legal notice'|trans({}, {'langcode': langcode}) }}</a>
+                  <a href="{{ branding.legal_notice_url }}" style="color:#475569; text-decoration:underline;">{{ legal_label }}</a>
                 {% endif %}
                 {% if branding.legal_notice_url and branding.privacy_url %} &middot; {% endif %}
                 {% if branding.privacy_url %}
-                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ 'Privacy'|trans({}, {'langcode': langcode}) }}</a>
+                  <a href="{{ branding.privacy_url }}" style="color:#475569; text-decoration:underline;">{{ privacy_label }}</a>
                 {% endif %}
               </div>
             </td>

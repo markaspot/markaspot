@@ -6,6 +6,7 @@
  */
 
 use Drupal\Component\Serialization\Yaml;
+use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
@@ -1992,6 +1993,55 @@ function markaspot_update_11915(): string {
   }
 
   return $changes ? implode(', ', $changes) . '.' : 'No mail config changes needed.';
+}
+
+/**
+ * Enable markaspot_notification on existing installations.
+ *
+ * Fresh installs get the module from markaspot.info.yml. Existing tenants need
+ * it enabled through the profile because update hooks in a disabled module do
+ * not run. Also keep the REST resource and staff permission aligned for sites
+ * where the module was enabled manually before this update.
+ */
+function markaspot_update_11916(): string {
+  $changes = [];
+  $module_handler = \Drupal::moduleHandler();
+  $module_installer = \Drupal::service('module_installer');
+
+  if (!$module_handler->moduleExists('markaspot_notification')) {
+    $module_installer->install(['markaspot_notification']);
+    $changes[] = 'enabled markaspot_notification';
+  }
+
+  $config = \Drupal::configFactory()->getEditable('rest.resource.mas_notifications');
+  if ($config->isNew()) {
+    $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_notification');
+    $source = new FileStorage($module_path . '/config/install');
+    $data = $source->read('rest.resource.mas_notifications');
+    if (!is_array($data)) {
+      throw new \RuntimeException('Could not read rest.resource.mas_notifications from markaspot_notification config/install.');
+    }
+    $config->setData($data)->save(TRUE);
+    $changes[] = 'installed mas_notifications REST resource';
+  }
+
+  $permission = 'access dashboard notifications';
+  $granted = [];
+  foreach (['tenant_admin', 'editorial_board', 'moderator'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role || $role->hasPermission($permission)) {
+      continue;
+    }
+    $role->grantPermission($permission)->save();
+    $granted[] = $role_id;
+  }
+  if ($granted !== []) {
+    $changes[] = 'granted dashboard notification access to ' . implode(', ', $granted);
+  }
+
+  \Drupal::service('router.builder')->rebuild();
+
+  return $changes ? implode('; ', $changes) . '.' : 'markaspot_notification already enabled and configured.';
 }
 
 /**
