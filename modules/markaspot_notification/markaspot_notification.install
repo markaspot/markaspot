@@ -1,0 +1,28 @@
+<?php
+
+declare(strict_types=1);
+
+use Drupal\Core\Config\FileStorage;
+
+/**
+ * Installs the notifications REST resource on existing sites.
+ */
+function markaspot_notification_update_10001(): string {
+  $config = \Drupal::configFactory()->getEditable('rest.resource.mas_notifications');
+  if (!$config->isNew()) {
+    \Drupal::service('router.builder')->rebuild();
+    return 'The MaS notifications REST resource already exists.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_notification');
+  $source = new FileStorage($module_path . '/config/install');
+  $data = $source->read('rest.resource.mas_notifications');
+  if (!is_array($data)) {
+    throw new \RuntimeException('Could not read rest.resource.mas_notifications from markaspot_notification config/install.');
+  }
+
+  $config->setData($data)->save(TRUE);
+  \Drupal::service('router.builder')->rebuild();
+
+  return 'Installed the MaS notifications REST resource.';
+}
