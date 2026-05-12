@@ -2617,12 +2617,24 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       ]);
     }
 
-    if (!empty($fields['boilerplate_id'])) {
+    if (!empty($fields['boilerplate_id']) && $paragraph->hasField('field_boilerplate')) {
       $paragraph->set('field_boilerplate', $fields['boilerplate_id']);
     }
 
-    if (!empty($fields['author_id']) && $paragraph->hasField('field_author')) {
-      $paragraph->set('field_author', $fields['author_id']);
+    if (!empty($fields['author_id'])) {
+      if ($paragraph->hasField('field_author')) {
+        $paragraph->set('field_author', $fields['author_id']);
+      }
+      else {
+        // Audit-trail concern (BSI APP.3.1, GDPR Art. 5(1)(f) integrity):
+        // surface schema drift in watchdog so a tenant missing field_author
+        // on the `status` paragraph bundle is visible to operators rather
+        // than silently dropping author attribution on status notes.
+        \Drupal::logger('markaspot_open311')->warning(
+          'Paragraph bundle @bundle is missing field_author; author uid @uid not recorded for status note. Run markaspot_status_paragraph update to restore the field.',
+          ['@bundle' => $paragraph->bundle(), '@uid' => $fields['author_id']]
+        );
+      }
     }
 
     $paragraph->save();
