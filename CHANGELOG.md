@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.79](https://github.com/markaspot/markaspot/compare/11.9.78...11.9.79) (2026-05-12)
+
+### Bug Fixes
+
+* install notification REST resource ([ba6c782](https://github.com/markaspot/markaspot/commit/ba6c7825b3b038792b52cd49d00cd69fd8325778))
+* **notification:** classify mail side effects ([ce634c1](https://github.com/markaspot/markaspot/commit/ce634c184e48b017e91cc66fb5371e30ec90cf22))
+* **service_request:** drop invalid body field dependency ([1081da3](https://github.com/markaspot/markaspot/commit/1081da330770bda6ff9319321d664accc46c7723))
+
 ## [11.9.78](https://github.com/markaspot/markaspot/compare/11.9.77...11.9.78) (2026-05-11)
 
 ### Bug Fixes
