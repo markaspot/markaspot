@@ -337,11 +337,21 @@ function _markaspot_tenant_admin_validate_jurisdiction(array &$form, FormStateIn
 /**
  * Implements hook_entity_field_access().
  *
- * Grants tenant admins write access to the node 'status' field (published)
- * on page nodes that belong to their jurisdiction. Without this, JSON:API
- * rejects POST/PATCH requests that include the status field because
- * 'administer node published status' is not granted globally (which would
- * be a cross-tenant security risk).
+ * Grants jurisdiction-scoped write access to the node 'status' field
+ * (published/unpublished) for tenant admins AND moderators on the
+ * page + service_request bundles. Without this, JSON:API rejects
+ * POST/PATCH requests that include the status field because the core
+ * 'administer node published status' permission is not granted globally
+ * (which would be a cross-tenant security risk in a multi-tenant setup).
+ *
+ * Coverage:
+ *  - bundles: page, service_request
+ *  - Drupal-site roles: tenant_admin, moderator
+ *  - jurisdiction-scope: user must hold a jur-tenant_admin OR jur-moderator
+ *    group role on the node's jurisdiction (see
+ *    TenantAdminHelper::getUserPublishCapableJurisdictionIds).
+ *  - editorial_board: not handled here; that role has the global core
+ *    'administer nodes' permission already.
  */
 function markaspot_tenant_admin_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
   // Only handle edit operations on the status field.
@@ -349,21 +359,26 @@ function markaspot_tenant_admin_entity_field_access(string $operation, FieldDefi
     return AccessResult::neutral();
   }
 
-  // Only for node entities of type 'page'.
-  if ($field_definition->getTargetEntityTypeId() !== 'node' || $field_definition->getTargetBundle() !== 'page') {
+  // Only for node entities of supported bundles.
+  $supported_bundles = ['page', 'service_request'];
+  $bundle = $field_definition->getTargetBundle();
+  if ($field_definition->getTargetEntityTypeId() !== 'node' || !in_array($bundle, $supported_bundles, TRUE)) {
     return AccessResult::neutral();
   }
 
-  // Only for tenant_admin users.
-  if (!in_array('tenant_admin', $account->getRoles(), TRUE)) {
+  // Only for Drupal-site roles allowed to publish/unpublish in their
+  // jurisdiction. Editorial_board is excluded here because the global
+  // 'administer nodes' permission already covers it via core.
+  $privileged_roles = ['tenant_admin', 'moderator'];
+  if (empty(array_intersect($privileged_roles, $account->getRoles()))) {
     return AccessResult::neutral();
   }
 
-  // For new nodes (POST), allow status if user has 'create page content'.
-  // Cross-jurisdiction creation is prevented at node access level by the
-  // Group module ('create group_node:page entity' permission).
+  // For new nodes (POST), allow status if user has create-content for
+  // the bundle. Cross-jurisdiction creation is prevented at node access
+  // level by the Group module ('create group_node:<bundle> entity').
   if ($items === NULL || $items->getEntity()->isNew()) {
-    return AccessResult::allowedIf($account->hasPermission('create page content'))
+    return AccessResult::allowedIf($account->hasPermission("create $bundle content"))
       ->cachePerPermissions()
       ->addCacheContexts(['user.group_permissions']);
   }
@@ -375,7 +390,7 @@ function markaspot_tenant_admin_entity_field_access(string $operation, FieldDefi
   $check_node = $node->original ?? $node;
   if ($check_node->hasField('field_jurisdiction') && !$check_node->get('field_jurisdiction')->isEmpty()) {
     $node_jur_id = (int) $check_node->get('field_jurisdiction')->target_id;
-    $user_jur_ids = TenantAdminHelper::getUserJurisdictionIds($account);
+    $user_jur_ids = TenantAdminHelper::getUserPublishCapableJurisdictionIds($account);
 
     if (in_array($node_jur_id, $user_jur_ids, TRUE)) {
       return AccessResult::allowed()
@@ -391,9 +406,9 @@ function markaspot_tenant_admin_entity_field_access(string $operation, FieldDefi
       ->addCacheContexts(['user.group_permissions']);
   }
 
-  // Node has no jurisdiction: deny. Unassigned pages are shared/system
+  // Node has no jurisdiction: deny. Unassigned nodes are shared/system
   // content; only site admins may change their published status.
-  return AccessResult::forbidden('Page has no jurisdiction; only site admins may change status.')
+  return AccessResult::forbidden('Node has no jurisdiction; only site admins may change status.')
     ->cachePerPermissions()
     ->addCacheContexts(['user.group_permissions']);
 }
