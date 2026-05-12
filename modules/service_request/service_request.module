@@ -155,25 +155,81 @@ function _service_request_handle_update(EntityInterface $node, $config, bool $au
 
   /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
   $processor = \Drupal::service('markaspot_open311.processor');
-  $langcode = $node->language()->getId();
+
+  // Use the site default language rather than the node language. Node
+  // language is unreliable for tenant content — legacy/imported nodes
+  // may be tagged 'en' on a German-only tenant, in which case
+  // t('Status changed.', langcode: 'en') resolves to the English source
+  // and surfaces in citizen mails as untranslated text.
+  $languageManager = \Drupal::languageManager();
+  $defaultLangcode = $languageManager->getDefaultLanguage()->getId();
 
   // Note is omitted so the factory uses the status term's description.
   // Falls back to t() string if term description is empty.
   $paragraph = $processor->createStatusNoteParagraph([
     'status_term_id' => $newStatus,
-  ], $langcode);
+  ], $defaultLangcode);
   if ($paragraph->get('field_status_note')->isEmpty()) {
     $paragraph->set('field_status_note', [
-      'value' => t('Status changed.', [], ['langcode' => $langcode]),
+      'value' => t('Status changed.', [], ['langcode' => $defaultLangcode]),
       'format' => 'plain_text',
     ]);
-    $paragraph->save();
   }
+
+  // Add translations for every other enabled language so that
+  // [node:latest_status_note] renders localized in citizen mails
+  // regardless of recipient language. Falls back to the localized t()
+  // string when the status term has no description in that language.
+  foreach ($languageManager->getLanguages() as $lang) {
+    $lc = $lang->getId();
+    if ($lc === $defaultLangcode || $paragraph->hasTranslation($lc)) {
+      continue;
+    }
+    $translation = $paragraph->addTranslation($lc, $paragraph->toArray());
+    $translation->set('field_status_note', [
+      'value' => _service_request_resolve_status_note_text((int) $newStatus, $lc),
+      'format' => 'plain_text',
+    ]);
+  }
+  $paragraph->save();
 
   $node->field_status_notes->appendItem([
     'target_id' => $paragraph->id(),
     'target_revision_id' => $paragraph->getRevisionId(),
   ]);
+}
+
+/**
+ * Resolves a status note body for a given status term + langcode.
+ *
+ * Prefers the status term's description in the requested language. Falls back
+ * to the localized t() string "Status changed." when the term has no
+ * description for that language. Keeps the multilingual status-note path
+ * out of GeoreportProcessorService's private helpers.
+ *
+ * @param int $termId
+ *   The taxonomy term ID of the new status.
+ * @param string $langcode
+ *   Target language code.
+ *
+ * @return string
+ *   Localized status note body (plain text).
+ */
+function _service_request_resolve_status_note_text(int $termId, string $langcode): string {
+  $term = \Drupal::entityTypeManager()->getStorage('taxonomy_term')->load($termId);
+  if ($term) {
+    if ($langcode === 'und') {
+      $langcode = \Drupal::languageManager()->getDefaultLanguage()->getId();
+    }
+    if ($term->hasTranslation($langcode)) {
+      $term = $term->getTranslation($langcode);
+    }
+    $description = $term->getDescription();
+    if (!empty($description)) {
+      return strip_tags($description);
+    }
+  }
+  return (string) t('Status changed.', [], ['langcode' => $langcode]);
 }
 
 /**
