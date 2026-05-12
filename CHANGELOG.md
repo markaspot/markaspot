@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.81](https://github.com/markaspot/markaspot/compare/11.9.80...11.9.81) (2026-05-12)
+
+### Bug Fixes
+
+* **tenant_admin:** invalidate status access on membership revoke + log cross-jur ([faff484](https://github.com/markaspot/markaspot/commit/faff484996f7f02fba63e3a9ce5ad9f73a0e1d27))
+* **tenant_admin:** jurisdiction-scoped publish access for moderators + service_request ([dbca875](https://github.com/markaspot/markaspot/commit/dbca8755a5ff74374e2cd74aeaeb4b366d8959f9))
+
 ## [11.9.80](https://github.com/markaspot/markaspot/compare/11.9.79...11.9.80) (2026-05-12)
 
 ### Bug Fixes
