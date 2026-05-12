@@ -2621,7 +2621,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $paragraph->set('field_boilerplate', $fields['boilerplate_id']);
     }
 
-    if (!empty($fields['author_id'])) {
+    if (!empty($fields['author_id']) && $paragraph->hasField('field_author')) {
       $paragraph->set('field_author', $fields['author_id']);
     }
 
