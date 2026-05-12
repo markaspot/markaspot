@@ -22,6 +22,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\Group;
+use Drupal\user\Entity\User;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_tenant_admin\TenantAdminHelper;
 use Drupal\user\Entity\User;
@@ -388,22 +389,45 @@ function markaspot_tenant_admin_entity_field_access(string $operation, FieldDefi
   // an attacker PATCHes field_jurisdiction + status in a single request.
   $node = $items->getEntity();
   $check_node = $node->original ?? $node;
+
+  // Cache the access decision against the user entity so that a
+  // membership revocation (which calls $user->save() via
+  // _markaspot_tenant_admin_sync_role on group_relationship delete)
+  // invalidates the cached decision immediately, closing the cache-TTL
+  // window where a revoked moderator could otherwise retain publish
+  // rights.
+  $user_entity = User::load((int) $account->id());
+
   if ($check_node->hasField('field_jurisdiction') && !$check_node->get('field_jurisdiction')->isEmpty()) {
     $node_jur_id = (int) $check_node->get('field_jurisdiction')->target_id;
     $user_jur_ids = TenantAdminHelper::getUserPublishCapableJurisdictionIds($account);
 
     if (in_array($node_jur_id, $user_jur_ids, TRUE)) {
-      return AccessResult::allowed()
+      $result = AccessResult::allowed()
         ->addCacheableDependency($check_node)
         ->cachePerPermissions()
         ->addCacheContexts(['user.group_permissions']);
+      if ($user_entity) {
+        $result->addCacheableDependency($user_entity);
+      }
+      return $result;
     }
 
-    // Node belongs to a different jurisdiction: deny explicitly.
-    return AccessResult::forbidden('Node belongs to a different jurisdiction.')
+    // Node belongs to a different jurisdiction: deny explicitly + log so
+    // repeated cross-jurisdiction probing surfaces in monitoring (BSI
+    // APP.3.1 / GDPR Art. 5(1)(f) integrity).
+    \Drupal::logger('markaspot_tenant_admin')->warning(
+      'User uid @uid attempted to edit status on node @nid in jurisdiction @other (user is not a member there).',
+      ['@uid' => $account->id(), '@nid' => $check_node->id(), '@other' => $node_jur_id]
+    );
+    $result = AccessResult::forbidden('Node belongs to a different jurisdiction.')
       ->addCacheableDependency($check_node)
       ->cachePerPermissions()
       ->addCacheContexts(['user.group_permissions']);
+    if ($user_entity) {
+      $result->addCacheableDependency($user_entity);
+    }
+    return $result;
   }
 
   // Node has no jurisdiction: deny. Unassigned nodes are shared/system
