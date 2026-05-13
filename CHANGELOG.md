@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.83](https://github.com/markaspot/markaspot/compare/11.9.82...11.9.83) (2026-05-13)
+
+### Bug Fixes
+
+* **tenant_admin:** remove duplicate use Drupal\user\Entity\User import ([0c19bcc](https://github.com/markaspot/markaspot/commit/0c19bccad1c8ec9d8d317a548796f65e6a9d5f53))
+
 ## [11.9.82](https://github.com/markaspot/markaspot/compare/11.9.81...11.9.82) (2026-05-12)
 
 ### Features
