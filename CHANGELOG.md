@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.88](https://github.com/markaspot/markaspot/compare/11.9.87...11.9.88) (2026-05-13)
+
+### Bug Fixes
+
+* **group:** import CacheableJsonResponse + CacheableMetadata in admin endpoint ([0337220](https://github.com/markaspot/markaspot/commit/0337220b417ff7da638a6c8baa04cf607a555d89))
+
 ## [11.9.87](https://github.com/markaspot/markaspot/compare/11.9.86...11.9.87) (2026-05-13)
 
 ### Bug Fixes
