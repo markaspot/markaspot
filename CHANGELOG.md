@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.85](https://github.com/markaspot/markaspot/compare/11.9.84...11.9.85) (2026-05-13)
+
+### Features
+
+* **spam:** workspace blocking, AI scanner, admin jurisdictions endpoint ([ebea0e1](https://github.com/markaspot/markaspot/commit/ebea0e16b7b5774bab0036a8b534acc0771bc2ad))
+
 ## [11.9.84](https://github.com/markaspot/markaspot/compare/11.9.83...11.9.84) (2026-05-13)
 
 ### Features
