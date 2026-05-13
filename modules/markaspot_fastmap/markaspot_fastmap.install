@@ -1169,3 +1169,56 @@ function markaspot_fastmap_update_11920(): void {
   $field_storage->setSetting('allowed_values', $allowed_values);
   $field_storage->save();
 }
+
+/**
+ * Recover from 11920 failure on tenants where system.schema advanced to 11920
+ * without the field write landing.
+ *
+ * Background: 11.9.85 shipped 11920 with a shape-naive append that failed
+ * mid-flight on flat-map tenants (cp1 fastmap). system.schema got nudged to
+ * 11920 but the field stayed unchanged. The 11.9.86 fix could not run via
+ * updb because the counter said "done". 11921 re-emits the shape-aware
+ * recovery so the standard `drush updb` path picks it up.
+ *
+ * Shape preservation is intentional: a flat-to-list normalization would
+ * trigger Drupal core's "A list field with existing data cannot have its
+ * keys changed" guard. Keep the existing shape, only append 'blocked'.
+ *
+ * Idempotent: returns early when 'blocked' is already present in either
+ * shape — safe on dev/demo/any-cleanly-updated tenant.
+ */
+function markaspot_fastmap_update_11921(): void {
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('group', 'field_visibility');
+  if (!$field_storage) {
+    return;
+  }
+
+  $allowed_values = $field_storage->getSetting('allowed_values') ?: [];
+
+  // Idempotency: already present in either shape.
+  foreach ($allowed_values as $key => $item) {
+    if ($key === 'blocked') {
+      return;
+    }
+    if (is_array($item) && ($item['value'] ?? NULL) === 'blocked') {
+      return;
+    }
+  }
+
+  // Detect shape from the first existing entry.
+  $isListOfMappings = FALSE;
+  foreach ($allowed_values as $item) {
+    $isListOfMappings = is_array($item) && array_key_exists('value', $item);
+    break;
+  }
+
+  if ($isListOfMappings) {
+    $allowed_values[] = ['value' => 'blocked', 'label' => 'Blocked'];
+  }
+  else {
+    $allowed_values['blocked'] = 'Blocked';
+  }
+
+  $field_storage->setSetting('allowed_values', $allowed_values);
+  $field_storage->save();
+}
