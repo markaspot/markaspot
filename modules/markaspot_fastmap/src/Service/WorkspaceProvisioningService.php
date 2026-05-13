@@ -577,6 +577,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'boundaries' => ['enabled' => TRUE, 'showBoundaryOnMap' => TRUE],
         'privacyNotice' => ['enabled' => TRUE, 'modal' => TRUE],
         'formFirst' => ['mobileLayout' => 'bottomSheet', 'defaultTab' => 'photo'],
+        // Required for /auth/login: TenantSettingsController reads strict
+        // `$features['passwordless'] ?? FALSE`, missing key → 302 to /.
+        'passwordless' => TRUE,
       ],
       'ui' => [
         'headerHeight' => '64px',

@@ -1076,3 +1076,48 @@ function markaspot_fastmap_update_11918(): void {
     ])
     ->save();
 }
+
+/**
+ * Backfill missing features.passwordless in jur field_nuxt_config.
+ *
+ * WorkspaceProvisioningService::buildNuxtConfig() emitted the features
+ * array without the passwordless key until the fix in this release.
+ * Tenants provisioned via the Self-Service onboarding path (observed on
+ * civicspot.io GIDs 39/40/41 between 2026-05-05 and 2026-05-11) inherited
+ * the defect and rendered /auth/login as 302 to / because
+ * TenantSettingsController reads `$features['passwordless'] ?? FALSE`
+ * with strict semantics. Catches the same drift the runtime
+ * markaspot_health PasswordlessFeatureMissingCheck plugin detects.
+ *
+ * Idempotent: skips groups where the key is already present (true OR
+ * false), so an operator who intentionally disabled passwordless keeps
+ * that choice across deploys.
+ */
+function markaspot_fastmap_update_11919(): void {
+  $storage = \Drupal::entityTypeManager()->getStorage('group');
+  $gids = $storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->execute();
+
+  $patched = 0;
+  foreach ($storage->loadMultiple($gids) as $group) {
+    $raw = $group->get('field_nuxt_config')->value;
+    $cfg = json_decode((string) $raw, TRUE);
+    if (!is_array($cfg)) {
+      continue;
+    }
+    if (isset($cfg['features']) && is_array($cfg['features']) && array_key_exists('passwordless', $cfg['features'])) {
+      continue;
+    }
+    if (!isset($cfg['features']) || !is_array($cfg['features'])) {
+      $cfg['features'] = [];
+    }
+    $cfg['features']['passwordless'] = TRUE;
+    $group->set('field_nuxt_config', json_encode($cfg, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+    $group->save();
+    $patched++;
+  }
+
+  \Drupal::logger('markaspot_fastmap')->info('Backfilled features.passwordless on @count jur group(s).', ['@count' => $patched]);
+}

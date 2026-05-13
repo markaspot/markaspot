@@ -294,8 +294,14 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    *   The group ID to assign.
    * @param int $userId
    *   The user ID to assign.
+   * @param array|null $createdGroupFields
+   *   Receives the group create values for assertions.
    */
-  protected function setupSuccessfulProvisioning(int $groupId = 42, int $userId = 10): void {
+  protected function setupSuccessfulProvisioning(
+    int $groupId = 42,
+    int $userId = 10,
+    ?array &$createdGroupFields = NULL,
+  ): void {
     // Group storage: slug not taken.
     $this->groupStorage->method('loadByProperties')
       ->willReturn([]);
@@ -311,7 +317,11 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $membership->method('save')->willReturn(1);
     $group->method('addRelationship')->willReturn($membership);
 
-    $this->groupStorage->method('create')->willReturn($group);
+    $this->groupStorage->method('create')
+      ->willReturnCallback(function (array $values) use ($group, &$createdGroupFields) {
+        $createdGroupFields = $values;
+        return $group;
+      });
 
     // Term storage: create terms that return incremental IDs.
     $termIdCounter = 0;
@@ -392,7 +402,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    * @covers ::provisionWorkspace
    */
   public function testProvisionWorkspaceSuccess(): void {
-    $this->setupSuccessfulProvisioning(42, 10);
+    $createdGroupFields = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $createdGroupFields);
 
     $result = $this->service->provisionWorkspace($this->validData());
 
@@ -403,6 +414,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     // 2 categories (Road Damage, Flood).
     $this->assertEquals(2, $result['categories']);
     $this->assertEquals(10, $result['user_id']);
+
+    $nuxtConfig = json_decode($createdGroupFields['field_nuxt_config'], TRUE);
+    $this->assertTrue($nuxtConfig['features']['passwordless']);
   }
 
   /**
