@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.86](https://github.com/markaspot/markaspot/compare/11.9.85...11.9.86) (2026-05-13)
+
+### Bug Fixes
+
+* **fastmap:** handle both allowed_values shapes in update_11920 ([e643765](https://github.com/markaspot/markaspot/commit/e643765367d40a40663f73b05784e562f8a15fae))
+
 ## [11.9.85](https://github.com/markaspot/markaspot/compare/11.9.84...11.9.85) (2026-05-13)
 
 ### Features
