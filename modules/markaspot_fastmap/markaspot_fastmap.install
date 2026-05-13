@@ -1124,6 +1124,15 @@ function markaspot_fastmap_update_11919(): void {
 
 /**
  * Add the blocked workspace visibility mode.
+ *
+ * Live tenant DBs hold field_visibility.allowed_values in two shapes:
+ *   - Flat map (older installs): ['public' => 'Public', ...]
+ *   - List of mappings (post-Drupal-options-migration): [['value' => 'public', 'label' => 'Public'], ...]
+ *
+ * Appending the wrong shape produces a mixed-type array and TypedConfig
+ * refuses to save it with errors like
+ * "settings.allowed_values.<n>.label.0 doesn't exist". Detect the existing
+ * shape and append in kind so the hook is idempotent across both layouts.
  */
 function markaspot_fastmap_update_11920(): void {
   $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('group', 'field_visibility');
@@ -1132,16 +1141,31 @@ function markaspot_fastmap_update_11920(): void {
   }
 
   $allowed_values = $field_storage->getSetting('allowed_values') ?: [];
+
+  // Idempotency: already present in either shape.
   foreach ($allowed_values as $key => $item) {
-    if ($key === 'blocked' || (is_array($item) && ($item['value'] ?? NULL) === 'blocked')) {
+    if ($key === 'blocked') {
+      return;
+    }
+    if (is_array($item) && ($item['value'] ?? NULL) === 'blocked') {
       return;
     }
   }
 
-  $allowed_values[] = [
-    'value' => 'blocked',
-    'label' => 'Blocked',
-  ];
+  // Detect shape from the first existing entry.
+  $isListOfMappings = FALSE;
+  foreach ($allowed_values as $item) {
+    $isListOfMappings = is_array($item) && array_key_exists('value', $item);
+    break;
+  }
+
+  if ($isListOfMappings) {
+    $allowed_values[] = ['value' => 'blocked', 'label' => 'Blocked'];
+  }
+  else {
+    $allowed_values['blocked'] = 'Blocked';
+  }
+
   $field_storage->setSetting('allowed_values', $allowed_values);
   $field_storage->save();
 }
