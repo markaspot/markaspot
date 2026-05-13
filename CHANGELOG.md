@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.84](https://github.com/markaspot/markaspot/compare/11.9.83...11.9.84) (2026-05-13)
+
+### Features
+
+* **fastmap:** backfill features.passwordless drift in workspace provisioning ([d533aa2](https://github.com/markaspot/markaspot/commit/d533aa21641f84749bc3fc2baadf4768782acb61))
+
 ## [11.9.83](https://github.com/markaspot/markaspot/compare/11.9.82...11.9.83) (2026-05-13)
 
 ### Bug Fixes
