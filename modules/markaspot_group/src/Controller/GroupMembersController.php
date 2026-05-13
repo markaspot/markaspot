@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_group\Controller;
 
+use Drupal\Core\Cache\CacheableJsonResponse;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\Database;
 use Drupal\Core\Access\AccessResult;
