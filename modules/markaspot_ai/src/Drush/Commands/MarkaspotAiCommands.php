@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_ai\Drush\Commands;
 
+use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\Queue\QueueWorkerManagerInterface;
 use Drupal\markaspot_ai\Service\EmbeddingService;
 use Drupal\markaspot_ai\Service\SentimentService;
+use Drupal\markaspot_ai\Service\SpamRiskScannerService;
 use Drush\Attributes as CLI;
 use Drush\Commands\DrushCommands;
 
@@ -28,8 +30,80 @@ class MarkaspotAiCommands extends DrushCommands {
     protected EmbeddingService $embeddingService,
     protected SentimentService $sentimentService,
     protected Connection $database,
+    protected ?SpamRiskScannerService $spamRiskScanner = NULL,
   ) {
     parent::__construct();
+  }
+
+  /**
+   * Scan new workspaces for likely spam activity.
+   */
+  #[CLI\Command(name: 'mas:ai:spam-scan')]
+  #[CLI\Option(name: 'hours', description: 'Look back this many hours for service requests.')]
+  #[CLI\Option(name: 'workspace', description: 'Restrict scan to one workspace ID or slug.')]
+  #[CLI\Option(name: 'limit', description: 'Maximum recent requests to inspect before bucketing.')]
+  #[CLI\Option(name: 'new-workspace-days', description: 'Only scan workspaces created within this many days. Use 0 to disable.')]
+  #[CLI\Option(name: 'sample-limit', description: 'Maximum redacted request samples per workspace.')]
+  #[CLI\Option(name: 'use-ai', description: 'Use the configured AI provider after deterministic prefiltering.')]
+  #[CLI\Option(name: 'provider', description: 'AI provider override for classification, for example anthropic.')]
+  #[CLI\Option(name: 'ai-trigger-score', description: 'Minimum deterministic score before sending redacted samples to AI.')]
+  #[CLI\Option(name: 'apply', description: 'Apply automatic block when risk score reaches threshold.')]
+  #[CLI\Option(name: 'auto-block-threshold', description: 'Risk score required for --apply to set field_visibility=blocked.')]
+  #[CLI\FieldLabels(labels: [
+    'workspace_id' => 'Workspace ID',
+    'workspace' => 'Workspace',
+    'risk_score' => 'Risk',
+    'decision' => 'Decision',
+    'action' => 'Action',
+    'request_count' => 'Requests',
+    'request_ids' => 'Samples',
+    'reasons' => 'Reasons',
+  ])]
+  #[CLI\Usage(name: 'mas:ai:spam-scan --hours=24', description: 'Dry-run deterministic scan of new workspaces.')]
+  #[CLI\Usage(name: 'mas:ai:spam-scan --hours=24 --use-ai --provider=anthropic', description: 'Send only suspicious, redacted first-request samples to Anthropic.')]
+  #[CLI\Usage(name: 'mas:ai:spam-scan --workspace=test --use-ai --provider=anthropic --apply', description: 'Scan one workspace and block it automatically when the score reaches the threshold.')]
+  public function spamScan(
+    array $options = [
+      'hours' => 24,
+      'workspace' => NULL,
+      'limit' => 500,
+      'new-workspace-days' => 7,
+      'sample-limit' => 10,
+      'use-ai' => FALSE,
+      // Default to the documented Anthropic privacy contract. Operators may
+      // pass --provider=openai (etc.) for an explicit override; an unset
+      // provider must NEVER fall back to the global default_provider.
+      'provider' => 'anthropic',
+      'ai-trigger-score' => 50,
+      'apply' => FALSE,
+      'auto-block-threshold' => 95,
+    ],
+  ): RowsOfFields {
+    $hours = max(1, (int) ($options['hours'] ?? 24));
+    $since = time() - ($hours * 3600);
+
+    if (!$this->spamRiskScanner instanceof SpamRiskScannerService) {
+      throw new \RuntimeException('Spam risk scanner service is not available. Run drush cr and retry.');
+    }
+
+    $rows = $this->spamRiskScanner->scanRecent(
+      $since,
+      $options['workspace'] !== NULL && $options['workspace'] !== '' ? (string) $options['workspace'] : NULL,
+      max(1, (int) ($options['limit'] ?? 500)),
+      !empty($options['use-ai']),
+      !empty($options['apply']),
+      max(1, (int) ($options['auto-block-threshold'] ?? 95)),
+      max(0, (int) ($options['new-workspace-days'] ?? 7)),
+      max(0, (int) ($options['ai-trigger-score'] ?? 50)),
+      max(1, min(10, (int) ($options['sample-limit'] ?? 10))),
+      !empty($options['provider']) ? (string) $options['provider'] : NULL,
+    );
+
+    if ($rows === []) {
+      $this->logger()->notice('No matching new-workspace spam signals found.');
+    }
+
+    return new RowsOfFields($rows);
   }
 
   /**

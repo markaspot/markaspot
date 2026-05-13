@@ -10,6 +10,7 @@ markaspot_ai.settings:
           choices:
             - openai
             - azure
+            - anthropic
             - ionos
     providers:
       type: mapping
@@ -53,6 +54,25 @@ markaspot_ai.settings:
             embedding_model:
               type: string
               label: 'Embedding Deployment Name'
+            auth_type:
+              type: string
+              label: 'Authentication Type'
+        anthropic:
+          type: mapping
+          label: 'Anthropic Configuration'
+          mapping:
+            api_key:
+              type: string
+              label: 'API Key'
+            api_url:
+              type: uri
+              label: 'API URL'
+            api_version:
+              type: string
+              label: 'API Version'
+            chat_model:
+              type: string
+              label: 'Chat Model'
             auth_type:
               type: string
               label: 'Authentication Type'

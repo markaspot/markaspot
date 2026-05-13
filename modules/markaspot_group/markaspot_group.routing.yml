@@ -10,6 +10,18 @@ markaspot_group.members_matrix:
     _format: 'json'
     _auth: ['cookie']
 
+markaspot_group.admin_jurisdictions:
+  path: '/api/admin/jurisdictions'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\GroupMembersController::listAdminJurisdictions'
+    _title: 'Admin Jurisdictions'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_group\Controller\GroupMembersController::platformAdminAccessCheck'
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+
 markaspot_group.member_update:
   path: '/api/group-members/{uid}'
   defaults:

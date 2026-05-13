@@ -1,0 +1,7 @@
+services:
+  markaspot_fastmap.workspace_commands:
+    class: Drupal\markaspot_fastmap\Commands\WorkspaceCommands
+    arguments:
+      - '@entity_type.manager'
+    tags:
+      - { name: drush.command }

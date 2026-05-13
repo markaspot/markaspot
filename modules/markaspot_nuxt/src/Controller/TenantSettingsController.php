@@ -1026,6 +1026,37 @@ class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'No valid fields provided.'], 400);
     }
 
+    if (array_key_exists('field_visibility', $data)) {
+      $currentVisibility = $group->hasField('field_visibility') && !$group->get('field_visibility')->isEmpty()
+        ? (string) $group->get('field_visibility')->value
+        : 'public';
+      $requestedVisibility = is_string($data['field_visibility']) ? $data['field_visibility'] : '';
+      if (($currentVisibility === 'blocked' || $requestedVisibility === 'blocked')
+        && !$this->currentUserCanManageWorkspaceBlock()) {
+        return new JsonResponse(['error' => 'Only platform administrators can block or unblock a workspace.'], 403);
+      }
+    }
+
+    // TOCTOU recheck against the freshest DB state. Runs even when the PATCH
+    // does not touch field_visibility, because $group->save() writes the full
+    // entity row: an in-memory field_visibility loaded BEFORE an admin's
+    // concurrent block would otherwise silently overwrite that block. Placed
+    // before field validation so blocked-workspace rejections short-circuit
+    // and don't spend cycles validating fields that won't be saved.
+    $fresh = $this->entityTypeManager->getStorage('group')->loadUnchanged($group->id());
+    $freshVisibility = $fresh && $fresh->hasField('field_visibility') && !$fresh->get('field_visibility')->isEmpty()
+      ? (string) $fresh->get('field_visibility')->value
+      : 'public';
+    if ($freshVisibility === 'blocked' && !$this->currentUserCanManageWorkspaceBlock()) {
+      return new JsonResponse(['error' => 'Only platform administrators can block or unblock a workspace.'], 403);
+    }
+    // For privileged callers on a fresh-blocked workspace who did not patch
+    // field_visibility themselves, preserve the fresh blocked state so the
+    // in-memory stale value doesn't get re-written by save().
+    if ($freshVisibility === 'blocked' && !array_key_exists('field_visibility', $data)) {
+      $group->set('field_visibility', 'blocked');
+    }
+
     // Validate each supplied field before touching the entity.
     foreach ($data as $fieldName => $value) {
       $error = $this->validateFieldValue($fieldName, $value);
@@ -2074,6 +2105,14 @@ class TenantSettingsController extends ControllerBase {
   }
 
   /**
+   * Checks whether the current user can change the platform block state.
+   */
+  private function currentUserCanManageWorkspaceBlock(): bool {
+    return (int) $this->currentUser->id() === 1
+      || in_array('administrator', $this->currentUser->getRoles(), TRUE);
+  }
+
+  /**
    * Validates a single general settings field value.
    *
    * @param string $fieldName
@@ -2158,7 +2197,7 @@ class TenantSettingsController extends ControllerBase {
         if (!is_string($value)) {
           return 'field_visibility must be a string.';
         }
-        $allowed = ['public', 'submission_only', 'authenticated'];
+        $allowed = ['public', 'submission_only', 'authenticated', 'blocked'];
         if (!in_array($value, $allowed, TRUE)) {
           return 'field_visibility must be one of: ' . implode(', ', $allowed) . '.';
         }

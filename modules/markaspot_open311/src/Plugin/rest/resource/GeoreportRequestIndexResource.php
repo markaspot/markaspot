@@ -640,6 +640,45 @@ class GeoreportRequestIndexResource extends ResourceBase {
       // before the processor maps category, status, and group relationships.
       $request_data['jurisdiction_id'] = $jurisdictionId;
 
+      // Block check covers both the claimed jurisdiction AND any boundary-
+      // resolved child jurisdiction (including ancestors of the deepest
+      // match). Without the boundary fan-out, a bot can claim a public parent
+      // workspace while the coordinates fall into a blocked child —
+      // node_presave would still throw, but the response would surface as a
+      // 502 via the generic \Throwable trap, hiding the real reason.
+      if ($jurisdictionId && $this->workspaceVisibility) {
+        $coordinates = $this->getRequestCoordinates($request_data);
+        if ($this->workspaceVisibility->isBlockedForSubmission(
+            $jurisdictionId,
+            $coordinates[0] ?? NULL,
+            $coordinates[1] ?? NULL,
+          )
+        ) {
+          // Detection signal: blocked submission attempts must be visible to
+          // operators investigating spam bots. Flood-gated to one watchdog
+          // entry per (workspace, IP) per 60s, otherwise a sustained bot at
+          // 1000 RPS would write 1000 dblog rows/s and starve other
+          // diagnostics. First hit gets the warning; suppressed retries are
+          // still rejected with 403, just not re-logged.
+          $clientIp = \Drupal::request()->getClientIp() ?? '0.0.0.0';
+          $floodKey = 'markaspot_open311.blocked_post.' . $jurisdictionId . '.' . $clientIp;
+          if ($this->flood->isAllowed($floodKey, 1, 60)) {
+            $this->flood->register($floodKey, 60);
+            $this->logger->warning(
+              'Blocked workspace submission rejected: uid=@uid ip=@ip claimed_jid=@claimed lat=@lat lng=@lng',
+              [
+                '@uid' => (int) $this->currentUser->id(),
+                '@ip' => $clientIp,
+                '@claimed' => $jurisdictionId,
+                '@lat' => $coordinates[0] ?? 'null',
+                '@lng' => $coordinates[1] ?? 'null',
+              ]
+            );
+          }
+          throw new GeoreportException('Workspace is blocked.', 403);
+        }
+      }
+
       $this->enforceSubmissionBoundary($request_data, $jurisdictionId);
 
       // Workspace visibility enforcement: block anonymous POST for

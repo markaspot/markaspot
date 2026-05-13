@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_ai\Form;
 
+use Drupal\Core\Cache\CacheTagsInvalidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\markaspot_ai\Service\NlpClientService;
+use Drupal\markaspot_ai\Service\TokenTrackingService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -26,6 +28,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     ConfigFactoryInterface $config_factory,
     TypedConfigManagerInterface $typed_config_manager,
     protected NlpClientService $nlpClient,
+    protected TokenTrackingService $tokenTracking,
+    protected CacheTagsInvalidatorInterface $cacheTagsInvalidator,
   ) {
     parent::__construct($config_factory, $typed_config_manager);
   }
@@ -38,6 +42,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       $container->get('config.factory'),
       $container->get('config.typed'),
       $container->get('markaspot_ai.nlp_client'),
+      $container->get('markaspot_ai.token_tracking'),
+      $container->get('cache_tags.invalidator'),
     );
   }
 
@@ -75,6 +81,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#options' => [
         'openai' => $this->t('OpenAI'),
         'azure' => $this->t('Azure OpenAI'),
+        'anthropic' => $this->t('Anthropic'),
         'ionos' => $this->t('IONOS AI (Berlin)'),
       ],
       '#default_value' => $config->get('default_provider') ?? 'openai',
@@ -239,6 +246,82 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#title' => $this->t('Embedding Deployment Name'),
       '#description' => $this->t('The deployment name for embeddings (e.g., text-embedding-3-large).'),
       '#default_value' => $config->get('providers.azure.embedding_model') ?? 'text-embedding-3-large',
+      '#required' => TRUE,
+    ];
+
+    // Anthropic Configuration.
+    $form['provider']['anthropic'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Anthropic Configuration'),
+      '#description' => $this->t('Anthropic Messages API provider for chat and classification tasks. Embedding workflows still require an OpenAI-compatible provider.'),
+      '#states' => [
+        'visible' => [
+          ':input[name="default_provider"]' => ['value' => 'anthropic'],
+        ],
+      ],
+    ];
+
+    $anthropic_env_key = getenv('MARKASPOT_AI_API_KEY')
+      ?: getenv('ANTHROPIC_API_KEY')
+      ?: getenv('MARKASPOT_AI_ANTHROPIC_KEY');
+    if (!empty($anthropic_env_key)) {
+      $form['provider']['anthropic']['anthropic_api_key_status'] = [
+        '#type' => 'item',
+        '#markup' => '<div class="messages messages--status">' .
+          $this->t('<strong>API key loaded from environment variable.</strong> This is the recommended secure approach.') .
+          '</div>',
+        '#weight' => -1,
+      ];
+      $form['provider']['anthropic']['anthropic_api_key'] = [
+        '#type' => 'textfield',
+        '#title' => $this->t('API Key'),
+        '#default_value' => '••••••••' . substr($anthropic_env_key, -4),
+        '#disabled' => TRUE,
+      ];
+    }
+    else {
+      $existing_anthropic_key = $config->get('providers.anthropic.api_key');
+      $form['provider']['anthropic']['anthropic_api_key'] = [
+        '#type' => 'password',
+        '#title' => $this->t('API Key'),
+        '#description' => $this->t('Your Anthropic API key. <strong>Recommended:</strong> Set ANTHROPIC_API_KEY or MARKASPOT_AI_API_KEY environment variable instead for better security.'),
+        '#default_value' => '',
+        '#attributes' => ['autocomplete' => 'off'],
+      ];
+
+      if (!empty($existing_anthropic_key)) {
+        $form['provider']['anthropic']['anthropic_api_key']['#description'] = $this->t('API key is configured in database. Leave empty to keep existing, or enter new key to replace. <strong>Recommended:</strong> Use ANTHROPIC_API_KEY or MARKASPOT_AI_API_KEY environment variable instead.');
+        $form['provider']['anthropic']['anthropic_api_key_status'] = [
+          '#type' => 'item',
+          '#markup' => '<div class="messages messages--warning">' .
+            $this->t('API key stored in config database. Consider using environment variable for better security.') .
+            '</div>',
+          '#weight' => -1,
+        ];
+      }
+    }
+
+    $form['provider']['anthropic']['anthropic_api_url'] = [
+      '#type' => 'url',
+      '#title' => $this->t('API URL'),
+      '#description' => $this->t('The base URL for the Anthropic API.'),
+      '#default_value' => $config->get('providers.anthropic.api_url') ?? 'https://api.anthropic.com/v1',
+      '#required' => TRUE,
+    ];
+
+    $form['provider']['anthropic']['anthropic_api_version'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('API Version'),
+      '#description' => $this->t('Anthropic API version header.'),
+      '#default_value' => $config->get('providers.anthropic.api_version') ?? '2023-06-01',
+      '#required' => TRUE,
+    ];
+
+    $form['provider']['anthropic']['anthropic_chat_model'] = [
+      '#type' => 'textfield',
+      '#title' => $this->t('Chat Model'),
+      '#description' => $this->t('Model to use for the Messages API.'),
+      '#default_value' => $config->get('providers.anthropic.chat_model') ?? 'claude-sonnet-4-20250514',
       '#required' => TRUE,
     ];
 
@@ -570,9 +653,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     // Add current usage summary if tracking is enabled.
     if ($config->get('token_tracking.enabled')) {
       try {
-        /** @var \Drupal\markaspot_ai\Service\TokenTrackingService $tracking */
-        $tracking = \Drupal::service('markaspot_ai.token_tracking');
-        $usage = $tracking->getDailyUsage();
+        $usage = $this->tokenTracking->getDailyUsage();
         $dailyLimit = (int) $config->get('token_tracking.daily_limit');
 
         $usage_text = $this->t('Today: @total tokens used (@input input, @output output) from @count requests.', [
@@ -665,6 +746,12 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
         }
       }
     }
+    elseif ($provider === 'anthropic') {
+      $anthropic_url = $form_state->getValue('anthropic_api_url');
+      if (!empty($anthropic_url) && !filter_var($anthropic_url, FILTER_VALIDATE_URL)) {
+        $form_state->setErrorByName('anthropic_api_url', $this->t('Anthropic API URL must be a valid URL.'));
+      }
+    }
     elseif ($provider === 'ionos') {
       $ionos_url = $form_state->getValue('ionos_api_url');
       if (!empty($ionos_url) && !filter_var($ionos_url, FILTER_VALIDATE_URL)) {
@@ -750,6 +837,31 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $config->set('providers.azure.embedding_model', $form_state->getValue('azure_embedding_model'));
     $config->set('providers.azure.auth_type', 'api_key_header');
 
+    // Save Anthropic configuration.
+    // Only save API key when not loaded from environment variable.
+    $anthropic_env_key = getenv('MARKASPOT_AI_API_KEY')
+      ?: getenv('ANTHROPIC_API_KEY')
+      ?: getenv('MARKASPOT_AI_ANTHROPIC_KEY');
+    if (empty($anthropic_env_key)) {
+      $anthropic_api_key = $form_state->getValue('anthropic_api_key');
+      if (!empty($anthropic_api_key)) {
+        $config->set('providers.anthropic.api_key', $anthropic_api_key);
+      }
+    }
+    $config->set(
+      'providers.anthropic.api_url',
+      $form_state->getValue('anthropic_api_url') ?? 'https://api.anthropic.com/v1'
+    );
+    $config->set(
+      'providers.anthropic.api_version',
+      $form_state->getValue('anthropic_api_version') ?? '2023-06-01'
+    );
+    $config->set(
+      'providers.anthropic.chat_model',
+      $form_state->getValue('anthropic_chat_model') ?? 'claude-sonnet-4-20250514'
+    );
+    $config->set('providers.anthropic.auth_type', 'x_api_key');
+
     // Save IONOS configuration.
     // Only save API key when not loaded from environment variable.
     $ionos_env_key = getenv('IONOS_AI_API_KEY') ?: getenv('MARKASPOT_AI_IONOS_KEY');
@@ -800,7 +912,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $config->save();
 
     // Invalidate usage cache.
-    \Drupal::service('cache_tags.invalidator')->invalidateTags(['markaspot_ai:usage']);
+    $this->cacheTagsInvalidator->invalidateTags(['markaspot_ai:usage']);
 
     parent::submitForm($form, $form_state);
   }

@@ -1121,3 +1121,27 @@ function markaspot_fastmap_update_11919(): void {
 
   \Drupal::logger('markaspot_fastmap')->info('Backfilled features.passwordless on @count jur group(s).', ['@count' => $patched]);
 }
+
+/**
+ * Add the blocked workspace visibility mode.
+ */
+function markaspot_fastmap_update_11920(): void {
+  $field_storage = \Drupal\field\Entity\FieldStorageConfig::loadByName('group', 'field_visibility');
+  if (!$field_storage) {
+    return;
+  }
+
+  $allowed_values = $field_storage->getSetting('allowed_values') ?: [];
+  foreach ($allowed_values as $key => $item) {
+    if ($key === 'blocked' || (is_array($item) && ($item['value'] ?? NULL) === 'blocked')) {
+      return;
+    }
+  }
+
+  $allowed_values[] = [
+    'value' => 'blocked',
+    'label' => 'Blocked',
+  ];
+  $field_storage->setSetting('allowed_values', $allowed_values);
+  $field_storage->save();
+}

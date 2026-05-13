@@ -396,6 +396,7 @@ class GeoreportRequestResource extends ResourceBase {
       if (!$node) {
         throw new NotFoundHttpException('Service request not found.');
       }
+      $this->enforceWorkspaceWritable($node);
       $request_data = $this->canonicalizeUpdateJurisdiction($request_data, $node, $scopeParameters);
 
       // Return result to handler for formatting and response.
@@ -694,6 +695,37 @@ class GeoreportRequestResource extends ResourceBase {
 
     $jurisdictionId = $this->resolveNodeJurisdictionId($node);
     $this->georeportProcessor->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
+  }
+
+  /**
+   * Denies updates to requests in a blocked workspace.
+   */
+  protected function enforceWorkspaceWritable(ContentEntityInterface $node): void {
+    $jurisdictionId = $this->resolveNodeJurisdictionId($node);
+    if (!$jurisdictionId
+      || !$this->workspaceVisibility
+      || !$this->workspaceVisibility->isBlocked($jurisdictionId)) {
+      return;
+    }
+
+    // Flood-gated detection log. See sibling rate-limiting on the Index POST
+    // path: same threat (sustained bot retries) but on PATCH, same mitigation
+    // (1/60s per (workspace, IP)).
+    $clientIp = \Drupal::request()->getClientIp() ?? '0.0.0.0';
+    $floodKey = 'markaspot_open311.blocked_patch.' . $jurisdictionId . '.' . $clientIp;
+    if ($this->flood->isAllowed($floodKey, 1, 60)) {
+      $this->flood->register($floodKey, 60);
+      $this->logger->warning(
+        'Blocked workspace update rejected: uid=@uid ip=@ip jid=@jid nid=@nid',
+        [
+          '@uid' => (int) $this->currentUser->id(),
+          '@ip' => $clientIp,
+          '@jid' => $jurisdictionId,
+          '@nid' => (int) $node->id(),
+        ]
+      );
+    }
+    throw new AccessDeniedHttpException('Workspace is blocked.');
   }
 
   /**

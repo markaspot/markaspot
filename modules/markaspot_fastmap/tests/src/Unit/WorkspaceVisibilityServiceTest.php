@@ -114,6 +114,18 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
 
   /**
    * @covers ::getVisibility
+   * @covers ::isBlocked
+   */
+  public function testGetVisibilityBlocked(): void {
+    $group = $this->createMockGroup('blocked');
+    $this->groupStorage->method('load')->with(6)->willReturn($group);
+
+    $this->assertEquals('blocked', $this->service->getVisibility(6));
+    $this->assertTrue($this->service->isBlocked(6));
+  }
+
+  /**
+   * @covers ::getVisibility
    */
   public function testGetVisibilityDefaultsWhenEmpty(): void {
     $group = $this->createMockGroup(NULL);
@@ -150,6 +162,7 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
       'public allows anonymous view' => ['public', TRUE],
       'submission_only blocks anonymous view' => ['submission_only', FALSE],
       'authenticated blocks anonymous view' => ['authenticated', FALSE],
+      'blocked blocks anonymous view' => ['blocked', FALSE],
     ];
   }
 
@@ -172,7 +185,56 @@ class WorkspaceVisibilityServiceTest extends UnitTestCase {
       'public allows anonymous submit' => ['public', TRUE],
       'submission_only allows anonymous submit' => ['submission_only', TRUE],
       'authenticated blocks anonymous submit' => ['authenticated', FALSE],
+      'blocked blocks anonymous submit' => ['blocked', FALSE],
     ];
+  }
+
+  /**
+   * @covers ::isBlocked
+   */
+  public function testIsBlockedReturnsFalseForRegularVisibility(): void {
+    $group = $this->createMockGroup('authenticated');
+    $this->groupStorage->method('load')->with(9)->willReturn($group);
+
+    $this->assertFalse($this->service->isBlocked(9));
+  }
+
+  /**
+   * Regression for H4: claimed jurisdiction is blocked → block submission.
+   *
+   * Coordinate-based boundary fan-out lives in markaspot_fastmap.module and
+   * requires the module loaded; that path is covered by Kernel tests. The
+   * claimed-id path is the most common bot vector and stays unit-testable.
+   *
+   * @covers ::isBlockedForSubmission
+   */
+  public function testIsBlockedForSubmissionReturnsTrueOnBlockedClaim(): void {
+    $group = $this->createMockGroup('blocked');
+    $this->groupStorage->method('load')->with(11)->willReturn($group);
+
+    $this->assertTrue($this->service->isBlockedForSubmission(11, NULL, NULL));
+  }
+
+  /**
+   * @covers ::isBlockedForSubmission
+   */
+  public function testIsBlockedForSubmissionReturnsFalseOnPublicClaimWithoutCoordinates(): void {
+    $group = $this->createMockGroup('public');
+    $this->groupStorage->method('load')->with(12)->willReturn($group);
+
+    $this->assertFalse($this->service->isBlockedForSubmission(12, NULL, NULL));
+  }
+
+  /**
+   * @covers ::isBlockedForSubmission
+   */
+  public function testIsBlockedForSubmissionTreatsZeroCoordinatesAsAbsent(): void {
+    $group = $this->createMockGroup('public');
+    $this->groupStorage->method('load')->with(13)->willReturn($group);
+
+    // 0/0 is the sentinel from getRequestCoordinates() when input is invalid.
+    // We must not run the (potentially expensive) boundary fan-out for it.
+    $this->assertFalse($this->service->isBlockedForSubmission(13, 0.0, 0.0));
   }
 
   /**

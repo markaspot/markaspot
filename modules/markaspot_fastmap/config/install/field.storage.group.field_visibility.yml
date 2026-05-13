@@ -23,6 +23,9 @@ settings:
     -
       value: authenticated
       label: Authenticated
+    -
+      value: blocked
+      label: Blocked
   allowed_values_function: ''
 module: options
 locked: false

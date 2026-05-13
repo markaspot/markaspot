@@ -741,6 +741,127 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests tenant admins cannot set workspace visibility to blocked.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsTenantAdminCannotBlockWorkspace(): void {
+    $this->currentUser->method('id')->willReturn('7');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $group = $this->createMockGroup([
+      'field_visibility' => 'public',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_visibility' => 'blocked'])
+    );
+
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertEquals(403, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertStringContainsString('platform administrators', $data['error']);
+  }
+
+  /**
+   * Tests tenant admins cannot unblock a blocked workspace.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsTenantAdminCannotUnblockWorkspace(): void {
+    $this->currentUser->method('id')->willReturn('7');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $group = $this->createMockGroup([
+      'field_visibility' => 'blocked',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_visibility' => 'public'])
+    );
+
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertEquals(403, $response->getStatusCode());
+  }
+
+  /**
+   * Tests the blocked visibility value is accepted by field validation.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testValidateFieldValueAllowsBlockedVisibility(): void {
+    $method = new \ReflectionMethod($this->controller, 'validateFieldValue');
+    $method->setAccessible(TRUE);
+
+    $this->assertNull($method->invoke($this->controller, 'field_visibility', 'blocked'));
+  }
+
+  /**
+   * C-1 regression: tenant PATCH without field_visibility cannot clobber a
+   * concurrent admin block.
+   *
+   * Without the multi-field guard, $group->save() would write the in-memory
+   * field_visibility (initial: 'public') back over the freshly-set 'blocked'
+   * state — silently unblocking the workspace from a non-admin caller.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testUpdateGeneralSettingsMultiFieldPatchPreservesAdminBlock(): void {
+    $this->currentUser->method('id')->willReturn('7');
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    // Initial load: 'public'. Simulates the read before an admin's concurrent
+    // block lands.
+    $group = $this->createMockGroup([
+      'field_visibility' => 'public',
+      'field_platform_name' => 'Old name',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    // loadUnchanged returns the post-admin-block fresh state.
+    $fresh = $this->createMockGroup([
+      'field_visibility' => 'blocked',
+      'field_platform_name' => 'Old name',
+    ]);
+    $this->groupStorage->method('loadUnchanged')->with(14)->willReturn($fresh);
+
+    // Tenant sends a PATCH that does NOT touch field_visibility — only
+    // field_platform_name. Pre-fix this would have slipped past both guards
+    // and $group->save() would have re-written the public visibility.
+    $request = Request::create(
+      '/api/tenant/14/general',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['field_platform_name' => 'New name'])
+    );
+
+    $response = $this->controller->updateGeneralSettings($request, '14');
+
+    $this->assertEquals(403, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertStringContainsString('platform administrators', $data['error']);
+  }
+
+  /**
    * Tests updateGeneralSettings() rejects too-long platform name.
    *
    * @covers ::updateGeneralSettings

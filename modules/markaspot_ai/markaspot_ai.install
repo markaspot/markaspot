@@ -598,6 +598,25 @@ function markaspot_ai_update_10009(): string {
 }
 
 /**
+ * Add Anthropic chat provider configuration.
+ */
+function markaspot_ai_update_10010(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_ai.settings');
+
+  if ($config->get('providers.anthropic') === NULL) {
+    $config->set('providers.anthropic', [
+      'api_key' => '',
+      'api_url' => 'https://api.anthropic.com/v1',
+      'api_version' => '2023-06-01',
+      'chat_model' => 'claude-sonnet-4-20250514',
+      'auth_type' => 'x_api_key',
+    ])->save();
+  }
+
+  return 'Added Anthropic provider configuration for chat classification.';
+}
+
+/**
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {
@@ -623,15 +642,16 @@ function markaspot_ai_requirements(string $phase): array {
   if ($phase === 'runtime') {
     $config = \Drupal::config('markaspot_ai.settings');
     $default_provider = $config->get('default_provider') ?? 'openai';
-    $api_key = $config->get("providers.{$default_provider}.api_key") ?? '';
+    $api_key = getenv('MARKASPOT_AI_API_KEY') ?: ($config->get("providers.{$default_provider}.api_key") ?? '');
 
     // Check environment variables for API key.
     if (empty($api_key)) {
       $env_vars = match ($default_provider) {
         'azure' => ['AZURE_OPENAI_API_KEY', 'MARKASPOT_AI_AZURE_KEY'],
         'openai' => ['OPENAI_API_KEY', 'MARKASPOT_AI_OPENAI_KEY'],
+        'anthropic' => ['ANTHROPIC_API_KEY', 'MARKASPOT_AI_ANTHROPIC_KEY'],
         'ionos' => ['IONOS_AI_API_KEY', 'MARKASPOT_AI_IONOS_KEY'],
-        default => [],
+        default => ['MARKASPOT_AI_' . strtoupper((string) $default_provider) . '_KEY'],
       };
       foreach ($env_vars as $env_var) {
         $env_value = getenv($env_var);

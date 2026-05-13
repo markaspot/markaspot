@@ -106,6 +106,10 @@ class AiClientService {
     $provider_config = $config->get("providers.{$provider}") ?? [];
 
     $model = $options['model'] ?? $provider_config['chat_model'] ?? 'gpt-4o';
+    if ($provider === 'anthropic') {
+      return $this->chatAnthropic($messages, $provider_config, $model, $options);
+    }
+
     $endpoint = $this->buildEndpoint($provider, $provider_config, $model, 'chat/completions');
 
     $headers = $this->buildAuthHeaders(
@@ -166,6 +170,11 @@ class AiClientService {
     $config = $this->getConfig();
     $provider = $options['provider'] ?? $config->get('default_provider') ?? 'openai';
     $provider_config = $config->get("providers.{$provider}") ?? [];
+    if ($provider === 'anthropic') {
+      throw new \InvalidArgumentException(
+        'Anthropic embeddings are not supported by this adapter. Use an OpenAI-compatible provider for embedding workflows.'
+      );
+    }
 
     $model = $options['model'] ?? $provider_config['embedding_model'] ?? 'text-embedding-3-large';
     $endpoint = $this->buildEndpoint($provider, $provider_config, $model, 'embeddings');
@@ -252,6 +261,12 @@ class AiClientService {
       case 'api_key_header':
         if (!empty($apiKey)) {
           $headers['api-key'] = $apiKey;
+        }
+        break;
+
+      case 'x_api_key':
+        if (!empty($apiKey)) {
+          $headers['x-api-key'] = $apiKey;
         }
         break;
 
@@ -395,6 +410,83 @@ class AiClientService {
     }
 
     return $decoded;
+  }
+
+  /**
+   * Sends a chat request to Anthropic's Messages API.
+   *
+   * Anthropic does not use OpenAI's chat/completions shape. This adapter keeps
+   * the public chat() return shape compatible with existing callers.
+   */
+  protected function chatAnthropic(array $messages, array $providerConfig, string $model, array $options): array {
+    $endpoint = rtrim(
+      getenv('MARKASPOT_AI_API_URL') ?: $providerConfig['api_url'] ?? 'https://api.anthropic.com/v1',
+      '/'
+    ) . '/messages';
+
+    $apiVersion = getenv('MARKASPOT_AI_API_VERSION') ?: $providerConfig['api_version'] ?? '2023-06-01';
+    $headers = $this->buildAuthHeaders(
+      $providerConfig['auth_type'] ?? 'x_api_key',
+      $this->resolveApiKey('anthropic', $providerConfig)
+    );
+    $headers['anthropic-version'] = $apiVersion;
+
+    $system = [];
+    $anthropicMessages = [];
+    foreach ($messages as $message) {
+      $role = $message['role'] ?? 'user';
+      $content = $message['content'] ?? '';
+      if ($role === 'system') {
+        $system[] = is_string($content) ? $content : json_encode($content, JSON_UNESCAPED_SLASHES);
+        continue;
+      }
+      $anthropicMessages[] = [
+        'role' => $role === 'assistant' ? 'assistant' : 'user',
+        'content' => is_string($content) ? $content : json_encode($content, JSON_UNESCAPED_SLASHES),
+      ];
+    }
+
+    if ($anthropicMessages === []) {
+      $anthropicMessages[] = ['role' => 'user', 'content' => ''];
+    }
+
+    $payload = [
+      'model' => $model,
+      'max_tokens' => max(1, (int) ($options['max_tokens'] ?? 1024)),
+      'messages' => $anthropicMessages,
+    ];
+    if ($system !== []) {
+      $payload['system'] = implode("\n\n", $system);
+    }
+    if (isset($options['temperature'])) {
+      $payload['temperature'] = (float) $options['temperature'];
+    }
+    if (isset($options['top_p'])) {
+      $payload['top_p'] = (float) $options['top_p'];
+    }
+
+    $response = $this->executeWithRetry(function () use ($endpoint, $headers, $payload) {
+      return $this->sendRequest('POST', $endpoint, $headers, $payload);
+    });
+
+    $content = '';
+    foreach ($response['content'] ?? [] as $block) {
+      if (($block['type'] ?? NULL) === 'text' && isset($block['text'])) {
+        $content .= (string) $block['text'];
+      }
+    }
+
+    return [
+      'choices' => [
+        ['message' => ['content' => $content]],
+      ],
+      'usage' => [
+        'prompt_tokens' => $response['usage']['input_tokens'] ?? 0,
+        'completion_tokens' => $response['usage']['output_tokens'] ?? 0,
+      ],
+      'model' => $response['model'] ?? $model,
+      'raw' => $response,
+    ];
   }
 
   /**

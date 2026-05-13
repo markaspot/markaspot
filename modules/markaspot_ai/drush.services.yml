@@ -8,5 +8,6 @@ services:
       - '@markaspot_ai.embedding'
       - '@markaspot_ai.sentiment'
       - '@database'
+      - '@?markaspot_ai.spam_risk_scanner'
     tags:
       - { name: drush.command }

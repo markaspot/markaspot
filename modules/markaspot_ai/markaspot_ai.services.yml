@@ -75,6 +75,14 @@ services:
       - '@markaspot_ai.risk_score_calculator'
       - '@database'
 
+  markaspot_ai.spam_risk_scanner:
+    class: Drupal\markaspot_ai\Service\SpamRiskScannerService
+    arguments:
+      - '@entity_type.manager'
+      - '@markaspot_ai.client'
+      - '@datetime.time'
+      - '@logger.factory'
+
   markaspot_ai.nlp_client:
     class: Drupal\markaspot_ai\Service\NlpClientService
     arguments:

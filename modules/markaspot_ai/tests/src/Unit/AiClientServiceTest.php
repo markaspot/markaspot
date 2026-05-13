@@ -123,6 +123,13 @@ class AiClientServiceTest extends UnitTestCase {
             'api_key' => 'azure-key-456',
             'chat_model' => 'gpt-4o',
           ],
+          'providers.anthropic' => [
+            'api_url' => 'https://api.anthropic.com/v1',
+            'api_version' => '2023-06-01',
+            'auth_type' => 'x_api_key',
+            'api_key' => 'anthropic-key-789',
+            'chat_model' => 'claude-sonnet-4-20250514',
+          ],
           'providers.local' => [
             'api_url' => 'http://localhost:11434/v1',
             'auth_type' => 'none',
@@ -230,6 +237,18 @@ class AiClientServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests x-api-key auth header.
+   *
+   * @covers ::buildAuthHeaders
+   */
+  public function testXApiKeyHeader(): void {
+    $headers = $this->service->buildAuthHeaders('x_api_key', 'anthropic-key');
+
+    $this->assertEquals('anthropic-key', $headers['x-api-key']);
+    $this->assertArrayNotHasKey('Authorization', $headers);
+  }
+
+  /**
    * Tests successful chat completion.
    *
    * @covers ::chat
@@ -253,6 +272,51 @@ class AiClientServiceTest extends UnitTestCase {
     ]);
 
     $this->assertEquals($apiResponse, $result);
+  }
+
+  /**
+   * Tests Anthropic chat completion adapter.
+   *
+   * @covers ::chat
+   */
+  public function testAnthropicChatSuccess(): void {
+    $this->tokenTracking->method('checkLimit')->willReturn(TRUE);
+
+    $anthropicResponse = [
+      'content' => [
+        ['type' => 'text', 'text' => '{"risk_score":96}'],
+      ],
+      'usage' => ['input_tokens' => 12, 'output_tokens' => 6],
+      'model' => 'claude-sonnet-4-20250514',
+    ];
+
+    $this->httpClient->expects($this->once())
+      ->method('request')
+      ->with(
+        'POST',
+        'https://api.anthropic.com/v1/messages',
+        $this->callback(function (array $options): bool {
+          return ($options['headers']['x-api-key'] ?? '') === 'anthropic-key-789'
+            && ($options['headers']['anthropic-version'] ?? '') === '2023-06-01'
+            && ($options['json']['model'] ?? '') === 'claude-sonnet-4-20250514'
+            && ($options['json']['system'] ?? '') === 'Classify spam.'
+            && ($options['json']['messages'][0]['role'] ?? '') === 'user'
+            && ($options['json']['max_tokens'] ?? 0) === 100;
+        })
+      )
+      ->willReturn(new Response(200, [], json_encode($anthropicResponse)));
+
+    $result = $this->service->chat([
+      ['role' => 'system', 'content' => 'Classify spam.'],
+      ['role' => 'user', 'content' => 'Sample'],
+    ], [
+      'provider' => 'anthropic',
+      'max_tokens' => 100,
+    ]);
+
+    $this->assertEquals('{"risk_score":96}', $result['choices'][0]['message']['content']);
+    $this->assertEquals(12, $result['usage']['prompt_tokens']);
+    $this->assertEquals(6, $result['usage']['completion_tokens']);
   }
 
   /**

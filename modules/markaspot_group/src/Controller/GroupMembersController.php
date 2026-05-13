@@ -112,6 +112,81 @@ class GroupMembersController extends ControllerBase {
   }
 
   /**
+   * Access check for endpoints reserved to Drupal site administrators.
+   *
+   * Used by listAdminJurisdictions() so that only Drupal-administrator users
+   * (uid 1 or 'administrator' role) can enumerate every jur-group, regardless
+   * of membership. Tenant admins are intentionally excluded.
+   */
+  public function platformAdminAccessCheck(AccountInterface $account): AccessResultInterface {
+    if ((int) $account->id() === 1) {
+      return AccessResult::allowed()->addCacheContexts(['user']);
+    }
+    if (in_array('administrator', $account->getRoles(), TRUE)) {
+      return AccessResult::allowed()->addCacheContexts(['user.roles']);
+    }
+    return AccessResult::forbidden('Platform administrator role required.')
+      ->addCacheContexts(['user.roles']);
+  }
+
+  /**
+   * Returns every jurisdiction group for platform admins.
+   *
+   * The dashboard workspace switcher uses this to merge "all workspaces" into
+   * the switcher dropdown for Drupal site administrators, so a platform admin
+   * can inspect or unblock a workspace (e.g. a spam workspace) without first
+   * being granted explicit group membership. Tenant admins do not see this
+   * data — they keep the membership-filtered list from /auth/status.
+   */
+  public function listAdminJurisdictions(): CacheableJsonResponse {
+    $storage = $this->entityTypeManager->getStorage('group');
+    $groupType = $this->config('markaspot_open311.settings')->get('jurisdiction_group_type') ?: 'jur';
+
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $groupType)
+      ->sort('label', 'ASC')
+      ->execute();
+
+    $jurisdictions = [];
+    $cacheability = new CacheableMetadata();
+    // Invalidate when ANY group is added/removed/changed (covers visibility
+    // toggles, slug renames, new spam workspaces becoming visible). Drupal
+    // core's group entity hooks invalidate `group_list` on every CRUD, so
+    // per-group `group:N` tags would be redundant here.
+    $cacheability->addCacheTags(['group_list']);
+    // `user.roles` is the right discriminator: the payload differs between
+    // platform admins and everyone else, not per individual uid. Drupal's
+    // cache-context optimizer treats `user` as strictly more specific than
+    // `user.roles`, so adding both would only inflate CID cardinality.
+    $cacheability->addCacheContexts(['user.roles']);
+
+    foreach ($storage->loadMultiple($ids) as $group) {
+      if (!$group instanceof GroupInterface || $group->bundle() !== $groupType) {
+        continue;
+      }
+      $jurisdictions[] = [
+        'id' => (string) $group->id(),
+        'label' => (string) $group->label(),
+        'slug' => $group->hasField('field_slug') && !$group->get('field_slug')->isEmpty()
+          ? (string) $group->get('field_slug')->value
+          : NULL,
+        'visibility' => $group->hasField('field_visibility') && !$group->get('field_visibility')->isEmpty()
+          ? (string) $group->get('field_visibility')->value
+          : 'public',
+        'type' => $groupType,
+      ];
+    }
+
+    $response = new CacheableJsonResponse(['jurisdictions' => $jurisdictions]);
+    $response->addCacheableDependency($cacheability);
+    // Belt-and-braces against intermediate HTTP caches that might honour
+    // group_list invalidation differently.
+    $response->headers->set('Cache-Control', 'private, no-cache');
+    return $response;
+  }
+
+  /**
    * Access check for group members matrix endpoints.
    *
    * Grants access to Drupal administrators and users who hold the
