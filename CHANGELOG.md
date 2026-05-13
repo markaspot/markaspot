@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.87](https://github.com/markaspot/markaspot/compare/11.9.86...11.9.87) (2026-05-13)
+
+### Bug Fixes
+
+* **fastmap:** re-emit blocked-visibility recovery as update_11921 ([86a951a](https://github.com/markaspot/markaspot/commit/86a951adaf009d3ddc4284e5ba9d45ac633d7b78))
+
 ## [11.9.86](https://github.com/markaspot/markaspot/compare/11.9.85...11.9.86) (2026-05-13)
 
 ### Bug Fixes
