@@ -1,0 +1,5 @@
+admin:
+  version: 1.x
+  css:
+    component:
+      css/markaspot_fastmap.admin.css: {}

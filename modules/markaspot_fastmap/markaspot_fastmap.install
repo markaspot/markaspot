@@ -88,6 +88,19 @@ function markaspot_fastmap_schema(): array {
         'length' => 30,
         'not null' => TRUE,
       ],
+      'selected_tier' => [
+        'description' => 'Pricing tier selected during workspace creation.',
+        'type' => 'varchar',
+        'length' => 16,
+        'not null' => FALSE,
+      ],
+      'login_claimed' => [
+        'description' => 'Whether a login token from this verified email token has been claimed.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
       'created' => [
         'description' => 'Unix timestamp of verification.',
         'type' => 'int',
@@ -1221,4 +1234,149 @@ function markaspot_fastmap_update_11921(): void {
 
   $field_storage->setSetting('allowed_values', $allowed_values);
   $field_storage->save();
+}
+
+/**
+ * Defer the workspace tier to Stripe webhook activation (Bug #2).
+ *
+ * Until 11.9.x, `field.field.group.jur.field_tier` shipped with
+ * `default_value: free`. Every new jur group entity that did not explicitly
+ * set a tier was stamped 'free' on save. The billing GET endpoint then
+ * reported "Current Plan: Free" before the user had ever seen a Stripe
+ * checkout, a UX lie at best and a compliance risk at worst.
+ *
+ * The new contract: tier is set ONLY by the Stripe webhook
+ * checkout.session.completed handler. Demo workspaces have field_tier=NULL.
+ *
+ * This hook:
+ * 1. Strips the field default_value so future installs get NULL tier.
+ * 2. Re-classifies mis-stamped demo workspaces:
+ *    field_tier='free' AND field_expiry_date IS NOT NULL AND no Stripe
+ *    subscription -> field_tier=NULL.
+ *    Other tier states are left untouched (paid, free_permanent partners).
+ *
+ * Idempotent: re-running on a clean tenant finds nothing to fix.
+ */
+function markaspot_fastmap_update_11922(): void {
+  // 1. Strip the eager default from the field config so future installs
+  //    get NULL tier. Operates on the active config so tenants that have
+  //    already imported the old default get the new behavior immediately.
+  $field_config = \Drupal\field\Entity\FieldConfig::loadByName('group', 'jur', 'field_tier');
+  if ($field_config) {
+    $default_value = $field_config->getDefaultValueLiteral();
+    if (!empty($default_value)) {
+      $field_config->setDefaultValue([]);
+      $field_config->save();
+    }
+  }
+
+  // 2. Re-classify mis-stamped demo workspaces. Direct DB updates avoid
+  //    triggering all the group-save hooks (tier-change webhooks etc.)
+  //    on the potentially-large set of demo workspaces affected.
+  $connection = \Drupal::database();
+
+  // Find jur groups with field_tier='free', non-empty expiry, and no
+  // active Stripe subscription. These are the eager-free demo bleed.
+  $query = $connection->select('group__field_tier', 't');
+  $query->fields('t', ['entity_id']);
+  $query->innerJoin('groups', 'g', 'g.id = t.entity_id AND g.type = :type', [':type' => 'jur']);
+  $query->innerJoin('group__field_expiry_date', 'e', 'e.entity_id = t.entity_id');
+  $query->leftJoin(
+    'group__field_stripe_subscription_id',
+    's',
+    "s.entity_id = t.entity_id AND s.field_stripe_subscription_id_value IS NOT NULL AND TRIM(s.field_stripe_subscription_id_value) <> ''"
+  );
+  $query->condition('t.field_tier_value', 'free');
+  $query->condition('e.field_expiry_date_value', 0, '>');
+  $query->isNull('s.entity_id');
+
+  $affected_ids = $query->execute()->fetchCol();
+
+  if (empty($affected_ids)) {
+    \Drupal::logger('markaspot_fastmap')->info(
+      'update_11922: no mis-classified demo workspaces found.'
+    );
+    return;
+  }
+
+  $connection->delete('group__field_tier')
+    ->condition('entity_id', $affected_ids, 'IN')
+    ->execute();
+
+  // Invalidate cache so the next read on these groups picks up the change.
+  $tags = array_map(static fn($id) => 'group:' . $id, $affected_ids);
+  \Drupal::service('cache_tags.invalidator')->invalidateTags($tags);
+
+  \Drupal::logger('markaspot_fastmap')->notice(
+    'update_11922: reset field_tier=NULL on @count mis-classified demo workspaces (ids: @ids).',
+    [
+      '@count' => count($affected_ids),
+      '@ids' => implode(', ', array_slice($affected_ids, 0, 50)) . (count($affected_ids) > 50 ? ', ...' : ''),
+    ]
+  );
+}
+
+/**
+ * Stores retry metadata on verified FastMap tokens.
+ */
+function markaspot_fastmap_update_11923(): void {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists('markaspot_fastmap_verified')) {
+    return;
+  }
+
+  // Guard against parallel updb runs (multi-node container deploys, repeated
+  // drush updb after a stalled first run). Without the advisory lock, two
+  // concurrent DDL "ADD COLUMN" calls can race: one succeeds, the other dies
+  // with "Duplicate column name" while system.schema has already advanced,
+  // leaving the table in a partially-migrated state. The lock keeps the field
+  // existence check and the addField call inside the same critical section.
+  $lock = \Drupal::lock();
+  $lockName = 'markaspot_fastmap_update_11923';
+  if (!$lock->acquire($lockName, 30)) {
+    \Drupal::logger('markaspot_fastmap')->warning(
+      'update_11923: another process holds the schema lock; skipping. The next updb run will retry.'
+    );
+    return;
+  }
+
+  try {
+    if (!$schema->fieldExists('markaspot_fastmap_verified', 'selected_tier')) {
+      try {
+        $schema->addField('markaspot_fastmap_verified', 'selected_tier', [
+          'description' => 'Pricing tier selected during workspace creation.',
+          'type' => 'varchar',
+          'length' => 16,
+          'not null' => FALSE,
+        ]);
+      }
+      catch (\Throwable $e) {
+        // If another node added the column between the check and the call,
+        // swallow the duplicate-column error and proceed.
+        if (!$schema->fieldExists('markaspot_fastmap_verified', 'selected_tier')) {
+          throw $e;
+        }
+      }
+    }
+
+    if (!$schema->fieldExists('markaspot_fastmap_verified', 'login_claimed')) {
+      try {
+        $schema->addField('markaspot_fastmap_verified', 'login_claimed', [
+          'description' => 'Whether a login token from this verified email token has been claimed.',
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+          'default' => 0,
+        ]);
+      }
+      catch (\Throwable $e) {
+        if (!$schema->fieldExists('markaspot_fastmap_verified', 'login_claimed')) {
+          throw $e;
+        }
+      }
+    }
+  }
+  finally {
+    $lock->release($lockName);
+  }
 }

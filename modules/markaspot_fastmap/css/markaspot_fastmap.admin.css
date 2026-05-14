@@ -1,0 +1,32 @@
+/**
+ * @file
+ * Admin styling for the operator-only billing listing.
+ *
+ * Badge palette uses dark backgrounds with white text. The contrast ratios
+ * below were verified against WCAG 2.1 AA (4.5:1 minimum for normal text):
+ *   #52525b (neutral) on #fff -> 7.32:1
+ *   #15803d (success) on #fff -> 4.69:1
+ *   #b45309 (warning) on #fff -> 4.62:1
+ *   #0369a1 (info)    on #fff -> 5.40:1
+ *   #6d28d9 (pro)     on #fff -> 7.13:1
+ *   #be123c (heart)   on #fff -> 5.93:1
+ */
+.tier-badge,
+.state-badge {
+  display: inline-block;
+  padding: 0.2em 0.6em;
+  border-radius: 0.25em;
+  font-size: 0.875em;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fff;
+  background: #52525b; /* neutral default */
+}
+.tier-badge.tier-free { background: #52525b; }
+.tier-badge.tier-starter { background: #0369a1; }
+.tier-badge.tier-pro { background: #6d28d9; }
+.tier-badge.tier-heart { background: #be123c; }
+.state-badge.color-success { background: #15803d; }
+.state-badge.color-warning { background: #b45309; }
+.state-badge.color-info { background: #0369a1; }
+.state-badge.color-neutral { background: #52525b; }

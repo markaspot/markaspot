@@ -379,6 +379,15 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         $group = $groupStorage->create($groupFields);
         $group->save();
 
+        // Tier is never set eagerly at provisioning time. Demo workspaces have
+        // no tier until the Stripe checkout webhook activates the workspace.
+        // Field-level default_value is intentionally empty; clearing it again
+        // here is a belt-and-suspenders guard against pre-update_11922 tenants
+        // where the field default may still be 'free'.
+        if ($group->hasField('field_tier')) {
+          $group->set('field_tier', NULL);
+        }
+
         // All new workspaces start with an expiry date. The expiry is cleared
         // later when the Stripe webhook confirms successful payment.
         $config = $this->configFactory->get('markaspot_fastmap.settings');

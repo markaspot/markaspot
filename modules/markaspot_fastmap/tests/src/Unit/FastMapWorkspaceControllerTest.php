@@ -11,6 +11,7 @@ use Drupal\Core\Database\Query\Delete;
 use Drupal\Core\Database\Query\Insert;
 use Drupal\Core\Database\Query\Merge;
 use Drupal\Core\Database\Query\SelectInterface;
+use Drupal\Core\Database\Query\Update;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
@@ -142,6 +143,16 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     };
     $this->database->method('startTransaction')->willReturn($this->transaction);
+
+    // Default Update mock: mint-time claim of markaspot_fastmap_verified now
+    // happens inside createWorkspaceLoginToken(). Tests that don't override
+    // this stub get a successful claim (1 affected row) so the login-token
+    // mint path returns a token instead of NULL.
+    $defaultUpdate = $this->createMock(Update::class);
+    $defaultUpdate->method('fields')->willReturnSelf();
+    $defaultUpdate->method('condition')->willReturnSelf();
+    $defaultUpdate->method('execute')->willReturn(1);
+    $this->database->method('update')->willReturn($defaultUpdate);
     $this->provisioning = $this->createMock(WorkspaceProvisioningServiceInterface::class);
     $this->mailManager = $this->createMock(MailManagerInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
@@ -819,7 +830,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $this->database->expects($this->never())->method('select');
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(409, $response->getStatusCode());
@@ -836,7 +847,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     // Token created 8 days ago (beyond 7-day default).
     $record = [
       'id' => 1,
-      'token' => 'valid-token',
+      'token' => str_repeat('ef', 32),
       'email' => 'user@example.com',
       'workspace_data' => json_encode(['name' => 'Test']),
       'created' => time() - (8 * 86400),
@@ -859,7 +870,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->database->method('select')->willReturn($select);
     $this->database->method('delete')->willReturn($delete);
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(410, $response->getStatusCode());
@@ -882,7 +893,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $record = [
       'id' => 1,
-      'token' => 'valid-token',
+      'token' => str_repeat('ef', 32),
       'email' => 'user@example.com',
       'workspace_data' => json_encode($workspaceData),
       'created' => time() - 3600,
@@ -923,7 +934,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
         'user_id' => 7,
       ]);
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(201, $response->getStatusCode());
@@ -960,7 +971,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $record = [
       'id' => 1,
-      'token' => 'valid-token',
+      'token' => str_repeat('ef', 32),
       'email' => 'user@example.com',
       'workspace_data' => json_encode($workspaceData),
       'created' => time() - 3600,
@@ -999,7 +1010,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
         'user_id' => 7,
       ]);
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(201, $response->getStatusCode());
@@ -1026,7 +1037,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $record = [
       'id' => 1,
-      'token' => 'valid-token',
+      'token' => str_repeat('ef', 32),
       'email' => 'user@example.com',
       'workspace_data' => json_encode($workspaceData),
       'created' => time() - 3600,
@@ -1065,7 +1076,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
         'user_id' => 7,
       ]);
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(TrustedRedirectResponse::class, $response);
     $this->assertStringContainsString('/redirect-ws/dashboard', $response->headers->get('location'));
@@ -1073,11 +1084,11 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests that a verified token can return a fresh login token in JSON mode.
+   * Tests that an unclaimed recent verified token can return a login token.
    *
    * @covers ::verifyWorkspace
    */
-  public function testVerifyWorkspaceAlreadyVerifiedJsonResponseIncludesLoginToken(): void {
+  public function testVerifyWorkspaceAlreadyVerifiedJsonResponseIncludesLoginTokenWithinGrace(): void {
     $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
     $this->pushCurrentRequest([
       'HTTP_ACCEPT' => 'application/json',
@@ -1088,7 +1099,12 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $pendingStatement->method('fetchAssoc')->willReturn(FALSE);
 
     $verifiedStatement = $this->createMock(StatementInterface::class);
-    $verifiedStatement->method('fetchField')->willReturn('verified-ws');
+    $verifiedStatement->method('fetchAssoc')->willReturn([
+      'slug' => 'verified-ws',
+      'selected_tier' => 'starter',
+      'created' => time(),
+      'login_claimed' => 0,
+    ]);
 
     $pendingSelect = $this->createMock(SelectInterface::class);
     $pendingSelect->method('fields')->willReturnSelf();
@@ -1151,13 +1167,63 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $container = \Drupal::getContainer();
     $container->set('entity_type.manager', $entityTypeManager);
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertEquals('verified-ws', $data['slug']);
+    $this->assertEquals('starter', $data['selected_tier']);
     $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $data['login_token']);
+  }
+
+  /**
+   * Tests that a claimed verified token does not mint another login token.
+   *
+   * @covers ::verifyWorkspace
+   */
+  public function testVerifyWorkspaceAlreadyVerifiedJsonResponseOmitsLoginTokenAfterClaim(): void {
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest([
+      'HTTP_ACCEPT' => 'application/json',
+      'HTTP_X_FASTMAP_RESPONSE_MODE' => 'json',
+    ]);
+
+    $pendingStatement = $this->createMock(StatementInterface::class);
+    $pendingStatement->method('fetchAssoc')->willReturn(FALSE);
+
+    $verifiedStatement = $this->createMock(StatementInterface::class);
+    $verifiedStatement->method('fetchAssoc')->willReturn([
+      'slug' => 'verified-ws',
+      'selected_tier' => 'pro',
+      'created' => time(),
+      'login_claimed' => 1,
+    ]);
+
+    $pendingSelect = $this->createMock(SelectInterface::class);
+    $pendingSelect->method('fields')->willReturnSelf();
+    $pendingSelect->method('condition')->willReturnSelf();
+    $pendingSelect->method('range')->willReturnSelf();
+    $pendingSelect->method('forUpdate')->willReturnSelf();
+    $pendingSelect->method('execute')->willReturn($pendingStatement);
+
+    $verifiedSelect = $this->createMock(SelectInterface::class);
+    $verifiedSelect->method('fields')->willReturnSelf();
+    $verifiedSelect->method('condition')->willReturnSelf();
+    $verifiedSelect->method('range')->willReturnSelf();
+    $verifiedSelect->method('execute')->willReturn($verifiedStatement);
+
+    $this->database->method('select')
+      ->willReturnOnConsecutiveCalls($pendingSelect, $verifiedSelect);
+
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
+
+    $this->assertInstanceOf(JsonResponse::class, $response);
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('verified-ws', $data['slug']);
+    $this->assertEquals('pro', $data['selected_tier']);
+    $this->assertArrayNotHasKey('login_token', $data);
   }
 
   /**
@@ -1168,7 +1234,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
   public function testVerifyWorkspaceCorruptedData(): void {
     $record = [
       'id' => 1,
-      'token' => 'valid-token',
+      'token' => str_repeat('ef', 32),
       'email' => 'user@example.com',
       'workspace_data' => 'not-valid-json{{{',
       'created' => time() - 3600,
@@ -1186,7 +1252,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $this->database->method('select')->willReturn($select);
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(500, $response->getStatusCode());
@@ -1209,7 +1275,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $record = [
       'id' => 1,
-      'token' => 'valid-token',
+      'token' => str_repeat('ef', 32),
       'email' => 'user@example.com',
       'workspace_data' => json_encode($workspaceData),
       'created' => time() - 3600,
@@ -1230,7 +1296,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->provisioning->method('provisionWorkspace')
       ->willThrowException(new \RuntimeException('Slug already taken'));
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(409, $response->getStatusCode());
@@ -1254,7 +1320,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $record = [
       'id' => 1,
-      'token' => 'valid-token',
+      'token' => str_repeat('ef', 32),
       'email' => 'user@example.com',
       'workspace_data' => json_encode($workspaceData),
       'created' => time() - 3600,
@@ -1275,7 +1341,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->provisioning->method('provisionWorkspace')
       ->willThrowException(new \RuntimeException('Workspace provisioning failed: SQLSTATE[23000]'));
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(500, $response->getStatusCode());
@@ -1300,7 +1366,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
 
     $record = [
       'id' => 1,
-      'token' => 'valid-token',
+      'token' => str_repeat('ef', 32),
       'email' => 'user@example.com',
       'workspace_data' => json_encode($workspaceData),
       'created' => time() - 3600,
@@ -1343,7 +1409,7 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
       ->method('teardownWorkspace')
       ->with(42);
 
-    $response = $this->controller->verifyWorkspace('valid-token');
+    $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
     $this->assertInstanceOf(JsonResponse::class, $response);
     $this->assertEquals(500, $response->getStatusCode());
@@ -1729,6 +1795,125 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals(403, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertStringContainsString('not available', $data['error']);
+  }
+
+  /**
+   * Verified-token claim is atomic and happens at mint time, not claim time.
+   *
+   * Asserts both halves of the security fix:
+   * 1. markVerifiedTokenClaimed() refuses to claim a row that is already
+   *    claimed or aged past the recovery window (returns FALSE).
+   * 2. The verify_token is never written into the login_token keyvalue
+   *    payload, so a compromised login_token cannot be combined with a
+   *    captured verify_token to re-mint.
+   *
+   * @covers ::createWorkspaceLoginToken
+   */
+  public function testMintTimeClaimAtomicAndOmitsVerifyTokenFromKeyValue(): void {
+    $validVerifyToken = str_repeat('ab', 32);
+    $conditions = [];
+
+    // Build an isolated Database mock so we can override the default
+    // Update stub installed in setUp().
+    $update = $this->getMockBuilder(Update::class)
+      ->disableOriginalConstructor()
+      ->onlyMethods(['fields', 'condition', 'execute'])
+      ->getMock();
+    $update->method('fields')
+      ->with(['login_claimed' => 1])
+      ->willReturnSelf();
+    $update->method('condition')
+      ->willReturnCallback(function (
+        string $field,
+        mixed $value = NULL,
+        string $operator = '=',
+      ) use (&$conditions, $update) {
+        $conditions[] = [$field, $value, $operator];
+        return $update;
+      });
+    // 0 rows affected = already claimed.
+    $update->method('execute')->willReturn(0);
+
+    $database = $this->createMock(Connection::class);
+    $database->method('update')
+      ->with('markaspot_fastmap_verified')
+      ->willReturn($update);
+
+    $container = \Drupal::getContainer();
+    $container->set('database', $database);
+    $controller = FastMapWorkspaceController::create($container);
+
+    // Capture every keyvalue write so we can prove verify_token is absent.
+    $storedPayloads = [];
+    $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $kvStore->method('setWithExpire')
+      ->willReturnCallback(function (string $key, $value) use (&$storedPayloads): void {
+        $storedPayloads[] = $value;
+      });
+    $kvFactory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $kvFactory->method('get')->willReturn($kvStore);
+    $container->set('keyvalue.expirable', $kvFactory);
+    $controller = FastMapWorkspaceController::create($container);
+
+    $method = new \ReflectionMethod($controller, 'createWorkspaceLoginToken');
+    $method->setAccessible(TRUE);
+    $token = $method->invoke($controller, 42, 'verified-ws', $validVerifyToken);
+
+    $this->assertNull(
+      $token,
+      'When the verified row cannot be claimed, no login token must be minted.'
+    );
+    $this->assertSame(
+      [],
+      $storedPayloads,
+      'When the claim fails, no keyvalue write must occur.'
+    );
+
+    // Atomic UPDATE must scope by token + unclaimed + recovery window.
+    $this->assertContains(['token', $validVerifyToken, '='], $conditions);
+    $this->assertContains(['login_claimed', 0, '='], $conditions);
+    $createdConditions = array_values(array_filter(
+      $conditions,
+      fn(array $condition) => $condition[0] === 'created' && $condition[2] === '>='
+    ));
+    $this->assertCount(1, $createdConditions);
+  }
+
+  /**
+   * Happy-path mint stores uid + slug but never the verify_token.
+   *
+   * @covers ::createWorkspaceLoginToken
+   */
+  public function testMintTimeKeyValuePayloadOmitsVerifyToken(): void {
+    $validVerifyToken = str_repeat('cd', 32);
+
+    $storedPayloads = [];
+    $kvStore = $this->createMock(KeyValueStoreExpirableInterface::class);
+    $kvStore->method('setWithExpire')
+      ->willReturnCallback(function (string $key, $value, int $ttl) use (&$storedPayloads): void {
+        $storedPayloads[] = $value;
+      });
+    $kvFactory = $this->createMock(KeyValueExpirableFactoryInterface::class);
+    $kvFactory->method('get')->willReturn($kvStore);
+
+    $container = \Drupal::getContainer();
+    $container->set('keyvalue.expirable', $kvFactory);
+    $controller = FastMapWorkspaceController::create($container);
+
+    $method = new \ReflectionMethod($controller, 'createWorkspaceLoginToken');
+    $method->setAccessible(TRUE);
+    $token = $method->invoke($controller, 99, 'verified-ws', $validVerifyToken);
+
+    $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $token);
+    $this->assertCount(1, $storedPayloads);
+    $payload = $storedPayloads[0];
+    $this->assertSame(99, $payload['uid']);
+    $this->assertSame('verified-ws', $payload['slug']);
+    $this->assertArrayNotHasKey(
+      'verify_token',
+      $payload,
+      'Login-token keyvalue payload must never carry the verify_token derivative secret.'
+    );
   }
 
   /**

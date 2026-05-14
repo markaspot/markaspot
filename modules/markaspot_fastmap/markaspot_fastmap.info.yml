@@ -9,3 +9,4 @@ dependencies:
   - field_permissions:field_permissions
   - drupal:group
   - drupal:taxonomy
+  - drupal:system

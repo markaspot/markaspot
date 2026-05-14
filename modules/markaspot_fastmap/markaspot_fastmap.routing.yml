@@ -100,3 +100,14 @@ markaspot_fastmap.tos_status:
   options:
     _auth: ['cookie']
     no_cache: 'TRUE'
+
+markaspot_fastmap.billing_admin:
+  path: '/admin/markaspot/billing'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\BillingAdminController::listing'
+    _title: 'Tenant Billing'
+  methods: [GET]
+  requirements:
+    _permission: 'view fastmap billing admin'
+  options:
+    _admin_route: true

@@ -1,0 +1,47 @@
+{#
+/**
+ * @file
+ * German legal notice template (Impressum) per TMG §5.
+ *
+ * Available variables:
+ * - billing_name: string (HTML-escaped legal company name)
+ * - address_line1, address_line2: string (escaped)
+ * - postal_code, city, country: string (escaped)
+ * - email: string (escaped contact email)
+ * - tax_id: string (escaped Umsatzsteuer-ID)
+ * - has_complete_data: bool — false when one of name/address/email is empty
+ *
+ * Operators can opt out of auto-regeneration by inserting the comment
+ * <!-- manual-override --> anywhere in the saved field value.
+ */
+#}
+<h2>Impressum</h2>
+
+<p>Angaben gemäß § 5 TMG:</p>
+
+<p class="legal-notice-address">
+  {{ billing_name ?: '[Firmenname noch nicht hinterlegt]' }}<br>
+  {{ address_line1 ?: '[Anschrift noch nicht hinterlegt]' }}<br>
+  {% if address_line2 %}{{ address_line2 }}<br>{% endif %}
+  {{ postal_code }} {{ city }}<br>
+  {{ country }}
+</p>
+
+<h3>Kontakt</h3>
+<p>
+  E-Mail:
+  {% if email %}
+    <a href="mailto:{{ email }}">{{ email }}</a>
+  {% else %}
+    [E-Mail noch nicht hinterlegt]
+  {% endif %}
+</p>
+
+{% if tax_id %}
+<h3>Umsatzsteuer-ID</h3>
+<p>Umsatzsteuer-Identifikationsnummer gemäß § 27 a Umsatzsteuergesetz: {{ tax_id }}</p>
+{% endif %}
+
+{% if not has_complete_data %}
+<p><em>Hinweis: Diese Angaben sind unvollständig. Bitte vervollständigen Sie die Rechnungsdaten in den Workspace-Einstellungen, um ein TMG-konformes Impressum zu veröffentlichen.</em></p>
+{% endif %}

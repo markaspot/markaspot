@@ -9,3 +9,8 @@ delete fastmap workspace:
 access workspace usage:
   title: 'Access workspace usage'
   description: 'View request count and tier limits for workspaces.'
+
+view fastmap billing admin:
+  title: 'View FastMap tenant billing admin'
+  description: 'Browse all tenant billing state for SaaS operations. Restricted to platform operator (Civic Patches GmbH), NOT individual tenant administrators.'
+  restrict access: true

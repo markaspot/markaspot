@@ -59,6 +59,7 @@ class OtpServiceTest extends UnitTestCase {
     ?ModuleHandlerInterface $moduleHandler = NULL,
     ?EntityRepositoryInterface $entityRepository = NULL,
     ?LanguageManagerInterface $languageManager = NULL,
+    ?EntityTypeManagerInterface $entityTypeManager = NULL,
     string $jurisdictionGroupType = 'jur',
   ): OtpService {
     $mail = $this->createMock(MailManagerInterface::class);
@@ -91,13 +92,15 @@ class OtpServiceTest extends UnitTestCase {
       ['markaspot_open311.settings', $open311Config],
     ]);
 
-    // Group storage: load() returns NULL so sendCode falls back to the
-    // site name for the email platform string — the jurisdiction label
-    // is not what these tests assert on.
-    $groupStorage = $this->createMock(EntityStorageInterface::class);
-    $groupStorage->method('load')->willReturn(NULL);
-    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
-    $entityTypeManager->method('getStorage')->willReturn($groupStorage);
+    if ($entityTypeManager === NULL) {
+      // Group storage: load() returns NULL so sendCode falls back to the
+      // site name for the email platform string — the jurisdiction label
+      // is not what these tests assert on.
+      $groupStorage = $this->createMock(EntityStorageInterface::class);
+      $groupStorage->method('load')->willReturn(NULL);
+      $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+      $entityTypeManager->method('getStorage')->willReturn($groupStorage);
+    }
 
     if ($languageManager === NULL) {
       $language = $this->createMock(LanguageInterface::class);
@@ -305,6 +308,7 @@ class OtpServiceTest extends UnitTestCase {
       $moduleHandler,
       NULL,
       NULL,
+      NULL,
       'jurisdiction',
     );
 
@@ -373,6 +377,43 @@ class OtpServiceTest extends UnitTestCase {
       'tos_accepted' => FALSE,
       'tos_accepted_at' => NULL,
     ], $method->invoke($service, $user));
+  }
+
+  /**
+   * Blocked accounts cannot authenticate through passwordless OTP.
+   *
+   * @covers ::authenticateUser
+   */
+  public function testAuthenticateUserRejectsBlockedExistingUser(): void {
+    $user = $this->createMock(User::class);
+    $user->expects($this->once())
+      ->method('isBlocked')
+      ->willReturn(TRUE);
+
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->expects($this->once())
+      ->method('loadByProperties')
+      ->with(['mail' => 'blocked@example.com'])
+      ->willReturn([$user]);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->expects($this->once())
+      ->method('getStorage')
+      ->with('user')
+      ->willReturn($userStorage);
+
+    $service = $this->buildService(
+      $this->createMock(Connection::class),
+      NULL,
+      NULL,
+      NULL,
+      $entityTypeManager,
+    );
+
+    $method = new \ReflectionMethod($service, 'authenticateUser');
+    $method->setAccessible(TRUE);
+
+    $this->assertNull($method->invoke($service, 'blocked@example.com'));
   }
 
   /**
@@ -453,6 +494,60 @@ class OtpServiceTest extends UnitTestCase {
 
     $this->assertSame(42, $updateConditions['jurisdiction_id']);
     $this->assertSame('user@example.com', $updateConditions['email']);
+  }
+
+  /**
+   * Blocked accounts do not receive fresh passwordless OTP codes.
+   *
+   * @covers ::requestCode
+   * @covers ::loadUserByEmail
+   */
+  public function testRequestCodeDoesNotSendCodeForBlockedExistingUser(): void {
+    $user = $this->createMock(User::class);
+    $user->expects($this->once())
+      ->method('isBlocked')
+      ->willReturn(TRUE);
+
+    $userStorage = $this->createMock(EntityStorageInterface::class);
+    $userStorage->expects($this->once())
+      ->method('loadByProperties')
+      ->with(['mail' => 'blocked@example.com'])
+      ->willReturn([$user]);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->expects($this->once())
+      ->method('getStorage')
+      ->with('user')
+      ->willReturn($userStorage);
+
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(0);
+
+    $update = $this->createMock(Update::class);
+    $update->method('fields')->willReturnSelf();
+    $update->method('condition')->willReturnSelf();
+    $update->method('execute')->willReturn(1);
+
+    $database = $this->createMock(Connection::class);
+    $database->method('delete')->willReturn($delete);
+    $database->method('update')->willReturn($update);
+    $database->expects($this->never())
+      ->method('insert');
+
+    $service = $this->buildService(
+      $database,
+      NULL,
+      NULL,
+      NULL,
+      $entityTypeManager,
+    );
+
+    $result = $service->requestCode('blocked@example.com', 42);
+
+    $this->assertTrue($result['success']);
+    $this->assertSame('Verification code sent to your email', $result['message']);
+    $this->assertSame(600, $result['expiresIn']);
   }
 
   /**

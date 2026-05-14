@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_fastmap\Controller;
 
+use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\Component\Utility\Xss;
 use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Core\Controller\ControllerBase;
@@ -26,7 +27,7 @@ use Symfony\Component\HttpFoundation\Request;
  * Handles FastMap workspace creation with email verification.
  *
  * Flow: POST create-workspace -> stores pending record -> sends verification
- * email -> GET verify/{token} -> provisions workspace -> redirects to dashboard.
+ * email -> GET verify/{token} -> provisions workspace.
  */
 class FastMapWorkspaceController extends ControllerBase {
 
@@ -74,6 +75,16 @@ class FastMapWorkspaceController extends ControllerBase {
    * Lock lifetime while verifying and provisioning a pending token.
    */
   private const VERIFY_TOKEN_LOCK_TTL = 300.0;
+
+  /**
+   * Login token time-to-live in seconds.
+   */
+  private const LOGIN_TOKEN_TTL = 300;
+
+  /**
+   * Verified-token recovery window in seconds.
+   */
+  private const VERIFIED_TOKEN_RECOVERY_TTL = 86400;
 
   /**
    * The database connection.
@@ -306,6 +317,19 @@ class FastMapWorkspaceController extends ControllerBase {
         }
       }
 
+      $selectedTier = '';
+      if (isset($data['selected_tier']) && is_string($data['selected_tier'])) {
+        $tier = trim($data['selected_tier']);
+        // Source the allow-list from the canonical field_tier allowed_values
+        // rather than hardcoding, so future tier additions ('heart',
+        // 'free_permanent' partner deals etc.) do not silently drop here.
+        $field_storage = FieldStorageConfig::loadByName('group', 'field_tier');
+        $allowed_tiers = $field_storage ? array_keys((array) $field_storage->getSetting('allowed_values')) : [];
+        if ($allowed_tiers && in_array($tier, $allowed_tiers, TRUE)) {
+          $selectedTier = $tier;
+        }
+      }
+
       // Store all workspace data for later provisioning.
       $workspaceData = [
         'name' => $name,
@@ -331,6 +355,7 @@ class FastMapWorkspaceController extends ControllerBase {
           : NULL,
         'start_page_translations' => $startPageTranslations ?: NULL,
         'demo' => !empty($data['demo']),
+        'selected_tier' => $selectedTier,
         'ai_system_prompt' => isset($data['ai_system_prompt']) && is_string($data['ai_system_prompt'])
           ? mb_substr(trim($data['ai_system_prompt']), 0, 2000)
           : '',
@@ -468,21 +493,28 @@ class FastMapWorkspaceController extends ControllerBase {
         // client. Check if the workspace was already provisioned by looking
         // for a verified record or matching group.
         $verified = $this->database->select('markaspot_fastmap_verified', 'v')
-          ->fields('v', ['slug'])
+          ->fields('v', ['slug', 'selected_tier', 'created', 'login_claimed'])
           ->condition('token', $token)
           ->range(0, 1)
           ->execute()
-          ->fetchField();
+          ->fetchAssoc();
 
         if ($verified) {
+          $verifiedSlug = (string) $verified['slug'];
+          $selectedTier = (string) ($verified['selected_tier'] ?? '');
           $baseUrl = $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
-          $loginToken = $this->createLoginTokenForVerifiedWorkspace($verified);
+          $loginToken = $this->canReissueVerifiedLoginToken($verified)
+            ? $this->createLoginTokenForVerifiedWorkspace($verifiedSlug, $token)
+            : NULL;
 
           if ($baseUrl && !$wantsJsonResponse) {
-            return $this->buildWorkspaceRedirectResponse($verified, NULL, $loginToken);
+            return $this->buildWorkspaceRedirectResponse($verifiedSlug, NULL, $loginToken);
           }
 
-          $response = ['slug' => $verified];
+          $response = ['slug' => $verifiedSlug];
+          if ($selectedTier !== '') {
+            $response['selected_tier'] = $selectedTier;
+          }
           if ($loginToken) {
             $response['login_token'] = $loginToken;
           }
@@ -532,6 +564,8 @@ class FastMapWorkspaceController extends ControllerBase {
           ->keys(['token' => $token])
           ->fields([
             'slug' => $result['slug'],
+            'selected_tier' => (string) ($workspaceData['selected_tier'] ?? ''),
+            'login_claimed' => 0,
             'created' => time(),
           ])
           ->execute();
@@ -552,7 +586,7 @@ class FastMapWorkspaceController extends ControllerBase {
       // automatically logged in after email verification.
       // Uses the same keyvalue.expirable store as the dev switch-token flow,
       // but with a production-safe 5-minute TTL and no devel-module guard.
-      $loginToken = $this->createWorkspaceLoginToken((int) $result['user_id'], $result['slug']);
+      $loginToken = $this->createWorkspaceLoginToken((int) $result['user_id'], $result['slug'], $token);
 
       // Redirect to workspace dashboard or return JSON.
       $baseUrl = $config->get('workspace_base_url');
@@ -570,6 +604,9 @@ class FastMapWorkspaceController extends ControllerBase {
         'categories' => $result['categories'],
         'status' => 'provisioned',
       ];
+      if (!empty($workspaceData['selected_tier'])) {
+        $response['selected_tier'] = $workspaceData['selected_tier'];
+      }
       if ($loginToken) {
         $response['login_token'] = $loginToken;
       }
@@ -633,15 +670,33 @@ class FastMapWorkspaceController extends ControllerBase {
 
   /**
    * Creates a short-lived workspace login token.
+   *
+   * When a verified-email token is supplied, the originating row in
+   * markaspot_fastmap_verified is marked claimed atomically as part of the
+   * mint. This prevents the keyvalue entry from carrying the verify_token as
+   * a derivative secret: a compromised login_token can no longer be combined
+   * with the verify_token to brute-force a re-mint, because the verify_token
+   * is never persisted next to the login_token in the first place.
+   *
+   * Trade-off: an unused login_token still consumes its verified-row claim
+   * after at most LOGIN_TOKEN_TTL (5 minutes), after which the keyvalue entry
+   * expires automatically. We accept that ephemeral window because the
+   * verify_token is single-purpose and the verified row otherwise lives for
+   * VERIFIED_TOKEN_RECOVERY_TTL anyway.
    */
-  private function createWorkspaceLoginToken(int $uid, string $slug): ?string {
+  private function createWorkspaceLoginToken(int $uid, string $slug, ?string $verifyToken = NULL): ?string {
+    if ($verifyToken !== NULL && !$this->markVerifiedTokenClaimed($verifyToken)) {
+      return NULL;
+    }
+
     try {
       $loginToken = bin2hex(random_bytes(32));
       $store = $this->keyValueExpirable->get('markaspot_fastmap_login_tokens');
-      $store->setWithExpire($loginToken, [
+      $tokenData = [
         'uid' => $uid,
         'slug' => $slug,
-      ], 300);
+      ];
+      $store->setWithExpire($loginToken, $tokenData, self::LOGIN_TOKEN_TTL);
       return $loginToken;
     }
     catch (\Exception $e) {
@@ -655,15 +710,64 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
+   * Atomically marks a verified-email token as having minted its login token.
+   *
+   * Returns FALSE when the row is missing, already claimed, or aged past
+   * VERIFIED_TOKEN_RECOVERY_TTL. The mint-side caller must abort in that case
+   * so a stale or contested verify_token cannot mint a second login_token.
+   */
+  private function markVerifiedTokenClaimed(string $verifyToken): bool {
+    if (!preg_match('/^[0-9a-f]{64}$/', $verifyToken)) {
+      return FALSE;
+    }
+
+    try {
+      $affected = $this->database->update('markaspot_fastmap_verified')
+        ->fields(['login_claimed' => 1])
+        ->condition('token', $verifyToken)
+        ->condition('login_claimed', 0)
+        ->condition('created', time() - self::VERIFIED_TOKEN_RECOVERY_TTL, '>=')
+        ->execute();
+      return (int) $affected > 0;
+    }
+    catch (\Throwable $e) {
+      $this->fastmapLogger->warning('Could not mark verified login token claimed: @msg', [
+        '@msg' => $e->getMessage(),
+      ]);
+      return FALSE;
+    }
+  }
+
+  /**
    * Re-issues a login token for an already verified workspace when possible.
    */
-  private function createLoginTokenForVerifiedWorkspace(string $slug): ?string {
+  private function createLoginTokenForVerifiedWorkspace(string $slug, string $verifyToken): ?string {
     $userId = $this->resolveVerifiedWorkspaceUserId($slug);
     if (!$userId) {
       return NULL;
     }
 
-    return $this->createWorkspaceLoginToken($userId, $slug);
+    return $this->createWorkspaceLoginToken($userId, $slug, $verifyToken);
+  }
+
+  /**
+   * Returns TRUE if a verified email token may still mint a login token.
+   *
+   * The boundary is aligned with markVerifiedTokenClaimed(): rows older than
+   * VERIFIED_TOKEN_RECOVERY_TTL are rejected by the atomic UPDATE. A small
+   * head-room equal to LOGIN_TOKEN_TTL keeps the surfaced login_token from
+   * outliving its backing verified row, so a successful claim cannot suddenly
+   * fail in the user_login_finalize step because the row was garbage-collected
+   * in the meantime.
+   */
+  private function canReissueVerifiedLoginToken(array $verified): bool {
+    if (!empty($verified['login_claimed'])) {
+      return FALSE;
+    }
+
+    $created = (int) ($verified['created'] ?? 0);
+    return $created > 0
+      && (time() - $created) <= self::VERIFIED_TOKEN_RECOVERY_TTL - self::LOGIN_TOKEN_TTL;
   }
 
   /**

@@ -417,6 +417,97 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $nuxtConfig = json_decode($createdGroupFields['field_nuxt_config'], TRUE);
     $this->assertTrue($nuxtConfig['features']['passwordless']);
+
+    // field_tier is NEVER set in the create() payload. Stripe webhook is the
+    // only path that activates a tier.
+    $this->assertArrayNotHasKey('field_tier', $createdGroupFields);
+  }
+
+  /**
+   * Tests new workspaces have NULL tier and explicitly clear field_tier.
+   *
+   * Tier is activated only by the Stripe webhook (checkout.session.completed).
+   * Provisioning must not leak 'free' into field_tier — that would tell the
+   * billing GET endpoint "Current Plan: Free" before the user has agreed to
+   * any plan.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testNewWorkspaceHasNullTier(): void {
+    $this->groupStorage->method('loadByProperties')->willReturn([]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn(42);
+    $group->method('hasField')->willReturnCallback(
+      fn(string $name): bool => $name === 'field_tier'
+    );
+
+    // Record all set() calls so we can assert field_tier was explicitly
+    // cleared after create() — defense-in-depth against pre-update_11922
+    // tenants where the field default might still be 'free'.
+    $setCalls = [];
+    $group->method('set')
+      ->willReturnCallback(function (string $name, mixed $value) use (&$setCalls, $group) {
+        $setCalls[] = [$name, $value];
+        return $group;
+      });
+    $group->method('save')->willReturn(1);
+
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('set')->willReturnSelf();
+    $membership->method('save')->willReturn(1);
+    $group->method('addRelationship')->willReturn($membership);
+
+    $createdGroupFields = NULL;
+    $this->groupStorage->method('create')
+      ->willReturnCallback(function (array $values) use ($group, &$createdGroupFields) {
+        $createdGroupFields = $values;
+        return $group;
+      });
+
+    $this->termStorage->method('create')
+      ->willReturnCallback(function () {
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(1);
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    $this->userStorage->method('loadByProperties')->willReturn([]);
+    $user = $this->createMock(UserInterface::class);
+    $user->method('id')->willReturn(10);
+    $user->method('save')->willReturn(1);
+    $this->userStorage->method('create')->willReturn($user);
+
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function () {
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        return $node;
+      });
+
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+
+    $this->service->provisionWorkspace($this->validData());
+
+    // 1. Tier was never set via group create().
+    $this->assertArrayNotHasKey('field_tier', $createdGroupFields);
+
+    // 2. Tier was explicitly cleared to NULL after creation.
+    $tierClearCalls = array_filter(
+      $setCalls,
+      static fn(array $call): bool => $call[0] === 'field_tier' && $call[1] === NULL
+    );
+    $this->assertNotEmpty(
+      $tierClearCalls,
+      'WorkspaceProvisioningService must explicitly clear field_tier to NULL after create().'
+    );
   }
 
   /**

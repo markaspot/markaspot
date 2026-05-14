@@ -342,9 +342,79 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
  *
  * Invalidates the workspace visibility cache entry when a group is saved,
  * ensuring visibility changes take effect immediately within the same request.
+ *
+ * Also triggers a legal-notice regeneration when billing fields changed.
+ * The generator itself calls $group->save() with setNewRevision(TRUE), so a
+ * static guard prevents the inner save from recursing into this hook a
+ * second time. Manual overrides (sentinel <!-- manual-override -->) are
+ * skipped by the generator and never get auto-regenerated.
  */
 function markaspot_fastmap_group_update(GroupInterface $group): void {
   \Drupal::service('markaspot_fastmap.workspace_visibility')->resetCache((int) $group->id());
+
+  if ($group->bundle() !== 'jur') {
+    return;
+  }
+
+  // Recursion guard: the generator calls $group->save() which fires this
+  // hook again. We only want to enter the generator once per outer save.
+  $regenerating = &drupal_static(__FUNCTION__ . ':regenerating', []);
+  $gid = (int) $group->id();
+  if (!empty($regenerating[$gid])) {
+    return;
+  }
+
+  $billing_fields = [
+    'field_billing_name',
+    'field_billing_email',
+    'field_billing_address_line1',
+    'field_billing_address_line2',
+    'field_billing_city',
+    'field_billing_postal_code',
+    'field_billing_country',
+    'field_billing_tax_id',
+    'field_jurisdiction_e_mail',
+    'field_jurisdiction_address',
+  ];
+
+  $original = $group->original ?? NULL;
+  if (!$original instanceof GroupInterface) {
+    return;
+  }
+
+  $changed = FALSE;
+  foreach ($billing_fields as $field_name) {
+    if (!$group->hasField($field_name) || !$original->hasField($field_name)) {
+      continue;
+    }
+    if (!$group->get($field_name)->equals($original->get($field_name))) {
+      $changed = TRUE;
+      break;
+    }
+  }
+
+  if (!$changed) {
+    return;
+  }
+
+  $regenerating[$gid] = TRUE;
+  try {
+    /** @var \Drupal\markaspot_fastmap\Service\LegalNoticeGenerator $generator */
+    $generator = \Drupal::service('markaspot_fastmap.legal_notice_generator');
+    $generator->syncGroup($group);
+  }
+  catch (\Throwable $e) {
+    // Sync failures must NOT block the outer billing save: that's a
+    // payment-side write that already completed. Log and move on; the
+    // operator can re-trigger via the admin form or a follow-up edit.
+    \Drupal::logger('markaspot_fastmap')->error(
+      'legal_notice auto-sync failed for group @id: @msg',
+      ['@id' => $gid, '@msg' => $e->getMessage()]
+    );
+  }
+  finally {
+    unset($regenerating[$gid]);
+  }
 }
 
 /**
@@ -400,6 +470,39 @@ function markaspot_fastmap_node_presave(NodeInterface $node): void {
     return;
   }
 
+  // GDPR Art. 26 demo-compliance gate: workspaces still in demo state (expiry
+  // set + no Stripe subscription) must not produce publicly visible reports.
+  // This gate runs BEFORE the admin-bypass below because demo compliance is a
+  // workspace property, not a submitter property: even an admin save must be
+  // queued for moderation until the workspace is Stripe-activated.
+  $demoGroup = _markaspot_fastmap_resolve_jurisdiction_group_for_node($node);
+
+  // Fallback: when the structured resolver returns NULL (no category, no
+  // boundary hit, no validated field), trust the raw Open311 jurisdiction_id
+  // from the request. Without this, a citizen submitting an Open311 POST with
+  // a demo workspace's jurisdiction_id but a missing/invalid service_code
+  // bypasses the gate and produces a published report.
+  if (!$demoGroup) {
+    $rawJurisdictionId = _markaspot_fastmap_get_request_jurisdiction_id();
+    if ($rawJurisdictionId) {
+      $rawGroup = \Drupal::entityTypeManager()
+        ->getStorage('group')
+        ->load($rawJurisdictionId);
+      if (_markaspot_fastmap_is_jurisdiction_group($rawGroup)) {
+        $demoGroup = $rawGroup;
+      }
+    }
+  }
+
+  if ($demoGroup && _markaspot_fastmap_workspace_in_demo_state($demoGroup)) {
+    $node->setUnpublished();
+    \Drupal::logger('markaspot_fastmap')->debug(
+      'Report queued for moderation: workspace @gid is in demo-mode (Stripe activation pending).',
+      ['@gid' => $demoGroup->id()]
+    );
+    return;
+  }
+
   // Admins bypass tier limits.
   $currentUser = \Drupal::currentUser();
   if ($currentUser->hasPermission('bypass mas validation')
@@ -410,35 +513,7 @@ function markaspot_fastmap_node_presave(NodeInterface $node): void {
   // Resolve the jurisdiction group for tier-limit enforcement. The API request
   // fallback is critical for child jurisdictions: without it, category fallback
   // resolves to the root (e.g., BCP Council) instead of the child workspace.
-  $group = NULL;
-  $categoryRootId = _markaspot_fastmap_resolve_category_root_jurisdiction_id($node);
-  $boundaryJurisdictionId = _markaspot_fastmap_resolve_boundary_jurisdiction_id($node);
-  if ($boundaryJurisdictionId) {
-    $group = \Drupal::entityTypeManager()
-      ->getStorage('group')
-      ->load($boundaryJurisdictionId);
-  }
-
-  // Prefer explicit request jurisdiction over a pre-stamped field. Open311
-  // carries the selected workspace in request data, while field_jurisdiction
-  // may still be root/default before group insert hooks run.
-  if (!$group && $jurisdictionId = _markaspot_fastmap_get_request_jurisdiction_id()) {
-    $group = _markaspot_fastmap_load_allowed_jurisdiction_group((int) $jurisdictionId, $categoryRootId, $boundaryJurisdictionId);
-  }
-
-  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
-    $fieldJurisdictionId = (int) $node->get('field_jurisdiction')->target_id;
-    if (!$group && $fieldJurisdictionId && _markaspot_fastmap_resolve_allowed_jurisdiction_id($fieldJurisdictionId, $categoryRootId, $boundaryJurisdictionId)) {
-      $group = $node->get('field_jurisdiction')->entity;
-    }
-  }
-
-  // Final fallback: use the category root jurisdiction directly.
-  if (!$group && $categoryRootId) {
-    $group = \Drupal::entityTypeManager()
-      ->getStorage('group')
-      ->load($categoryRootId);
-  }
+  $group = _markaspot_fastmap_resolve_jurisdiction_group_for_node($node);
 
   if (!$group || !$group->hasField('field_tier')) {
     return;
@@ -784,6 +859,76 @@ function _markaspot_fastmap_jurisdiction_matches_category_root(int $jurisdiction
   /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
   $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
   return $resolver->getRootJurisdictionId($jurisdictionId) === $categoryRootId;
+}
+
+/**
+ * Resolves the jurisdiction group a service_request node belongs to.
+ *
+ * Single source of truth for jurisdiction resolution on save: boundary match
+ * first, then explicit request jurisdiction (Open311 payload), then a
+ * pre-stamped field_jurisdiction value, then category-root fallback. Returns
+ * NULL when no jurisdiction can be resolved. Used by both the demo-compliance
+ * gate and the tier-limit enforcement path in hook_node_presave().
+ */
+function _markaspot_fastmap_resolve_jurisdiction_group_for_node(NodeInterface $node): ?GroupInterface {
+  $group = NULL;
+  $categoryRootId = _markaspot_fastmap_resolve_category_root_jurisdiction_id($node);
+  $boundaryJurisdictionId = _markaspot_fastmap_resolve_boundary_jurisdiction_id($node);
+  if ($boundaryJurisdictionId) {
+    $group = \Drupal::entityTypeManager()
+      ->getStorage('group')
+      ->load($boundaryJurisdictionId);
+  }
+
+  // Prefer explicit request jurisdiction over a pre-stamped field. Open311
+  // carries the selected workspace in request data, while field_jurisdiction
+  // may still be root/default before group insert hooks run.
+  if (!$group && $jurisdictionId = _markaspot_fastmap_get_request_jurisdiction_id()) {
+    $group = _markaspot_fastmap_load_allowed_jurisdiction_group((int) $jurisdictionId, $categoryRootId, $boundaryJurisdictionId);
+  }
+
+  if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
+    $fieldJurisdictionId = (int) $node->get('field_jurisdiction')->target_id;
+    if (!$group && $fieldJurisdictionId && _markaspot_fastmap_resolve_allowed_jurisdiction_id($fieldJurisdictionId, $categoryRootId, $boundaryJurisdictionId)) {
+      $group = $node->get('field_jurisdiction')->entity;
+    }
+  }
+
+  // Final fallback: use the category root jurisdiction directly.
+  if (!$group && $categoryRootId) {
+    $group = \Drupal::entityTypeManager()
+      ->getStorage('group')
+      ->load($categoryRootId);
+  }
+
+  return $group instanceof GroupInterface ? $group : NULL;
+}
+
+/**
+ * Checks whether a workspace is in demo state (GDPR demo-compliance gate).
+ *
+ * A workspace is in demo state when it has an expiry date set AND no Stripe
+ * subscription. Empty/missing expiry means permanent. Existing subscription
+ * (even with a checkout grace expiry) means activated. field_tier is not
+ * considered: free permanent workspaces are activated, not demo.
+ */
+function _markaspot_fastmap_workspace_in_demo_state(GroupInterface $group): bool {
+  if (!$group->hasField('field_expiry_date') || $group->get('field_expiry_date')->isEmpty()) {
+    return FALSE;
+  }
+  // Treat a literal 0 expiry as "not in demo" because epoch 0 (1970-01-01) is
+  // always in the past and unambiguously not a future expiry timestamp.
+  if ((int) $group->get('field_expiry_date')->value <= 0) {
+    return FALSE;
+  }
+  if (!$group->hasField('field_stripe_subscription_id')) {
+    return TRUE;
+  }
+  if ($group->get('field_stripe_subscription_id')->isEmpty()) {
+    return TRUE;
+  }
+  // Whitespace-only subscription ID is not a real activation.
+  return trim((string) $group->get('field_stripe_subscription_id')->value) === '';
 }
 
 /**

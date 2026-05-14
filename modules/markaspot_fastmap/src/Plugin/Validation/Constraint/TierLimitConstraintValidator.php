@@ -80,9 +80,22 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
       return;
     }
 
-    $tier = !$group->get('field_tier')->isEmpty()
-      ? $group->get('field_tier')->value
-      : 'free';
+    // Empty field_tier means the workspace has not yet completed Stripe
+    // checkout. While in demo state (expiry set, no Stripe subscription),
+    // tier-limit enforcement is bypassed so the user can finish the
+    // onboarding/checkout flow without hitting fake "Free" caps. The hourly
+    // cron uses ->exists('field_tier') to mirror this skip.
+    if ($group->get('field_tier')->isEmpty()) {
+      if ($this->isWorkspaceInDemoState($group)) {
+        return;
+      }
+      // Fall back to free limits as a defensive guard for the unexpected
+      // "no tier + no demo expiry" combo (should never happen post-11922).
+      $tier = 'free';
+    }
+    else {
+      $tier = $group->get('field_tier')->value;
+    }
 
     // getLimits() fails closed: unknown tiers fall back to free tier limits.
     // Returns NULL only if tier_limits config is completely missing.
@@ -406,6 +419,29 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
   protected function isJurisdictionGroup(mixed $group): bool {
     return $group instanceof GroupInterface
       && $group->bundle() === $this->getJurisdictionGroupType();
+  }
+
+  /**
+   * Determines whether the given workspace is in the demo state.
+   *
+   * Mirrors the procedural helper _markaspot_fastmap_workspace_in_demo_state()
+   * in markaspot_fastmap.module so this plugin can be unit-tested without
+   * loading the .module file.
+   */
+  protected function isWorkspaceInDemoState(GroupInterface $group): bool {
+    if (!$group->hasField('field_expiry_date') || $group->get('field_expiry_date')->isEmpty()) {
+      return FALSE;
+    }
+    if ((int) $group->get('field_expiry_date')->value <= 0) {
+      return FALSE;
+    }
+    if (!$group->hasField('field_stripe_subscription_id')) {
+      return TRUE;
+    }
+    if ($group->get('field_stripe_subscription_id')->isEmpty()) {
+      return TRUE;
+    }
+    return trim((string) $group->get('field_stripe_subscription_id')->value) === '';
   }
 
 }

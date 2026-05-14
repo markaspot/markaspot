@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_fastmap\Controller;
 
+use Drupal\Component\Utility\Html;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Controller\ControllerBase;
@@ -11,6 +12,7 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Database\IntegrityConstraintViolationException;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_fastmap\Service\BillingStateResolver;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -57,6 +59,13 @@ class BillingController extends ControllerBase {
   protected RequestStack $requestStack;
 
   /**
+   * The billing state resolver.
+   *
+   * @var \Drupal\markaspot_fastmap\Service\BillingStateResolver
+   */
+  protected BillingStateResolver $billingStateResolver;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
@@ -64,6 +73,7 @@ class BillingController extends ControllerBase {
     $instance->fastmapLogger = $container->get('logger.channel.markaspot_fastmap');
     $instance->database = $container->get('database');
     $instance->requestStack = $container->get('request_stack');
+    $instance->billingStateResolver = $container->get('markaspot_fastmap.billing_state_resolver');
     return $instance;
   }
 
@@ -215,7 +225,7 @@ class BillingController extends ControllerBase {
     }
 
     $data = [
-      'tier' => 'free',
+      'tier' => NULL,
       'stripe_customer_id' => NULL,
       'stripe_subscription_id' => NULL,
       'expiry_date' => NULL,
@@ -257,6 +267,20 @@ class BillingController extends ControllerBase {
         $data[$key] = $entity->get($fieldName)->value;
       }
     }
+
+    // Compute the workspace lifecycle state from billing fields. The frontend
+    // tier picker keys the "Current Plan" badge off this, so it never shows a
+    // tier the user has not actually paid for. See WorkspaceProvisioningService
+    // — tier is NEVER set eagerly; only the Stripe webhook activates it.
+    // The same state resolver is consumed by the operator-admin listing
+    // (BillingAdminController) to guarantee both surfaces agree on which
+    // lifecycle bucket a workspace is in.
+    $data['effective_state'] = $this->billingStateResolver->resolve(
+      $data['tier'],
+      $data['stripe_customer_id'],
+      $data['stripe_subscription_id'],
+      $data['expiry_date']
+    );
 
     return new JsonResponse($data);
   }
@@ -333,8 +357,9 @@ class BillingController extends ControllerBase {
 
       $value = $data[$key];
 
-      // Validate tier values.
-      if ($key === 'tier') {
+      // Validate tier values. NULL is accepted: customer.subscription.deleted
+      // resets tier to NULL (demo-equivalent), never to 'free'.
+      if ($key === 'tier' && $value !== NULL) {
         if (!in_array($value, $validTiers, TRUE)) {
           $transaction->rollBack();
           return new JsonResponse(
@@ -355,6 +380,15 @@ class BillingController extends ControllerBase {
       else {
         $maxLength = $fieldMaxLengths[$key] ?? 255;
         $value = mb_substr(trim((string) $value), 0, $maxLength);
+        // PII fields (billing_name, billing_email, billing_address_*) feed
+        // the public-facing Impressum auto-generator. Stripe accepts free
+        // text for customer.name + the tax_id business_name field, so
+        // escape at storage time to defend the Impressum render path
+        // against persistent XSS (CWE-79) without relying on every
+        // future template to opt into Twig auto-escaping.
+        if (str_starts_with($key, 'billing_')) {
+          $value = Html::escape($value);
+        }
         $entity->set($fieldName, $value);
       }
       $updated[] = $key;
@@ -369,6 +403,16 @@ class BillingController extends ControllerBase {
     }
 
     try {
+      // Group config carries new_revision=true, but the save path needs an
+      // explicit setNewRevision() call to write a new groups_revision row
+      // capturing the change. Required for GoBD §3.5.3 "Unveränderbarkeit"
+      // + "Nachvollziehbarkeit" of billing stammdaten (AO §147).
+      $entity->setNewRevision(TRUE);
+      $entity->setRevisionLogMessage(sprintf(
+        'Billing fields updated via Stripe sync: %s',
+        implode(', ', $updated)
+      ));
+      $entity->setRevisionCreationTime(time());
       $entity->save();
       unset($transaction);
       $this->fastmapLogger->info(

@@ -1,0 +1,6 @@
+markaspot_fastmap.billing_admin:
+  title: 'Tenant Billing'
+  description: 'List all tenants with billing state, tier, and Stripe identifiers.'
+  parent: system.admin_config_services
+  route_name: markaspot_fastmap.billing_admin
+  weight: 10

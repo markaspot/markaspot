@@ -27,3 +27,14 @@ services:
     class: Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService
     arguments:
       - '@entity_type.manager'
+
+  markaspot_fastmap.billing_state_resolver:
+    class: Drupal\markaspot_fastmap\Service\BillingStateResolver
+
+  markaspot_fastmap.legal_notice_generator:
+    class: Drupal\markaspot_fastmap\Service\LegalNoticeGenerator
+    arguments:
+      - '@twig'
+      - '@language_manager'
+      - '@module_handler'
+      - '@logger.channel.markaspot_fastmap'

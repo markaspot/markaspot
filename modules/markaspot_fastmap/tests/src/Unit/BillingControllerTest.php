@@ -16,6 +16,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRoleInterface;
 use Drupal\group\GroupMembership;
 use Drupal\markaspot_fastmap\Controller\BillingController;
+use Drupal\markaspot_fastmap\Service\BillingStateResolver;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -159,6 +160,7 @@ class BillingControllerTest extends UnitTestCase {
     $container->set('current_user', $this->currentUser);
     $container->set('request_stack', $this->requestStack);
     $container->set('cache_contexts_manager', $cacheContextsManager);
+    $container->set('markaspot_fastmap.billing_state_resolver', new BillingStateResolver());
     \Drupal::setContainer($container);
 
     $this->controller = BillingController::create($container);
@@ -456,11 +458,15 @@ class BillingControllerTest extends UnitTestCase {
 
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
-    $this->assertEquals('free', $data['tier']);
+    // Tier is never set eagerly — empty group has NULL tier.
+    $this->assertNull($data['tier']);
     $this->assertNull($data['stripe_customer_id']);
     $this->assertNull($data['stripe_subscription_id']);
     $this->assertNull($data['expiry_date']);
     $this->assertNull($data['billing_name']);
+    // A group with no expiry, no customer, no subscription, no tier has no
+    // recognizable lifecycle state.
+    $this->assertEquals('unknown', $data['effective_state']);
   }
 
   /**
@@ -500,6 +506,11 @@ class BillingControllerTest extends UnitTestCase {
     $this->assertEquals('Test Company', $data['billing_name']);
     $this->assertEquals('billing@example.com', $data['billing_email']);
     $this->assertEquals('DE', $data['billing_country']);
+    // Expiry set AND subscription set is a transitional inconsistency that
+    // should never occur in production: the webhook clears expiry the moment
+    // it activates the subscription. Marked 'unknown' so the frontend can
+    // flag it rather than silently rendering a misleading badge.
+    $this->assertEquals('unknown', $data['effective_state']);
   }
 
   /**
@@ -882,6 +893,144 @@ class BillingControllerTest extends UnitTestCase {
       'pro' => ['pro'],
       'heart' => ['heart'],
     ];
+  }
+
+  /**
+   * Demo state: expiry IS NOT NULL AND stripe_subscription_id IS EMPTY.
+   *
+   * @covers ::get
+   */
+  public function testEffectiveStateForDemo(): void {
+    $request = Request::create('/api/billing/14', 'GET');
+
+    $group = $this->createMockGroup([
+      'field_expiry_date' => '1700000000',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->get('14', $request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('demo', $data['effective_state']);
+    $this->assertNull($data['tier']);
+    $this->assertNull($data['stripe_subscription_id']);
+  }
+
+  /**
+   * Pending checkout: customer present, no subscription, no expiry.
+   *
+   * User clicked "Start checkout", Stripe customer created, but webhook
+   * has not yet confirmed the subscription.
+   *
+   * @covers ::get
+   */
+  public function testEffectiveStateForPendingCheckout(): void {
+    $request = Request::create('/api/billing/14', 'GET');
+
+    $group = $this->createMockGroup([
+      'field_stripe_customer_id' => 'cus_pending',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->get('14', $request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('pending_checkout', $data['effective_state']);
+    $this->assertEquals('cus_pending', $data['stripe_customer_id']);
+    $this->assertNull($data['stripe_subscription_id']);
+  }
+
+  /**
+   * Free permanent: no expiry, has subscription, tier='free'.
+   *
+   * Admin-granted permanent free plan (e.g. partner, hardship). Distinct
+   * from the demo state where tier is NULL.
+   *
+   * @covers ::get
+   */
+  public function testEffectiveStateForFreePermanent(): void {
+    $request = Request::create('/api/billing/14', 'GET');
+
+    $group = $this->createMockGroup([
+      'field_tier' => 'free',
+      'field_stripe_customer_id' => 'cus_partner',
+      'field_stripe_subscription_id' => 'sub_free_perm',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->get('14', $request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('free_permanent', $data['effective_state']);
+    $this->assertEquals('free', $data['tier']);
+  }
+
+  /**
+   * Paid: no expiry, tier in starter/pro/heart.
+   *
+   * @covers ::get
+   *
+   * @dataProvider paidTierProvider
+   */
+  public function testEffectiveStateForPaid(string $tier): void {
+    $request = Request::create('/api/billing/14', 'GET');
+
+    $group = $this->createMockGroup([
+      'field_tier' => $tier,
+      'field_stripe_customer_id' => 'cus_paid',
+      'field_stripe_subscription_id' => 'sub_active',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->get('14', $request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('paid', $data['effective_state']);
+    $this->assertEquals($tier, $data['tier']);
+  }
+
+  /**
+   * Provides paid tier values for effective_state tests.
+   */
+  public static function paidTierProvider(): array {
+    return [
+      'starter' => ['starter'],
+      'pro' => ['pro'],
+      'heart' => ['heart'],
+    ];
+  }
+
+  /**
+   * Update accepts NULL tier (subscription deletion path).
+   *
+   * Customer.subscription.deleted resets field_tier to NULL so the workspace
+   * falls back to demo-equivalent state, never to 'free'.
+   *
+   * @covers ::update
+   */
+  public function testUpdateAcceptsNullTier(): void {
+    $request = $this->createJsonRequest(
+      ['tier' => NULL, 'stripe_customer_id' => 'cus_existing'],
+      'test-service-key-456'
+    );
+
+    $group = $this->createWritableGroup();
+    $group->expects($this->atLeastOnce())
+      ->method('set')
+      ->willReturnSelf();
+    $group->expects($this->once())->method('save');
+
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->update('14', $request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertContains('tier', $data['updated']);
   }
 
 }

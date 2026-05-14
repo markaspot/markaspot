@@ -179,6 +179,26 @@ class OtpService {
     $config = $this->configFactory->get('markaspot_passwordless.settings');
     $code_lifetime = $config->get('code_lifetime') ?? 600;
 
+    // Block-state guard runs BEFORE any DB mutation so a blocked user
+    // cannot cause in-flight legitimate codes for active accounts on
+    // other jurisdictions to be wiped, and so attackers cannot observe
+    // a DB-mutation timing differential.
+    $existingUser = $this->loadUserByEmail($email);
+    if ($existingUser && $existingUser->isBlocked()) {
+      $this->logger->warning('Blocked user @email requested passwordless login code.', [
+        '@email' => $email,
+      ]);
+      // Dummy bcrypt to equalize timing against the legitimate path that
+      // calls password_hash() at line ~212. Same pattern as the empty-
+      // records branch of verifyCode().
+      password_verify('000000', self::DUMMY_HASH);
+      return [
+        'success' => TRUE,
+        'message' => 'Verification code sent to your email',
+        'expiresIn' => $code_lifetime,
+      ];
+    }
+
     // Invalidate existing codes for this email *within the same
     // jurisdiction*. A request on tenant A must not wipe an in-flight
     // code the same address holds on tenant B.
@@ -405,14 +425,15 @@ class OtpService {
    *   The user entity or NULL on failure.
    */
   protected function authenticateUser(string $email): ?User {
-    // Look up user by email.
-    $users = $this->entityTypeManager
-      ->getStorage('user')
-      ->loadByProperties(['mail' => $email]);
+    $user = $this->loadUserByEmail($email);
 
-    if (!empty($users)) {
-      /** @var \Drupal\user\Entity\User $user */
-      $user = reset($users);
+    if ($user) {
+      if ($user->isBlocked()) {
+        $this->logger->warning('Blocked user @email attempted passwordless login.', [
+          '@email' => $email,
+        ]);
+        return NULL;
+      }
     }
     else {
       // Check if auto-registration is enabled.
@@ -458,6 +479,29 @@ class OtpService {
     // Log the user in.
     user_login_finalize($user);
 
+    return $user;
+  }
+
+  /**
+   * Loads an existing user by email.
+   *
+   * @param string $email
+   *   The email address.
+   *
+   * @return \Drupal\user\Entity\User|null
+   *   The user entity, or NULL when no matching user exists.
+   */
+  protected function loadUserByEmail(string $email): ?User {
+    $users = $this->entityTypeManager
+      ->getStorage('user')
+      ->loadByProperties(['mail' => $email]);
+
+    if (empty($users)) {
+      return NULL;
+    }
+
+    /** @var \Drupal\user\Entity\User $user */
+    $user = reset($users);
     return $user;
   }
 

@@ -15,6 +15,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_fastmap\Controller\BillingController;
+use Drupal\markaspot_fastmap\Service\BillingStateResolver;
 use Psr\Log\LoggerInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\HttpFoundation\Request;
@@ -147,6 +148,7 @@ class BillingControllerTOFUTest extends KernelTestBase {
     $container->set('current_user', $account);
     $container->set('request_stack', new RequestStack());
     $container->set('cache_contexts_manager', $cacheContextsManager);
+    $container->set('markaspot_fastmap.billing_state_resolver', new BillingStateResolver());
     \Drupal::setContainer($container);
 
     return BillingController::create($container);
