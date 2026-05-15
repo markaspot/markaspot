@@ -435,6 +435,87 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests custom WMS layers are enabled for operator-managed tenants.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testCustomWmsLayersEnabledWithoutTierField(): void {
+    $nuxtJson = json_encode([
+      'features' => [
+        'map' => [
+          'wmsLayers' => [
+            [
+              'title' => 'NKF Objekte',
+              'layerName' => 'v_od_staedtische_liegenschaften_p_27315',
+              'url' => 'https://gdi.bonn.de/geoserver/nkf_objektverwaltung/wms',
+            ],
+          ],
+        ],
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['customWmsLayers']);
+  }
+
+  /**
+   * Tests custom WMS layers remain tier-gated when field_tier exists.
+   *
+   * @covers ::getMarkASpotSettings
+   *
+   * @dataProvider customWmsLayerTierProvider
+   */
+  public function testCustomWmsLayersRespectTierField(string $tier, bool $expected): void {
+    $nuxtJson = json_encode([
+      'features' => [
+        'map' => [
+          'wmsLayers' => [
+            [
+              'title' => 'NKF Objekte',
+              'layerName' => 'v_od_staedtische_liegenschaften_p_27315',
+              'url' => 'https://gdi.bonn.de/geoserver/nkf_objektverwaltung/wms',
+            ],
+          ],
+        ],
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+      'field_tier' => $tier,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame($expected, $data['features']['customWmsLayers']);
+  }
+
+  /**
+   * Data provider for tier-based custom WMS access.
+   *
+   * @return array<string, array{string, bool}>
+   *   Test cases.
+   */
+  public static function customWmsLayerTierProvider(): array {
+    return [
+      'starter' => ['starter', FALSE],
+      'pro' => ['pro', TRUE],
+      'heart' => ['heart', TRUE],
+    ];
+  }
+
+  /**
    * Tests map center parsing in array format [lng, lat].
    *
    * @covers ::getMarkASpotSettings

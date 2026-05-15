@@ -67,7 +67,7 @@ class MarkASpotSettingsController extends ControllerBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
-    return new static(
+    return new self(
       $container->get('entity_type.manager'),
       $container->get('config.factory'),
       $container->get('stream_wrapper_manager'),
@@ -358,22 +358,27 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Tier-gate: tenant-supplied WMS layer URLs (features.map.wmsLayers[].url)
-    // are forwarded by the Nuxt proxy to arbitrary upstream HTTPS hosts. To
-    // limit SSRF blast radius, only paid tiers may register custom layers;
-    // free/starter workspaces fall back to the proxy's hardcoded defaults.
+    // are forwarded by the Nuxt proxy to arbitrary upstream HTTPS hosts. SaaS
+    // workspaces with field_tier only allow this on paid tiers; classic
+    // client/on-premise tenants without field_tier are operator-managed and may
+    // use their configured WMS layers.
     //
     // Sits AFTER the field_nuxt_config merge above so a tenant cannot
     // overwrite this flag from their own JSON config.
     //
-    // On-premise installs without markaspot_fastmap have no field_tier,
-    // so this resolves to FALSE by design. Operators who want to allow
-    // custom WMS layers on-premise should override this in a custom
-    // hook_markaspot_nuxt_settings_alter() implementation.
+    $has_configured_wms_layers = !empty($settings['features']['map']['wmsLayers'])
+      || !empty($settings['map']['wmsLayers']);
     $tier = NULL;
-    if ($group && $group->hasField('field_tier') && !$group->get('field_tier')->isEmpty()) {
+    $has_tier_field = $group instanceof GroupInterface && $group->hasField('field_tier');
+    if ($has_tier_field && !$group->get('field_tier')->isEmpty()) {
       $tier = $group->get('field_tier')->value;
     }
-    $settings['features']['customWmsLayers'] = in_array($tier, ['pro', 'heart'], TRUE);
+    if ($group instanceof GroupInterface && !$has_tier_field) {
+      $settings['features']['customWmsLayers'] = $has_configured_wms_layers;
+    }
+    else {
+      $settings['features']['customWmsLayers'] = in_array($tier, ['pro', 'heart'], TRUE);
+    }
 
     // Add groupTypes if not set from jurisdiction config.
     // Auto-detect from markaspot_open311 config (supports legacy 'organisation' naming).
