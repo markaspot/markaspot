@@ -82,13 +82,18 @@ function markaspot_nuxt_entity_presave(EntityInterface $entity) {
 /**
  * Implements hook_node_presave().
  *
- * Enforces the per-jurisdiction privacy-notice consent flag on service
- * request creation. When features.privacyNotice.enabled is true for the
- * report's jurisdiction, the submission must set field_gdpr to TRUE.
+ * Enforces the per-jurisdiction GDPR-consent requirement on service request
+ * creation. When fields.field_gdpr.required is true for the report's
+ * jurisdiction, the submission must set field_gdpr to TRUE.
  *
  * The check runs only on new nodes — editing an existing report does not
- * require re-consenting. The default when the flag is unset is TRUE
- * (fail-closed) so that misconfigured tenants stay compliant.
+ * require re-consenting. The default when the flag is unset is FALSE.
+ * Strict-disclosure tenants (e.g. Munich) opt in by setting
+ * fields.field_gdpr.required=true in field_nuxt_config.
+ *
+ * Decoupled from features.privacyNotice (UI modal display only): showing
+ * a privacy-disclosure modal and persisting a per-report consent are two
+ * separate semantic concerns that historically shared a single flag.
  *
  * Covers all save paths: Open311 REST, JSON:API, admin forms, drush
  * imports. Throws UnprocessableEntityHttpException which Drupal's kernel
@@ -107,8 +112,8 @@ function markaspot_nuxt_node_presave(NodeInterface $node): void {
   $jurisdiction = $checker->resolveJurisdictionForNode($node);
 
   // Schema default is false — consent only required when explicitly enabled
-  // via features.privacyNotice.enabled in field_nuxt_config.
-  $required = $checker->isEnabled('features.privacyNotice.enabled', $jurisdiction, FALSE);
+  // via fields.field_gdpr.required in field_nuxt_config.
+  $required = $checker->isEnabled('fields.field_gdpr.required', $jurisdiction, FALSE);
   if (!$required) {
     return;
   }

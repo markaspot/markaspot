@@ -626,6 +626,15 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         'status' => ['enabled' => TRUE],
         'category' => ['enabled' => TRUE],
       ],
+      // Per-field overrides. Keep field_gdpr.required OFF for self-service
+      // tenants: enabling it would force every citizen report to carry a
+      // privacy-consent checkbox, which is a Munich-style strict-disclosure
+      // requirement, not a default for new FastMap workspaces. Operators
+      // can opt-in via the dashboard. Decoupled from features.privacyNotice
+      // (modal display only) since 11.9.x.
+      'fields' => [
+        'field_gdpr' => ['required' => FALSE],
+      ],
     ];
   }
 

@@ -215,3 +215,65 @@ function markaspot_nuxt_update_9003(): string {
 
   return implode("\n", $messages);
 }
+
+/**
+ * Decouple privacyNotice (UI modal) from field_gdpr.required (form consent).
+ *
+ * Tenants whose field_nuxt_config had features.privacyNotice.enabled=TRUE
+ * implicitly required field_gdpr=TRUE on every service_request via the
+ * presave hook. The 11.9.x decoupling refactor splits those concerns:
+ * privacyNotice now controls only the disclosure modal/banner, while
+ * fields.field_gdpr.required is the new explicit consent gate.
+ *
+ * To preserve behaviour for tenants that relied on the implicit coupling
+ * (Munich style strict-disclosure), this hook reads the old privacyNotice
+ * flag and seeds the new fields.field_gdpr.required flag where missing.
+ *
+ * Idempotent: skips groups whose fields.field_gdpr.required is already set.
+ */
+function markaspot_nuxt_update_9004(): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('group');
+  $gids = $storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'jur')
+    ->execute();
+
+  $migrated = 0;
+  $skipped = 0;
+  foreach ($storage->loadMultiple($gids) as $group) {
+    if (!$group->hasField('field_nuxt_config') || $group->get('field_nuxt_config')->isEmpty()) {
+      $skipped++;
+      continue;
+    }
+    $raw = (string) $group->get('field_nuxt_config')->value;
+    $config = json_decode($raw, TRUE);
+    if (!is_array($config)) {
+      $skipped++;
+      continue;
+    }
+
+    // Already has the explicit flag: leave alone.
+    if (isset($config['fields']['field_gdpr']['required'])) {
+      $skipped++;
+      continue;
+    }
+
+    $privacyNoticeEnabled = (bool) ($config['features']['privacyNotice']['enabled'] ?? FALSE);
+    if (!$privacyNoticeEnabled) {
+      $skipped++;
+      continue;
+    }
+
+    $config['fields']['field_gdpr']['required'] = TRUE;
+    $group->set('field_nuxt_config', json_encode($config));
+    $group->setNewRevision(FALSE);
+    $group->save();
+    $migrated++;
+  }
+
+  return sprintf(
+    'Migrated %d jurisdictions from features.privacyNotice.enabled to fields.field_gdpr.required (skipped %d).',
+    $migrated,
+    $skipped,
+  );
+}
