@@ -231,7 +231,7 @@ function markaspot_nuxt_update_9003(): string {
  *
  * Idempotent: skips groups whose fields.field_gdpr.required is already set.
  */
-function markaspot_nuxt_update_9004(): string {
+function markaspot_nuxt_update_11900(): string {
   $storage = \Drupal::entityTypeManager()->getStorage('group');
   $gids = $storage->getQuery()
     ->accessCheck(FALSE)
