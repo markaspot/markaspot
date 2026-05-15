@@ -1,5 +1,23 @@
 # Changelog
 
+## [11.9.89](https://github.com/markaspot/markaspot/compare/11.9.88...11.9.89) (2026-05-15)
+
+### Features
+
+* **fastmap:** SaaS billing admin, legal notice generator, workspace hardening ([2535064](https://github.com/markaspot/markaspot/commit/2535064015563ba6a36963d2fdb12c207a48c4fd))
+* **nuxt:** tier-gate features.customWmsLayers for paid workspaces ([ec5565b](https://github.com/markaspot/markaspot/commit/ec5565b088e2dfc3bbead2aa714beeb4fa5ac881))
+
+### Bug Fixes
+
+* align mail health attachment config ([602a362](https://github.com/markaspot/markaspot/commit/602a36243a79f9fcaca98c4c4632b04d9e2db9d3))
+* **fastmap:** distinguish canceled subscription from pending checkout ([ed66804](https://github.com/markaspot/markaspot/commit/ed66804f0ee99df3d129a40c736111021807c15c))
+* **fastmap:** expose has_stripe_customer boolean in nuxt jurisdiction config ([0f1f3ef](https://github.com/markaspot/markaspot/commit/0f1f3ef7feb4bef8f633b7a2fcda40b0a07978ae))
+* **mail:** drop pre-existing Reply-To before branding override ([b126ec6](https://github.com/markaspot/markaspot/commit/b126ec666e98cb3dc1960a3ea45bde32788c364c))
+
+### Refactoring
+
+* **nuxt:** decouple privacyNotice display from field_gdpr consent ([57bfda1](https://github.com/markaspot/markaspot/commit/57bfda1e7bc0f0c3e4dc2581e2fde88275be0167))
+
 ## [11.9.88](https://github.com/markaspot/markaspot/compare/11.9.87...11.9.88) (2026-05-13)
 
 ### Bug Fixes
