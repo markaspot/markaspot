@@ -963,6 +963,12 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
     $has_stripe = $group->hasField('field_stripe_customer_id') && !$group->get('field_stripe_customer_id')->isEmpty();
     $has_expiry = $group->hasField('field_expiry_date') && !$group->get('field_expiry_date')->isEmpty();
     $settings['jurisdiction']['is_permanent'] = $has_stripe || !$has_expiry;
+    // Boolean signal that a Stripe customer is linked. Avoids leaking the
+    // pseudonymous Stripe ID (PII under GDPR) through this public, cacheable
+    // settings endpoint. The frontend useTierGating resolver only needs
+    // truthiness to disambiguate enterprise workspaces from demo workspaces
+    // in the tier=NULL state.
+    $settings['jurisdiction']['has_stripe_customer'] = $has_stripe;
   }
 
   // Workspace expiry timestamp (demo or checkout grace period).
