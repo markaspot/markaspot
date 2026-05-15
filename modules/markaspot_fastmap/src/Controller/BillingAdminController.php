@@ -43,6 +43,7 @@ class BillingAdminController extends ControllerBase {
     'all',
     'demo',
     'pending_checkout',
+    'canceled',
     'paid',
     'free_permanent',
     'unknown',
@@ -63,6 +64,7 @@ class BillingAdminController extends ControllerBase {
   private const STATE_BADGE_CLASSES = [
     'demo' => 'color-warning',
     'pending_checkout' => 'color-info',
+    'canceled' => 'color-warning',
     'paid' => 'color-success',
     'free_permanent' => 'color-success',
     'unknown' => 'color-neutral',

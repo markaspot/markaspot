@@ -12,11 +12,15 @@ namespace Drupal\markaspot_fastmap\Service;
  * (BillingAdminController). Keeps the two surfaces in lockstep — Phase 3 of
  * the compliance marathon requires they never diverge.
  *
- * The five recognised states are:
+ * The six recognised states are:
  *  - 'demo': expiry set AND no Stripe subscription. Workspace is in the
  *    onboarding grace window. Tier is typically NULL.
- *  - 'pending_checkout': stripe_customer_id present BUT no subscription
- *    (user clicked "Start checkout" but did not finish payment).
+ *  - 'pending_checkout': stripe_customer_id present, no subscription, tier
+ *    is NULL (user clicked "Start checkout" but did not finish payment;
+ *    Stripe created the customer record but no subscription yet).
+ *  - 'canceled': stripe_customer_id present, no subscription, tier is
+ *    NOT NULL (subscription was canceled by user or Stripe; webhook
+ *    downgrades tier to 'free' but the customer record persists).
  *  - 'free_permanent': no expiry AND has subscription AND tier='free'
  *    (admin-granted permanent free plan, edge case).
  *  - 'paid': no expiry AND tier in ['starter', 'pro', 'heart'].
@@ -46,8 +50,8 @@ class BillingStateResolver {
    *   The current field_expiry_date timestamp (or NULL when not in demo).
    *
    * @return string
-   *   One of: 'demo', 'pending_checkout', 'free_permanent', 'paid',
-   *   'unknown'. See the class docblock for semantics.
+   *   One of: 'demo', 'pending_checkout', 'canceled', 'free_permanent',
+   *   'paid', 'unknown'. See the class docblock for semantics.
    */
   public function resolve(
     ?string $tier,
@@ -64,7 +68,12 @@ class BillingStateResolver {
     }
 
     if ($hasCustomer && !$hasSubscription) {
-      return 'pending_checkout';
+      // Disambiguate by tier:
+      // - tier=NULL: first-time checkout in progress. Stripe created the
+      //   customer record but the subscription is not yet active.
+      // - tier set (typically 'free' after webhook downgrade): subscription
+      //   was canceled. Customer record persists, active sub is gone.
+      return $tier === NULL ? 'pending_checkout' : 'canceled';
     }
 
     if (!$hasExpiry && in_array($tier, self::PAID_TIERS, TRUE)) {
