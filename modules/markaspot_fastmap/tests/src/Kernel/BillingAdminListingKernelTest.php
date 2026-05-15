@@ -53,8 +53,12 @@ class BillingAdminListingKernelTest extends KernelTestBase {
 
     // Demo: expiry, no subscription.
     $this->assertSame('demo', $resolver->resolve(NULL, NULL, NULL, 1700000000));
-    // Pending checkout: customer, no subscription.
+    // Pending checkout: customer, no subscription, tier=NULL.
     $this->assertSame('pending_checkout', $resolver->resolve(NULL, 'cus_x', NULL, NULL));
+    // Canceled: customer, no subscription, tier set (webhook downgrades to
+    // 'free' on cancel, customer record persists).
+    $this->assertSame('canceled', $resolver->resolve('free', 'cus_x', NULL, NULL));
+    $this->assertSame('canceled', $resolver->resolve('pro', 'cus_x', NULL, NULL));
     // Paid: starter/pro/heart, no expiry.
     $this->assertSame('paid', $resolver->resolve('starter', 'cus_x', 'sub_x', NULL));
     $this->assertSame('paid', $resolver->resolve('pro', 'cus_x', 'sub_x', NULL));

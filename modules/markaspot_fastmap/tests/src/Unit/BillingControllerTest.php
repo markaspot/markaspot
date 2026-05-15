@@ -943,6 +943,33 @@ class BillingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Canceled: customer present, no subscription, tier set.
+   *
+   * Subscription was canceled (by user or Stripe). Webhook downgrades
+   * tier to 'free' but the customer record persists. Distinct from
+   * pending_checkout where tier is still NULL.
+   *
+   * @covers ::get
+   */
+  public function testEffectiveStateForCanceled(): void {
+    $request = Request::create('/api/billing/14', 'GET');
+
+    $group = $this->createMockGroup([
+      'field_tier' => 'free',
+      'field_stripe_customer_id' => 'cus_canceled',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $response = $this->controller->get('14', $request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertEquals('canceled', $data['effective_state']);
+    $this->assertEquals('cus_canceled', $data['stripe_customer_id']);
+    $this->assertNull($data['stripe_subscription_id']);
+  }
+
+  /**
    * Free permanent: no expiry, has subscription, tier='free'.
    *
    * Admin-granted permanent free plan (e.g. partner, hardship). Distinct
