@@ -231,6 +231,32 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
+   * Symfony Mailer rejects duplicate Reply-To headers ("must be unique").
+   * If MailManager or an upstream alter-hook seeded a lowercase reply-to,
+   * our case-insensitive cleanup must remove it before we set our branded
+   * Reply-To, so the message ends up with exactly one header for that name.
+   */
+  public function testAlterReplacesPreExistingCaseInsensitiveReplyTo(): void {
+    $builder = new RecordingStubBuilder(new MailMessage(
+      subject: 'Branded subject',
+      variant: 'card_transactional',
+      content: ['headline' => 'Hi'],
+    ));
+
+    $message = $this->buildMessage();
+    $message['headers']['reply-to'] = 'old-upstream@example.com';
+    $this->buildHook($builder)->alter($message);
+
+    $replyToKeys = array_filter(
+      array_keys($message['headers']),
+      static fn ($key) => strcasecmp((string) $key, 'Reply-To') === 0,
+    );
+    $this->assertCount(1, $replyToKeys, 'Exactly one Reply-To header must remain.');
+    $this->assertSame('Reply-To', array_values($replyToKeys)[0], 'Surviving header must use canonical casing.');
+    $this->assertSame('support@civic-patches.com', $message['headers']['Reply-To']);
+  }
+
+  /**
    * Builds a MailAlterHook with mocked dependencies + a stub builder.
    */
   private function buildHook(?MailBuilderInterface $builder, ?string $plainOverride = NULL): MailAlterHook {

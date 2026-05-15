@@ -146,6 +146,15 @@ final class MailAlterHook {
     // proper HTML rendering altogether.
     $message['params']['theme'] = 'markaspot_mail_passthrough';
     if (!empty($brandingPackage['reply_to'])) {
+      // Drop any pre-existing Reply-To (case-insensitive) before we set
+      // ours. Symfony Mailer's Header class enforces uniqueness on Reply-To
+      // and throws when the same header has already been seeded by Drupal
+      // MailManager or an upstream alter-hook.
+      foreach (array_keys($message['headers']) as $headerName) {
+        if (strcasecmp((string) $headerName, 'Reply-To') === 0) {
+          unset($message['headers'][$headerName]);
+        }
+      }
       $message['headers']['Reply-To'] = $this->sanitizeHeaderValue((string) $brandingPackage['reply_to']);
     }
 
