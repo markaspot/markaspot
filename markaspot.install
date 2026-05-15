@@ -1968,8 +1968,8 @@ function markaspot_update_11914(): string {
  * Ensure runtime mail config matches the platform default.
  *
  * Existing tenants may already have run markaspot_update_11913 before
- * attachments.enabled was part of the health check. Keep this as a separate
- * update so the drift repair is reproducible through updatedb.
+ * markaspot_mail attachment policy was part of the health check. Keep this as
+ * a separate update so the drift repair is reproducible through updatedb.
  */
 function markaspot_update_11915(): string {
   $changes = [];
@@ -1983,13 +1983,14 @@ function markaspot_update_11915(): string {
     $mailsystem->set('defaults.formatter', 'phpmailer_smtp');
     $changes[] = 'mailsystem.settings defaults.formatter=phpmailer_smtp';
   }
-  if ($mailsystem->get('attachments.enabled') !== TRUE) {
-    $mailsystem->set('attachments.enabled', TRUE);
-    $changes[] = 'mailsystem.settings attachments.enabled=true';
-  }
-
   if ($changes !== []) {
     $mailsystem->save();
+  }
+
+  $mail_settings = \Drupal::configFactory()->getEditable('markaspot_mail.settings');
+  if ($mail_settings->get('attachments.enabled') !== TRUE) {
+    $mail_settings->set('attachments.enabled', TRUE)->save();
+    $changes[] = 'markaspot_mail.settings attachments.enabled=true';
   }
 
   return $changes ? implode(', ', $changes) . '.' : 'No mail config changes needed.';

@@ -50,14 +50,21 @@ class MailsystemDriftCheckTest extends UnitTestCase {
    * @covers ::run
    */
   public function testRunPassesWhenConfigIsCorrect(): void {
-    $config = $this->createMock(ImmutableConfig::class);
-    $config->method('isNew')->willReturn(FALSE);
-    $config->method('get')->willReturnMap([
+    $mailsystem = $this->createMock(ImmutableConfig::class);
+    $mailsystem->method('isNew')->willReturn(FALSE);
+    $mailsystem->method('get')->willReturnMap([
       ['defaults.sender', 'phpmailer_smtp'],
+    ]);
+    $markaspotMail = $this->createMock(ImmutableConfig::class);
+    $markaspotMail->method('isNew')->willReturn(FALSE);
+    $markaspotMail->method('get')->willReturnMap([
       ['attachments.enabled', TRUE],
     ]);
     $factory = $this->createMock(ConfigFactoryInterface::class);
-    $factory->method('get')->willReturn($config);
+    $factory->method('get')->willReturnMap([
+      ['mailsystem.settings', $mailsystem],
+      ['markaspot_mail.settings', $markaspotMail],
+    ]);
 
     $plugin = new MailsystemDriftCheck([], 'mailsystem_drift', $this->definition, $factory);
     $result = $plugin->run();
@@ -69,14 +76,21 @@ class MailsystemDriftCheckTest extends UnitTestCase {
    * @covers ::run
    */
   public function testRunFailsWhenSenderAndAttachmentsDrift(): void {
-    $config = $this->createMock(ImmutableConfig::class);
-    $config->method('isNew')->willReturn(FALSE);
-    $config->method('get')->willReturnMap([
+    $mailsystem = $this->createMock(ImmutableConfig::class);
+    $mailsystem->method('isNew')->willReturn(FALSE);
+    $mailsystem->method('get')->willReturnMap([
       ['defaults.sender', 'php_mail'],
+    ]);
+    $markaspotMail = $this->createMock(ImmutableConfig::class);
+    $markaspotMail->method('isNew')->willReturn(FALSE);
+    $markaspotMail->method('get')->willReturnMap([
       ['attachments.enabled', FALSE],
     ]);
     $factory = $this->createMock(ConfigFactoryInterface::class);
-    $factory->method('get')->willReturn($config);
+    $factory->method('get')->willReturnMap([
+      ['mailsystem.settings', $mailsystem],
+      ['markaspot_mail.settings', $markaspotMail],
+    ]);
 
     $plugin = new MailsystemDriftCheck([], 'mailsystem_drift', $this->definition, $factory);
     $result = $plugin->run();
