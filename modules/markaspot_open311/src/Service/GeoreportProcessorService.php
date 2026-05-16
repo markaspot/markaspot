@@ -1878,7 +1878,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
       // Add drupal extended attributes when extensions=true
       // Priority: 1) full parameter, 2) specific fields from allowed list.
-      if (isset($parameters['full']) && $extendedRole === 'manager') {
+      // The ?full path exposes the complete entity including citizen PII, so
+      // it is gated by the dedicated 'access open311 full export' permission
+      // (editorial_board + administrator only) — not by the broad 'manager'
+      // extended role, which moderators also reach via 'access open311
+      // advanced properties'. A user without the permission falls through to
+      // the ?fields= branch.
+      if (isset($parameters['full']) && $this->currentUser->hasPermission('access open311 full export')) {
         $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
       }
       elseif (isset($parameters['fields'])) {
@@ -3105,6 +3111,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         }
         // Compact shape only: never $entity->toArray() here, it would bloat
         // the payload (e.g. field_jurisdiction -> full group config).
+        // Accepted limitation: only the field-level view access above is
+        // checked, not a per-referenced-entity access('view'). The label
+        // exposed here is for operational reference entities (status terms,
+        // categories, service provider org groups) the holders of 'access
+        // open311 full export' (editorial_board / administrator) have view
+        // access to anyway; a per-entity check across a full export would add
+        // measurable cost for no real gain.
         $value = array_map(
           fn($entity) => [
             'target_id' => $entity->id(),

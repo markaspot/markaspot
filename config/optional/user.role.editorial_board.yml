@@ -46,6 +46,7 @@ permissions:
   - 'access files overview'
   - 'access open311 advanced properties'
   - 'access open311 extension'
+  - 'access open311 full export'
   - 'access site in maintenance mode'
   - 'access site reports'
   - 'access taxonomy overview'
