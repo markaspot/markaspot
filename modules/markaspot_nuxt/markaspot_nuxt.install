@@ -266,7 +266,14 @@ function markaspot_nuxt_update_11900(): string {
 
     $config['fields']['field_gdpr']['required'] = TRUE;
     $group->set('field_nuxt_config', json_encode($config));
-    $group->setNewRevision(FALSE);
+    // Write an explicit revision so the consent-relevant config change is
+    // discoverable in the group's revision history (GoBD audit trail). The
+    // hook runs once per jurisdiction, so this is a bounded one-time cost,
+    // not the recurring revision bloat that setNewRevision(FALSE) guards
+    // against on per-request saves.
+    $group->setNewRevision(TRUE);
+    $group->setRevisionLogMessage('Auto-migrated field_gdpr.required from features.privacyNotice.enabled (markaspot_nuxt update 11900).');
+    $group->setRevisionCreationTime(\time());
     $group->save();
     $migrated++;
   }
