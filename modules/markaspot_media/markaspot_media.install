@@ -173,3 +173,57 @@ function markaspot_media_update_11903(): void {
     ])->save();
   }
 }
+
+/**
+ * Switch field_request_media to the request_media:media selection handler.
+ *
+ * The handler and the request_media:media plugin already ship with this
+ * module, but config/install only applies on a fresh install. Existing
+ * tenants keep the core default:media handler, which access-filters
+ * referenceable entities by publish status. Report photos are uploaded
+ * unpublished on purpose (privacy: not public before AI screening), so the
+ * default handler makes an anonymous reporter's just-uploaded media
+ * unreferenceable and the report submit fails ValidReferenceConstraint with
+ * HTTP 422. request_media:media keeps the request_image bundle restriction
+ * and the existence check but drops the publish-status filter.
+ */
+function markaspot_media_update_11904(): void {
+  $config = \Drupal::configFactory()
+    ->getEditable('field.field.node.service_request.field_request_media');
+  if ($config->isNew()) {
+    return;
+  }
+
+  $changed = FALSE;
+
+  if ($config->get('settings.handler') !== 'request_media:media') {
+    $config->set('settings.handler', 'request_media:media');
+    $changed = TRUE;
+  }
+
+  // The handler plugin is provided by this module, so the field config must
+  // declare the dependency. It is hand-maintained on purpose: the raw config
+  // write is used precisely because an entity-API FieldConfig::save() re-runs
+  // calculateDependencies(), which does not resolve selection-handler plugin
+  // providers and would silently drop this entry. Do not "fix" this into a
+  // FieldConfig::save() — that would reintroduce the bug.
+  $modules = $config->get('dependencies.module') ?? [];
+  if (!in_array('markaspot_media', $modules, TRUE)) {
+    $modules[] = 'markaspot_media';
+    sort($modules);
+    $config->set('dependencies.module', $modules);
+    $changed = TRUE;
+  }
+
+  if (!$changed) {
+    return;
+  }
+  $config->save();
+
+  // A raw config write fires no FieldConfig entity hooks, so EntityFieldManager
+  // still serves the cached field definition with the old handler. Invalidate
+  // it explicitly so the new handler takes effect without a full cache rebuild.
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+
+  \Drupal::logger('markaspot_media')->info('Switched field_request_media selection handler to request_media:media (allows referencing unpublished request_image media during AI screening).');
+}
