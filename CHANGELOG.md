@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.91](https://github.com/markaspot/markaspot/compare/11.9.90...11.9.91) (2026-05-16)
+
+### Bug Fixes
+
+* **nuxt:** harden tenant settings logo deletion and access caching ([9524fc4](https://github.com/markaspot/markaspot/commit/9524fc44e6988737ca4fedaf42642b60b769b2f2))
+
 ## [11.9.90](https://github.com/markaspot/markaspot/compare/11.9.89...11.9.90) (2026-05-16)
 
 ### Features
