@@ -8,6 +8,7 @@ use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\PublicStream;
@@ -15,7 +16,7 @@ use Drupal\Core\StreamWrapper\StreamWrapperManager;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\file\FileRepositoryInterface;
 use Drupal\group\Entity\GroupInterface;
-use Drupal\group\GroupMembershipLoaderInterface;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\Component\Utility\EmailValidator;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -38,7 +39,7 @@ use Symfony\Component\HttpFoundation\Request;
  * All endpoints accept both numeric group IDs and URL slugs as the
  * jurisdiction_id parameter via JurisdictionIdResolverTrait.
  */
-class TenantSettingsController extends ControllerBase {
+final class TenantSettingsController extends ControllerBase {
 
   use JurisdictionIdResolverTrait;
 
@@ -196,13 +197,6 @@ class TenantSettingsController extends ControllerBase {
   ];
 
   /**
-   * The group membership loader.
-   *
-   * @var \Drupal\group\GroupMembershipLoaderInterface
-   */
-  protected GroupMembershipLoaderInterface $membershipLoader;
-
-  /**
    * The stream wrapper manager.
    *
    * @var \Drupal\Core\StreamWrapper\StreamWrapperManagerInterface
@@ -249,7 +243,6 @@ class TenantSettingsController extends ControllerBase {
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
-    GroupMembershipLoaderInterface $membership_loader,
     StreamWrapperManagerInterface $stream_wrapper_manager,
     FileSystemInterface $file_system,
     FileRepositoryInterface $file_repository,
@@ -259,7 +252,6 @@ class TenantSettingsController extends ControllerBase {
     ?CountryRepositoryInterface $country_repository,
   ) {
     $this->entityTypeManager = $entity_type_manager;
-    $this->membershipLoader = $membership_loader;
     $this->streamWrapperManager = $stream_wrapper_manager;
     $this->fileSystem = $file_system;
     $this->fileRepository = $file_repository;
@@ -275,7 +267,6 @@ class TenantSettingsController extends ControllerBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('entity_type.manager'),
-      $container->get('group.membership_loader'),
       $container->get('stream_wrapper_manager'),
       $container->get('file_system'),
       $container->get('file.repository'),
@@ -320,29 +311,38 @@ class TenantSettingsController extends ControllerBase {
       return AccessResult::allowed()->addCacheContexts(['user.roles']);
     }
 
+    // Decisions below depend on the user's group memberships. Tag the result
+    // with the membership-list cache tag so it invalidates when a membership
+    // is added, removed, or its roles change — without it a demoted admin
+    // would keep a cached allow. Mirrors GroupMembership::loadByUser().
+    $membership_cache_tag = 'group_relationship_list:plugin:group_membership:entity:' . $account->id();
+
     // tenant_admin role: allow access if the requested jurisdiction falls
     // within the hierarchy (self + descendants) of any jurisdiction where
     // the user holds tenant_admin membership.
     if (in_array('tenant_admin', $account->getRoles(), TRUE)) {
-      $memberships = $this->membershipLoader->loadByUser($account, array_values(array_unique([
+      $admin_roles = array_values(array_unique([
         $this->getJurisdictionGroupType() . '-tenant_admin',
         'jur-tenant_admin',
-      ])));
-      foreach ($memberships as $membership) {
-        $managedGroup = $membership->getGroup();
+      ]));
+      foreach (GroupMembership::loadByUser($account, $admin_roles) as $relationship) {
+        $managedGroup = $relationship->getGroup();
         if (!$this->isJurisdictionGroup($managedGroup)) {
           continue;
         }
         $managedJurId = (int) $managedGroup->id();
         $scopeIds = $this->hierarchyResolver->getDescendantIds($managedJurId);
         if (in_array($resolved_id, $scopeIds, TRUE)) {
-          return AccessResult::allowed()->addCacheContexts(['user']);
+          return AccessResult::allowed()
+            ->addCacheContexts(['user'])
+            ->addCacheTags([$membership_cache_tag]);
         }
       }
     }
 
     return AccessResult::forbidden('User is not an administrator or tenant admin for this jurisdiction.')
-      ->addCacheContexts(['user', 'user.roles']);
+      ->addCacheContexts(['user', 'user.roles'])
+      ->addCacheTags([$membership_cache_tag]);
   }
 
   /**
@@ -633,7 +633,7 @@ class TenantSettingsController extends ControllerBase {
       $file = $this->fileRepository->writeData(
         $fileData,
         $destination,
-        FileSystemInterface::EXISTS_REPLACE
+        FileExists::Replace
       );
 
       if (!$file) {
@@ -778,7 +778,7 @@ class TenantSettingsController extends ControllerBase {
     $baseName = pathinfo($safeSvgName, PATHINFO_FILENAME);
     $destination = $uploadDir . '/' . $baseName . '.png';
     try {
-      $uri = $this->fileSystem->saveData($fileData, $destination, FileSystemInterface::EXISTS_REPLACE);
+      $uri = $this->fileSystem->saveData($fileData, $destination, FileExists::Replace);
     }
     catch (\Exception $e) {
       $this->getLogger('markaspot_nuxt')->warning(
@@ -857,7 +857,6 @@ class TenantSettingsController extends ControllerBase {
 
     $deleted = [];
     $filesToDelete = [];
-    $fallbackUrisToDelete = [];
     $fileStorage = $this->entityTypeManager()->getStorage('file');
 
     foreach ($fieldsToDelete as $fieldName) {
@@ -871,10 +870,6 @@ class TenantSettingsController extends ControllerBase {
         $file = $fileStorage->load($fieldValue[0]['target_id']);
         if ($file) {
           $filesToDelete[] = $file;
-          $fallbackUri = $this->getLogoPngFallbackUri((string) $file->getFileUri());
-          if ($fallbackUri !== NULL) {
-            $fallbackUrisToDelete[] = $fallbackUri;
-          }
         }
       }
 
@@ -902,12 +897,28 @@ class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'Failed to save group entity after logo deletion.'], 500);
     }
 
-    // Delete file entities only after successful group save.
-    foreach ($filesToDelete as $file) {
-      $file->delete();
+    // Delete file entities only after successful group save — but skip any
+    // file still referenced by the other logo variant. Light and dark logos
+    // may point at the same file; deleting it for one variant must not break
+    // the other. The PNG fallback follows the same keep/delete decision.
+    $referencedFids = [];
+    foreach (['field_logo_light', 'field_logo_dark'] as $logoField) {
+      if ($group->hasField($logoField)) {
+        $remaining = $group->get($logoField)->getValue();
+        if (!empty($remaining[0]['target_id'])) {
+          $referencedFids[] = (int) $remaining[0]['target_id'];
+        }
+      }
     }
-    foreach (array_unique($fallbackUrisToDelete) as $uri) {
-      $this->deleteFileIfReadable($uri);
+    foreach ($filesToDelete as $file) {
+      if (in_array((int) $file->id(), $referencedFids, TRUE)) {
+        continue;
+      }
+      $fallbackUri = $this->getLogoPngFallbackUri((string) $file->getFileUri());
+      $file->delete();
+      if ($fallbackUri !== NULL) {
+        $this->deleteFileIfReadable($fallbackUri);
+      }
     }
 
     $this->getLogger('markaspot_nuxt')->notice(
