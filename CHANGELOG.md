@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.90](https://github.com/markaspot/markaspot/compare/11.9.89...11.9.90) (2026-05-16)
+
+### Features
+
+* **open311:** resolve entity references in full field export ([d07f5d4](https://github.com/markaspot/markaspot/commit/d07f5d4087ec8a77e3c44793e709bb55bf47a6b6))
+
+### Bug Fixes
+
+* allow configured wms layers for classic tenants ([974fac9](https://github.com/markaspot/markaspot/commit/974fac9c25df19323dea10dd289fecf72bf322ce))
+* **media:** migrate existing tenants to the request_media selection handler ([8f63a45](https://github.com/markaspot/markaspot/commit/8f63a45424a8381dceffffb8439c37b1845a9104))
+* **open311:** gate full entity export behind dedicated PII permission ([0b4396a](https://github.com/markaspot/markaspot/commit/0b4396a959a847121a351400db4202961339a759))
+
+### Refactoring
+
+* **fastmap:** group field_nuxt_config keys by concern ([1bfbcff](https://github.com/markaspot/markaspot/commit/1bfbcff9c124752f3efccc8daf219a0bb87f7602))
+
 ## [11.9.89](https://github.com/markaspot/markaspot/compare/11.9.88...11.9.89) (2026-05-15)
 
 ### Features
