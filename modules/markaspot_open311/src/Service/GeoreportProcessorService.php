@@ -1878,7 +1878,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
       // Add drupal extended attributes when extensions=true
       // Priority: 1) full parameter, 2) specific fields from allowed list.
-      if (isset($parameters['full'])) {
+      if (isset($parameters['full']) && $extendedRole === 'manager') {
         $request['extended_attributes']['drupal'] = $this->getAllFieldValues($node);
       }
       elseif (isset($parameters['fields'])) {
@@ -3069,11 +3069,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   /**
    * Retrieves the values of all fields from a node.
    *
+   * Produces a non-lossy snapshot of every non-empty field the current user
+   * may view. Entity-reference fields are resolved to a compact
+   * {target_id, label} shape so the payload stays small (notably
+   * field_jurisdiction, whose group entity would otherwise drag the full
+   * field_nuxt_config and field_boundary GeoJSON into every row). Scalar and
+   * text fields keep their full item array, with the same string->int
+   * conversion for integer / list_integer fields that getFieldValues() applies.
+   *
    * @param object $node
    *   The node object.
    *
    * @return array
-   *   An associative array of field values.
+   *   An associative array of field values keyed by field name.
    */
   private function getAllFieldValues(object $node): array {
     $fieldValues = [];
@@ -3081,13 +3089,48 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     foreach ($node->getFields() as $fieldName => $field) {
       $fieldAccess = $field->access('view', NULL, TRUE);
 
-      if ($fieldAccess->isAllowed()) {
-        // Skip empty fields: clean API responses omit absent data.
-        if ($field->isEmpty()) {
+      if (!$fieldAccess->isAllowed()) {
+        continue;
+      }
+      // Skip empty fields: clean API responses omit absent data.
+      if ($field->isEmpty()) {
+        continue;
+      }
+
+      if (method_exists($field, 'referencedEntities')) {
+        $entities = $field->referencedEntities();
+        // Skip entity references that resolve to nothing.
+        if (empty($entities)) {
           continue;
         }
-        $fieldValues[$fieldName] = $field->value;
+        // Compact shape only: never $entity->toArray() here, it would bloat
+        // the payload (e.g. field_jurisdiction -> full group config).
+        $value = array_map(
+          fn($entity) => [
+            'target_id' => $entity->id(),
+            'label' => $entity->label(),
+          ],
+          $entities
+        );
+        // Normalize single-value references to a single assoc array.
+        if (count($value) === 1) {
+          $value = reset($value);
+        }
       }
+      else {
+        $value = $field->getValue();
+        // Convert integer field values from string to int.
+        $fieldType = $field->getFieldDefinition()->getType();
+        if ($fieldType === 'integer' || $fieldType === 'list_integer') {
+          foreach ($value as &$item) {
+            if (isset($item['value']) && is_numeric($item['value'])) {
+              $item['value'] = (int) $item['value'];
+            }
+          }
+        }
+      }
+
+      $fieldValues[$fieldName] = $value;
     }
 
     return $fieldValues;
