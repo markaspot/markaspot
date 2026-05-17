@@ -121,20 +121,20 @@ msgid "Your demo expires @date"
 msgstr "Vaše demo vyprší @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "The demo workspace \"@name\" will be automatically removed on @date."
-msgstr "Demo pracovní prostor \"@name\" bude automaticky odstraněn dne @date."
+msgid "The demo workspace \"@name\" will be automatically removed on @date unless you choose a plan."
+msgstr "Demo pracovní prostor \"@name\" bude automaticky odstraněn dne @date, pokud si nevyberete plán."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire."
-msgstr "Upgradujte nyní, abyste zachovali pracovní prostor, historii a nastavení, nebo tento e-mail ignorujte a nechte demo vypršet."
+msgid "You can keep your workspace, history and settings for free. Choose a plan before it expires, including our Free tier at no cost. If you do nothing, the workspace will be removed."
+msgstr "Svůj pracovní prostor, historii a nastavení si můžete ponechat zdarma. Vyberte si plán, než vyprší jeho platnost, včetně našeho zcela bezplatného plánu Free. Pokud neuděláte nic, pracovní prostor bude odstraněn."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Open my workspace"
 msgstr "Otevřít můj pracovní prostor"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "Create a permanent workspace"
-msgstr "Vytvořit trvalý pracovní prostor"
+msgid "Keep my workspace"
+msgstr "Ponechat pracovní prostor"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Workspace"

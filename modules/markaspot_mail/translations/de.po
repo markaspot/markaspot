@@ -91,17 +91,17 @@ msgstr "Demo-Arbeitsbereich „@name“ läuft am @date ab"
 msgid "Your demo expires @date"
 msgstr "Ihr Demo-Arbeitsbereich läuft am @date ab"
 
-msgid "The demo workspace \"@name\" will be automatically removed on @date."
-msgstr "Der Demo-Arbeitsbereich „@name“ wird am @date automatisch gelöscht."
+msgid "The demo workspace \"@name\" will be automatically removed on @date unless you choose a plan."
+msgstr "Der Demo-Arbeitsbereich „@name“ wird am @date automatisch gelöscht, sofern Sie keinen Tarif wählen."
 
-msgid "Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire."
-msgstr "Jetzt upgraden, um Arbeitsbereich, Verlauf und Einstellungen zu erhalten. Andernfalls ignorieren Sie einfach diese E-Mail."
+msgid "You can keep your workspace, history and settings for free. Choose a plan before it expires, including our Free tier at no cost. If you do nothing, the workspace will be removed."
+msgstr "Sie können Ihren Arbeitsbereich, Verlauf und Einstellungen kostenlos behalten. Wählen Sie vor Ablauf einen Tarif, darunter unseren Free-Tarif ganz ohne Kosten. Wenn Sie nichts tun, wird der Arbeitsbereich gelöscht."
 
 msgid "Open my workspace"
 msgstr "Arbeitsbereich öffnen"
 
-msgid "Create a permanent workspace"
-msgstr "Dauerhaften Arbeitsbereich erstellen"
+msgid "Keep my workspace"
+msgstr "Arbeitsbereich behalten"
 
 msgid "Workspace"
 msgstr "Arbeitsbereich"

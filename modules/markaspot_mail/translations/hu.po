@@ -120,20 +120,20 @@ msgid "Your demo expires @date"
 msgstr "A bemutatója ekkor jár le: @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "The demo workspace \"@name\" will be automatically removed on @date."
-msgstr "\"@name\" bemutató munkaterülete automatikusan törlődik ekkor: @date."
+msgid "The demo workspace \"@name\" will be automatically removed on @date unless you choose a plan."
+msgstr "\"@name\" bemutató munkaterülete automatikusan törlődik ekkor: @date, hacsak nem választ csomagot."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire."
-msgstr "Frissítsen most, hogy megőrizze munkaterületét, előzményeit és beállításait, vagy hagyja figyelmen kívül ezt az e-mailt, és hagyja lejárni."
+msgid "You can keep your workspace, history and settings for free. Choose a plan before it expires, including our Free tier at no cost. If you do nothing, the workspace will be removed."
+msgstr "Munkaterületét, előzményeit és beállításait ingyenesen megtarthatja. Válasszon csomagot a lejárat előtt, többek között a teljesen ingyenes Free csomagot. Ha nem tesz semmit, a munkaterület törlődik."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Open my workspace"
 msgstr "Munkaterület megnyitása"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "Create a permanent workspace"
-msgstr "Állandó munkaterület létrehozása"
+msgid "Keep my workspace"
+msgstr "Munkaterület megtartása"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Workspace"

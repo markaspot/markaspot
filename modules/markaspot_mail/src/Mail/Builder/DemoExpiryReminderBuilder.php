@@ -88,16 +88,16 @@ final class DemoExpiryReminderBuilder implements MailBuilderInterface {
         'headline' => (string) $this->t('Your demo expires @date', [
           '@date' => $expiryDate,
         ], ['langcode' => $langcode]),
-        'intro' => (string) $this->t('The demo workspace "@name" will be automatically removed on @date.', [
+        'intro' => (string) $this->t('The demo workspace "@name" will be automatically removed on @date unless you choose a plan.', [
           '@name' => $workspaceName,
           '@date' => $expiryDate,
         ], ['langcode' => $langcode]),
         'body_blocks' => [
-          (string) $this->t('Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire.', [], ['langcode' => $langcode]),
+          (string) $this->t('You can keep your workspace, history and settings for free. Choose a plan before it expires, including our Free tier at no cost. If you do nothing, the workspace will be removed.', [], ['langcode' => $langcode]),
         ],
         'cta_label' => $workspaceUrl !== ''
           ? (string) $this->t('Open my workspace', [], ['langcode' => $langcode])
-          : (string) $this->t('Create a permanent workspace', [], ['langcode' => $langcode]),
+          : (string) $this->t('Keep my workspace', [], ['langcode' => $langcode]),
         'cta_url' => $ctaUrl,
         'features_block' => [
           [(string) $this->t('Workspace', [], ['langcode' => $langcode]) => $workspaceName],

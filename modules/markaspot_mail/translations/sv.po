@@ -120,20 +120,20 @@ msgid "Your demo expires @date"
 msgstr "Din demo upphör att gälla @date"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "The demo workspace \"@name\" will be automatically removed on @date."
-msgstr "Demoarbetsytan \"@name\" tas bort automatiskt @date."
+msgid "The demo workspace \"@name\" will be automatically removed on @date unless you choose a plan."
+msgstr "Demoarbetsytan \"@name\" tas bort automatiskt @date om du inte väljer ett abonnemang."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "Upgrade now to keep your workspace, history and settings, or ignore this email to let it expire."
-msgstr "Uppgradera nu för att behålla din arbetsyta, historik och inställningar, eller ignorera det här e-postmeddelandet och låt den upphöra att gälla."
+msgid "You can keep your workspace, history and settings for free. Choose a plan before it expires, including our Free tier at no cost. If you do nothing, the workspace will be removed."
+msgstr "Du kan behålla din arbetsyta, historik och dina inställningar gratis. Välj ett abonnemang innan det löper ut, inklusive vårt Free-abonnemang helt utan kostnad. Om du inte gör något tas arbetsytan bort."
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Open my workspace"
 msgstr "Öppna min arbetsyta"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "Create a permanent workspace"
-msgstr "Skapa en permanent arbetsyta"
+msgid "Keep my workspace"
+msgstr "Behåll min arbetsyta"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Workspace"
