@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.92](https://github.com/markaspot/markaspot/compare/11.9.91...11.9.92) (2026-05-17)
+
+### Features
+
+* status attributes for service status transitions ([541ea1f](https://github.com/markaspot/markaspot/commit/541ea1f89b34ec792385799bf71a0ccd7d4e4126))
+
+### Bug Fixes
+
+* **health:** bind status-note smoke fixture to its jurisdiction group ([ed3d13c](https://github.com/markaspot/markaspot/commit/ed3d13cd74b3f0b0ed45659f34b33d669eb5322e))
+
 ## [11.9.91](https://github.com/markaspot/markaspot/compare/11.9.90...11.9.91) (2026-05-16)
 
 ### Bug Fixes
