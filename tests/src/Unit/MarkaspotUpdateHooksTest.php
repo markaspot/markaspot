@@ -21,6 +21,52 @@ use Drupal\user\RoleInterface;
 use Psr\Log\LoggerInterface;
 
 /**
+ * Test double for module installer service mocks.
+ */
+class MarkaspotUpdateHooksModuleInstallerDouble {
+
+  public function install(array $modules): void {
+  }
+
+  public function uninstall(array $modules): void {
+  }
+
+}
+
+/**
+ * Test double for group entity mocks.
+ */
+class MarkaspotUpdateHooksGroupDouble {
+
+  public function hasField(string $field): bool {
+    return FALSE;
+  }
+
+  public function set(string $field, mixed $value): static {
+    return $this;
+  }
+
+  public function save(): void {
+  }
+
+  public function label(): string {
+    return '';
+  }
+
+}
+
+/**
+ * Test double for user permission handler mocks.
+ */
+class MarkaspotUpdateHooksPermissionHandlerDouble {
+
+  public function getPermissions(): array {
+    return [];
+  }
+
+}
+
+/**
  * Tests the Mark-a-Spot installation profile update helpers.
  *
  * @group markaspot
@@ -87,8 +133,8 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $this->configFactory = $this->createMock(ConfigFactoryInterface::class);
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
-    $this->moduleInstaller = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['install', 'uninstall'])
+    $this->moduleInstaller = $this->getMockBuilder(MarkaspotUpdateHooksModuleInstallerDouble::class)
+      ->onlyMethods(['install', 'uninstall'])
       ->getMock();
     $this->transliteration = $this->createMock(TransliterationInterface::class);
     $this->keyValueFactory = $this->createMock(KeyValueFactoryInterface::class);
@@ -177,8 +223,8 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
       ->willReturn('Zero City');
 
     $captured = [];
-    $group = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['hasField', 'set', 'save', 'label'])
+    $group = $this->getMockBuilder(MarkaspotUpdateHooksGroupDouble::class)
+      ->onlyMethods(['hasField', 'set', 'save', 'label'])
       ->getMock();
     $group->method('hasField')
       ->willReturnCallback(static fn(string $field) => in_array($field, ['field_slug', 'field_nuxt_config'], TRUE));
@@ -261,8 +307,8 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $groupTypeStorage->method('load')
       ->willReturnCallback(static fn(string $id) => in_array($id, ['organisation', 'jurisdiction'], TRUE) ? new \stdClass() : NULL);
 
-    $createdGroup = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['hasField', 'set', 'save', 'label'])
+    $createdGroup = $this->getMockBuilder(MarkaspotUpdateHooksGroupDouble::class)
+      ->onlyMethods(['hasField', 'set', 'save', 'label'])
       ->getMock();
     $createdGroup->method('hasField')->willReturn(FALSE);
     $createdGroup->expects($this->once())->method('save');
@@ -554,8 +600,8 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents($yamlFile));
     $yamlPerms = $yaml['permissions'] ?? [];
 
-    $permissionHandler = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['getPermissions'])
+    $permissionHandler = $this->getMockBuilder(MarkaspotUpdateHooksPermissionHandlerDouble::class)
+      ->onlyMethods(['getPermissions'])
       ->getMock();
     $allPermsKeyed = array_fill_keys($yamlPerms, ['title' => 'test']);
     $permissionHandler->method('getPermissions')->willReturn($allPermsKeyed);
@@ -603,8 +649,8 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $yamlPerms = $yaml['permissions'] ?? [];
     $allPermsKeyed = array_fill_keys($yamlPerms, ['title' => 'test']);
 
-    $permissionHandler = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['getPermissions'])
+    $permissionHandler = $this->getMockBuilder(MarkaspotUpdateHooksPermissionHandlerDouble::class)
+      ->onlyMethods(['getPermissions'])
       ->getMock();
     $permissionHandler->method('getPermissions')->willReturn($allPermsKeyed);
 
@@ -654,8 +700,8 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
       ->with('markaspot')
       ->willReturn('/tmp/nonexistent-profile-path');
 
-    $permissionHandler = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['getPermissions'])
+    $permissionHandler = $this->getMockBuilder(MarkaspotUpdateHooksPermissionHandlerDouble::class)
+      ->onlyMethods(['getPermissions'])
       ->getMock();
     $permissionHandler->method('getPermissions')->willReturn([]);
 
@@ -697,8 +743,8 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
       'edit own field_e_mail' => ['title' => 'test'],
       'edit terms in service_category' => ['title' => 'test'],
     ];
-    $permissionHandler = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['getPermissions'])
+    $permissionHandler = $this->getMockBuilder(MarkaspotUpdateHooksPermissionHandlerDouble::class)
+      ->onlyMethods(['getPermissions'])
       ->getMock();
     $permissionHandler->method('getPermissions')->willReturn($validPerms);
 
@@ -750,8 +796,8 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
       'edit own field_e_mail' => ['title' => 'test'],
       'edit terms in service_category' => ['title' => 'test'],
     ];
-    $permissionHandler = $this->getMockBuilder(\stdClass::class)
-      ->addMethods(['getPermissions'])
+    $permissionHandler = $this->getMockBuilder(MarkaspotUpdateHooksPermissionHandlerDouble::class)
+      ->onlyMethods(['getPermissions'])
       ->getMock();
     $permissionHandler->method('getPermissions')->willReturn($validPerms);
 
@@ -820,6 +866,86 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $this->assertStringContainsString('markaspot_privacy', $result);
     $this->assertStringNotContainsString('markaspot_front', $result);
     $this->assertStringNotContainsString('markaspot_trend', $result);
+  }
+
+  /**
+   * Tests that 11918 grants missing anonymous public report permissions.
+   */
+  public function testUpdate11918GrantsMissingAnonymousPublicReportPermissions(): void {
+    $existingPermissions = [
+      'access content' => TRUE,
+      'create field_request_media' => TRUE,
+    ];
+    $grantedPermissions = [];
+
+    $role = $this->createMock(RoleInterface::class);
+    $role->method('hasPermission')
+      ->willReturnCallback(static fn(string $permission) => isset($existingPermissions[$permission]));
+    $role->method('grantPermission')
+      ->willReturnCallback(function (string $permission) use (&$grantedPermissions, $role) {
+        $grantedPermissions[] = $permission;
+        return $role;
+      });
+    $role->expects($this->once())->method('save');
+
+    $roleStorage = $this->createMock(EntityStorageInterface::class);
+    $roleStorage->method('load')
+      ->with('anonymous')
+      ->willReturn($role);
+
+    $this->entityTypeManager->method('getStorage')
+      ->with('user_role')
+      ->willReturn($roleStorage);
+
+    $result = markaspot_update_11918();
+
+    $this->assertContains('create media', $grantedPermissions);
+    $this->assertContains('create request_image media', $grantedPermissions);
+    $this->assertContains('create service_request content', $grantedPermissions);
+    $this->assertContains('view media', $grantedPermissions);
+    $this->assertContains('view own unpublished media', $grantedPermissions);
+    $this->assertStringContainsString('Granted anonymous public report permissions', $result);
+  }
+
+  /**
+   * Tests that 11918 is idempotent when anonymous role is already aligned.
+   */
+  public function testUpdate11918SkipsWhenAnonymousPermissionsAlreadyAligned(): void {
+    $role = $this->createMock(RoleInterface::class);
+    $role->method('hasPermission')->willReturn(TRUE);
+    $role->expects($this->never())->method('grantPermission');
+    $role->expects($this->never())->method('save');
+
+    $roleStorage = $this->createMock(EntityStorageInterface::class);
+    $roleStorage->method('load')
+      ->with('anonymous')
+      ->willReturn($role);
+
+    $this->entityTypeManager->method('getStorage')
+      ->with('user_role')
+      ->willReturn($roleStorage);
+
+    $result = markaspot_update_11918();
+
+    $this->assertSame('Anonymous public report permissions already aligned.', $result);
+  }
+
+  /**
+   * Tests that 11918 returns early when anonymous role is missing.
+   */
+  public function testUpdate11918SkipsWhenAnonymousRoleIsMissing(): void {
+    $roleStorage = $this->createMock(EntityStorageInterface::class);
+    $roleStorage->method('load')
+      ->with('anonymous')
+      ->willReturn(NULL);
+
+    $this->entityTypeManager->method('getStorage')
+      ->with('user_role')
+      ->willReturn($roleStorage);
+
+    $result = markaspot_update_11918();
+
+    $this->assertSame('Anonymous role not found; no permissions changed.', $result);
   }
 
 }
