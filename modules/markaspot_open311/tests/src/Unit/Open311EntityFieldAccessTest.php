@@ -1,0 +1,275 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\Tests\markaspot_open311\Unit;
+
+use Drupal\Core\Access\AccessResultForbidden;
+use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
+use Drupal\taxonomy\TermInterface;
+use Drupal\Tests\UnitTestCase;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+
+require_once __DIR__ . '/../../../markaspot_open311.module';
+
+/**
+ * Tests markaspot_open311_entity_field_access() access gating.
+ *
+ * Covers the two internal status-attribute fields:
+ * - field_status_definition (taxonomy_term / service_status): the internal
+ *   status-attribute schema, staff-only.
+ * - field_status_attributes (paragraph / status): captured internal process
+ *   data, never interactively writable.
+ *
+ * @group markaspot_open311
+ */
+class Open311EntityFieldAccessTest extends UnitTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    // AccessResult cacheability calls (addCacheContexts/cachePerPermissions)
+    // validate context tokens against the cache_contexts_manager service.
+    $cacheContextsManager = $this->createMock(CacheContextsManager::class);
+    $cacheContextsManager->method('assertValidTokens')->willReturn(TRUE);
+    $container = new ContainerBuilder();
+    $container->set('cache_contexts_manager', $cacheContextsManager);
+    \Drupal::setContainer($container);
+  }
+
+  /**
+   * Registers a FeatureFlagChecker double on the container.
+   *
+   * @param bool $enabled
+   *   The value isEnabled() should return for features.statusAttributes.
+   */
+  private function setFeatureFlag(bool $enabled): void {
+    $checker = $this->createMock(FeatureFlagChecker::class);
+    $checker->method('isEnabled')->willReturn($enabled);
+    \Drupal::getContainer()->set('markaspot_nuxt.feature_flag_checker', $checker);
+  }
+
+  /**
+   * Builds a field definition double.
+   *
+   * @param string $name
+   *   The field name.
+   * @param string $entityType
+   *   The target entity type id.
+   * @param string $bundle
+   *   The target bundle.
+   *
+   * @return \Drupal\Core\Field\FieldDefinitionInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked field definition.
+   */
+  private function fieldDefinition(string $name, string $entityType, string $bundle): FieldDefinitionInterface {
+    $definition = $this->createMock(FieldDefinitionInterface::class);
+    $definition->method('getName')->willReturn($name);
+    $definition->method('getTargetEntityTypeId')->willReturn($entityType);
+    $definition->method('getTargetBundle')->willReturn($bundle);
+    return $definition;
+  }
+
+  /**
+   * Builds an account double granting the given permissions.
+   *
+   * @param string[] $permissions
+   *   Permission strings the account holds.
+   *
+   * @return \Drupal\Core\Session\AccountInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked account.
+   */
+  private function account(array $permissions): AccountInterface {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('hasPermission')
+      ->willReturnCallback(fn(string $permission): bool => in_array($permission, $permissions, TRUE));
+    return $account;
+  }
+
+  /**
+   * Builds a service_status term field item list double.
+   *
+   * @return \Drupal\Core\Field\FieldItemListInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked item list whose getEntity() returns a TermInterface.
+   */
+  private function statusTermItems(): FieldItemListInterface {
+    $term = $this->createMock(TermInterface::class);
+    $term->method('hasField')->with('field_jurisdiction')->willReturn(FALSE);
+    $term->method('getCacheContexts')->willReturn([]);
+    $term->method('getCacheTags')->willReturn([]);
+    $term->method('getCacheMaxAge')->willReturn(-1);
+
+    $items = $this->createMock(FieldItemListInterface::class);
+    $items->method('getEntity')->willReturn($term);
+    return $items;
+  }
+
+  /**
+   * Field_status_definition is hidden from anonymous users even when enabled.
+   *
+   * Anonymous holds no permissions; the feature flag is on.
+   *
+   * @dataProvider definitionOperationProvider
+   */
+  public function testStatusDefinitionForbiddenForAnonymous(string $operation): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      $operation,
+      $this->fieldDefinition('field_status_definition', 'taxonomy_term', 'service_status'),
+      $this->account([]),
+      $this->statusTermItems(),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Field_status_definition is hidden from citizens even when enabled.
+   *
+   * An authenticated citizen with non-staff permissions still lacks
+   * 'manage dashboard notes'; the feature flag is on.
+   *
+   * @dataProvider definitionOperationProvider
+   */
+  public function testStatusDefinitionForbiddenForCitizen(string $operation): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      $operation,
+      $this->fieldDefinition('field_status_definition', 'taxonomy_term', 'service_status'),
+      // Typical citizen permissions, none of which are staff permissions.
+      $this->account(['access content', 'create field_address']),
+      $this->statusTermItems(),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Staff with 'manage dashboard notes' get access when the flag is enabled.
+   *
+   * @dataProvider definitionOperationProvider
+   */
+  public function testStatusDefinitionAllowedForStaffWhenEnabled(string $operation): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      $operation,
+      $this->fieldDefinition('field_status_definition', 'taxonomy_term', 'service_status'),
+      $this->account(['manage dashboard notes']),
+      $this->statusTermItems(),
+    );
+    $this->assertFalse($result->isForbidden(), 'Staff access is not forbidden when the flag is enabled.');
+  }
+
+  /**
+   * Staff with 'manage dashboard notes' are denied when the flag is disabled.
+   *
+   * @dataProvider definitionOperationProvider
+   */
+  public function testStatusDefinitionForbiddenForStaffWhenDisabled(string $operation): void {
+    $this->setFeatureFlag(FALSE);
+    $result = markaspot_open311_entity_field_access(
+      $operation,
+      $this->fieldDefinition('field_status_definition', 'taxonomy_term', 'service_status'),
+      $this->account(['manage dashboard notes']),
+      $this->statusTermItems(),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Platform operators ('administer taxonomy') keep access regardless of flag.
+   */
+  public function testStatusDefinitionAllowedForOperator(): void {
+    $this->setFeatureFlag(FALSE);
+    $result = markaspot_open311_entity_field_access(
+      'edit',
+      $this->fieldDefinition('field_status_definition', 'taxonomy_term', 'service_status'),
+      $this->account(['administer taxonomy']),
+      $this->statusTermItems(),
+    );
+    $this->assertFalse($result->isForbidden(), 'Operators keep taxonomy access.');
+  }
+
+  /**
+   * Field_status_attributes edit is forbidden for everyone.
+   *
+   * Even an account explicitly holding 'edit field_status_attributes' cannot
+   * write the field interactively; the dashboard controller writes it
+   * programmatically, which does not invoke hook_entity_field_access.
+   */
+  public function testStatusAttributesEditForbiddenEvenWithPermission(): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      'edit',
+      $this->fieldDefinition('field_status_attributes', 'paragraph', 'status'),
+      $this->account([
+        'edit field_status_attributes',
+        'view field_status_attributes',
+        'administer taxonomy',
+      ]),
+      NULL,
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Field_status_attributes view is forbidden without the field permission.
+   */
+  public function testStatusAttributesViewForbiddenWithoutPermission(): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('field_status_attributes', 'paragraph', 'status'),
+      $this->account([]),
+      NULL,
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Field_status_attributes view is allowed with the view field permission.
+   */
+  public function testStatusAttributesViewAllowedWithPermission(): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('field_status_attributes', 'paragraph', 'status'),
+      $this->account(['view field_status_attributes']),
+      NULL,
+    );
+    $this->assertFalse($result->isForbidden(), 'View is permitted with the field permission.');
+  }
+
+  /**
+   * Unrelated fields return a neutral result.
+   */
+  public function testUnrelatedFieldIsNeutral(): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('field_address', 'node', 'service_request'),
+      $this->account([]),
+      NULL,
+    );
+    $this->assertTrue($result->isNeutral(), 'Unrelated fields are not gated.');
+  }
+
+  /**
+   * Operations on field_status_definition under test.
+   *
+   * @return array<string, array{string}>
+   *   The view and edit operations.
+   */
+  public static function definitionOperationProvider(): array {
+    return [
+      'view' => ['view'],
+      'edit' => ['edit'],
+    ];
+  }
+
+}

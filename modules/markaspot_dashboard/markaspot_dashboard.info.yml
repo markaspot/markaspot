@@ -6,4 +6,6 @@ core_version_requirement: ^10 || ^11
 dependencies:
   - drupal:node
   - entity_reference_revisions:entity_reference_revisions
+  - markaspot_open311
+  - markaspot_nuxt
   - paragraphs:paragraphs

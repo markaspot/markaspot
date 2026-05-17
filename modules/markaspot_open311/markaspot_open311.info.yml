@@ -5,6 +5,7 @@ core_version_requirement: ^10 || ^11
 package: Mark-a-Spot
 
 dependencies:
+  - field_permissions
   - service_request
   - rest
   - services_api_key_auth

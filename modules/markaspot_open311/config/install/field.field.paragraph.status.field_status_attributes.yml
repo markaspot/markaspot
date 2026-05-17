@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.paragraph.field_status_attributes
+    - paragraphs.paragraphs_type.status
+  module:
+    - text
+id: paragraph.status.field_status_attributes
+field_name: field_status_attributes
+entity_type: paragraph
+bundle: status
+label: 'Status Attributes'
+description: 'JSON-encoded internal attributes captured during this status transition.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

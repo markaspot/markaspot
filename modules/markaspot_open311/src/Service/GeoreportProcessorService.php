@@ -2586,6 +2586,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   - 'format' (string): Text format. Defaults to 'plain_text'.
    *   - 'boilerplate_id' (int|string): Optional boilerplate node ID.
    *   - 'author_id' (int|string): Optional author user ID.
+   *   - 'status_attributes' (string): Optional JSON object with internal
+   *     status transition attributes. This is dashboard-only process data and
+   *     is intentionally not exposed by getExtendedAttributes().
    * @param string $langcode
    *   The language code for the paragraph. Defaults to site default language.
    *
@@ -2625,6 +2628,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     if (!empty($fields['boilerplate_id']) && $paragraph->hasField('field_boilerplate')) {
       $paragraph->set('field_boilerplate', $fields['boilerplate_id']);
+    }
+
+    if (array_key_exists('status_attributes', $fields) && $paragraph->hasField('field_status_attributes')) {
+      $paragraph->set('field_status_attributes', [
+        'value' => (string) $fields['status_attributes'],
+        'format' => 'plain_text',
+      ]);
     }
 
     if (!empty($fields['author_id'])) {

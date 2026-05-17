@@ -5,7 +5,9 @@ namespace Drupal\markaspot_dashboard\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
+use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -43,6 +45,7 @@ class StatusNoteController extends ControllerBase {
     EntityTypeManagerInterface $entity_type_manager,
     GeoreportProcessorServiceInterface $georeport_processor,
     AccountProxyInterface $current_user,
+    protected FeatureFlagChecker $featureFlagChecker,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->georeportProcessor = $georeport_processor;
@@ -57,6 +60,7 @@ class StatusNoteController extends ControllerBase {
       $container->get('entity_type.manager'),
       $container->get('markaspot_open311.processor'),
       $container->get('current_user'),
+      $container->get('markaspot_nuxt.feature_flag_checker'),
     );
   }
 
@@ -84,6 +88,11 @@ class StatusNoteController extends ControllerBase {
 
     if (!$node->access('update')) {
       return new JsonResponse(['error' => 'Access denied'], 403);
+    }
+
+    $statusAttributes = $this->normalizeStatusAttributes($data['status_attributes'] ?? NULL);
+    if ($statusAttributes !== NULL && !$this->statusAttributesEnabled($node)) {
+      return new JsonResponse(['error' => 'Status attributes are not enabled for this jurisdiction.'], 403);
     }
 
     // Resolve UUIDs to entity IDs.
@@ -115,6 +124,7 @@ class StatusNoteController extends ControllerBase {
       'note' => isset($data['note']) ? strip_tags($data['note']) : NULL,
       'boilerplate_id' => $boilerplateId,
       'author_id' => $this->currentUser->id(),
+      ...($statusAttributes !== NULL ? ['status_attributes' => $statusAttributes] : []),
     ], $node->language()->getId());
 
     // Link to service request.
@@ -133,6 +143,93 @@ class StatusNoteController extends ControllerBase {
   }
 
   /**
+   * Update a status note.
+   */
+  public function update(Request $request, $uuid) {
+    $paragraphs = $this->entityTypeManager->getStorage('paragraph')->loadByProperties([
+      'uuid' => $uuid,
+      'type' => 'status',
+    ]);
+
+    if (empty($paragraphs)) {
+      return new JsonResponse(['error' => 'Not found'], 404);
+    }
+
+    $paragraph = reset($paragraphs);
+    $node = $this->loadParentNode((int) $paragraph->id());
+    if (!$node) {
+      return new JsonResponse(['error' => 'Parent request not found'], 403);
+    }
+
+    if (!$node->access('update')) {
+      return new JsonResponse(['error' => 'Access denied'], 403);
+    }
+
+    $data = json_decode($request->getContent(), TRUE);
+    if (!is_array($data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body'], 400);
+    }
+
+    if (array_key_exists('status_attributes', $data)) {
+      if (!$this->statusAttributesEnabled($node)) {
+        return new JsonResponse(['error' => 'Status attributes are not enabled for this jurisdiction.'], 403);
+      }
+      if (!$paragraph->hasField('field_status_attributes')) {
+        return new JsonResponse(['error' => 'Status attributes field is not installed.'], 500);
+      }
+
+      $statusAttributes = $this->normalizeStatusAttributes($data['status_attributes']);
+      $paragraph->set('field_status_attributes', $statusAttributes === NULL
+        ? NULL
+        : ['value' => $statusAttributes, 'format' => 'plain_text']
+      );
+    }
+
+    if (array_key_exists('note', $data)) {
+      $note = is_string($data['note']) ? strip_tags($data['note']) : '';
+      $paragraph->set('field_status_note', $note === ''
+        ? NULL
+        : ['value' => $note, 'format' => 'plain_text']
+      );
+    }
+
+    if (array_key_exists('status_term_uuid', $data)) {
+      $statusTermId = NULL;
+      if (!empty($data['status_term_uuid'])) {
+        $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties([
+          'uuid' => $data['status_term_uuid'],
+          'vid' => 'service_status',
+        ]);
+        if (!empty($terms)) {
+          $statusTermId = reset($terms)->id();
+        }
+      }
+      $paragraph->set('field_status_term', $statusTermId ?? []);
+    }
+
+    if (array_key_exists('boilerplate_uuid', $data) && $paragraph->hasField('field_boilerplate')) {
+      $boilerplateId = NULL;
+      if (!empty($data['boilerplate_uuid'])) {
+        $boilerplates = $this->entityTypeManager->getStorage('node')->loadByProperties([
+          'uuid' => $data['boilerplate_uuid'],
+          'type' => 'boilerplate',
+        ]);
+        if (!empty($boilerplates)) {
+          $boilerplateId = reset($boilerplates)->id();
+        }
+      }
+      $paragraph->set('field_boilerplate', $boilerplateId ?? []);
+    }
+
+    $paragraph->save();
+
+    return new JsonResponse([
+      'status' => 'success',
+      'uuid' => $paragraph->uuid(),
+    ]);
+  }
+
+  /**
    * Delete a status note.
    */
   public function delete($uuid) {
@@ -148,18 +245,11 @@ class StatusNoteController extends ControllerBase {
     $paragraph = reset($paragraphs);
     $paragraph_id = $paragraph->id();
 
-    // Find parent node.
-    $query = $this->entityTypeManager->getStorage('node')->getQuery()
-      ->condition('type', 'service_request')
-      ->condition('field_status_notes.target_id', $paragraph_id)
-      ->accessCheck(TRUE);
-    $nids = $query->execute();
+    $node = $this->loadParentNode((int) $paragraph_id);
 
-    if (empty($nids)) {
+    if (!$node) {
       return new JsonResponse(['error' => 'Parent request not found'], 403);
     }
-
-    $node = $this->entityTypeManager->getStorage('node')->load(reset($nids));
 
     if (!$node->access('update')) {
       return new JsonResponse(['error' => 'Access denied'], 403);
@@ -174,6 +264,58 @@ class StatusNoteController extends ControllerBase {
     $paragraph->delete();
 
     return new JsonResponse(['status' => 'success']);
+  }
+
+  /**
+   * Load the service request that owns a status paragraph.
+   */
+  private function loadParentNode(int $paragraph_id): ?NodeInterface {
+    $query = $this->entityTypeManager->getStorage('node')->getQuery()
+      ->condition('type', 'service_request')
+      ->condition('field_status_notes.target_id', $paragraph_id)
+      ->accessCheck(TRUE);
+    $nids = $query->execute();
+
+    if (empty($nids)) {
+      return NULL;
+    }
+
+    return $this->entityTypeManager->getStorage('node')->load(reset($nids));
+  }
+
+  /**
+   * Normalize status attributes to a JSON object string.
+   */
+  private function normalizeStatusAttributes(mixed $raw): ?string {
+    if ($raw === NULL || $raw === '' || $raw === []) {
+      return NULL;
+    }
+
+    if (is_string($raw)) {
+      $decoded = json_decode($raw, TRUE);
+      if (!is_array($decoded)) {
+        return NULL;
+      }
+      $raw = $decoded;
+    }
+
+    if (!is_array($raw)) {
+      return NULL;
+    }
+
+    if (array_is_list($raw)) {
+      return NULL;
+    }
+
+    return json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+  }
+
+  /**
+   * Checks the operator-controlled tenant capability for status attributes.
+   */
+  private function statusAttributesEnabled(NodeInterface $node): bool {
+    $jurisdiction = $this->featureFlagChecker->resolveJurisdictionForNode($node);
+    return $this->featureFlagChecker->isEnabled('features.statusAttributes', $jurisdiction, FALSE);
   }
 
 }

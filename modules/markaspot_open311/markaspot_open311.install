@@ -18,6 +18,92 @@ function markaspot_open311_install(): void {
     $role->grantPermission('create field_request_attributes');
     $role->save();
   }
+
+  _markaspot_open311_configure_status_attribute_surfaces();
+}
+
+/**
+ * Configures UI, permissions, and JSON:API exposure for status attributes.
+ *
+ * @return string[]
+ *   Human-readable messages about changed configuration.
+ */
+function _markaspot_open311_configure_status_attribute_surfaces(): array {
+  $messages = [];
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  if ($entity_type_manager->getStorage('field_config')->load('taxonomy_term.service_status.field_status_definition')) {
+    $status_form_display = $entity_type_manager->getStorage('entity_form_display')
+      ->load('taxonomy_term.service_status.default');
+    if ($status_form_display) {
+      $status_form_display->setComponent('field_status_definition', [
+        'type' => 'status_definition_json_form',
+        'weight' => 20,
+      ])->save();
+      $messages[] = 'Added status_definition_json_form widget to service_status form display.';
+    }
+  }
+
+  if ($entity_type_manager->getStorage('field_config')->load('paragraph.status.field_status_attributes')) {
+    $paragraph_form_display = $entity_type_manager->getStorage('entity_form_display')
+      ->load('paragraph.status.default');
+    if ($paragraph_form_display) {
+      $paragraph_form_display->removeComponent('field_status_attributes')->save();
+      $messages[] = 'Hid field_status_attributes from the Drupal paragraph form.';
+    }
+  }
+
+  $role_storage = $entity_type_manager->getStorage('user_role');
+  // Staff roles need create/edit to persist captured attributes through the
+  // Entity API (field_permissions "custom" gates every operation), plus view
+  // to read them back. Granting view alone silently drops staff writes.
+  $attribute_permissions = [
+    'view field_status_attributes',
+    'create field_status_attributes',
+    'edit field_status_attributes',
+  ];
+  foreach (['moderator', 'editorial_board', 'tenant_admin'] as $role_id) {
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      continue;
+    }
+    $role_changed = FALSE;
+    foreach ($attribute_permissions as $permission) {
+      if (!$role->hasPermission($permission)) {
+        $role->grantPermission($permission);
+        $messages[] = "Granted $role_id $permission permission.";
+        $role_changed = TRUE;
+      }
+    }
+    if ($role_changed) {
+      $role->save();
+    }
+  }
+
+  $config_factory = \Drupal::configFactory();
+  $status_resource = $config_factory->getEditable('jsonapi_extras.jsonapi_resource_config.taxonomy_term--service_status');
+  if (!$status_resource->isNew()) {
+    $status_resource->set('resourceFields.field_status_definition', [
+      'disabled' => FALSE,
+      'fieldName' => 'field_status_definition',
+      'publicName' => 'field_status_definition',
+      'enhancer' => ['id' => ''],
+    ])->save();
+    $messages[] = 'Exposed field_status_definition on the service_status JSON:API resource.';
+  }
+
+  $paragraph_resource = $config_factory->getEditable('jsonapi_extras.jsonapi_resource_config.paragraph--status');
+  if (!$paragraph_resource->isNew()) {
+    $paragraph_resource->set('resourceFields.field_status_attributes', [
+      'disabled' => FALSE,
+      'fieldName' => 'field_status_attributes',
+      'publicName' => 'field_status_attributes',
+      'enhancer' => ['id' => ''],
+    ])->save();
+    $messages[] = 'Exposed field_status_attributes on the status paragraph JSON:API resource.';
+  }
+
+  return $messages;
 }
 
 /**
@@ -297,4 +383,69 @@ function markaspot_open311_update_11808(): TranslatableMarkup {
   }
   $role->grantPermission('access open311 full export')->save();
   return t('Granted "access open311 full export" to the editorial_board role.');
+}
+
+/**
+ * Add gated internal status definition and status attribute fields.
+ */
+function markaspot_open311_update_11809(): TranslatableMarkup {
+  $messages = [];
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $field_storage = $entity_type_manager->getStorage('field_storage_config');
+  $field_config = $entity_type_manager->getStorage('field_config');
+
+  if (!$field_storage->load('taxonomy_term.field_status_definition')) {
+    $field_storage->create([
+      'field_name' => 'field_status_definition',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'text_long',
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ])->save();
+    $messages[] = 'Created field_status_definition storage.';
+  }
+
+  if (!$field_config->load('taxonomy_term.service_status.field_status_definition')) {
+    $field_config->create([
+      'field_name' => 'field_status_definition',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => 'service_status',
+      'label' => 'Status Definition Attributes',
+      'description' => 'Internal process attributes to capture when this status is selected.',
+      'required' => FALSE,
+      'translatable' => TRUE,
+    ])->save();
+    $messages[] = 'Created field_status_definition on service_status.';
+  }
+
+  if (!$field_storage->load('paragraph.field_status_attributes')) {
+    $storage = $field_storage->create([
+      'field_name' => 'field_status_attributes',
+      'entity_type' => 'paragraph',
+      'type' => 'text_long',
+      'cardinality' => 1,
+      'translatable' => FALSE,
+    ]);
+    $storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom');
+    $storage->save();
+    $messages[] = 'Created field_status_attributes storage with custom permissions.';
+  }
+
+  if (!$field_config->load('paragraph.status.field_status_attributes')) {
+    $field_config->create([
+      'field_name' => 'field_status_attributes',
+      'entity_type' => 'paragraph',
+      'bundle' => 'status',
+      'label' => 'Status Attributes',
+      'description' => 'JSON-encoded internal attributes captured during this status transition.',
+      'required' => FALSE,
+    ])->save();
+    $messages[] = 'Created field_status_attributes on status paragraphs.';
+  }
+
+  $messages = array_merge($messages, _markaspot_open311_configure_status_attribute_surfaces());
+
+  return new TranslatableMarkup('@messages', [
+    '@messages' => implode(' ', $messages) ?: 'Status attribute fields already installed.',
+  ]);
 }

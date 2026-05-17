@@ -5,7 +5,13 @@
  * Contains markaspot_open311.module.
  */
 
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Session\AccountInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\taxonomy\TermInterface;
 
 /**
  * Implements hook_help().
@@ -28,4 +34,97 @@ function markaspot_open311_theme() {
   $theme = [];
 
   return $theme;
+}
+
+/**
+ * Implements hook_entity_field_access().
+ */
+function markaspot_open311_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
+  // field_status_attributes stores internal process data on status paragraphs.
+  // field_permissions already gates it, but a misconfiguration there would
+  // leak captured values through JSON:API. This fail-closed branch hard-denies
+  // view/edit for anyone lacking the explicit field permission, independent of
+  // field_permissions, so internal data can never reach citizens.
+  if (
+    in_array($operation, ['view', 'edit'], TRUE)
+    && $field_definition->getName() === 'field_status_attributes'
+    && $field_definition->getTargetEntityTypeId() === 'paragraph'
+    && $field_definition->getTargetBundle() === 'status'
+  ) {
+    // The feature-flag gate for status attributes lives in
+    // StatusNoteController, which is the only legitimate writer. It persists
+    // the field programmatically via Paragraph::set()/save(), and programmatic
+    // set/save do not invoke hook_entity_field_access. Interactive writes
+    // (JSON:API PATCH on paragraph--status, entity forms) would otherwise
+    // bypass that controller-side flag check entirely, so edit is hard-denied
+    // here for everyone regardless of permission or feature flag.
+    if ($operation === 'edit') {
+      return AccessResult::forbidden('Status attributes are written programmatically by the dashboard status-note endpoint only.')
+        ->addCacheContexts(['user.permissions']);
+    }
+    if (!$account->hasPermission('view field_status_attributes')) {
+      return AccessResult::forbidden('Internal status attributes require explicit field access.')
+        ->addCacheContexts(['user.permissions']);
+    }
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  if (
+    !in_array($operation, ['view', 'edit'], TRUE)
+    || $field_definition->getName() !== 'field_status_definition'
+    || $field_definition->getTargetEntityTypeId() !== 'taxonomy_term'
+    || $field_definition->getTargetBundle() !== 'service_status'
+  ) {
+    return AccessResult::neutral();
+  }
+
+  // Platform operators keep normal taxonomy access so they can prepare tenant
+  // definitions before enabling the tenant-facing feature flag.
+  if ($account->hasPermission('administer taxonomy')) {
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  // field_status_definition holds the internal status-attribute schema. It is
+  // staff-only: non-operators must hold the dashboard-staff permission
+  // 'manage dashboard notes'. Anonymous and citizen accounts never qualify,
+  // so they can never read or write the definition through JSON:API even when
+  // the tenant has opted into the feature.
+  if (!$account->hasPermission('manage dashboard notes')) {
+    return AccessResult::forbidden('Internal status definitions are restricted to dashboard staff.')
+      ->addCacheContexts(['user.permissions']);
+  }
+
+  if ($items === NULL || !$items->getEntity() instanceof TermInterface) {
+    return AccessResult::forbidden()
+      ->addCacheContexts(['user.permissions']);
+  }
+
+  $term = $items->getEntity();
+  $jurisdiction = _markaspot_open311_term_jurisdiction($term);
+  /** @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $feature_checker */
+  $feature_checker = \Drupal::service('markaspot_nuxt.feature_flag_checker');
+  $enabled = $feature_checker->isEnabled('features.statusAttributes', $jurisdiction, FALSE);
+
+  $result = $enabled ? AccessResult::neutral() : AccessResult::forbidden();
+  $result
+    ->addCacheableDependency($term)
+    ->addCacheContexts(['user.permissions']);
+
+  if ($jurisdiction) {
+    $result->addCacheableDependency($jurisdiction);
+  }
+
+  return $result;
+}
+
+/**
+ * Resolves the jurisdiction group from a taxonomy term.
+ */
+function _markaspot_open311_term_jurisdiction(TermInterface $term): ?GroupInterface {
+  if (!$term->hasField('field_jurisdiction') || $term->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  $entity = $term->get('field_jurisdiction')->entity;
+  return $entity instanceof GroupInterface ? $entity : NULL;
 }

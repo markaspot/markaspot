@@ -99,6 +99,15 @@ markaspot_dashboard.status_note_delete:
   requirements:
     _permission: 'manage dashboard notes'
 
+markaspot_dashboard.status_note_update:
+  path: '/api/dashboard/status-notes/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\StatusNoteController::update'
+    _format: 'json'
+  methods: [PATCH]
+  requirements:
+    _permission: 'manage dashboard notes'
+
 # Internal Remarks API (Staff/Dashboard feature)
 markaspot_dashboard.internal_remark_create:
   path: '/api/dashboard/internal-remarks'

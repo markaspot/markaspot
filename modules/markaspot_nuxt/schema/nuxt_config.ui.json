@@ -115,6 +115,11 @@
           "description": "Explicit tenant opt-in for presave PII redaction"
         }
       },
+      "statusAttributes": {
+        "ui:options": {
+          "description": "Operator-only opt-in for internal status transition fields"
+        }
+      },
       "feedback": {
         "ui:options": {
           "description": "Allow feedback on responses"

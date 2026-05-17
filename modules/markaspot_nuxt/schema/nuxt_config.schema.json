@@ -164,6 +164,12 @@
           "description": "Explicit opt-in for markaspot_ai presave PII redaction. Separate from embeddings and duplicate detection.",
           "default": false
         },
+        "statusAttributes": {
+          "type": "boolean",
+          "title": "Status Attributes",
+          "description": "Operator-only opt-in for internal structured fields on status transitions.",
+          "default": false
+        },
         "feedback": {
           "type": "boolean",
           "title": "Feedback",
