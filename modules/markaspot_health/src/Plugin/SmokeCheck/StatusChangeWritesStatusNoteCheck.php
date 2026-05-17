@@ -493,6 +493,17 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
    * coord lands inside whatever tenant `discoverFixture()` resolved to —
    * earlier hardcoded Rotterdam coords broke the smoke on Amsterdam,
    * Utrecht, BCP, etc.
+   *
+   * After save, the node is bound to its jurisdiction's `jur` group via a
+   * `group_node:service_request` relationship. The GeoReport submission
+   * pipeline (markaspot_group hook_node_insert + reconciler) creates that
+   * binding for real requests; the entity-API create here can miss it on a
+   * strict multi-tenant tenant, leaving the node ungrouped. The subsequent
+   * update POST resolves the request through GeoreportProcessorService's
+   * jurisdiction-scoped query, which only returns grouped content — so an
+   * ungrouped fixture 404s ("Service request not found.") even though the
+   * release is sound. ensureJurisdictionRelationship() makes the fixture
+   * match a real request before the update is issued.
    */
   protected function createServiceRequestNode(array $fixture, string $runId) {
     $title = sprintf('SMOKE-%s-status-note', $runId);
@@ -526,12 +537,47 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
       }
       $node = $this->entityTypeManager->getStorage('node')->create($values);
       $node->save();
+      $this->ensureJurisdictionRelationship($node, (int) $fixture['jurisdiction_id']);
       return $node;
     }
     catch (\Throwable $e) {
       $this->lastCreateError = $e::class . ': ' . substr($e->getMessage(), 0, 240);
       return NULL;
     }
+  }
+
+  /**
+   * Binds the test node to its jurisdiction group like a real request.
+   *
+   * Mirrors GroupIntegrityChecker::createServiceRequestRelationship(): the
+   * canonical node ↔ jurisdiction binding is a `group_node:service_request`
+   * group_relationship row. Idempotent — when markaspot_group's hooks already
+   * materialised the relationship (the common case on a single-root tenant),
+   * the existence check short-circuits and nothing is created.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The saved service_request node.
+   * @param int $jurisdictionId
+   *   The `jur` group id the node's field_jurisdiction points to.
+   */
+  protected function ensureJurisdictionRelationship($node, int $jurisdictionId): void {
+    if ($jurisdictionId <= 0 || !$this->entityTypeManager->hasDefinition('group')) {
+      return;
+    }
+    $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');
+    $existing = $relationshipStorage->loadByProperties([
+      'entity_id' => $node->id(),
+      'gid' => $jurisdictionId,
+      'plugin_id' => 'group_node:service_request',
+    ]);
+    if ($existing !== []) {
+      return;
+    }
+    $group = $this->entityTypeManager->getStorage('group')->load($jurisdictionId);
+    if ($group === NULL || $group->bundle() !== $this->jurisdictionGroupType()) {
+      return;
+    }
+    $group->addRelationship($node, 'group_node:service_request');
   }
 
   /**
