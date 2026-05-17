@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_nuxt\Unit;
 
 use Psr\Log\LoggerInterface;
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -13,6 +14,7 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
@@ -20,7 +22,6 @@ use Drupal\Component\Utility\EmailValidator;
 use Drupal\file\FileRepositoryInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembership;
-use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\TenantSettingsController;
 use Drupal\Tests\UnitTestCase;
@@ -50,11 +51,18 @@ class TenantSettingsControllerTest extends UnitTestCase {
   protected EntityStorageInterface $groupStorage;
 
   /**
-   * The mocked membership loader.
+   * Mocked group_relationship storage for GroupMembership::loadByUser().
    *
-   * @var \Drupal\group\GroupMembershipLoaderInterface|\PHPUnit\Framework\MockObject\MockObject
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
    */
-  protected GroupMembershipLoaderInterface $membershipLoader;
+  protected EntityStorageInterface $groupRelationshipStorage;
+
+  /**
+   * The mocked chained membership cache backing GroupMembership::loadByUser().
+   *
+   * @var \Drupal\Core\Cache\CacheBackendInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected CacheBackendInterface $membershipCache;
 
   /**
    * The mocked stream wrapper manager.
@@ -105,15 +113,18 @@ class TenantSettingsControllerTest extends UnitTestCase {
     parent::setUp();
 
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
+    $this->groupRelationshipStorage = $this->createMock(EntityStorageInterface::class);
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->entityTypeManager->method('getStorage')
       ->willReturnCallback(fn(string $type) => match ($type) {
         'group' => $this->groupStorage,
+        'group_relationship' => $this->groupRelationshipStorage,
         'file' => $this->createMock(EntityStorageInterface::class),
         default => $this->createMock(EntityStorageInterface::class),
       });
 
-    $this->membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
+    $this->membershipCache = $this->createMock(CacheBackendInterface::class);
+
     $this->streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
     $this->fileSystem = $this->createMock(FileSystemInterface::class);
     $this->fileRepository = $this->createMock(FileRepositoryInterface::class);
@@ -134,7 +145,6 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $container = new ContainerBuilder();
     $container->set('config.factory', $configFactory);
     $container->set('entity_type.manager', $this->entityTypeManager);
-    $container->set('group.membership_loader', $this->membershipLoader);
     $container->set('stream_wrapper_manager', $this->streamWrapperManager);
     $container->set('file_system', $this->fileSystem);
     $container->set('file.repository', $this->fileRepository);
@@ -142,6 +152,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
     $container->set('email.validator', $emailValidator);
     $container->set('cache_contexts_manager', $cacheContextsManager);
+    $container->set('cache.group_memberships_chained', $this->membershipCache);
 
     // Logger factory for $this->getLogger() calls in the controller.
     $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
@@ -151,6 +162,25 @@ class TenantSettingsControllerTest extends UnitTestCase {
     \Drupal::setContainer($container);
 
     $this->controller = TenantSettingsController::create($container);
+  }
+
+  /**
+   * Stubs the static GroupMembership::loadByUser() to yield given memberships.
+   *
+   * AccessCheck() resolves tenant_admin memberships through the group module's
+   * static GroupMembership::loadByUser(), which reads the
+   * cache.group_memberships_chained backend and the group_relationship storage.
+   * Priming a cache hit lets that static API return the supplied test doubles
+   * without bootstrapping the full group module.
+   *
+   * @param array $memberships
+   *   The group membership doubles loadByUser() should return.
+   */
+  private function stubMemberships(array $memberships): void {
+    $this->membershipCache->method('get')
+      ->willReturn((object) ['data' => $memberships ? [1] : []]);
+    $this->groupRelationshipStorage->method('loadMultiple')
+      ->willReturn($memberships);
   }
 
   /**
@@ -294,9 +324,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $membership = $this->createMock(GroupMembership::class);
     $membership->method('getGroup')->willReturn($memberGroup);
 
-    $this->membershipLoader->method('loadByUser')
-      ->with($account, ['jur-tenant_admin'])
-      ->willReturn([$membership]);
+    $this->stubMemberships([$membership]);
 
     // Group 14 descendants include itself.
     $this->hierarchyResolver->method('getDescendantIds')
@@ -326,9 +354,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $membership = $this->createMock(GroupMembership::class);
     $membership->method('getGroup')->willReturn($parentGroup);
 
-    $this->membershipLoader->method('loadByUser')
-      ->with($account, ['jur-tenant_admin'])
-      ->willReturn([$membership]);
+    $this->stubMemberships([$membership]);
 
     // Group 10 descendants include 14.
     $this->hierarchyResolver->method('getDescendantIds')
@@ -358,9 +384,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $membership = $this->createMock(GroupMembership::class);
     $membership->method('getGroup')->willReturn($otherGroup);
 
-    $this->membershipLoader->method('loadByUser')
-      ->with($account, ['jur-tenant_admin'])
-      ->willReturn([$membership]);
+    $this->stubMemberships([$membership]);
 
     // Group 20 descendants do not include 14.
     $this->hierarchyResolver->method('getDescendantIds')
@@ -389,9 +413,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $membership = $this->createMock(GroupMembership::class);
     $membership->method('getGroup')->willReturn($orgGroup);
 
-    $this->membershipLoader->method('loadByUser')
-      ->with($account, ['jur-tenant_admin'])
-      ->willReturn([$membership]);
+    $this->stubMemberships([$membership]);
 
     $this->hierarchyResolver->expects($this->never())
       ->method('getDescendantIds');
@@ -1582,7 +1604,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
       ->with(
         $this->isType('string'),
         'public://jurisdictions/14/logos/logo.png',
-        FileSystemInterface::EXISTS_REPLACE,
+        FileExists::Replace,
       )
       ->willReturn('public://jurisdictions/14/logos/logo.png');
     $method = new \ReflectionMethod($this->controller, 'saveLogoPngFallback');
