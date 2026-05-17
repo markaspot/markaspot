@@ -335,6 +335,153 @@ function _markaspot_tenant_admin_validate_jurisdiction(array &$form, FormStateIn
 }
 
 /**
+ * Implements hook_entity_access().
+ *
+ * Tenant admins and moderators keep Drupal's global `edit any request_image
+ * media` permission so JSON:API can update request media. Media entities are
+ * not group-scoped, so scope update access through the service_request nodes
+ * that reference the media item.
+ *
+ * Scope notes:
+ *  - Only the `update` operation is gated. `delete` is intentionally not
+ *    covered: no tenant-scoped role holds `delete any request_image media`,
+ *    so core's media access handler already denies it at the permission
+ *    layer. `view` is left to core; see the parent service_request node
+ *    access for the read path.
+ *  - Access is granted only when *every* parent service_request lies in a
+ *    managed jurisdiction. A `forbidden` result overrides any `allowed` from
+ *    other modules, so this deliberately fails closed for media shared
+ *    across jurisdictions rather than leaking a cross-tenant edit.
+ */
+function markaspot_tenant_admin_entity_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  if (
+    $operation !== 'update'
+    || $entity->getEntityTypeId() !== 'media'
+    || $entity->bundle() !== 'request_image'
+  ) {
+    return AccessResult::neutral();
+  }
+
+  if (!$account->hasPermission('edit any request_image media')) {
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  // Global staff roles keep core media access. The jurisdiction guard below is
+  // only for tenant-scoped operational roles that otherwise inherit a global
+  // media permission.
+  if ($account->hasPermission('administer media') || $account->hasPermission('bypass node access')) {
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  $scoped_roles = ['tenant_admin', 'moderator'];
+  if (empty(array_intersect($scoped_roles, $account->getRoles()))) {
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  return _markaspot_tenant_admin_request_image_media_update_access($entity, $account);
+}
+
+/**
+ * Checks request_image media update access against parent request jurisdiction.
+ */
+function _markaspot_tenant_admin_request_image_media_update_access(EntityInterface $entity, AccountInterface $account): AccessResult {
+  $media_id = (int) $entity->id();
+  if ($media_id <= 0) {
+    // Unreachable for the `update` operation (the entity is always saved),
+    // but fail closed to stay consistent with the other guard clauses.
+    return _markaspot_tenant_admin_request_image_media_access_result(
+      AccessResult::forbidden('Unsaved request image media cannot be scoped to a jurisdiction.')
+    );
+  }
+
+  $allowed_jur_ids = TenantAdminHelper::getUserPublishCapableJurisdictionIds($account);
+  if ($allowed_jur_ids === []) {
+    return _markaspot_tenant_admin_request_image_media_access_result(
+      AccessResult::forbidden('No manageable jurisdiction could be resolved for this account.')
+    );
+  }
+
+  $total_parent_count = _markaspot_tenant_admin_count_request_media_parents($media_id);
+  $allowed_parent_count = _markaspot_tenant_admin_count_request_media_parents($media_id, $allowed_jur_ids);
+
+  if ($total_parent_count === NULL || $allowed_parent_count === NULL) {
+    return _markaspot_tenant_admin_request_image_media_access_result(
+      AccessResult::forbidden('Could not verify request image media jurisdiction.')
+    );
+  }
+
+  if ($total_parent_count > 0 && $allowed_parent_count === $total_parent_count) {
+    return _markaspot_tenant_admin_request_image_media_access_result(
+      AccessResult::allowed('Request image media is scoped to a manageable jurisdiction.')
+    );
+  }
+
+  \Drupal::logger('markaspot_tenant_admin')->warning(
+    'User uid @uid attempted to update request_image media @mid outside their managed jurisdictions.',
+    ['@uid' => $account->id(), '@mid' => $media_id]
+  );
+
+  return _markaspot_tenant_admin_request_image_media_access_result(
+    AccessResult::forbidden('Request image media is not scoped to a manageable jurisdiction.')
+  );
+}
+
+/**
+ * Counts service request nodes referencing a request_image media item.
+ *
+ * @param int $media_id
+ *   The media entity ID.
+ * @param int[]|null $jurisdiction_ids
+ *   Optional jurisdiction IDs to constrain the parent service requests.
+ *
+ * @return int|null
+ *   The count, or NULL when the query could not be executed.
+ */
+function _markaspot_tenant_admin_count_request_media_parents(int $media_id, ?array $jurisdiction_ids = NULL): ?int {
+  try {
+    // accessCheck(FALSE) is deliberate: this query *is* the access-control
+    // mechanism. Running node access on it would be circular and could hide
+    // parents the actor cannot view, undercounting the total and producing a
+    // false `allowed`.
+    $query = \Drupal::entityQuery('node')
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('field_request_media', $media_id)
+      ->count();
+
+    if ($jurisdiction_ids !== NULL) {
+      if ($jurisdiction_ids === []) {
+        return 0;
+      }
+      $query->condition('field_jurisdiction', array_values(array_unique(array_map('intval', $jurisdiction_ids))), 'IN');
+    }
+
+    return (int) $query->execute();
+  }
+  catch (\Exception $exception) {
+    \Drupal::logger('markaspot_tenant_admin')->warning(
+      'Could not check request_image media parent scope: @message',
+      ['@message' => $exception->getMessage()]
+    );
+    return NULL;
+  }
+}
+
+/**
+ * Adds cacheability common to request_image media access decisions.
+ *
+ * The decision depends on the *set* of parent service_request nodes and their
+ * field_jurisdiction, none of which is reflected in the media entity's cache
+ * tags. Rather than invalidating on a broad node_list:service_request tag, the
+ * result is kept uncacheable: the two COUNT queries are cheap and max-age 0
+ * also closes the membership-revocation window for free. cachePerPermissions()
+ * and cache contexts would be inert here, so they are intentionally omitted.
+ */
+function _markaspot_tenant_admin_request_image_media_access_result(AccessResult $result): AccessResult {
+  return $result->setCacheMaxAge(0);
+}
+
+/**
  * Implements hook_entity_field_access().
  *
  * Grants jurisdiction-scoped write access to the node 'status' field
