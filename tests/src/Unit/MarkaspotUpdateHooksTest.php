@@ -2,6 +2,7 @@
 
 namespace Drupal\Tests\markaspot\Unit;
 
+use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ImmutableConfig;
@@ -25,9 +26,15 @@ use Psr\Log\LoggerInterface;
  */
 class MarkaspotUpdateHooksModuleInstallerDouble {
 
+  /**
+   *
+   */
   public function install(array $modules): void {
   }
 
+  /**
+   *
+   */
   public function uninstall(array $modules): void {
   }
 
@@ -38,17 +45,29 @@ class MarkaspotUpdateHooksModuleInstallerDouble {
  */
 class MarkaspotUpdateHooksGroupDouble {
 
+  /**
+   *
+   */
   public function hasField(string $field): bool {
     return FALSE;
   }
 
+  /**
+   *
+   */
   public function set(string $field, mixed $value): static {
     return $this;
   }
 
+  /**
+   *
+   */
   public function save(): void {
   }
 
+  /**
+   *
+   */
   public function label(): string {
     return '';
   }
@@ -60,6 +79,9 @@ class MarkaspotUpdateHooksGroupDouble {
  */
 class MarkaspotUpdateHooksPermissionHandlerDouble {
 
+  /**
+   *
+   */
   public function getPermissions(): array {
     return [];
   }
@@ -597,7 +619,7 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     // Permission handler: return all permissions from the YAML as valid.
     $yamlFile = $profilePath . '/config/install/user.role.tenant_admin.yml';
     $this->assertFileExists($yamlFile, 'tenant_admin YAML config must exist');
-    $yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents($yamlFile));
+    $yaml = Yaml::decode(file_get_contents($yamlFile));
     $yamlPerms = $yaml['permissions'] ?? [];
 
     $permissionHandler = $this->getMockBuilder(MarkaspotUpdateHooksPermissionHandlerDouble::class)
@@ -645,7 +667,7 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
       ->willReturn($profilePath);
 
     $yamlFile = $profilePath . '/config/install/user.role.tenant_admin.yml';
-    $yaml = \Drupal\Component\Serialization\Yaml::decode(file_get_contents($yamlFile));
+    $yaml = Yaml::decode(file_get_contents($yamlFile));
     $yamlPerms = $yaml['permissions'] ?? [];
     $allPermsKeyed = array_fill_keys($yamlPerms, ['title' => 'test']);
 
@@ -946,6 +968,108 @@ class MarkaspotUpdateHooksTest extends UnitTestCase {
     $result = markaspot_update_11918();
 
     $this->assertSame('Anonymous role not found; no permissions changed.', $result);
+  }
+
+  /**
+   * Tests that 11917 revokes citizen and grants staff internal remark access.
+   */
+  public function testUpdate11917RevokesCitizenAndGrantsStaffInternalRemarkAccess(): void {
+    $authenticated = $this->createMock(RoleInterface::class);
+    $authenticated->method('hasPermission')
+      ->willReturnCallback(static fn(string $permission): bool => $permission === 'view own field_internal_remark');
+    $authenticated->expects($this->once())
+      ->method('revokePermission')
+      ->with('view own field_internal_remark')
+      ->willReturnSelf();
+    $authenticated->expects($this->once())->method('save');
+
+    $grantedPermissions = [];
+    $makeStaffRole = function () use (&$grantedPermissions) {
+      $role = $this->createMock(RoleInterface::class);
+      $role->method('hasPermission')->willReturn(FALSE);
+      $role->method('grantPermission')
+        ->willReturnCallback(function (string $permission) use (&$grantedPermissions, $role) {
+          $grantedPermissions[] = $permission;
+          return $role;
+        });
+      $role->expects($this->once())->method('save');
+      return $role;
+    };
+    $roles = [
+      'authenticated' => $authenticated,
+      'tenant_admin' => $makeStaffRole(),
+      'editorial_board' => $makeStaffRole(),
+      'moderator' => $makeStaffRole(),
+    ];
+
+    $roleStorage = $this->createMock(EntityStorageInterface::class);
+    $roleStorage->method('load')
+      ->willReturnCallback(static fn($id) => $roles[$id] ?? NULL);
+
+    $this->entityTypeManager->method('getStorage')
+      ->with('user_role')
+      ->willReturn($roleStorage);
+
+    $result = markaspot_update_11917();
+
+    $this->assertSame(
+      ['view field_internal_remark', 'view field_internal_remark', 'view field_internal_remark'],
+      $grantedPermissions
+    );
+    $this->assertStringContainsString('revoked own internal remark access', $result);
+    $this->assertStringContainsString('granted internal remark access to tenant_admin, editorial_board, moderator', $result);
+  }
+
+  /**
+   * Tests that 11917 is idempotent when the roles are already aligned.
+   */
+  public function testUpdate11917SkipsWhenRolesAlreadyAligned(): void {
+    $authenticated = $this->createMock(RoleInterface::class);
+    $authenticated->method('hasPermission')->willReturn(FALSE);
+    $authenticated->expects($this->never())->method('revokePermission');
+    $authenticated->expects($this->never())->method('save');
+
+    $makeAlignedRole = function () {
+      $role = $this->createMock(RoleInterface::class);
+      $role->method('hasPermission')->willReturn(TRUE);
+      $role->expects($this->never())->method('grantPermission');
+      $role->expects($this->never())->method('save');
+      return $role;
+    };
+    $roles = [
+      'authenticated' => $authenticated,
+      'tenant_admin' => $makeAlignedRole(),
+      'editorial_board' => $makeAlignedRole(),
+      'moderator' => $makeAlignedRole(),
+    ];
+
+    $roleStorage = $this->createMock(EntityStorageInterface::class);
+    $roleStorage->method('load')
+      ->willReturnCallback(static fn($id) => $roles[$id] ?? NULL);
+
+    $this->entityTypeManager->method('getStorage')
+      ->with('user_role')
+      ->willReturn($roleStorage);
+
+    $result = markaspot_update_11917();
+
+    $this->assertSame('Internal remark role permissions already aligned.', $result);
+  }
+
+  /**
+   * Tests that 11917 returns early when the roles are missing.
+   */
+  public function testUpdate11917SkipsWhenRolesAreMissing(): void {
+    $roleStorage = $this->createMock(EntityStorageInterface::class);
+    $roleStorage->method('load')->willReturn(NULL);
+
+    $this->entityTypeManager->method('getStorage')
+      ->with('user_role')
+      ->willReturn($roleStorage);
+
+    $result = markaspot_update_11917();
+
+    $this->assertSame('Internal remark role permissions already aligned.', $result);
   }
 
 }

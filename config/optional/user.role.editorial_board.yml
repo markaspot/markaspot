@@ -127,6 +127,7 @@ permissions:
   - 'view field_attachment'
   - 'view field_boilerplate'
   - 'view field_e_mail'
+  - 'view field_internal_remark'
   - 'view field_notes'
   - 'view field_priority'
   - 'view field_service_provider'

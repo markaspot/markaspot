@@ -2046,6 +2046,36 @@ function markaspot_update_11916(): string {
 }
 
 /**
+ * Restrict internal remark visibility to staff roles.
+ */
+function markaspot_update_11917(): string {
+  $changes = [];
+
+  $authenticated = Role::load('authenticated');
+  if ($authenticated && $authenticated->hasPermission('view own field_internal_remark')) {
+    $authenticated->revokePermission('view own field_internal_remark')->save();
+    $changes[] = 'revoked own internal remark access from authenticated users';
+  }
+
+  $permission = 'view field_internal_remark';
+  $granted = [];
+  foreach (['tenant_admin', 'editorial_board', 'moderator'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role || $role->hasPermission($permission)) {
+      continue;
+    }
+    $role->grantPermission($permission)->save();
+    $granted[] = $role_id;
+  }
+
+  if ($granted !== []) {
+    $changes[] = 'granted internal remark access to ' . implode(', ', $granted);
+  }
+
+  return $changes ? implode('; ', $changes) . '.' : 'Internal remark role permissions already aligned.';
+}
+
+/**
  * Restore anonymous public report submission permissions.
  */
 function markaspot_update_11918(): string {

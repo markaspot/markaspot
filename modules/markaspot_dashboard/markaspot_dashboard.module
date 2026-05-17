@@ -1,0 +1,73 @@
+<?php
+
+/**
+ * @file
+ * Access hooks for the Mark-a-Spot dashboard module.
+ */
+
+use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Access\AccessResultInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Session\AccountInterface;
+
+/**
+ * Implements hook_entity_access().
+ */
+function markaspot_dashboard_entity_access(EntityInterface $entity, $operation, AccountInterface $account): AccessResultInterface {
+  if ($entity->getEntityTypeId() !== 'paragraph' || $entity->bundle() !== 'internal_remark') {
+    return AccessResult::neutral();
+  }
+
+  $permissions = [
+    'view' => 'view field_internal_remark',
+    'update' => 'edit field_internal_remark',
+    'delete' => 'edit field_internal_remark',
+  ];
+  if (!isset($permissions[$operation])) {
+    return AccessResult::neutral();
+  }
+
+  return AccessResult::forbiddenIf(!$account->hasPermission($permissions[$operation]))
+    ->cachePerPermissions();
+}
+
+/**
+ * Implements hook_entity_create_access().
+ *
+ * hook_entity_access() never receives the "create" operation, so creation of
+ * internal_remark paragraphs is gated here. Staff create remarks through the
+ * route-gated InternalRemarkController; this closes direct creation paths
+ * (e.g. JSON:API) for accounts without edit access.
+ */
+function markaspot_dashboard_entity_create_access(AccountInterface $account, array $context, $entity_bundle): AccessResultInterface {
+  if (($context['entity_type_id'] ?? NULL) !== 'paragraph' || $entity_bundle !== 'internal_remark') {
+    return AccessResult::neutral();
+  }
+
+  return AccessResult::forbiddenIf(!$account->hasPermission('edit field_internal_remark'))
+    ->cachePerPermissions();
+}
+
+/**
+ * Implements hook_entity_field_access().
+ *
+ * Backstop for the node-level field_internal_remark reference field. It does
+ * not depend on the field_permissions UI setting, mirroring the gate that
+ * markaspot_open311 applies to field_status_attributes, so the remark text
+ * stays staff-only even if that setting is changed.
+ */
+function markaspot_dashboard_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResultInterface {
+  if (
+    in_array($operation, ['view', 'edit'], TRUE)
+    && $field_definition->getName() === 'field_internal_remark'
+    && $field_definition->getTargetEntityTypeId() === 'node'
+  ) {
+    $permission = $operation === 'edit' ? 'edit field_internal_remark' : 'view field_internal_remark';
+    return AccessResult::forbiddenIf(!$account->hasPermission($permission))
+      ->cachePerPermissions();
+  }
+
+  return AccessResult::neutral();
+}
