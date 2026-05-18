@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.93](https://github.com/markaspot/markaspot/compare/11.9.92...11.9.93) (2026-05-18)
+
+### Features
+
+* clarify free tier in demo expiry reminder mail ([3e0d80b](https://github.com/markaspot/markaspot/commit/3e0d80b0e06d3405b088d042fbb6b5575b931323))
+
+### Bug Fixes
+
+* **dashboard:** restrict internal remarks to staff roles ([dc9b9f0](https://github.com/markaspot/markaspot/commit/dc9b9f03b725c6409e9743e7f7b17614a99cc60c))
+* restore anonymous public report submission permissions ([11c73f7](https://github.com/markaspot/markaspot/commit/11c73f7f5d77ca28d08f9f5993fc05a7fc0527c0))
+* **tenant_admin:** scope request_image media updates to managed jurisdictions ([1166b42](https://github.com/markaspot/markaspot/commit/1166b42b37d394086d7450e5d82afe6d90f83f7c))
+
 ## [11.9.92](https://github.com/markaspot/markaspot/compare/11.9.91...11.9.92) (2026-05-17)
 
 ### Features
