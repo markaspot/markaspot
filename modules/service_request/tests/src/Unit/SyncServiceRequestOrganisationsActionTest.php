@@ -23,6 +23,64 @@ class SyncServiceRequestOrganisationsActionTest extends UnitTestCase {
   }
 
   /**
+   * Tests the category assignment action is provided by service_request.
+   */
+  public function testCategoryAssignmentActionPluginIdIsStable(): void {
+    $source = $this->loadCategoryAssignmentActionSource();
+
+    $this->assertStringContainsString('namespace Drupal\\service_request\\Plugin\\Action;', $source);
+    $this->assertStringContainsString('id = "service_request_assign_organisation_from_category"', $source);
+    $this->assertStringContainsString("'category_group_field' => 'field_category_gid'", $source);
+    $this->assertStringContainsString("'content_plugin' => 'group_node:service_request'", $source);
+  }
+
+  /**
+   * Tests the category assignment action supports legacy string mappings.
+   */
+  public function testCategoryAssignmentActionSupportsStringAndReferenceMappings(): void {
+    $source = $this->loadCategoryAssignmentActionSource();
+
+    $this->assertStringContainsString("\$item['target_id'] ?? \$item['value'] ?? NULL", $source);
+    $this->assertStringContainsString("strtolower(\$value) === 'n/a'", $source);
+    $this->assertStringContainsString('ctype_digit($value)', $source);
+  }
+
+  /**
+   * Tests category assignment sync removes stale organisation relationships.
+   */
+  public function testCategoryAssignmentActionReconcilesRelationships(): void {
+    $source = $this->loadCategoryAssignmentActionSource();
+
+    $this->assertStringContainsString('function syncRelationships(', $source);
+    $this->assertStringContainsString('function removeStaleRelationships(', $source);
+    $this->assertStringContainsString('function shouldSyncRelationships(', $source);
+    $this->assertStringContainsString('!empty($this->configuration[\'save_entity\'])', $source);
+    $this->assertStringContainsString('$relationship->delete();', $source);
+  }
+
+  /**
+   * Tests category assignment fails closed for tenant-scoped groups.
+   */
+  public function testCategoryAssignmentActionChecksTenantBoundaries(): void {
+    $source = $this->loadCategoryAssignmentActionSource();
+
+    $this->assertStringContainsString('nodeHasJurisdictionField', $source);
+    $this->assertStringContainsString('return FALSE;', $source);
+    $this->assertStringContainsString('getRootJurisdictionId', $source);
+  }
+
+  /**
+   * Tests category assignment access checks node and field edit access.
+   */
+  public function testCategoryAssignmentActionChecksMutationAccess(): void {
+    $source = $this->loadCategoryAssignmentActionSource();
+
+    $this->assertStringContainsString("access('update'", $source);
+    $this->assertStringContainsString("access('edit'", $source);
+    $this->assertStringContainsString('AccessResult::forbidden()', $source);
+  }
+
+  /**
    * Tests the action supports legacy and current organisation bundles.
    */
   public function testActionSupportsLegacyAndCurrentOrganisationBundles(): void {
@@ -58,6 +116,16 @@ class SyncServiceRequestOrganisationsActionTest extends UnitTestCase {
    */
   private function loadActionSource(): string {
     $path = dirname(__DIR__, 3) . '/src/Plugin/Action/SyncServiceRequestOrganisations.php';
+    $source = file_get_contents($path);
+    $this->assertIsString($source);
+    return $source;
+  }
+
+  /**
+   * Loads the category assignment action source.
+   */
+  private function loadCategoryAssignmentActionSource(): string {
+    $path = dirname(__DIR__, 3) . '/src/Plugin/Action/AssignServiceRequestOrganisationFromCategory.php';
     $source = file_get_contents($path);
     $this->assertIsString($source);
     return $source;

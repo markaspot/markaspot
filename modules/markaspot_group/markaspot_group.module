@@ -19,6 +19,7 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupMembership as GroupMembershipEntity;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\Entity\ProtectedGroup;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
@@ -1859,12 +1860,11 @@ function _markaspot_group_resync_org_memberships_for_org_move(GroupInterface $or
  *   The user account.
  */
 function _markaspot_group_add_derived_jurisdiction_role(GroupInterface $jur_group, UserInterface $user): void {
-  $member = $jur_group->getMember($user);
-  if (!$member) {
+  $relationship = GroupMembershipEntity::loadSingle($jur_group, $user);
+  if (!$relationship instanceof GroupRelationshipInterface) {
     return;
   }
 
-  $relationship = $member->getGroupRelationship();
   if ($relationship->bundle() !== _markaspot_group_jurisdiction_membership_bundle($jur_group)) {
     \Drupal::logger('markaspot_group')->error(
       'Refusing to add derived jur role to mismatched relationship @relationship with bundle @bundle on jurisdiction group @gid.',
@@ -1905,12 +1905,11 @@ function _markaspot_group_add_derived_jurisdiction_role(GroupInterface $jur_grou
  *   The user account.
  */
 function _markaspot_group_remove_derived_jurisdiction_role(GroupInterface $jur_group, UserInterface $user): void {
-  $member = $jur_group->getMember($user);
-  if (!$member) {
+  $relationship = GroupMembershipEntity::loadSingle($jur_group, $user);
+  if (!$relationship instanceof GroupRelationshipInterface) {
     return;
   }
 
-  $relationship = $member->getGroupRelationship();
   if ($relationship->bundle() !== _markaspot_group_jurisdiction_membership_bundle($jur_group)) {
     \Drupal::logger('markaspot_group')->error(
       'Refusing to remove derived jur role from mismatched relationship @relationship with bundle @bundle on jurisdiction group @gid.',
@@ -1960,13 +1959,9 @@ function _markaspot_group_remove_derived_jurisdiction_role(GroupInterface $jur_g
  *   TRUE when another org membership still implies the jurisdiction.
  */
 function _markaspot_group_user_has_org_membership_for_jurisdiction(UserInterface $user, int $jurisdiction_id, ?int $exclude_relationship_id = NULL): bool {
-  if (!\Drupal::getContainer()->has('group.membership_loader')) {
-    return FALSE;
-  }
-
-  $memberships = \Drupal::service('group.membership_loader')->loadByUser($user);
+  $memberships = GroupMembershipEntity::loadByUser($user);
   foreach ($memberships as $membership) {
-    $relationship = $membership->getGroupRelationship();
+    $relationship = $membership;
     if ($exclude_relationship_id !== NULL && (int) $relationship->id() === $exclude_relationship_id) {
       continue;
     }
@@ -2617,7 +2612,14 @@ function _markaspot_group_derive_org_from_category(NodeInterface $node, ?int $ju
     return NULL;
   }
 
-  $org_group_id = (int) $term->get('field_category_gid')->target_id;
+  $org_group_id = _markaspot_group_category_gid_value($term);
+  if ($org_group_id === NULL) {
+    \Drupal::logger('markaspot_group')->warning(
+      'Category term @tid has no numeric group mapping in field_category_gid.',
+      ['@tid' => $term->id()]
+    );
+    return NULL;
+  }
 
   // Verify the referenced group exists and is an org group.
   $group = $group_storage->load($org_group_id);
@@ -2630,6 +2632,37 @@ function _markaspot_group_derive_org_from_category(NodeInterface $node, ?int $ju
   }
 
   return $org_group_id;
+}
+
+/**
+ * Reads a numeric organisation group ID from field_category_gid.
+ *
+ * Newer sites store the field as an entity reference target_id. Older tenants
+ * store the same mapping as a string value. This helper supports both shapes.
+ */
+function _markaspot_group_category_gid_value(TermInterface $term): ?int {
+  if (!$term->hasField('field_category_gid') || $term->get('field_category_gid')->isEmpty()) {
+    return NULL;
+  }
+
+  foreach ($term->get('field_category_gid')->getValue() as $item) {
+    $raw_value = $item['target_id'] ?? $item['value'] ?? NULL;
+    if ($raw_value === NULL) {
+      continue;
+    }
+
+    $value = trim((string) $raw_value);
+    if ($value === '' || strtolower($value) === 'n/a' || !ctype_digit($value)) {
+      continue;
+    }
+
+    $group_id = (int) $value;
+    if ($group_id > 0) {
+      return $group_id;
+    }
+  }
+
+  return NULL;
 }
 
 /**

@@ -1,0 +1,54 @@
+action.configuration.service_request_assign_organisation_from_category:
+  type: mapping
+  label: 'Assign service request organisation from category action configuration'
+  mapping:
+    organisation_field:
+      type: string
+      label: 'Organisation field'
+    category_field:
+      type: string
+      label: 'Category field'
+    category_group_field:
+      type: string
+      label: 'Category organisation field'
+    jurisdiction_field:
+      type: string
+      label: 'Jurisdiction field'
+    content_plugin:
+      type: string
+      label: 'Group content plugin'
+    organisation_group_type:
+      type: string
+      label: 'Organisation group type'
+    overwrite_existing:
+      type: boolean
+      label: 'Overwrite existing organisation values'
+    sync_relationship:
+      type: boolean
+      label: 'Create the group relationship'
+    save_entity:
+      type: boolean
+      label: 'Save entity'
+
+action.configuration.service_request_sync_organisations:
+  type: mapping
+  label: 'Sync service request organisations action configuration'
+  mapping:
+    organisation_field:
+      type: string
+      label: 'Organisation field'
+    email_field:
+      type: string
+      label: 'Organisation email field'
+    content_plugin:
+      type: string
+      label: 'Group content plugin'
+    organisation_group_type:
+      type: string
+      label: 'Organisation group type'
+    subject:
+      type: text
+      label: 'Subject'
+    message:
+      type: text
+      label: 'Message'
