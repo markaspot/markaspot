@@ -529,8 +529,8 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $media = $this->createMockMedia(1);
     $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
 
-    // Privacy flag is set AND the AI judged the only concern (a face) to be
-    // fully remediated by the blur that was applied.
+    // Privacy flag is set; the blur service blurred the face. The citizen
+    // notice is suppressed deterministically by the blur result, not the model.
     $aiResult = [
       'category' => 42,
       'description' => 'Privacy-safe description',
@@ -540,7 +540,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
       'hazard_issues' => [],
       'privacy_flag' => TRUE,
       'privacy_issues' => ['blurred face visible'],
-      'privacy_remediated_by_blur' => TRUE,
     ];
 
     $this->imageProcessingService->method('processImages')
@@ -582,28 +581,28 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['privacy_flag']);
     $this->assertSame(['blurred face visible'], $data['privacy_issues']);
-    // Citizen warning is suppressed because blur ran AND the AI confirmed full
-    // remediation.
+    // Citizen warning is suppressed because the blur service blurred the face.
     $this->assertTrue($data['privacy_handled_by_blur']);
-    // The internal AI judgment field must not leak into the citizen payload.
-    $this->assertArrayNotHasKey('privacy_remediated_by_blur', $data);
-    // Nor may it be persisted into the JSON:API-exposed field_ai_metadata.
+    // privacy_flag is still persisted to field_ai_metadata for moderation.
     $this->assertNotNull($capturedMetadata);
     $storedMeta = json_decode($capturedMetadata, TRUE);
-    $this->assertArrayNotHasKey('privacy_remediated_by_blur', $storedMeta);
     $this->assertTrue($storedMeta['privacy_flag']);
+    // The response-only signal must never be persisted to the JSON:API-exposed
+    // field_ai_metadata, even if a future refactor reorders the assignment.
+    $this->assertArrayNotHasKey('privacy_handled_by_blur', $storedMeta);
   }
 
   /**
-   * Residual, unremediated PII must keep the citizen privacy prompt visible.
+   * Blur suppresses the citizen notice, but residual PII stays unpublished.
    *
-   * Even though blur ran on the image, the AI reports that the privacy concern
-   * is NOT fully remediated (e.g. a readable document remains), so the combined
-   * privacy_handled_by_blur signal must be FALSE.
+   * Variant A trade-off: once the blur service blurred faces/plates, the
+   * citizen notice is suppressed deterministically, even if the AI also flagged
+   * unblurrable PII (e.g. a document). Internal moderation is unaffected:
+   * privacy_flag keeps the media unpublished so a moderator still catches it.
    *
    * @covers ::getAIResults
    */
-  public function testResidualPiiKeepsPrivacyPromptVisibleDespiteBlur(): void {
+  public function testBlurSuppressesNoticeButResidualPiiStaysUnpublished(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
 
     $media = $this->createMockMedia(1);
@@ -618,8 +617,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
       'hazard_issues' => [],
       'privacy_flag' => TRUE,
       'privacy_issues' => ['readable ID document visible'],
-      // Blur covered a face, but a document remains: not fully remediated.
-      'privacy_remediated_by_blur' => FALSE,
     ];
 
     $this->imageProcessingService->method('processImages')
@@ -635,7 +632,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
         ],
       ]);
 
-    // Media stays unpublished (privacy_flag=TRUE) — moderation unaffected.
+    // Moderation invariant: privacy_flag=TRUE keeps the media unpublished.
     $media->expects($this->never())->method('setPublished');
 
     $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
@@ -644,67 +641,20 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['privacy_flag']);
-    // Despite blur running, the prompt must remain because PII is unremediated.
-    $this->assertFalse($data['privacy_handled_by_blur']);
-    $this->assertArrayNotHasKey('privacy_remediated_by_blur', $data);
+    // Blur ran, so the citizen notice is suppressed (Variant A trade-off),
+    // while the media stays unpublished for human review (asserted above).
+    $this->assertTrue($data['privacy_handled_by_blur']);
   }
 
   /**
-   * Fail-closed: a missing AI remediation field must not suppress the prompt.
+   * No blur means the citizen notice stays visible.
    *
-   * Some providers (older Azure api-versions, local LLMs) ignore the
-   * json_schema and omit the key entirely. The combined signal must be FALSE so
-   * citizen warning still shows.
-   *
-   * @covers ::getAIResults
-   */
-  public function testMissingRemediationFieldFailsClosed(): void {
-    $this->flood->method('isAllowed')->willReturn(TRUE);
-
-    $media = $this->createMockMedia(1);
-    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
-
-    // Note: no 'privacy_remediated_by_blur' key at all.
-    $aiResult = [
-      'category' => 42,
-      'description' => 'Privacy-safe description',
-      'alt_text' => ['A damaged bin'],
-      'hazard_flag' => FALSE,
-      'hazard_level' => 0,
-      'hazard_issues' => [],
-      'privacy_flag' => TRUE,
-      'privacy_issues' => ['face visible'],
-    ];
-
-    $this->imageProcessingService->method('processImages')
-      ->willReturn([
-        'ai_result' => json_encode($aiResult),
-        'blur_results' => [
-          'public://test.jpg' => [
-            'contents' => 'blurred-bytes',
-            'blurred' => TRUE,
-            'faces' => 1,
-            'plates' => 0,
-          ],
-        ],
-      ]);
-
-    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
-    $response = $this->controller->getAIResults($request);
-
-    $data = json_decode($response->getContent(), TRUE);
-    $this->assertFalse($data['privacy_handled_by_blur']);
-  }
-
-  /**
-   * Security boundary: a stray AI remediation=TRUE without blur is ignored.
-   *
-   * The backend AND-gate (blur_applied && ...) must win over a misbehaving
-   * model that claims remediation when no blur was actually applied.
+   * When the blur service blurred nothing (no blur_results), the deterministic
+   * signal is FALSE, so the privacy notice is shown — independent of the model.
    *
    * @covers ::getAIResults
    */
-  public function testRemediationWithoutBlurIsIgnored(): void {
+  public function testNoBlurKeepsNoticeVisible(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
 
     $media = $this->createMockMedia(1);
@@ -719,8 +669,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
       'hazard_issues' => [],
       'privacy_flag' => TRUE,
       'privacy_issues' => ['face visible'],
-      // Model wrongly claims remediation, but no blur ran.
-      'privacy_remediated_by_blur' => TRUE,
     ];
 
     // No blur_results: blur_applied resolves to FALSE.
@@ -735,7 +683,135 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     $data = json_decode($response->getContent(), TRUE);
     $this->assertFalse($data['privacy_handled_by_blur']);
-    $this->assertArrayNotHasKey('privacy_remediated_by_blur', $data);
+  }
+
+  /**
+   * A blurred media stays unpublished even when the AI clears privacy_flag.
+   *
+   * The smoke showed the model inconsistently sets privacy_flag=false on a
+   * blurred face. Depublish must not depend on that: once the blur service
+   * blurred this media, it is held for human review regardless of the verdict.
+   *
+   * @covers ::getAIResults
+   */
+  public function testBlurredMediaStaysUnpublishedEvenWhenAiClearsPrivacy(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    // AI cleared privacy, but the blur service blurred a face on this media.
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['A damaged bin'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => FALSE,
+      'privacy_issues' => [],
+    ];
+
+    $this->imageProcessingService->method('processImages')
+      ->willReturn([
+        'ai_result' => json_encode($aiResult),
+        'blur_results' => [
+          'public://test.jpg' => [
+            'contents' => 'blurred-bytes',
+            'blurred' => TRUE,
+            'faces' => 1,
+            'plates' => 0,
+          ],
+        ],
+      ]);
+
+    // Deterministic depublish guard: a blurred media is never auto-published.
+    $media->expects($this->never())->method('setPublished');
+
+    // Capture the persisted moderation flag: it must be TRUE for a blurred
+    // media even though the AI cleared privacy_flag. This is the field the
+    // node hook reads, so folding the blur fact in keeps controller and hook
+    // in agreement (no re-publish on later node saves).
+    $capturedPrivacyFlag = NULL;
+    $media->method('set')->willReturnCallback(
+      function (string $field, $value) use (&$capturedPrivacyFlag, $media) {
+        if ($field === 'field_ai_privacy_flag') {
+          $capturedPrivacyFlag = $value;
+        }
+        return $media;
+      }
+    );
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    // Citizen notice suppressed (blur ran); media held for review (asserted).
+    $this->assertTrue($data['privacy_handled_by_blur']);
+    // field_ai_privacy_flag persisted TRUE despite AI privacy_flag=false.
+    $this->assertTrue($capturedPrivacyFlag);
+  }
+
+  /**
+   * Mixed batch: only the un-blurred media is published.
+   *
+   * Locks the grain distinction: the depublish guard is PER-media
+   * ($blur_results[$uri]['blurred']), not the batch-level $blur_applied, so a
+   * clean image in the same submission still publishes while the blurred one
+   * is held for review.
+   *
+   * @covers ::getAIResults
+   */
+  public function testMixedBatchPublishesOnlyTheCleanMedia(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $blurredMedia = $this->createMockMedia(1, TRUE, TRUE, 'public://a.jpg');
+    $cleanMedia = $this->createMockMedia(2, TRUE, TRUE, 'public://b.jpg');
+    $this->mediaStorage->method('loadByProperties')
+      ->willReturn([1 => $blurredMedia, 2 => $cleanMedia]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['A damaged bin', 'A pothole'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => FALSE,
+      'privacy_issues' => [],
+    ];
+
+    $this->imageProcessingService->method('processImages')
+      ->willReturn([
+        'ai_result' => json_encode($aiResult),
+        'blur_results' => [
+          'public://a.jpg' => [
+            'contents' => 'blurred-bytes',
+            'blurred' => TRUE,
+            'faces' => 1,
+            'plates' => 0,
+          ],
+          'public://b.jpg' => [
+            'contents' => '',
+            'blurred' => FALSE,
+            'faces' => 0,
+            'plates' => 0,
+          ],
+        ],
+      ]);
+
+    // Blurred media held; clean media published.
+    $blurredMedia->expects($this->never())->method('setPublished');
+    $cleanMedia->expects($this->once())->method('setPublished');
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    // Batch-level signal is OR: blur ran somewhere in the batch.
+    $this->assertTrue($data['privacy_handled_by_blur']);
   }
 
   /**

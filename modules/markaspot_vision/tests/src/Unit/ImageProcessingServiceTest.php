@@ -373,36 +373,58 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
-   * With blur applied, the prompt asks for the content-aware remediation flag.
+   * With blur applied, the AI must still flag for internal review.
+   *
+   * The citizen-facing suppression is decided deterministically by the
+   * controller from the blur result, NOT by the model. So the prompt must not
+   * ask the model for any remediation verdict.
    *
    * @covers ::buildPrivacyInstruction
    */
-  public function testBuildPrivacyInstructionRequestsRemediationFlagWhenBlurred(): void {
+  public function testBuildPrivacyInstructionKeepsFlagForReviewWhenBlurred(): void {
     $service = $this->createService();
 
     $instruction = $this->invokeMethod($service, 'buildPrivacyInstruction', [TRUE]);
 
-    $this->assertStringContainsString('already', $instruction);
     $this->assertStringContainsString('blurred by preprocessing', $instruction);
-    // Citizen-suppression signal is requested ONLY for the blur case.
-    $this->assertStringContainsString('privacy_remediated_by_blur to true ONLY', $instruction);
     // privacy_flag must still be set even for already-blurred regions.
     $this->assertStringContainsString('including the already blurred regions', $instruction);
+    // The model must NOT be asked to self-report a blur remediation verdict.
+    $this->assertStringNotContainsString('privacy_remediated_by_blur', $instruction);
   }
 
   /**
-   * Without blur, the remediation flag is forced to false.
+   * Without blur, the prompt carries no blur-specific language.
    *
    * @covers ::buildPrivacyInstruction
    */
-  public function testBuildPrivacyInstructionForcesRemediationFalseWithoutBlur(): void {
+  public function testBuildPrivacyInstructionHasNoBlurLanguageWithoutBlur(): void {
     $service = $this->createService();
 
     $instruction = $this->invokeMethod($service, 'buildPrivacyInstruction', [FALSE]);
 
-    $this->assertStringContainsString('set', $instruction);
-    $this->assertStringContainsString('privacy_remediated_by_blur to false', $instruction);
+    $this->assertStringContainsString('set privacy_flag to true', $instruction);
     $this->assertStringNotContainsString('blurred by preprocessing', $instruction);
+    $this->assertStringNotContainsString('privacy_remediated_by_blur', $instruction);
+  }
+
+  /**
+   * The reportability instruction defines both true and false cases.
+   *
+   * @covers ::buildReportabilityInstruction
+   */
+  public function testBuildReportabilityInstructionCoversBothCases(): void {
+    $service = $this->createService();
+
+    $instruction = $this->invokeMethod($service, 'buildReportabilityInstruction', []);
+
+    $this->assertStringContainsString('is_reportable_issue', $instruction);
+    // True case: a real public-space issue.
+    $this->assertStringContainsString('reportable public-space issue', $instruction);
+    // False case: off-domain content.
+    $this->assertStringContainsString('portrait or selfie', $instruction);
+    // It must NOT block: best-guess category is still returned.
+    $this->assertStringContainsString('best-guess category', $instruction);
   }
 
   /**

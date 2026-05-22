@@ -337,6 +337,11 @@ class ImageProcessingService {
       // review policy to the configured tenant prompt.
       $prompt .= $this->buildPrivacyInstruction($blur_applied);
 
+      // Off-domain detection: ask the model whether the image is actually a
+      // reportable municipal issue, so the UI can ask the citizen to pick a
+      // category instead of acting on a confabulated one.
+      $prompt .= $this->buildReportabilityInstruction();
+
       // Append service definition attributes to the prompt.
       $serviceDefsText = $this->getServiceDefinitionsForPrompt($jurisdictionId, $langcode);
       if (!empty($serviceDefsText)) {
@@ -444,18 +449,14 @@ class ImageProcessingService {
       . "list the concerns in privacy_issues. ";
 
     if ($blur_applied) {
+      // Faces/plates were already blurred by preprocessing. The AI must STILL
+      // flag them so the report is reviewed internally; the citizen-facing
+      // notice is suppressed separately and deterministically by the controller
+      // based on the blur service result (not by the model).
       $instruction .= "Some faces or license plates in these images have already "
         . "been blurred by preprocessing. Still set privacy_flag to true whenever "
-        . "any personal data is present (including the already blurred regions), so "
-        . "the report can be reviewed internally. Additionally, set "
-        . "privacy_remediated_by_blur to true ONLY when the sole privacy concerns "
-        . "are faces or license plates that now appear blurred; set it to false if "
-        . "any other personal data (names, documents, IDs, house numbers) is visible "
-        . "or if any face or license plate remains unblurred. ";
-    }
-    else {
-      $instruction .= "No blur preprocessing was applied to these images, so set "
-        . "privacy_remediated_by_blur to false. ";
+        . "any personal data is present (including the already blurred regions) so "
+        . "the report is reviewed internally. ";
     }
 
     return $instruction
@@ -463,6 +464,28 @@ class ImageProcessingService {
       . "but write the description WITHOUT mentioning or referencing any identifiable persons, "
       . "license plates, personal names, documents, IDs, or house numbers. "
       . "Describe the situation and the issue, not the people.";
+  }
+
+  /**
+   * Builds the off-domain (reportability) instruction for the AI prompt.
+   *
+   * The response schema forces a category, which makes the model confabulate a
+   * report for off-domain images (e.g. a portrait). This asks the model for a
+   * coarse, reliable yes/no so the UI can ask the citizen to choose a category
+   * rather than acting on a made-up one. It never gates moderation.
+   *
+   * @return string
+   *   Prompt suffix instructing the model to set is_reportable_issue.
+   */
+  protected function buildReportabilityInstruction(): string {
+    return "\n\nREPORTABILITY: Set is_reportable_issue to true when the image "
+      . "shows a real, reportable public-space issue that fits one of the listed "
+      . "categories (e.g. waste, road or sign damage, broken infrastructure). "
+      . "Set is_reportable_issue to false when the image shows no reportable "
+      . "issue at all (e.g. a portrait or selfie, an unrelated indoor object, a "
+      . "screenshot, or content too unclear to assess). Still return your "
+      . "best-guess category and description either way; the application decides "
+      . "how to use is_reportable_issue.";
   }
 
   /**
@@ -635,6 +658,11 @@ class ImageProcessingService {
             'type' => 'object',
             'properties' => [
               'category' => ['type' => 'integer'],
+              // TRUE when the image shows an actual reportable municipal issue
+              // that fits a category; FALSE for off-domain images (portraits,
+              // unrelated objects, unclear content). Drives the citizen-facing
+              // "please pick a category yourself" hint; never gates moderation.
+              'is_reportable_issue' => ['type' => 'boolean'],
               'description' => ['type' => 'string'],
               'alt_text' => [
                 'type' => 'array',
@@ -650,11 +678,6 @@ class ImageProcessingService {
                 'type' => 'array',
                 'items' => ['type' => 'string'],
               ],
-              // Content-aware hint for the citizen UI: TRUE when the privacy
-              // concern is fully covered by the applied blur. Stripped from the
-              // API response before it reaches citizens; it does not affect
-              // privacy_flag or depublishing (those key off privacy_flag only).
-              'privacy_remediated_by_blur' => ['type' => 'boolean'],
               'hazard_level' => [
                 'type' => 'integer',
                 'minimum' => 0,
@@ -678,6 +701,7 @@ class ImageProcessingService {
             ],
             'required' => [
               'category',
+              'is_reportable_issue',
               'description',
               'alt_text',
               'hazard_flag',
@@ -685,7 +709,6 @@ class ImageProcessingService {
               'hazard_issues',
               'privacy_flag',
               'privacy_issues',
-              'privacy_remediated_by_blur',
               'attributes',
             ],
             'additionalProperties' => FALSE,
