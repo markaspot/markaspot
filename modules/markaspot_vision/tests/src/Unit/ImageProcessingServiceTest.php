@@ -348,6 +348,64 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
+   * The privacy instruction must always carry the deterministic flag policy.
+   *
+   * Internal moderation (depublishing) keys off privacy_flag, so the prompt
+   * must instruct the AI to set it without depending on a tenant-configured
+   * privacy policy that may be empty.
+   *
+   * @covers ::buildPrivacyInstruction
+   */
+  public function testBuildPrivacyInstructionAlwaysCarriesBaselinePolicy(): void {
+    $service = $this->createService();
+
+    foreach ([TRUE, FALSE] as $blurApplied) {
+      $instruction = $this->invokeMethod($service, 'buildPrivacyInstruction', [$blurApplied]);
+
+      // Deterministic detection criteria must be present and self-contained.
+      $this->assertStringContainsString('set privacy_flag to true', $instruction);
+      $this->assertStringContainsString('faces, license plates', $instruction);
+      // It must NOT delegate the policy to a (maybe empty) configured prompt.
+      $this->assertStringNotContainsString('configured prompt', $instruction);
+      // It must never tell the model to suppress the moderation flag.
+      $this->assertStringNotContainsString('Do not set privacy_flag', $instruction);
+    }
+  }
+
+  /**
+   * With blur applied, the prompt asks for the content-aware remediation flag.
+   *
+   * @covers ::buildPrivacyInstruction
+   */
+  public function testBuildPrivacyInstructionRequestsRemediationFlagWhenBlurred(): void {
+    $service = $this->createService();
+
+    $instruction = $this->invokeMethod($service, 'buildPrivacyInstruction', [TRUE]);
+
+    $this->assertStringContainsString('already', $instruction);
+    $this->assertStringContainsString('blurred by preprocessing', $instruction);
+    // Citizen-suppression signal is requested ONLY for the blur case.
+    $this->assertStringContainsString('privacy_remediated_by_blur to true ONLY', $instruction);
+    // privacy_flag must still be set even for already-blurred regions.
+    $this->assertStringContainsString('including the already blurred regions', $instruction);
+  }
+
+  /**
+   * Without blur, the remediation flag is forced to false.
+   *
+   * @covers ::buildPrivacyInstruction
+   */
+  public function testBuildPrivacyInstructionForcesRemediationFalseWithoutBlur(): void {
+    $service = $this->createService();
+
+    $instruction = $this->invokeMethod($service, 'buildPrivacyInstruction', [FALSE]);
+
+    $this->assertStringContainsString('set', $instruction);
+    $this->assertStringContainsString('privacy_remediated_by_blur to false', $instruction);
+    $this->assertStringNotContainsString('blurred by preprocessing', $instruction);
+  }
+
+  /**
    * Tests resolveBlurBearer: canonical MARKASPOT_BLUR_API_KEY wins.
    *
    * @covers ::resolveBlurBearer

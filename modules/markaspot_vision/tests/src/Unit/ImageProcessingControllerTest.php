@@ -229,10 +229,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
     return $media;
   }
 
-  // =========================================================================
-  // Rate limiting tests
-  // =========================================================================
-
   /**
    * @covers ::getAIResults
    */
@@ -280,10 +276,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     $this->assertEquals(429, $response->getStatusCode());
   }
-
-  // =========================================================================
-  // Input validation tests
-  // =========================================================================
 
   /**
    * @covers ::getAIResults
@@ -358,10 +350,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
     // Will be 500 because no media found, which is fine.
     $this->assertNotEquals(400, $response->getStatusCode());
   }
-
-  // =========================================================================
-  // Entity access control tests
-  // =========================================================================
 
   /**
    * @covers ::getAIResults
@@ -454,10 +442,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
   }
 
-  // =========================================================================
-  // Error sanitization tests
-  // =========================================================================
-
   /**
    * @covers ::getAIResults
    */
@@ -498,10 +482,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->controller->getAIResults($request);
   }
 
-  // =========================================================================
-  // Happy path test
-  // =========================================================================
-
   /**
    * @covers ::getAIResults
    */
@@ -525,6 +505,9 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->imageProcessingService->method('processImages')
       ->willReturn(['ai_result' => json_encode($expectedResult)]);
 
+    // Safe media (privacy_flag=FALSE) must be published immediately.
+    $media->expects($this->once())->method('setPublished');
+
     $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
     $response = $this->controller->getAIResults($request);
 
@@ -533,6 +516,226 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertEquals(42, $data['category']);
     $this->assertEquals('Pothole on Hauptstrasse', $data['description']);
     $this->assertTrue($data['hazard_flag']);
+    // No blur ran, so the citizen warning signal must be false.
+    $this->assertFalse($data['privacy_handled_by_blur']);
+  }
+
+  /**
+   * @covers ::getAIResults
+   */
+  public function testSuccessfulAnalysisReturnsBlurHandlingMetadata(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    // Privacy flag is set AND the AI judged the only concern (a face) to be
+    // fully remediated by the blur that was applied.
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['Blurred workers near a damaged bin'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => ['blurred face visible'],
+      'privacy_remediated_by_blur' => TRUE,
+    ];
+
+    $this->imageProcessingService->method('processImages')
+      ->willReturn([
+        'ai_result' => json_encode($aiResult),
+        'blur_results' => [
+          'public://test.jpg' => [
+            'contents' => 'blurred-bytes',
+            'blurred' => TRUE,
+            'faces' => 1,
+            'plates' => 0,
+          ],
+        ],
+      ]);
+
+    $this->imageProcessingService->expects($this->once())
+      ->method('saveBlurredImage')
+      ->with($media, 'blurred-bytes', 'public://test.jpg');
+
+    // Internal moderation invariant: privacy_flag=TRUE must keep the media
+    // unpublished even though the citizen warning is suppressed by blur.
+    $media->expects($this->never())->method('setPublished');
+
+    // Capture what gets persisted to the JSON:API-exposed field_ai_metadata.
+    $capturedMetadata = NULL;
+    $media->method('set')->willReturnCallback(
+      function (string $field, $value) use (&$capturedMetadata, $media) {
+        if ($field === 'field_ai_metadata') {
+          $capturedMetadata = $value;
+        }
+        return $media;
+      }
+    );
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['privacy_flag']);
+    $this->assertSame(['blurred face visible'], $data['privacy_issues']);
+    // Citizen warning is suppressed because blur ran AND the AI confirmed full
+    // remediation.
+    $this->assertTrue($data['privacy_handled_by_blur']);
+    // The internal AI judgment field must not leak into the citizen payload.
+    $this->assertArrayNotHasKey('privacy_remediated_by_blur', $data);
+    // Nor may it be persisted into the JSON:API-exposed field_ai_metadata.
+    $this->assertNotNull($capturedMetadata);
+    $storedMeta = json_decode($capturedMetadata, TRUE);
+    $this->assertArrayNotHasKey('privacy_remediated_by_blur', $storedMeta);
+    $this->assertTrue($storedMeta['privacy_flag']);
+  }
+
+  /**
+   * Residual, unremediated PII must keep the citizen privacy prompt visible.
+   *
+   * Even though blur ran on the image, the AI reports that the privacy concern
+   * is NOT fully remediated (e.g. a readable document remains), so the combined
+   * privacy_handled_by_blur signal must be FALSE.
+   *
+   * @covers ::getAIResults
+   */
+  public function testResidualPiiKeepsPrivacyPromptVisibleDespiteBlur(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['A damaged bin near a building entrance'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => ['readable ID document visible'],
+      // Blur covered a face, but a document remains: not fully remediated.
+      'privacy_remediated_by_blur' => FALSE,
+    ];
+
+    $this->imageProcessingService->method('processImages')
+      ->willReturn([
+        'ai_result' => json_encode($aiResult),
+        'blur_results' => [
+          'public://test.jpg' => [
+            'contents' => 'blurred-bytes',
+            'blurred' => TRUE,
+            'faces' => 1,
+            'plates' => 0,
+          ],
+        ],
+      ]);
+
+    // Media stays unpublished (privacy_flag=TRUE) — moderation unaffected.
+    $media->expects($this->never())->method('setPublished');
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['privacy_flag']);
+    // Despite blur running, the prompt must remain because PII is unremediated.
+    $this->assertFalse($data['privacy_handled_by_blur']);
+    $this->assertArrayNotHasKey('privacy_remediated_by_blur', $data);
+  }
+
+  /**
+   * Fail-closed: a missing AI remediation field must not suppress the prompt.
+   *
+   * Some providers (older Azure api-versions, local LLMs) ignore the
+   * json_schema and omit the key entirely. The combined signal must be FALSE so
+   * citizen warning still shows.
+   *
+   * @covers ::getAIResults
+   */
+  public function testMissingRemediationFieldFailsClosed(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    // Note: no 'privacy_remediated_by_blur' key at all.
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['A damaged bin'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => ['face visible'],
+    ];
+
+    $this->imageProcessingService->method('processImages')
+      ->willReturn([
+        'ai_result' => json_encode($aiResult),
+        'blur_results' => [
+          'public://test.jpg' => [
+            'contents' => 'blurred-bytes',
+            'blurred' => TRUE,
+            'faces' => 1,
+            'plates' => 0,
+          ],
+        ],
+      ]);
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['privacy_handled_by_blur']);
+  }
+
+  /**
+   * Security boundary: a stray AI remediation=TRUE without blur is ignored.
+   *
+   * The backend AND-gate (blur_applied && ...) must win over a misbehaving
+   * model that claims remediation when no blur was actually applied.
+   *
+   * @covers ::getAIResults
+   */
+  public function testRemediationWithoutBlurIsIgnored(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['A damaged bin'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => ['face visible'],
+      // Model wrongly claims remediation, but no blur ran.
+      'privacy_remediated_by_blur' => TRUE,
+    ];
+
+    // No blur_results: blur_applied resolves to FALSE.
+    $this->imageProcessingService->method('processImages')
+      ->willReturn(['ai_result' => json_encode($aiResult)]);
+
+    // saveBlurredImage must never run when nothing was blurred.
+    $this->imageProcessingService->expects($this->never())->method('saveBlurredImage');
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['privacy_handled_by_blur']);
+    $this->assertArrayNotHasKey('privacy_remediated_by_blur', $data);
   }
 
   /**

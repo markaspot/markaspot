@@ -5,6 +5,7 @@ namespace Drupal\markaspot_vision\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -134,7 +135,8 @@ class ImageProcessingService {
     ];
     $ext = $extensions[$mimeType] ?? 'jpg';
 
-    // Build request options with optional Bearer auth for external blur service.
+    // Build request options with optional Bearer auth for external blur
+    // service.
     $request_options = [
       'multipart' => [
         [
@@ -241,9 +243,14 @@ class ImageProcessingService {
       );
 
       // Overwrite the original file with the blurred version.
-      $this->fileSystem->saveData($contents, $originalUri, FileSystemInterface::EXISTS_REPLACE);
+      $this->fileSystem->saveData(
+        $contents,
+        $originalUri,
+        FileExists::Replace
+      );
 
-      // Flush image style derivatives so they regenerate from the blurred source.
+      // Flush image style derivatives so they regenerate from the blurred
+      // source.
       image_path_flush($originalUri);
 
       $this->logger->notice(
@@ -283,6 +290,7 @@ class ImageProcessingService {
       // Process all images together.
       $image_data = [];
       $blur_results = [];
+      $blur_applied = FALSE;
       foreach ($file_uris as $file_uri) {
         $styled_file_path = $this->getStyledImagePath($file_uri);
         $contents = file_get_contents($styled_file_path);
@@ -297,6 +305,9 @@ class ImageProcessingService {
         // Blur sensitive areas (faces, license plates) before AI analysis.
         $blur_result = $this->blurSensitiveAreas($contents, $mime);
         $blur_results[$file_uri] = $blur_result;
+        if (!empty($blur_result['blurred'])) {
+          $blur_applied = TRUE;
+        }
 
         $image_data[] = [
           'base64' => base64_encode($blur_result['contents']),
@@ -322,22 +333,9 @@ class ImageProcessingService {
       );
       $prompt = $collective_prefix . $prompt;
 
-      // Instruct AI to generate privacy-safe descriptions even
-      // when PII is detected. Still categorize and assess hazards,
-      // but describe the scene without referencing identifiable
-      // people, license plates, or readable names.
-      $prompt .= "\n\nPRIVACY INSTRUCTION: "
-        . "If you detect personal data "
-        . "(faces, license plates, readable names), "
-        . "set privacy_flag to true and list issues "
-        . "in privacy_issues. "
-        . "IMPORTANT: Still generate a useful description, "
-        . "category, and hazard assessment, "
-        . "but write the description WITHOUT mentioning "
-        . "or referencing any identifiable persons, "
-        . "license plates, or personal names. "
-        . "Describe the situation and the issue, "
-        . "not the people.";
+      // Instruct AI to generate privacy-safe descriptions while leaving the
+      // review policy to the configured tenant prompt.
+      $prompt .= $this->buildPrivacyInstruction($blur_applied);
 
       // Append service definition attributes to the prompt.
       $serviceDefsText = $this->getServiceDefinitionsForPrompt($jurisdictionId, $langcode);
@@ -426,6 +424,48 @@ class ImageProcessingService {
   }
 
   /**
+   * Builds the privacy instruction appended to the AI prompt.
+   *
+   * @param bool $blur_applied
+   *   TRUE when image preprocessing already blurred sensitive regions.
+   *
+   * @return string
+   *   Prompt suffix for privacy-safe AI output.
+   */
+  protected function buildPrivacyInstruction(bool $blur_applied): string {
+    // Deterministic baseline policy. This MUST stay self-contained so that
+    // privacy_flag (which drives internal moderation and depublishing) is set
+    // reliably for every tenant, regardless of whether the tenant configured a
+    // custom system prompt. Tenant system prompts may add to this policy but
+    // must not be required for it to work.
+    $instruction = "\n\nPRIVACY INSTRUCTION: "
+      . "If you detect personal data (faces, license plates, readable personal "
+      . "names, documents, IDs, or house numbers), set privacy_flag to true and "
+      . "list the concerns in privacy_issues. ";
+
+    if ($blur_applied) {
+      $instruction .= "Some faces or license plates in these images have already "
+        . "been blurred by preprocessing. Still set privacy_flag to true whenever "
+        . "any personal data is present (including the already blurred regions), so "
+        . "the report can be reviewed internally. Additionally, set "
+        . "privacy_remediated_by_blur to true ONLY when the sole privacy concerns "
+        . "are faces or license plates that now appear blurred; set it to false if "
+        . "any other personal data (names, documents, IDs, house numbers) is visible "
+        . "or if any face or license plate remains unblurred. ";
+    }
+    else {
+      $instruction .= "No blur preprocessing was applied to these images, so set "
+        . "privacy_remediated_by_blur to false. ";
+    }
+
+    return $instruction
+      . "IMPORTANT: Still generate a useful description, category, and hazard assessment, "
+      . "but write the description WITHOUT mentioning or referencing any identifiable persons, "
+      . "license plates, personal names, documents, IDs, or house numbers. "
+      . "Describe the situation and the issue, not the people.";
+  }
+
+  /**
    * Sends a request to the AI API with retry logic.
    *
    * @param array $api_config
@@ -505,7 +545,8 @@ class ImageProcessingService {
   protected function getApiConfig(ImmutableConfig $config): array {
     $auth_type = getenv('MARKASPOT_VISION_AUTH_TYPE') ?: $config->get('auth_type') ?? 'bearer';
     $api_key = $this->resolveApiKey($config);
-    // ENV takes priority over config (allows per-instance override without config changes).
+    // ENV takes priority over config and allows per-instance overrides without
+    // config changes.
     $api_url = trim(getenv('MARKASPOT_VISION_API_URL') ?: $config->get('api_url') ?? '');
 
     $headers = [
@@ -541,7 +582,7 @@ class ImageProcessingService {
   /**
    * Resolves the API key from config or environment variable.
    *
-   * Priority: MARKASPOT_VISION_API_KEY env > Drupal config > OPENAI_API_KEY env.
+   * Priority: MARKASPOT_VISION_API_KEY env > config > OPENAI_API_KEY env.
    * Config is the standard source, set per site in Drupal admin for each
    * provider (OpenAI, Azure, local LLM). The generic OPENAI_API_KEY is only
    * used as a last-resort fallback.
@@ -609,6 +650,11 @@ class ImageProcessingService {
                 'type' => 'array',
                 'items' => ['type' => 'string'],
               ],
+              // Content-aware hint for the citizen UI: TRUE when the privacy
+              // concern is fully covered by the applied blur. Stripped from the
+              // API response before it reaches citizens; it does not affect
+              // privacy_flag or depublishing (those key off privacy_flag only).
+              'privacy_remediated_by_blur' => ['type' => 'boolean'],
               'hazard_level' => [
                 'type' => 'integer',
                 'minimum' => 0,
@@ -639,6 +685,7 @@ class ImageProcessingService {
               'hazard_issues',
               'privacy_flag',
               'privacy_issues',
+              'privacy_remediated_by_blur',
               'attributes',
             ],
             'additionalProperties' => FALSE,

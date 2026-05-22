@@ -88,6 +88,7 @@ class ImageProcessingController extends ControllerBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
+    // @phpstan-ignore-next-line new.static
     return new static(
       $container->get('markaspot_vision.image_processing'),
       $container->get('logger.factory'),
@@ -218,7 +219,8 @@ class ImageProcessingController extends ControllerBase {
       // Get user's language preference from request (frontend sends this).
       $langcode = $data['language'] ?? NULL;
 
-      // Get jurisdiction ID for filtering categories (multi-tenant mode, supports slugs).
+      // Get jurisdiction ID for filtering categories in multi-tenant mode.
+      // Supports numeric IDs and slugs.
       $jurisdictionId = $this->resolveJurisdictionId($data['jurisdiction_id'] ?? NULL);
 
       // Process images with ImageProcessingService.
@@ -233,7 +235,26 @@ class ImageProcessingController extends ControllerBase {
       }
 
       // Extract blur results from the AI processing response.
+      // $blur_applied is TRUE if ANY image in the batch was blurred by the
+      // preprocessing service. The AI receives the (possibly only partially)
+      // blurred batch, and its privacy_remediated_by_blur verdict covers the
+      // whole batch: the prompt requires it to be false if ANY image still has
+      // residual personal data.
       $blur_results = $ai_result['blur_results'] ?? [];
+      $blur_applied = FALSE;
+      foreach ($blur_results as $blur_result) {
+        if (!empty($blur_result['blurred'])) {
+          $blur_applied = TRUE;
+          break;
+        }
+      }
+
+      // Capture and strip the AI's internal remediation verdict before the
+      // result is persisted or returned. field_ai_metadata is JSON:API-exposed,
+      // so this internal-only signal must never be stored on the entity nor
+      // surface to citizens; it only feeds the privacy_handled_by_blur signal.
+      $ai_remediated_by_blur = !empty($decoded_result['privacy_remediated_by_blur']);
+      unset($decoded_result['privacy_remediated_by_blur']);
 
       $media_index = 0;
       foreach ($media_entities as $media) {
@@ -251,7 +272,8 @@ class ImageProcessingController extends ControllerBase {
           $media->set('field_ai_hazard_level', $decoded_result['hazard_level'] ?? 0);
           $media->set('field_ai_hazard_category', $decoded_result['hazard_category'] ?? NULL);
 
-          // Replace original with blurred version if faces/plates were detected.
+          // Replace original with blurred version if faces or plates were
+          // detected.
           $media_uri = $media_uri_map[$media->id()] ?? NULL;
           if ($media_uri && !empty($blur_results[$media_uri]['blurred'])) {
             $this->imageProcessingService->saveBlurredImage(
@@ -265,7 +287,7 @@ class ImageProcessingController extends ControllerBase {
           if (!empty($decoded_result['alt_text']) && is_array($decoded_result['alt_text'])) {
             $field_media_image = $media->get('field_media_image');
             if ($field_media_image && !$field_media_image->isEmpty()) {
-              // Use the corresponding alt text for this media entity (by index).
+              // Use the corresponding alt text for this media entity.
               $alt_text = $decoded_result['alt_text'][$media_index] ?? $this->t('Documented situation as per description');
               $field_media_image->alt = $alt_text;
               $this->logger->notice('Alt text populated with AI description for media @id (index @index): @alt', [
@@ -278,7 +300,8 @@ class ImageProcessingController extends ControllerBase {
 
           // Publish media immediately after successful AI screening if safe.
           // This must happen here (not only in hook_node_insert) because
-          // entity reference validation rejects unpublished media for anonymous.
+          // entity reference validation rejects unpublished media for
+          // anonymous.
           if (!$privacy_flag) {
             $media->setPublished();
           }
@@ -337,8 +360,17 @@ class ImageProcessingController extends ControllerBase {
         $this->tierConfig->recordAIAnalysis((int) $resolvedJurisdictionId);
       }
 
-      // Return only the AI result for frontend compatibility.
-      return new JsonResponse($decoded_result);
+      // Response-only signal for the citizen UI: suppress the privacy prompt
+      // only when blur preprocessing actually ran AND the AI judged the privacy
+      // concern to be fully remediated by that blur. Both conditions are
+      // required so that residual, unblurred personal data (names, documents,
+      // IDs, or a face/plate the blur service missed) still surfaces the
+      // prompt. Internal moderation (privacy_flag, field_ai_*, depublishing)
+      // is unaffected by this signal. The internal verdict was already stripped
+      // from $decoded_result above, so it leaks neither here nor into storage.
+      $response_result = $decoded_result;
+      $response_result['privacy_handled_by_blur'] = $blur_applied && $ai_remediated_by_blur;
+      return new JsonResponse($response_result);
 
     }
     catch (\Exception $e) {
