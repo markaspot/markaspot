@@ -304,6 +304,8 @@ class ImageProcessingService {
 
         // Blur sensitive areas (faces, license plates) before AI analysis.
         $blur_result = $this->blurSensitiveAreas($contents, $mime);
+        // Carry the MIME so the controller can build a data URL preview.
+        $blur_result['mime'] = $mime;
         $blur_results[$file_uri] = $blur_result;
         if (!empty($blur_result['blurred'])) {
           $blur_applied = TRUE;

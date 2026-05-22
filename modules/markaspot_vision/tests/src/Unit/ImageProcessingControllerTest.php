@@ -154,6 +154,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   protected function createMockMedia(int $id, bool $viewAccess = TRUE, bool $updateAccess = TRUE, ?string $fileUri = 'public://test.jpg'): MediaInterface {
     $media = $this->createMock(MediaInterface::class);
     $media->method('id')->willReturn($id);
+    $media->method('uuid')->willReturn('uuid-' . $id);
     $media->method('access')
       ->willReturnCallback(function ($operation) use ($viewAccess, $updateAccess) {
         if ($operation === 'view') {
@@ -551,6 +552,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
             'blurred' => TRUE,
             'faces' => 1,
             'plates' => 0,
+            'mime' => 'image/jpeg',
           ],
         ],
       ]);
@@ -590,6 +592,12 @@ class ImageProcessingControllerTest extends UnitTestCase {
     // The response-only signal must never be persisted to the JSON:API-exposed
     // field_ai_metadata, even if a future refactor reorders the assignment.
     $this->assertArrayNotHasKey('privacy_handled_by_blur', $storedMeta);
+    // The blurred thumbnail is returned (data URL) keyed by media UUID so the
+    // citizen preview can show the privacy-protected version.
+    $this->assertSame(
+      'data:image/jpeg;base64,' . base64_encode('blurred-bytes'),
+      $data['blurred_previews']['uuid-1']
+    );
   }
 
   /**

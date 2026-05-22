@@ -247,6 +247,10 @@ class ImageProcessingController extends ControllerBase {
         }
       }
 
+      // Response-only blurred thumbnails (data URLs), keyed by media UUID, so
+      // the citizen's upload preview can show the privacy-protected version.
+      $blurred_previews = [];
+
       $media_index = 0;
       foreach ($media_entities as $media) {
         try {
@@ -296,6 +300,13 @@ class ImageProcessingController extends ControllerBase {
               $blur_results[$media_uri]['contents'],
               $media_uri,
             );
+            // Response-only blurred thumbnail for the citizen upload preview.
+            // These are the user's own, already-anonymised bytes (data URL),
+            // so the preview shows the privacy-protected version, not the
+            // unblurred local original.
+            $blur_mime = $blur_results[$media_uri]['mime'] ?? 'image/jpeg';
+            $blurred_previews[$media->uuid()] = 'data:' . $blur_mime
+              . ';base64,' . base64_encode($blur_results[$media_uri]['contents']);
           }
 
           // Populate alt text with AI-generated description for accessibility.
@@ -388,10 +399,15 @@ class ImageProcessingController extends ControllerBase {
       // PII keeps the media unpublished for review even though the citizen
       // notice is suppressed.
       $response_result = $decoded_result;
-      // Strip any echo of our own response-only key in case a non-compliant
-      // provider returns it; the authoritative value is the blur ground truth.
-      unset($response_result['privacy_handled_by_blur']);
+      // Strip any echo of our own response-only keys in case a non-compliant
+      // provider returns them; the authoritative values are computed here.
+      unset($response_result['privacy_handled_by_blur'], $response_result['blurred_previews']);
       $response_result['privacy_handled_by_blur'] = $blur_applied;
+      // Blurred thumbnails (data URLs) so the citizen preview shows the
+      // privacy-protected version. Only present when something was blurred.
+      if (!empty($blurred_previews)) {
+        $response_result['blurred_previews'] = $blurred_previews;
+      }
       return new JsonResponse($response_result);
 
     }
