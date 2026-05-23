@@ -7,26 +7,24 @@
   'use strict';
 
   /**
-   * Disable edit button and dropdown for the first paragraph.
+   * Hide the edit button and dropdown for the initial status paragraph.
+   *
+   * The initial status (delta 0) is locked server-side in the form alter; this
+   * is a defensive, cosmetic fallback. It keys `once()` on the edit button
+   * itself (whose `name` is stable as `field_status_notes_0_edit`) rather than
+   * on the table wrapper: the "Add status" AJAX rebuild re-renders the field and
+   * gives the table a deduplicated id (`field-status-notes-values--<random>`),
+   * so a wrapper-id selector silently stops matching after the first render.
    */
   Drupal.behaviors.disableFirstParagraphActions = {
-    attach: function (context, settings) {
-      // Disable the edit button and dropdown for the first paragraph
-      once('disable-first-paragraph', '#field-status-notes-values tbody', context).forEach(function (tbody) {
-        const firstRow = tbody.querySelector('tr.draggable:first-child');
+    attach: function (context) {
+      once('disable-first-status', 'input[name="field_status_notes_0_edit"]', context).forEach(function (editButton) {
+        editButton.style.display = 'none';
 
-        if (firstRow) {
-          // Use the stable 'name' attribute to select the edit button
-          const editButton = firstRow.querySelector('input[name="field_status_notes_0_edit"]');
-          if (editButton) {
-            editButton.style.display = 'none';
-          }
-
-          // Selectors for dropdown remain the same (usually stable)
-          const dropdownToggle = firstRow.querySelector('.paragraphs-dropdown .paragraphs-dropdown-toggle');
-           if (dropdownToggle) {
-             dropdownToggle.style.display = 'none';
-           }
+        const row = editButton.closest('tr');
+        const dropdownToggle = row && row.querySelector('.paragraphs-dropdown .paragraphs-dropdown-toggle');
+        if (dropdownToggle) {
+          dropdownToggle.style.display = 'none';
         }
       });
     }
