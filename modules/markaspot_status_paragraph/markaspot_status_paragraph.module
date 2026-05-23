@@ -81,6 +81,9 @@ function markaspot_status_paragraph_form_node_service_request_edit_form_alter(&$
   // Attach library
   $form['#attached']['library'][] = 'markaspot_status_paragraph/status_paragraph';
 
+  // Lock the initial status (delta 0) so it cannot be edited or removed.
+  _markaspot_status_paragraph_lock_initial_status($form);
+
   // Apply the filter directly to the boilerplate field in the subform
   // Only if the BoilerplateFilter class exists (it may not in all installations)
   if (isset($form['field_status_notes']['widget']) && class_exists('\\Drupal\\markaspot_custom\\BoilerplateFilter')) {
@@ -100,6 +103,9 @@ function markaspot_status_paragraph_form_node_service_request_management_form_al
   // Attach library
   $form['#attached']['library'][] = 'markaspot_status_paragraph/status_paragraph';
 
+  // Lock the initial status (delta 0) so it cannot be edited or removed.
+  _markaspot_status_paragraph_lock_initial_status($form);
+
   // Apply the filter directly to the boilerplate field in the subform
   // Only if the BoilerplateFilter class exists (it may not in all installations)
   if (isset($form['field_status_notes']['widget']) && class_exists('\\Drupal\\markaspot_custom\\BoilerplateFilter')) {
@@ -109,6 +115,40 @@ function markaspot_status_paragraph_form_node_service_request_management_form_al
           ['\\Drupal\\markaspot_custom\\BoilerplateFilter', 'filterBoilerplateField'];
       }
     }
+  }
+}
+
+/**
+ * Locks the initial status paragraph (delta 0) against edit and removal.
+ *
+ * The first status note is created automatically when a report is submitted and
+ * must stay read-only. Removing the action buttons from the widget render array
+ * is authoritative: it survives the "Add status" AJAX rebuild (which re-runs
+ * this alter) and cannot be bypassed client-side, unlike a CSS/JS hide.
+ *
+ * @param array $form
+ *   The service request form render array, altered by reference.
+ */
+function _markaspot_status_paragraph_lock_initial_status(array &$form) {
+  if (!isset($form['field_status_notes']['widget'][0]['top']['actions'])) {
+    return;
+  }
+
+  $actions = &$form['field_status_notes']['widget'][0]['top']['actions'];
+
+  // Remove the affordance to open/edit the initial status.
+  unset($actions['actions']['edit_button']);
+
+  // Remove destructive, duplicate and convert affordances from the dropdown.
+  unset($actions['dropdown_actions']['remove_button']);
+  unset($actions['dropdown_actions']['duplicate_button']);
+  unset($actions['dropdown_actions']['convert_button']);
+
+  // Drop the dropdown toggle entirely when no actions remain in it.
+  // Element::children() takes its argument by reference, so guard with isset()
+  // and pass the real array element rather than a "?? []" temporary value.
+  if (isset($actions['dropdown_actions']) && !Element::children($actions['dropdown_actions'])) {
+    unset($actions['dropdown_actions']);
   }
 }
 
