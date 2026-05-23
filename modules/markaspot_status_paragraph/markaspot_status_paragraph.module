@@ -129,25 +129,46 @@ function markaspot_status_paragraph_form_node_service_request_management_form_al
  *   The service request form render array, altered by reference.
  */
 function _markaspot_status_paragraph_lock_initial_status(array &$form) {
-  if (!isset($form['field_status_notes']['widget'][0]['top']['actions'])) {
+  if (!isset($form['field_status_notes']['widget'])) {
     return;
   }
 
-  $actions = &$form['field_status_notes']['widget'][0]['top']['actions'];
+  $widget = &$form['field_status_notes']['widget'];
 
-  // Remove the affordance to open/edit the initial status.
-  unset($actions['actions']['edit_button']);
+  // Remove the per-item action affordances for the initial status (delta 0).
+  if (isset($widget[0]['top']['actions'])) {
+    $actions = &$widget[0]['top']['actions'];
 
-  // Remove destructive, duplicate and convert affordances from the dropdown.
-  unset($actions['dropdown_actions']['remove_button']);
-  unset($actions['dropdown_actions']['duplicate_button']);
-  unset($actions['dropdown_actions']['convert_button']);
+    // Remove the affordance to open/edit the initial status.
+    unset($actions['actions']['edit_button']);
 
-  // Drop the dropdown toggle entirely when no actions remain in it.
-  // Element::children() takes its argument by reference, so guard with isset()
-  // and pass the real array element rather than a "?? []" temporary value.
-  if (isset($actions['dropdown_actions']) && !Element::children($actions['dropdown_actions'])) {
-    unset($actions['dropdown_actions']);
+    // Remove destructive, duplicate and convert affordances from the dropdown.
+    unset($actions['dropdown_actions']['remove_button']);
+    unset($actions['dropdown_actions']['duplicate_button']);
+    unset($actions['dropdown_actions']['convert_button']);
+
+    // Drop the dropdown toggle entirely when no actions remain in it.
+    // Element::children() takes its arg by reference: guard with isset() and
+    // pass the real array element, not a "?? []" temporary value.
+    if (isset($actions['dropdown_actions'])
+      && !Element::children($actions['dropdown_actions'])) {
+      unset($actions['dropdown_actions']);
+    }
+
+    unset($actions);
+  }
+
+  // Remove the field-level "Edit all" / "Collapse all" toggle. With the
+  // per-item edit affordance gone, "Edit all" would be the only remaining way
+  // to expand (and thus change) the locked initial status. Disabling the
+  // subform instead is not viable: a #disabled rich-text "status note" is
+  // submitted empty and fails its required validation, blocking save.
+  // Individual non-initial statuses keep their own per-item edit buttons.
+  if (isset($widget['header_actions'])) {
+    foreach (['actions', 'dropdown_actions'] as $group) {
+      unset($widget['header_actions'][$group]['edit_all']);
+      unset($widget['header_actions'][$group]['collapse_all']);
+    }
   }
 }
 
