@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.95](https://github.com/markaspot/markaspot/compare/11.9.94...11.9.95) (2026-05-25)
+
+### Bug Fixes
+
+* **vision:** bind analysis to upload context ([134b517](https://github.com/markaspot/markaspot/commit/134b517c3f7729d86873b0dbd8802121c7c352ca))
+
 ## [11.9.94](https://github.com/markaspot/markaspot/compare/11.9.93...11.9.94) (2026-05-25)
 
 ### Features
