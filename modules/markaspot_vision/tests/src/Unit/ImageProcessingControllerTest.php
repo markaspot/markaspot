@@ -10,17 +10,19 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
+use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
 use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Tests security hardening of the ImageProcessingController.
- *
- * @group markaspot_vision
- * @coversDefaultClass \Drupal\markaspot_vision\Controller\ImageProcessingController
  */
+#[CoversClass(ImageProcessingController::class)]
+#[Group('markaspot_vision')]
 class ImageProcessingControllerTest extends UnitTestCase {
 
   /**
@@ -43,6 +45,20 @@ class ImageProcessingControllerTest extends UnitTestCase {
    * @var \Drupal\markaspot_vision\Service\ImageProcessingService|\PHPUnit\Framework\MockObject\MockObject
    */
   protected $imageProcessingService;
+
+  /**
+   * Mocked media analysis access guard.
+   *
+   * @var \Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $mediaAnalysisAccessGuard;
+
+  /**
+   * Default media analysis guard result for tests.
+   *
+   * @var bool
+   */
+  protected bool $allowMediaAnalysis = TRUE;
 
   /**
    * Mocked logger.
@@ -72,6 +88,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
     parent::setUp();
 
     $this->imageProcessingService = $this->createMock(ImageProcessingService::class);
+    $this->mediaAnalysisAccessGuard = $this->createMock(MediaAnalysisAccessGuard::class);
     $this->logger = $this->createMock(LoggerInterface::class);
     $this->flood = $this->createMock(FloodInterface::class);
     $this->mediaStorage = $this->createMock(EntityStorageInterface::class);
@@ -107,6 +124,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       $loggerFactory,
       $this->flood,
       $featureFlagChecker,
+      $this->mediaAnalysisAccessGuard,
     );
 
     // Inject entityTypeManager via reflection (ControllerBase stores it
@@ -117,6 +135,9 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     // Inject string translation stub so $this->t() works in tests.
     $this->controller->setStringTranslation($this->getStringTranslationStub());
+
+    $this->mediaAnalysisAccessGuard->method('canAnalyze')
+      ->willReturnCallback(fn () => $this->allowMediaAnalysis);
   }
 
   /**
@@ -231,7 +252,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testRateLimitExceededReturns429(): void {
     $this->flood->method('isAllowed')
@@ -248,7 +268,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testRateLimitRegistersEachRequest(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -264,7 +283,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testRateLimitUsesClientIp(): void {
     $this->flood->expects($this->once())
@@ -279,7 +297,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testMissingMediaIdsReturns400(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -293,7 +310,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testNonArrayMediaIdsReturns400(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -305,7 +321,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testEmptyMediaIdsReturns400(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -317,7 +332,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testTooManyMediaIdsReturns400(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -334,7 +348,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testExactlyFiveMediaIdsAllowed(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -353,7 +366,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testMediaWithoutViewAccessIsFiltered(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -369,7 +381,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testMediaWithoutUpdateAccessStillSaves(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -402,7 +413,24 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
+   */
+  public function testUnauthorizedMediaReturns403BeforeProcessing(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1, viewAccess: FALSE, updateAccess: FALSE);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    $this->allowMediaAnalysis = FALSE;
+    $this->imageProcessingService->expects($this->never())->method('processImages');
+    $media->expects($this->never())->method('save');
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(403, $response->getStatusCode());
+  }
+
+  /**
    */
   public function testAllLoadedMediaIsProcessed(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -444,7 +472,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testExceptionReturnsGenericError(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -462,7 +489,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testExceptionLogsDetailedMessage(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -484,7 +510,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testSuccessfulAnalysisReturnsDecodedResult(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -522,7 +547,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testSuccessfulAnalysisReturnsBlurHandlingMetadata(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -601,6 +625,54 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Failing to persist a blurred image fails the analysis response closed.
+   */
+  public function testBlurredImagePersistenceFailureFailsClosed(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['Blurred face near a bin'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => ['face visible'],
+    ];
+
+    $this->imageProcessingService->method('processImages')
+      ->willReturn([
+        'ai_result' => json_encode($aiResult),
+        'blur_results' => [
+          'public://test.jpg' => [
+            'contents' => 'blurred-bytes',
+            'blurred' => TRUE,
+            'faces' => 1,
+            'plates' => 0,
+            'mime' => 'image/jpeg',
+          ],
+        ],
+      ]);
+
+    $this->imageProcessingService->method('saveBlurredImage')
+      ->willThrowException(new \RuntimeException('persist failed'));
+
+    $media->expects($this->never())->method('save');
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(500, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertArrayNotHasKey('blurred_previews', $data);
+    $this->assertArrayNotHasKey('privacy_handled_by_blur', $data);
+  }
+
+  /**
    * Blur suppresses the citizen notice, but residual PII stays unpublished.
    *
    * Variant A trade-off: once the blur service blurred faces/plates, the
@@ -608,7 +680,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
    * unblurrable PII (e.g. a document). Internal moderation is unaffected:
    * privacy_flag keeps the media unpublished so a moderator still catches it.
    *
-   * @covers ::getAIResults
    */
   public function testBlurSuppressesNoticeButResidualPiiStaysUnpublished(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -660,7 +731,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
    * When the blur service blurred nothing (no blur_results), the deterministic
    * signal is FALSE, so the privacy notice is shown — independent of the model.
    *
-   * @covers ::getAIResults
    */
   public function testNoBlurKeepsNoticeVisible(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -700,7 +770,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
    * blurred face. Depublish must not depend on that: once the blur service
    * blurred this media, it is held for human review regardless of the verdict.
    *
-   * @covers ::getAIResults
    */
   public function testBlurredMediaStaysUnpublishedEvenWhenAiClearsPrivacy(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -769,7 +838,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
    * clean image in the same submission still publishes while the blurred one
    * is held for review.
    *
-   * @covers ::getAIResults
    */
   public function testMixedBatchPublishesOnlyTheCleanMedia(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -823,7 +891,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * @covers ::getAIResults
    */
   public function testInvalidJsonBody(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);

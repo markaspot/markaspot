@@ -10,16 +10,19 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
+use Drupal\media\MediaInterface;
 use Drupal\Tests\UnitTestCase;
 use GuzzleHttp\ClientInterface;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\LoggerInterface;
 
 /**
  * Tests the image processing service for AI vision APIs.
- *
- * @group markaspot_vision
- * @coversDefaultClass \Drupal\markaspot_vision\Service\ImageProcessingService
  */
+#[CoversClass(ImageProcessingService::class)]
+#[Group('markaspot_vision')]
 class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
@@ -28,6 +31,13 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * @var \Psr\Log\LoggerInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected $logger;
+
+  /**
+   * The mocked file system service.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $fileSystem;
 
   /**
    * Saved ENV variables to restore after each test.
@@ -99,6 +109,8 @@ class ImageProcessingServiceTest extends UnitTestCase {
       'top_p' => NULL,
       'max_tokens' => 300,
       'system_prompt' => '',
+      'enable_blur_preprocessing' => FALSE,
+      'blur_service_url' => 'http://markaspot-vision:8200/blur',
     ];
 
     $configValues = array_merge($defaults, $configValues);
@@ -116,7 +128,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
     $httpClient = $this->createMock(ClientInterface::class);
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
-    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $this->fileSystem = $this->createMock(FileSystemInterface::class);
 
     $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
     $loggerFactory->method('get')
@@ -127,7 +139,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
       $httpClient,
       $configFactory,
       $entityTypeManager,
-      $fileSystem,
+      $this->fileSystem,
       $loggerFactory,
     );
   }
@@ -154,7 +166,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests bearer auth config.
    *
-   * @covers ::getApiConfig
    */
   public function testGetApiConfigBearer(): void {
     $service = $this->createService([
@@ -187,7 +198,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests API key header auth config.
    *
-   * @covers ::getApiConfig
    */
   public function testGetApiConfigApiKeyHeader(): void {
     $service = $this->createService();
@@ -213,7 +223,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests no auth config.
    *
-   * @covers ::getApiConfig
    */
   public function testGetApiConfigNoAuth(): void {
     $service = $this->createService();
@@ -240,7 +249,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests request payload structure.
    *
-   * @covers ::prepareRequestPayload
    */
   public function testPrepareRequestPayloadStructure(): void {
     $service = $this->createService([
@@ -267,7 +275,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests payload omits max_tokens for vision models.
    *
-   * @covers ::prepareRequestPayload
    */
   public function testPrepareRequestPayloadVisionModelNoMaxTokens(): void {
     $service = $this->createService([
@@ -285,7 +292,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests JSON schema includes all required fields.
    *
-   * @covers ::prepareRequestPayload
    */
   public function testPrepareRequestPayloadJsonSchemaFields(): void {
     $service = $this->createService();
@@ -311,11 +317,8 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests language name resolution.
-   *
-   * @covers ::resolveLanguageName
-   *
-   * @dataProvider languageNameProvider
    */
+  #[DataProvider('languageNameProvider')]
   public function testResolveLanguageName(?string $langcode, string $expected): void {
     $service = $this->createService();
     $result = $this->invokeMethod($service, 'resolveLanguageName', [$langcode]);
@@ -354,7 +357,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * must instruct the AI to set it without depending on a tenant-configured
    * privacy policy that may be empty.
    *
-   * @covers ::buildPrivacyInstruction
    */
   public function testBuildPrivacyInstructionAlwaysCarriesBaselinePolicy(): void {
     $service = $this->createService();
@@ -379,7 +381,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * controller from the blur result, NOT by the model. So the prompt must not
    * ask the model for any remediation verdict.
    *
-   * @covers ::buildPrivacyInstruction
    */
   public function testBuildPrivacyInstructionKeepsFlagForReviewWhenBlurred(): void {
     $service = $this->createService();
@@ -396,7 +397,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Without blur, the prompt carries no blur-specific language.
    *
-   * @covers ::buildPrivacyInstruction
    */
   public function testBuildPrivacyInstructionHasNoBlurLanguageWithoutBlur(): void {
     $service = $this->createService();
@@ -411,7 +411,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * The reportability instruction defines both true and false cases.
    *
-   * @covers ::buildReportabilityInstruction
    */
   public function testBuildReportabilityInstructionCoversBothCases(): void {
     $service = $this->createService();
@@ -428,9 +427,65 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
+   * Disabled blur preprocessing returns the original image.
+   *
+   */
+  public function testBlurSensitiveAreasReturnsOriginalWhenDisabled(): void {
+    $service = $this->createService([
+      'enable_blur_preprocessing' => FALSE,
+    ]);
+
+    $result = $service->blurSensitiveAreas('image-bytes', 'image/jpeg');
+
+    $this->assertSame('image-bytes', $result['contents']);
+    $this->assertFalse($result['blurred']);
+  }
+
+  /**
+   * Enabled blur preprocessing is fail-closed when no URL is configured.
+   *
+   */
+  public function testBlurSensitiveAreasThrowsWhenEnabledWithoutUrl(): void {
+    $this->logger->expects($this->once())->method('error');
+
+    $service = $this->createService([
+      'enable_blur_preprocessing' => TRUE,
+      'blur_service_url' => '',
+    ]);
+
+    $this->expectException(\RuntimeException::class);
+    $service->blurSensitiveAreas('image-bytes', 'image/jpeg');
+  }
+
+  /**
+   * Persisting blurred images fails closed for non-public URIs.
+   */
+  public function testSaveBlurredImageThrowsForNonPublicUri(): void {
+    $media = $this->createMock(MediaInterface::class);
+    $media->method('id')->willReturn(123);
+
+    $service = $this->createService();
+
+    $this->expectException(\RuntimeException::class);
+    $service->saveBlurredImage($media, 'blurred-bytes', 'private://test.jpg');
+  }
+
+  /**
+   * Blur URLs are logged without credentials or query strings.
+   */
+  public function testRedactUrlForLogRemovesSecrets(): void {
+    $service = $this->createService();
+
+    $result = $this->invokeMethod($service, 'redactUrlForLog', [
+      'https://user:pass@example.com:9443/blur?token=secret',
+    ]);
+
+    $this->assertSame('https://example.com:9443/blur', $result);
+  }
+
+  /**
    * Tests resolveBlurBearer: canonical MARKASPOT_BLUR_API_KEY wins.
    *
-   * @covers ::resolveBlurBearer
    */
   public function testResolveBlurBearerCanonicalEnvTakesPrecedence(): void {
     putenv('MARKASPOT_BLUR_API_KEY=canonical-bearer');
@@ -447,7 +502,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests resolveBlurBearer: legacy AI_API_KEY fires deprecation warning.
    *
-   * @covers ::resolveBlurBearer
    */
   public function testResolveBlurBearerLegacyEnvTriggersWarning(): void {
     putenv('AI_API_KEY=legacy-bearer');
@@ -465,7 +519,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests resolveBlurBearer: returns empty when no ENV is set.
    *
-   * @covers ::resolveBlurBearer
    */
   public function testResolveBlurBearerEmptyWhenNoEnv(): void {
     // setUp has cleared both MARKASPOT_BLUR_API_KEY and AI_API_KEY.
@@ -480,7 +533,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests resolveBlurUrl: config value wins over both ENV names.
    *
-   * @covers ::resolveBlurUrl
    */
   public function testResolveBlurUrlConfigTakesPrecedence(): void {
     putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
@@ -497,7 +549,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests resolveBlurUrl: canonical MARKASPOT_BLUR_URL wins over legacy.
    *
-   * @covers ::resolveBlurUrl
    */
   public function testResolveBlurUrlCanonicalEnvTakesPrecedenceOverLegacy(): void {
     putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
@@ -514,7 +565,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests resolveBlurUrl: legacy VISION_BLUR_URL fires deprecation warning.
    *
-   * @covers ::resolveBlurUrl
    */
   public function testResolveBlurUrlLegacyEnvTriggersWarning(): void {
     putenv('VISION_BLUR_URL=https://legacy.example/blur');
@@ -532,7 +582,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests resolveBlurUrl: returns empty when nothing is configured.
    *
-   * @covers ::resolveBlurUrl
    */
   public function testResolveBlurUrlReturnsEmptyWhenNothingConfigured(): void {
     $this->logger->expects($this->never())->method('warning');
@@ -546,7 +595,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
   /**
    * Tests resolveBlurUrl: empty config string is treated as not-set.
    *
-   * @covers ::resolveBlurUrl
    */
   public function testResolveBlurUrlEmptyConfigFallsThroughToEnv(): void {
     putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');

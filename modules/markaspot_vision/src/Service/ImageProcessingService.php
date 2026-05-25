@@ -90,8 +90,8 @@ class ImageProcessingService {
    * Blurs sensitive areas (faces, license plates) in an image.
    *
    * Sends the image to the blur microservice and returns the result.
-   * Gracefully falls back to the original image if the service is
-   * unavailable or not configured.
+   * When blur preprocessing is enabled, failures are fail-closed so original
+   * images are not forwarded to the vision provider without preprocessing.
    *
    * @param string $contents
    *   The raw image bytes.
@@ -122,9 +122,10 @@ class ImageProcessingService {
     // Resolve blur service URL via the canonical schema (#309).
     $blur_url = $this->resolveBlurUrl($config->get('blur_service_url'));
     if ($blur_url === '') {
-      $this->logger->notice('Blur preprocessing enabled but no blur service URL configured (set MARKASPOT_BLUR_URL or markaspot_vision.settings.blur_service_url). Skipping blur step.');
-      return $fallback;
+      $this->logger->error('Blur preprocessing enabled but no blur service URL configured (set MARKASPOT_BLUR_URL or markaspot_vision.settings.blur_service_url).');
+      throw new \RuntimeException('Blur preprocessing is enabled but no blur service URL is configured.');
     }
+    $log_url = $this->redactUrlForLog($blur_url);
 
     // Map MIME type to file extension for the multipart filename.
     $extensions = [
@@ -166,11 +167,11 @@ class ImageProcessingService {
 
       $statusCode = $response->getStatusCode();
       if ($statusCode !== 200) {
-        $this->logger->warning('Blur service returned status @code from @url.', [
+        $this->logger->error('Blur service returned status @code from @url. Refusing to forward the original image to vision.', [
           '@code' => $statusCode,
-          '@url' => $blur_url,
+          '@url' => $log_url,
         ]);
-        return $fallback;
+        throw new \RuntimeException('Blur service returned status ' . $statusCode . '.');
       }
 
       $faces = (int) ($response->getHeaderLine('X-Detections-Faces') ?: 0);
@@ -193,20 +194,18 @@ class ImageProcessingService {
       ];
     }
     catch (\Exception $e) {
-      $this->logger->warning('Blur service unreachable at @url: @error', [
-        '@url' => $blur_url,
-        '@error' => $e->getMessage(),
+      $this->logger->error('Blur service failed at @url. Refusing to forward the original image to vision.', [
+        '@url' => $log_url,
       ]);
-      return $fallback;
+      throw new \RuntimeException('Blur service failed; refusing to forward the original image to vision.', 0, $e);
     }
   }
 
   /**
    * Saves a blurred image as a managed file on a media entity.
    *
-   * Replaces the original image on field_media_image with the blurred
-   * version. Does not call $media->save() so the caller can batch
-   * field changes.
+   * Replaces the original image on field_media_image with the blurred version.
+   * Does not call $media->save() so the caller can batch field changes.
    *
    * @param \Drupal\media\MediaInterface $media
    *   The media entity to update.
@@ -214,17 +213,19 @@ class ImageProcessingService {
    *   The blurred image bytes.
    * @param string $originalUri
    *   The URI of the original file, used for deriving the filename.
+   * @throws \RuntimeException
+   *   Thrown when the blurred image cannot replace the original.
    */
   public function saveBlurredImage(MediaInterface $media, string $contents, string $originalUri): void {
     try {
       // GDPR safeguard: only allow overwriting files in the public filesystem.
       $scheme = parse_url($originalUri, PHP_URL_SCHEME);
       if ($scheme !== 'public') {
-        $this->logger->error(
-          'GDPR blur refused: URI scheme "@scheme" is not allowed for media @id. Only public:// URIs may be overwritten.',
-          ['@scheme' => $scheme, '@id' => $media->id()]
-        );
-        return;
+        throw new \RuntimeException(sprintf(
+          'GDPR blur refused: URI scheme "%s" is not allowed for media %s. Only public:// URIs may be overwritten.',
+          (string) $scheme,
+          (string) $media->id(),
+        ));
       }
 
       // GDPR Article 5(2) audit trail: record original file fingerprint
@@ -260,10 +261,29 @@ class ImageProcessingService {
     }
     catch (\Exception $e) {
       $this->logger->error(
-        'Failed to save blurred image for media @id: @error',
-        ['@id' => $media->id(), '@error' => $e->getMessage()]
+        'Failed to save blurred image for media @id. Refusing to report blur as handled.',
+        ['@id' => $media->id()]
       );
+      throw new \RuntimeException('Failed to persist blurred image for media ' . $media->id() . '.', 0, $e);
     }
+  }
+
+  /**
+   * Redacts credentials and query strings before logging external URLs.
+   */
+  protected function redactUrlForLog(string $url): string {
+    $parts = parse_url($url);
+    if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+      return '[invalid-url]';
+    }
+
+    $authority = $parts['host'];
+    if (!empty($parts['port'])) {
+      $authority .= ':' . $parts['port'];
+    }
+
+    $path = $parts['path'] ?? '';
+    return $parts['scheme'] . '://' . $authority . $path;
   }
 
   /**

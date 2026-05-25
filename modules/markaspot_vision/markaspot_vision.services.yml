@@ -7,11 +7,19 @@ services:
       - '@entity_type.manager'
       - '@file_system'
       - '@logger.factory'
+  markaspot_vision.media_analysis_access_guard:
+    class: Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard
+    arguments:
+      - '@current_user'
+      - '@keyvalue.expirable'
+      - '@request_stack'
   markaspot_vision.image_processing_controller:
     class: Drupal\markaspot_vision\Controller\ImageProcessingController
     arguments:
       - '@markaspot_vision.image_processing'
       - '@logger.factory'
       - '@flood'
+      - '@markaspot_nuxt.feature_flag_checker'
+      - '@markaspot_vision.media_analysis_access_guard'
     tags:
       - { name: controller.service_arguments }

@@ -13,6 +13,7 @@ use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
+use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
 
 /**
  * Controller for processing images with AI vision services.
@@ -57,6 +58,13 @@ class ImageProcessingController extends ControllerBase {
   protected FeatureFlagChecker $featureFlagChecker;
 
   /**
+   * Guards media analysis access for anonymous upload flows.
+   *
+   * @var \Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard
+   */
+  protected MediaAnalysisAccessGuard $mediaAnalysisAccessGuard;
+
+  /**
    * Constructs a new ImageProcessingController object.
    *
    * @param \Drupal\markaspot_vision\Service\ImageProcessingService $image_processing_service
@@ -67,6 +75,8 @@ class ImageProcessingController extends ControllerBase {
    *   The flood service.
    * @param \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $feature_flag_checker
    *   The feature flag checker.
+   * @param \Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard $media_analysis_access_guard
+   *   Guards access to media analysis.
    * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
    *   The tier config service (optional, only on SaaS).
    */
@@ -75,12 +85,14 @@ class ImageProcessingController extends ControllerBase {
     LoggerChannelFactoryInterface $logger_factory,
     FloodInterface $flood,
     FeatureFlagChecker $feature_flag_checker,
+    MediaAnalysisAccessGuard $media_analysis_access_guard,
     ?TierConfigService $tier_config = NULL,
   ) {
     $this->imageProcessingService = $image_processing_service;
     $this->logger = $logger_factory->get('markaspot_vision');
     $this->flood = $flood;
     $this->featureFlagChecker = $feature_flag_checker;
+    $this->mediaAnalysisAccessGuard = $media_analysis_access_guard;
     $this->tierConfig = $tier_config;
   }
 
@@ -94,6 +106,7 @@ class ImageProcessingController extends ControllerBase {
       $container->get('logger.factory'),
       $container->get('flood'),
       $container->get('markaspot_nuxt.feature_flag_checker'),
+      $container->get('markaspot_vision.media_analysis_access_guard'),
       $container->has('markaspot_fastmap.tier_config')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
@@ -188,9 +201,17 @@ class ImageProcessingController extends ControllerBase {
       $media_entities = [];
       $loaded = $media_storage->loadByProperties(['uuid' => $data['media_ids']]);
       foreach ($loaded as $media) {
-        // Skip access('view') check: media may be unpublished (privacy by
-        // design) but still needs AI analysis. The endpoint is protected by
-        // flood control and requires valid UUIDs.
+        // Do not use access('view'): media may be unpublished by design until
+        // AI analysis completes. Instead, require update access/ownership from
+        // a real user session or the same upload session that created media.
+        if (!$this->mediaAnalysisAccessGuard->canAnalyze($media, $request)) {
+          $this->logger->warning('Rejected vision analysis for media @id: request is not tied to the upload context.', [
+            '@id' => $media->id(),
+          ]);
+          return new JsonResponse([
+            'error' => $this->t('You are not allowed to analyze one or more uploaded media items.'),
+          ], 403);
+        }
         $media_entities[$media->id()] = $media;
       }
 
@@ -344,6 +365,9 @@ class ImageProcessingController extends ControllerBase {
             '@id' => $media->id(),
             '@message' => $e->getMessage(),
           ]);
+          if (!empty($media_was_blurred)) {
+            throw $e;
+          }
         }
         $media_index++;
       }

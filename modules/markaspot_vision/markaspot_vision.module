@@ -5,7 +5,9 @@
  * Contains markaspot_vision.module.
  */
 
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\media\MediaInterface;
 use Drupal\node\NodeInterface;
 
 /**
@@ -22,6 +24,17 @@ function markaspot_vision_help(string $route_name, RouteMatchInterface $route_ma
     default:
       return '';
   }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for media entities.
+ */
+function markaspot_vision_media_insert(EntityInterface $entity): void {
+  if (!$entity instanceof MediaInterface) {
+    return;
+  }
+
+  \Drupal::service('markaspot_vision.media_analysis_access_guard')->recordUpload($entity);
 }
 
 /**
