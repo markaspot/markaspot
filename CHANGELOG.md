@@ -1,5 +1,24 @@
 # Changelog
 
+## [11.9.94](https://github.com/markaspot/markaspot/compare/11.9.93...11.9.94) (2026-05-25)
+
+### Features
+
+* **vision:** keep privacy_flag strict, suppress citizen prompt only on blur-remediated PII ([999118e](https://github.com/markaspot/markaspot/commit/999118e1de477132cf371a8066541c464abff7e1))
+* **vision:** return blurred thumbnail (data URL) for citizen upload preview ([68651a7](https://github.com/markaspot/markaspot/commit/68651a7f47d8e8bda57e9860efacc3398f0fa074))
+
+### Bug Fixes
+
+* add service request category organisation action ([6b6df04](https://github.com/markaspot/markaspot/commit/6b6df04244bb563b6e79f1a5165dc93433f738fd))
+* add service request organisation sync action ([da2bfaf](https://github.com/markaspot/markaspot/commit/da2bfafec238c6ad4b85d546dccdf6c9618e4765))
+* declare taxonomy/language/content_translation deps for markaspot_language ([f2713f1](https://github.com/markaspot/markaspot/commit/f2713f183c0aef8cdbcab680decd466a31e6bb2f))
+* keep initial status read-only after adding a new status ([b5bab9c](https://github.com/markaspot/markaspot/commit/b5bab9c9cbb1216bc674ca4ca084ad7dac740c8b)), closes [lhm#510](https://github.com/markaspot/lhm/issues/510)
+* prevent editing the initial status via "Edit all" ([89a3eb5](https://github.com/markaspot/markaspot/commit/89a3eb5eb53e103c2826f6e4ea46bd38f6e92486)), closes [lhm#510](https://github.com/markaspot/lhm/issues/510) [#disabled](https://github.com/markaspot/markaspot/issues/disabled)
+
+### Refactoring
+
+* **vision:** deterministic blur privacy signal + off-domain detection ([45122e9](https://github.com/markaspot/markaspot/commit/45122e998ffa6927decd4fd4304350f780978a60))
+
 ## [11.9.93](https://github.com/markaspot/markaspot/compare/11.9.92...11.9.93) (2026-05-18)
 
 ### Features
