@@ -483,7 +483,18 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     if (!empty($parameters)) {
       $fields = self::filterAllowedFieldParameters($parameters);
       foreach ($fields as $field => $value) {
-        $query->condition($field, $value, '=');
+        // filterAllowedFieldParameters() emits an array when the caller sent
+        // a comma-separated list (multi-select filter) and a scalar when the
+        // caller sent a single value. Mirror that into the entity query: IN
+        // for arrays, = for scalars. The values themselves are parameterised
+        // by PDO either way, so SQL injection is not in scope on the value
+        // side.
+        if (is_array($value)) {
+          $query->condition($field, $value, 'IN');
+        }
+        else {
+          $query->condition($field, $value, '=');
+        }
       }
     }
 
@@ -1204,17 +1215,92 @@ final class GeoreportRequestIndexResource extends ResourceBase {
   ];
 
   /**
+   * Hard cap on the number of comma-separated values for a single field.
+   *
+   * The frontend's multi-select UI realistically caps out around a handful
+   * of values; anything beyond this is either a poorly designed integration
+   * or a probe. Drop the trailing entries instead of throwing — the query
+   * still runs with the first N values.
+   */
+  private const MAX_MULTI_VALUES_PER_FIELD = 50;
+
+  /**
    * Return only the query parameters that target allowlisted node fields.
+   *
+   * Each accepted entry is normalised so the caller can branch on shape:
+   *   - string value  → single-equality filter ($query->condition($f, $v, '=')).
+   *   - array  value  → multi-value IN filter ($query->condition($f, $v, 'IN')).
+   *
+   * Two channels yield a multi-value array:
+   *   1. comma-separated string (e.g. ?field_district=148,149) — frontend
+   *      multi-select UI emits this shape;
+   *   2. array submission (e.g. ?field_district[]=148&field_district[]=149) —
+   *      historical API contract, retained for backward compatibility.
+   *
+   * In both channels the resulting array is trimmed, empties are dropped,
+   * duplicates are removed, and the length is capped at
+   * MAX_MULTI_VALUES_PER_FIELD. Non-string scalars are dropped (the public
+   * GET contract is "string parameter").
    *
    * Extracted from the main index() flow so the security boundary has a
    * named, unit-tested surface.
    */
   public static function filterAllowedFieldParameters(array $parameters): array {
-    return array_filter(
+    $candidates = array_filter(
       $parameters,
       fn($key) => in_array($key, self::ALLOWED_FIELD_FILTERS, TRUE),
       ARRAY_FILTER_USE_KEY
     );
+    $safe = [];
+    foreach ($candidates as $field => $value) {
+      if (is_array($value)) {
+        $parts = self::normaliseMultiValues($value);
+        if ($parts !== []) {
+          $safe[$field] = $parts;
+        }
+        continue;
+      }
+      if (is_string($value)) {
+        if (str_contains($value, ',')) {
+          $parts = self::normaliseMultiValues(explode(',', $value));
+          if ($parts !== []) {
+            $safe[$field] = $parts;
+          }
+        }
+        else {
+          $safe[$field] = $value;
+        }
+        continue;
+      }
+      // Other scalars (numbers, booleans) and objects: drop. The contract
+      // is string-typed query parameters; anything else is unexpected.
+    }
+    return $safe;
+  }
+
+  /**
+   * Trim, dedupe, drop empties, and cap a list of candidate values.
+   *
+   * Used by filterAllowedFieldParameters() for both array submissions and
+   * comma-separated string splits. Keeps the bound on Drupal entity-query
+   * IN-clause size predictable (MAX_MULTI_VALUES_PER_FIELD) regardless of
+   * which channel the client used.
+   *
+   * @param array<int|string, mixed> $values
+   *   Raw value list as received.
+   *
+   * @return string[]
+   *   Sanitised string values, possibly empty.
+   */
+  private static function normaliseMultiValues(array $values): array {
+    $strings = array_filter($values, 'is_string');
+    $trimmed = array_map('trim', $strings);
+    $nonEmpty = array_filter($trimmed, fn($v) => $v !== '');
+    $deduped = array_values(array_unique($nonEmpty));
+    if (count($deduped) > self::MAX_MULTI_VALUES_PER_FIELD) {
+      $deduped = array_slice($deduped, 0, self::MAX_MULTI_VALUES_PER_FIELD);
+    }
+    return $deduped;
   }
 
 }

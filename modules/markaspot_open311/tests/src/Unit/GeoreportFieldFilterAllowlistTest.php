@@ -117,4 +117,88 @@ class GeoreportFieldFilterAllowlistTest extends UnitTestCase {
     );
   }
 
+  /**
+   * Comma-separated values from the multi-select UI are split into an array
+   * so the caller can apply IN semantics.
+   *
+   * @covers ::filterAllowedFieldParameters
+   */
+  public function testCommaSeparatedValuesAreSplit(): void {
+    $input = [
+      'field_district' => '148,149,150',
+      'field_status' => '12',
+      'field_sublocality' => '42, 43, 44',
+    ];
+    $result = GeoreportRequestIndexResource::filterAllowedFieldParameters($input);
+    $this->assertSame(['148', '149', '150'], $result['field_district']);
+    $this->assertSame('12', $result['field_status']);
+    $this->assertSame(['42', '43', '44'], $result['field_sublocality'], 'Whitespace around comma should be trimmed.');
+  }
+
+  /**
+   * Multi-value arrays are deduplicated and stripped of empty/whitespace.
+   *
+   * @covers ::filterAllowedFieldParameters
+   */
+  public function testMultiValueNormalisation(): void {
+    $input = [
+      'field_district' => '148,148,148,,  ,149',
+      'field_status' => ['1', '2', '2', '', '   ', '3'],
+    ];
+    $result = GeoreportRequestIndexResource::filterAllowedFieldParameters($input);
+    $this->assertSame(['148', '149'], $result['field_district']);
+    $this->assertSame(['1', '2', '3'], $result['field_status']);
+  }
+
+  /**
+   * Hard cap protects the entity query from oversized IN clauses.
+   *
+   * @covers ::filterAllowedFieldParameters
+   */
+  public function testMultiValueCap(): void {
+    $values = array_map('strval', range(1, 100));
+    $input = ['field_district' => implode(',', $values)];
+    $result = GeoreportRequestIndexResource::filterAllowedFieldParameters($input);
+    $this->assertCount(50, $result['field_district']);
+    // Order is preserved up to the cap.
+    $this->assertSame('1', $result['field_district'][0]);
+    $this->assertSame('50', $result['field_district'][49]);
+  }
+
+  /**
+   * Pure comma / whitespace yields nothing (no spurious empty-string IN).
+   *
+   * @covers ::filterAllowedFieldParameters
+   */
+  public function testEmptyAfterSplitIsDropped(): void {
+    $input = [
+      'field_district' => ',,  , ,',
+      'field_status' => '12',
+    ];
+    $this->assertSame(
+      ['field_status' => '12'],
+      GeoreportRequestIndexResource::filterAllowedFieldParameters($input)
+    );
+  }
+
+  /**
+   * Non-string scalars (ints, bools) and objects are dropped — the public
+   * GET surface only carries strings, and unexpected shapes should not
+   * silently round-trip into the entity query.
+   *
+   * @covers ::filterAllowedFieldParameters
+   */
+  public function testNonStringScalarsAreDropped(): void {
+    $input = [
+      'field_status' => 12,
+      'field_category' => true,
+      'field_district' => new \stdClass(),
+      'field_sublocality' => '42',
+    ];
+    $this->assertSame(
+      ['field_sublocality' => '42'],
+      GeoreportRequestIndexResource::filterAllowedFieldParameters($input)
+    );
+  }
+
 }
