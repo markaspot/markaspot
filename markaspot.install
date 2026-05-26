@@ -5,6 +5,8 @@
  * Install, update and uninstall functions for the markaspot profile.
  */
 
+use Drupal\Component\Uuid\Uuid;
+use Drupal\Core\Config\Entity\ConfigEntityInterface;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
@@ -2132,6 +2134,78 @@ function markaspot_update_11918(): string {
 
   $role->save();
   return 'Granted anonymous public report permissions: ' . implode(', ', $granted) . '.';
+}
+
+/**
+ * Repair config-entity UUIDs that landed as NULL/invalid from old dumps.
+ *
+ * Imports of pre-11.9 dumps (D10 with legacy config entities, fresh module
+ * activations via SQL INSERT, etc.) regularly leave a subset of
+ * config-entity rows without a valid uuid. When JSON:API then resolves a
+ * relationship targeting one of these entities — typically
+ * `paragraphs_type.internal_remark` referenced via
+ * `paragraph.relationships.paragraph_type.data.id` — the response fails
+ * core's ResourceResponseValidator schema check ("NULL value found, but a
+ * string is required") and produces a 500 cascade in the dashboard.
+ *
+ * cp2 was hand-patched on 2026-05-18 via `drush cset`. This hook is the
+ * portable version: idempotent, safe to re-run, generates UUIDs only where
+ * missing/invalid, persists via the entity API so config_dependency caches
+ * stay consistent.
+ *
+ * Same surface as scripts/repair-config-entity-uuids.php in client repos,
+ * but a real post_update so `drush updb` picks it up on every tenant
+ * without manual intervention.
+ */
+function markaspot_update_11919(): string {
+  $entityTypeManager = \Drupal::entityTypeManager();
+  $uuidService = \Drupal::service('uuid');
+  $repaired = 0;
+  $failed = [];
+
+  foreach ($entityTypeManager->getDefinitions() as $entityTypeId => $definition) {
+    if (!$definition->entityClassImplements(ConfigEntityInterface::class)) {
+      continue;
+    }
+
+    try {
+      $storage = $entityTypeManager->getStorage($entityTypeId);
+      $entities = method_exists($storage, 'loadMultipleOverrideFree')
+        ? $storage->loadMultipleOverrideFree()
+        : $storage->loadMultiple();
+    }
+    catch (\Throwable $e) {
+      $failed[] = "$entityTypeId: " . $e->getMessage();
+      continue;
+    }
+
+    foreach ($entities as $entity) {
+      if (!$entity instanceof ConfigEntityInterface) {
+        continue;
+      }
+      $uuid = $entity->uuid();
+      if (is_string($uuid) && Uuid::isValid($uuid)) {
+        continue;
+      }
+      try {
+        $entity->set('uuid', $uuidService->generate());
+        $entity->save();
+        $repaired++;
+      }
+      catch (\Throwable $e) {
+        $failed[] = $entity->getConfigDependencyName() . ': ' . $e->getMessage();
+      }
+    }
+  }
+
+  $msg = sprintf('Repaired %d config-entity UUIDs (NULL/invalid).', $repaired);
+  if (!empty($failed)) {
+    $msg .= ' Failed: ' . implode('; ', array_slice($failed, 0, 5));
+    if (count($failed) > 5) {
+      $msg .= ' (and ' . (count($failed) - 5) . ' more)';
+    }
+  }
+  return $msg;
 }
 
 /**
