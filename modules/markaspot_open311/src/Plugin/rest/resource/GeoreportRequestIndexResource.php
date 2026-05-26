@@ -45,7 +45,7 @@ use Drupal\user\Entity\Role;
  *   }
  * )
  */
-class GeoreportRequestIndexResource extends ResourceBase {
+final class GeoreportRequestIndexResource extends ResourceBase {
 
   use StringTranslationTrait;
   use LanguageNegotiationTrait;
@@ -471,13 +471,17 @@ class GeoreportRequestIndexResource extends ResourceBase {
       }
     }
 
-    // Handle custom field filters - move these after main filters.
+    // Handle custom field filters.
+    //
+    // The endpoint is reachable anonymously, so the previous substring
+    // match `str_contains($key, 'field_')` let any caller probe entity
+    // schema by passing arbitrary `field_*` query parameters: invalid
+    // names surface as 500s and valid ones run as `WHERE field_* = …`.
+    // Both behaviours are useful to an attacker mapping field structure.
+    // The allowlist below mirrors the intentionally filterable surface
+    // and is enforced via the named helper so the unit test can pin it.
     if (!empty($parameters)) {
-      $fields = array_filter(
-        $parameters,
-        fn($key) => str_contains($key, 'field_'),
-        ARRAY_FILTER_USE_KEY
-      );
+      $fields = self::filterAllowedFieldParameters($parameters);
       foreach ($fields as $field => $value) {
         $query->condition($field, $value, '=');
       }
@@ -660,7 +664,7 @@ class GeoreportRequestIndexResource extends ResourceBase {
           // 1000 RPS would write 1000 dblog rows/s and starve other
           // diagnostics. First hit gets the warning; suppressed retries are
           // still rejected with 403, just not re-logged.
-          $clientIp = \Drupal::request()->getClientIp() ?? '0.0.0.0';
+          $clientIp = $this->requestStack->getCurrentRequest()?->getClientIp() ?? '0.0.0.0';
           $floodKey = 'markaspot_open311.blocked_post.' . $jurisdictionId . '.' . $clientIp;
           if ($this->flood->isAllowed($floodKey, 1, 60)) {
             $this->flood->register($floodKey, 60);
@@ -1176,6 +1180,41 @@ class GeoreportRequestIndexResource extends ResourceBase {
         400
       );
     }
+  }
+
+  /**
+   * Allowlist of node fields filterable via direct field_* query parameters.
+   *
+   * The endpoint is reachable anonymously. Limiting equality filtering to
+   * this explicit set prevents schema probing through arbitrary field_*
+   * names and matches the surface the frontend actually queries.
+   *
+   * SECURITY: before adding a field here, confirm it carries no per-row
+   * access constraints that the entity query bypasses. The query is built
+   * with accessCheck(), but field-permissions-gated fields (e.g.
+   * field_internal_remark) must NEVER be in this list.
+   */
+  public const ALLOWED_FIELD_FILTERS = [
+    'field_status',
+    'field_category',
+    'field_district',
+    'field_sublocality',
+    'field_hazard_level',
+    'field_facility',
+  ];
+
+  /**
+   * Return only the query parameters that target allowlisted node fields.
+   *
+   * Extracted from the main index() flow so the security boundary has a
+   * named, unit-tested surface.
+   */
+  public static function filterAllowedFieldParameters(array $parameters): array {
+    return array_filter(
+      $parameters,
+      fn($key) => in_array($key, self::ALLOWED_FIELD_FILTERS, TRUE),
+      ARRAY_FILTER_USE_KEY
+    );
   }
 
 }
