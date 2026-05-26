@@ -14,6 +14,13 @@ use Drupal\Core\Session\AccountInterface;
 
 /**
  * Implements hook_entity_access().
+ *
+ * Three layers of defense for internal_remark paragraphs:
+ *  - view/update/delete require the corresponding field_permissions grant
+ *  - update/delete additionally require authorship OR 'administer nodes'
+ *    so a staff member with the bare grant cannot rewrite peers' remarks
+ *    via direct JSON:API PATCH/DELETE
+ *  - create is gated separately in hook_entity_create_access() below
  */
 function markaspot_dashboard_entity_access(EntityInterface $entity, $operation, AccountInterface $account): AccessResultInterface {
   if ($entity->getEntityTypeId() !== 'paragraph' || $entity->bundle() !== 'internal_remark') {
@@ -29,8 +36,29 @@ function markaspot_dashboard_entity_access(EntityInterface $entity, $operation, 
     return AccessResult::neutral();
   }
 
-  return AccessResult::forbiddenIf(!$account->hasPermission($permissions[$operation]))
-    ->cachePerPermissions();
+  if (!$account->hasPermission($permissions[$operation])) {
+    return AccessResult::forbidden()->cachePerPermissions();
+  }
+
+  // Authorship gate for write operations. The custom InternalRemarkController
+  // applies the same check, but the direct JSON:API path bypasses that
+  // controller — without this gate any staff member with the bare grant
+  // could silently rewrite peers' remarks (IDOR).
+  if (in_array($operation, ['update', 'delete'], TRUE)) {
+    if ($account->hasPermission('administer nodes')) {
+      return AccessResult::neutral()->cachePerPermissions();
+    }
+    $author_id = (int) ($entity->get('field_author')->target_id ?? 0);
+    $is_author = $author_id !== 0 && $author_id === (int) $account->id();
+    $result = $is_author
+      ? AccessResult::neutral()
+      : AccessResult::forbidden('Only the remark author or an administrator may modify this remark.');
+    return $result
+      ->cachePerUser()
+      ->addCacheableDependency($entity);
+  }
+
+  return AccessResult::neutral()->cachePerPermissions();
 }
 
 /**

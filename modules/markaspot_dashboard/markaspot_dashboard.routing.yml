@@ -118,6 +118,15 @@ markaspot_dashboard.internal_remark_create:
   requirements:
     _permission: 'manage dashboard notes'
 
+markaspot_dashboard.internal_remark_update:
+  path: '/api/dashboard/internal-remarks/{uuid}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\InternalRemarkController::update'
+    _format: 'json'
+  methods: [PATCH]
+  requirements:
+    _permission: 'manage dashboard notes'
+
 markaspot_dashboard.internal_remark_delete:
   path: '/api/dashboard/internal-remarks/{uuid}'
   defaults:

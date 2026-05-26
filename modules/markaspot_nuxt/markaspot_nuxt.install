@@ -284,3 +284,60 @@ function markaspot_nuxt_update_11900(): string {
     $skipped,
   );
 }
+
+/**
+ * Lock down user--user JSON:API sideloads to {uuid, name} only.
+ *
+ * Closes GDPR Art. 5(1)(c) data minimisation gap: when a node includes
+ * `field_internal_remark.field_author`, Drupal sideloads the full user
+ * resource. The dashboard only needs uuid + display_name/name, but the
+ * historic config left mail, roles, access/login timestamps,
+ * field_internal_phone, field_internal_orga and other PII enabled. Cross-org
+ * staff browsers could read those off the wire via devtools.
+ *
+ * The fix mirrors the rewritten optional config so fresh installs and
+ * existing tenants converge on the same minimal exposure surface.
+ */
+function markaspot_nuxt_update_11901(): string {
+  $allow = ['uuid', 'name'];
+  $config = \Drupal::configFactory()->getEditable('jsonapi_extras.jsonapi_resource_config.user--user');
+
+  // Tenants that never installed this optional config fall through to the
+  // default JSON:API resource handler, which exposes every user field with no
+  // filter. Seed the config from the shipped optional yaml so the lockdown
+  // applies regardless of the prior state.
+  if ($config->isNew()) {
+    $source = new FileStorage(__DIR__ . '/config/optional');
+    $seed = $source->read('jsonapi_extras.jsonapi_resource_config.user--user');
+    if ($seed === FALSE) {
+      return 'Optional config source missing, cannot seed user--user lockdown.';
+    }
+    $config->setData($seed)->save();
+    return 'Seeded jsonapi_extras.jsonapi_resource_config.user--user with locked-down fields (kept: ' . implode(', ', $allow) . ').';
+  }
+
+  $fields = $config->get('resourceFields') ?? [];
+  $changed = 0;
+  foreach ($fields as $key => $field) {
+    $shouldDisable = !in_array($key, $allow, TRUE);
+    if (($field['disabled'] ?? FALSE) !== $shouldDisable) {
+      $fields[$key]['disabled'] = $shouldDisable;
+      $changed++;
+    }
+  }
+
+  // The resource itself must stay enabled so JSON:API can resolve user
+  // relationships in includes (e.g. field_internal_remark.field_author).
+  // Setting disabled=true on the resource also blocks sideload resolution.
+  if ($config->get('disabled') === TRUE) {
+    $config->set('disabled', FALSE);
+    $changed++;
+  }
+
+  if ($changed === 0) {
+    return 'No user--user resource fields needed updating.';
+  }
+
+  $config->set('resourceFields', $fields)->save();
+  return sprintf('Locked down %d user--user resource field(s) to disabled=true (kept: %s).', $changed, implode(', ', $allow));
+}
