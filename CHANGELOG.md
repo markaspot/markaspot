@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.96](https://github.com/markaspot/markaspot/compare/11.9.95...11.9.96) (2026-05-26)
+
+### Features
+
+* **open311:** comma-IN operator for allowlisted field_* filters ([6b0522c](https://github.com/markaspot/markaspot/commit/6b0522ceb51318230b203966577d71082726945f))
+
+### Bug Fixes
+
+* repair NULL/invalid config-entity uuids on migrated tenants ([42883fc](https://github.com/markaspot/markaspot/commit/42883fcc1573701865a83404ec4e156d2584a364))
+* **security:** allowlist field_* parameters on GeoReport requests index ([848867a](https://github.com/markaspot/markaspot/commit/848867acf698514e875f1ae9635e0de4278b6795))
+* **security:** minimise user--user JSON:API fields and gate internal_remark writes ([896e17c](https://github.com/markaspot/markaspot/commit/896e17c6e5360887319a209e44550b8faf8b1bb5))
+
 ## [11.9.95](https://github.com/markaspot/markaspot/compare/11.9.94...11.9.95) (2026-05-25)
 
 ### Bug Fixes
