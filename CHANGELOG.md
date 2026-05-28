@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.99](https://github.com/markaspot/markaspot/compare/11.9.98...11.9.99) (2026-05-28)
+
+### Bug Fixes
+
+* mirror request attribute management updates ([ef12962](https://github.com/markaspot/markaspot/commit/ef129629898f054a17a5dd148aa5a51b39025bcc))
+
 ## [11.9.98](https://github.com/markaspot/markaspot/compare/11.9.97...11.9.98) (2026-05-28)
 
 ### Bug Fixes
