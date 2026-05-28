@@ -79,6 +79,50 @@ msgstr "Als u deze uitnodiging niet verwachtte, kunt u deze e-mail veilig negere
 msgid "Accept invitation"
 msgstr "Uitnodiging accepteren"
 
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "your organisation"
+msgstr "uw organisatie"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id assigned to @organisation"
+msgstr "Melding #@request_id is toegewezen aan @organisation"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "This request has been assigned to your organisation for processing."
+msgstr "Deze melding is toegewezen aan uw organisatie voor verwerking."
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Description: @description"
+msgstr "Beschrijving: @description"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request"
+msgstr "Melding"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Category"
+msgstr "Categorie"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Location"
+msgstr "Locatie"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Organisation"
+msgstr "Organisatie"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id was assigned to @organisation"
+msgstr "Melding #@request_id is toegewezen aan @organisation"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "A citizen request is ready for review."
+msgstr "Een melding van een inwoner is klaar voor beoordeling."
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Open request"
+msgstr "Melding openen"
+
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your @site workspace \"@name\""
 msgstr "Activeer uw @site-werkruimte \"@name\""

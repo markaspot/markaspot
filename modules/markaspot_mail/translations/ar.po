@@ -79,6 +79,50 @@ msgstr "إذا لم تكن تتوقع هذه الدعوة، فيمكنك تجا�
 msgid "Accept invitation"
 msgstr "قبول الدعوة"
 
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "your organisation"
+msgstr "مؤسستك"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id assigned to @organisation"
+msgstr "تم تعيين البلاغ رقم @request_id إلى @organisation"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "This request has been assigned to your organisation for processing."
+msgstr "تم تعيين هذا البلاغ إلى مؤسستك للمعالجة."
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Description: @description"
+msgstr "الوصف: @description"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request"
+msgstr "البلاغ"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Category"
+msgstr "الفئة"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Location"
+msgstr "الموقع"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Organisation"
+msgstr "المؤسسة"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id was assigned to @organisation"
+msgstr "تم تعيين البلاغ رقم @request_id إلى @organisation"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "A citizen request is ready for review."
+msgstr "بلاغ من مواطن جاهز للمراجعة."
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Open request"
+msgstr "فتح البلاغ"
+
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your @site workspace \"@name\""
 msgstr "فعّل مساحة العمل \"@name\" الخاصة بك على @site"

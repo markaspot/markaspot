@@ -77,3 +77,81 @@ function markaspot_mail_update_10002(): string {
   $config->set('attachments', $current)->save();
   return 'Seeded attachments defaults: ' . implode(', ', $added) . '.';
 }
+
+/**
+ * Import updated shipped translations for organisation assignment mails.
+ *
+ * Drupal imports module-local .po files when a module or language is first
+ * enabled. Existing tenants need an update hook when we extend those files,
+ * otherwise new $this->t() strings keep falling back to English until an
+ * operator manually runs locale:check + locale:update.
+ */
+function markaspot_mail_update_10003(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('locale')) {
+    return 'locale not enabled; no markaspot_mail translations imported.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_mail');
+  $translation_dir = DRUPAL_ROOT . '/' . $module_path . '/translations';
+  if (!is_dir($translation_dir)) {
+    return 'markaspot_mail translation directory not found; no action.';
+  }
+
+  $not_customized = defined('LOCALE_NOT_CUSTOMIZED')
+    ? (int) constant('LOCALE_NOT_CUSTOMIZED')
+    : 0;
+  $options = [
+    'overwrite_options' => [
+      'not_customized' => TRUE,
+      'customized' => FALSE,
+    ],
+    'customized' => $not_customized,
+  ];
+
+  $imported = [];
+  $imported_langcodes = [];
+  $updated_lids = [];
+  foreach (array_keys(\Drupal::languageManager()->getLanguages()) as $langcode) {
+    if ($langcode === 'en') {
+      continue;
+    }
+    $uri = $translation_dir . '/' . $langcode . '.po';
+    if (!is_file($uri)) {
+      continue;
+    }
+
+    try {
+      $report = \Drupal\locale\Gettext::fileToDatabase((object) [
+        'langcode' => $langcode,
+        'uri' => $uri,
+      ], $options);
+    }
+    catch (\Throwable $e) {
+      \Drupal::logger('markaspot_mail')->warning('Failed to import markaspot_mail translations for @langcode: @message', [
+        '@langcode' => $langcode,
+        '@message' => $e->getMessage(),
+      ]);
+      continue;
+    }
+
+    $changed = (int) ($report['additions'] ?? 0) + (int) ($report['updates'] ?? 0);
+    if ($changed > 0) {
+      $imported[] = $langcode . ':' . $changed;
+      $imported_langcodes[] = $langcode;
+      $strings = $report['strings'] ?? [];
+      if (is_array($strings)) {
+        $updated_lids = array_merge($updated_lids, $strings);
+      }
+    }
+  }
+
+  if ($imported === []) {
+    return 'markaspot_mail translations already up to date; no action.';
+  }
+
+  if (function_exists('_locale_refresh_translations')) {
+    _locale_refresh_translations($imported_langcodes, array_unique($updated_lids));
+  }
+
+  return 'Imported markaspot_mail translations: ' . implode(', ', $imported) . '.';
+}

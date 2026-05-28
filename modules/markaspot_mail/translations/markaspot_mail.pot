@@ -78,6 +78,50 @@ msgstr ""
 msgid "Accept invitation"
 msgstr ""
 
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "your organisation"
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id assigned to @organisation"
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "This request has been assigned to your organisation for processing."
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Description: @description"
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request"
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Category"
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Location"
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Organisation"
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id was assigned to @organisation"
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "A citizen request is ready for review."
+msgstr ""
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Open request"
+msgstr ""
+
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your @site workspace \"@name\""
 msgstr ""

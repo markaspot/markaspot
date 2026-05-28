@@ -79,6 +79,50 @@ msgstr "Si no esperaba esta invitación, puede ignorar este correo electrónico 
 msgid "Accept invitation"
 msgstr "Aceptar invitación"
 
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "your organisation"
+msgstr "su organización"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id assigned to @organisation"
+msgstr "La incidencia #@request_id se ha asignado a @organisation"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "This request has been assigned to your organisation for processing."
+msgstr "Esta incidencia se ha asignado a su organización para su tramitación."
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Description: @description"
+msgstr "Descripción: @description"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request"
+msgstr "Incidencia"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Category"
+msgstr "Categoría"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Location"
+msgstr "Ubicación"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Organisation"
+msgstr "Organización"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id was assigned to @organisation"
+msgstr "La incidencia #@request_id se ha asignado a @organisation"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "A citizen request is ready for review."
+msgstr "Una incidencia ciudadana está lista para revisión."
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Open request"
+msgstr "Abrir incidencia"
+
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your @site workspace \"@name\""
 msgstr "Active su espacio de trabajo \"@name\" de @site"

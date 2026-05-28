@@ -79,6 +79,50 @@ msgstr "Jeśli nie spodziewałeś się tego zaproszenia, możesz bezpiecznie zig
 msgid "Accept invitation"
 msgstr "Zaakceptuj zaproszenie"
 
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "your organisation"
+msgstr "Twojej organizacji"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id assigned to @organisation"
+msgstr "Zgłoszenie #@request_id zostało przypisane do @organisation"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "This request has been assigned to your organisation for processing."
+msgstr "To zgłoszenie zostało przypisane Twojej organizacji do obsługi."
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Description: @description"
+msgstr "Opis: @description"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request"
+msgstr "Zgłoszenie"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Category"
+msgstr "Kategoria"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Location"
+msgstr "Lokalizacja"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Organisation"
+msgstr "Organizacja"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Request #@request_id was assigned to @organisation"
+msgstr "Zgłoszenie #@request_id zostało przypisane do @organisation"
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "A citizen request is ready for review."
+msgstr "Zgłoszenie mieszkańca jest gotowe do sprawdzenia."
+
+#: src/Mail/Builder/GroupOrgNotificationBuilder.php
+msgid "Open request"
+msgstr "Otwórz zgłoszenie"
+
 #: src/Mail/Builder/WorkspaceVerificationBuilder.php
 msgid "Activate your @site workspace \"@name\""
 msgstr "Aktywuj swoją przestrzeń roboczą \"@name\" w @site"

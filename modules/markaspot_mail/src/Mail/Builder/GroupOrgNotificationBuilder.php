@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail\Builder;
 
+use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
-use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
+use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
+use Drupal\markaspot_mail\Service\MailBrandingService;
+use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -16,25 +21,21 @@ use Psr\Log\LoggerInterface;
  *
  * Generic admin-to-organisation notification fired by the group module
  * when a service request is routed to one or more head organisations.
- * The caller builds the subject + message strings itself (typically with
- * context-specific placeholders already substituted), so this builder is
- * a pass-through wrapper that applies branding chrome without touching
- * the wording.
+ * The group module owns trigger timing and recipient resolution; this builder
+ * owns the wording, translation and jurisdiction branding.
  *
  * Required params:
- *   - subject (string)
- *   - message (string, the body — legacy key name matches the hook)
- *
- * Always platform mode: org_notification targets head organisations
- * that may span multiple jurisdictions, and the caller doesn't pass a
- * single canonical jur context.
+ *   - node (NodeInterface)
+ *   - organisation (GroupInterface)
  */
 final class GroupOrgNotificationBuilder implements MailBuilderInterface {
 
-  use SplitParagraphsTrait;
+  use ResolveJurisdictionFromNodeTrait;
+  use StringTranslationTrait;
 
   public function __construct(
     private readonly LoggerInterface $logger,
+    private readonly MailBrandingService $branding,
   ) {}
 
   /**
@@ -55,27 +56,129 @@ final class GroupOrgNotificationBuilder implements MailBuilderInterface {
    * {@inheritdoc}
    */
   public function build(MailContext $ctx): ?MailMessage {
-    $subject = trim((string) ($ctx->params['subject'] ?? ''));
-    $message = trim((string) ($ctx->params['message'] ?? ''));
-    if ($subject === '' || $message === '') {
-      $this->logger->warning('org_notification: missing subject or message param, skipping branded render.');
+    $node = $ctx->params['node'] ?? NULL;
+    $organisation = $ctx->params['organisation'] ?? NULL;
+    if (!$node instanceof NodeInterface || !$organisation instanceof GroupInterface) {
+      $this->logger->warning('org_notification: missing node or organisation param, skipping branded render.');
       return NULL;
     }
 
-    $paragraphs = $this->splitParagraphs($message);
-    $intro = array_shift($paragraphs) ?? '';
+    [$mode, $jurisdictionId] = $this->resolveJurisdictionFromNode($node);
+    $branding = $this->branding->getBranding($jurisdictionId, $mode, $ctx->langcode);
+    $requestId = $this->resolveRequestId($node);
+    $organisationName = trim((string) $organisation->label());
+    $organisationLabel = $organisationName !== ''
+      ? $organisationName
+      : (string) $this->t('your organisation', [], ['langcode' => $ctx->langcode]);
+    $category = $this->resolveCategoryLabel($node);
+    $address = $this->resolveFieldString($node, 'field_address');
+    $description = $this->resolveBodyText($node);
+    $requestUrl = $this->resolveRequestUrl($requestId, $branding);
+
+    $subject = (string) $this->t('Request #@request_id assigned to @organisation', [
+      '@request_id' => $requestId,
+      '@organisation' => $organisationLabel,
+    ], ['langcode' => $ctx->langcode]);
+
+    $bodyBlocks = [
+      (string) $this->t('This request has been assigned to your organisation for processing.', [], ['langcode' => $ctx->langcode]),
+    ];
+    if ($description !== '') {
+      $bodyBlocks[] = (string) $this->t('Description: @description', [
+        '@description' => $description,
+      ], ['langcode' => $ctx->langcode]);
+    }
+
+    $features = [
+      [(string) $this->t('Request', [], ['langcode' => $ctx->langcode]) => '#' . $requestId],
+    ];
+    if ($category !== '') {
+      $features[] = [(string) $this->t('Category', [], ['langcode' => $ctx->langcode]) => $category];
+    }
+    if ($address !== '') {
+      $features[] = [(string) $this->t('Location', [], ['langcode' => $ctx->langcode]) => $address];
+    }
+    if ($organisationName !== '') {
+      $features[] = [(string) $this->t('Organisation', [], ['langcode' => $ctx->langcode]) => $organisationName];
+    }
 
     return new MailMessage(
       subject: $subject,
       variant: 'card_transactional',
       content: [
-        'preheader' => mb_strimwidth(strip_tags($message), 0, 100, '…'),
+        'preheader' => (string) $this->t('Request #@request_id was assigned to @organisation', [
+          '@request_id' => $requestId,
+          '@organisation' => $organisationLabel,
+        ], ['langcode' => $ctx->langcode]),
         'headline' => $subject,
-        'intro' => $intro,
-        'body_blocks' => $paragraphs,
+        'intro' => (string) $this->t('A citizen request is ready for review.', [], ['langcode' => $ctx->langcode]),
+        'body_blocks' => $bodyBlocks,
+        'features_block' => $features,
+        'cta_label' => $requestUrl !== '' ? (string) $this->t('Open request', [], ['langcode' => $ctx->langcode]) : '',
+        'cta_url' => $requestUrl,
       ],
-      mode: 'platform',
+      mode: $mode,
+      jurisdictionId: $jurisdictionId,
     );
+  }
+
+  /**
+   * Resolves the human-facing request identifier.
+   */
+  private function resolveRequestId(NodeInterface $node): string {
+    $requestId = '';
+    if ($node->hasField('request_id') && !$node->get('request_id')->isEmpty()) {
+      $requestId = trim($node->get('request_id')->getString());
+    }
+    return $requestId !== '' ? $requestId : (string) $node->id();
+  }
+
+  /**
+   * Resolves a taxonomy-like category label.
+   */
+  private function resolveCategoryLabel(NodeInterface $node): string {
+    if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+      return '';
+    }
+    $field = $node->get('field_category');
+    if (!$field instanceof EntityReferenceFieldItemListInterface) {
+      return '';
+    }
+    $category = $field->referencedEntities()[0] ?? NULL;
+    return is_object($category) && method_exists($category, 'label')
+      ? trim((string) $category->label())
+      : '';
+  }
+
+  /**
+   * Resolves a scalar node field value.
+   */
+  private function resolveFieldString(NodeInterface $node, string $fieldName): string {
+    if (!$node->hasField($fieldName) || $node->get($fieldName)->isEmpty()) {
+      return '';
+    }
+    return trim($node->get($fieldName)->getString());
+  }
+
+  /**
+   * Resolves and escapes the citizen-submitted description.
+   */
+  private function resolveBodyText(NodeInterface $node): string {
+    return trim(strip_tags($this->resolveFieldString($node, 'body')));
+  }
+
+  /**
+   * Builds the dashboard URL from resolved mail branding.
+   */
+  private function resolveRequestUrl(string $requestId, array $branding): string {
+    $frontendBase = rtrim((string) ($branding['frontend_base_url'] ?? ''), '/');
+    if ($frontendBase === '' || $requestId === '') {
+      return '';
+    }
+    $slug = trim((string) ($branding['jurisdiction_slug'] ?? ''));
+    $useJurisdictionPath = (bool) ($branding['frontend_uses_jurisdiction_path'] ?? ($slug !== ''));
+    $prefix = $useJurisdictionPath && $slug !== '' ? '/' . rawurlencode($slug) : '';
+    return $frontendBase . $prefix . '/dashboard/requests/' . rawurlencode($requestId);
   }
 
 }

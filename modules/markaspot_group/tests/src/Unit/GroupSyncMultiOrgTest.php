@@ -8,6 +8,8 @@ use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Component\Utility\EmailValidatorInterface;
 use Drupal\group\Entity\GroupInterface;
@@ -616,8 +618,44 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
         $this->callback(static fn(array $params): bool =>
           ($params['node'] ?? NULL) === $node
           && ($params['organisation'] ?? NULL) === $group
-          && str_contains((string) ($params['subject'] ?? ''), '#REQ-1')
-          && str_contains((string) ($params['message'] ?? ''), 'A short body')
+          && is_string($params['subject'] ?? NULL)
+          && str_contains($params['subject'], 'REQ-1')
+          && str_contains($params['subject'], 'Organisation')
+          && is_string($params['message'] ?? NULL)
+          && str_contains($params['message'], 'Request: #REQ-1')
+          && str_contains($params['message'], 'Category: Radbuegel')
+          && str_contains($params['message'], 'Location: Teststrasse 1')
+          && str_contains($params['message'], 'Description: A short body')
+        ),
+      )
+      ->willReturn(['result' => TRUE]);
+    $this->installNotificationContainer($mailManager);
+
+    _markaspot_group_notify_service_request_org_relationship($relationship, TRUE);
+  }
+
+  /**
+   * Tests org notification langcode follows jurisdiction Nuxt config.
+   */
+  public function testOrgRelationshipUsesJurisdictionDefaultLanguage(): void {
+    $node = $this->serviceRequestNode(
+      jurisdictionId: 18,
+      jurisdictionGroup: $this->jurisdictionGroup(id: 18, defaultLangcode: 'de'),
+    );
+    $group = $this->organisationGroup(jurisdictionId: 18);
+    $relationship = $this->relationship($node, $group);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->once())
+      ->method('mail')
+      ->with(
+        'markaspot_group',
+        'org_notification',
+        'org@example.test',
+        'de',
+        $this->callback(static fn(array $params): bool =>
+          ($params['node'] ?? NULL) === $node
+          && ($params['organisation'] ?? NULL) === $group
         ),
       )
       ->willReturn(['result' => TRUE]);
@@ -882,12 +920,24 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $emailValidator->method('isValid')
       ->willReturnCallback(static fn(string $email): bool => str_contains($email, '@'));
 
+    $english = $this->createMock(LanguageInterface::class);
+    $english->method('getId')->willReturn('en');
+    $german = $this->createMock(LanguageInterface::class);
+    $german->method('getId')->willReturn('de');
+    $languageManager = $this->createMock(LanguageManagerInterface::class);
+    $languageManager->method('getDefaultLanguage')->willReturn($english);
+    $languageManager->method('getLanguages')->willReturn([
+      'en' => $english,
+      'de' => $german,
+    ]);
+
     $container = new ContainerBuilder();
     $container->set('plugin.manager.mail', $mailManager);
     $container->set('request_stack', $requestStack);
     $container->set('config.factory', $configFactory);
     $container->set('email.validator', $emailValidator);
     $container->set('markaspot_group.hierarchy_resolver', $hierarchyResolver);
+    $container->set('language_manager', $languageManager);
     if ($entityTypeManager !== NULL) {
       $container->set('entity_type.manager', $entityTypeManager);
     }
@@ -897,7 +947,13 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   /**
    * Creates a service request node mock with the fields used by mail delivery.
    */
-  private function serviceRequestNode(int $jurisdictionId = 1, int $organisationId = 100): NodeInterface {
+  private function serviceRequestNode(
+    int $jurisdictionId = 1,
+    int $organisationId = 100,
+    ?GroupInterface $jurisdictionGroup = NULL,
+  ): NodeInterface {
+    $jurisdictionGroup ??= $this->jurisdictionGroup(id: $jurisdictionId);
+
     $category = new class() {
 
       /**
@@ -910,7 +966,13 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     };
 
     $fields = [
-      'field_jurisdiction' => $this->field([['target_id' => $jurisdictionId]], ['target_id' => $jurisdictionId]),
+      'field_jurisdiction' => $this->field(
+        [['target_id' => $jurisdictionId]],
+        [
+          'target_id' => $jurisdictionId,
+          'entity' => $jurisdictionGroup,
+        ],
+      ),
       'field_organisation' => $this->field([['target_id' => $organisationId]]),
       'request_id' => $this->field([['value' => 'REQ-1']], ['value' => 'REQ-1']),
       'field_category' => $this->field([['target_id' => 9]], ['entity' => $category]),
@@ -943,6 +1005,34 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $group->method('id')->willReturn($id);
     $group->method('bundle')->willReturn('org');
     $group->method('label')->willReturn('Organisation');
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $fieldName): bool => array_key_exists($fieldName, $fields));
+    $group->method('get')
+      ->willReturnCallback(static fn(string $fieldName): FieldItemListInterface => $fields[$fieldName]);
+    return $group;
+  }
+
+  /**
+   * Creates a jurisdiction group with a Nuxt default language.
+   */
+  private function jurisdictionGroup(int $id = 1, ?string $defaultLangcode = NULL): GroupInterface {
+    $fields = [];
+    if ($defaultLangcode !== NULL) {
+      $nuxtConfig = json_encode([
+        'languages' => [
+          'default' => $defaultLangcode,
+          'available' => [$defaultLangcode],
+        ],
+      ]);
+      $fields['field_nuxt_config'] = $this->field(
+        [['value' => $nuxtConfig]],
+        ['value' => $nuxtConfig],
+      );
+    }
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($id);
+    $group->method('bundle')->willReturn('jur');
     $group->method('hasField')
       ->willReturnCallback(static fn(string $fieldName): bool => array_key_exists($fieldName, $fields));
     $group->method('get')
@@ -991,6 +1081,7 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $field = $this->createMock(FieldItemListInterface::class);
     $field->method('isEmpty')->willReturn($values === []);
     $field->method('getValue')->willReturn($values);
+    $field->method('getString')->willReturn((string) ($properties['value'] ?? ''));
     $field->method('__get')
       ->willReturnCallback(static fn(string $property): mixed => $properties[$property] ?? NULL);
     $field->method('__isset')

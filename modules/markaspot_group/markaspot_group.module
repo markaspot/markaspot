@@ -35,8 +35,8 @@ use Drupal\user\UserInterface;
  */
 function markaspot_group_mail(string $key, array &$message, array $params): void {
   if ($key === 'org_notification') {
-    $message['subject'] = $params['subject'];
-    $message['body'][] = $params['message'];
+    $message['subject'] = (string) ($params['subject'] ?? 'A service request was assigned to your organisation');
+    $message['body'][] = (string) ($params['message'] ?? 'A service request has been assigned to your organisation.');
     return;
   }
 
@@ -2854,41 +2854,16 @@ function _markaspot_group_notify_organisation_group(NodeInterface $node, GroupIn
     return;
   }
 
-  $request_id = _markaspot_group_sanitize_for_email(
-    (string) ($node->hasField('request_id') ? $node->get('request_id')->value ?? $node->id() : $node->id())
-  );
-  $category = _markaspot_group_sanitize_for_email(
-    $node->hasField('field_category') && !$node->get('field_category')->isEmpty()
-      ? $node->get('field_category')->entity->label()
-      : ''
-  );
-  $address = _markaspot_group_sanitize_for_email(
-    $node->hasField('field_address') ? $node->get('field_address')->value ?? '' : ''
-  );
-  $body_text = _markaspot_group_sanitize_for_email(
-    $node->hasField('body') && !$node->get('body')->isEmpty()
-      ? $node->get('body')->value
-      : ''
-  );
-  $site_url = \Drupal::request()->getSchemeAndHttpHost();
-
-  $subject = "A request #$request_id for the category $category";
-  $message = "Hello,\na citizen request has been assigned to your organization:\n\n"
-    . "Category: {$node->label()}\n"
-    . "Detailed Description: $body_text\n"
-    . "Location of the request: $address\n\n"
-    . "To process the request, please click on the following link:\n"
-    . "$site_url/{$node->id()}/edit\n\n"
-    . "Not registered yet today? $site_url/{$node->id()}/user\n\n"
-    . "--\nThis is an automatically generated email and cannot be replied to.";
+  $langcode = _markaspot_group_organisation_notification_langcode($node);
 
   /** @var \Drupal\Core\Mail\MailManagerInterface $mail_manager */
   $mail_manager = \Drupal::service('plugin.manager.mail');
+  $fallback_message = _markaspot_group_build_organisation_notification_fallback($node, $org_group);
 
   foreach ($recipients as $email) {
-    $result = $mail_manager->mail('markaspot_group', 'org_notification', $email, 'en', [
-      'subject' => $subject,
-      'message' => $message,
+    $result = $mail_manager->mail('markaspot_group', 'org_notification', $email, $langcode, [
+      'subject' => $fallback_message['subject'],
+      'message' => $fallback_message['message'],
       'node' => $node,
       'organisation' => $org_group,
     ]);
@@ -2902,6 +2877,177 @@ function _markaspot_group_notify_organisation_group(NodeInterface $node, GroupIn
       );
     }
   }
+}
+
+/**
+ * Builds the plain fallback mail body for organisation notifications.
+ *
+ * markaspot_mail normally replaces this in hook_mail_alter() with branded,
+ * localized HTML. Keep the original Drupal mail actionable so render failures
+ * still notify the organisation with enough context to process the request.
+ *
+ * @return array{subject: string, message: string}
+ *   Fallback mail subject and body.
+ */
+function _markaspot_group_build_organisation_notification_fallback(NodeInterface $node, GroupInterface $org_group): array {
+  $request_id = _markaspot_group_sanitize_for_email(
+    (string) ($node->hasField('request_id') && !$node->get('request_id')->isEmpty()
+      ? $node->get('request_id')->getString()
+      : $node->id())
+  );
+  $organisation = _markaspot_group_sanitize_for_email((string) $org_group->label());
+  $category = '';
+  if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+    $category_entity = $node->get('field_category')->entity ?? NULL;
+    if (is_object($category_entity) && method_exists($category_entity, 'label')) {
+      $category = _markaspot_group_sanitize_for_email((string) $category_entity->label());
+    }
+  }
+  $address = _markaspot_group_sanitize_for_email(
+    (string) ($node->hasField('field_address') && !$node->get('field_address')->isEmpty()
+      ? $node->get('field_address')->getString()
+      : '')
+  );
+  $description = _markaspot_group_sanitize_for_email(
+    (string) ($node->hasField('body') && !$node->get('body')->isEmpty()
+      ? $node->get('body')->getString()
+      : '')
+  );
+
+  $edit_url = '';
+  try {
+    $edit_url = \Drupal\Core\Url::fromRoute('entity.node.edit_form', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+  }
+  catch (\Throwable) {
+    // Keep the fallback mail sendable even in CLI or partially bootstrapped
+    // contexts where route generation is not available.
+  }
+
+  $lines = [
+    'Hello,',
+    '',
+    'A citizen request has been assigned to your organisation.',
+    '',
+    'Request: #' . $request_id,
+  ];
+  if ($category !== '') {
+    $lines[] = 'Category: ' . $category;
+  }
+  if ($address !== '') {
+    $lines[] = 'Location: ' . $address;
+  }
+  if ($organisation !== '') {
+    $lines[] = 'Organisation: ' . $organisation;
+  }
+  if ($description !== '') {
+    $lines[] = 'Description: ' . $description;
+  }
+  if ($edit_url !== '') {
+    $lines[] = '';
+    $lines[] = 'Open request: ' . $edit_url;
+  }
+  $lines[] = '';
+  $lines[] = 'This is an automatically generated email and cannot be replied to.';
+
+  return [
+    'subject' => 'Request #' . $request_id . ' assigned to ' . ($organisation !== '' ? $organisation : 'your organisation'),
+    'message' => implode("\n", $lines),
+  ];
+}
+
+/**
+ * Resolves the language used for organisation assignment notification mail.
+ *
+ * The jurisdiction's Nuxt language setting is the same source the frontend
+ * uses for dashboard locale selection. Falling back to Drupal's default
+ * language keeps older single-tenant installs working when no jurisdiction
+ * config exists yet.
+ */
+function _markaspot_group_organisation_notification_langcode(NodeInterface $node): string {
+  $jurisdiction = _markaspot_group_node_jurisdiction_group($node);
+  if ($jurisdiction instanceof GroupInterface) {
+    $configured_langcode = _markaspot_group_jurisdiction_default_langcode($jurisdiction);
+    if ($configured_langcode !== NULL) {
+      return $configured_langcode;
+    }
+  }
+
+  if (\Drupal::hasService('language_manager')) {
+    return \Drupal::languageManager()->getDefaultLanguage()->getId();
+  }
+
+  return 'en';
+}
+
+/**
+ * Resolves the jurisdiction group referenced by a service request node.
+ */
+function _markaspot_group_node_jurisdiction_group(NodeInterface $node): ?GroupInterface {
+  if (!$node->hasField('field_jurisdiction') || $node->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  $field = $node->get('field_jurisdiction');
+  $entity = $field->entity ?? NULL;
+  if (_markaspot_group_is_jurisdiction_group($entity)) {
+    return $entity;
+  }
+
+  $target_id = (int) ($field->target_id ?? 0);
+  if ($target_id <= 0 || !\Drupal::hasService('entity_type.manager')) {
+    return NULL;
+  }
+
+  $group = \Drupal::entityTypeManager()
+    ->getStorage('group')
+    ->load($target_id);
+
+  return _markaspot_group_is_jurisdiction_group($group) ? $group : NULL;
+}
+
+/**
+ * Extracts the jurisdiction's default frontend language from field_nuxt_config.
+ */
+function _markaspot_group_jurisdiction_default_langcode(GroupInterface $jurisdiction): ?string {
+  if (!$jurisdiction->hasField('field_nuxt_config') || $jurisdiction->get('field_nuxt_config')->isEmpty()) {
+    return NULL;
+  }
+
+  $decoded = json_decode((string) $jurisdiction->get('field_nuxt_config')->value, TRUE);
+  if (!is_array($decoded)) {
+    return NULL;
+  }
+
+  $langcode = $decoded['languages']['default'] ?? NULL;
+  if (!is_string($langcode)) {
+    return NULL;
+  }
+
+  return _markaspot_group_normalize_notification_langcode($langcode);
+}
+
+/**
+ * Normalizes a configured frontend language to an installed Drupal langcode.
+ */
+function _markaspot_group_normalize_notification_langcode(string $langcode): ?string {
+  $langcode = strtolower(trim($langcode));
+  if (!preg_match('/^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/', $langcode)) {
+    return NULL;
+  }
+
+  if (!\Drupal::hasService('language_manager')) {
+    return $langcode;
+  }
+
+  $languages = \Drupal::languageManager()->getLanguages();
+  if (isset($languages[$langcode])) {
+    return $langcode;
+  }
+
+  $base_langcode = strtok($langcode, '-');
+  return is_string($base_langcode) && isset($languages[$base_langcode])
+    ? $base_langcode
+    : NULL;
 }
 
 /**

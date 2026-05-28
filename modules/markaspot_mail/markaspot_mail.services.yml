@@ -140,5 +140,6 @@ services:
     class: Drupal\markaspot_mail\Mail\Builder\GroupOrgNotificationBuilder
     arguments:
       - '@logger.channel.markaspot_mail'
+      - '@markaspot_mail.branding'
     tags:
       - { name: markaspot_mail.builder }

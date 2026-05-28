@@ -150,6 +150,7 @@ class MailBrandingService {
    *   - reply_to (string, header-sanitized)
    *   - frontend_base_url (string, platform-safe https URL)
    *   - jurisdiction_slug (string|null)
+   *   - frontend_uses_jurisdiction_path (bool)
    *   - jurisdiction_label (string|null)
    *   - tenant_display_name (string|null)
    *   - platform_footer (array)
@@ -204,6 +205,7 @@ class MailBrandingService {
       'reply_to' => $this->sanitizeHeaderValue($platformDefaults['reply_to']),
       'frontend_base_url' => $platformDefaults['frontend_base_url'],
       'jurisdiction_slug' => NULL,
+      'frontend_uses_jurisdiction_path' => FALSE,
       'jurisdiction_label' => NULL,
       'tenant_display_name' => NULL,
       'platform_footer' => $showPlatformFooter ? $this->getPlatformFooter() : NULL,
@@ -360,6 +362,7 @@ class MailBrandingService {
     $slug = $branding['jurisdiction_slug'];
     $tenantBase = $this->resolveTenantFrontendBase($slug, $platformDefaults);
     $branding['frontend_base_url'] = $tenantBase;
+    $branding['frontend_uses_jurisdiction_path'] = $this->shouldUseJurisdictionPathPrefix($slug, $platformDefaults);
     $frontendBase = rtrim($tenantBase, '/');
 
     // Path is 'impressum' to match the Nuxt route at
@@ -516,6 +519,22 @@ class MailBrandingService {
     }
     $candidate = str_replace('{slug}', $slug, $template);
     return $this->validateHttpUrl($candidate, $platformBase);
+  }
+
+  /**
+   * Returns whether tenant frontend links need a /<slug> path prefix.
+   */
+  private function shouldUseJurisdictionPathPrefix(?string $slug, array $platformDefaults): bool {
+    if ($slug === NULL || $slug === '' || $this->isSingleJurisdictionInstall()) {
+      return FALSE;
+    }
+
+    $template = (string) ($platformDefaults['tenant_frontend_base_template'] ?? '');
+    if ($template !== '' && str_contains($template, '{slug}')) {
+      return FALSE;
+    }
+
+    return (string) ($platformDefaults['frontend_base_url'] ?? '') !== '';
   }
 
   /**

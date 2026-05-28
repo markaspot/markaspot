@@ -586,6 +586,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('https://rotterdam.civicspot.io/rotterdam/impressum', $branding['legal_notice_url']);
     $this->assertSame('https://rotterdam.civicspot.io/rotterdam/privacy', $branding['privacy_url']);
     $this->assertSame('https://rotterdam.civicspot.io', $branding['frontend_base_url']);
+    $this->assertFalse($branding['frontend_uses_jurisdiction_path']);
   }
 
   /**
@@ -612,6 +613,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
     $this->assertSame('https://maengelmelder.example.test/impressum', $branding['legal_notice_url']);
     $this->assertSame('https://maengelmelder.example.test/privacy', $branding['privacy_url']);
     $this->assertSame('https://maengelmelder.example.test', $branding['frontend_base_url']);
+    $this->assertFalse($branding['frontend_uses_jurisdiction_path']);
   }
 
   /**
@@ -637,6 +639,7 @@ final class MailBrandingServiceTest extends UnitTestCase {
 
     $this->assertSame('https://maengelmelder.example.test/wbd/impressum', $branding['legal_notice_url']);
     $this->assertSame('https://maengelmelder.example.test/wbd/privacy', $branding['privacy_url']);
+    $this->assertTrue($branding['frontend_uses_jurisdiction_path']);
   }
 
   /**
