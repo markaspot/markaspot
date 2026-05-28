@@ -731,7 +731,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertStringContainsString("\$form_mode === 'management'", $source);
     $this->assertStringContainsString('currentUserCanAccessManagementFormSettings', $source);
     $this->assertStringContainsString('AccessDeniedHttpException', $source);
-    $this->assertStringContainsString("\$cache_metadata->addCacheContexts(['user.permissions'])", $source);
+    $this->assertStringContainsString("\$cache_metadata->addCacheContexts(['user.permissions', 'user.roles'])", $source);
     $this->assertStringContainsString('edit any service_request content', $source);
   }
 
@@ -782,6 +782,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
 
     $this->assertSame(404, $response->getStatusCode());
     $this->assertContains('user.permissions', $response->getCacheableMetadata()->getCacheContexts());
+    $this->assertContains('user.roles', $response->getCacheableMetadata()->getCacheContexts());
   }
 
 }

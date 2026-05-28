@@ -782,7 +782,7 @@ class MarkASpotSettingsController extends ControllerBase {
     // Set max-age for HTTP caching (1 hour).
     $cache_metadata->setCacheMaxAge(3600);
     if ($is_management_form_mode) {
-      $cache_metadata->addCacheContexts(['user.permissions']);
+      $cache_metadata->addCacheContexts(['user.permissions', 'user.roles']);
     }
 
     // Load the form display for the given entity type, bundle, and form mode.
