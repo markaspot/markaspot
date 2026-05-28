@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.98](https://github.com/markaspot/markaspot/compare/11.9.97...11.9.98) (2026-05-28)
+
+### Bug Fixes
+
+* align request attributes management group ([3eb601c](https://github.com/markaspot/markaspot/commit/3eb601cadfa1fd6c61d6435ebc8125c041de495c))
+
 ## [11.9.97](https://github.com/markaspot/markaspot/compare/11.9.96...11.9.97) (2026-05-28)
 
 ### Features
