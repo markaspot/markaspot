@@ -125,8 +125,14 @@ class RequestIdGeneratorTest extends UnitTestCase {
 
     $install = file_get_contents(dirname(__DIR__, 3) . '/markaspot_request_id.install');
     $this->assertIsString($install);
-    $this->assertStringContainsString('updateFieldStorageDefinition', $install);
-    $storageUpdatePosition = strpos($install, 'updateFieldStorageDefinition');
+    $this->assertStringContainsString("changeField(\$table, 'request_id'", $install);
+    $this->assertStringContainsString('CHARACTER_MAXIMUM_LENGTH', $install);
+    $this->assertStringContainsString('$current_length > 64', $install);
+    $this->assertStringContainsString('$seen === count($tables)', $install);
+    $this->assertStringContainsString('expected storage columns are incomplete', $install);
+    $this->assertStringContainsString('setLastInstalledFieldStorageDefinition', $install);
+    $this->assertStringNotContainsString('updateFieldStorageDefinition', $install);
+    $storageUpdatePosition = strpos($install, '_markaspot_request_id_expand_node_request_id_columns($messages)');
     $groupGuardPosition = strpos($install, "moduleExists('group')");
     $this->assertNotFalse($storageUpdatePosition);
     $this->assertNotFalse($groupGuardPosition);

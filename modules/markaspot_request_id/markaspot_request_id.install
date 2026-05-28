@@ -297,13 +297,7 @@ function markaspot_request_id_update_11800() {
  */
 function markaspot_request_id_update_11900(): string {
   $messages = [];
-  $node_field_definitions = \Drupal::service('entity_field.manager')
-    ->getFieldStorageDefinitions('node');
-  if (isset($node_field_definitions['request_id'])) {
-    \Drupal::entityDefinitionUpdateManager()
-      ->updateFieldStorageDefinition($node_field_definitions['request_id']);
-    $messages[] = 'Expanded node.request_id storage definition.';
-  }
+  _markaspot_request_id_expand_node_request_id_columns($messages);
 
   if (!\Drupal::moduleHandler()->moduleExists('group')) {
     $messages[] = 'Skipped request ID prefix field because group module is not installed.';
@@ -388,4 +382,96 @@ function markaspot_request_id_update_11900(): string {
   }
 
   return implode(' ', $messages);
+}
+
+/**
+ * Expands the node request_id storage for prefixed request IDs.
+ *
+ * Existing installs may already have service request data in node tables. Drupal
+ * refuses a generic base-field definition update in that state, but increasing a
+ * varchar length from 32 to 64 is a safe in-place schema change.
+ *
+ * @param array<int, string> $messages
+ *   Update-hook status messages.
+ */
+function _markaspot_request_id_expand_node_request_id_columns(array &$messages): void {
+  $schema = \Drupal::database()->schema();
+  $column_spec = [
+    'type' => 'varchar',
+    'length' => 64,
+    'not null' => FALSE,
+    'description' => 'The generated request ID.',
+  ];
+
+  $changed = 0;
+  $seen = 0;
+  $tables = ['node_field_data', 'node_field_revision'];
+  foreach ($tables as $table) {
+    if (!$schema->tableExists($table) || !$schema->fieldExists($table, 'request_id')) {
+      continue;
+    }
+    $seen++;
+
+    $current_length = _markaspot_request_id_current_varchar_length($table, 'request_id');
+    if ($current_length !== NULL && $current_length > 64) {
+      $messages[] = "Skipped $table.request_id expansion because it is already wider than 64 characters.";
+      continue;
+    }
+    if ($current_length === 64) {
+      $messages[] = "$table.request_id already supports 64 characters.";
+      continue;
+    }
+
+    $schema->changeField($table, 'request_id', 'request_id', $column_spec);
+    $messages[] = "Expanded $table.request_id to 64 characters.";
+    $changed++;
+  }
+
+  $node_field_definitions = \Drupal::service('entity_field.manager')
+    ->getFieldStorageDefinitions('node');
+  if ($seen === count($tables) && isset($node_field_definitions['request_id'])) {
+    \Drupal::service('entity.last_installed_schema.repository')
+      ->setLastInstalledFieldStorageDefinition($node_field_definitions['request_id']);
+    $messages[] = 'Updated installed schema metadata for node.request_id.';
+  }
+  elseif ($seen > 0) {
+    $messages[] = 'Skipped installed schema metadata for node.request_id because expected storage columns are incomplete.';
+  }
+
+  if ($seen === 0) {
+    $messages[] = 'Skipped node.request_id column expansion because no storage columns were found.';
+  }
+}
+
+/**
+ * Gets the current varchar length for a database column when available.
+ *
+ * @param string $table
+ *   The Drupal table name without braces.
+ * @param string $field
+ *   The column name.
+ *
+ * @return int|null
+ *   The varchar length, or NULL when it cannot be detected portably.
+ */
+function _markaspot_request_id_current_varchar_length(string $table, string $field): ?int {
+  $connection = \Drupal::database();
+  if ($connection->databaseType() !== 'mysql') {
+    return NULL;
+  }
+
+  try {
+    $length = $connection->query(
+      'SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :field',
+      [
+        ':table' => $connection->prefixTables('{' . $table . '}'),
+        ':field' => $field,
+      ]
+    )->fetchField();
+  }
+  catch (\Throwable) {
+    return NULL;
+  }
+
+  return $length === FALSE || $length === NULL ? NULL : (int) $length;
 }
