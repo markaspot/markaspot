@@ -1,0 +1,21 @@
+services:
+  logger.channel.markaspot_media:
+    parent: logger.channel_base
+    arguments: ['markaspot_media']
+
+  markaspot_media.request_image_upload_storage_guard:
+    class: Drupal\markaspot_media\Service\RequestImageUploadStorageGuard
+    arguments:
+      - '@config.factory'
+      - '@state'
+      - '@lock'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_media'
+      - '@?s3fs'
+
+  markaspot_media.request_image_upload_storage_subscriber:
+    class: Drupal\markaspot_media\EventSubscriber\RequestImageUploadStorageSubscriber
+    arguments:
+      - '@markaspot_media.request_image_upload_storage_guard'
+    tags:
+      - { name: event_subscriber }
