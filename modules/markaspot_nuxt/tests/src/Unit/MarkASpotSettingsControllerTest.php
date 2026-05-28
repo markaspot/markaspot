@@ -15,12 +15,14 @@ use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * Tests the MarkASpotSettingsController.
@@ -729,7 +731,57 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertStringContainsString("\$form_mode === 'management'", $source);
     $this->assertStringContainsString('currentUserCanAccessManagementFormSettings', $source);
     $this->assertStringContainsString('AccessDeniedHttpException', $source);
+    $this->assertStringContainsString("\$cache_metadata->addCacheContexts(['user.permissions'])", $source);
     $this->assertStringContainsString('edit any service_request content', $source);
+  }
+
+  /**
+   * Anonymous users cannot access management form-mode settings.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testManagementFormSettingsRejectsAnonymousUsers(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn(FALSE);
+    $account->method('getRoles')->willReturn(['anonymous']);
+    \Drupal::getContainer()->set('current_user', $account);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->controller->getFormModeSettings('node', 'service_request', 'management');
+  }
+
+  /**
+   * Edit-own node permissions do not expose management form-mode settings.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testManagementFormSettingsRejectsEditOwnOnlyUsers(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn(TRUE);
+    $account->method('getRoles')->willReturn(['authenticated']);
+    $account->method('hasPermission')
+      ->willReturnCallback(fn(string $permission): bool => $permission === 'edit own service_request content');
+    \Drupal::getContainer()->set('current_user', $account);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->controller->getFormModeSettings('node', 'service_request', 'management');
+  }
+
+  /**
+   * Management form-mode settings vary caches by permissions.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testManagementFormSettingsCacheVaryByPermissions(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('isAuthenticated')->willReturn(TRUE);
+    $account->method('getRoles')->willReturn(['moderator']);
+    \Drupal::getContainer()->set('current_user', $account);
+
+    $response = $this->controller->getFormModeSettings('node', 'service_request', 'management');
+
+    $this->assertSame(404, $response->getStatusCode());
+    $this->assertContains('user.permissions', $response->getCacheableMetadata()->getCacheContexts());
   }
 
 }

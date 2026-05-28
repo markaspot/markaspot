@@ -772,7 +772,8 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The form display settings in JSON format.
    */
   public function getFormModeSettings($entity_type, $bundle, $form_mode) {
-    if ($form_mode === 'management' && !$this->currentUserCanAccessManagementFormSettings()) {
+    $is_management_form_mode = $form_mode === 'management';
+    if ($is_management_form_mode && !$this->currentUserCanAccessManagementFormSettings()) {
       throw new AccessDeniedHttpException('Management form settings require dashboard staff access.');
     }
 
@@ -780,6 +781,9 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata = new CacheableMetadata();
     // Set max-age for HTTP caching (1 hour).
     $cache_metadata->setCacheMaxAge(3600);
+    if ($is_management_form_mode) {
+      $cache_metadata->addCacheContexts(['user.permissions']);
+    }
 
     // Load the form display for the given entity type, bundle, and form mode.
     $form_display = $this->entityTypeManager
@@ -893,7 +897,7 @@ class MarkASpotSettingsController extends ControllerBase {
       return TRUE;
     }
 
-    foreach (['administer nodes', 'edit any service_request content', 'edit own service_request content'] as $permission) {
+    foreach (['administer nodes', 'edit any service_request content'] as $permission) {
       if ($account->hasPermission($permission)) {
         return TRUE;
       }
