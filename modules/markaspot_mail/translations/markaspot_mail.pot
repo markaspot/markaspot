@@ -175,7 +175,7 @@ msgid "Open my workspace"
 msgstr ""
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
-msgid "Create a permanent workspace"
+msgid "Keep my workspace"
 msgstr ""
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php

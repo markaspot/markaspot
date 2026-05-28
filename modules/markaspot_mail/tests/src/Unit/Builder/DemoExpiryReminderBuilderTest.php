@@ -67,7 +67,7 @@ final class DemoExpiryReminderBuilderTest extends UnitTestCase {
     $this->assertSame('platform', $msg->mode);
     $this->assertSame('card_transactional', $msg->variant);
     $this->assertSame('https://civicspot.io', $msg->content['cta_url']);
-    $this->assertSame('Create a permanent workspace', $msg->content['cta_label']);
+    $this->assertSame('Keep my workspace', $msg->content['cta_label']);
     // Features block always shows workspace + expiry so the user can
     // confirm which workspace the warning is about.
     $this->assertNotEmpty($msg->content['features_block']);
