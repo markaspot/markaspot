@@ -920,6 +920,16 @@ function service_request_update_11015(): string {
 }
 
 /**
+ * Align request attributes with the management Administration field group.
+ */
+function service_request_update_11016(): string {
+  _service_request_load_markaspot_profile_updates();
+  return function_exists('markaspot_update_11924')
+    ? markaspot_update_11924()
+    : 'markaspot_update_11924 not available, skipped.';
+}
+
+/**
  * Loads profile update helpers from the parent install profile.
  */
 function _service_request_load_markaspot_profile_updates(): void {
@@ -927,7 +937,8 @@ function _service_request_load_markaspot_profile_updates(): void {
     function_exists('markaspot_update_11920') &&
     function_exists('markaspot_update_11921') &&
     function_exists('markaspot_update_11922') &&
-    function_exists('markaspot_update_11923')
+    function_exists('markaspot_update_11923') &&
+    function_exists('markaspot_update_11924')
   ) {
     return;
   }

@@ -718,4 +718,18 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals('https://custom-tiles.example.com/dark.json', $data['mapbox_style_dark']);
   }
 
+  /**
+   * Management form-mode settings require staff access.
+   *
+   * @covers ::getFormModeSettings
+   */
+  public function testManagementFormSettingsRequireStaffAccess(): void {
+    $source = file_get_contents(dirname(__DIR__, 3) . '/src/Controller/MarkASpotSettingsController.php');
+    $this->assertIsString($source);
+    $this->assertStringContainsString("\$form_mode === 'management'", $source);
+    $this->assertStringContainsString('currentUserCanAccessManagementFormSettings', $source);
+    $this->assertStringContainsString('AccessDeniedHttpException', $source);
+    $this->assertStringContainsString('edit any service_request content', $source);
+  }
+
 }

@@ -12,6 +12,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -771,6 +772,10 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The form display settings in JSON format.
    */
   public function getFormModeSettings($entity_type, $bundle, $form_mode) {
+    if ($form_mode === 'management' && !$this->currentUserCanAccessManagementFormSettings()) {
+      throw new AccessDeniedHttpException('Management form settings require dashboard staff access.');
+    }
+
     // Build cache metadata.
     $cache_metadata = new CacheableMetadata();
     // Set max-age for HTTP caching (1 hour).
@@ -872,6 +877,29 @@ class MarkASpotSettingsController extends ControllerBase {
     ]);
     $response->addCacheableDependency($cache_metadata);
     return $response;
+  }
+
+  /**
+   * Checks whether the current user may inspect management form settings.
+   */
+  private function currentUserCanAccessManagementFormSettings(): bool {
+    $account = $this->currentUser();
+    if (!$account->isAuthenticated()) {
+      return FALSE;
+    }
+
+    $staff_roles = ['administrator', 'moderator', 'editorial_board', 'tenant_admin'];
+    if (array_intersect($staff_roles, $account->getRoles())) {
+      return TRUE;
+    }
+
+    foreach (['administer nodes', 'edit any service_request content', 'edit own service_request content'] as $permission) {
+      if ($account->hasPermission($permission)) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
   }
 
   /**

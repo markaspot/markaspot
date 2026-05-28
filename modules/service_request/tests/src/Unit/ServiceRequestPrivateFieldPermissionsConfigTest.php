@@ -554,11 +554,13 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
     $this->assertStringContainsString('function service_request_update_11013(): string', $source);
     $this->assertStringContainsString('function service_request_update_11014(): string', $source);
     $this->assertStringContainsString('function service_request_update_11015(): string', $source);
+    $this->assertStringContainsString('function service_request_update_11016(): string', $source);
     $this->assertStringContainsString('_service_request_load_markaspot_profile_updates()', $source);
     $this->assertStringContainsString('markaspot_update_11920()', $source);
     $this->assertStringContainsString('markaspot_update_11921()', $source);
     $this->assertStringContainsString('markaspot_update_11922()', $source);
     $this->assertStringContainsString('markaspot_update_11923()', $source);
+    $this->assertStringContainsString('markaspot_update_11924()', $source);
   }
 
   /**
