@@ -14,7 +14,9 @@ use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Utility\Token;
+use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\node\NodeInterface;
+use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -60,9 +62,14 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
   protected Token $token;
 
   /**
+   * The optional jurisdiction hierarchy resolver.
+   */
+  protected ?object $hierarchyResolver;
+
+  /**
    * Constructs the action plugin.
    */
-  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, MailManagerInterface $mail_manager, LanguageManagerInterface $language_manager, EmailValidatorInterface $email_validator, LoggerInterface $logger, Token $token) {
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, EntityTypeManagerInterface $entity_type_manager, MailManagerInterface $mail_manager, LanguageManagerInterface $language_manager, EmailValidatorInterface $email_validator, LoggerInterface $logger, Token $token, ?object $hierarchy_resolver = NULL) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->entityTypeManager = $entity_type_manager;
     $this->mailManager = $mail_manager;
@@ -70,6 +77,7 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
     $this->emailValidator = $email_validator;
     $this->logger = $logger;
     $this->token = $token;
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -85,7 +93,10 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
       $container->get('language_manager'),
       $container->get('email.validator'),
       $container->get('logger.factory')->get('service_request'),
-      $container->get('token')
+      $container->get('token'),
+      $container->has('markaspot_group.hierarchy_resolver')
+        ? $container->get('markaspot_group.hierarchy_resolver')
+        : NULL
     );
   }
 
@@ -95,6 +106,7 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
   public function defaultConfiguration() {
     return [
       'organisation_field' => 'field_organisation',
+      'jurisdiction_field' => 'field_jurisdiction',
       'email_field' => 'field_head_organisation_e_mail',
       'content_plugin' => 'group_node:service_request',
       'organisation_group_type' => '',
@@ -225,6 +237,8 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
   /**
    * Removes organisation relationships no longer present on the field.
    *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
    * @param int[] $current_group_ids
    *   The assigned organisation group IDs.
    * @param string[] $organisation_bundles
@@ -255,6 +269,8 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
   /**
    * Adds missing organisation relationships for all assigned organisations.
    *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
    * @param int[] $current_group_ids
    *   The assigned organisation group IDs.
    * @param string[] $organisation_bundles
@@ -270,6 +286,13 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
     foreach ($current_group_ids as $group_id) {
       $group = $group_storage->load($group_id);
       if (!$this->isOrganisationGroup($group, $organisation_bundles)) {
+        continue;
+      }
+      if (!$this->groupMatchesJurisdiction($group, $node)) {
+        $this->logger->warning('Skipping organisation relationship for node @nid and group @gid because their jurisdictions do not match.', [
+          '@nid' => $node->id(),
+          '@gid' => $group_id,
+        ]);
         continue;
       }
 
@@ -302,6 +325,8 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
   /**
    * Sends notification mails to newly assigned organisation groups.
    *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
    * @param int[] $group_ids
    *   The groups to notify.
    * @param string[] $organisation_bundles
@@ -320,6 +345,13 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
       if (!$this->isOrganisationGroup($group, $organisation_bundles) || !$group instanceof FieldableEntityInterface) {
         continue;
       }
+      if (!$this->groupMatchesJurisdiction($group, $node)) {
+        $this->logger->warning('Skipping organisation notification for node @nid and group @gid because their jurisdictions do not match.', [
+          '@nid' => $node->id(),
+          '@gid' => $group_id,
+        ]);
+        continue;
+      }
 
       $emails = $this->getGroupEmails($group);
       if (!$emails) {
@@ -330,18 +362,31 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
         'node' => $node,
         'group' => $group,
         'entity' => $group,
-        'subject' => $this->token->replace((string) $this->configuration['subject'], ['node' => $node, 'group' => $group, 'entity' => $group], ['clear' => TRUE]),
-        'message' => $this->token->replace((string) $this->configuration['message'], ['node' => $node, 'group' => $group, 'entity' => $group], ['clear' => TRUE]),
+        'subject' => $this->token->replace(
+          (string) $this->configuration['subject'],
+          ['node' => $node, 'group' => $group, 'entity' => $group],
+          ['clear' => TRUE],
+        ),
+        'message' => $this->token->replace(
+          (string) $this->configuration['message'],
+          ['node' => $node, 'group' => $group, 'entity' => $group],
+          ['clear' => TRUE],
+        ),
       ];
 
+      $sent_count = 0;
       foreach ($emails as $email) {
         $message = $this->mailManager->mail('system', 'action_send_email', $email, $langcode, ['context' => $context]);
         if (!empty($message['result'])) {
-          $this->logger->info('Sent service request organisation notification for node @nid to @mail.', [
-            '@nid' => $node->id(),
-            '@mail' => $email,
-          ]);
+          $sent_count++;
         }
+      }
+      if ($sent_count > 0) {
+        $this->logger->info('Sent service request organisation notification for node @nid to @count recipient(s) in group @gid.', [
+          '@nid' => $node->id(),
+          '@count' => $sent_count,
+          '@gid' => $group_id,
+        ]);
       }
     }
   }
@@ -354,17 +399,47 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
    */
   protected function getGroupEmails(FieldableEntityInterface $group): array {
     $email_field = (string) $this->configuration['email_field'];
-    if (!$group->hasField($email_field)) {
+    $emails = [];
+    if ($group->hasField($email_field) && !$group->get($email_field)->isEmpty()) {
+      foreach ($group->get($email_field)->getValue() as $item) {
+        $email = trim((string) ($item['value'] ?? $item['email'] ?? ''));
+        if ($email !== '' && $this->emailValidator->isValid($email)) {
+          $emails[] = strtolower($email);
+        }
+      }
+      if ($emails !== []) {
+        return array_values(array_unique($emails));
+      }
+    }
+
+    if (!$group instanceof EntityInterface) {
       return [];
     }
 
-    $emails = [];
-    foreach ($group->get($email_field)->getValue() as $item) {
-      $email = trim((string) ($item['value'] ?? $item['email'] ?? ''));
+    $group_id = $group->id();
+    $relationship_storage = $this->getGroupRelationshipStorage();
+    if (!$group_id || !$relationship_storage) {
+      return [];
+    }
+
+    $membership_relationships = $relationship_storage->loadByProperties([
+      'gid' => $group_id,
+      'plugin_id' => 'group_membership',
+    ]);
+    foreach ($membership_relationships as $membership_relationship) {
+      if (!$membership_relationship instanceof GroupRelationshipInterface) {
+        continue;
+      }
+      $user = $membership_relationship->getEntity();
+      if (!$user instanceof UserInterface || !$user->isActive()) {
+        continue;
+      }
+      $email = trim((string) $user->getEmail());
       if ($email !== '' && $this->emailValidator->isValid($email)) {
-        $emails[] = $email;
+        $emails[] = strtolower($email);
       }
     }
+
     return array_values(array_unique($emails));
   }
 
@@ -380,6 +455,71 @@ class SyncServiceRequestOrganisations extends ConfigurableActionBase implements 
     return $group instanceof EntityInterface
       && $group->getEntityTypeId() === 'group'
       && in_array($group->bundle(), $organisation_bundles, TRUE);
+  }
+
+  /**
+   * Checks whether the group belongs to the service request jurisdiction.
+   *
+   * Old single-tenant projects do not have field_jurisdiction on organisation
+   * groups. In that shape there is no tenant boundary to enforce here.
+   *
+   * @param mixed $group
+   *   The loaded group entity.
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   */
+  protected function groupMatchesJurisdiction($group, NodeInterface $node): bool {
+    if (!$group instanceof FieldableEntityInterface) {
+      return FALSE;
+    }
+
+    $node_has_jurisdiction_field = $this->nodeHasJurisdictionField($node);
+    $group_has_jurisdiction_field = $group->hasField('field_jurisdiction');
+
+    if (!$node_has_jurisdiction_field && !$group_has_jurisdiction_field) {
+      return TRUE;
+    }
+    if (!$node_has_jurisdiction_field || !$group_has_jurisdiction_field) {
+      return FALSE;
+    }
+
+    $jurisdiction_id = $this->getJurisdictionId($node);
+    if (!$jurisdiction_id || $group->get('field_jurisdiction')->isEmpty()) {
+      return FALSE;
+    }
+
+    $group_jurisdiction_id = (int) $group->get('field_jurisdiction')->target_id;
+    if ($group_jurisdiction_id === $jurisdiction_id) {
+      return TRUE;
+    }
+
+    if ($this->hierarchyResolver && method_exists($this->hierarchyResolver, 'getRootJurisdictionId')) {
+      $root_jurisdiction_id = $this->hierarchyResolver->getRootJurisdictionId($jurisdiction_id);
+      return $root_jurisdiction_id !== NULL && $group_jurisdiction_id === $root_jurisdiction_id;
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Checks whether the service request exposes a jurisdiction field.
+   */
+  protected function nodeHasJurisdictionField(NodeInterface $node): bool {
+    $jurisdiction_field = (string) ($this->configuration['jurisdiction_field'] ?? '');
+    return $jurisdiction_field !== '' && $node->hasField($jurisdiction_field);
+  }
+
+  /**
+   * Gets the service request jurisdiction ID.
+   */
+  protected function getJurisdictionId(NodeInterface $node): ?int {
+    $jurisdiction_field = (string) ($this->configuration['jurisdiction_field'] ?? '');
+    if ($jurisdiction_field === '' || !$node->hasField($jurisdiction_field) || $node->get($jurisdiction_field)->isEmpty()) {
+      return NULL;
+    }
+
+    $target_id = (int) ($node->get($jurisdiction_field)->target_id ?? 0);
+    return $target_id > 0 ? $target_id : NULL;
   }
 
   /**

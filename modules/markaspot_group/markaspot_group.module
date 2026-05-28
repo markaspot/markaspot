@@ -1449,8 +1449,7 @@ function _markaspot_group_field_target_changed(NodeInterface $node, string $fiel
  * 2. Assigns root jurisdiction (fallback when no sub-jur matched)
  * 3. Derives organisation from category (jurisdiction-aware)
  * 4. Syncs field_organisation to org group relationship
- * 5. Sends notification email to the assigned organisation
- * 6. Saves node if org was derived.
+ * 5. Saves node if org was derived.
  *
  * The sub-jurisdiction assignment runs first so that org derivation can
  * check whether a child jurisdiction has its own org handling the category.
@@ -1528,12 +1527,11 @@ function markaspot_group_node_insert(NodeInterface $node): void {
     }
   }
 
-  // 6. Notify the assigned organisation via email.
-  if ($org_derived) {
-    _markaspot_group_notify_organisation($node);
-  }
+  // Organisation notifications are emitted when the org relationship is
+  // created. That covers dashboard, JSON:API, admin UI, Drush and legacy ECA
+  // writes without double-sending on freshly inserted nodes.
 
-  // 7. Save the node if org was derived or jurisdiction was set.
+  // 6. Save the node if org was derived or jurisdiction was set.
   if ($org_derived || $jur_set) {
     // Prevent recursive hooks during this save.
     _markaspot_group_set_syncing(TRUE);
@@ -1684,6 +1682,7 @@ function _markaspot_group_reconcile_service_request_relationships(NodeInterface|
  */
 function markaspot_group_group_relationship_insert(GroupRelationshipInterface $relationship): void {
   _markaspot_group_sync_relationship_to_field($relationship, 'insert');
+  _markaspot_group_notify_service_request_org_relationship($relationship, _markaspot_group_is_syncing());
   _markaspot_group_sync_org_membership_to_jurisdiction($relationship);
   _markaspot_group_tenant_admin_sync_role($relationship, 'insert');
 }
@@ -2666,19 +2665,195 @@ function _markaspot_group_category_gid_value(TermInterface $term): ?int {
 }
 
 /**
- * Sends notification email to the assigned organisation.
+ * Sends notification email when a service_request is added to an org group.
  *
- * Replaces the email action from the ECA rule process_apply_group.
+ * This is the canonical delivery path for organisation assignment mail. It is
+ * intentionally tied to the materialized relationship instead of one writer,
+ * so dashboard edits, JSON:API writes, admin UI changes, Drush scripts and
+ * legacy ECA paths behave the same way.
+ *
+ * @param \Drupal\group\Entity\GroupRelationshipInterface $relationship
+ *   The inserted group relationship.
+ * @param bool $trust_relationship_node
+ *   TRUE when the relationship was created by the guarded field-to-relationship
+ *   sync path and the in-memory node carries not-yet-persisted insert values.
+ */
+function _markaspot_group_notify_service_request_org_relationship(GroupRelationshipInterface $relationship, bool $trust_relationship_node = FALSE): void {
+  if (!$trust_relationship_node) {
+    $relationship = _markaspot_group_reload_persisted_relationship($relationship);
+    if (!$relationship instanceof GroupRelationshipInterface) {
+      return;
+    }
+  }
+
+  if ($relationship->getPluginId() !== 'group_node:service_request') {
+    return;
+  }
+
+  $group = $relationship->getGroup();
+  if (!$group instanceof GroupInterface || $group->bundle() !== _markaspot_group_get_org_group_type()) {
+    return;
+  }
+
+  if ($trust_relationship_node) {
+    $node = $relationship->getEntity();
+  }
+  else {
+    $entity_id = (int) $relationship->getEntityId();
+    if ($entity_id <= 0) {
+      return;
+    }
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+    $node_storage->resetCache([$entity_id]);
+    $node = $node_storage->load($entity_id);
+  }
+  if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+    return;
+  }
+
+  if (!$node->hasField('field_organisation')
+    || !in_array((int) $group->id(), _markaspot_group_field_target_ids($node, 'field_organisation'), TRUE)) {
+    return;
+  }
+
+  if (_markaspot_group_has_active_org_notification_eca()) {
+    return;
+  }
+
+  _markaspot_group_notify_organisation_group($node, $group);
+}
+
+/**
+ * Reloads a relationship after sync to ensure it still exists.
+ */
+function _markaspot_group_reload_persisted_relationship(GroupRelationshipInterface $relationship): ?GroupRelationshipInterface {
+  $relationship_id = $relationship->id();
+  if ($relationship_id === NULL) {
+    return NULL;
+  }
+
+  $relationship_storage = \Drupal::entityTypeManager()->getStorage('group_relationship');
+  $relationship_storage->resetCache([$relationship_id]);
+  $persisted_relationship = $relationship_storage->load($relationship_id);
+
+  return $persisted_relationship instanceof GroupRelationshipInterface
+    ? $persisted_relationship
+    : NULL;
+}
+
+/**
+ * Checks whether tenant ECA config still owns organisation notification mail.
+ *
+ * Some legacy tenants keep a custom ECA process with tenant-specific wording
+ * and PII policy. The profile-level relationship fallback must not double-send
+ * while such a process is active.
+ */
+function _markaspot_group_has_active_org_notification_eca(): bool {
+  $config_factory = \Drupal::configFactory();
+  foreach ($config_factory->listAll('eca.eca.') as $config_name) {
+    $config = $config_factory->get($config_name);
+    if (!$config->get('status')) {
+      continue;
+    }
+
+    $actions = $config->get('actions');
+    if (!is_array($actions)) {
+      continue;
+    }
+
+    foreach ($actions as $action) {
+      if (!is_array($action)) {
+        continue;
+      }
+      $plugin = (string) ($action['plugin'] ?? '');
+      $configuration = is_array($action['configuration'] ?? NULL) ? $action['configuration'] : [];
+      if ($plugin === 'service_request_sync_organisations'
+        && trim((string) ($configuration['subject'] ?? '')) !== ''
+        && trim((string) ($configuration['message'] ?? '')) !== '') {
+        return TRUE;
+      }
+      if ($config_name === 'eca.eca.process_apply_group'
+        && $plugin === 'action_send_email_action'
+        && trim((string) ($configuration['recipient'] ?? '')) !== ''
+        && trim((string) ($configuration['subject'] ?? '')) !== ''
+        && trim((string) ($configuration['message'] ?? '')) !== '') {
+        return TRUE;
+      }
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Sends notification email to all or selected assigned organisations.
+ *
+ * Replaces the email action from the ECA rule process_apply_group. New code
+ * should prefer relationship-created notification to avoid writer-specific
+ * behavior; this wrapper remains useful for explicit backfills.
  *
  * @param \Drupal\node\NodeInterface $node
  *   The service_request node with field_organisation set.
+ * @param int[]|null $organisation_ids
+ *   Optional organisation group IDs to notify. When NULL, all referenced
+ *   organisations are notified.
  */
-function _markaspot_group_notify_organisation(NodeInterface $node): void {
+function _markaspot_group_notify_organisation(NodeInterface $node, ?array $organisation_ids = NULL): void {
   if (!$node->hasField('field_organisation') || $node->get('field_organisation')->isEmpty()) {
     return;
   }
 
-  // Precompute shared values once for all organisations.
+  $allowed_ids = NULL;
+  if ($organisation_ids !== NULL) {
+    $allowed_ids = array_values(array_unique(array_filter(array_map('intval', $organisation_ids))));
+    if ($allowed_ids === []) {
+      return;
+    }
+  }
+
+  // Notify assigned organisations.
+  foreach ($node->get('field_organisation')->referencedEntities() as $org_group) {
+    if (!$org_group instanceof GroupInterface) {
+      continue;
+    }
+    if ($allowed_ids !== NULL && !in_array((int) $org_group->id(), $allowed_ids, TRUE)) {
+      continue;
+    }
+
+    _markaspot_group_notify_organisation_group($node, $org_group);
+  }
+}
+
+/**
+ * Sends the organisation assignment email to one organisation group.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The assigned service_request node.
+ * @param \Drupal\group\Entity\GroupInterface $org_group
+ *   The assigned organisation group.
+ */
+function _markaspot_group_notify_organisation_group(NodeInterface $node, GroupInterface $org_group): void {
+  if ($org_group->bundle() !== _markaspot_group_get_org_group_type()) {
+    return;
+  }
+
+  $node_jurisdiction_id = _markaspot_group_node_jurisdiction_id($node);
+  if ($node_jurisdiction_id === NULL || !_markaspot_group_org_group_matches_jurisdiction($org_group, $node_jurisdiction_id)) {
+    return;
+  }
+
+  $recipients = _markaspot_group_organisation_notification_recipients($org_group);
+  if ($recipients === []) {
+    \Drupal::logger('markaspot_group')->notice(
+      'No organisation notification recipient found for org group @gid on node @nid.',
+      [
+        '@gid' => $org_group->id(),
+        '@nid' => $node->id(),
+      ]
+    );
+    return;
+  }
+
   $request_id = _markaspot_group_sanitize_for_email(
     (string) ($node->hasField('request_id') ? $node->get('request_id')->value ?? $node->id() : $node->id())
   );
@@ -2710,25 +2885,101 @@ function _markaspot_group_notify_organisation(NodeInterface $node): void {
   /** @var \Drupal\Core\Mail\MailManagerInterface $mail_manager */
   $mail_manager = \Drupal::service('plugin.manager.mail');
 
-  // Notify ALL assigned organisations.
-  foreach ($node->get('field_organisation')->referencedEntities() as $org_group) {
-    if (!$org_group->hasField('field_head_organisation_e_mail')) {
-      continue;
-    }
-
-    $email = $org_group->get('field_head_organisation_e_mail')->isEmpty()
-      ? NULL
-      : $org_group->get('field_head_organisation_e_mail')->value;
-
-    if (!$email) {
-      continue;
-    }
-
-    $mail_manager->mail('markaspot_group', 'org_notification', $email, 'en', [
+  foreach ($recipients as $email) {
+    $result = $mail_manager->mail('markaspot_group', 'org_notification', $email, 'en', [
       'subject' => $subject,
       'message' => $message,
+      'node' => $node,
+      'organisation' => $org_group,
     ]);
+    if (($result['result'] ?? FALSE) !== TRUE) {
+      \Drupal::logger('markaspot_group')->error(
+        'Failed to send organisation notification for org group @gid on node @nid.',
+        [
+          '@gid' => $org_group->id(),
+          '@nid' => $node->id(),
+        ]
+      );
+    }
   }
+}
+
+/**
+ * Gets notification recipients for an organisation group.
+ *
+ * Uses the explicit organisation mailbox when configured. If the group has no
+ * mailbox, falls back to active group members so assignment notifications do
+ * not silently disappear on membership-driven tenants.
+ *
+ * @return string[]
+ *   Valid recipient addresses.
+ */
+function _markaspot_group_organisation_notification_recipients(GroupInterface $org_group): array {
+  $field_recipients = _markaspot_group_email_field_values($org_group, 'field_head_organisation_e_mail');
+  if ($field_recipients !== []) {
+    return $field_recipients;
+  }
+
+  $member_recipients = [];
+  $membership_relationships = \Drupal::entityTypeManager()
+    ->getStorage('group_relationship')
+    ->loadByProperties([
+      'gid' => $org_group->id(),
+      'plugin_id' => 'group_membership',
+    ]);
+
+  foreach ($membership_relationships as $membership_relationship) {
+    if (!$membership_relationship instanceof GroupRelationshipInterface) {
+      continue;
+    }
+    $user = $membership_relationship->getEntity();
+    if (!$user instanceof UserInterface || !$user->isActive()) {
+      continue;
+    }
+    $email = _markaspot_group_normalize_notification_email((string) $user->getEmail());
+    if ($email !== NULL) {
+      $member_recipients[$email] = $email;
+    }
+  }
+
+  return array_values($member_recipients);
+}
+
+/**
+ * Gets valid e-mail values from a field.
+ *
+ * @return string[]
+ *   Valid recipient addresses.
+ */
+function _markaspot_group_email_field_values(GroupInterface $group, string $field_name): array {
+  if (!$group->hasField($field_name) || $group->get($field_name)->isEmpty()) {
+    return [];
+  }
+
+  $recipients = [];
+  foreach ($group->get($field_name)->getValue() as $item) {
+    $email = _markaspot_group_normalize_notification_email((string) ($item['value'] ?? $item['email'] ?? ''));
+    if ($email !== NULL) {
+      $recipients[$email] = $email;
+    }
+  }
+
+  return array_values($recipients);
+}
+
+/**
+ * Normalizes and validates an organisation notification address.
+ */
+function _markaspot_group_normalize_notification_email(string $email): ?string {
+  $email = trim($email);
+  if ($email === '') {
+    return NULL;
+  }
+  if (!\Drupal::service('email.validator')->isValid($email)) {
+    return NULL;
+  }
+
+  return strtolower($email);
 }
 
 /**

@@ -98,6 +98,7 @@ class SyncServiceRequestOrganisationsActionTest extends UnitTestCase {
 
     $this->assertStringContainsString('array_diff($current_group_ids, $original_group_ids)', $source);
     $this->assertStringContainsString('$this->notifyGroups($entity, $new_group_ids, $organisation_bundles);', $source);
+    $this->assertStringContainsString('groupMatchesJurisdiction($group, $node)', $source);
   }
 
   /**
@@ -106,9 +107,28 @@ class SyncServiceRequestOrganisationsActionTest extends UnitTestCase {
   public function testActionPreReplacesMailTokens(): void {
     $source = $this->loadActionSource();
 
-    $this->assertStringContainsString("\$this->token->replace((string) \$this->configuration['subject']", $source);
-    $this->assertStringContainsString("\$this->token->replace((string) \$this->configuration['message']", $source);
+    $this->assertStringContainsString('$this->token->replace(', $source);
+    $this->assertStringContainsString("(string) \$this->configuration['subject']", $source);
+    $this->assertStringContainsString("(string) \$this->configuration['message']", $source);
     $this->assertStringContainsString("'system', 'action_send_email'", $source);
+  }
+
+  /**
+   * Tests the action falls back to group members when no org mailbox exists.
+   */
+  public function testActionFallsBackToGroupMemberEmails(): void {
+    $source = $this->loadActionSource();
+
+    $this->assertStringContainsString("use Drupal\\user\\UserInterface;", $source);
+    $this->assertStringContainsString("use Drupal\\group\\Entity\\GroupRelationshipInterface;", $source);
+    $this->assertStringContainsString('if ($emails !== [])', $source);
+    $this->assertStringContainsString("'plugin_id' => 'group_membership'", $source);
+    $this->assertStringContainsString('$membership_relationship instanceof GroupRelationshipInterface', $source);
+    $this->assertStringContainsString('$user = $membership_relationship->getEntity();', $source);
+    $this->assertStringContainsString('!$user->isActive()', $source);
+    $this->assertStringContainsString('strtolower($email)', $source);
+    $this->assertStringNotContainsString("'@mail' => \$email", $source);
+    $this->assertStringContainsString("'@count' => \$sent_count", $source);
   }
 
   /**

@@ -2,7 +2,22 @@
 
 namespace Drupal\Tests\markaspot_group\Unit;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Mail\MailManagerInterface;
+use Drupal\Component\Utility\EmailValidatorInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
+use Drupal\user\UserInterface;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Tests multi-org diff and sync logic in markaspot_group.
@@ -15,6 +30,14 @@ use Drupal\Tests\UnitTestCase;
  * @group markaspot_group
  */
 class GroupSyncMultiOrgTest extends UnitTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    require_once dirname(__DIR__, 3) . '/markaspot_group.module';
+  }
 
   /**
    * Presave diff detection tests.
@@ -525,6 +548,454 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $this->assertLessThan($fieldReadPos, $reloadPos);
     $this->assertStringContainsString('The relationship entity can carry a', $source);
     $this->assertStringContainsString('stale node instance when a node PATCH races the relationship hook.', $source);
+  }
+
+  /**
+   * Tests org assignment mail is emitted from the relationship insert hook.
+   */
+  public function testOrgRelationshipInsertEmitsOrganisationNotification(): void {
+    $source = file_get_contents(dirname(__DIR__, 3) . '/markaspot_group.module');
+
+    $hookPos = strpos($source, 'function markaspot_group_group_relationship_insert(GroupRelationshipInterface $relationship): void');
+    $syncPos = strpos($source, "_markaspot_group_sync_relationship_to_field(\$relationship, 'insert');", $hookPos);
+    $notifyPos = strpos($source, '_markaspot_group_notify_service_request_org_relationship($relationship, _markaspot_group_is_syncing());', $hookPos);
+    $tenantAdminPos = strpos($source, "_markaspot_group_tenant_admin_sync_role(\$relationship, 'insert');", $hookPos);
+
+    $this->assertNotFalse($hookPos);
+    $this->assertNotFalse($syncPos);
+    $this->assertNotFalse($notifyPos);
+    $this->assertNotFalse($tenantAdminPos);
+    $this->assertLessThan($notifyPos, $syncPos);
+    $this->assertLessThan($tenantAdminPos, $notifyPos);
+    $this->assertStringContainsString('function _markaspot_group_notify_service_request_org_relationship(GroupRelationshipInterface $relationship, bool $trust_relationship_node = FALSE): void', $source);
+    $this->assertStringContainsString('function _markaspot_group_reload_persisted_relationship(GroupRelationshipInterface $relationship): ?GroupRelationshipInterface', $source);
+    $this->assertStringContainsString("\$relationship->getPluginId() !== 'group_node:service_request'", $source);
+    $this->assertStringContainsString('$group->bundle() !== _markaspot_group_get_org_group_type()', $source);
+    $this->assertStringContainsString('$node_storage->resetCache([$entity_id]);', $source);
+    $this->assertStringContainsString('$node->bundle() !== \'service_request\'', $source);
+    $this->assertStringContainsString("_markaspot_group_field_target_ids(\$node, 'field_organisation')", $source);
+    $this->assertStringContainsString('$node_jurisdiction_id === NULL || !_markaspot_group_org_group_matches_jurisdiction($org_group, $node_jurisdiction_id)', $source);
+    $this->assertStringContainsString('_markaspot_group_has_active_org_notification_eca()', $source);
+    $this->assertStringContainsString('_markaspot_group_notify_organisation_group($node, $group);', $source);
+    $this->assertStringContainsString("'node' => \$node,", $source);
+    $this->assertStringContainsString("'organisation' => \$org_group,", $source);
+  }
+
+  /**
+   * Tests tenant-owned ECA notification processes suppress fallback mail.
+   */
+  public function testActiveOrgNotificationEcaSuppressesFallbackMail(): void {
+    $source = file_get_contents(dirname(__DIR__, 3) . '/markaspot_group.module');
+
+    $this->assertStringContainsString('function _markaspot_group_has_active_org_notification_eca(): bool', $source);
+    $this->assertStringContainsString('$config_factory->listAll(\'eca.eca.\')', $source);
+    $this->assertStringContainsString("\$plugin === 'service_request_sync_organisations'", $source);
+    $this->assertStringContainsString("\$config_name === 'eca.eca.process_apply_group'", $source);
+    $this->assertStringContainsString("\$plugin === 'action_send_email_action'", $source);
+    $this->assertStringContainsString("trim((string) (\$configuration['subject'] ?? '')) !== ''", $source);
+    $this->assertStringContainsString("trim((string) (\$configuration['message'] ?? '')) !== ''", $source);
+    $this->assertStringContainsString('The profile-level relationship fallback must not double-send', $source);
+  }
+
+  /**
+   * Tests a valid org relationship sends exactly one fallback notification.
+   */
+  public function testValidOrgRelationshipSendsOneFallbackNotification(): void {
+    $node = $this->serviceRequestNode();
+    $group = $this->organisationGroup();
+    $relationship = $this->relationship($node, $group);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->once())
+      ->method('mail')
+      ->with(
+        'markaspot_group',
+        'org_notification',
+        'org@example.test',
+        'en',
+        $this->callback(static fn(array $params): bool =>
+          ($params['node'] ?? NULL) === $node
+          && ($params['organisation'] ?? NULL) === $group
+          && str_contains((string) ($params['subject'] ?? ''), '#REQ-1')
+          && str_contains((string) ($params['message'] ?? ''), 'A short body')
+        ),
+      )
+      ->willReturn(['result' => TRUE]);
+    $this->installNotificationContainer($mailManager);
+
+    _markaspot_group_notify_service_request_org_relationship($relationship, TRUE);
+  }
+
+  /**
+   * Tests org relationship mail falls back to active group members.
+   */
+  public function testOrgRelationshipFallsBackToActiveMemberEmails(): void {
+    $node = $this->serviceRequestNode();
+    $group = $this->organisationGroup(email: '');
+    $relationship = $this->relationship($node, $group);
+    $membershipRelationships = $this->membershipRelationships([
+      'member-two@example.test',
+      'Member-One@example.test',
+      'member-one@example.test',
+    ]);
+    $sentRecipients = [];
+
+    $relationshipStorage = $this->createMock(EntityStorageInterface::class);
+    $relationshipStorage->expects($this->once())
+      ->method('loadByProperties')
+      ->with([
+        'gid' => 100,
+        'plugin_id' => 'group_membership',
+      ])
+      ->willReturn($membershipRelationships);
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->expects($this->once())
+      ->method('getStorage')
+      ->with('group_relationship')
+      ->willReturn($relationshipStorage);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->exactly(2))
+      ->method('mail')
+      ->willReturnCallback(static function (
+        string $module,
+        string $key,
+        string $to,
+        string $langcode,
+        array $params,
+      ) use (&$sentRecipients): array {
+        $sentRecipients[] = $to;
+        return ['result' => TRUE];
+      });
+    $this->installNotificationContainer($mailManager, entityTypeManager: $entityTypeManager);
+
+    _markaspot_group_notify_service_request_org_relationship($relationship, TRUE);
+
+    sort($sentRecipients);
+    $this->assertSame(['member-one@example.test', 'member-two@example.test'], $sentRecipients);
+  }
+
+  /**
+   * Tests cross-tenant relationships do not send fallback mail.
+   */
+  public function testCrossTenantOrgRelationshipDoesNotSendFallbackNotification(): void {
+    $node = $this->serviceRequestNode(jurisdictionId: 1, organisationId: 100);
+    $group = $this->organisationGroup(id: 100, jurisdictionId: 2);
+    $relationship = $this->relationship($node, $group);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->never())->method('mail');
+    $this->installNotificationContainer($mailManager);
+
+    _markaspot_group_notify_service_request_org_relationship($relationship, TRUE);
+  }
+
+  /**
+   * Tests active tenant ECA notification config suppresses fallback mail.
+   */
+  public function testTenantEcaNotificationProcessSuppressesFallbackNotification(): void {
+    $node = $this->serviceRequestNode();
+    $group = $this->organisationGroup();
+    $relationship = $this->relationship($node, $group);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->never())->method('mail');
+    $this->installNotificationContainer(
+      $mailManager,
+      [
+        'eca.eca.process_nhbgnxm' => [
+          'status' => TRUE,
+          'actions' => [
+            'Activity_1dpxtbx' => [
+              'plugin' => 'service_request_sync_organisations',
+              'configuration' => [
+                'subject' => 'Assigned',
+                'message' => 'Assigned message',
+              ],
+            ],
+          ],
+        ],
+      ],
+    );
+
+    _markaspot_group_notify_service_request_org_relationship($relationship, TRUE);
+  }
+
+  /**
+   * Tests sync-only ECA config does not suppress fallback notification.
+   */
+  public function testSyncOnlyEcaProcessDoesNotSuppressFallbackNotification(): void {
+    $node = $this->serviceRequestNode();
+    $group = $this->organisationGroup();
+    $relationship = $this->relationship($node, $group);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->once())
+      ->method('mail')
+      ->willReturn(['result' => TRUE]);
+    $this->installNotificationContainer(
+      $mailManager,
+      [
+        'eca.eca.process_nhbgnxm' => [
+          'status' => TRUE,
+          'actions' => [
+            'Activity_1dpxtbx' => [
+              'plugin' => 'service_request_sync_organisations',
+              'configuration' => [
+                'subject' => '',
+                'message' => '',
+              ],
+            ],
+          ],
+        ],
+      ],
+    );
+
+    _markaspot_group_notify_service_request_org_relationship($relationship, TRUE);
+  }
+
+  /**
+   * Tests persisted relationship notification rechecks the relationship exists.
+   */
+  public function testPersistedRelationshipPathSkipsDeletedRelationship(): void {
+    $relationship = $this->createMock(GroupRelationshipInterface::class);
+    $relationship->method('id')->willReturn(77);
+
+    $relationshipStorage = $this->createMock(EntityStorageInterface::class);
+    $relationshipStorage->expects($this->once())
+      ->method('resetCache')
+      ->with([77]);
+    $relationshipStorage->expects($this->once())
+      ->method('load')
+      ->with(77)
+      ->willReturn(NULL);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->expects($this->once())
+      ->method('getStorage')
+      ->with('group_relationship')
+      ->willReturn($relationshipStorage);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->never())->method('mail');
+    $this->installNotificationContainer($mailManager, entityTypeManager: $entityTypeManager);
+
+    _markaspot_group_notify_service_request_org_relationship($relationship);
+  }
+
+  /**
+   * Tests persisted relationship notification reloads and sends exactly once.
+   */
+  public function testPersistedRelationshipPathReloadsAndSendsOnce(): void {
+    $node = $this->serviceRequestNode();
+    $group = $this->organisationGroup();
+    $relationship = $this->relationship($node, $group);
+
+    $relationshipStorage = $this->createMock(EntityStorageInterface::class);
+    $relationshipStorage->expects($this->once())
+      ->method('resetCache')
+      ->with([77]);
+    $relationshipStorage->expects($this->once())
+      ->method('load')
+      ->with(77)
+      ->willReturn($relationship);
+
+    $nodeStorage = $this->createMock(EntityStorageInterface::class);
+    $nodeStorage->expects($this->once())
+      ->method('resetCache')
+      ->with([123]);
+    $nodeStorage->expects($this->once())
+      ->method('load')
+      ->with(123)
+      ->willReturn($node);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->willReturnCallback(static fn(string $entityTypeId): EntityStorageInterface => match ($entityTypeId) {
+        'group_relationship' => $relationshipStorage,
+        'node' => $nodeStorage,
+      });
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->once())
+      ->method('mail')
+      ->with(
+        'markaspot_group',
+        'org_notification',
+        'org@example.test',
+        'en',
+        $this->callback(static fn(array $params): bool =>
+          ($params['node'] ?? NULL) === $node
+          && ($params['organisation'] ?? NULL) === $group
+        ),
+      )
+      ->willReturn(['result' => TRUE]);
+    $this->installNotificationContainer($mailManager, entityTypeManager: $entityTypeManager);
+
+    _markaspot_group_notify_service_request_org_relationship($relationship);
+  }
+
+  /**
+   * Tests node insert no longer sends a duplicate organisation mail directly.
+   */
+  public function testNodeInsertDoesNotDoubleSendOrganisationNotification(): void {
+    $source = file_get_contents(dirname(__DIR__, 3) . '/markaspot_group.module');
+
+    $nodeInsertPos = strpos($source, 'function markaspot_group_node_insert(NodeInterface $node): void');
+    $nodeUpdatePos = strpos($source, 'function markaspot_group_node_update(NodeInterface $node): void');
+    $nodeInsertSource = substr($source, $nodeInsertPos, $nodeUpdatePos - $nodeInsertPos);
+
+    $this->assertNotFalse($nodeInsertPos);
+    $this->assertNotFalse($nodeUpdatePos);
+    $this->assertStringNotContainsString('_markaspot_group_notify_organisation($node);', $nodeInsertSource);
+    $this->assertStringContainsString('Organisation notifications are emitted when the org relationship is', $nodeInsertSource);
+  }
+
+  /**
+   * Installs the minimal Drupal container needed by notification helpers.
+   */
+  private function installNotificationContainer(
+    MailManagerInterface $mailManager,
+    array $ecaConfigs = [],
+    ?EntityTypeManagerInterface $entityTypeManager = NULL,
+  ): void {
+    $requestStack = new RequestStack();
+    $requestStack->push(Request::create('https://dashboard.example.test'));
+
+    $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchyResolver->method('getRootJurisdictionId')->willReturn(NULL);
+
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('listAll')
+      ->with('eca.eca.')
+      ->willReturn(array_keys($ecaConfigs));
+    $configFactory->method('get')
+      ->willReturnCallback(function (string $name) use ($ecaConfigs): ImmutableConfig {
+        $values = $ecaConfigs[$name] ?? [];
+        $config = $this->createMock(ImmutableConfig::class);
+        $config->method('get')
+          ->willReturnCallback(static fn(string $key): mixed => $values[$key] ?? NULL);
+        return $config;
+      });
+
+    $emailValidator = $this->createMock(EmailValidatorInterface::class);
+    $emailValidator->method('isValid')
+      ->willReturnCallback(static fn(string $email): bool => str_contains($email, '@'));
+
+    $container = new ContainerBuilder();
+    $container->set('plugin.manager.mail', $mailManager);
+    $container->set('request_stack', $requestStack);
+    $container->set('config.factory', $configFactory);
+    $container->set('email.validator', $emailValidator);
+    $container->set('markaspot_group.hierarchy_resolver', $hierarchyResolver);
+    if ($entityTypeManager !== NULL) {
+      $container->set('entity_type.manager', $entityTypeManager);
+    }
+    \Drupal::setContainer($container);
+  }
+
+  /**
+   * Creates a service request node mock with the fields used by mail delivery.
+   */
+  private function serviceRequestNode(int $jurisdictionId = 1, int $organisationId = 100): NodeInterface {
+    $category = new class() {
+
+      /**
+       * Returns the category label.
+       */
+      public function label(): string {
+        return 'Radbuegel';
+      }
+
+    };
+
+    $fields = [
+      'field_jurisdiction' => $this->field([['target_id' => $jurisdictionId]], ['target_id' => $jurisdictionId]),
+      'field_organisation' => $this->field([['target_id' => $organisationId]]),
+      'request_id' => $this->field([['value' => 'REQ-1']], ['value' => 'REQ-1']),
+      'field_category' => $this->field([['target_id' => 9]], ['entity' => $category]),
+      'field_address' => $this->field([['value' => 'Teststrasse 1']], ['value' => 'Teststrasse 1']),
+      'body' => $this->field([['value' => 'A short body']], ['value' => 'A short body']),
+    ];
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('id')->willReturn(123);
+    $node->method('label')->willReturn('Fixture request');
+    $node->method('hasField')
+      ->willReturnCallback(static fn(string $fieldName): bool => array_key_exists($fieldName, $fields));
+    $node->method('get')
+      ->willReturnCallback(static fn(string $fieldName): FieldItemListInterface => $fields[$fieldName]);
+    return $node;
+  }
+
+  /**
+   * Creates an organisation group mock with jurisdiction and mail fields.
+   */
+  private function organisationGroup(int $id = 100, int $jurisdictionId = 1, string $email = 'org@example.test'): GroupInterface {
+    $emailValues = $email === '' ? [] : [['value' => $email]];
+    $fields = [
+      'field_jurisdiction' => $this->field([['target_id' => $jurisdictionId]], ['target_id' => $jurisdictionId]),
+      'field_head_organisation_e_mail' => $this->field($emailValues, ['value' => $email]),
+    ];
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($id);
+    $group->method('bundle')->willReturn('org');
+    $group->method('label')->willReturn('Organisation');
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $fieldName): bool => array_key_exists($fieldName, $fields));
+    $group->method('get')
+      ->willReturnCallback(static fn(string $fieldName): FieldItemListInterface => $fields[$fieldName]);
+    return $group;
+  }
+
+  /**
+   * Creates group membership relationship mocks for member fallback mail.
+   *
+   * @param string[] $emails
+   *   User e-mail addresses returned by the memberships.
+   *
+   * @return \Drupal\group\Entity\GroupRelationshipInterface[]
+   *   Membership relationship mocks.
+   */
+  private function membershipRelationships(array $emails): array {
+    return array_map(function (string $email): GroupRelationshipInterface {
+      $user = $this->createMock(UserInterface::class);
+      $user->method('isActive')->willReturn(TRUE);
+      $user->method('getEmail')->willReturn($email);
+
+      $relationship = $this->createMock(GroupRelationshipInterface::class);
+      $relationship->method('getEntity')->willReturn($user);
+      return $relationship;
+    }, $emails);
+  }
+
+  /**
+   * Creates a service request group relationship mock.
+   */
+  private function relationship(NodeInterface $node, GroupInterface $group): GroupRelationshipInterface {
+    $relationship = $this->createMock(GroupRelationshipInterface::class);
+    $relationship->method('id')->willReturn(77);
+    $relationship->method('getPluginId')->willReturn('group_node:service_request');
+    $relationship->method('getGroup')->willReturn($group);
+    $relationship->method('getEntity')->willReturn($node);
+    $relationship->method('getEntityId')->willReturn($node->id());
+    return $relationship;
+  }
+
+  /**
+   * Creates a field item list mock with simple public item properties.
+   */
+  private function field(array $values, array $properties = []): FieldItemListInterface {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('isEmpty')->willReturn($values === []);
+    $field->method('getValue')->willReturn($values);
+    $field->method('__get')
+      ->willReturnCallback(static fn(string $property): mixed => $properties[$property] ?? NULL);
+    $field->method('__isset')
+      ->willReturnCallback(static fn(string $property): bool => array_key_exists($property, $properties));
+    return $field;
   }
 
   /**
