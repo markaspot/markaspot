@@ -1,5 +1,25 @@
 # Changelog
 
+## [11.9.97](https://github.com/markaspot/markaspot/compare/11.9.96...11.9.97) (2026-05-28)
+
+### Features
+
+* add jurisdiction request id prefixes ([a28db00](https://github.com/markaspot/markaspot/commit/a28db00bcaead7a1fc691ee80d5327ed945246a5))
+
+### Bug Fixes
+
+* align demo expiry mail label ([0533e0e](https://github.com/markaspot/markaspot/commit/0533e0e6fdab7bfadd1f4009c89f39d3b76bbadf))
+* expose request attributes in management form ([7ff63b9](https://github.com/markaspot/markaspot/commit/7ff63b929e4cb222f1be4d8cea6a88d149eeaba9))
+* localize organisation assignment mails ([5e1a052](https://github.com/markaspot/markaspot/commit/5e1a0524a5268552ba10975019e9f0650c6b0d5e))
+* make request id prefix update deploy-safe ([a15d837](https://github.com/markaspot/markaspot/commit/a15d8371b26437cbbcb541fc154e3e8455a21abd))
+* mirror request management update hooks ([f23d48a](https://github.com/markaspot/markaspot/commit/f23d48aad662ef59b94a17c25a08ff71e2d8ad7c))
+* notify organisation group members ([8757358](https://github.com/markaspot/markaspot/commit/87573587789362280e8fdcb357c9554aae13d62c))
+* prepare request image upload storage ([c1bd438](https://github.com/markaspot/markaspot/commit/c1bd438657335db23422d040ec83ca6ab183a7bd))
+
+### Refactoring
+
+* align request management fields and jurisdiction scope ([9731c95](https://github.com/markaspot/markaspot/commit/9731c952f8bd99e4ac3d08b66f3a1444839f16c8))
+
 ## [11.9.96](https://github.com/markaspot/markaspot/compare/11.9.95...11.9.96) (2026-05-26)
 
 ### Features
