@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.101](https://github.com/markaspot/markaspot/compare/11.9.100...11.9.101) (2026-05-28)
+
+### Bug Fixes
+
+* vary management form cache by staff roles ([aecebb6](https://github.com/markaspot/markaspot/commit/aecebb6fe4823f8f8df66f37700966bfa4ba6222))
+
 ## [11.9.100](https://github.com/markaspot/markaspot/compare/11.9.99...11.9.100) (2026-05-28)
 
 ### Bug Fixes
