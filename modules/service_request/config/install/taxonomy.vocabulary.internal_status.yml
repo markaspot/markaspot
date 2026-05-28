@@ -1,0 +1,11 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - service_request
+name: 'Internal Status'
+vid: internal_status
+description: 'Jurisdiction-scoped internal processing statuses for service requests.'
+hierarchy: 0
+weight: 0

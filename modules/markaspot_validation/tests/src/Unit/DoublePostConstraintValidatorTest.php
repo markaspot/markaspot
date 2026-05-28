@@ -194,6 +194,30 @@ class DoublePostConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
+   * Tests duplicate message fallback when legacy nodes miss request_id.
+   *
+   * @covers ::duplicateNodeRequestId
+   */
+  public function testDuplicateNodeRequestIdFallsBackToEntityId(): void {
+    $requestId = $this->createMock(FieldItemListInterface::class);
+    $requestId->method('isEmpty')->willReturn(TRUE);
+
+    $node = $this->createMock(ContentEntityInterface::class);
+    $node->method('hasField')
+      ->with('request_id')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('request_id')
+      ->willReturn($requestId);
+    $node->method('id')->willReturn(123);
+
+    $method = new \ReflectionMethod(DoublePostConstraintValidator::class, 'duplicateNodeRequestId');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame('123', $method->invoke($this->createValidator(), $node));
+  }
+
+  /**
    * Sets up the config for duplicate checking to be enabled.
    *
    * @param bool $hint

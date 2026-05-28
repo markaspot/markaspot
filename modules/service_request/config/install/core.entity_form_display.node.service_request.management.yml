@@ -9,6 +9,7 @@ dependencies:
     - field.field.node.service_request.field_e_mail
     - field.field.node.service_request.field_geolocation
     - field.field.node.service_request.field_status
+    - field.field.node.service_request.field_status_internal_term
     - field.field.node.service_request.field_status_notes
     - node.type.service_request
   enforced:
@@ -68,6 +69,7 @@ third_party_settings:
     group_administration:
       children:
         - field_status
+        - field_status_internal_term
         - field_status_notes
         - status
         - created
@@ -97,7 +99,7 @@ content:
     region: content
   created:
     type: datetime_timestamp
-    weight: 20
+    weight: 21
     settings: {  }
     third_party_settings: {  }
     region: content
@@ -128,9 +130,15 @@ content:
     third_party_settings: {  }
     type: options_buttons
     region: content
+  field_status_internal_term:
+    type: options_select
+    weight: 18
+    settings: {  }
+    third_party_settings: {  }
+    region: content
   field_status_notes:
     type: entity_reference_paragraphs
-    weight: 18
+    weight: 19
     settings:
       title: Paragraph
       title_plural: Paragraphs
@@ -144,7 +152,7 @@ content:
     type: boolean_checkbox
     settings:
       display_label: true
-    weight: 19
+    weight: 20
     region: content
     third_party_settings: {  }
 hidden:

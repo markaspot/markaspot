@@ -8,6 +8,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\markaspot_validation\EventSubscriber\ViolationCauseResponseSubscriber;
@@ -94,7 +95,7 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
    * {@inheritDoc}
    */
   public static function create(ContainerInterface $container) {
-    return new static(
+    return new self(
       $container->get('datetime.time'),
       $container->get('request_stack'),
       $container->get('entity_type.manager'),
@@ -243,26 +244,41 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
 
     if ($viewable) {
       $url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+      $request_id = $this->duplicateNodeRequestId($node);
       $message = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
-        '@id' => $node->request_id->value,
-        '@radius' => $config->get('radius'),
+        '@id' => $request_id,
+        '@radius' => (string) ($config->get('radius') ?? ''),
         '@unit' => $unit,
       ]);
       return [
         'message' => $message,
-        'request_id' => $node->request_id->value,
+        'request_id' => $request_id,
         'url' => $url,
       ];
     }
 
     return [
       'message' => $this->t('We found a recently added report of the same category within a radius of @radius @unit.', [
-        '@radius' => $config->get('radius'),
+        '@radius' => (string) ($config->get('radius') ?? ''),
         '@unit' => $unit,
       ]),
       'request_id' => NULL,
       'url' => NULL,
     ];
+  }
+
+  /**
+   * Resolves a duplicate's public request id without NULL placeholders.
+   */
+  protected function duplicateNodeRequestId(ContentEntityInterface $node): string {
+    if ($node->hasField('request_id') && !$node->get('request_id')->isEmpty()) {
+      $value = $node->get('request_id')->value;
+      if ($value !== NULL && trim((string) $value) !== '') {
+        return (string) $value;
+      }
+    }
+
+    return (string) $node->id();
   }
 
   /**

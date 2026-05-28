@@ -158,6 +158,26 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
   }
 
   /**
+   * Internal status is part of the managed tenant taxonomy contract.
+   */
+  public function testInternalStatusIsManagedTenantTaxonomy(): void {
+    $moduleRoot = dirname(__DIR__, 3);
+    $moduleSource = file_get_contents($moduleRoot . '/markaspot_tenant_admin.module');
+    $this->assertIsString($moduleSource);
+
+    $this->assertStringContainsString("'taxonomy_term_internal_status_form'", $moduleSource);
+    $this->assertStringContainsString("['service_category', 'service_status', 'internal_status']", $moduleSource);
+    $this->assertStringContainsString("foreach (['service_category', 'service_status', 'internal_status'] as \$vocabulary)", $moduleSource);
+
+    $roleConfig = file_get_contents($moduleRoot . '/config/install/user.role.tenant_admin.yml');
+    $this->assertIsString($roleConfig);
+    $this->assertStringContainsString('create terms in internal_status', $roleConfig);
+    $this->assertStringContainsString('edit terms in internal_status', $roleConfig);
+    $this->assertStringContainsString('delete terms in internal_status', $roleConfig);
+    $this->assertStringContainsString('translate internal_status taxonomy_term', $roleConfig);
+  }
+
+  /**
    * Tests that users with 'administer taxonomy' bypass the filter.
    */
   public function testFullAdminBypassesFilter(): void {

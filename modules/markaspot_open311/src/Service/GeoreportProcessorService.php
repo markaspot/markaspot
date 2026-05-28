@@ -3,14 +3,18 @@
 namespace Drupal\markaspot_open311\Service;
 
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\File\FileExists;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\media\MediaInterface;
 use Drupal\Core\File\Exception\InvalidStreamWrapperException;
 use Drupal\Core\File\Exception\FileException;
+use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\TransferException;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\user\Entity\User;
 use Drupal\Core\Config\ConfigFactoryInterface;
@@ -20,6 +24,8 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\file\Entity\File;
+use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
@@ -159,6 +165,41 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected $logger;
 
   /**
+   * The database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  protected $database;
+
+  /**
+   * The file system service.
+   *
+   * @var \Drupal\Core\File\FileSystemInterface
+   */
+  protected $fileSystem;
+
+  /**
+   * The HTTP client.
+   *
+   * @var \GuzzleHttp\ClientInterface
+   */
+  protected $httpClient;
+
+  /**
+   * The messenger service.
+   *
+   * @var \Drupal\Core\Messenger\MessengerInterface
+   */
+  protected $messenger;
+
+  /**
+   * The account switcher service.
+   *
+   * @var \Drupal\Core\Session\AccountSwitcherInterface
+   */
+  protected $accountSwitcher;
+
+  /**
    * GeoreportProcessorService constructor.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -183,6 +224,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The token service.
    * @param \Drupal\Core\Language\LanguageManagerInterface $languageManager
    *   The language manager service.
+   * @param \Drupal\Core\Database\Connection $database
+   *   The database connection.
+   * @param \Drupal\Core\File\FileSystemInterface $fileSystem
+   *   The file system service.
+   * @param \GuzzleHttp\ClientInterface $httpClient
+   *   The HTTP client.
+   * @param \Drupal\Core\Messenger\MessengerInterface $messenger
+   *   The messenger service.
+   * @param \Drupal\Core\Session\AccountSwitcherInterface $accountSwitcher
+   *   The account switcher service.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchyResolver
    *   The jurisdiction hierarchy resolver.
    * @param \Psr\Log\LoggerInterface|null $logger
@@ -200,6 +251,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     StreamWrapperManagerInterface $streamWrapperManager,
     Token $token,
     LanguageManagerInterface $languageManager,
+    Connection $database,
+    FileSystemInterface $fileSystem,
+    ClientInterface $httpClient,
+    MessengerInterface $messenger,
+    AccountSwitcherInterface $accountSwitcher,
     ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
     ?LoggerInterface $logger = NULL,
   ) {
@@ -214,6 +270,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $this->streamWrapperManager = $streamWrapperManager;
     $this->token = $token;
     $this->languageManager = $languageManager;
+    $this->database = $database;
+    $this->fileSystem = $fileSystem;
+    $this->httpClient = $httpClient;
+    $this->messenger = $messenger;
+    $this->accountSwitcher = $accountSwitcher;
     $this->hierarchyResolver = $hierarchyResolver;
     $this->logger = $logger;
   }
@@ -339,7 +400,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
     }
 
-    if (array_key_exists('extended_attributes', $requestData)) {
+    if (
+      $operation === 'update'
+      && $this->currentUser->hasPermission('access open311 advanced properties')
+      && array_key_exists('extended_attributes', $requestData)
+    ) {
       // Check for revision_log_message at multiple possible locations.
       $revisionLogMessage = $requestData['extended_attributes']['revision_log_message']
         ?? $requestData['extended_attributes']['drupal']['revision_log_message']
@@ -390,6 +455,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         }
       }
 
+      // Public Open311 clients may submit service definition attributes only
+      // through the top-level attributes payload, where they are allowlisted
+      // against the public service category. Do not accept raw Drupal writes to
+      // field_request_attributes here, otherwise internal-status attributes
+      // could be mass-assigned by citizens.
+      unset($extendedDrupal['field_request_attributes']);
+
       $values += $this->handleExtendedAttributes($extendedDrupal);
 
       // Handle media published status updates (original path)
@@ -407,13 +479,17 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $decoded = json_decode($attributes, TRUE);
         if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
           $decoded = $this->validateImagelistAttributes($decoded, $requestData);
-          $values['field_request_attributes'] = ['value' => json_encode($decoded)];
+          if ($decoded !== []) {
+            $values['field_request_attributes'] = ['value' => json_encode($decoded)];
+          }
         }
       }
       elseif (is_array($attributes) || is_object($attributes)) {
         $decoded = (array) $attributes;
         $decoded = $this->validateImagelistAttributes($decoded, $requestData);
-        $values['field_request_attributes'] = ['value' => json_encode($decoded)];
+        if ($decoded !== []) {
+          $values['field_request_attributes'] = ['value' => json_encode($decoded)];
+        }
       }
     }
 
@@ -423,11 +499,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   }
 
   /**
-   * Validates imagelist attribute values against their media type.
+   * Validates public service definition attribute values.
    *
-   * For attributes with datatype 'imagelist', checks that the submitted
-   * value is a valid media entity UUID of the correct bundle. Invalid
-   * values are stripped from the attributes array.
+   * Only attributes declared on the public service category are accepted. For
+   * attributes with datatype 'imagelist', checks that the submitted value is a
+   * valid media entity UUID of the correct bundle. Invalid or unknown values
+   * are stripped from the attributes array.
    *
    * @param array $attributes
    *   The submitted attribute key-value pairs.
@@ -440,33 +517,23 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   private function validateImagelistAttributes(array $attributes, array $requestData): array {
     $serviceCode = $requestData['service_code'] ?? NULL;
     if (!$serviceCode) {
-      return $attributes;
+      return [];
     }
 
-    // Load the service definition to find imagelist attributes.
-    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
-      ->loadByProperties([
-        'vid' => 'service_category',
-        'field_service_code' => $serviceCode,
-      ]);
-
-    if (empty($terms)) {
-      return $attributes;
-    }
-
-    $term = reset($terms);
-    if (!$term->hasField('field_service_definition') || $term->get('field_service_definition')->isEmpty()) {
-      return $attributes;
-    }
-
-    $definition = json_decode($term->get('field_service_definition')->value, TRUE);
-    if (empty($definition['attributes'])) {
-      return $attributes;
+    $jurisdictionId = isset($requestData['jurisdiction_id']) ? (int) $requestData['jurisdiction_id'] : NULL;
+    $definitionAttributes = $this->getPublicServiceDefinitionAttributes($serviceCode, $jurisdictionId);
+    if ($definitionAttributes === []) {
+      return [];
     }
 
     // Build a map of imagelist attribute codes to their media types and groups.
+    $allowedCodes = [];
     $imagelistAttrs = [];
-    foreach ($definition['attributes'] as $attr) {
+    foreach ($definitionAttributes as $attr) {
+      if (!is_array($attr) || empty($attr['code'])) {
+        continue;
+      }
+      $allowedCodes[$attr['code']] = TRUE;
       if (($attr['datatype'] ?? '') === 'imagelist' && !empty($attr['media_type'])) {
         $imagelistAttrs[$attr['code']] = [
           'media_type' => $attr['media_type'],
@@ -474,6 +541,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         ];
       }
     }
+    $attributes = array_intersect_key($attributes, $allowedCodes);
 
     // Validate each imagelist attribute value.
     foreach ($imagelistAttrs as $code => $attrConfig) {
@@ -509,6 +577,88 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return $attributes;
+  }
+
+  /**
+   * Returns public definition attributes for a service category.
+   *
+   * Internal status definitions intentionally do not participate in Open311
+   * public request attributes.
+   *
+   * @param string $serviceCode
+   *   The Open311 service code.
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction group ID to scope the category lookup.
+   *
+   * @return array
+   *   Parsed public service definition attributes.
+   */
+  private function getPublicServiceDefinitionAttributes(string $serviceCode, ?int $jurisdictionId = NULL): array {
+    $term = $this->loadServiceCategoryByCode($serviceCode, $jurisdictionId);
+    if (
+      !$term ||
+      !$term->hasField('field_service_definition') ||
+      $term->get('field_service_definition')->isEmpty()
+    ) {
+      return [];
+    }
+
+    $definition = json_decode($term->get('field_service_definition')->value, TRUE);
+    if (!is_array($definition)) {
+      return [];
+    }
+
+    $attributes = array_is_list($definition)
+      ? $definition
+      : ($definition['attributes'] ?? []);
+
+    return is_array($attributes) ? $attributes : [];
+  }
+
+  /**
+   * Filters request attributes to the public service definition.
+   *
+   * @param array $attributes
+   *   Stored request attributes.
+   * @param object $node
+   *   The service request node.
+   *
+   * @return array
+   *   Attributes safe for public Open311 responses.
+   */
+  private function filterPublicRequestAttributes(array $attributes, object $node): array {
+    if ($attributes === []) {
+      return [];
+    }
+
+    $serviceCode = NULL;
+    if (
+      $node->hasField('field_category') &&
+      !$node->get('field_category')->isEmpty() &&
+      ($category = $node->get('field_category')->entity) instanceof ContentEntityInterface &&
+      $category->hasField('field_service_code') &&
+      !$category->get('field_service_code')->isEmpty()
+    ) {
+      $serviceCode = (string) $category->get('field_service_code')->value;
+    }
+    if (!$serviceCode) {
+      return [];
+    }
+
+    $jurisdictionId = $this->getJurisdictionIdFromNode($node);
+    $definitionAttributes = $this->getPublicServiceDefinitionAttributes($serviceCode, $jurisdictionId);
+    if ($definitionAttributes === []) {
+      return [];
+    }
+
+    $allowedCodes = [];
+    foreach ($definitionAttributes as $attribute) {
+      if (is_array($attribute) && !empty($attribute['code'])) {
+        $allowedCodes[(string) $attribute['code']] = TRUE;
+      }
+    }
+
+    return array_intersect_key($attributes, $allowedCodes);
   }
 
   /**
@@ -552,25 +702,58 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   If the service code is not found in the taxonomy.
    */
   public function mapServiceCodeToTaxonomy(string $serviceCode, ?int $jurisdictionId = NULL): ?int {
-    $serviceCodes = explode(',', $serviceCode);
-    foreach ($serviceCodes as $code) {
-      $properties = ['field_service_code' => trim($code)];
-      if ($jurisdictionId) {
-        // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
-        $effectiveId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
-        if ($effectiveId === NULL) {
-          return NULL;
-        }
-        $properties['field_jurisdiction'] = $effectiveId;
-      }
-      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties($properties);
-      $term = reset($terms);
-      if (!empty($term)) {
-        return $term->id();
-      }
+    $term = $this->loadServiceCategoryByCode($serviceCode, $jurisdictionId);
+    if ($term) {
+      return (int) $term->id();
     }
 
     throw new NotFoundHttpException('Service code not found');
+  }
+
+  /**
+   * Loads a public service category by Open311 service code.
+   *
+   * @param string $serviceCode
+   *   The service code to resolve. Comma-separated legacy values are supported.
+   * @param int|null $jurisdictionId
+   *   Optional jurisdiction group ID to scope the lookup.
+   *
+   * @return \Drupal\Core\Entity\ContentEntityInterface|null
+   *   The matching service category term, if found.
+   */
+  private function loadServiceCategoryByCode(string $serviceCode, ?int $jurisdictionId = NULL): ?ContentEntityInterface {
+    $effectiveJurisdictionId = NULL;
+    if ($jurisdictionId) {
+      // Resolve to root jurisdiction for child jurisdictions (taxonomy inheritance).
+      $effectiveJurisdictionId = $this->hierarchyResolver->getRootJurisdictionId($jurisdictionId);
+      if ($effectiveJurisdictionId === NULL) {
+        return NULL;
+      }
+    }
+
+    $serviceCodes = explode(',', $serviceCode);
+    foreach ($serviceCodes as $code) {
+      $code = trim($code);
+      if ($code === '') {
+        continue;
+      }
+
+      $properties = [
+        'vid' => 'service_category',
+        'field_service_code' => $code,
+      ];
+      if ($effectiveJurisdictionId) {
+        $properties['field_jurisdiction'] = $effectiveJurisdictionId;
+      }
+
+      $terms = $this->entityTypeManager->getStorage('taxonomy_term')->loadByProperties($properties);
+      $term = reset($terms);
+      if ($term instanceof ContentEntityInterface) {
+        return $term;
+      }
+    }
+
+    return NULL;
   }
 
   /**
@@ -799,14 +982,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     if ($bypass_access) {
       // Switch to root user account to bypass all access checks during node loading.
-      $account_switcher = \Drupal::service('account_switcher');
       $root_user = User::load(1);
-      $account_switcher->switchTo($root_user);
+      $this->accountSwitcher->switchTo($root_user);
       try {
         $nodes = $storage->loadMultiple($nids);
       }
       finally {
-        $account_switcher->switchBack();
+        $this->accountSwitcher->switchBack();
       }
     }
     else {
@@ -816,13 +998,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       if (!$user->isAnonymous()) {
         foreach ($nids as $nid) {
           if (!isset($nodes[$nid])) {
-            $account_switcher = \Drupal::service('account_switcher');
-            $account_switcher->switchTo(User::load(1));
+            $this->accountSwitcher->switchTo(User::load(1));
             try {
               $node = $storage->load($nid);
             }
             finally {
-              $account_switcher->switchBack();
+              $this->accountSwitcher->switchBack();
             }
 
             if ($node && !$node->isPublished() && $node->getOwnerId() == $user->id()) {
@@ -1498,8 +1679,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Direct database query for entity_id only - much faster than loading entities.
-    $connection = \Drupal::database();
-    $node_ids = $connection->select('group_relationship_field_data', 'gr')
+    $node_ids = $this->database->select('group_relationship_field_data', 'gr')
       ->fields('gr', ['entity_id'])
       ->condition('gid', $group_id)
       ->condition('plugin_id', 'group_node:service_request')
@@ -1779,21 +1959,25 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Add manager-only PII fields.
     if ($extendedRole === 'manager') {
-      if ($node->hasField('field_e_mail') && !$node->get('field_e_mail')->isEmpty()) {
-        $request['email'] = $node->get('field_e_mail')->value ?? '';
-        $request['extended_attributes']['e-mail'] = $node->get('field_e_mail')->value ?? '';
+      $email = $this->viewableFieldValue($node, 'field_e_mail');
+      if ($email !== NULL) {
+        $request['email'] = $email;
+        $request['extended_attributes']['e-mail'] = $email;
       }
 
-      if ($node->hasField('field_phone') && !$node->get('field_phone')->isEmpty()) {
-        $request['phone'] = $node->get('field_phone')->value ?? '';
+      $phone = $this->viewableFieldValue($node, 'field_phone');
+      if ($phone !== NULL) {
+        $request['phone'] = $phone;
       }
 
-      if ($node->hasField('field_first_name') && !$node->get('field_first_name')->isEmpty()) {
-        $request['first_name'] = $node->get('field_first_name')->value ?? '';
+      $firstName = $this->viewableFieldValue($node, 'field_first_name');
+      if ($firstName !== NULL) {
+        $request['first_name'] = $firstName;
       }
 
-      if ($node->hasField('field_last_name') && !$node->get('field_last_name')->isEmpty()) {
-        $request['last_name'] = $node->get('field_last_name')->value ?? '';
+      $lastName = $this->viewableFieldValue($node, 'field_last_name');
+      if ($lastName !== NULL) {
+        $request['last_name'] = $lastName;
       }
 
       if ($node->hasField('uid') && !$node->get('uid')->isEmpty() && $node->get('uid')->entity) {
@@ -1903,7 +2087,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $attributesJson = $node->get('field_request_attributes')->value;
       $attributesData = json_decode($attributesJson, TRUE);
       if (json_last_error() === JSON_ERROR_NONE && !empty($attributesData)) {
-        $request['extended_attributes']['attributes'] = $attributesData;
+        $publicAttributes = is_array($attributesData)
+          ? $this->filterPublicRequestAttributes($attributesData, $node)
+          : [];
+        if ($publicAttributes !== []) {
+          $request['extended_attributes']['attributes'] = $publicAttributes;
+        }
       }
     }
 
@@ -2646,7 +2835,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         // surface schema drift in watchdog so a tenant missing field_author
         // on the `status` paragraph bundle is visible to operators rather
         // than silently dropping author attribution on status notes.
-        \Drupal::logger('markaspot_open311')->warning(
+        $this->logger?->warning(
           'Paragraph bundle @bundle is missing field_author; author uid @uid not recorded for status note. Run markaspot_status_paragraph update to restore the field.',
           ['@bundle' => $paragraph->bundle(), '@uid' => $fields['author_id']]
         );
@@ -3043,8 +3232,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
             if (empty($entities)) {
               continue;
             }
-            // Serialize entities to arrays for JSON compatibility.
-            $value = array_map(fn($entity) => $entity->toArray(), $entities);
+            // Never serialise referenced entities with toArray() here:
+            // manager field allowlists may include operational references
+            // (organisation, internal status) whose target entities carry
+            // private config fields. Keep the GeoReport API contract compact
+            // and field-permission friendly.
+            $value = $this->serializeReferencedEntitiesCompact($entities);
+            if ($value === []) {
+              continue;
+            }
             // Normalize single-value arrays.
             if (count($value) === 1) {
               $value = reset($value);
@@ -3121,20 +3317,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         }
         // Compact shape only: never $entity->toArray() here, it would bloat
         // the payload (e.g. field_jurisdiction -> full group config).
-        // Accepted limitation: only the field-level view access above is
-        // checked, not a per-referenced-entity access('view'). The label
-        // exposed here is for operational reference entities (status terms,
-        // categories, service provider org groups) the holders of 'access
-        // open311 full export' (editorial_board / administrator) have view
-        // access to anyway; a per-entity check across a full export would add
-        // measurable cost for no real gain.
-        $value = array_map(
-          fn($entity) => [
-            'target_id' => $entity->id(),
-            'label' => $entity->label(),
-          ],
-          $entities
-        );
+        // Referenced entity access is checked inside the helper so direct
+        // GeoReport serialisation honours taxonomy/group access hooks too.
+        $value = $this->serializeReferencedEntitiesCompact($entities);
+        if ($value === []) {
+          continue;
+        }
         // Normalize single-value references to a single assoc array.
         if (count($value) === 1) {
           $value = reset($value);
@@ -3157,6 +3345,48 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return $fieldValues;
+  }
+
+  /**
+   * Serialises referenced entities to the only shape GeoReport exports need.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface[] $entities
+   *   Referenced entities.
+   *
+   * @return array<int, array{target_id: mixed, label: string}>
+   *   Compact references safe for API export.
+   */
+  private function serializeReferencedEntitiesCompact(array $entities): array {
+    $references = [];
+    foreach ($entities as $entity) {
+      if (!$entity instanceof EntityInterface || !$entity->access('view', $this->currentUser)) {
+        continue;
+      }
+
+      $references[] = [
+        'target_id' => $entity->id(),
+        'label' => $entity->label(),
+      ];
+    }
+
+    return $references;
+  }
+
+  /**
+   * Returns a scalar field value only when field access allows viewing it.
+   */
+  private function viewableFieldValue(ContentEntityInterface $entity, string $fieldName): ?string {
+    if (!$entity->hasField($fieldName)) {
+      return NULL;
+    }
+
+    $field = $entity->get($fieldName);
+    if ($field->isEmpty() || !$field->access('view', $this->currentUser)) {
+      return NULL;
+    }
+
+    $value = $field->value ?? NULL;
+    return $value === NULL ? NULL : (string) $value;
   }
 
   /**
@@ -3212,15 +3442,15 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $fileDirectory = trim($fileDirectory, '/');
       // Create the directory if it doesn't exist.
       $directoryPath = $wrapperScheme . ($fileDirectory ? $fileDirectory . '/' : '');
-      \Drupal::service('file_system')->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
+      $this->fileSystem->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
 
       foreach ($urls as $url) {
         $destination = $directoryPath . basename($url);
 
         if (strstr($url, 'http')) {
           try {
-            $data = (string) \Drupal::httpClient()->get(trim($url))->getBody();
-            $filePath = \Drupal::service('file_system')->saveData($data, $destination, FileSystemInterface::EXISTS_RENAME);
+            $data = (string) $this->httpClient->get(trim($url))->getBody();
+            $filePath = $this->fileSystem->saveData($data, $destination, FileExists::Rename);
 
             if ($filePath) {
               $file = File::create(['uri' => $filePath]);
@@ -3246,10 +3476,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
             }
           }
           catch (TransferException $exception) {
-            \Drupal::messenger()->addError(t('Failed to fetch file due to error "%error"', ['%error' => $exception->getMessage()]));
+            $this->messenger->addError($this->t('Failed to fetch file due to error "%error"', ['%error' => $exception->getMessage()]));
           }
           catch (FileException | InvalidStreamWrapperException $e) {
-            \Drupal::messenger()->addError(t('Failed to save file due to error "%error"', ['%error' => $e->getMessage()]));
+            $this->messenger->addError($this->t('Failed to save file due to error "%error"', ['%error' => $e->getMessage()]));
             throw new \Exception('Image could not be retrieved via URL', 400);
           }
         }

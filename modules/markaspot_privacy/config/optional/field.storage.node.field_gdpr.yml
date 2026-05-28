@@ -6,7 +6,7 @@ dependencies:
     - node
 third_party_settings:
   field_permissions:
-    permission_type: public
+    permission_type: custom
 id: node.field_gdpr
 field_name: field_gdpr
 entity_type: node

@@ -2,10 +2,12 @@
 
 namespace Drupal\Tests\markaspot_open311\Unit;
 
+use Drupal\Core\Access\AccessResult;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
@@ -15,7 +17,10 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
 use Psr\Log\LoggerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Utility\Token;
@@ -26,6 +31,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\Tests\UnitTestCase;
+use GuzzleHttp\ClientInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -194,6 +200,11 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
     $token = $this->createMock(Token::class);
     $languageManager = $this->createMock(LanguageManagerInterface::class);
+    $database = $this->createMock(Connection::class);
+    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $httpClient = $this->createMock(ClientInterface::class);
+    $messenger = $this->createMock(MessengerInterface::class);
+    $accountSwitcher = $this->createMock(AccountSwitcherInterface::class);
 
     $this->processor = new GeoreportProcessorService(
       $this->configFactory,
@@ -207,6 +218,11 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       $streamWrapperManager,
       $token,
       $languageManager,
+      $database,
+      $fileSystem,
+      $httpClient,
+      $messenger,
+      $accountSwitcher,
       $this->hierarchyResolver,
       $this->logger,
     );
@@ -504,6 +520,276 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
 
     $result = $this->invokeMethod($this->processor, 'determineExtendedRole', [$user]);
     $this->assertEquals('anonymous', $result);
+  }
+
+  /**
+   * Allowlisted entity references are compacted instead of serialised whole.
+   *
+   * The GeoReport `extensions&fields=...` path is config-driven. If an
+   * operational entity-reference field is allowlisted, the API must not leak
+   * target entity internals such as field_status_definition through toArray().
+   *
+   * @covers ::getFieldValues
+   */
+  public function testFieldValuesCompactEntityReferences(): void {
+    $term = $this->createMock(ContentEntityInterface::class);
+    $term->method('id')->willReturn(77);
+    $term->method('label')->willReturn('Bitte um Prüfung');
+    $term->method('access')
+      ->with('view', $this->currentUser)
+      ->willReturn(TRUE);
+    $term->expects($this->never())->method('toArray');
+
+    $field = new class($term) {
+
+      /**
+       * Referenced entity.
+       */
+      private ContentEntityInterface $entity;
+
+      /**
+       * Constructs the field stub.
+       */
+      public function __construct(ContentEntityInterface $entity) {
+        $this->entity = $entity;
+      }
+
+      /**
+       * Allows field view access.
+       */
+      public function access(string $operation, mixed $account = NULL, bool $returnAsObject = FALSE): AccessResult {
+        return AccessResult::allowed();
+      }
+
+      /**
+       * Returns referenced entities.
+       *
+       * @return \Drupal\Core\Entity\ContentEntityInterface[]
+       *   Referenced entities.
+       */
+      public function referencedEntities(): array {
+        return [$this->entity];
+      }
+
+    };
+
+    $node = $this->createMock(ContentEntityInterface::class);
+    $node->method('hasField')
+      ->with('field_status_internal_term')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('field_status_internal_term')
+      ->willReturn($field);
+
+    $result = $this->invokeMethod($this->processor, 'getFieldValues', [
+      $node,
+      'field_status_internal_term',
+    ]);
+
+    $this->assertSame([
+      'field_status_internal_term' => [
+        'target_id' => 77,
+        'label' => 'Bitte um Prüfung',
+      ],
+    ], $result);
+  }
+
+  /**
+   * Allowlisted entity references still respect referenced entity view access.
+   *
+   * @covers ::getFieldValues
+   */
+  public function testFieldValuesSkipInaccessibleEntityReferences(): void {
+    $term = $this->createMock(ContentEntityInterface::class);
+    $term->method('access')
+      ->with('view', $this->currentUser)
+      ->willReturn(FALSE);
+    $term->expects($this->never())->method('id');
+    $term->expects($this->never())->method('label');
+    $term->expects($this->never())->method('toArray');
+
+    $field = new class($term) {
+
+      /**
+       * Referenced entity.
+       */
+      private ContentEntityInterface $entity;
+
+      /**
+       * Constructs the field stub.
+       */
+      public function __construct(ContentEntityInterface $entity) {
+        $this->entity = $entity;
+      }
+
+      /**
+       * Allows source field view access.
+       */
+      public function access(string $operation, mixed $account = NULL, bool $returnAsObject = FALSE): AccessResult {
+        return AccessResult::allowed();
+      }
+
+      /**
+       * Returns referenced entities.
+       *
+       * @return \Drupal\Core\Entity\ContentEntityInterface[]
+       *   Referenced entities.
+       */
+      public function referencedEntities(): array {
+        return [$this->entity];
+      }
+
+    };
+
+    $node = $this->createMock(ContentEntityInterface::class);
+    $node->method('hasField')
+      ->with('field_status_internal_term')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('field_status_internal_term')
+      ->willReturn($field);
+
+    $result = $this->invokeMethod($this->processor, 'getFieldValues', [
+      $node,
+      'field_status_internal_term',
+    ]);
+
+    $this->assertSame([], $result);
+  }
+
+  /**
+   * Manager-only scalar fields still respect field view access.
+   *
+   * @covers ::viewableFieldValue
+   */
+  public function testViewableFieldValueSkipsInaccessibleFields(): void {
+    $field = new class {
+
+      /**
+       * Field value.
+       */
+      public string $value = 'person@example.com';
+
+      /**
+       * Field is populated.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+      /**
+       * Denies field access.
+       */
+      public function access(string $operation, mixed $account = NULL): bool {
+        return FALSE;
+      }
+
+    };
+
+    $node = $this->createMock(ContentEntityInterface::class);
+    $node->method('hasField')
+      ->with('field_e_mail')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('field_e_mail')
+      ->willReturn($field);
+
+    $result = $this->invokeMethod($this->processor, 'viewableFieldValue', [
+      $node,
+      'field_e_mail',
+    ]);
+
+    $this->assertNull($result);
+  }
+
+  /**
+   * Accessible manager-only scalar fields are still returned.
+   *
+   * @covers ::viewableFieldValue
+   */
+  public function testViewableFieldValueReturnsAccessibleFields(): void {
+    $field = new class {
+
+      /**
+       * Field value.
+       */
+      public string $value = 'person@example.com';
+
+      /**
+       * Field is populated.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+      /**
+       * Allows field access.
+       */
+      public function access(string $operation, mixed $account = NULL): bool {
+        return TRUE;
+      }
+
+    };
+
+    $node = $this->createMock(ContentEntityInterface::class);
+    $node->method('hasField')
+      ->with('field_e_mail')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('field_e_mail')
+      ->willReturn($field);
+
+    $result = $this->invokeMethod($this->processor, 'viewableFieldValue', [
+      $node,
+      'field_e_mail',
+    ]);
+
+    $this->assertSame('person@example.com', $result);
+  }
+
+  /**
+   * Citizen create requests cannot mass-assign Drupal fields.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testCreateIgnoresExtendedDrupalFieldAssignments(): void {
+    $values = $this->processor->prepareNodeProperties([
+      'description' => 'Public issue text',
+      'extended_attributes' => [
+        'drupal' => [
+          'field_internal_remark' => 'must not be accepted',
+          'field_status_internal_term' => 77,
+        ],
+      ],
+    ], 'create');
+
+    $this->assertArrayNotHasKey('field_internal_remark', $values);
+    $this->assertArrayNotHasKey('field_status_internal_term', $values);
+    $this->assertSame([
+      'value' => 'Public issue text',
+      'format' => 'plain_text',
+    ], $values['body']);
+  }
+
+  /**
+   * Update requests without advanced API permission cannot mass-assign fields.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateWithoutAdvancedPermissionIgnoresExtendedDrupalFieldAssignments(): void {
+    $this->currentUser->method('hasPermission')->willReturn(FALSE);
+
+    $values = $this->processor->prepareNodeProperties([
+      'extended_attributes' => [
+        'drupal' => [
+          'field_internal_remark' => 'must not be accepted',
+          'field_status_internal_term' => 77,
+        ],
+      ],
+    ], 'update');
+
+    $this->assertArrayNotHasKey('field_internal_remark', $values);
+    $this->assertArrayNotHasKey('field_status_internal_term', $values);
   }
 
   // =========================================================================
@@ -1091,6 +1377,139 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that attributes outside the service definition are rejected.
+   */
+  public function testValidateImagelistAttributesRejectsUnknownAttributes(): void {
+    $serviceDefinition = json_encode([
+      'attributes' => [
+        [
+          'code' => 'public_note',
+          'datatype' => 'text',
+          'description' => 'Public note',
+          'required' => FALSE,
+          'variable' => TRUE,
+          'order' => 0,
+        ],
+      ],
+    ]);
+
+    $term = $this->createImagelistTerm($serviceDefinition);
+    $this->termStorage->method('loadByProperties')
+      ->with([
+        'vid' => 'service_category',
+        'field_service_code' => 'rack_001',
+      ])
+      ->willReturn([1 => $term]);
+
+    $attributes = [
+      'public_note' => 'visible',
+      'radbuegel_systemskizze' => 'internal-media-uuid',
+    ];
+    $requestData = ['service_code' => 'rack_001'];
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'validateImagelistAttributes',
+      [$attributes, $requestData]
+    );
+
+    $this->assertSame(['public_note' => 'visible'], $result);
+  }
+
+  /**
+   * Tests that public request attributes are filtered on Open311 read output.
+   */
+  public function testFilterPublicRequestAttributesRejectsInternalAttributes(): void {
+    $serviceDefinition = json_encode([
+      'attributes' => [
+        [
+          'code' => 'public_note',
+          'datatype' => 'text',
+          'description' => 'Public note',
+          'required' => FALSE,
+          'variable' => TRUE,
+          'order' => 0,
+        ],
+      ],
+    ]);
+
+    $term = $this->createImagelistTerm($serviceDefinition);
+    $this->hierarchyResolver->method('getRootJurisdictionId')
+      ->with(19)
+      ->willReturn(19);
+    $this->termStorage->method('loadByProperties')
+      ->with([
+        'vid' => 'service_category',
+        'field_service_code' => 'rack_001',
+        'field_jurisdiction' => 19,
+      ])
+      ->willReturn([1 => $term]);
+
+    $node = $this->createRequestAttributeNode('rack_001', 19);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'filterPublicRequestAttributes',
+      [
+        [
+          'public_note' => 'visible',
+          'radbuegel_systemskizze' => 'internal-media-uuid',
+        ],
+        $node,
+      ]
+    );
+
+    $this->assertSame(['public_note' => 'visible'], $result);
+  }
+
+  /**
+   * Tests that public attribute validation is scoped to the jurisdiction.
+   */
+  public function testValidateImagelistAttributesScopesServiceDefinitionByJurisdiction(): void {
+    $serviceDefinition = json_encode([
+      'attributes' => [
+        [
+          'code' => 'public_note',
+          'datatype' => 'text',
+          'description' => 'Public note',
+          'required' => FALSE,
+          'variable' => TRUE,
+          'order' => 0,
+        ],
+      ],
+    ]);
+
+    $term = $this->createImagelistTerm($serviceDefinition);
+    $this->hierarchyResolver->method('getRootJurisdictionId')
+      ->with(20)
+      ->willReturn(19);
+    $this->termStorage->method('loadByProperties')
+      ->with([
+        'vid' => 'service_category',
+        'field_service_code' => 'rack_001',
+        'field_jurisdiction' => 19,
+      ])
+      ->willReturn([1 => $term]);
+
+    $attributes = [
+      'public_note' => 'visible',
+      'foreign_only' => 'wrong tenant',
+    ];
+    $requestData = [
+      'service_code' => 'rack_001',
+      'jurisdiction_id' => 20,
+    ];
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'validateImagelistAttributes',
+      [$attributes, $requestData]
+    );
+
+    $this->assertSame(['public_note' => 'visible'], $result);
+  }
+
+  /**
    * Tests that an invalid (non-existent) UUID is rejected.
    */
   public function testValidateImagelistAttributesRejectsInvalidUuid(): void {
@@ -1612,6 +2031,120 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->willReturn($fieldItem);
 
     return $term;
+  }
+
+  /**
+   * Creates a service request node stub with category service code/jurisdiction.
+   */
+  protected function createRequestAttributeNode(string $serviceCode, int $jurisdictionId): NodeInterface {
+    $serviceCodeField = new class($serviceCode) {
+
+      /**
+       * Field scalar value.
+       */
+      public string $value;
+
+      /**
+       * Constructs the field item stub.
+       */
+      public function __construct(string $value) {
+        $this->value = $value;
+      }
+
+      /**
+       * Checks if the field is empty.
+       */
+      public function isEmpty(): bool {
+        return $this->value === '';
+      }
+
+    };
+
+    $jurisdictionField = new class($jurisdictionId) {
+
+      /**
+       * Target entity ID.
+       */
+      public int $targetId;
+
+      /**
+       * Constructs the field item stub.
+       */
+      public function __construct(int $targetId) {
+        $this->targetId = $targetId;
+      }
+
+      /**
+       * Checks if the field is empty.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+      /**
+       * Provides Drupal-style snake_case field item properties.
+       */
+      public function __get(string $name): mixed {
+        if ($name === 'target_id') {
+          return $this->targetId;
+        }
+        return NULL;
+      }
+
+    };
+
+    $category = $this->createMock(ContentEntityInterface::class);
+    $category->method('hasField')
+      ->willReturnCallback(fn($name) => in_array($name, [
+        'field_service_code',
+        'field_jurisdiction',
+      ], TRUE));
+    $category->method('get')
+      ->willReturnCallback(function (string $name) use ($serviceCodeField, $jurisdictionField) {
+        if ($name === 'field_service_code') {
+          return $serviceCodeField;
+        }
+        if ($name === 'field_jurisdiction') {
+          return $jurisdictionField;
+        }
+        return $this->createMock(FieldItemListInterface::class);
+      });
+
+    $categoryField = new class($category) {
+
+      /**
+       * Referenced category entity.
+       */
+      public ContentEntityInterface $entity;
+
+      /**
+       * Constructs the category field stub.
+       */
+      public function __construct(ContentEntityInterface $entity) {
+        $this->entity = $entity;
+      }
+
+      /**
+       * Checks if the field is empty.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('hasField')
+      ->willReturnCallback(fn($name) => $name === 'field_category');
+    $node->method('get')
+      ->willReturnCallback(function (string $name) use ($categoryField) {
+        if ($name === 'field_category') {
+          return $categoryField;
+        }
+        return $this->createMock(FieldItemListInterface::class);
+      });
+
+    return $node;
   }
 
   /**

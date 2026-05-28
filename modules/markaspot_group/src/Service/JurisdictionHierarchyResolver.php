@@ -345,13 +345,7 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
       return NULL;
     }
 
-    // Root jurisdictions always show all categories.
-    if (!$group->hasField('field_parent_jurisdiction')
-        || $group->get('field_parent_jurisdiction')->isEmpty()) {
-      return NULL;
-    }
-
-    // Child jurisdiction without category restrictions inherits all from root.
+    // Any jurisdiction can narrow the exposed service categories explicitly.
     if (!$group->hasField('field_service_categories')
         || $group->get('field_service_categories')->isEmpty()) {
       return NULL;

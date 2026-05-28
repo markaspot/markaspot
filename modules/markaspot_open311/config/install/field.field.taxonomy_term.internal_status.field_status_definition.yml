@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_status_definition
+    - taxonomy.vocabulary.internal_status
+  module:
+    - text
+id: taxonomy_term.internal_status.field_status_definition
+field_name: field_status_definition
+entity_type: taxonomy_term
+bundle: internal_status
+label: 'Status Definition Attributes'
+description: 'Internal process attributes to capture when this internal status is selected.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  allowed_formats: {  }
+field_type: text_long

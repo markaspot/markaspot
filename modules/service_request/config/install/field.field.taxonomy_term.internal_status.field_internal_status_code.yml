@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.taxonomy_term.field_internal_status_code
+    - taxonomy.vocabulary.internal_status
+  enforced:
+    module:
+      - service_request
+id: taxonomy_term.internal_status.field_internal_status_code
+field_name: field_internal_status_code
+entity_type: taxonomy_term
+bundle: internal_status
+label: 'Internal Status Code'
+description: 'Stable machine code used to migrate and integrate legacy internal status values.'
+required: true
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

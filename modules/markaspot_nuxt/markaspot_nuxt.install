@@ -341,3 +341,43 @@ function markaspot_nuxt_update_11901(): string {
   $config->set('resourceFields', $fields)->save();
   return sprintf('Locked down %d user--user resource field(s) to disabled=true (kept: %s).', $changed, implode(', ', $allow));
 }
+
+/**
+ * Enable taxonomy_term--internal_status for existing JSON:API tenants.
+ */
+function markaspot_nuxt_update_11902(): string {
+  $vocab = \Drupal::entityTypeManager()
+    ->getStorage('taxonomy_vocabulary')
+    ->load('internal_status');
+  if (!$vocab) {
+    return 'Skipped taxonomy_term--internal_status: vocabulary not installed.';
+  }
+
+  $config_name = 'jsonapi_extras.jsonapi_resource_config.taxonomy_term--internal_status';
+  $config = \Drupal::configFactory()->getEditable($config_name);
+  if (!$config->isNew() && $config->get('disabled') === FALSE) {
+    return 'Skipped taxonomy_term--internal_status: already enabled.';
+  }
+
+  $source = new FileStorage(__DIR__ . '/config/optional');
+  $seed = $source->read($config_name);
+  if ($seed === FALSE) {
+    return 'Optional config source missing, cannot seed taxonomy_term--internal_status.';
+  }
+
+  if ($config->isNew()) {
+    $config->setData($seed)->save(TRUE);
+    return 'Seeded taxonomy_term--internal_status JSON:API resource config.';
+  }
+
+  $config
+    ->set('disabled', FALSE)
+    ->set('path', $seed['path'] ?? 'taxonomy_term/internal_status')
+    ->set('resourceType', $seed['resourceType'] ?? 'taxonomy_term--internal_status');
+  if (!$config->get('resourceFields') && isset($seed['resourceFields'])) {
+    $config->set('resourceFields', $seed['resourceFields']);
+  }
+  $config->save(TRUE);
+
+  return 'Enabled taxonomy_term--internal_status JSON:API resource config.';
+}

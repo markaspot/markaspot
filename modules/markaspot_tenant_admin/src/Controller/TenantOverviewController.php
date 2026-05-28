@@ -63,6 +63,14 @@ class TenantOverviewController extends ControllerBase {
           ]),
           '#attributes' => ['class' => ['admin-item']],
         ],
+        [
+          '#type' => 'link',
+          '#title' => $this->t('Internal statuses'),
+          '#url' => Url::fromRoute('entity.taxonomy_vocabulary.overview_form', [
+            'taxonomy_vocabulary' => 'internal_status',
+          ]),
+          '#attributes' => ['class' => ['admin-item']],
+        ],
       ],
       '#attributes' => ['class' => ['admin-list']],
     ];

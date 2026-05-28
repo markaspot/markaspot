@@ -3458,9 +3458,8 @@ function markaspot_group_update_11928(): string {
       continue;
     }
 
-    $member = $jur_group->getMember($user);
-    if ($member) {
-      $jur_relationship = $member->getGroupRelationship();
+    $jur_relationship = \Drupal\group\Entity\GroupMembership::loadSingle($jur_group, $user);
+    if ($jur_relationship) {
       if ($jur_relationship->bundle() !== _markaspot_group_update_jurisdiction_membership_bundle($jur_group)) {
         \Drupal::logger('markaspot_group')->error(
           'Skipped derived jurisdiction backfill for org membership @relationship because existing group membership @jur_relationship on jurisdiction @gid has bundle @bundle.',
@@ -3567,6 +3566,67 @@ function markaspot_group_update_11929(): string {
 }
 
 /**
+ * Allows jurisdiction members to read public service requests.
+ */
+function markaspot_group_update_11930(): string {
+  $group_type = _markaspot_group_update_jurisdiction_group_type();
+  _markaspot_group_ensure_derived_jurisdiction_role();
+
+  $role_storage = \Drupal::entityTypeManager()->getStorage('group_role');
+  $permission = 'view group_node:service_request entity';
+  $role_ids = [
+    $group_type . '-member',
+    _markaspot_group_update_derived_jurisdiction_role_id(),
+  ];
+  $updated = [];
+  $skipped = [];
+
+  foreach ($role_ids as $role_id) {
+    /** @var \Drupal\group\Entity\GroupRoleInterface|null $role */
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      $skipped[] = "$role_id (missing)";
+      continue;
+    }
+
+    if ($role->getGroupTypeId() !== $group_type) {
+      $skipped[] = sprintf('%s (group type %s)', $role_id, $role->getGroupTypeId());
+      continue;
+    }
+
+    $permissions = $role->getPermissions();
+    if (in_array($permission, $permissions, TRUE)) {
+      continue;
+    }
+
+    $permissions[] = $permission;
+    $role->set('permissions', $permissions);
+    $role->save();
+    $updated[] = $role_id;
+  }
+
+  if (!$updated && !$skipped) {
+    return 'Jurisdiction member service-request visibility already aligned.';
+  }
+
+  $messages = [];
+  if ($updated) {
+    $messages[] = sprintf(
+      'Added service-request read permission to %s',
+      implode(', ', $updated)
+    );
+  }
+  if ($skipped) {
+    $messages[] = sprintf(
+      'Skipped unexpected jurisdiction group roles: %s',
+      implode(', ', $skipped)
+    );
+  }
+
+  return implode('; ', $messages) . '.';
+}
+
+/**
  * Ensures the internal derived jur role exists before backfilling.
  */
 function _markaspot_group_ensure_derived_jurisdiction_role(): void {
@@ -3577,6 +3637,7 @@ function _markaspot_group_ensure_derived_jurisdiction_role(): void {
     'view group',
     'view group_node:boilerplate entity',
     'view group_node:page entity',
+    'view group_node:service_request entity',
   ];
 
   /** @var \Drupal\group\Entity\GroupRoleInterface|null $role */
@@ -3600,13 +3661,22 @@ function _markaspot_group_ensure_derived_jurisdiction_role(): void {
       'admin' => FALSE,
       'scope' => 'individual',
       'global_role' => NULL,
-      'permissions' => $permissions,
     ];
     foreach ($expected_values as $field => $expected_value) {
       if ($role->get($field) !== $expected_value) {
         $role->set($field, $expected_value);
         $changed = TRUE;
       }
+    }
+    $current_permissions = $role->getPermissions();
+    foreach ($permissions as $permission) {
+      if (!in_array($permission, $current_permissions, TRUE)) {
+        $current_permissions[] = $permission;
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $role->set('permissions', $current_permissions);
     }
     if ($changed) {
       $role->save();

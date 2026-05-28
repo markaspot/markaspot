@@ -719,10 +719,14 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       }
       throw new HttpException(500, 'Internal Server Error', $e);
     }
+    catch (GeoreportException $e) {
+      // Open311 contract exceptions carry intentional API error codes and are
+      // mapped by GeoreportEventSubscriber.
+      throw $e;
+    }
     catch (HttpExceptionInterface $e) {
-      // Pre-mapped HTTP exceptions (GeoreportException,
-      // AccessDeniedHttpException, BadRequest…) carry intentional status
-      // codes — let them propagate verbatim.
+      // Pre-mapped HTTP exceptions (AccessDeniedHttpException, BadRequest…)
+      // carry intentional status codes — let them propagate verbatim.
       throw $e;
     }
     catch (\Throwable $e) {

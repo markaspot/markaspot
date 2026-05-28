@@ -397,7 +397,11 @@ if ($api_key) {
   // Single request.
   if ($sample_node) {
     $request_id = $sample_node->get('request_id')->value ?? $sample_node->id();
-    [$code, $data] = http_get("$base/georeport/v2/requests/$request_id.json?api_key=$api_key");
+    $single_request_url = "$base/georeport/v2/requests/$request_id.json?api_key=$api_key";
+    if ($sample_node->hasField('field_jurisdiction') && !$sample_node->get('field_jurisdiction')->isEmpty()) {
+      $single_request_url .= '&jurisdiction_id=' . (int) $sample_node->get('field_jurisdiction')->target_id;
+    }
+    [$code, $data] = http_get($single_request_url);
     assert_true(in_array($code, [200, 403, 404]), "GET requests/{id}.json responds ($code)");
   }
 

@@ -13,6 +13,8 @@ use Drupal\Core\Entity\Entity\EntityFormDisplay;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\node\Entity\Node;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\user\Entity\Role;
 
 /**
@@ -2206,6 +2208,882 @@ function markaspot_update_11919(): string {
     }
   }
   return $msg;
+}
+
+/**
+ * Restrict personal service-request fields to field_permissions access.
+ */
+function markaspot_update_11920(): string {
+  $personal_fields = [
+    'field_e_mail',
+    'field_first_name',
+    'field_gdpr',
+    'field_last_name',
+    'field_notification',
+    'field_phone',
+  ];
+  $citizen_create_fields = [
+    ...$personal_fields,
+    'field_request_attributes',
+  ];
+  $changes = [];
+
+  foreach ($personal_fields as $field_name) {
+    $field_storage = FieldStorageConfig::loadByName('node', $field_name);
+    if (!$field_storage) {
+      continue;
+    }
+
+    $current = $field_storage->getThirdPartySetting('field_permissions', 'permission_type', 'public');
+    if ($current === 'custom') {
+      continue;
+    }
+
+    $field_storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom');
+    $field_storage->save();
+    $changes[] = "set $field_name to custom field permissions";
+  }
+
+  // Rebuild dynamic field_permissions entries after changing storage config.
+  \Drupal::service('plugin.manager.field.field_type')->clearCachedDefinitions();
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  drupal_flush_all_caches();
+  $valid_permissions = array_keys(\Drupal::service('user.permissions')->getPermissions());
+
+  $revoked = [];
+  $granted = [];
+  foreach (['anonymous', 'authenticated'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role) {
+      continue;
+    }
+
+    $changed = FALSE;
+    foreach ($personal_fields as $field_name) {
+      foreach (['view', 'view own', 'edit', 'edit own'] as $operation) {
+        $permission = "$operation $field_name";
+        if (!$role->hasPermission($permission)) {
+          continue;
+        }
+        $role->revokePermission($permission);
+        $revoked[] = "$role_id: $permission";
+        $changed = TRUE;
+      }
+    }
+
+    foreach ($citizen_create_fields as $field_name) {
+      $permission = "create $field_name";
+      if (!in_array($permission, $valid_permissions, TRUE) || $role->hasPermission($permission)) {
+        continue;
+      }
+      $role->grantPermission($permission);
+      $granted[] = "$role_id: $permission";
+      $changed = TRUE;
+    }
+
+    if ($changed) {
+      $role->save();
+    }
+  }
+
+  if ($revoked !== []) {
+    $changes[] = 'revoked citizen private-field access: ' . implode(', ', $revoked);
+  }
+
+  foreach (['moderator', 'tenant_admin', 'editorial_board'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role) {
+      continue;
+    }
+
+    $changed = FALSE;
+    foreach ($personal_fields as $field_name) {
+      foreach (['create', 'view', 'view own', 'edit', 'edit own'] as $operation) {
+        $permission = "$operation $field_name";
+        if (!in_array($permission, $valid_permissions, TRUE) || $role->hasPermission($permission)) {
+          continue;
+        }
+        $role->grantPermission($permission);
+        $granted[] = "$role_id: $permission";
+        $changed = TRUE;
+      }
+    }
+
+    if ($changed) {
+      $role->save();
+    }
+  }
+
+  if ($granted !== []) {
+    $changes[] = 'granted personal-field access: ' . implode(', ', $granted);
+  }
+
+  return $changes ? implode('; ', $changes) . '.' : 'Service-request personal field permissions already aligned.';
+}
+
+/**
+ * Add jurisdiction-scoped taxonomy-backed internal request statuses.
+ */
+function markaspot_update_11921(): string {
+  $changes = [];
+
+  if (!Vocabulary::load('internal_status')) {
+    Vocabulary::create([
+      'vid' => 'internal_status',
+      'name' => 'Internal Status',
+      'description' => 'Jurisdiction-scoped internal processing statuses for service requests.',
+      'weight' => 0,
+    ])->save();
+    $changes[] = 'created internal_status vocabulary';
+  }
+
+  $code_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_internal_status_code');
+  if (!$code_storage) {
+    $code_storage = FieldStorageConfig::create([
+      'field_name' => 'field_internal_status_code',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'string',
+      'settings' => [
+        'max_length' => 64,
+        'is_ascii' => FALSE,
+        'case_sensitive' => FALSE,
+      ],
+      'cardinality' => 1,
+      'translatable' => FALSE,
+    ]);
+    $code_storage->save();
+    $changes[] = 'created field_internal_status_code storage';
+  }
+
+  if (!FieldConfig::loadByName('taxonomy_term', 'internal_status', 'field_internal_status_code')) {
+    FieldConfig::create([
+      'field_storage' => $code_storage,
+      'bundle' => 'internal_status',
+      'label' => 'Internal Status Code',
+      'description' => 'Stable machine code used to migrate and integrate legacy internal status values.',
+      'required' => TRUE,
+      'translatable' => FALSE,
+    ])->save();
+    $changes[] = 'attached field_internal_status_code to internal_status terms';
+  }
+
+  $node_storage = FieldStorageConfig::loadByName('node', 'field_status_internal_term');
+  if (!$node_storage) {
+    $node_storage = FieldStorageConfig::create([
+      'field_name' => 'field_status_internal_term',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'taxonomy_term',
+      ],
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ]);
+    $node_storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom');
+    $node_storage->save();
+    $changes[] = 'created field_status_internal_term storage';
+  }
+  elseif ($node_storage->getThirdPartySetting('field_permissions', 'permission_type', 'public') !== 'custom') {
+    $node_storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom');
+    $node_storage->save();
+    $changes[] = 'set field_status_internal_term to custom field permissions';
+  }
+
+  if (!FieldConfig::loadByName('node', 'service_request', 'field_status_internal_term')) {
+    FieldConfig::create([
+      'field_storage' => $node_storage,
+      'bundle' => 'service_request',
+      'label' => 'Internal Status',
+      'description' => 'Jurisdiction-scoped internal processing status for dashboard workflows.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [
+        'handler' => 'default:taxonomy_term',
+        'handler_settings' => [
+          'target_bundles' => [
+            'internal_status' => 'internal_status',
+          ],
+          'sort' => [
+            'field' => 'weight',
+            'direction' => 'asc',
+          ],
+          'auto_create' => FALSE,
+          'auto_create_bundle' => '',
+        ],
+      ],
+    ])->save();
+    $changes[] = 'attached field_status_internal_term to service_request';
+  }
+
+  $definition_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_status_definition');
+  if ($definition_storage && !FieldConfig::loadByName('taxonomy_term', 'internal_status', 'field_status_definition')) {
+    FieldConfig::create([
+      'field_storage' => $definition_storage,
+      'bundle' => 'internal_status',
+      'label' => 'Status Definition Attributes',
+      'description' => 'Internal process attributes to capture when this internal status is selected.',
+      'required' => FALSE,
+      'translatable' => TRUE,
+      'settings' => [
+        'allowed_formats' => [],
+      ],
+    ])->save();
+    $changes[] = 'attached field_status_definition to internal_status terms';
+  }
+  elseif (!$definition_storage) {
+    $changes[] = 'field_status_definition storage missing; skipped internal_status definition field';
+  }
+
+  $jurisdiction_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_jurisdiction');
+  if (!$jurisdiction_storage) {
+    $jurisdiction_storage = FieldStorageConfig::create([
+      'field_name' => 'field_jurisdiction',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+      'cardinality' => 1,
+      'translatable' => FALSE,
+    ]);
+    $jurisdiction_storage->save();
+    $changes[] = 'created taxonomy field_jurisdiction storage';
+  }
+
+  $jurisdiction_group_type = _markaspot_update_11921_jurisdiction_group_type();
+  $group_type = \Drupal::entityTypeManager()
+    ->getStorage('group_type')
+    ->load($jurisdiction_group_type);
+  if ($group_type && !FieldConfig::loadByName('taxonomy_term', 'internal_status', 'field_jurisdiction')) {
+    FieldConfig::create([
+      'field_storage' => $jurisdiction_storage,
+      'bundle' => 'internal_status',
+      'label' => 'Jurisdiction',
+      'description' => 'The jurisdiction this internal status belongs to.',
+      'required' => TRUE,
+      'translatable' => TRUE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => [
+            $jurisdiction_group_type => $jurisdiction_group_type,
+          ],
+          'sort' => [
+            'field' => 'label',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+    $changes[] = "attached field_jurisdiction to internal_status terms for $jurisdiction_group_type groups";
+  }
+  elseif (!$group_type) {
+    $changes[] = "jurisdiction group type $jurisdiction_group_type missing; skipped internal_status jurisdiction field";
+  }
+
+  _markaspot_update_11921_sync_form_displays($changes);
+  _markaspot_update_11921_sync_open311_manager_fields($changes);
+  _markaspot_update_11921_enable_internal_status_jsonapi_resource($changes);
+
+  // Rebuild dynamic field_permissions entries after creating field storage.
+  \Drupal::service('plugin.manager.field.field_type')->clearCachedDefinitions();
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  drupal_flush_all_caches();
+  $valid_permissions = array_keys(\Drupal::service('user.permissions')->getPermissions());
+
+  $granted = _markaspot_update_11921_grant_internal_status_permissions($valid_permissions);
+  if ($granted !== []) {
+    $changes[] = 'granted internal status permissions: ' . implode(', ', $granted);
+  }
+
+  $migration = _markaspot_update_11921_migrate_legacy_internal_status();
+  if ($migration['migrated'] > 0 || $migration['created_terms'] > 0 || $migration['skipped'] > 0) {
+    $changes[] = sprintf(
+      'migrated %d legacy internal status values into %d internal_status terms (%d skipped)',
+      $migration['migrated'],
+      $migration['created_terms'],
+      $migration['skipped']
+    );
+  }
+
+  return $changes ? implode('; ', $changes) . '.' : 'Taxonomy-backed internal statuses already aligned.';
+}
+
+/**
+ * Gets the configured jurisdiction group type for update 11921.
+ */
+function _markaspot_update_11921_jurisdiction_group_type(): string {
+  $configured = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type');
+  return is_string($configured) && $configured !== '' ? $configured : 'jur';
+}
+
+/**
+ * Updates form displays so the new field is primary and the legacy list is hidden.
+ *
+ * @param string[] $changes
+ *   Human-readable update messages.
+ */
+function _markaspot_update_11921_sync_form_displays(array &$changes): void {
+  $display = EntityFormDisplay::load('node.service_request.management');
+  if ($display) {
+    $display->setComponent('field_status_internal_term', [
+      'type' => 'options_select',
+      'weight' => 18,
+      'region' => 'content',
+      'settings' => [],
+      'third_party_settings' => [],
+    ]);
+    if ($display->getComponent('field_status_internal')) {
+      $display->removeComponent('field_status_internal');
+    }
+
+    $group = $display->getThirdPartySetting('field_group', 'group_administration');
+    if (is_array($group)) {
+      $children = array_values(array_filter(
+        $group['children'] ?? [],
+        static fn($child): bool => $child !== 'field_status_internal'
+      ));
+      if (!in_array('field_status_internal_term', $children, TRUE)) {
+        $status_index = array_search('field_status', $children, TRUE);
+        $insert_at = $status_index === FALSE ? 0 : $status_index + 1;
+        array_splice($children, $insert_at, 0, ['field_status_internal_term']);
+      }
+      $group['children'] = $children;
+      $display->setThirdPartySetting('field_group', 'group_administration', $group);
+    }
+
+    $display->save();
+    $changes[] = 'updated service_request management form display';
+  }
+
+  $term_display = EntityFormDisplay::load('taxonomy_term.internal_status.default');
+  if (!$term_display) {
+    $term_display = EntityFormDisplay::create([
+      'targetEntityType' => 'taxonomy_term',
+      'bundle' => 'internal_status',
+      'mode' => 'default',
+      'status' => TRUE,
+    ]);
+  }
+  $term_display
+    ->setComponent('description', [
+      'type' => 'text_textarea',
+      'weight' => 1,
+      'settings' => [
+        'rows' => 5,
+        'placeholder' => '',
+      ],
+    ])
+    ->setComponent('field_internal_status_code', [
+      'type' => 'string_textfield',
+      'weight' => 2,
+      'settings' => [
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+
+  if (FieldConfig::loadByName('taxonomy_term', 'internal_status', 'field_jurisdiction')) {
+    $term_display->setComponent('field_jurisdiction', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 3,
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+    ]);
+  }
+  if (FieldConfig::loadByName('taxonomy_term', 'internal_status', 'field_status_definition')) {
+    $term_display->setComponent('field_status_definition', [
+      'type' => 'status_definition_json_form',
+      'weight' => 4,
+      'settings' => [
+        'schema_type' => 'object',
+        'schema_properties' => '',
+      ],
+    ]);
+  }
+
+  $term_display->save();
+  $changes[] = 'updated internal_status taxonomy form display';
+}
+
+/**
+ * Adds internal status fields to the GeoReport manager field contract.
+ *
+ * @param string[] $changes
+ *   Human-readable update messages.
+ */
+function _markaspot_update_11921_sync_open311_manager_fields(array &$changes): void {
+  $config = \Drupal::configFactory()->getEditable('markaspot_open311.settings');
+  $fields = $config->get('field_access.manager_fields');
+  $fields = is_array($fields) ? array_values($fields) : [];
+  $required = [
+    'field_status_internal',
+    'field_status_internal_term',
+  ];
+  $missing = array_values(array_diff($required, $fields));
+
+  if ($missing === []) {
+    return;
+  }
+
+  $config
+    ->set('field_access.manager_fields', array_values(array_unique(array_merge($fields, $missing))))
+    ->save(TRUE);
+  $changes[] = 'added internal status fields to Open311 manager fields';
+}
+
+/**
+ * Grants staff roles field and taxonomy permissions for internal statuses.
+ *
+ * @param string[] $valid_permissions
+ *   Dynamic permissions currently known by Drupal.
+ *
+ * @return string[]
+ *   Granted permissions in "role: permission" format.
+ */
+function _markaspot_update_11921_grant_internal_status_permissions(array $valid_permissions): array {
+  $granted = [];
+  $staff_roles = ['moderator', 'tenant_admin', 'editorial_board'];
+  $field_permissions = [];
+  foreach (['field_status_internal', 'field_status_internal_term'] as $field_name) {
+    foreach (['create', 'view', 'view own', 'edit', 'edit own'] as $operation) {
+      $field_permissions[] = "$operation $field_name";
+    }
+  }
+  $dashboard_permissions = [
+    'manage dashboard notes',
+  ];
+  $taxonomy_permissions = [
+    'create terms in internal_status',
+    'edit terms in internal_status',
+    'delete terms in internal_status',
+    'translate internal_status taxonomy_term',
+  ];
+
+  foreach ($staff_roles as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role) {
+      continue;
+    }
+    $changed = FALSE;
+    foreach ($field_permissions as $permission) {
+      if (!in_array($permission, $valid_permissions, TRUE) || $role->hasPermission($permission)) {
+        continue;
+      }
+      $role->grantPermission($permission);
+      $granted[] = "$role_id: $permission";
+      $changed = TRUE;
+    }
+
+    foreach ($dashboard_permissions as $permission) {
+      if (!in_array($permission, $valid_permissions, TRUE) || $role->hasPermission($permission)) {
+        continue;
+      }
+      $role->grantPermission($permission);
+      $granted[] = "$role_id: $permission";
+      $changed = TRUE;
+    }
+
+    if (in_array($role_id, ['tenant_admin', 'editorial_board'], TRUE)) {
+      foreach ($taxonomy_permissions as $permission) {
+        if (!in_array($permission, $valid_permissions, TRUE) || $role->hasPermission($permission)) {
+          continue;
+        }
+        $role->grantPermission($permission);
+        $granted[] = "$role_id: $permission";
+        $changed = TRUE;
+      }
+    }
+
+    if ($changed) {
+      $role->save();
+    }
+  }
+
+  return $granted;
+}
+
+/**
+ * Enables the internal status JSON:API resource for existing tenants.
+ *
+ * @param string[] $changes
+ *   Human-readable update messages.
+ */
+function _markaspot_update_11921_enable_internal_status_jsonapi_resource(array &$changes): void {
+  if (!\Drupal::moduleHandler()->moduleExists('markaspot_nuxt')) {
+    $changes[] = 'markaspot_nuxt not installed; skipped internal_status JSON:API resource';
+    return;
+  }
+
+  $config_name = 'jsonapi_extras.jsonapi_resource_config.taxonomy_term--internal_status';
+  $config = \Drupal::configFactory()->getEditable($config_name);
+  if (!$config->isNew() && $config->get('disabled') === FALSE) {
+    return;
+  }
+
+  $source = new FileStorage(\Drupal::service('extension.list.module')->getPath('markaspot_nuxt') . '/config/optional');
+  $seed = $source->read($config_name);
+  if ($seed === FALSE) {
+    $changes[] = 'internal_status JSON:API resource seed config missing';
+    return;
+  }
+
+  if ($config->isNew()) {
+    $config->setData($seed)->save(TRUE);
+  }
+  else {
+    $config
+      ->set('disabled', FALSE)
+      ->set('path', $seed['path'] ?? 'taxonomy_term/internal_status')
+      ->set('resourceType', $seed['resourceType'] ?? 'taxonomy_term--internal_status');
+    if (!$config->get('resourceFields') && isset($seed['resourceFields'])) {
+      $config->set('resourceFields', $seed['resourceFields']);
+    }
+    $config->save(TRUE);
+  }
+
+  $changes[] = 'enabled internal_status JSON:API resource';
+}
+
+/**
+ * Returns legacy list values keyed by code for field_status_internal.
+ *
+ * @return array<string, string>
+ *   Legacy code => label map.
+ */
+function _markaspot_update_11921_legacy_internal_status_values(): array {
+  $storage = FieldStorageConfig::loadByName('node', 'field_status_internal');
+  $allowed_values = $storage?->getSetting('allowed_values') ?? [];
+  $values = [];
+
+  foreach ($allowed_values as $key => $item) {
+    if (is_array($item)) {
+      $value = $item['value'] ?? $key;
+      $label = $item['label'] ?? $value;
+    }
+    else {
+      $value = $key;
+      $label = $item;
+    }
+    if ($value === NULL || $value === '') {
+      continue;
+    }
+    $values[(string) $value] = (string) $label;
+  }
+
+  return $values;
+}
+
+/**
+ * Ensures an internal_status term exists for a legacy code and jurisdiction.
+ */
+function _markaspot_update_11921_ensure_internal_status_term(string $code, string $label, int $jurisdiction_id, int &$created_terms): ?Term {
+  $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $has_jurisdiction_field = FieldConfig::loadByName('taxonomy_term', 'internal_status', 'field_jurisdiction') !== NULL;
+  $term_ids = $term_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('vid', 'internal_status')
+    ->condition('field_internal_status_code', $code)
+    ->execute();
+
+  /** @var \Drupal\taxonomy\Entity\Term[] $terms */
+  $terms = $term_ids ? Term::loadMultiple($term_ids) : [];
+  foreach ($terms as $term) {
+    if (!$has_jurisdiction_field) {
+      _markaspot_update_11921_copy_status_definition($term, $label, $jurisdiction_id);
+      return $term;
+    }
+    if (!$term->hasField('field_jurisdiction') || $term->get('field_jurisdiction')->isEmpty()) {
+      continue;
+    }
+    if ((int) $term->get('field_jurisdiction')->target_id === $jurisdiction_id) {
+      _markaspot_update_11921_copy_status_definition($term, $label, $jurisdiction_id);
+      return $term;
+    }
+  }
+
+  $values = [
+    'vid' => 'internal_status',
+    'name' => $label,
+    'field_internal_status_code' => $code,
+    'status' => 1,
+  ];
+  if (FieldConfig::loadByName('taxonomy_term', 'internal_status', 'field_jurisdiction')) {
+    $values['field_jurisdiction'] = ['target_id' => $jurisdiction_id];
+  }
+
+  $term = Term::create($values);
+  $term->save();
+  $created_terms++;
+  _markaspot_update_11921_copy_status_definition($term, $label, $jurisdiction_id);
+
+  return $term;
+}
+
+/**
+ * Copies a matching status definition to an internal status term if empty.
+ */
+function _markaspot_update_11921_copy_status_definition(Term $internal_status, string $label, int $jurisdiction_id): void {
+  if (
+    !$internal_status->hasField('field_status_definition') ||
+    !$internal_status->get('field_status_definition')->isEmpty()
+  ) {
+    return;
+  }
+
+  $status_ids = \Drupal::entityQuery('taxonomy_term')
+    ->accessCheck(FALSE)
+    ->condition('vid', 'service_status')
+    ->condition('name', $label)
+    ->exists('field_status_definition');
+  if (FieldConfig::loadByName('taxonomy_term', 'service_status', 'field_jurisdiction')) {
+    $status_ids = $status_ids
+      ->condition('field_jurisdiction', $jurisdiction_id)
+      ->range(0, 1)
+      ->execute();
+  }
+  else {
+    $status_ids = $status_ids
+      ->range(0, 2)
+      ->execute();
+    if (count($status_ids) !== 1) {
+      return;
+    }
+  }
+
+  if (!$status_ids) {
+    return;
+  }
+
+  $status = Term::load(reset($status_ids));
+  if (!$status || !$status->hasField('field_status_definition') || $status->get('field_status_definition')->isEmpty()) {
+    return;
+  }
+
+  $source = $status->get('field_status_definition')->first();
+  if (!$source) {
+    return;
+  }
+
+  $definition_json = _markaspot_update_11921_normalize_status_definition_json((string) $source->value);
+  if ($definition_json === NULL) {
+    return;
+  }
+
+  $internal_status->set('field_status_definition', [
+    'value' => $definition_json,
+    'format' => $source->format ?? 'plain_text',
+  ]);
+  $internal_status->save();
+}
+
+/**
+ * Normalizes legacy status definition JSON to the current schema object shape.
+ */
+function _markaspot_update_11921_normalize_status_definition_json(string $raw): ?string {
+  $raw = trim($raw);
+  if ($raw === '') {
+    return NULL;
+  }
+
+  $definition = json_decode($raw, TRUE);
+  if (!is_array($definition)) {
+    return NULL;
+  }
+
+  if (array_is_list($definition)) {
+    $definition = ['attributes' => array_values($definition)];
+  }
+  elseif (!isset($definition['attributes'])) {
+    $definition['attributes'] = [];
+  }
+  elseif (!is_array($definition['attributes'])) {
+    return NULL;
+  }
+  else {
+    $definition['attributes'] = array_values($definition['attributes']);
+  }
+
+  return json_encode($definition, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+}
+
+/**
+ * Migrates legacy list_string internal statuses to jurisdiction-scoped terms.
+ *
+ * @return array{migrated:int, created_terms:int, skipped:int}
+ *   Migration counts.
+ */
+function _markaspot_update_11921_migrate_legacy_internal_status(): array {
+  if (
+    !FieldConfig::loadByName('node', 'service_request', 'field_status_internal_term') ||
+    !FieldConfig::loadByName('node', 'service_request', 'field_status_internal')
+  ) {
+    return ['migrated' => 0, 'created_terms' => 0, 'skipped' => 0];
+  }
+
+  $legacy_values = _markaspot_update_11921_legacy_internal_status_values();
+  $node_ids = \Drupal::entityQuery('node')
+    ->accessCheck(FALSE)
+    ->condition('type', 'service_request')
+    ->exists('field_status_internal')
+    ->notExists('field_status_internal_term')
+    ->execute();
+
+  $migrated = 0;
+  $created_terms = 0;
+  $skipped = 0;
+
+  /** @var \Drupal\node\Entity\Node[] $nodes */
+  $nodes = $node_ids ? Node::loadMultiple($node_ids) : [];
+  foreach ($nodes as $node) {
+    if (
+      !$node->hasField('field_status_internal') ||
+      !$node->hasField('field_status_internal_term') ||
+      $node->get('field_status_internal')->isEmpty() ||
+      !$node->get('field_status_internal_term')->isEmpty()
+    ) {
+      continue;
+    }
+
+    $legacy_code = (string) $node->get('field_status_internal')->value;
+    if ($legacy_code === '') {
+      continue;
+    }
+
+    if (!$node->hasField('field_jurisdiction') || $node->get('field_jurisdiction')->isEmpty()) {
+      $skipped++;
+      continue;
+    }
+
+    $jurisdiction_id = (int) $node->get('field_jurisdiction')->target_id;
+    if ($jurisdiction_id <= 0) {
+      $skipped++;
+      continue;
+    }
+
+    $term = _markaspot_update_11921_ensure_internal_status_term(
+      $legacy_code,
+      $legacy_values[$legacy_code] ?? $legacy_code,
+      $jurisdiction_id,
+      $created_terms
+    );
+    if (!$term) {
+      $skipped++;
+      continue;
+    }
+
+    $node->set('field_status_internal_term', ['target_id' => $term->id()]);
+    $node->save();
+    $migrated++;
+  }
+
+  return [
+    'migrated' => $migrated,
+    'created_terms' => $created_terms,
+    'skipped' => $skipped,
+  ];
+}
+
+/**
+ * Harden operational service-request fields used by dashboard APIs.
+ */
+function markaspot_update_11922(): string {
+  $changes = [];
+  $operational_fields = _markaspot_update_11922_operational_fields();
+
+  foreach ($operational_fields as $field_name) {
+    $field_storage = FieldStorageConfig::loadByName('node', $field_name);
+    if (!$field_storage) {
+      continue;
+    }
+
+    if ($field_storage->getThirdPartySetting('field_permissions', 'permission_type', 'public') === 'custom') {
+      continue;
+    }
+
+    $field_storage->setThirdPartySetting('field_permissions', 'permission_type', 'custom');
+    $field_storage->save();
+    $changes[] = "set $field_name to custom field permissions";
+  }
+
+  \Drupal::service('plugin.manager.field.field_type')->clearCachedDefinitions();
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  drupal_flush_all_caches();
+  $valid_permissions = array_keys(\Drupal::service('user.permissions')->getPermissions());
+
+  $granted = _markaspot_update_11922_grant_operational_field_permissions($valid_permissions);
+  if ($granted !== []) {
+    $changes[] = 'granted operational field access: ' . implode(', ', $granted);
+  }
+
+  return $changes ? implode('; ', $changes) . '.' : 'Operational service-request field permissions already aligned.';
+}
+
+/**
+ * Lists service-request fields whose API access must be staff-only.
+ *
+ * @return string[]
+ *   Field machine names.
+ */
+function _markaspot_update_11922_operational_fields(): array {
+  return [
+    'field_boilerplates_sp',
+    'field_hazard_category',
+    'field_hazard_level',
+    'field_reassign_sp',
+    'field_request_attributes',
+    'field_risk_score',
+    'field_sentiment',
+    'field_service_provider_feedback',
+    'field_service_provider_files',
+    'field_service_provider_notes',
+    'field_service_provider_status',
+  ];
+}
+
+/**
+ * Grants dashboard roles access to operational fields when they exist.
+ *
+ * @param string[] $valid_permissions
+ *   Dynamic permissions currently known by Drupal.
+ *
+ * @return string[]
+ *   Granted permissions in "role: permission" format.
+ */
+function _markaspot_update_11922_grant_operational_field_permissions(array $valid_permissions): array {
+  $granted = [];
+  $permissions = [];
+  foreach (_markaspot_update_11922_operational_fields() as $field_name) {
+    foreach (['create', 'view', 'view own', 'edit', 'edit own'] as $operation) {
+      $permissions[] = "$operation $field_name";
+    }
+  }
+
+  foreach (['moderator', 'tenant_admin', 'editorial_board'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role) {
+      continue;
+    }
+
+    $changed = FALSE;
+    foreach ($permissions as $permission) {
+      if (!in_array($permission, $valid_permissions, TRUE) || $role->hasPermission($permission)) {
+        continue;
+      }
+      $role->grantPermission($permission);
+      $granted[] = "$role_id: $permission";
+      $changed = TRUE;
+    }
+
+    if ($changed) {
+      $role->save();
+    }
+  }
+
+  return $granted;
 }
 
 /**

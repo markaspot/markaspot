@@ -840,7 +840,11 @@ else {
     ]);
 
     $r = $http->post("$base/georeport/v2/requests.json?api_key=$ed_key", [
-      'headers' => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+      'headers' => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+        'X-Acknowledge-Duplicate' => 'true',
+      ],
       'body' => $post_body,
       'http_errors' => FALSE,
     ]);
@@ -862,7 +866,11 @@ else {
     ]);
 
     $r = $http->post("$base/georeport/v2/requests.json?api_key=$ed_key", [
-      'headers' => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+      'headers' => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+        'X-Acknowledge-Duplicate' => 'true',
+      ],
       'body' => $post_body_foreign,
       'http_errors' => FALSE,
     ]);
@@ -1390,7 +1398,11 @@ else {
     ]);
 
     $r = $http->post("$base/georeport/v2/requests.json?api_key=$child_key_value", [
-      'headers' => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+      'headers' => [
+        'Content-Type' => 'application/json',
+        'Accept' => 'application/json',
+        'X-Acknowledge-Duplicate' => 'true',
+      ],
       'body' => $post_body,
       'http_errors' => FALSE,
     ]);
@@ -1498,7 +1510,11 @@ else {
         ]);
 
         $r = $http->post("$base/georeport/v2/requests.json?api_key=$child_key_value", [
-          'headers' => ['Content-Type' => 'application/json', 'Accept' => 'application/json'],
+          'headers' => [
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json',
+            'X-Acknowledge-Duplicate' => 'true',
+          ],
           'body' => $post_body_parent,
           'http_errors' => FALSE,
         ]);

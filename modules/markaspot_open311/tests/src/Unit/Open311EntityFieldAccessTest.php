@@ -6,6 +6,7 @@ namespace Drupal\Tests\markaspot_open311\Unit;
 
 use Drupal\Core\Access\AccessResultForbidden;
 use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
@@ -20,10 +21,12 @@ require_once __DIR__ . '/../../../markaspot_open311.module';
  * Tests markaspot_open311_entity_field_access() access gating.
  *
  * Covers the two internal status-attribute fields:
- * - field_status_definition (taxonomy_term / service_status): the internal
- *   status-attribute schema, staff-only.
+ * - field_status_definition (taxonomy_term / service_status and
+ *   internal_status): the internal status-attribute schema, staff-only.
  * - field_status_attributes (paragraph / status): captured internal process
  *   data, never interactively writable.
+ * - taxonomy_term / internal_status: term labels are staff-only because they
+ *   describe back-office workflow state.
  *
  * @group markaspot_open311
  */
@@ -112,6 +115,19 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
   }
 
   /**
+   * Builds an entity double with the given type and bundle.
+   *
+   * @return \Drupal\Core\Entity\EntityInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked entity.
+   */
+  private function entity(string $entityTypeId, string $bundle): EntityInterface {
+    $entity = $this->createMock(EntityInterface::class);
+    $entity->method('getEntityTypeId')->willReturn($entityTypeId);
+    $entity->method('bundle')->willReturn($bundle);
+    return $entity;
+  }
+
+  /**
    * Field_status_definition is hidden from anonymous users even when enabled.
    *
    * Anonymous holds no permissions; the feature flag is on.
@@ -193,6 +209,82 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
       $this->statusTermItems(),
     );
     $this->assertFalse($result->isForbidden(), 'Operators keep taxonomy access.');
+  }
+
+  /**
+   * Internal status definitions use the same staff gate as service statuses.
+   */
+  public function testInternalStatusDefinitionForbiddenForCitizen(): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('field_status_definition', 'taxonomy_term', 'internal_status'),
+      $this->account(['access content']),
+      $this->statusTermItems(),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Staff can read internal status definitions when the feature is enabled.
+   */
+  public function testInternalStatusDefinitionAllowedForStaffWhenEnabled(): void {
+    $this->setFeatureFlag(TRUE);
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('field_status_definition', 'taxonomy_term', 'internal_status'),
+      $this->account(['manage dashboard notes']),
+      $this->statusTermItems(),
+    );
+    $this->assertFalse($result->isForbidden(), 'Staff access is not forbidden for internal status definitions.');
+  }
+
+  /**
+   * Internal status term labels are hidden from citizens.
+   */
+  public function testInternalStatusTermViewForbiddenForCitizen(): void {
+    $result = markaspot_open311_entity_access(
+      $this->entity('taxonomy_term', 'internal_status'),
+      'view',
+      $this->account(['access content']),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Staff term access remains neutral so normal taxonomy access can apply.
+   */
+  public function testInternalStatusTermViewNeutralForStaff(): void {
+    $result = markaspot_open311_entity_access(
+      $this->entity('taxonomy_term', 'internal_status'),
+      'view',
+      $this->account(['manage dashboard notes']),
+    );
+    $this->assertTrue($result->isNeutral(), 'Staff internal-status term access is delegated to normal taxonomy access.');
+  }
+
+  /**
+   * Creating internal status terms is also staff-only.
+   */
+  public function testInternalStatusTermCreateForbiddenForCitizen(): void {
+    $result = markaspot_open311_entity_create_access(
+      $this->account(['access content']),
+      ['entity_type_id' => 'taxonomy_term'],
+      'internal_status',
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Unrelated taxonomy terms are not affected by the internal status guard.
+   */
+  public function testServiceStatusEntityAccessIsNeutral(): void {
+    $result = markaspot_open311_entity_access(
+      $this->entity('taxonomy_term', 'service_status'),
+      'view',
+      $this->account(['access content']),
+    );
+    $this->assertTrue($result->isNeutral(), 'Service status term access is not changed.');
   }
 
   /**

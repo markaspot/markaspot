@@ -34,6 +34,8 @@ field_access:
     - field_sentiment
     - field_ai_hazard_category
     - field_organisation
+    - field_status_internal
+    - field_status_internal_term
 # Group Integration Settings
 group_filter_enabled: false
 group_filter_type: 'org'

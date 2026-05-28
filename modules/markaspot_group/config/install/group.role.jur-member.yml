@@ -13,3 +13,4 @@ group_type: jur
 permissions:
   - 'view group'
   - 'view group_node:page entity'
+  - 'view group_node:service_request entity'

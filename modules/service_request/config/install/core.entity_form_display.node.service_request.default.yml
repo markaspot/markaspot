@@ -8,6 +8,7 @@ dependencies:
     - field.field.node.service_request.field_e_mail
     - field.field.node.service_request.field_geolocation
     - field.field.node.service_request.field_status
+    - field.field.node.service_request.field_status_internal_term
     - field.field.node.service_request.field_status_notes
     - node.type.service_request
   enforced:
@@ -115,6 +116,7 @@ content:
     third_party_settings: {  }
     region: content
 hidden:
+  field_status_internal_term: true
   field_pbf_ref_group: true
   field_pbf_ref_role: true
   langcode: true

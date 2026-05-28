@@ -1,0 +1,60 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.taxonomy_term.internal_status.field_internal_status_code
+    - field.field.taxonomy_term.internal_status.field_jurisdiction
+    - field.field.taxonomy_term.internal_status.field_status_definition
+    - taxonomy.vocabulary.internal_status
+  module:
+    - markaspot_open311
+    - path
+    - text
+id: taxonomy_term.internal_status.default
+targetEntityType: taxonomy_term
+bundle: internal_status
+mode: default
+content:
+  description:
+    type: text_textarea
+    weight: 1
+    settings:
+      placeholder: ''
+      rows: 5
+    third_party_settings: {  }
+  field_internal_status_code:
+    type: string_textfield
+    weight: 2
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  field_jurisdiction:
+    type: entity_reference_autocomplete
+    weight: 3
+    settings:
+      match_operator: CONTAINS
+      match_limit: 10
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  field_status_definition:
+    type: status_definition_json_form
+    weight: 4
+    settings:
+      schema_type: object
+      schema_properties: ''
+    third_party_settings: {  }
+  name:
+    type: string_textfield
+    weight: 0
+    settings:
+      size: 60
+      placeholder: ''
+    third_party_settings: {  }
+  path:
+    type: path
+    weight: 5
+    settings: {  }
+    third_party_settings: {  }
+hidden: {  }

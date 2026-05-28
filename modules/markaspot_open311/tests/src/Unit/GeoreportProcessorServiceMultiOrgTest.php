@@ -4,13 +4,17 @@ namespace Drupal\Tests\markaspot_open311\Unit;
 
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
+use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\Core\Messenger\MessengerInterface;
+use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Utility\Token;
@@ -20,6 +24,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
+use GuzzleHttp\ClientInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -151,6 +156,11 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
     $entityFieldManager = $this->createMock(EntityFieldManagerInterface::class);
     $streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
     $token = $this->createMock(Token::class);
+    $database = $this->createMock(Connection::class);
+    $fileSystem = $this->createMock(FileSystemInterface::class);
+    $httpClient = $this->createMock(ClientInterface::class);
+    $messenger = $this->createMock(MessengerInterface::class);
+    $accountSwitcher = $this->createMock(AccountSwitcherInterface::class);
 
     $languageManager = $this->createMock(LanguageManagerInterface::class);
     $language = $this->createMock(LanguageInterface::class);
@@ -169,6 +179,11 @@ class GeoreportProcessorServiceMultiOrgTest extends UnitTestCase {
       $streamWrapperManager,
       $token,
       $languageManager,
+      $database,
+      $fileSystem,
+      $httpClient,
+      $messenger,
+      $accountSwitcher,
       $hierarchyResolver,
       $this->logger,
     );

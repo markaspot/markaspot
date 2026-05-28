@@ -50,6 +50,7 @@ class OrgMembershipJurisdictionSyncTest extends UnitTestCase {
     $this->assertStringContainsString('id: jur-org_member', $role_config);
     $this->assertStringContainsString('scope: individual', $role_config);
     $this->assertStringContainsString("'view group_node:boilerplate entity'", $role_config);
+    $this->assertStringContainsString("'view group_node:service_request entity'", $role_config);
   }
 
   /**
@@ -61,6 +62,29 @@ class OrgMembershipJurisdictionSyncTest extends UnitTestCase {
 
     $this->assertStringContainsString('id: jur-moderator', $role_config);
     $this->assertStringContainsString("'view group_node:boilerplate entity'", $role_config);
+  }
+
+  /**
+   * Tests jurisdiction members can read public service requests.
+   */
+  public function testJurisdictionMembersCanReadPublicServiceRequests(): void {
+    $module_root = dirname(__DIR__, 3);
+    $member_config = file_get_contents($module_root . '/config/install/group.role.jur-member.yml');
+    $derived_config = file_get_contents($module_root . '/config/install/group.role.jur-org_member.yml');
+    $install_source = file_get_contents($module_root . '/markaspot_group.install');
+
+    $this->assertStringContainsString('id: jur-member', $member_config);
+    $this->assertStringContainsString("'view group_node:service_request entity'", $member_config);
+    $this->assertStringContainsString('id: jur-org_member', $derived_config);
+    $this->assertStringContainsString("'view group_node:service_request entity'", $derived_config);
+    $this->assertStringContainsString('function markaspot_group_update_11930(): string', $install_source);
+    $this->assertStringContainsString('$group_type = _markaspot_group_update_jurisdiction_group_type();', $install_source);
+    $this->assertStringContainsString("_markaspot_group_ensure_derived_jurisdiction_role();", $install_source);
+    $this->assertStringContainsString("\$group_type . '-member'", $install_source);
+    $this->assertStringContainsString('_markaspot_group_update_derived_jurisdiction_role_id()', $install_source);
+    $this->assertStringContainsString('$current_permissions = $role->getPermissions();', $install_source);
+    $this->assertStringNotContainsString("'permissions' => \$permissions,\n    ];\n    foreach (\$expected_values", $install_source);
+    $this->assertStringContainsString('Skipped unexpected jurisdiction group roles', $install_source);
   }
 
 }

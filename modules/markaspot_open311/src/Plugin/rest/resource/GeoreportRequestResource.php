@@ -170,21 +170,14 @@ class GeoreportRequestResource extends ResourceBase {
    *   The processor service.
    * @param \Drupal\Core\Language\LanguageManagerInterface $language_manager
    *   The language manager.
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   The flood control service.
    * @param \Drupal\markaspot_group\Service\JurisdictionScopeValidator|null $jurisdiction_scope_validator
    *   The jurisdiction scope validator.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
    *   The jurisdiction hierarchy resolver.
    * @param object|null $workspace_visibility
    *   The workspace visibility service (optional).
-   * @param \Drupal\Core\Flood\FloodInterface|null $flood
-   *   The flood control service. Optional only for backwards compat with
-   *   constructor invocations that predate the rate-limit extension; new
-   *   callers MUST pass it. The fallback wires the core 'flood' service.
-   *
-   *   @todo Remove the NULL fallback + \Drupal::service('flood') shim
-   *     once downstream subclasses have migrated. BC hedge for one
-   *     release cycle only — not intended to ossify into permanent
-   *     service-locator usage.
    */
   public function __construct(
     array $configuration,
@@ -200,10 +193,10 @@ class GeoreportRequestResource extends ResourceBase {
     EntityTypeManagerInterface $entity_type_manager,
     GeoreportProcessorService $georeport_processor,
     LanguageManagerInterface $language_manager,
+    FloodInterface $flood,
     ?JurisdictionScopeValidator $jurisdiction_scope_validator = NULL,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
     ?object $workspace_visibility = NULL,
-    ?FloodInterface $flood = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -217,14 +210,14 @@ class GeoreportRequestResource extends ResourceBase {
     $this->jurisdictionScopeValidator = $jurisdiction_scope_validator;
     $this->hierarchyResolver = $hierarchy_resolver;
     $this->workspaceVisibility = $workspace_visibility;
-    $this->flood = $flood ?? \Drupal::service('flood');
+    $this->flood = $flood;
   }
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
-    return new static(
+    return new self(
       $configuration,
       $plugin_id,
       $plugin_definition,
@@ -238,10 +231,10 @@ class GeoreportRequestResource extends ResourceBase {
       $container->get('entity_type.manager'),
       $container->get('markaspot_open311.processor'),
       $container->get('language_manager'),
+      $container->get('flood'),
       $container->get('markaspot_group.jurisdiction_scope_validator'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL,
-      $container->get('flood'),
     );
   }
 
@@ -405,10 +398,15 @@ class GeoreportRequestResource extends ResourceBase {
     catch (EntityStorageException $e) {
       throw new HttpException(500, 'Internal Server Error', $e);
     }
+    catch (GeoreportException $e) {
+      // Open311 contract exceptions carry intentional API error codes and are
+      // mapped by GeoreportEventSubscriber.
+      throw $e;
+    }
     catch (HttpExceptionInterface $e) {
       // Pre-mapped HTTP exceptions (NotFoundHttpException,
-      // AccessDeniedHttpException, GeoreportException) carry intentional
-      // status codes — let them propagate verbatim.
+      // AccessDeniedHttpException) carry intentional status codes — let them
+      // propagate verbatim.
       throw $e;
     }
     catch (\Throwable $e) {
@@ -711,7 +709,7 @@ class GeoreportRequestResource extends ResourceBase {
     // Flood-gated detection log. See sibling rate-limiting on the Index POST
     // path: same threat (sustained bot retries) but on PATCH, same mitigation
     // (1/60s per (workspace, IP)).
-    $clientIp = \Drupal::request()->getClientIp() ?? '0.0.0.0';
+    $clientIp = $this->requestStack->getCurrentRequest()?->getClientIp() ?? '0.0.0.0';
     $floodKey = 'markaspot_open311.blocked_patch.' . $jurisdictionId . '.' . $clientIp;
     if ($this->flood->isAllowed($floodKey, 1, 60)) {
       $this->flood->register($floodKey, 60);
@@ -863,7 +861,12 @@ class GeoreportRequestResource extends ResourceBase {
   protected function processUpdateFields(ContentEntityInterface $node, array $values): void {
     // Handle media updates first.
     if (isset($values['_media_updates'])) {
-      $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates'], $node);
+      if (
+        $node->hasField('field_request_media') &&
+        $node->get('field_request_media')->access('edit', NULL, TRUE)->isAllowed()
+      ) {
+        $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates'], $node);
+      }
       // Don't process this as a field.
       unset($values['_media_updates']);
     }
@@ -879,7 +882,13 @@ class GeoreportRequestResource extends ResourceBase {
         continue;
       }
 
-      $fieldType = $node->get($field_name)->getFieldDefinition()->getType();
+      $field = $node->get($field_name);
+      $fieldAccess = $field->access('edit', NULL, TRUE);
+      if (!$fieldAccess->isAllowed()) {
+        continue;
+      }
+
+      $fieldType = $field->getFieldDefinition()->getType();
 
       // For entity references, except for 'field_request_media'.
       if ($fieldType == 'entity_reference' && $field_name != 'field_request_media') {
@@ -915,19 +924,24 @@ class GeoreportRequestResource extends ResourceBase {
   protected function specialFieldHandling(ContentEntityInterface $node, array $values): void {
     // Handling of field_status_notes.
     if (isset($values['field_status_notes'])) {
-      // Use target_id for entity reference field, not value.
-      $status = $values['field_status'] ?? $node->get('field_status')->target_id;
-      $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
-        'status_term_id' => $status,
-        'note' => $values['field_status_notes'],
-      ], $node->language()->getId());
+      if (
+        $node->hasField('field_status_notes') &&
+        $node->get('field_status_notes')->access('edit', NULL, TRUE)->isAllowed()
+      ) {
+        // Use target_id for entity reference field, not value.
+        $status = $values['field_status'] ?? $node->get('field_status')->target_id;
+        $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
+          'status_term_id' => $status,
+          'note' => $values['field_status_notes'],
+        ], $node->language()->getId());
 
-      $current = $node->get('field_status_notes')->getValue();
-      $current[] = [
-        'target_id' => $paragraph->id(),
-        'target_revision_id' => $paragraph->getRevisionId(),
-      ];
-      $node->set('field_status_notes', $current);
+        $current = $node->get('field_status_notes')->getValue();
+        $current[] = [
+          'target_id' => $paragraph->id(),
+          'target_revision_id' => $paragraph->getRevisionId(),
+        ];
+        $node->set('field_status_notes', $current);
+      }
     }
 
     // Handling of revision creation.

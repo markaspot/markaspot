@@ -204,6 +204,7 @@ function markaspot_tenant_admin_form_alter(array &$form, FormStateInterface $for
   $target_forms = [
     'taxonomy_term_service_category_form',
     'taxonomy_term_service_status_form',
+    'taxonomy_term_internal_status_form',
   ];
   if (!in_array($form_id, $target_forms, TRUE)) {
     return;
@@ -593,7 +594,7 @@ function markaspot_tenant_admin_entity_field_access(string $operation, FieldDefi
  * link from appearing.
  */
 function markaspot_tenant_admin_taxonomy_term_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
-  $managed_vocabs = ['service_category', 'service_status'];
+  $managed_vocabs = ['service_category', 'service_status', 'internal_status'];
   if (!in_array($entity->bundle(), $managed_vocabs, TRUE)) {
     return AccessResult::neutral();
   }
@@ -654,7 +655,7 @@ function markaspot_tenant_admin_taxonomy_term_access(EntityInterface $entity, st
  *   jurisdiction ownership scope.
  */
 function markaspot_tenant_admin_taxonomy_term_presave(EntityInterface $entity): void {
-  if (!in_array($entity->bundle(), ['service_category', 'service_status'], TRUE)) {
+  if (!in_array($entity->bundle(), ['service_category', 'service_status', 'internal_status'], TRUE)) {
     return;
   }
 
@@ -713,7 +714,7 @@ function markaspot_tenant_admin_taxonomy_term_presave(EntityInterface $entity): 
  *   the required Open311 status mapping set.
  */
 function markaspot_tenant_admin_taxonomy_term_predelete(EntityInterface $entity): void {
-  if (!in_array($entity->bundle(), ['service_category', 'service_status'], TRUE)) {
+  if (!in_array($entity->bundle(), ['service_category', 'service_status', 'internal_status'], TRUE)) {
     return;
   }
 
@@ -813,7 +814,7 @@ function _markaspot_tenant_admin_account_has_managed_taxonomy_write_permission(
     return TRUE;
   }
 
-  foreach (['service_category', 'service_status'] as $vocabulary) {
+  foreach (['service_category', 'service_status', 'internal_status'] as $vocabulary) {
     foreach (['create', 'edit', 'delete'] as $operation) {
       if ($account->hasPermission("$operation terms in $vocabulary")) {
         return TRUE;

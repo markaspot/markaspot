@@ -142,4 +142,36 @@ final class JsonApiUserResourceConfigTest extends UnitTestCase {
     }
   }
 
+  /**
+   * Internal status terms must expose the staff dashboard definition contract.
+   */
+  public function testInternalStatusResourceExposesDashboardContract(): void {
+    $path = dirname(__DIR__, 4) . '/markaspot_nuxt/config/optional/jsonapi_extras.jsonapi_resource_config.taxonomy_term--internal_status.yml';
+    $this->assertFileExists($path, 'taxonomy_term--internal_status resource config must ship with the profile.');
+    $config = Yaml::parseFile($path);
+
+    $this->assertFalse($config['disabled'] ?? TRUE);
+    $this->assertSame('taxonomy_term--internal_status', $config['id'] ?? NULL);
+    $this->assertSame('taxonomy_term/internal_status', $config['path'] ?? NULL);
+
+    foreach ([
+      'tid',
+      'name',
+      'weight',
+      'field_internal_status_code',
+      'field_jurisdiction',
+      'field_status_definition',
+    ] as $fieldName) {
+      $this->assertArrayHasKey(
+        $fieldName,
+        $config['resourceFields'],
+        sprintf('Field "%s" must be pinned on taxonomy_term--internal_status.', $fieldName)
+      );
+      $this->assertFalse(
+        $config['resourceFields'][$fieldName]['disabled'] ?? TRUE,
+        sprintf('Field "%s" must be available to authenticated dashboard JSON:API calls.', $fieldName)
+      );
+    }
+  }
+
 }

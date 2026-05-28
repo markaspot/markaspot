@@ -233,8 +233,14 @@ function _markaspot_service_provider_create_service_provider_notes_field() {
       'status' => TRUE,
       'dependencies' => [
         'module' => [
+          'field_permissions',
           'node',
           'text',
+        ],
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'custom',
         ],
       ],
       'id' => 'node.field_service_provider_notes',
@@ -327,7 +333,13 @@ function _markaspot_service_provider_create_reassign_sp_field() {
       'status' => TRUE,
       'dependencies' => [
         'module' => [
+          'field_permissions',
           'node',
+        ],
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'custom',
         ],
       ],
       'id' => 'node.field_reassign_sp',
@@ -429,7 +441,13 @@ function _markaspot_service_provider_create_sp_boilerplates_field() {
       'status' => TRUE,
       'dependencies' => [
         'module' => [
+          'field_permissions',
           'node',
+        ],
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'custom',
         ],
       ],
       'id' => 'node.field_boilerplates_sp',

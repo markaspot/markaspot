@@ -1,0 +1,28 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_status_internal_term
+    - node.type.service_request
+    - taxonomy.vocabulary.internal_status
+id: node.service_request.field_status_internal_term
+field_name: field_status_internal_term
+entity_type: node
+bundle: service_request
+label: 'Internal Status'
+description: 'Jurisdiction-scoped internal processing status for dashboard workflows.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      internal_status: internal_status
+    sort:
+      field: weight
+      direction: asc
+    auto_create: false
+    auto_create_bundle: ''
+field_type: entity_reference

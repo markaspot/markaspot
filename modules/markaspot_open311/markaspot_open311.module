@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
@@ -34,6 +35,50 @@ function markaspot_open311_theme() {
   $theme = [];
 
   return $theme;
+}
+
+/**
+ * Implements hook_entity_access().
+ */
+function markaspot_open311_entity_access(EntityInterface $entity, string $operation, AccountInterface $account): AccessResult {
+  if (
+    $entity->getEntityTypeId() !== 'taxonomy_term' ||
+    $entity->bundle() !== 'internal_status' ||
+    !in_array($operation, ['view', 'update', 'delete'], TRUE)
+  ) {
+    return AccessResult::neutral();
+  }
+
+  if ($account->hasPermission('administer taxonomy')) {
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  if (!$account->hasPermission('manage dashboard notes')) {
+    return AccessResult::forbidden('Internal status terms are restricted to dashboard staff.')
+      ->addCacheContexts(['user.permissions']);
+  }
+
+  return AccessResult::neutral()->cachePerPermissions();
+}
+
+/**
+ * Implements hook_entity_create_access().
+ */
+function markaspot_open311_entity_create_access(AccountInterface $account, array $context, $entity_bundle): AccessResult {
+  if (($context['entity_type_id'] ?? NULL) !== 'taxonomy_term' || $entity_bundle !== 'internal_status') {
+    return AccessResult::neutral();
+  }
+
+  if ($account->hasPermission('administer taxonomy')) {
+    return AccessResult::neutral()->cachePerPermissions();
+  }
+
+  if (!$account->hasPermission('manage dashboard notes')) {
+    return AccessResult::forbidden('Internal status terms are restricted to dashboard staff.')
+      ->addCacheContexts(['user.permissions']);
+  }
+
+  return AccessResult::neutral()->cachePerPermissions();
 }
 
 /**
@@ -73,7 +118,7 @@ function markaspot_open311_entity_field_access(string $operation, FieldDefinitio
     !in_array($operation, ['view', 'edit'], TRUE)
     || $field_definition->getName() !== 'field_status_definition'
     || $field_definition->getTargetEntityTypeId() !== 'taxonomy_term'
-    || $field_definition->getTargetBundle() !== 'service_status'
+    || !in_array($field_definition->getTargetBundle(), ['service_status', 'internal_status'], TRUE)
   ) {
     return AccessResult::neutral();
   }
