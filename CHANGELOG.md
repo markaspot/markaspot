@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.100](https://github.com/markaspot/markaspot/compare/11.9.99...11.9.100) (2026-05-28)
+
+### Bug Fixes
+
+* protect management form mode settings cache ([5ba9a9b](https://github.com/markaspot/markaspot/commit/5ba9a9b35899e3fee5ea3df4c02e7d9e610c5545))
+
 ## [11.9.99](https://github.com/markaspot/markaspot/compare/11.9.98...11.9.99) (2026-05-28)
 
 ### Bug Fixes
