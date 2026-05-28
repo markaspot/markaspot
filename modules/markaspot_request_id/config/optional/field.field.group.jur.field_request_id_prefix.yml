@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_request_id_prefix
+    - group.type.jur
+id: group.jur.field_request_id_prefix
+field_name: field_request_id_prefix
+entity_type: group
+bundle: jur
+label: 'Request ID Prefix'
+description: 'Optional uppercase prefix for visible request IDs on multi-jurisdiction servers, for example BONN or AWB. Existing request IDs are not rewritten.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

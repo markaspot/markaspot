@@ -291,3 +291,101 @@ function markaspot_request_id_update_11800() {
 
   return implode(' ', $messages);
 }
+
+/**
+ * Add optional request ID prefixes to jurisdiction groups.
+ */
+function markaspot_request_id_update_11900(): string {
+  $messages = [];
+  $node_field_definitions = \Drupal::service('entity_field.manager')
+    ->getFieldStorageDefinitions('node');
+  if (isset($node_field_definitions['request_id'])) {
+    \Drupal::entityDefinitionUpdateManager()
+      ->updateFieldStorageDefinition($node_field_definitions['request_id']);
+    $messages[] = 'Expanded node.request_id storage definition.';
+  }
+
+  if (!\Drupal::moduleHandler()->moduleExists('group')) {
+    $messages[] = 'Skipped request ID prefix field because group module is not installed.';
+    return implode(' ', $messages);
+  }
+
+  $etm = \Drupal::entityTypeManager();
+
+  try {
+    $jur_type = $etm->getStorage('group_type')->load('jur');
+  }
+  catch (\Exception $e) {
+    $messages[] = 'Skipped request ID prefix field because group entity storage is not available.';
+    return implode(' ', $messages);
+  }
+
+  if (!$jur_type) {
+    $messages[] = 'Skipped request ID prefix field because jur group type does not exist.';
+    return implode(' ', $messages);
+  }
+
+  $field_storage = $etm->getStorage('field_storage_config');
+  $storage = $field_storage->load('group.field_request_id_prefix');
+  if (!$storage) {
+    $storage = $field_storage->create([
+      'field_name' => 'field_request_id_prefix',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'settings' => [
+        'max_length' => 16,
+        'is_ascii' => TRUE,
+        'case_sensitive' => FALSE,
+      ],
+      'cardinality' => 1,
+      'translatable' => FALSE,
+    ]);
+    $storage->save();
+    $messages[] = 'Created group.field_request_id_prefix storage.';
+  }
+
+  $field_config = $etm->getStorage('field_config');
+  if (!$field_config->load('group.jur.field_request_id_prefix')) {
+    $field_config->create([
+      'field_storage' => $storage,
+      'bundle' => 'jur',
+      'label' => 'Request ID Prefix',
+      'description' => 'Optional uppercase prefix for visible request IDs on multi-jurisdiction servers, for example BONN or AWB. Existing request IDs are not rewritten.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+    ])->save();
+    $messages[] = 'Created group.jur.field_request_id_prefix field.';
+  }
+
+  $form_display_storage = $etm->getStorage('entity_form_display');
+  $form_display = $form_display_storage->load('group.jur.default');
+  if (!$form_display) {
+    $form_display = $form_display_storage->create([
+      'targetEntityType' => 'group',
+      'bundle' => 'jur',
+      'mode' => 'default',
+      'status' => TRUE,
+    ]);
+  }
+
+  if (!$form_display->getComponent('field_request_id_prefix')) {
+    $form_display->setComponent('field_request_id_prefix', [
+      'type' => 'string_textfield',
+      'weight' => 3,
+      'region' => 'content',
+      'settings' => [
+        'size' => 16,
+        'placeholder' => 'BONN',
+      ],
+      'third_party_settings' => [],
+    ]);
+    $form_display->save();
+    $messages[] = 'Added request ID prefix field to the jurisdiction form display.';
+  }
+
+  if ($messages === []) {
+    return 'Request ID prefix field already exists.';
+  }
+
+  return implode(' ', $messages);
+}

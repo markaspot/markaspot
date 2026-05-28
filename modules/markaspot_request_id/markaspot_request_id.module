@@ -7,6 +7,7 @@
 
 use Drupal\Core\Entity\EntityStorageException;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Datetime\DrupalDateTime;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Entity\EntityTypeInterface;
 use Drupal\Core\Field\BaseFieldDefinition;
@@ -42,7 +43,7 @@ function markaspot_request_id_entity_base_field_info(EntityTypeInterface $entity
       // ->setRequired(TRUE)
       ->setTranslatable(TRUE)
       ->setRevisionable(TRUE)
-      ->setSetting('max_length', 32)
+      ->setSetting('max_length', 64)
       ->setDisplayOptions('view', [
         'label' => 'hidden',
         'region' => 'hidden',
@@ -78,8 +79,9 @@ function markaspot_request_id_node_presave(EntityInterface $node) {
       try {
         /** @var \Drupal\markaspot_request_id\Service\RequestIdGeneratorInterface $generator */
         $generator = \Drupal::service('markaspot_request_id.generator');
+        $sourceJurisdictionId = $generator->resolveSourceJurisdictionFromNode($node);
         $jurisdictionId = $generator->resolveJurisdictionFromNode($node);
-        $node->request_id->value = $generator->generateRequestId($jurisdictionId);
+        $node->request_id->value = $generator->generateRequestId($jurisdictionId, $sourceJurisdictionId);
       }
       catch (\Exception $e) {
         \Drupal::logger('markaspot_request_id')->error(

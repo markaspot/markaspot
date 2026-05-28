@@ -15,6 +15,7 @@ dependencies:
     - field.field.group.jur.field_nuxt_config
     - field.field.group.jur.field_parent_jurisdiction
     - field.field.group.jur.field_platform_name
+    - field.field.group.jur.field_request_id_prefix
     - field.field.group.jur.field_service_categories
     - field.field.group.jur.field_slug
     - field.field.group.jur.field_stripe_customer_id
@@ -124,6 +125,14 @@ content:
       size: 60
       placeholder: ''
     third_party_settings: {  }
+  field_request_id_prefix:
+    type: string_textfield
+    weight: 3
+    region: content
+    settings:
+      size: 16
+      placeholder: BONN
+    third_party_settings: {  }
   field_service_categories:
     type: entity_reference_autocomplete
     weight: 15
@@ -186,4 +195,3 @@ hidden:
   field_stripe_customer_id: true
   field_stripe_subscription_id: true
   uid: true
-

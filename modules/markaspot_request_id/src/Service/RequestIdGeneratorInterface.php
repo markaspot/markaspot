@@ -17,11 +17,33 @@ interface RequestIdGeneratorInterface {
    *
    * @param int|null $jurisdictionId
    *   The root jurisdiction group ID, or NULL for single-tenant (uses 0).
+   * @param int|null $sourceJurisdictionId
+   *   The source jurisdiction group ID used for the optional visible prefix.
+   *   Leave NULL to use the sequence jurisdiction, or no prefix for
+   *   single-tenant sites.
    *
    * @return string
    *   The formatted request ID (e.g., "42-2026").
    */
-  public function generateRequestId(?int $jurisdictionId = NULL): string;
+  public function generateRequestId(
+    ?int $jurisdictionId = NULL,
+    ?int $sourceJurisdictionId = NULL,
+  ): string;
+
+  /**
+   * Resolves the source jurisdiction ID from a service request node.
+   *
+   * This is the jurisdiction attached to the selected service category. It is
+   * used for visible request-ID prefixes and is not rewritten by parent/root
+   * hierarchy resolution.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $node
+   *   The service request node.
+   *
+   * @return int|null
+   *   The source jurisdiction group ID, or NULL if not determinable.
+   */
+  public function resolveSourceJurisdictionFromNode(EntityInterface $node): ?int;
 
   /**
    * Resolves the root jurisdiction ID from a service request node.

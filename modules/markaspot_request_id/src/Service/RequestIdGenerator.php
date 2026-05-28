@@ -8,6 +8,8 @@ use Drupal\Core\Database\Connection;
 use Drupal\Core\Datetime\DrupalDateTime;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\FieldableEntityInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -52,6 +54,11 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
    */
   protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
+  /**
+   * The entity type manager.
+   */
+  protected ?EntityTypeManagerInterface $entityTypeManager;
+
   public function __construct(
     Connection $database,
     ConfigFactoryInterface $configFactory,
@@ -59,6 +66,7 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
     LockBackendInterface $lock,
     LoggerChannelFactoryInterface $loggerFactory,
     ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
+    ?EntityTypeManagerInterface $entityTypeManager = NULL,
   ) {
     $this->database = $database;
     $this->configFactory = $configFactory;
@@ -66,12 +74,16 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
     $this->lock = $lock;
     $this->logger = $loggerFactory->get('markaspot_request_id');
     $this->hierarchyResolver = $hierarchyResolver;
+    $this->entityTypeManager = $entityTypeManager;
   }
 
   /**
    * {@inheritdoc}
    */
-  public function generateRequestId(?int $jurisdictionId = NULL): string {
+  public function generateRequestId(
+    ?int $jurisdictionId = NULL,
+    ?int $sourceJurisdictionId = NULL,
+  ): string {
     $jid = $jurisdictionId ?? 0;
     $config = $this->configFactory->get('markaspot_request_id.settings');
     $delimiter = $config->get('delimiter') ?? '-';
@@ -105,7 +117,13 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
         }
 
         $date = date($format, $timestamp);
-        $requestId = $nextSeq . $delimiter . $date;
+        $requestId = $this->buildRequestId(
+          $nextSeq,
+          $date,
+          $delimiter,
+          $jid,
+          $sourceJurisdictionId
+        );
 
         $this->database->insert('markaspot_request_id')
           ->fields([
@@ -139,6 +157,91 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
     }
 
     return $requestId;
+  }
+
+  /**
+   * Builds the stored request ID.
+   *
+   * Prefixes are purely presentational. They help multi-jurisdiction staff
+   * distinguish visible tracking IDs, but API access must still scope by
+   * jurisdiction or use the entity UUID.
+   *
+   * @param int $sequence
+   *   The next sequence number for the root jurisdiction.
+   * @param string $date
+   *   The already formatted date suffix.
+   * @param string $delimiter
+   *   The configured delimiter.
+   * @param int|null $jurisdictionId
+   *   The root jurisdiction ID used by the sequence.
+   * @param int|null $sourceJurisdictionId
+   *   The source jurisdiction ID used for the visible prefix.
+   *
+   * @return string
+   *   The formatted request ID.
+   */
+  protected function buildRequestId(
+    int $sequence,
+    string $date,
+    string $delimiter,
+    ?int $jurisdictionId = NULL,
+    ?int $sourceJurisdictionId = NULL,
+  ): string {
+    $baseId = $sequence . $delimiter . $date;
+    $prefix = $this->loadRequestIdPrefix($sourceJurisdictionId ?? $jurisdictionId);
+
+    if ($prefix === '' && $sourceJurisdictionId !== NULL && $sourceJurisdictionId !== $jurisdictionId) {
+      $prefix = $this->loadRequestIdPrefix($jurisdictionId);
+    }
+
+    return $prefix === '' ? $baseId : $prefix . $delimiter . $baseId;
+  }
+
+  /**
+   * Loads and normalizes the visible request-ID prefix for a jurisdiction.
+   *
+   * @param int|null $jurisdictionId
+   *   The jurisdiction group ID.
+   *
+   * @return string
+   *   The normalized prefix, or an empty string when no prefix is configured.
+   */
+  protected function loadRequestIdPrefix(?int $jurisdictionId): string {
+    if ($jurisdictionId === NULL || $jurisdictionId <= 0 || !$this->entityTypeManager) {
+      return '';
+    }
+
+    try {
+      $group = $this->entityTypeManager->getStorage('group')->load($jurisdictionId);
+    }
+    catch (\Exception $e) {
+      return '';
+    }
+
+    if (!$group instanceof FieldableEntityInterface
+      || $group->bundle() !== 'jur'
+      || !$group->hasField('field_request_id_prefix')
+      || $group->get('field_request_id_prefix')->isEmpty()) {
+      return '';
+    }
+
+    return $this->normalizeRequestIdPrefix((string) $group->get('field_request_id_prefix')->value);
+  }
+
+  /**
+   * Normalizes a configured request-ID prefix for URL and API safety.
+   *
+   * @param string $prefix
+   *   The raw configured prefix.
+   *
+   * @return string
+   *   Uppercase ASCII letters and digits, capped to the field length.
+   */
+  protected function normalizeRequestIdPrefix(string $prefix): string {
+    $normalized = strtoupper(trim($prefix));
+    $normalized = preg_replace('/[^A-Z0-9]+/', '', $normalized) ?? '';
+
+    return substr($normalized, 0, 16);
   }
 
   /**
@@ -182,16 +285,10 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
    * {@inheritdoc}
    */
   public function resolveJurisdictionFromNode(EntityInterface $node): ?int {
-    if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+    $jurisdictionId = $this->resolveSourceJurisdictionFromNode($node);
+    if ($jurisdictionId === NULL) {
       return NULL;
     }
-
-    $categoryTerm = $node->get('field_category')->entity;
-    if (!$categoryTerm || !$categoryTerm->hasField('field_jurisdiction') || $categoryTerm->get('field_jurisdiction')->isEmpty()) {
-      return NULL;
-    }
-
-    $jurisdictionId = (int) $categoryTerm->get('field_jurisdiction')->target_id;
 
     // Resolve to root jurisdiction if hierarchy resolver is available.
     if ($this->hierarchyResolver) {
@@ -217,6 +314,22 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
     }
 
     return $jurisdictionId;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function resolveSourceJurisdictionFromNode(EntityInterface $node): ?int {
+    if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+      return NULL;
+    }
+
+    $categoryTerm = $node->get('field_category')->entity;
+    if (!$categoryTerm || !$categoryTerm->hasField('field_jurisdiction') || $categoryTerm->get('field_jurisdiction')->isEmpty()) {
+      return NULL;
+    }
+
+    return (int) $categoryTerm->get('field_jurisdiction')->target_id;
   }
 
 }

@@ -8,3 +8,4 @@ services:
       - '@lock'
       - '@logger.factory'
       - '@?markaspot_group.hierarchy_resolver'
+      - '@entity_type.manager'

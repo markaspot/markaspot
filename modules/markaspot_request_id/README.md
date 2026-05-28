@@ -6,6 +6,7 @@ This module provides unique identifier management for service requests in Mark-a
 
 - Automatic generation of unique request IDs
 - Configurable ID formats and patterns
+- Optional jurisdiction prefixes for visible IDs on multi-jurisdiction servers
 - Reference handling for request identification
 - Search by request ID
 
@@ -17,6 +18,10 @@ Navigate to **Admin → Configuration → Mark-a-Spot → Request ID Settings** 
 - Prefix and suffix options
 - Numbering systems
 - Display settings
+
+For multi-jurisdiction servers, set `field_request_id_prefix` on each
+jurisdiction group that needs a distinct visible pattern. New requests then use
+IDs such as `BONN-7-2026` while existing request IDs remain unchanged.
 
 ## Integration
 
