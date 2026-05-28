@@ -2481,6 +2481,7 @@ function markaspot_update_11921(): string {
   }
 
   _markaspot_update_11921_sync_form_displays($changes);
+  _markaspot_update_11923_expose_request_attributes_management_form($changes);
   _markaspot_update_11921_sync_open311_manager_fields($changes);
   _markaspot_update_11921_enable_internal_status_jsonapi_resource($changes);
 
@@ -3084,6 +3085,78 @@ function _markaspot_update_11922_grant_operational_field_permissions(array $vali
   }
 
   return $granted;
+}
+
+/**
+ * Expose request attributes in the dashboard management form.
+ */
+function markaspot_update_11923(): string {
+  $changes = [];
+  _markaspot_update_11923_expose_request_attributes_management_form($changes);
+
+  return $changes ? implode('; ', $changes) . '.' : 'Request attributes already visible in management form display.';
+}
+
+/**
+ * Adds field_request_attributes to the management form display.
+ *
+ * The dashboard renders service-definition and internal-status attributes
+ * from the management form-mode contract. Keeping the field visible here
+ * lets field_permissions stay the access layer while avoiding hardcoded
+ * frontend field allow-lists.
+ *
+ * @param string[] $changes
+ *   Human-readable update messages.
+ */
+function _markaspot_update_11923_expose_request_attributes_management_form(array &$changes): void {
+  $field_config = FieldConfig::loadByName('node', 'service_request', 'field_request_attributes');
+  if (!$field_config) {
+    $changes[] = 'skipped field_request_attributes management component: field instance missing';
+    return;
+  }
+
+  $display = EntityFormDisplay::load('node.service_request.management');
+  if (!$display) {
+    $changes[] = 'skipped field_request_attributes management component: display missing';
+    return;
+  }
+
+  $changed = FALSE;
+  $component = $display->getComponent('field_request_attributes');
+  if (!$component || ($component['region'] ?? 'content') === 'hidden') {
+    $display->setComponent('field_request_attributes', [
+      'type' => 'text_textarea',
+      'weight' => 20,
+      'region' => 'content',
+      'settings' => [
+        'rows' => 5,
+        'placeholder' => '',
+      ],
+      'third_party_settings' => [],
+    ]);
+    $changed = TRUE;
+  }
+
+  $group = $display->getThirdPartySetting('field_group', 'group_internal');
+  if (is_array($group)) {
+    $children = array_values(array_filter(
+      $group['children'] ?? [],
+      static fn($child): bool => $child !== 'field_request_attributes'
+    ));
+    $internal_status_index = array_search('field_status_internal_term', $children, TRUE);
+    $insert_at = $internal_status_index === FALSE ? 0 : $internal_status_index + 1;
+    array_splice($children, $insert_at, 0, ['field_request_attributes']);
+    if (($group['children'] ?? []) !== $children) {
+      $group['children'] = $children;
+      $display->setThirdPartySetting('field_group', 'group_internal', $group);
+      $changed = TRUE;
+    }
+  }
+
+  if ($changed) {
+    $display->save();
+    $changes[] = 'exposed field_request_attributes in service_request management form display';
+  }
 }
 
 /**

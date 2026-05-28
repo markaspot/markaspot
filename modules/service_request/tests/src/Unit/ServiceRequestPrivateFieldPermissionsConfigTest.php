@@ -104,6 +104,23 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
   }
 
   /**
+   * Dashboard management form exposes request attributes for staff editing.
+   */
+  public function testManagementFormExposesRequestAttributes(): void {
+    $display = $this->loadYaml($this->moduleRoot . '/config/install/core.entity_form_display.node.service_request.management.yml');
+
+    $this->assertSame(
+      'text_textarea',
+      $display['content']['field_request_attributes']['type'] ?? NULL
+    );
+    $this->assertArrayNotHasKey(
+      'field_request_attributes',
+      $display['hidden'] ?? [],
+      'The dashboard needs request attributes visible in the management form-mode contract.'
+    );
+  }
+
+  /**
    * Every service_request field must be deliberately classified for API use.
    */
   public function testEveryServiceRequestFieldHasExplicitApiClassification(): void {
@@ -499,6 +516,26 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
   }
 
   /**
+   * Existing tenant sites expose request attributes in management form mode.
+   */
+  public function testExistingSitesExposeRequestAttributesInManagementFormMode(): void {
+    $path = $this->profileRoot . '/markaspot.install';
+    $source = file_get_contents($path);
+    $this->assertIsString($source);
+
+    $start = strpos($source, 'function markaspot_update_11923(): string');
+    $this->assertIsInt($start);
+    $end = strpos($source, 'function markaspot_requirements', $start);
+    $this->assertIsInt($end);
+    $hook = substr($source, $start, $end - $start);
+
+    $this->assertStringContainsString('function markaspot_update_11923(): string', $hook);
+    $this->assertStringContainsString('field_request_attributes', $hook);
+    $this->assertStringContainsString("'type' => 'text_textarea'", $hook);
+    $this->assertStringContainsString("'group_internal'", $hook);
+  }
+
+  /**
    * Existing sites get module update hooks even when profile schema is stale.
    */
   public function testServiceRequestModuleMirrorsProfileRequestManagementUpdates(): void {
@@ -509,10 +546,12 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
     $this->assertStringContainsString('function service_request_update_11012(): string', $source);
     $this->assertStringContainsString('function service_request_update_11013(): string', $source);
     $this->assertStringContainsString('function service_request_update_11014(): string', $source);
+    $this->assertStringContainsString('function service_request_update_11015(): string', $source);
     $this->assertStringContainsString('_service_request_load_markaspot_profile_updates()', $source);
     $this->assertStringContainsString('markaspot_update_11920()', $source);
     $this->assertStringContainsString('markaspot_update_11921()', $source);
     $this->assertStringContainsString('markaspot_update_11922()', $source);
+    $this->assertStringContainsString('markaspot_update_11923()', $source);
   }
 
   /**
