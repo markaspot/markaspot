@@ -118,6 +118,11 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
       $display['hidden'] ?? [],
       'The dashboard needs request attributes visible in the management form-mode contract.'
     );
+    $this->assertContains(
+      'field_request_attributes',
+      $display['third_party_settings']['field_group']['group_administration']['children'] ?? [],
+      'The dashboard management form field-group contract must expose request attributes in Administration.'
+    );
   }
 
   /**
@@ -530,9 +535,11 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
     $hook = substr($source, $start, $end - $start);
 
     $this->assertStringContainsString('function markaspot_update_11923(): string', $hook);
+    $this->assertStringContainsString('function markaspot_update_11924(): string', $hook);
     $this->assertStringContainsString('field_request_attributes', $hook);
     $this->assertStringContainsString("'type' => 'text_textarea'", $hook);
-    $this->assertStringContainsString("'group_internal'", $hook);
+    $this->assertStringContainsString("'group_administration'", $hook);
+    $this->assertStringContainsString('field_status_internal_term', $hook);
   }
 
   /**

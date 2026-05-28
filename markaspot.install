@@ -3137,26 +3137,76 @@ function _markaspot_update_11923_expose_request_attributes_management_form(array
     $changed = TRUE;
   }
 
-  $group = $display->getThirdPartySetting('field_group', 'group_internal');
-  if (is_array($group)) {
-    $children = array_values(array_filter(
-      $group['children'] ?? [],
-      static fn($child): bool => $child !== 'field_request_attributes'
-    ));
-    $internal_status_index = array_search('field_status_internal_term', $children, TRUE);
-    $insert_at = $internal_status_index === FALSE ? 0 : $internal_status_index + 1;
-    array_splice($children, $insert_at, 0, ['field_request_attributes']);
-    if (($group['children'] ?? []) !== $children) {
-      $group['children'] = $children;
-      $display->setThirdPartySetting('field_group', 'group_internal', $group);
-      $changed = TRUE;
-    }
-  }
+  $changed = _markaspot_update_11923_place_request_attributes_in_management_group($display) || $changed;
 
   if ($changed) {
     $display->save();
     $changes[] = 'exposed field_request_attributes in service_request management form display';
   }
+}
+
+/**
+ * Align request attributes with the shipped management form field group.
+ */
+function markaspot_update_11924(): string {
+  $display = EntityFormDisplay::load('node.service_request.management');
+  if (!$display) {
+    return 'node.service_request.management form display missing, nothing to do.';
+  }
+
+  if (!_markaspot_update_11923_place_request_attributes_in_management_group($display)) {
+    return 'field_request_attributes already aligned with the management form Administration group.';
+  }
+
+  $display->save();
+  return 'Moved field_request_attributes into the management form Administration group.';
+}
+
+/**
+ * Places field_request_attributes in the Administration field group.
+ */
+function _markaspot_update_11923_place_request_attributes_in_management_group(EntityFormDisplay $display): bool {
+  $field_groups = $display->getThirdPartySettings('field_group');
+  $target_group_id = 'group_administration';
+  if (
+    !isset($field_groups[$target_group_id]) ||
+    !is_array($field_groups[$target_group_id]) ||
+    !isset($field_groups[$target_group_id]['children']) ||
+    !is_array($field_groups[$target_group_id]['children'])
+  ) {
+    return FALSE;
+  }
+
+  $original_field_groups = $field_groups;
+  foreach ($field_groups as $group_id => $group) {
+    if (!is_array($group) || !isset($group['children']) || !is_array($group['children'])) {
+      continue;
+    }
+    $children = array_values(array_filter(
+      $group['children'],
+      static fn($child): bool => $child !== 'field_request_attributes'
+    ));
+    if ($children !== $group['children']) {
+      $group['children'] = $children;
+      $field_groups[$group_id] = $group;
+    }
+  }
+
+  $target_children = $field_groups[$target_group_id]['children'];
+  $internal_status_index = array_search('field_status_internal_term', $target_children, TRUE);
+  $insert_at = $internal_status_index === FALSE ? 0 : $internal_status_index + 1;
+  array_splice($target_children, $insert_at, 0, ['field_request_attributes']);
+  $field_groups[$target_group_id]['children'] = $target_children;
+
+  if ($field_groups === $original_field_groups) {
+    return FALSE;
+  }
+
+  foreach ($field_groups as $group_id => $group) {
+    $display->setThirdPartySetting('field_group', $group_id, $group);
+  }
+
+  return TRUE;
 }
 
 /**

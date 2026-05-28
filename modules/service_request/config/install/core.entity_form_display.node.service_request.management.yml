@@ -71,6 +71,7 @@ third_party_settings:
       children:
         - field_status
         - field_status_internal_term
+        - field_request_attributes
         - field_status_notes
         - status
         - created
