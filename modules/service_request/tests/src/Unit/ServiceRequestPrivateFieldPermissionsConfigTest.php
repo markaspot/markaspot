@@ -499,6 +499,23 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
   }
 
   /**
+   * Existing sites get module update hooks even when profile schema is stale.
+   */
+  public function testServiceRequestModuleMirrorsProfileRequestManagementUpdates(): void {
+    $path = $this->profileRoot . '/modules/service_request/service_request.install';
+    $source = file_get_contents($path);
+    $this->assertIsString($source);
+
+    $this->assertStringContainsString('function service_request_update_11012(): string', $source);
+    $this->assertStringContainsString('function service_request_update_11013(): string', $source);
+    $this->assertStringContainsString('function service_request_update_11014(): string', $source);
+    $this->assertStringContainsString('_service_request_load_markaspot_profile_updates()', $source);
+    $this->assertStringContainsString('markaspot_update_11920()', $source);
+    $this->assertStringContainsString('markaspot_update_11921()', $source);
+    $this->assertStringContainsString('markaspot_update_11922()', $source);
+  }
+
+  /**
    * Loads a profile-level optional role config.
    */
   private function loadProfileRole(string $roleId): array {

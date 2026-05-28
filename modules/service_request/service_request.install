@@ -878,3 +878,51 @@ function service_request_update_11011(): string {
 
   return 'Imported service_request/translations/de.po.';
 }
+
+/**
+ * Applies request personal-field permissions on existing tenants.
+ */
+function service_request_update_11012(): string {
+  _service_request_load_markaspot_profile_updates();
+  return function_exists('markaspot_update_11920')
+    ? markaspot_update_11920()
+    : 'markaspot_update_11920 not available, skipped.';
+}
+
+/**
+ * Adds taxonomy-backed internal request status fields on existing tenants.
+ */
+function service_request_update_11013(): string {
+  _service_request_load_markaspot_profile_updates();
+  return function_exists('markaspot_update_11921')
+    ? markaspot_update_11921()
+    : 'markaspot_update_11921 not available, skipped.';
+}
+
+/**
+ * Applies request operational-field permissions on existing tenants.
+ */
+function service_request_update_11014(): string {
+  _service_request_load_markaspot_profile_updates();
+  return function_exists('markaspot_update_11922')
+    ? markaspot_update_11922()
+    : 'markaspot_update_11922 not available, skipped.';
+}
+
+/**
+ * Loads profile update helpers from the parent install profile.
+ */
+function _service_request_load_markaspot_profile_updates(): void {
+  if (
+    function_exists('markaspot_update_11920') &&
+    function_exists('markaspot_update_11921') &&
+    function_exists('markaspot_update_11922')
+  ) {
+    return;
+  }
+
+  $profile_install = dirname(__DIR__, 2) . '/markaspot.install';
+  if (is_readable($profile_install)) {
+    require_once $profile_install;
+  }
+}
