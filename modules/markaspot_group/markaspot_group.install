@@ -3627,6 +3627,51 @@ function markaspot_group_update_11930(): string {
 }
 
 /**
+ * Restores organisation notification mailbox field after org group migration.
+ */
+function markaspot_group_update_11931(): string {
+  $created = [];
+  $updated = [];
+
+  if (_markaspot_group_update_ensure_org_head_email_storage()) {
+    $created[] = 'group.field_head_organisation_e_mail storage';
+  }
+  if (_markaspot_group_update_ensure_org_head_email_field()) {
+    $created[] = 'group.org.field_head_organisation_e_mail field';
+  }
+  if (_markaspot_group_update_ensure_org_head_email_form_display()) {
+    $updated[] = 'group.org.default form display';
+  }
+
+  $migrated_rows = _markaspot_group_update_migrate_org_head_email_table_bundles();
+  if ($migrated_rows > 0) {
+    $updated[] = sprintf('%d legacy field data row(s)', $migrated_rows);
+  }
+
+  if (_markaspot_group_update_prune_legacy_org_head_email_config()) {
+    $updated[] = 'legacy group.organisation field config';
+  }
+
+  _markaspot_group_update_register_org_head_email_field_map();
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  \Drupal::service('cache_tags.invalidator')->invalidateTags(['entity_field_info']);
+
+  if (!$created && !$updated) {
+    return 'Organisation notification mailbox field already aligned.';
+  }
+
+  $messages = [];
+  if ($created) {
+    $messages[] = sprintf('Created %s', implode(', ', $created));
+  }
+  if ($updated) {
+    $messages[] = sprintf('Updated %s', implode(', ', $updated));
+  }
+
+  return implode('; ', $messages) . '.';
+}
+
+/**
  * Ensures the internal derived jur role exists before backfilling.
  */
 function _markaspot_group_ensure_derived_jurisdiction_role(): void {
@@ -3694,6 +3739,253 @@ function _markaspot_group_ensure_derived_jurisdiction_role(): void {
     'group_type' => $group_type,
     'permissions' => $permissions,
   ])->save();
+}
+
+/**
+ * Ensures the group mailbox field storage exists without dropping old tables.
+ */
+function _markaspot_group_update_ensure_org_head_email_storage(): bool {
+  if (\Drupal\field\Entity\FieldStorageConfig::loadByName('group', 'field_head_organisation_e_mail')) {
+    return FALSE;
+  }
+
+  $table_state = _markaspot_group_update_legacy_org_head_email_table_state();
+  if ($table_state === 'none') {
+    \Drupal\field\Entity\FieldStorageConfig::create(_markaspot_group_update_org_head_email_storage_data())->save();
+    return TRUE;
+  }
+  if ($table_state === 'partial') {
+    throw new \RuntimeException('Partial legacy field_head_organisation_e_mail schema found. Restore both group field data and revision tables before running this update.');
+  }
+
+  // Legacy 11.7.x migrations can already have populated data tables. In that
+  // case, create only the config entity and keep the existing field tables.
+  \Drupal::configFactory()
+    ->getEditable('field.storage.group.field_head_organisation_e_mail')
+    ->setData(_markaspot_group_update_org_head_email_storage_data())
+    ->save(TRUE);
+
+  return TRUE;
+}
+
+/**
+ * Ensures the org group mailbox field config exists.
+ */
+function _markaspot_group_update_ensure_org_head_email_field(): bool {
+  if (\Drupal\field\Entity\FieldConfig::load('group.org.field_head_organisation_e_mail')) {
+    return FALSE;
+  }
+
+  $legacy = \Drupal\field\Entity\FieldConfig::load('group.organisation.field_head_organisation_e_mail');
+  $data = $legacy
+    ? _markaspot_group_update_retarget_org_head_email_field_data($legacy->toArray())
+    : _markaspot_group_update_org_head_email_field_data();
+
+  \Drupal\field\Entity\FieldConfig::create($data)->save();
+
+  return TRUE;
+}
+
+/**
+ * Adds the mailbox field to the org form display when that display exists.
+ */
+function _markaspot_group_update_ensure_org_head_email_form_display(): bool {
+  $config = \Drupal::configFactory()
+    ->getEditable('core.entity_form_display.group.org.default');
+  if ($config->isNew()) {
+    return FALSE;
+  }
+
+  $dependencies = $config->get('dependencies.config');
+  $dependencies = is_array($dependencies) ? $dependencies : [];
+  $changed = FALSE;
+  if (!in_array('field.field.group.org.field_head_organisation_e_mail', $dependencies, TRUE)) {
+    $dependencies[] = 'field.field.group.org.field_head_organisation_e_mail';
+    sort($dependencies);
+    $config->set('dependencies.config', $dependencies);
+    $changed = TRUE;
+  }
+
+  if (!$config->get('content.field_head_organisation_e_mail')) {
+    $config->set('content.field_head_organisation_e_mail', [
+      'type' => 'email_default',
+      'weight' => 7,
+      'region' => 'content',
+      'settings' => [
+        'placeholder' => '',
+        'size' => 60,
+      ],
+      'third_party_settings' => [],
+    ]);
+    $changed = TRUE;
+  }
+
+  if ($changed) {
+    $config->save(TRUE);
+  }
+
+  return $changed;
+}
+
+/**
+ * Migrates stored legacy org-mail field rows from organisation to org bundle.
+ */
+function _markaspot_group_update_migrate_org_head_email_table_bundles(): int {
+  $db = \Drupal::database();
+  $updated = 0;
+  foreach (['group__field_head_organisation_e_mail', 'group_revision__field_head_organisation_e_mail'] as $table) {
+    if (!$db->schema()->tableExists($table)) {
+      continue;
+    }
+    $updated += (int) $db->update($table)
+      ->fields(['bundle' => 'org'])
+      ->condition('bundle', 'organisation')
+      ->execute();
+  }
+
+  return $updated;
+}
+
+/**
+ * Gets the legacy org-mail data table state.
+ */
+function _markaspot_group_update_legacy_org_head_email_table_state(): string {
+  $schema = \Drupal::database()->schema();
+  $data_exists = $schema->tableExists('group__field_head_organisation_e_mail');
+  $revision_exists = $schema->tableExists('group_revision__field_head_organisation_e_mail');
+  if ($data_exists && $revision_exists) {
+    return 'both';
+  }
+  if (!$data_exists && !$revision_exists) {
+    return 'none';
+  }
+
+  return 'partial';
+}
+
+/**
+ * Checks whether legacy org-mail data tables already exist.
+ */
+function _markaspot_group_update_legacy_org_head_email_tables_exist(): bool {
+  return _markaspot_group_update_legacy_org_head_email_table_state() === 'both';
+}
+
+/**
+ * Removes stale legacy field config after the org bundle replacement exists.
+ */
+function _markaspot_group_update_prune_legacy_org_head_email_config(): bool {
+  $legacy = \Drupal\field\Entity\FieldConfig::load('group.organisation.field_head_organisation_e_mail');
+  if (!$legacy) {
+    return FALSE;
+  }
+
+  $legacy->delete();
+  return TRUE;
+}
+
+/**
+ * Keeps the low-level bundle field map aligned for JSON:API and Field API.
+ */
+function _markaspot_group_update_register_org_head_email_field_map(): void {
+  $kv = \Drupal::keyValue('entity.definitions.bundle_field_map');
+  $fields = $kv->get('group') ?: [];
+  if (!is_array($fields)) {
+    $fields = [];
+  }
+
+  $field_info = $fields['field_head_organisation_e_mail'] ?? [];
+  if (!is_array($field_info)) {
+    $field_info = [];
+  }
+  $field_info['type'] = 'email';
+  $bundles = $field_info['bundles'] ?? [];
+  $bundles = is_array($bundles) ? $bundles : [];
+  unset($bundles['organisation']);
+  $bundles['org'] = 'org';
+  $field_info['bundles'] = $bundles;
+  $fields['field_head_organisation_e_mail'] = $field_info;
+
+  $kv->set('group', $fields);
+}
+
+/**
+ * Builds storage config for the organisation notification mailbox field.
+ */
+function _markaspot_group_update_org_head_email_storage_data(): array {
+  return [
+    'langcode' => 'en',
+    'status' => TRUE,
+    'dependencies' => [
+      'module' => ['group'],
+    ],
+    'id' => 'group.field_head_organisation_e_mail',
+    'field_name' => 'field_head_organisation_e_mail',
+    'entity_type' => 'group',
+    'type' => 'email',
+    'settings' => [],
+    'module' => 'core',
+    'locked' => FALSE,
+    'cardinality' => -1,
+    'translatable' => FALSE,
+    'indexes' => [],
+    'persist_with_no_fields' => FALSE,
+    'custom_storage' => FALSE,
+  ];
+}
+
+/**
+ * Builds org field config for the organisation notification mailbox field.
+ */
+function _markaspot_group_update_org_head_email_field_data(): array {
+  return [
+    'langcode' => 'en',
+    'status' => TRUE,
+    'dependencies' => [
+      'config' => [
+        'field.storage.group.field_head_organisation_e_mail',
+        'group.type.org',
+      ],
+    ],
+    'id' => 'group.org.field_head_organisation_e_mail',
+    'field_name' => 'field_head_organisation_e_mail',
+    'entity_type' => 'group',
+    'bundle' => 'org',
+    'label' => 'Head Organisation E-Mail',
+    'description' => 'Use this field for one or multiple addresses for organisation assignment notifications.',
+    'required' => FALSE,
+    'translatable' => FALSE,
+    'default_value' => [],
+    'default_value_callback' => '',
+    'settings' => [],
+    'field_type' => 'email',
+  ];
+}
+
+/**
+ * Retargets legacy group.organisation mailbox config to group.org.
+ */
+function _markaspot_group_update_retarget_org_head_email_field_data(array $data): array {
+  unset($data['uuid']);
+  $data['id'] = 'group.org.field_head_organisation_e_mail';
+  $data['bundle'] = 'org';
+
+  $dependencies = $data['dependencies']['config'] ?? [];
+  $dependencies = is_array($dependencies) ? $dependencies : [];
+  $dependencies = array_map(
+    static fn(string $dependency): string => $dependency === 'group.type.organisation' ? 'group.type.org' : $dependency,
+    $dependencies
+  );
+  if (!in_array('field.storage.group.field_head_organisation_e_mail', $dependencies, TRUE)) {
+    $dependencies[] = 'field.storage.group.field_head_organisation_e_mail';
+  }
+  if (!in_array('group.type.org', $dependencies, TRUE)) {
+    $dependencies[] = 'group.type.org';
+  }
+  $dependencies = array_values(array_unique($dependencies));
+  sort($dependencies);
+  $data['dependencies']['config'] = $dependencies;
+
+  return $data;
 }
 
 /**

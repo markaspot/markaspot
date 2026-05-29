@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_head_organisation_e_mail
+    - group.type.org
+id: group.org.field_head_organisation_e_mail
+field_name: field_head_organisation_e_mail
+entity_type: group
+bundle: org
+label: 'Head Organisation E-Mail'
+description: 'Use this field for one or multiple addresses for organisation assignment notifications.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: email

@@ -2,6 +2,7 @@ langcode: en
 status: true
 dependencies:
   config:
+    - field.field.group.org.field_head_organisation_e_mail
     - field.field.group.org.field_jurisdiction
     - field.field.group.org.field_service_categories
     - group.type.org
@@ -12,6 +13,14 @@ targetEntityType: group
 bundle: org
 mode: default
 content:
+  field_head_organisation_e_mail:
+    type: email_default
+    weight: 7
+    region: content
+    settings:
+      placeholder: ''
+      size: 60
+    third_party_settings: {  }
   field_jurisdiction:
     type: entity_reference_autocomplete
     weight: 5
