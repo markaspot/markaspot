@@ -7,4 +7,10 @@ id: group--org
 disabled: false
 path: group/org
 resourceType: group--org
-resourceFields: {  }
+resourceFields:
+  field_head_organisation_e_mail:
+    disabled: true
+    fieldName: field_head_organisation_e_mail
+    publicName: field_head_organisation_e_mail
+    enhancer:
+      id: ''

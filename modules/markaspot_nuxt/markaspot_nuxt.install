@@ -381,3 +381,41 @@ function markaspot_nuxt_update_11902(): string {
 
   return 'Enabled taxonomy_term--internal_status JSON:API resource config.';
 }
+
+/**
+ * Hide internal organisation notification mailboxes from group--org JSON:API.
+ */
+function markaspot_nuxt_update_11903(): string {
+  $config_name = 'jsonapi_extras.jsonapi_resource_config.group--org';
+  $org_type = \Drupal::entityTypeManager()
+    ->getStorage('group_type')
+    ->load('org');
+  if (!$org_type) {
+    return 'Skipped group--org JSON:API resource config: org group type not installed.';
+  }
+
+  $config = \Drupal::configFactory()->getEditable($config_name);
+
+  if ($config->isNew()) {
+    return 'Skipped group--org JSON:API resource config: resource not enabled on this tenant.';
+  }
+
+  $fields = $config->get('resourceFields') ?? [];
+  $fields = is_array($fields) ? $fields : [];
+  $mail_field = $fields['field_head_organisation_e_mail'] ?? [];
+  $mail_field = is_array($mail_field) ? $mail_field : [];
+  $mail_field += [
+    'fieldName' => 'field_head_organisation_e_mail',
+    'publicName' => 'field_head_organisation_e_mail',
+    'enhancer' => ['id' => ''],
+  ];
+  $mail_field['disabled'] = TRUE;
+  $fields['field_head_organisation_e_mail'] = $mail_field;
+
+  if ($config->get('resourceFields') === $fields) {
+    return 'group--org JSON:API resource already hides field_head_organisation_e_mail.';
+  }
+
+  $config->set('resourceFields', $fields)->save(TRUE);
+  return 'Disabled field_head_organisation_e_mail on group--org JSON:API resource.';
+}

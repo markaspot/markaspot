@@ -928,7 +928,7 @@ function _markaspot_service_provider_ensure_org_group_jsonapi() {
     'disabled' => FALSE,
     'path' => 'group/org',
     'resourceType' => 'group--org',
-    'resourceFields' => [],
+    'resourceFields' => _markaspot_service_provider_org_group_jsonapi_resource_fields(),
   ];
 
   if ($config->isNew()) {
@@ -943,8 +943,15 @@ function _markaspot_service_provider_ensure_org_group_jsonapi() {
       $changed = TRUE;
     }
   }
-  if ($config->get('resourceFields') === NULL) {
-    $config->set('resourceFields', []);
+  $resource_fields = $config->get('resourceFields') ?? [];
+  $resource_fields = is_array($resource_fields) ? $resource_fields : [];
+  $mail_field = $resource_fields['field_head_organisation_e_mail'] ?? [];
+  $mail_field = is_array($mail_field) ? $mail_field : [];
+  $mail_field += _markaspot_service_provider_org_group_jsonapi_resource_fields()['field_head_organisation_e_mail'];
+  $mail_field['disabled'] = TRUE;
+  $resource_fields['field_head_organisation_e_mail'] = $mail_field;
+  if ($config->get('resourceFields') !== $resource_fields) {
+    $config->set('resourceFields', $resource_fields);
     $changed = TRUE;
   }
 
@@ -953,6 +960,22 @@ function _markaspot_service_provider_ensure_org_group_jsonapi() {
   }
 
   return $changed;
+}
+
+/**
+ * Gets org group JSON:API resource field overrides.
+ */
+function _markaspot_service_provider_org_group_jsonapi_resource_fields(): array {
+  return [
+    'field_head_organisation_e_mail' => [
+      'disabled' => TRUE,
+      'fieldName' => 'field_head_organisation_e_mail',
+      'publicName' => 'field_head_organisation_e_mail',
+      'enhancer' => [
+        'id' => '',
+      ],
+    ],
+  ];
 }
 
 /**
