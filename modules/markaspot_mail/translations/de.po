@@ -194,3 +194,7 @@ msgstr "Impressum"
 
 msgid "Privacy"
 msgstr "Datenschutz"
+
+#: templates/mail-layout.html.twig
+msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
+msgstr "Diese E-Mail wurde automatisch von @name über die Mark-a-Spot-Plattform versendet."

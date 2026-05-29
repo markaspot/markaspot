@@ -1917,11 +1917,50 @@ function markaspot_update_11911(): string {
  */
 function markaspot_update_11912(): string {
   $handler = \Drupal::moduleHandler();
-  if ($handler->moduleExists('markaspot_mail')) {
-    return 'markaspot_mail already enabled; no action.';
+  $install = [];
+  foreach (['mailsystem', 'phpmailer_smtp', 'markaspot_mail'] as $module) {
+    if (!$handler->moduleExists($module)) {
+      $install[] = $module;
+    }
   }
-  \Drupal::service('module_installer')->install(['markaspot_mail']);
-  return 'Enabled markaspot_mail module.';
+  if ($install === []) {
+    return 'Mail modules already enabled; no action.';
+  }
+  $deleted_stale = [];
+  if (in_array('phpmailer_smtp', $install, TRUE)) {
+    $deleted_stale = _markaspot_delete_stale_phpmailer_smtp_config();
+  }
+  \Drupal::service('module_installer')->install($install);
+  $message = 'Enabled mail modules: ' . implode(', ', $install) . '.';
+  if ($deleted_stale !== []) {
+    $message .= ' Removed stale config before install: ' . implode(', ', $deleted_stale) . '.';
+  }
+  return $message;
+}
+
+/**
+ * Deletes stale PHPMailer config before installing the module.
+ *
+ * Legacy imports can carry active phpmailer_smtp.* config while the module is
+ * disabled. Drupal refuses to install a module when its install config already
+ * exists, so remove the stale copies and let update 11913/markaspot_mail align
+ * the runtime config immediately afterwards.
+ *
+ * @return list<string>
+ *   Deleted config names.
+ */
+function _markaspot_delete_stale_phpmailer_smtp_config(): array {
+  $deleted = [];
+  foreach (['phpmailer_smtp.settings', 'phpmailer_smtp.format'] as $config_name) {
+    $config = \Drupal::configFactory()->getEditable($config_name);
+    if ($config->isNew()) {
+      continue;
+    }
+    $config->delete();
+    $deleted[] = $config_name;
+  }
+
+  return $deleted;
 }
 
 /**
@@ -1935,6 +1974,14 @@ function markaspot_update_11912(): string {
  */
 function markaspot_update_11913(): string {
   $changes = [];
+  $target_backend = _markaspot_resolve_mail_backend(
+    \Drupal::configFactory(),
+    \Drupal::moduleHandler(),
+  );
+
+  if ($target_backend === 'smtp') {
+    return 'Legacy smtp mail backend already aligned; no action.';
+  }
 
   $config = \Drupal::configFactory()->getEditable('phpmailer_smtp.format');
   if ($config->get('format') !== 'html') {
@@ -1977,15 +2024,25 @@ function markaspot_update_11914(): string {
  */
 function markaspot_update_11915(): string {
   $changes = [];
+  $target_backend = _markaspot_resolve_mail_backend(
+    \Drupal::configFactory(),
+    \Drupal::moduleHandler(),
+  );
+
+  $system_mail = \Drupal::configFactory()->getEditable('system.mail');
+  if ($system_mail->get('interface.default') !== $target_backend) {
+    $system_mail->set('interface.default', $target_backend)->save();
+    $changes[] = "system.mail interface.default={$target_backend}";
+  }
 
   $mailsystem = \Drupal::configFactory()->getEditable('mailsystem.settings');
-  if ($mailsystem->get('defaults.sender') !== 'phpmailer_smtp') {
-    $mailsystem->set('defaults.sender', 'phpmailer_smtp');
-    $changes[] = 'mailsystem.settings defaults.sender=phpmailer_smtp';
+  if ($mailsystem->get('defaults.sender') !== $target_backend) {
+    $mailsystem->set('defaults.sender', $target_backend);
+    $changes[] = "mailsystem.settings defaults.sender={$target_backend}";
   }
-  if ($mailsystem->get('defaults.formatter') !== 'phpmailer_smtp') {
-    $mailsystem->set('defaults.formatter', 'phpmailer_smtp');
-    $changes[] = 'mailsystem.settings defaults.formatter=phpmailer_smtp';
+  if ($mailsystem->get('defaults.formatter') !== $target_backend) {
+    $mailsystem->set('defaults.formatter', $target_backend);
+    $changes[] = "mailsystem.settings defaults.formatter={$target_backend}";
   }
   if ($changes !== []) {
     $mailsystem->save();
@@ -1998,6 +2055,29 @@ function markaspot_update_11915(): string {
   }
 
   return $changes ? implode(', ', $changes) . '.' : 'No mail config changes needed.';
+}
+
+/**
+ * Resolves the backend that should own the runtime mail stack.
+ */
+function _markaspot_resolve_mail_backend(
+  \Drupal\Core\Config\ConfigFactoryInterface $config_factory,
+  \Drupal\Core\Extension\ModuleHandlerInterface $module_handler,
+): string {
+  $system_mail = $config_factory->get('system.mail');
+  $mailsystem = $config_factory->get('mailsystem.settings');
+  $system_default = $system_mail->isNew() ? '' : (string) $system_mail->get('interface.default');
+  $sender = $mailsystem->isNew() ? '' : (string) $mailsystem->get('defaults.sender');
+  $formatter = $mailsystem->isNew() ? '' : (string) $mailsystem->get('defaults.formatter');
+
+  if ($module_handler->moduleExists('smtp')
+    && $system_default === 'smtp'
+    && $sender === 'smtp'
+    && $formatter === 'smtp') {
+    return 'smtp';
+  }
+
+  return 'phpmailer_smtp';
 }
 
 /**

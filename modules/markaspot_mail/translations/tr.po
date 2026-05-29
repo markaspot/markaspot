@@ -242,3 +242,7 @@ msgstr "Yasal bildirim"
 #: templates/mail-layout.html.twig
 msgid "Privacy"
 msgstr "Gizlilik"
+
+#: templates/mail-layout.html.twig
+msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
+msgstr "Bu e-posta, @name tarafından Mark-a-Spot platformu üzerinden otomatik olarak gönderildi."

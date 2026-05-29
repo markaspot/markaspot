@@ -242,3 +242,7 @@ msgstr "Jogi tájékoztató"
 #: templates/mail-layout.html.twig
 msgid "Privacy"
 msgstr "Adatvédelem"
+
+#: templates/mail-layout.html.twig
+msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
+msgstr "Ezt az e-mailt a(z) @name automatikusan küldte a Mark-a-Spot platformon keresztül."

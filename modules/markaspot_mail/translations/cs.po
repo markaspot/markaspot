@@ -243,3 +243,7 @@ msgstr "Právní informace"
 #: templates/mail-layout.html.twig
 msgid "Privacy"
 msgstr "Soukromí"
+
+#: templates/mail-layout.html.twig
+msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
+msgstr "Tento e-mail byl automaticky odeslán službou @name prostřednictvím platformy Mark-a-Spot."

@@ -9,3 +9,5 @@ dependencies:
   - drupal:file
   - drupal:media
   - group:group
+  - mailsystem:mailsystem
+  - phpmailer_smtp:phpmailer_smtp

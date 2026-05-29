@@ -242,3 +242,7 @@ msgstr "الإشعار القانوني"
 #: templates/mail-layout.html.twig
 msgid "Privacy"
 msgstr "الخصوصية"
+
+#: templates/mail-layout.html.twig
+msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
+msgstr "تم إرسال هذا البريد الإلكتروني تلقائيًا بواسطة @name عبر منصة Mark-a-Spot."

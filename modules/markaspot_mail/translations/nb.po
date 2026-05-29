@@ -242,3 +242,7 @@ msgstr "Juridisk informasjon"
 #: templates/mail-layout.html.twig
 msgid "Privacy"
 msgstr "Personvern"
+
+#: templates/mail-layout.html.twig
+msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
+msgstr "Denne e-posten ble sendt automatisk av @name via Mark-a-Spot-plattformen."

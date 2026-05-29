@@ -242,3 +242,7 @@ msgstr "Правова інформація"
 #: templates/mail-layout.html.twig
 msgid "Privacy"
 msgstr "Конфіденційність"
+
+#: templates/mail-layout.html.twig
+msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
+msgstr "Цей електронний лист було автоматично надіслано @name через платформу Mark-a-Spot."

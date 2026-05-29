@@ -29,11 +29,9 @@ function markaspot_mail_update_10001(): string {
   if (!\Drupal::moduleHandler()->moduleExists('phpmailer_smtp')) {
     return 'phpmailer_smtp not enabled; no action.';
   }
-  $config = \Drupal::configFactory()->getEditable('phpmailer_smtp.format');
-  if ($config->get('format') === 'html') {
+  if (!_markaspot_mail_ensure_phpmailer_html_format()) {
     return 'phpmailer_smtp.format.format already html; no action.';
   }
-  $config->set('format', 'html')->save();
   return 'Switched phpmailer_smtp.format.format to html.';
 }
 
@@ -47,6 +45,20 @@ function markaspot_mail_update_10001(): string {
  * keys so a site-admin override of e.g. max_total_bytes survives.
  */
 function markaspot_mail_update_10002(): string {
+  $added = _markaspot_mail_seed_attachment_defaults();
+  if ($added === []) {
+    return 'attachments.* already present; no action.';
+  }
+  return 'Seeded attachments defaults: ' . implode(', ', $added) . '.';
+}
+
+/**
+ * Seeds missing markaspot_mail attachment defaults.
+ *
+ * @return list<string>
+ *   Added attachment setting keys.
+ */
+function _markaspot_mail_seed_attachment_defaults(): array {
   $config = \Drupal::configFactory()->getEditable('markaspot_mail.settings');
   $current = $config->get('attachments') ?? [];
   $defaults = [
@@ -71,11 +83,10 @@ function markaspot_mail_update_10002(): string {
       $added[] = $key;
     }
   }
-  if ($added === []) {
-    return 'attachments.* already present; no action.';
+  if ($added !== []) {
+    $config->set('attachments', $current)->save();
   }
-  $config->set('attachments', $current)->save();
-  return 'Seeded attachments defaults: ' . implode(', ', $added) . '.';
+  return $added;
 }
 
 /**
@@ -87,6 +98,147 @@ function markaspot_mail_update_10002(): string {
  * operator manually runs locale:check + locale:update.
  */
 function markaspot_mail_update_10003(): string {
+  return _markaspot_mail_import_shipped_translations();
+}
+
+/**
+ * Re-import shipped translations for tenants that already ran update 10003.
+ */
+function markaspot_mail_update_10004(): string {
+  return _markaspot_mail_import_shipped_translations();
+}
+
+/**
+ * Route Drupal mail through the HTML-capable PHPMailer SMTP plugin.
+ *
+ * Legacy tenant database imports can restore Core/Maillog mail plugins. Core's
+ * php_mail formatter always converts message bodies through htmlToText(), so
+ * our branded mail builders end up with Content-Type: text/html but no HTML
+ * tags left in the body. Keep the sender and formatter aligned.
+ */
+function markaspot_mail_update_10005(): string {
+  $module_handler = \Drupal::moduleHandler();
+  $missing = [];
+  foreach (['mailsystem', 'phpmailer_smtp'] as $module) {
+    if (!$module_handler->moduleExists($module)) {
+      $missing[] = $module;
+    }
+  }
+  if ($missing !== []) {
+    $deleted_stale = [];
+    if (in_array('phpmailer_smtp', $missing, TRUE)) {
+      $deleted_stale = _markaspot_mail_delete_stale_phpmailer_smtp_config();
+    }
+    \Drupal::service('module_installer')->install($missing);
+    $module_handler->resetImplementations();
+    $still_missing = [];
+    foreach ($missing as $module) {
+      if (!$module_handler->moduleExists($module)) {
+        $still_missing[] = $module;
+      }
+    }
+    if ($still_missing !== []) {
+      throw new \RuntimeException('Could not enable required mail modules: ' . implode(', ', $still_missing));
+    }
+  }
+
+  $config_factory = \Drupal::configFactory();
+  $target_backend = _markaspot_mail_resolve_backend($module_handler, $config_factory);
+  $changed = [];
+  if ($missing !== []) {
+    $changed[] = 'enabled modules: ' . implode(', ', $missing);
+    if ($deleted_stale !== []) {
+      $changed[] = 'removed stale config: ' . implode(', ', $deleted_stale);
+    }
+  }
+
+  $system_mail = $config_factory->getEditable('system.mail');
+  if ($system_mail->get('interface.default') !== $target_backend) {
+    $system_mail->set('interface.default', $target_backend)->save();
+    $changed[] = 'system.mail.interface.default';
+  }
+
+  $mailsystem = $config_factory->getEditable('mailsystem.settings');
+  foreach (['defaults.sender', 'defaults.formatter'] as $key) {
+    if ($mailsystem->get($key) !== $target_backend) {
+      $mailsystem->set($key, $target_backend);
+      $changed[] = 'mailsystem.settings.' . $key;
+    }
+  }
+  if (array_intersect($changed, [
+    'mailsystem.settings.defaults.sender',
+    'mailsystem.settings.defaults.formatter',
+  ])) {
+    $mailsystem->save();
+  }
+
+  if ($target_backend === 'phpmailer_smtp' && _markaspot_mail_ensure_phpmailer_html_format()) {
+    $changed[] = 'phpmailer_smtp.format.format';
+  }
+
+  $attachment_defaults = _markaspot_mail_seed_attachment_defaults();
+  foreach ($attachment_defaults as $key) {
+    $changed[] = 'markaspot_mail.settings.attachments.' . $key;
+  }
+  $mail_settings = $config_factory->getEditable('markaspot_mail.settings');
+  if ($mail_settings->get('attachments.enabled') !== TRUE) {
+    $mail_settings->set('attachments.enabled', TRUE)->save();
+    $changed[] = 'markaspot_mail.settings.attachments.enabled';
+  }
+
+  if ($changed === []) {
+    return 'HTML mail backend already aligned; no action.';
+  }
+  return 'Aligned HTML mail backend: ' . implode(', ', $changed) . '.';
+}
+
+/**
+ * Resolves the backend that should own the runtime mail stack.
+ */
+function _markaspot_mail_resolve_backend(
+  \Drupal\Core\Extension\ModuleHandlerInterface $module_handler,
+  \Drupal\Core\Config\ConfigFactoryInterface $config_factory,
+): string {
+  $system_mail = $config_factory->get('system.mail');
+  $mailsystem = $config_factory->get('mailsystem.settings');
+  $system_default = $system_mail->isNew() ? '' : (string) $system_mail->get('interface.default');
+  $sender = $mailsystem->isNew() ? '' : (string) $mailsystem->get('defaults.sender');
+  $formatter = $mailsystem->isNew() ? '' : (string) $mailsystem->get('defaults.formatter');
+
+  if ($module_handler->moduleExists('smtp')
+    && $system_default === 'smtp'
+    && $sender === 'smtp'
+    && $formatter === 'smtp') {
+    return 'smtp';
+  }
+
+  return 'phpmailer_smtp';
+}
+
+/**
+ * Deletes stale PHPMailer config before installing the module.
+ *
+ * @return list<string>
+ *   Deleted config names.
+ */
+function _markaspot_mail_delete_stale_phpmailer_smtp_config(): array {
+  $deleted = [];
+  foreach (['phpmailer_smtp.settings', 'phpmailer_smtp.format'] as $config_name) {
+    $config = \Drupal::configFactory()->getEditable($config_name);
+    if ($config->isNew()) {
+      continue;
+    }
+    $config->delete();
+    $deleted[] = $config_name;
+  }
+
+  return $deleted;
+}
+
+/**
+ * Imports shipped markaspot_mail translations into Drupal locale storage.
+ */
+function _markaspot_mail_import_shipped_translations(): string {
   if (!\Drupal::moduleHandler()->moduleExists('locale')) {
     return 'locale not enabled; no markaspot_mail translations imported.';
   }
@@ -154,4 +306,25 @@ function markaspot_mail_update_10003(): string {
   }
 
   return 'Imported markaspot_mail translations: ' . implode(', ', $imported) . '.';
+}
+
+/**
+ * Ensures PHPMailer keeps message bodies as HTML.
+ */
+function _markaspot_mail_ensure_phpmailer_html_format(): bool {
+  $config = \Drupal::configFactory()->getEditable('phpmailer_smtp.format');
+  $changed = FALSE;
+  if ($config->isNew()) {
+    $config->set('dependencies.module', ['phpmailer_smtp']);
+    $config->set('force_html', 0);
+    $changed = TRUE;
+  }
+  if ($config->get('format') !== 'html') {
+    $config->set('format', 'html');
+    $changed = TRUE;
+  }
+  if ($changed) {
+    $config->save();
+  }
+  return $changed;
 }
