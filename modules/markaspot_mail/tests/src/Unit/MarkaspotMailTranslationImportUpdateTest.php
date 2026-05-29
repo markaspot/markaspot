@@ -49,6 +49,12 @@ class MarkaspotMailTranslationImportUpdateTest extends UnitTestCase
 
         $this->assertStringContainsString('function markaspot_mail_update_10005(): string', $source);
         $this->assertStringContainsString('_markaspot_mail_resolve_backend', $source);
+        $this->assertStringContainsString('_markaspot_mail_delete_stale_mail_config', $source);
+        $this->assertStringContainsString("'mailsystem' => ['mailsystem.settings']", $source);
+        $this->assertStringContainsString(
+            "'phpmailer_smtp' => ['phpmailer_smtp.settings', 'phpmailer_smtp.format']",
+            $source
+        );
         $this->assertStringContainsString("return 'smtp';", $source);
         $this->assertStringContainsString("return 'phpmailer_smtp';", $source);
         $this->assertStringContainsString("'defaults.sender', 'defaults.formatter'", $source);

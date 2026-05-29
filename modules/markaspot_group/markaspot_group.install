@@ -3745,17 +3745,17 @@ function _markaspot_group_ensure_derived_jurisdiction_role(): void {
  * Ensures the group mailbox field storage exists without dropping old tables.
  */
 function _markaspot_group_update_ensure_org_head_email_storage(): bool {
+  $table_state = _markaspot_group_update_legacy_org_head_email_table_state();
+  if ($table_state === 'partial') {
+    throw new \RuntimeException('Partial legacy field_head_organisation_e_mail schema found. Restore both group field data and revision tables before running this update.');
+  }
   if (\Drupal\field\Entity\FieldStorageConfig::loadByName('group', 'field_head_organisation_e_mail')) {
     return FALSE;
   }
 
-  $table_state = _markaspot_group_update_legacy_org_head_email_table_state();
   if ($table_state === 'none') {
     \Drupal\field\Entity\FieldStorageConfig::create(_markaspot_group_update_org_head_email_storage_data())->save();
     return TRUE;
-  }
-  if ($table_state === 'partial') {
-    throw new \RuntimeException('Partial legacy field_head_organisation_e_mail schema found. Restore both group field data and revision tables before running this update.');
   }
 
   // Legacy 11.7.x migrations can already have populated data tables. In that

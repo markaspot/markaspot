@@ -125,10 +125,7 @@ function markaspot_mail_update_10005(): string {
     }
   }
   if ($missing !== []) {
-    $deleted_stale = [];
-    if (in_array('phpmailer_smtp', $missing, TRUE)) {
-      $deleted_stale = _markaspot_mail_delete_stale_phpmailer_smtp_config();
-    }
+    $deleted_stale = _markaspot_mail_delete_stale_mail_config($missing);
     \Drupal::service('module_installer')->install($missing);
     $module_handler->resetImplementations();
     $still_missing = [];
@@ -216,23 +213,43 @@ function _markaspot_mail_resolve_backend(
 }
 
 /**
+ * Deletes stale mail config before installing mail modules.
+ *
+ * @param list<string> $modules
+ *   Module IDs about to be installed.
+ *
+ * @return list<string>
+ *   Deleted config names.
+ */
+function _markaspot_mail_delete_stale_mail_config(array $modules): array {
+  $config_by_module = [
+    'mailsystem' => ['mailsystem.settings'],
+    'phpmailer_smtp' => ['phpmailer_smtp.settings', 'phpmailer_smtp.format'],
+  ];
+
+  $deleted = [];
+  foreach ($modules as $module) {
+    foreach ($config_by_module[$module] ?? [] as $config_name) {
+      $config = \Drupal::configFactory()->getEditable($config_name);
+      if ($config->isNew()) {
+        continue;
+      }
+      $config->delete();
+      $deleted[] = $config_name;
+    }
+  }
+
+  return $deleted;
+}
+
+/**
  * Deletes stale PHPMailer config before installing the module.
  *
  * @return list<string>
  *   Deleted config names.
  */
 function _markaspot_mail_delete_stale_phpmailer_smtp_config(): array {
-  $deleted = [];
-  foreach (['phpmailer_smtp.settings', 'phpmailer_smtp.format'] as $config_name) {
-    $config = \Drupal::configFactory()->getEditable($config_name);
-    if ($config->isNew()) {
-      continue;
-    }
-    $config->delete();
-    $deleted[] = $config_name;
-  }
-
-  return $deleted;
+  return _markaspot_mail_delete_stale_mail_config(['phpmailer_smtp']);
 }
 
 /**

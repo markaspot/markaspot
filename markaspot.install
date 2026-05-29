@@ -1926,10 +1926,7 @@ function markaspot_update_11912(): string {
   if ($install === []) {
     return 'Mail modules already enabled; no action.';
   }
-  $deleted_stale = [];
-  if (in_array('phpmailer_smtp', $install, TRUE)) {
-    $deleted_stale = _markaspot_delete_stale_phpmailer_smtp_config();
-  }
+  $deleted_stale = _markaspot_delete_stale_mail_config($install);
   \Drupal::service('module_installer')->install($install);
   $message = 'Enabled mail modules: ' . implode(', ', $install) . '.';
   if ($deleted_stale !== []) {
@@ -1939,28 +1936,49 @@ function markaspot_update_11912(): string {
 }
 
 /**
- * Deletes stale PHPMailer config before installing the module.
+ * Deletes stale mail config before installing mail modules.
  *
- * Legacy imports can carry active phpmailer_smtp.* config while the module is
- * disabled. Drupal refuses to install a module when its install config already
- * exists, so remove the stale copies and let update 11913/markaspot_mail align
- * the runtime config immediately afterwards.
+ * Legacy imports can carry active config while the owning module is disabled.
+ * Drupal refuses to install a module when its install config already exists, so
+ * remove the stale copies and let update 11913/markaspot_mail align runtime
+ * config immediately afterwards.
+ *
+ * @param list<string> $modules
+ *   Module IDs about to be installed.
+ *
+ * @return list<string>
+ *   Deleted config names.
+ */
+function _markaspot_delete_stale_mail_config(array $modules): array {
+  $config_by_module = [
+    'mailsystem' => ['mailsystem.settings'],
+    'phpmailer_smtp' => ['phpmailer_smtp.settings', 'phpmailer_smtp.format'],
+    'markaspot_mail' => ['markaspot_mail.settings'],
+  ];
+
+  $deleted = [];
+  foreach ($modules as $module) {
+    foreach ($config_by_module[$module] ?? [] as $config_name) {
+      $config = \Drupal::configFactory()->getEditable($config_name);
+      if ($config->isNew()) {
+        continue;
+      }
+      $config->delete();
+      $deleted[] = $config_name;
+    }
+  }
+
+  return $deleted;
+}
+
+/**
+ * Deletes stale PHPMailer config before installing the module.
  *
  * @return list<string>
  *   Deleted config names.
  */
 function _markaspot_delete_stale_phpmailer_smtp_config(): array {
-  $deleted = [];
-  foreach (['phpmailer_smtp.settings', 'phpmailer_smtp.format'] as $config_name) {
-    $config = \Drupal::configFactory()->getEditable($config_name);
-    if ($config->isNew()) {
-      continue;
-    }
-    $config->delete();
-    $deleted[] = $config_name;
-  }
-
-  return $deleted;
+  return _markaspot_delete_stale_mail_config(['phpmailer_smtp']);
 }
 
 /**
