@@ -930,6 +930,84 @@ function service_request_update_11016(): string {
 }
 
 /**
+ * Add field_sublocality_terms to the organisation (org) group bundle.
+ *
+ * This entity_reference field lists the sublocality (Stadtteil) terms an
+ * organisation handles. It backs the
+ * service_request_assign_organisation_from_sublocality action, which derives
+ * the responsible organisation from the geocoded node sublocality.
+ *
+ * On fresh installs the field ships via config/optional. This hook backfills
+ * already-installed tenants. It is guarded so it is a no-op when the group
+ * entity type, the org bundle, or the sublocality vocabulary are absent, and
+ * it is idempotent (skips creation when the field already exists).
+ */
+function service_request_update_11017(): string {
+  $messages = [];
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->hasDefinition('group')) {
+    return 'Group entity type not available, skipped field_sublocality_terms.';
+  }
+
+  // Require the org group bundle.
+  $group_types = $entity_type_manager->getStorage('group_type')->loadMultiple();
+  if (!isset($group_types['org'])) {
+    return 'Group bundle "org" not available, skipped field_sublocality_terms.';
+  }
+
+  // Require the sublocality vocabulary.
+  if (!\Drupal::entityTypeManager()->getStorage('taxonomy_vocabulary')->load('sublocality')) {
+    return 'Vocabulary "sublocality" not available, skipped field_sublocality_terms.';
+  }
+
+  // 1. Create field storage if missing.
+  if (!FieldStorageConfig::loadByName('group', 'field_sublocality_terms')) {
+    FieldStorageConfig::create([
+      'field_name' => 'field_sublocality_terms',
+      'entity_type' => 'group',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'taxonomy_term',
+      ],
+      'cardinality' => -1,
+      'translatable' => TRUE,
+    ])->save();
+    $messages[] = 'Created field storage: group.field_sublocality_terms';
+  }
+
+  // 2. Create field instance on the org bundle if missing.
+  if (!FieldConfig::loadByName('group', 'org', 'field_sublocality_terms')) {
+    FieldConfig::create([
+      'field_name' => 'field_sublocality_terms',
+      'entity_type' => 'group',
+      'bundle' => 'org',
+      'label' => 'Sublocalities',
+      'description' => 'The sublocalities (Stadtteile) this organisation handles. Used for jurisdiction-aware org derivation from the geocoded sublocality.',
+      'required' => FALSE,
+      'translatable' => TRUE,
+      'default_value' => [],
+      'settings' => [
+        'handler' => 'default:taxonomy_term',
+        'handler_settings' => [
+          'target_bundles' => [
+            'sublocality' => 'sublocality',
+          ],
+          'sort' => [
+            'field' => 'name',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+    $messages[] = 'Created field instance: group.org.field_sublocality_terms';
+  }
+
+  return empty($messages) ? 'field_sublocality_terms already exists.' : implode("\n", $messages);
+}
+
+/**
  * Loads profile update helpers from the parent install profile.
  */
 function _service_request_load_markaspot_profile_updates(): void {

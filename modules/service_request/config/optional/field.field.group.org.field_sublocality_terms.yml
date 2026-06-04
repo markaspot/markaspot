@@ -1,0 +1,30 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_sublocality_terms
+    - group.type.org
+    - taxonomy.vocabulary.sublocality
+  enforced:
+    module:
+      - service_request
+id: group.org.field_sublocality_terms
+field_name: field_sublocality_terms
+entity_type: group
+bundle: org
+label: Sublocalities
+description: 'The sublocalities (Stadtteile) this organisation handles. Used for jurisdiction-aware org derivation from the geocoded sublocality.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:taxonomy_term'
+  handler_settings:
+    target_bundles:
+      sublocality: sublocality
+    sort:
+      field: name
+      direction: ASC
+    auto_create: false
+field_type: entity_reference
