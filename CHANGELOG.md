@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.102](https://github.com/markaspot/markaspot/compare/11.9.101...11.9.102) (2026-06-04)
+
+### Features
+
+* **open311:** attribute Open311-created revisions to acting user (markaspot-ui[#472](https://github.com/markaspot/markaspot/issues/472)) ([7e07d7d](https://github.com/markaspot/markaspot/commit/7e07d7d8283db2f151394d52b3d5a4e2d5dcaadb))
+* **service_request:** assign organisation from geocoded sublocality ([d71804d](https://github.com/markaspot/markaspot/commit/d71804dbf7a2ea4ec24c9c5dacb709dbd5b29268))
+
+### Bug Fixes
+
+* **geocoder:** re-seed default district_mappings when empty (update_11003) ([bdbf36c](https://github.com/markaspot/markaspot/commit/bdbf36c7d649fc8e825c57fd4264ca48a931e897))
+* guard legacy mail update edges ([949d62c](https://github.com/markaspot/markaspot/commit/949d62ca41ebdc83909eb606a5486faa4845ec9d))
+* hide organisation mailboxes from jsonapi ([59e77f5](https://github.com/markaspot/markaspot/commit/59e77f5def7a3ec51e14e137360442bcbf2cbc18))
+* keep html mail backend aligned ([82d2424](https://github.com/markaspot/markaspot/commit/82d242440f032a91b5ab1caac05cc7e3896006f7))
+* **open311:** persist status and status_notes on GeoReport update requests ([b190fd7](https://github.com/markaspot/markaspot/commit/b190fd7c7b6673085d8715a78a96f9f473a56bfa))
+* restore organisation notification mailbox field ([8f0b9a0](https://github.com/markaspot/markaspot/commit/8f0b9a033517cfcfc72221f8e6076afa29d93142))
+
 ## [11.9.101](https://github.com/markaspot/markaspot/compare/11.9.100...11.9.101) (2026-05-28)
 
 ### Bug Fixes
