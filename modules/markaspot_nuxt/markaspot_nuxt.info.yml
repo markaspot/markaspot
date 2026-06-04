@@ -10,6 +10,9 @@ dependencies:
   # module install order is not guaranteed and the config/optional files
   # are silently skipped on fresh installs when markaspot_nuxt lands first.
   - markaspot:service_request
+  # jsonapi_resources serves the custom service request version-history
+  # endpoint (Resource\ServiceRequestVersionHistory, markaspot-ui#329).
+  - jsonapi_resources:jsonapi_resources
 
 # Note: json_form_widget is a soft dependency installed via update hook.
 # Removing hard dependency allows updates from older versions.

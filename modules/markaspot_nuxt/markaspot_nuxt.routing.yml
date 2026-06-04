@@ -1,3 +1,37 @@
+# JSON:API version-history (revision LIST) for a service request node.
+#
+# Closes the one gap core JSON:API leaves open: it can serve per-revision FIELD
+# data via ?resourceVersion=id:{vid}, but cannot enumerate revisions. Tracked
+# upstream in core issue #3009588; this is the forward-compatible stop-gap built
+# on the official jsonapi_resources contrib (markaspot-ui#329).
+#
+# {entity} is the node UUID, resolved to a NodeInterface by jsonapi_resources'
+# entity param resolution (options.parameters.entity.type: entity:node).
+#
+# Staff-only gate: revision author identity is exposed, so the route requires
+# the node revision permission OR the service_request editor permission (comma =
+# OR). Anonymous / reporter accounts get 403, consistent with the revision_uid
+# hardening (markaspot_nuxt_update_11904). _entity_access ensures the caller can
+# also view the underlying node.
+markaspot_nuxt.service_request_version_history:
+  path: '/%jsonapi%/node/service_request/{entity}/version-history'
+  defaults:
+    _jsonapi_resource: Drupal\markaspot_nuxt\Resource\ServiceRequestVersionHistory
+    # Setting resource_type makes core JSON:API's UUID param converter
+    # (EntityUuidConverter) apply, so {entity} is resolved by UUID — the
+    # canonical JSON:API identifier the Nuxt frontend already holds — instead
+    # of the integer node id the default EntityConverter would expect. It does
+    # not affect the served (synthetic) resource type, which is declared by
+    # getRouteResourceTypes().
+    resource_type: 'node--service_request'
+  requirements:
+    _permission: 'view all revisions+edit any service_request content'
+    _entity_access: 'entity.view'
+  options:
+    parameters:
+      entity:
+        type: entity:node
+
 markaspot_nuxt.settings:
   path: '/admin/structure/markaspot/nuxt/settings'
   defaults:

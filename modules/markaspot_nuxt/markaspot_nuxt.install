@@ -472,3 +472,23 @@ function markaspot_nuxt_update_11904(): string {
   $resource->save();
   return 'Disabled revision_uid / revision_log / revision_timestamp on node--service_request JSON:API resource.';
 }
+
+/**
+ * Enable jsonapi_resources for the service request version-history endpoint.
+ *
+ * The dashboard "version history" view (markaspot-ui#329) lists a service
+ * request's revisions through a custom JSON:API resource
+ * (Drupal\markaspot_nuxt\Resource\ServiceRequestVersionHistory). That resource
+ * is served by the jsonapi_resources contrib, which fresh installs already
+ * enable via the profile install list. This hook backfills already-installed
+ * tenants. Idempotent: a no-op when the module is already enabled.
+ */
+function markaspot_nuxt_update_11905(): string {
+  if (\Drupal::moduleHandler()->moduleExists('jsonapi_resources')) {
+    return 'jsonapi_resources already enabled.';
+  }
+
+  \Drupal::service('module_installer')->install(['jsonapi_resources']);
+
+  return 'Enabled jsonapi_resources for the service request version-history endpoint.';
+}

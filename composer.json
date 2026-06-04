@@ -60,6 +60,7 @@
         "drupal/inline_entity_form": "^3",
         "drupal/shs": "^3",
         "drupal/json_form_widget": "^1",
+        "drupal/jsonapi_resources": "^1.5",
         "enshrined/svg-sanitize": "^0.22"
     },
     "suggest": {

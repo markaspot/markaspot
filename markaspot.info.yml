@@ -60,6 +60,7 @@ dependencies:
   - user
   - views
   - jsonapi
+  - jsonapi_resources
   - service_request
   - markaspot_validation
   - markaspot_group
