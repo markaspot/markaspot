@@ -3,6 +3,7 @@ providers:
   openai:
     api_key: ''
     api_url: 'https://api.openai.com/v1'
+    # Keep in sync with AiClientService::DEFAULT_CHAT_MODEL (PHP fallback).
     chat_model: 'gpt-4.1-mini'
     embedding_model: 'text-embedding-3-large'
     auth_type: 'bearer'
@@ -10,6 +11,7 @@ providers:
     api_key: ''
     api_url: ''
     api_version: '2024-12-01-preview'
+    # Keep in sync with AiClientService::DEFAULT_CHAT_MODEL (PHP fallback).
     chat_model: 'gpt-4.1-mini'
     embedding_model: 'text-embedding-3-large'
     auth_type: 'api_key_header'
@@ -39,6 +41,7 @@ token_tracking:
   alert_threshold: 0.9
 sentiment_analysis:
   enabled: false
+  # Keep in sync with AiClientService::DEFAULT_CHAT_MODEL (PHP fallback).
   model: 'gpt-4.1-mini'
 pii_redaction:
   enabled: false

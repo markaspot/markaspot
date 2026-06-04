@@ -21,6 +21,20 @@ use Psr\Log\LoggerInterface;
 class AiClientService {
 
   /**
+   * Default chat model used as the hardcoded fallback across the module.
+   *
+   * This is the authoritative source of truth for the chat-model safety net.
+   * It must be a model that exists on every provider tenant (OpenAI + Azure)
+   * and match the install-config default in markaspot_ai.settings.yml. When
+   * bumping the default model, update this constant; the YAML install configs
+   * carry a cross-reference comment because YAML cannot reference PHP
+   * constants.
+   *
+   * @var string
+   */
+  public const DEFAULT_CHAT_MODEL = 'gpt-4.1-mini';
+
+  /**
    * The HTTP client.
    *
    * @var \GuzzleHttp\ClientInterface

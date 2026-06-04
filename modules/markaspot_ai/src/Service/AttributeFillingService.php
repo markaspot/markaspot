@@ -268,7 +268,7 @@ class AttributeFillingService {
 
     // Get model from config.
     $config = $this->configFactory->get('markaspot_ai.settings');
-    $model = $config->get('attribute_filling.model') ?: 'gpt-4.1-mini';
+    $model = $config->get('attribute_filling.model') ?: AiClientService::DEFAULT_CHAT_MODEL;
 
     try {
       $response = $this->aiClient->chat(
@@ -482,7 +482,7 @@ class AttributeFillingService {
     ];
 
     $config = $this->configFactory->get('markaspot_ai.settings');
-    $model = $config->get('attribute_filling.model') ?: 'gpt-4.1-mini';
+    $model = $config->get('attribute_filling.model') ?: AiClientService::DEFAULT_CHAT_MODEL;
 
     try {
       $response = $this->aiClient->chat($messages, [
@@ -1138,7 +1138,7 @@ class AttributeFillingService {
 
     // --- Call LLM ---
     $config = $this->configFactory->get('markaspot_ai.settings');
-    $model = $config->get('attribute_filling.model') ?: 'gpt-4.1-mini';
+    $model = $config->get('attribute_filling.model') ?: AiClientService::DEFAULT_CHAT_MODEL;
 
     try {
       $response = $this->aiClient->chat($messages, [
