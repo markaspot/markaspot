@@ -23,7 +23,7 @@ use Symfony\Component\Validator\ConstraintValidator;
  * jurisdiction's items[]. This closes the cross-tenant injection gap where an
  * anonymous submitter could tag a report with another tenant's facility id.
  */
-class FacilityOwnershipConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
+final class FacilityOwnershipConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
 
   /**
    * Constructs the validator.
