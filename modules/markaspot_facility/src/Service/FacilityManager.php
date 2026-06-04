@@ -419,6 +419,13 @@ class FacilityManager {
         'address',
         'organisationId',
         'active',
+        // Display metadata added for #381 (FacilityRow icon/description/url).
+        // The Vue admin (facilities.vue) sends these, so accept them here to
+        // avoid a 422 on save (#368). Stored as-is in config; the frontend is
+        // responsible for safe rendering of url/icon/description.
+        'icon',
+        'description',
+        'url',
       ]);
       if ($item_unknown !== []) {
         throw new \InvalidArgumentException("items[$index] contains unknown keys: " . implode(', ', $item_unknown) . '.');
