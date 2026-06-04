@@ -600,24 +600,9 @@ EOF
       \$config->set('api_key', '$OPENAI_API_KEY');
       \$config->save();
     " 2>/dev/null
-    # Remove AVIF conversion from wide image style once (Drupal 11 core default).
-    # OpenAI Vision API does not support AVIF. Only needed on first install.
-    $DRUSH_CMD $DRUSH_URI php:eval "
-      \$state = \Drupal::state();
-      if (!\$state->get('markaspot_vision.avif_removed')) {
-        \$style = \Drupal::entityTypeManager()->getStorage('image_style')->load('wide');
-        if (\$style) {
-          foreach (\$style->getEffects() as \$effect) {
-            if (\$effect->getPluginId() === 'image_convert_avif') {
-              \$style->deleteImageEffect(\$effect);
-              \$style->save();
-              break;
-            }
-          }
-        }
-        \$state->set('markaspot_vision.avif_removed', TRUE);
-      }
-    " 2>/dev/null
+    # The Vision module ships its own ai_analysis image style (scale only, no
+    # AVIF) via config/install + update hook, so the core "wide" style keeps
+    # AVIF for web delivery. No image-style patching needed here.
     success "AI modules configured (vision + analysis)"
   fi
 

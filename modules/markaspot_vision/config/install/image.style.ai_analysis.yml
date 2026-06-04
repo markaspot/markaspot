@@ -1,0 +1,14 @@
+langcode: en
+status: true
+dependencies: {  }
+name: ai_analysis
+label: 'AI analysis (Vision API)'
+effects:
+  5ef48f45-091a-4a8b-b126-c772f19594c1:
+    uuid: 5ef48f45-091a-4a8b-b126-c772f19594c1
+    id: image_scale
+    weight: 1
+    data:
+      width: 1090
+      height: null
+      upscale: false
