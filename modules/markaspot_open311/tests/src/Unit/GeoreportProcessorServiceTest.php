@@ -1324,6 +1324,133 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   // =========================================================================
+  // prepareNodeProperties() status mapping tests (GeoReport update path)
+  // =========================================================================
+
+  /**
+   * Tests that a "closed" status string maps to field_status on update.
+   *
+   * This is the regression test for the bug where status=closed was silently
+   * dropped because prepareNodeProperties had no block for the GeoReport
+   * status-to-taxonomy mapping on the update path.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateStatusClosedMapsToFieldStatus(): void {
+    // Mock a "Closed" term with TID=5.
+    $closedTerm = $this->createMock(TermInterface::class);
+    $closedTerm->method('id')->willReturn(5);
+
+    $this->termStorage->method('loadByProperties')
+      ->willReturnCallback(function (array $props) use ($closedTerm) {
+        if (
+          ($props['vid'] ?? '') === 'service_status'
+          && ($props['field_open311_mapping'] ?? '') === 'closed'
+          && ($props['status'] ?? '') === 1
+        ) {
+          return [5 => $closedTerm];
+        }
+        return [];
+      });
+
+    $values = $this->processor->prepareNodeProperties([
+      'status' => 'closed',
+      'jurisdiction_id' => NULL,
+    ], 'update');
+
+    $this->assertArrayHasKey('field_status', $values, 'field_status must be set for status=closed updates');
+    $this->assertSame(5, $values['field_status'], 'field_status must hold the TID of the first closed term');
+  }
+
+  /**
+   * Tests that a "closed" status string maps to field_status on update with jurisdiction.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateStatusClosedWithJurisdictionMapsToFieldStatus(): void {
+    $closedTerm = $this->createMock(TermInterface::class);
+    $closedTerm->method('id')->willReturn(87);
+
+    // Root jurisdiction resolves to 1.
+    $this->hierarchyResolver->method('getRootJurisdictionId')
+      ->with(1)
+      ->willReturn(1);
+
+    $this->termStorage->method('loadByProperties')
+      ->willReturnCallback(function (array $props) use ($closedTerm) {
+        if (
+          ($props['vid'] ?? '') === 'service_status'
+          && ($props['field_open311_mapping'] ?? '') === 'closed'
+          && ($props['field_jurisdiction'] ?? '') === 1
+        ) {
+          return [87 => $closedTerm];
+        }
+        return [];
+      });
+
+    $values = $this->processor->prepareNodeProperties([
+      'status' => 'closed',
+      'jurisdiction_id' => 1,
+    ], 'update');
+
+    $this->assertArrayHasKey('field_status', $values, 'field_status must be set for jurisdiction-scoped closed updates');
+    $this->assertSame(87, $values['field_status']);
+  }
+
+  /**
+   * Tests that status is NOT mapped on create (create sets initial status separately).
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testCreateOperationIgnoresStatusField(): void {
+    $values = $this->processor->prepareNodeProperties([
+      'status' => 'closed',
+    ], 'create');
+
+    $this->assertArrayNotHasKey('field_status', $values, 'Create operation must not map the Open311 status string');
+  }
+
+  /**
+   * Tests that an empty status string does not set field_status.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateEmptyStatusStringDoesNotSetFieldStatus(): void {
+    $values = $this->processor->prepareNodeProperties([
+      'status' => '',
+    ], 'update');
+
+    $this->assertArrayNotHasKey('field_status', $values, 'An empty status string must not set field_status');
+  }
+
+  /**
+   * Tests that status_notes is mapped on update.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateStatusNotesMapsToFieldStatusNotes(): void {
+    $values = $this->processor->prepareNodeProperties([
+      'status_notes' => 'Closed by Open311 API',
+    ], 'update');
+
+    $this->assertArrayHasKey('field_status_notes', $values, 'field_status_notes must be set when status_notes is provided');
+    $this->assertSame('Closed by Open311 API', $values['field_status_notes']);
+  }
+
+  /**
+   * Tests that status_notes is NOT set for an empty string.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateEmptyStatusNotesDoesNotSetField(): void {
+    $values = $this->processor->prepareNodeProperties([
+      'status_notes' => '',
+    ], 'update');
+
+    $this->assertArrayNotHasKey('field_status_notes', $values, 'An empty status_notes must not set field_status_notes');
+  }
+
+  // =========================================================================
   // validateImagelistAttributes() tests
   // =========================================================================
 

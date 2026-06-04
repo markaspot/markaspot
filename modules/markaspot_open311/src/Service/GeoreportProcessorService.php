@@ -400,6 +400,26 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       }
     }
 
+    // Map the Open311 status string ("open" / "closed") to field_status.
+    // Only applied on update; create sets the initial status separately after
+    // node save via getInitialStatusTid(). The permission guard (access open311
+    // advanced properties) is enforced in GeoreportRequestResource::post().
+    if ($operation === 'update' && array_key_exists('status', $requestData) && $requestData['status'] !== '') {
+      $jurisdictionId = isset($requestData['jurisdiction_id']) ? (int) $requestData['jurisdiction_id'] : NULL;
+      $tids = $this->mapStatusToTaxonomyIds((string) $requestData['status'], $jurisdictionId);
+      if (!empty($tids)) {
+        // field_status is a single-value entity_reference; use the first match.
+        $values['field_status'] = (int) reset($tids);
+      }
+    }
+
+    // Map status_notes to field_status_notes (plain string).
+    // GeoreportRequestResource::specialFieldHandling() wraps this in a
+    // paragraph entity and appends it to the field_status_notes paragraph list.
+    if ($operation === 'update' && array_key_exists('status_notes', $requestData) && $requestData['status_notes'] !== '') {
+      $values['field_status_notes'] = $this->getSafeValue($requestData, 'status_notes');
+    }
+
     if (
       $operation === 'update'
       && $this->currentUser->hasPermission('access open311 advanced properties')

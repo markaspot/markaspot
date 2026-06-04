@@ -873,7 +873,10 @@ class GeoreportRequestResource extends ResourceBase {
 
     foreach ($values as $field_name => $value) {
       // Skip special handling fields; they are processed separately.
-      if (in_array($field_name, ['field_status_notes', 'revision_log_message', 'type'])) {
+      // field_status is handled in specialFieldHandling to bypass
+      // field_permissions access checks: the Open311 update permission gate
+      // in post() is the authoritative guard, not per-field edit permissions.
+      if (in_array($field_name, ['field_status', 'field_status_notes', 'revision_log_message', 'type'])) {
         continue;
       }
 
@@ -922,13 +925,24 @@ class GeoreportRequestResource extends ResourceBase {
    *   An associative array of field values to update.
    */
   protected function specialFieldHandling(ContentEntityInterface $node, array $values): void {
+    // field_status: map TID directly, bypassing field_permissions.
+    // The post() access gate (access open311 advanced properties) is the
+    // authoritative guard. field_permissions restricts UI editing but must
+    // not block privileged API writes.
+    if (isset($values['field_status']) && $node->hasField('field_status')) {
+      $node->set('field_status', ['target_id' => (int) $values['field_status']]);
+    }
+
     // Handling of field_status_notes.
+    // Access check uses our own permission rather than field_permissions, for
+    // the same reason as field_status above.
     if (isset($values['field_status_notes'])) {
       if (
         $node->hasField('field_status_notes') &&
-        $node->get('field_status_notes')->access('edit', NULL, TRUE)->isAllowed()
+        $this->currentUser->hasPermission('access open311 advanced properties')
       ) {
-        // Use target_id for entity reference field, not value.
+        // Resolve the effective status TID: prefer the newly set status, fall
+        // back to the node's current status if no status change was submitted.
         $status = $values['field_status'] ?? $node->get('field_status')->target_id;
         $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
           'status_term_id' => $status,
