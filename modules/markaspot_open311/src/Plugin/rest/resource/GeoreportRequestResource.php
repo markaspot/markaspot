@@ -964,8 +964,11 @@ class GeoreportRequestResource extends ResourceBase {
       $node->setRevisionLogMessage($values['revision_log_message']);
       $node->setRevisionCreationTime($this->time->getRequestTime());
 
-      // Optionally, you can set the revision user ID if needed.
-      // $node->setRevisionUserId($this->currentUser->id());
+      // Attribute the revision to the acting user so the "last edited by"
+      // indicator (markaspot-ui#472) reflects the editor instead of an empty
+      // author. For anonymous Open311 writes this resolves to uid 0, which is
+      // the same author the revision would otherwise carry.
+      $node->setRevisionUserId((int) $this->currentUser->id());
     }
   }
 
