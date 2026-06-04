@@ -1008,6 +1008,35 @@ function service_request_update_11017(): string {
 }
 
 /**
+ * Enable new revisions by default on the service_request content type.
+ *
+ * The dashboard edits service requests via JSON:API PATCH (not the GeoReport
+ * PUT). Whether those edits create a new revision — and whether the editing
+ * user is recorded as the revision author — depends on the bundle's
+ * new_revision default. With it disabled, "last edited by" would always show
+ * the original creator instead of the actual editor.
+ *
+ * Fresh installs already ship new_revision = true via config/install. This
+ * hook backfills already-installed tenants. It is guarded and idempotent:
+ * a no-op when the content type is missing or already set to true.
+ */
+function service_request_update_11018(): string {
+  $config = \Drupal::configFactory()->getEditable('node.type.service_request');
+
+  if (!$config || $config->isNew()) {
+    return 'node.type.service_request config not found, nothing to do.';
+  }
+
+  if ($config->get('new_revision') === TRUE) {
+    return 'node.type.service_request already creates new revisions by default.';
+  }
+
+  $config->set('new_revision', TRUE)->save(TRUE);
+
+  return 'Enabled new_revision on node.type.service_request so dashboard edits record the editing user.';
+}
+
+/**
  * Loads profile update helpers from the parent install profile.
  */
 function _service_request_load_markaspot_profile_updates(): void {

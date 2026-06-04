@@ -2003,6 +2003,26 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       if ($node->hasField('uid') && !$node->get('uid')->isEmpty() && $node->get('uid')->entity) {
         $request['extended_attributes']['author'] = $node->get('uid')->entity->label();
       }
+
+      // Expose the latest revision author ("last edited by") to staff. The
+      // dashboard edits via JSON:API PATCH, which creates a new revision and
+      // records the editing user as the revision user (the bundle defaults to
+      // new_revision = true). Falls back gracefully when the revision user has
+      // been deleted. These keys live under extended_attributes.markaspot to
+      // match the frontend contract; the getExtendedAttributes() call below
+      // merges (rather than replaces) so they survive when extensions=true.
+      $revisionUser = $node->getRevisionUser();
+      if ($revisionUser !== NULL) {
+        $request['extended_attributes']['markaspot']['last_editor'] = $revisionUser->label();
+      }
+      // getRevisionCreationTime() is nullable (e.g. revisions created before
+      // the revision metadata key was populated, or partially-built test
+      // doubles). Only expose last_edited when a timestamp is actually present;
+      // formatDateTime() requires a non-null int.
+      $revisionCreated = $node->getRevisionCreationTime();
+      if ($revisionCreated !== NULL) {
+        $request['extended_attributes']['markaspot']['last_edited'] = $this->formatDateTime((int) $revisionCreated);
+      }
     }
 
     // Organisation and jurisdiction: visible to managers always,
@@ -2064,7 +2084,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Add extended attributes if extensions parameter is set.
     if ($extendedRole !== 'anonymous' && isset($parameters['extensions'])) {
-      $request['extended_attributes']['markaspot'] = $this->getExtendedAttributes($node, $langcode);
+      // Merge rather than overwrite so any manager-gated keys already set on
+      // extended_attributes.markaspot (e.g. last_editor / last_edited) survive.
+      $request['extended_attributes']['markaspot'] = ($request['extended_attributes']['markaspot'] ?? [])
+        + $this->getExtendedAttributes($node, $langcode);
 
       // Add permissions - checks what operations the current user can perform.
       // We avoid using $node->access() as it triggers Group module's

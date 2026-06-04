@@ -5,6 +5,7 @@ namespace Drupal\Tests\markaspot_open311\Unit;
 use Drupal\Core\Access\AccessResult;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
+use Drupal\user\UserInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
@@ -1451,6 +1452,78 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   // =========================================================================
+  // mapNodeToServiceRequest() "last edited by" tests
+  // =========================================================================
+
+  /**
+   * Managers see the latest revision author as last_editor / last_edited.
+   *
+   * Asserts the keys are exposed under extended_attributes.markaspot, reflect
+   * the REVISION user (not the node author uid), and carry the revision
+   * creation time formatted as ISO 8601.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testLastEditorExposedToManagerReflectsRevisionUser(): void {
+    $node = $this->createLastEditorNode(
+      nid: 4001,
+      authorName: 'Original Author',
+      revisionUserName: 'Editing Moderator',
+      revisionTimestamp: 1717500000,
+    );
+
+    $request = $this->processor->mapNodeToServiceRequest($node, 'manager', ['langcode' => 'en']);
+
+    $this->assertArrayHasKey('markaspot', $request['extended_attributes']);
+    $this->assertSame('Editing Moderator', $request['extended_attributes']['markaspot']['last_editor']);
+    $this->assertNotSame('Original Author', $request['extended_attributes']['markaspot']['last_editor'], 'last_editor must reflect the revision user, not the node author');
+    $this->assertSame(date('c', 1717500000), $request['extended_attributes']['markaspot']['last_edited']);
+
+    // The author key keeps reflecting the node uid.
+    $this->assertSame('Original Author', $request['extended_attributes']['author']);
+  }
+
+  /**
+   * Non-managers never receive last_editor / last_edited.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testLastEditorHiddenFromNonManager(): void {
+    $node = $this->createLastEditorNode(
+      nid: 4002,
+      authorName: 'Original Author',
+      revisionUserName: 'Editing Moderator',
+      revisionTimestamp: 1717500000,
+    );
+
+    $request = $this->processor->mapNodeToServiceRequest($node, 'user', ['langcode' => 'en']);
+
+    $markaspot = $request['extended_attributes']['markaspot'] ?? [];
+    $this->assertArrayNotHasKey('last_editor', $markaspot, 'last_editor must not leak to non-managers');
+    $this->assertArrayNotHasKey('last_edited', $markaspot, 'last_edited must not leak to non-managers');
+    $this->assertArrayNotHasKey('author', $request['extended_attributes'] ?? []);
+  }
+
+  /**
+   * A deleted revision user omits last_editor but still exposes last_edited.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testLastEditorOmittedWhenRevisionUserNull(): void {
+    $node = $this->createLastEditorNode(
+      nid: 4003,
+      authorName: 'Original Author',
+      revisionUserName: NULL,
+      revisionTimestamp: 1717500000,
+    );
+
+    $request = $this->processor->mapNodeToServiceRequest($node, 'manager', ['langcode' => 'en']);
+
+    $this->assertArrayNotHasKey('last_editor', $request['extended_attributes']['markaspot'], 'last_editor must be omitted when the revision user is null/deleted');
+    $this->assertSame(date('c', 1717500000), $request['extended_attributes']['markaspot']['last_edited']);
+  }
+
+  // =========================================================================
   // validateImagelistAttributes() tests
   // =========================================================================
 
@@ -2337,6 +2410,124 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
    */
   protected function encodeRequestListCursor(array $payload): string {
     return rtrim(strtr(base64_encode(json_encode($payload)), '+/', '-_'), '=');
+  }
+
+  /**
+   * Builds a minimal service_request node for "last edited by" tests.
+   *
+   * Only the fields consumed before/within the manager gate are populated;
+   * every optional field reports hasField() === FALSE so the mapper skips it
+   * and the test stays focused on the revision attribution.
+   *
+   * @param int $nid
+   *   Node ID (also seeds the static cache key, so use a unique value per test).
+   * @param string $authorName
+   *   Display name returned for the node author (uid).
+   * @param string|null $revisionUserName
+   *   Display name for the revision user, or NULL to simulate a deleted user.
+   * @param int $revisionTimestamp
+   *   Revision creation timestamp.
+   *
+   * @return \Drupal\node\NodeInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The node mock.
+   */
+  protected function createLastEditorNode(int $nid, string $authorName, ?string $revisionUserName, int $revisionTimestamp): NodeInterface {
+    // Field items the mapper reads unconditionally (no hasField guard).
+    $emptyField = new class {
+
+      /**
+       * Field is empty.
+       */
+      public function isEmpty(): bool {
+        return TRUE;
+      }
+
+    };
+
+    // Author (uid) field item with a referenced user entity.
+    $author = $this->createMock(UserInterface::class);
+    $author->method('label')->willReturn($authorName);
+    $uidField = new class($author) {
+
+      /**
+       * Referenced author entity.
+       */
+      public object $entity;
+
+      /**
+       * Constructs the uid field stub.
+       */
+      public function __construct(object $entity) {
+        $this->entity = $entity;
+      }
+
+      /**
+       * Field is populated.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $scalarField = function (int|string $value) {
+      return new class($value) {
+
+        /**
+         * Field scalar value.
+         */
+        public int|string $value;
+
+        /**
+         * Constructs the scalar field stub.
+         */
+        public function __construct(int|string $value) {
+          $this->value = $value;
+        }
+
+        /**
+         * Field is populated.
+         */
+        public function isEmpty(): bool {
+          return FALSE;
+        }
+
+      };
+    };
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn($nid);
+    $node->method('hasTranslation')->willReturn(FALSE);
+    $node->method('getTitle')->willReturn('Broken streetlight');
+
+    // Only uid is a "present" optional field; everything else is absent so the
+    // mapper skips it (media, status notes, address, PII fields, etc.).
+    $node->method('hasField')
+      ->willReturnCallback(fn($name) => $name === 'uid');
+
+    $node->method('get')
+      ->willReturnCallback(function (string $name) use ($emptyField, $uidField, $scalarField) {
+        return match ($name) {
+          'request_id' => $scalarField('REQ-' . uniqid()),
+          'created' => $scalarField(1717400000),
+          'changed' => $scalarField(1717450000),
+          'uid' => $uidField,
+          default => $emptyField,
+        };
+      });
+
+    // Revision attribution.
+    if ($revisionUserName === NULL) {
+      $node->method('getRevisionUser')->willReturn(NULL);
+    }
+    else {
+      $revisionUser = $this->createMock(UserInterface::class);
+      $revisionUser->method('label')->willReturn($revisionUserName);
+      $node->method('getRevisionUser')->willReturn($revisionUser);
+    }
+    $node->method('getRevisionCreationTime')->willReturn($revisionTimestamp);
+
+    return $node;
   }
 
   // =========================================================================
