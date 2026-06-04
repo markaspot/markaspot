@@ -181,7 +181,52 @@ function markaspot_geocoder_update_11002(): string {
     return 'district_mappings already configured, leaving as-is.';
   }
 
-  $config->set('district_mappings', [
+  $config->set('district_mappings', _markaspot_geocoder_default_district_mappings())->save();
+
+  return 'Populated default district_mappings for field_district and field_sublocality.';
+}
+
+/**
+ * Re-seed default district_mappings on installs that advanced past 11002.
+ *
+ * Update 11002 only ran for sites whose schema version was below it. Tenants
+ * that installed markaspot_geocoder before the default mapping shipped (or
+ * whose config was reset to empty after the hook ran) and have since advanced
+ * past 11002 never receive the mapping, so the geocoder silently stops
+ * populating field_district / field_sublocality on save. This hook re-applies
+ * the shipped default whenever the mapping is empty. It is idempotent:
+ * non-empty mappings are left untouched, so tenants with custom mappings are
+ * not overwritten.
+ *
+ * Note: if a tenant's config/sync export carries an empty district_mappings,
+ * a later `drush cim` will re-clear it; that export must be corrected per
+ * tenant. This hook fixes the profile-level default-seeding gap.
+ */
+function markaspot_geocoder_update_11003(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_geocoder.settings');
+
+  if (!empty($config->get('district_mappings'))) {
+    return 'district_mappings already configured, leaving as-is.';
+  }
+
+  $config->set('district_mappings', _markaspot_geocoder_default_district_mappings())->save();
+
+  return 'Re-seeded default district_mappings (field_district, field_sublocality).';
+}
+
+/**
+ * Returns the default district/sublocality mapping shipped with the module.
+ *
+ * Single source for the seed used by the re-seed update hooks. Mirrors
+ * config/install/markaspot_geocoder.settings.yml: coarse OSM properties map to
+ * field_district, fine-grained properties to field_sublocality, both with
+ * auto_create so the taxonomy terms are created on first match.
+ *
+ * @return array
+ *   District mapping definitions.
+ */
+function _markaspot_geocoder_default_district_mappings(): array {
+  return [
     [
       'field' => 'field_district',
       'vocabulary' => 'district',
@@ -194,7 +239,5 @@ function markaspot_geocoder_update_11002(): string {
       'geocoder_properties' => ['quarter', 'neighbourhood'],
       'auto_create' => TRUE,
     ],
-  ])->save();
-
-  return 'Populated default district_mappings for field_district and field_sublocality.';
+  ];
 }
