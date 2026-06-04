@@ -552,6 +552,32 @@ class FacilityManagerTest extends UnitTestCase {
   /**
    * @covers ::normalizeSubmittedSettings
    * @covers ::validateUrlValue
+   *
+   * Embedded control characters in a url are stripped (not just trimmed at the
+   * ends), so a mid-string newline cannot split the value for a consumer that
+   * prints it raw.
+   */
+  public function testNormalizeSubmittedSettingsStripsControlCharsFromUrl(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'url' => "https://example.org/a\r\nb\tc",
+        ],
+      ],
+    ]);
+
+    $this->assertSame('https://example.org/abc', $normalized['items'][0]['url']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   * @covers ::validateUrlValue
    * @dataProvider hostileDisplayMetadataProvider
    *
    * #367/#368: the server rejects HTML in icon/description and any non-http(s)
@@ -598,6 +624,14 @@ class FacilityManagerTest extends UnitTestCase {
       ],
       'relative url' => [
         ['url' => '/campus'],
+        'items[0].url must be an absolute http:// or https:// URL.',
+      ],
+      'empty-host url' => [
+        ['url' => 'https://'],
+        'items[0].url must be an absolute http:// or https:// URL.',
+      ],
+      'no-host triple-slash url' => [
+        ['url' => 'https:///path'],
         'items[0].url must be an absolute http:// or https:// URL.',
       ],
       'html in icon' => [

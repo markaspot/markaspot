@@ -561,14 +561,21 @@ class FacilityManager {
     if (!is_string($value)) {
       throw new \InvalidArgumentException("$path must be a string.");
     }
-    $trimmed = trim($value);
+    // Strip control characters (NUL/tab/CR/LF) anywhere in the value, not just
+    // the ends: a mid-string newline could split the URL for a consumer that
+    // prints it raw (plain-text email, a header context) rather than as an
+    // attribute the way Nuxt does.
+    $trimmed = (string) preg_replace('/[\x00-\x1F\x7F]+/', '', trim($value));
     if ($trimmed === '') {
       return '';
     }
     if (mb_strlen($trimmed) > 512) {
       throw new \InvalidArgumentException("$path exceeds the maximum length of 512 characters.");
     }
-    if (!preg_match('#^https?://#i', $trimmed)) {
+    // Require an absolute http(s) URL with a non-empty host. The trailing
+    // [^\s/] rejects javascript:/data:/file: schemes, scheme-relative //host,
+    // and the empty-host edge (https://) that carries no usable destination.
+    if (!preg_match('#^https?://[^\s/]#i', $trimmed)) {
       throw new \InvalidArgumentException("$path must be an absolute http:// or https:// URL.");
     }
     return $trimmed;
