@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.106](https://github.com/markaspot/markaspot/compare/11.9.105...11.9.106) (2026-06-05)
+
+### Bug Fixes
+
+* repair config entity uuid drift idempotently ([f9cacaf](https://github.com/markaspot/markaspot/commit/f9cacafd6fea991287d0077091eda2998a5a6ddc))
+
 ## [11.9.105](https://github.com/markaspot/markaspot/compare/11.9.104...11.9.105) (2026-06-05)
 
 ### Features
