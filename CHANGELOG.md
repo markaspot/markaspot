@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.104](https://github.com/markaspot/markaspot/compare/11.9.103...11.9.104) (2026-06-05)
+
+### Bug Fixes
+
+* **install:** guard optional-module entity types in update hooks (no updb crash on divergent tenants) ([856105e](https://github.com/markaspot/markaspot/commit/856105efefa6652e5dc64946b6957ac2750c31f8))
+
 ## [11.9.103](https://github.com/markaspot/markaspot/compare/11.9.102...11.9.103) (2026-06-05)
 
 ### Features
