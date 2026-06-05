@@ -217,3 +217,32 @@ function markaspot_vision_update_11804(): string {
 
   return 'No orphaned blur field config found. Nothing to clean up.';
 }
+
+/**
+ * Create the dedicated ai_analysis image style for the Vision API.
+ *
+ * Replaces the start.sh workaround that stripped AVIF from the core "wide"
+ * style. OpenAI Vision only accepts PNG/JPEG/GIF/WebP, so the AI pipeline now
+ * uses its own scale-only style (no format conversion), leaving "wide" intact
+ * for web delivery with AVIF.
+ */
+function markaspot_vision_update_11805(): string {
+  $config_name = 'image.style.ai_analysis';
+
+  if (\Drupal::configFactory()->get($config_name)->get('name')) {
+    return 'Skipped: ai_analysis image style already exists.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_vision');
+  $source = new FileStorage($module_path . '/config/install');
+  $config_data = $source->read($config_name);
+
+  if (empty($config_data)) {
+    \Drupal::logger('markaspot_vision')->warning('Config file not found: @name', ['@name' => $config_name]);
+    return 'Skipped: config file image.style.ai_analysis.yml not found.';
+  }
+
+  \Drupal::entityTypeManager()->getStorage('image_style')->create($config_data)->save();
+
+  return 'Created ai_analysis image style.';
+}

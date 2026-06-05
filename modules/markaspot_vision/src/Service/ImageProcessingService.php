@@ -771,9 +771,9 @@ class ImageProcessingService {
    *   When the required image style is not found.
    */
   private function getStyledImagePath(string $uri): string {
-    $style = $this->entityTypeManager->getStorage('image_style')->load('wide');
+    $style = $this->entityTypeManager->getStorage('image_style')->load('ai_analysis');
     if (!$style) {
-      throw new \Exception('The "wide" image style was not found. Please ensure it exists.');
+      throw new \Exception('The "ai_analysis" image style was not found. Please ensure it exists.');
     }
     $styled_file_path = $style->buildUri($uri);
     if (!file_exists($styled_file_path)) {
