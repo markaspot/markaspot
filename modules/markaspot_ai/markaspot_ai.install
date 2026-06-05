@@ -8,6 +8,7 @@ declare(strict_types=1);
  */
 
 use Drupal\Core\Serialization\Yaml;
+use Drupal\markaspot_ai\Service\AiClientService;
 
 /**
  * Implements hook_schema().
@@ -473,7 +474,7 @@ function markaspot_ai_update_10003(): void {
       'api_key' => '',
       'api_url' => '',
       'api_version' => '2024-12-01-preview',
-      'chat_model' => 'gpt-4.1-mini',
+      'chat_model' => AiClientService::DEFAULT_CHAT_MODEL,
       'embedding_model' => 'text-embedding-3-large',
       'auth_type' => 'api_key_header',
     ]);
@@ -552,7 +553,7 @@ function markaspot_ai_update_10006(): void {
 function markaspot_ai_update_10007(): void {
   $config = \Drupal::configFactory()->getEditable('markaspot_ai.settings');
   if (empty($config->get('sentiment_analysis.model'))) {
-    $config->set('sentiment_analysis.model', 'gpt-4.1-mini')->save();
+    $config->set('sentiment_analysis.model', AiClientService::DEFAULT_CHAT_MODEL)->save();
   }
 }
 
