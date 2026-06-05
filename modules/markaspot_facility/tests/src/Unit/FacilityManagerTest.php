@@ -508,6 +508,144 @@ class FacilityManagerTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::normalizeSubmittedSettings
+   *
+   * #368 display metadata round-trips: valid icon/description/url are stored,
+   * and empty values are dropped so the write/read paths agree.
+   */
+  public function testNormalizeSubmittedSettingsStoresDisplayMetadata(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'icon' => 'i-lucide-building',
+          'description' => 'Main administrative building.',
+          'url' => 'https://example.org/campus-north',
+        ],
+        [
+          'id' => 'campus_south',
+          'label' => 'Campus South',
+          'lat' => 52.4,
+          'lng' => 13.3,
+          'icon' => '',
+          'description' => '   ',
+          'url' => '',
+        ],
+      ],
+    ]);
+
+    $this->assertSame('i-lucide-building', $normalized['items'][0]['icon']);
+    $this->assertSame('Main administrative building.', $normalized['items'][0]['description']);
+    $this->assertSame('https://example.org/campus-north', $normalized['items'][0]['url']);
+
+    // Empty display values are dropped, not stored as empty strings.
+    $this->assertArrayNotHasKey('icon', $normalized['items'][1]);
+    $this->assertArrayNotHasKey('description', $normalized['items'][1]);
+    $this->assertArrayNotHasKey('url', $normalized['items'][1]);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   * @covers ::validateUrlValue
+   *
+   * Embedded control characters in a url are stripped (not just trimmed at the
+   * ends), so a mid-string newline cannot split the value for a consumer that
+   * prints it raw.
+   */
+  public function testNormalizeSubmittedSettingsStripsControlCharsFromUrl(): void {
+    $normalized = $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'url' => "https://example.org/a\r\nb\tc",
+        ],
+      ],
+    ]);
+
+    $this->assertSame('https://example.org/abc', $normalized['items'][0]['url']);
+  }
+
+  /**
+   * @covers ::normalizeSubmittedSettings
+   * @covers ::validateUrlValue
+   * @dataProvider hostileDisplayMetadataProvider
+   *
+   * #367/#368: the server rejects HTML in icon/description and any non-http(s)
+   * url scheme, so a hostile value cannot be persisted in config and served to
+   * a consumer that does not re-sanitize on render.
+   */
+  public function testNormalizeSubmittedSettingsRejectsHostileDisplayMetadata(
+    array $itemOverrides,
+    string $expectedMessage,
+  ): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage($expectedMessage);
+
+    $this->manager->normalizeSubmittedSettings([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+        ] + $itemOverrides,
+      ],
+    ]);
+  }
+
+  /**
+   * Provides hostile display-metadata payloads plus the expected error.
+   */
+  public static function hostileDisplayMetadataProvider(): array {
+    return [
+      'javascript: url' => [
+        ['url' => 'javascript:alert(1)'],
+        'items[0].url must be an absolute http:// or https:// URL.',
+      ],
+      'data: url' => [
+        ['url' => 'data:text/html,<script>alert(1)</script>'],
+        'items[0].url must be an absolute http:// or https:// URL.',
+      ],
+      'scheme-relative url' => [
+        ['url' => '//evil.example/x'],
+        'items[0].url must be an absolute http:// or https:// URL.',
+      ],
+      'relative url' => [
+        ['url' => '/campus'],
+        'items[0].url must be an absolute http:// or https:// URL.',
+      ],
+      'empty-host url' => [
+        ['url' => 'https://'],
+        'items[0].url must be an absolute http:// or https:// URL.',
+      ],
+      'no-host triple-slash url' => [
+        ['url' => 'https:///path'],
+        'items[0].url must be an absolute http:// or https:// URL.',
+      ],
+      'html in icon' => [
+        ['icon' => '<img src=x onerror=alert(1)>'],
+        'items[0].icon must not contain HTML.',
+      ],
+      'html in description' => [
+        ['description' => '<script>alert(1)</script>'],
+        'items[0].description must not contain HTML.',
+      ],
+    ];
+  }
+
+  /**
    * @covers ::getDashboardSettings
    */
   public function testGetDashboardSettingsReturnsStructuredAddressRoundTrip(): void {
@@ -587,6 +725,48 @@ class FacilityManagerTest extends UnitTestCase {
     $settings = $this->manager->getDashboardSettings($group);
 
     $this->assertArrayNotHasKey('address', $settings['items'][0]);
+  }
+
+  /**
+   * @covers ::getDashboardSettings
+   *
+   * #368: stored display metadata (icon/description/url) is re-emitted on read.
+   */
+  public function testGetDashboardSettingsReturnsDisplayMetadataRoundTrip(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')->with('field_facilities')->willReturn(TRUE);
+    $json = json_encode([
+      'enabled' => TRUE,
+      'hideMapPicker' => FALSE,
+      'items' => [
+        [
+          'id' => 'campus_north',
+          'label' => 'Campus North',
+          'lat' => 52.5,
+          'lng' => 13.4,
+          'active' => TRUE,
+          'icon' => 'i-lucide-building',
+          'description' => 'Main administrative building.',
+          'url' => 'https://example.org/campus-north',
+        ],
+      ],
+    ]);
+      // phpcs:disable
+      $group->method('get')->with('field_facilities')->willReturn(new class($json) {
+      public string $value;
+
+      public function __construct(string $json) { $this->value = $json; }
+
+      public function isEmpty(): bool { return FALSE; }
+      });
+      // phpcs:enable
+
+    $settings = $this->manager->getDashboardSettings($group);
+
+    $this->assertSame('i-lucide-building', $settings['items'][0]['icon']);
+    $this->assertSame('Main administrative building.', $settings['items'][0]['description']);
+    $this->assertSame('https://example.org/campus-north', $settings['items'][0]['url']);
   }
 
   /**
@@ -847,6 +1027,72 @@ class FacilityManagerTest extends UnitTestCase {
       'address_line1' => 'Hauptstrasse 12',
       'country_code' => 'DE',
     ], $set_calls[1][1]);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   *
+   * #367 defence in depth: a foreign facility id reaching this method via a
+   * programmatic path (one that skipped validate(), e.g. ECA/import) is cleared
+   * rather than persisted with no resolvable geodata.
+   */
+  public function testApplyToServiceRequestClearsForeignFacility(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+      // phpcs:disable
+      $facility_field = new class('foreign_facility') {
+            public function __construct(public string $value) {}
+
+            public function isEmpty(): bool { return FALSE; }
+      };
+      $jurisdiction_field = new class() {
+            public function isEmpty(): bool { return FALSE; }
+
+            public function first(): object { return (object) ['target_id' => 14]; }
+      };
+      // phpcs:enable
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('hasField')
+      ->willReturnCallback(fn(string $field) => in_array($field, [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_address',
+      ], TRUE));
+    $node->method('get')
+      ->willReturnCallback(fn(string $field) => match ($field) {
+            'field_facility' => $facility_field,
+            'field_jurisdiction' => $jurisdiction_field,
+            default => $this->createMock(FieldItemListInterface::class),
+      });
+
+    $set_calls = [];
+    $node->method('set')
+      ->willReturnCallback(function (string $field_name, mixed $value) use (&$set_calls): void {
+            $set_calls[] = [$field_name, $value];
+      });
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([['field_facility', NULL]], $set_calls);
   }
 
   /**

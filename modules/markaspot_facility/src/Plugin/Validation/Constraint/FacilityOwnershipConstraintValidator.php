@@ -1,0 +1,120 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\markaspot_facility\Plugin\Validation\Constraint;
+
+use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_facility\Service\FacilityManager;
+use Drupal\node\NodeInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\Validator\Constraint;
+use Symfony\Component\Validator\ConstraintValidator;
+
+/**
+ * Validates that a service request's facility belongs to its jurisdiction.
+ *
+ * Resolves the node's owning jurisdiction from field_jurisdiction (the same
+ * resolution FacilityManager::applyToServiceRequest() performs), loads that
+ * jurisdiction's facility catalogue via FacilityManager, and rejects any
+ * non-empty field_facility value whose machine key is not present in the
+ * jurisdiction's items[]. This closes the cross-tenant injection gap where an
+ * anonymous submitter could tag a report with another tenant's facility id.
+ */
+final class FacilityOwnershipConstraintValidator extends ConstraintValidator implements ContainerInjectionInterface {
+
+  /**
+   * Constructs the validator.
+   */
+  public function __construct(
+    protected readonly EntityTypeManagerInterface $entityTypeManager,
+    protected readonly FacilityManager $facilityManager,
+  ) {}
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): static {
+    return new static(
+      $container->get('entity_type.manager'),
+      $container->get('markaspot_facility.manager'),
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function validate(mixed $value, Constraint $constraint): void {
+    if (!$constraint instanceof FacilityOwnershipConstraint) {
+      return;
+    }
+
+    if (!$value instanceof NodeInterface || $value->bundle() !== 'service_request') {
+      return;
+    }
+
+    // No facility tag means nothing to validate. Empty is always allowed.
+    if (!$value->hasField('field_facility') || $value->get('field_facility')->isEmpty()) {
+      return;
+    }
+    $facility_id = trim((string) $value->get('field_facility')->value);
+    if ($facility_id === '') {
+      return;
+    }
+
+    // A facility tag requires a resolvable jurisdiction. Mirrors the load path
+    // in FacilityManager::applyToServiceRequest(): field_jurisdiction ->
+    // target_id -> group storage. Fail secure: if the jurisdiction cannot be
+    // resolved, a public-writable facility id has no owning tenant to validate
+    // against, so it is rejected.
+    if (!$value->hasField('field_jurisdiction') || $value->get('field_jurisdiction')->isEmpty()) {
+      $this->context->buildViolation($this->violationMessage($constraint))
+        ->atPath('field_facility')
+        ->addViolation();
+      return;
+    }
+
+    $jurisdiction_item = $value->get('field_jurisdiction')->first();
+    $jurisdiction_id = (int) ($jurisdiction_item->target_id ?? 0);
+    if ($jurisdiction_id <= 0) {
+      $this->context->buildViolation($this->violationMessage($constraint))
+        ->atPath('field_facility')
+        ->addViolation();
+      return;
+    }
+
+    $group = $this->entityTypeManager->getStorage('group')->load($jurisdiction_id);
+    if (!$group instanceof GroupInterface) {
+      $this->context->buildViolation($this->violationMessage($constraint))
+        ->atPath('field_facility')
+        ->addViolation();
+      return;
+    }
+
+    // Use the dashboard (full) catalogue, not the public one: an admin may
+    // have deactivated a facility that an existing report legitimately
+    // references. The gap we close is cross-tenant ownership, not active state,
+    // so any id owned by THIS jurisdiction passes.
+    $settings = $this->facilityManager->getDashboardSettings($group);
+    foreach ($settings['items'] ?? [] as $facility) {
+      if (($facility['id'] ?? '') === $facility_id) {
+        return;
+      }
+    }
+
+    $this->context->buildViolation($this->violationMessage($constraint))
+      ->atPath('field_facility')
+      ->addViolation();
+  }
+
+  /**
+   * Returns the untranslated source string for the violation builder.
+   */
+  protected function violationMessage(FacilityOwnershipConstraint $constraint): string {
+    $message = $constraint->message;
+    return is_string($message) ? $message : $message->getUntranslatedString();
+  }
+
+}

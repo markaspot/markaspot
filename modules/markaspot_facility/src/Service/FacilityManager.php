@@ -166,8 +166,15 @@ class FacilityManager {
       return;
     }
 
+    // The facility id is not in this jurisdiction's catalogue. On validated
+    // write paths (Open311, JSON:API) the FacilityOwnership constraint already
+    // rejected this before save; reaching here means a programmatic path that
+    // skipped validate() (ECA action, import script, bulk update). Fail secure:
+    // drop the foreign tag rather than persisting a cross-tenant value with no
+    // resolvable geodata (#367 defence in depth).
+    $node->set('field_facility', NULL);
     $this->logger->warning(
-          'Facility "@facility" was not found for jurisdiction @jurisdiction while saving service request @node.',
+          'Facility "@facility" was not found for jurisdiction @jurisdiction while saving service request @node; the foreign facility tag was cleared.',
           [
             '@facility' => $facility_id,
             '@jurisdiction' => $jurisdiction_id,
@@ -310,6 +317,13 @@ class FacilityManager {
         if (!empty($item['organisationId']) && is_string($item['organisationId'])) {
           $normalized_item['organisationId'] = $item['organisationId'];
         }
+        // Display metadata (#368), re-emitted as stored. Values were
+        // validated on write (HTML-stripped text; http(s)-only url).
+        foreach (['icon', 'description', 'url'] as $display_field) {
+          if (!empty($item[$display_field]) && is_string($item[$display_field])) {
+            $normalized_item[$display_field] = $item[$display_field];
+          }
+        }
 
         $normalized['items'][] = $normalized_item;
       }
@@ -419,6 +433,14 @@ class FacilityManager {
         'address',
         'organisationId',
         'active',
+        // Display metadata added for #381 (FacilityRow icon/description/url),
+        // sent by the Vue admin (facilities.vue). Validated and stored below
+        // (#368): icon/description are HTML-stripped text, url is restricted to
+        // an absolute http(s) URL so a hostile scheme cannot be persisted and
+        // handed to a non-Nuxt consumer (Open311 export, admin table, email).
+        'icon',
+        'description',
+        'url',
       ]);
       if ($item_unknown !== []) {
         throw new \InvalidArgumentException("items[$index] contains unknown keys: " . implode(', ', $item_unknown) . '.');
@@ -451,6 +473,30 @@ class FacilityManager {
           "items[$index].organisationId",
           255
           );
+      }
+
+      // Display metadata (#368). icon/description are HTML-stripped plain text
+      // (validateTextValue rejects any markup); empty values are dropped so the
+      // write/read paths agree (normalizeStoredSettings only re-emits truthy
+      // values). url is scheme-restricted to absolute http(s).
+      foreach (['icon' => 255, 'description' => 1024] as $display_field => $max_length) {
+        if (array_key_exists($display_field, $item)) {
+          $value = $this->validateTextValue(
+            $item[$display_field],
+            "items[$index].$display_field",
+            $max_length,
+            TRUE
+            );
+          if ($value !== '') {
+            $normalized_item[$display_field] = $value;
+          }
+        }
+      }
+      if (array_key_exists('url', $item)) {
+        $url = $this->validateUrlValue($item['url'], "items[$index].url");
+        if ($url !== '') {
+          $normalized_item['url'] = $url;
+        }
       }
 
       $normalized['items'][] = $normalized_item;
@@ -496,6 +542,41 @@ class FacilityManager {
     }
     if (strip_tags($trimmed) !== $trimmed) {
       throw new \InvalidArgumentException("$path must not contain HTML.");
+    }
+    return $trimmed;
+  }
+
+  /**
+   * Validates an optional facility display URL (#368).
+   *
+   * Returns an empty string for an unset/blank value (the caller drops it).
+   * A non-empty value must be an absolute http(s) URL: this rejects
+   * `javascript:`, `data:`, and scheme-relative links so a hostile URL cannot
+   * be persisted in config and served to a consumer that does not re-sanitize
+   * on render (Open311 export, a future admin table, a notification email).
+   * The Nuxt frontend re-validates on render as defence in depth, but the
+   * server must not be a knowing pass-through for dangerous schemes.
+   */
+  private function validateUrlValue(mixed $value, string $path): string {
+    if (!is_string($value)) {
+      throw new \InvalidArgumentException("$path must be a string.");
+    }
+    // Strip control characters (NUL/tab/CR/LF) anywhere in the value, not just
+    // the ends: a mid-string newline could split the URL for a consumer that
+    // prints it raw (plain-text email, a header context) rather than as an
+    // attribute the way Nuxt does.
+    $trimmed = (string) preg_replace('/[\x00-\x1F\x7F]+/', '', trim($value));
+    if ($trimmed === '') {
+      return '';
+    }
+    if (mb_strlen($trimmed) > 512) {
+      throw new \InvalidArgumentException("$path exceeds the maximum length of 512 characters.");
+    }
+    // Require an absolute http(s) URL with a non-empty host. The trailing
+    // [^\s/] rejects javascript:/data:/file: schemes, scheme-relative //host,
+    // and the empty-host edge (https://) that carries no usable destination.
+    if (!preg_match('#^https?://[^\s/]#i', $trimmed)) {
+      throw new \InvalidArgumentException("$path must be an absolute http:// or https:// URL.");
     }
     return $trimmed;
   }

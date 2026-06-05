@@ -40,3 +40,20 @@ function markaspot_facility_node_presave(EntityInterface $node): void {
   \Drupal::service('markaspot_facility.manager')
     ->applyToServiceRequest($node);
 }
+
+/**
+ * Implements hook_entity_type_alter().
+ *
+ * Attaches the FacilityOwnership constraint to node entities so a service
+ * request can never persist a field_facility value that belongs to a different
+ * jurisdiction. field_facility is public/anonymous-writable, so this is the
+ * enforcement point for issue #367 (cross-tenant facility injection):
+ * validation runs on every node save, including anonymous Open311/JSON:API
+ * submissions. The presave hook above stays as the geodata-derivation step for
+ * valid, same-tenant facilities; this constraint is what REJECTS a foreign id.
+ */
+function markaspot_facility_entity_type_alter(array &$entity_types): void {
+  if (isset($entity_types['node'])) {
+    $entity_types['node']->addConstraint('FacilityOwnership');
+  }
+}
