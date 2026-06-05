@@ -5,6 +5,7 @@
  * Install file for service_request.
  */
 
+use Drupal\locale\Gettext;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\user\Entity\Role;
@@ -700,7 +701,13 @@ function service_request_update_11009(): string {
     ],
     'group_service_provider' => [
       'parent_name' => 'group_administration',
-      'children' => ['field_service_provider', 'field_service_provider_status', 'field_service_provider_notes', 'field_service_provider_feedback', 'field_sp_attachment'],
+      'children' => [
+        'field_service_provider',
+        'field_service_provider_status',
+        'field_service_provider_notes',
+        'field_service_provider_feedback',
+        'field_sp_attachment',
+      ],
       'format_type' => 'details',
       'label' => 'Dienstleister',
       'weight' => 15,
@@ -766,7 +773,7 @@ function service_request_update_11009(): string {
 /**
  * Repair group_service_provider: add field_sp_attachment, drop field_service_provider_files.
  *
- * update_11009 incorrectly listed field_service_provider_files as the SP file
+ * Update_11009 incorrectly listed field_service_provider_files as the SP file
  * field and omitted field_sp_attachment. This hook corrects existing form
  * displays on tenants that already ran 11009.
  */
@@ -874,7 +881,7 @@ function service_request_update_11011(): string {
     'finish_feedback' => FALSE,
   ];
   \Drupal::moduleHandler()->loadInclude('locale', 'inc', 'locale.bulk');
-  \Drupal\locale\Gettext::fileToDatabase($file, $options);
+  Gettext::fileToDatabase($file, $options);
 
   return 'Imported service_request/translations/de.po.';
 }
