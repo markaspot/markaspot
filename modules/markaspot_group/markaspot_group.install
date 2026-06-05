@@ -716,6 +716,13 @@ function markaspot_group_update_11903(): void {
 
   // 4. Delete obsolete ECA rules (disabling alone is insufficient due to
   // cascading entity event bug where disabled ECA models still execute).
+  // ECA is an optional, module-gated module (absent on some tenants, e.g.
+  // FastMap tiers). getStorage('eca') throws on a missing entity type and would
+  // abort updb there; nothing to clean up without the module, so skip step 4.
+  // This is the last step of the hook, so an early return is safe.
+  if (!\Drupal::entityTypeManager()->hasDefinition('eca')) {
+    return;
+  }
   $eca_rules = [
     'process_apply_jurisdiction',
     'process_apply_group',

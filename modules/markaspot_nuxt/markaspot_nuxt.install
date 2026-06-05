@@ -438,6 +438,14 @@ function markaspot_nuxt_update_11903(): string {
  * is intentionally left untouched (separate, broader decision).
  */
 function markaspot_nuxt_update_11904(): string {
+  // jsonapi_extras (which provides the jsonapi_resource_config entity type) is
+  // optional and disabled on some tenants (e.g. FastMap). getStorage() throws
+  // on a missing entity TYPE. The `if (!$resource)` guard below only covers a
+  // missing config ENTITY, not a missing type, so without this check the hook
+  // aborts updb on those tenants. Guard the type's existence first.
+  if (!\Drupal::entityTypeManager()->hasDefinition('jsonapi_resource_config')) {
+    return 'Skipped node--service_request JSON:API resource config: jsonapi_extras not enabled on this tenant.';
+  }
   $storage = \Drupal::entityTypeManager()->getStorage('jsonapi_resource_config');
   $resource = $storage->load('node--service_request');
 
