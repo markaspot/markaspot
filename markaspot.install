@@ -2457,63 +2457,316 @@ function markaspot_update_11918(): string {
  * string is required") and produces a 500 cascade in the dashboard.
  *
  * cp2 was hand-patched on 2026-05-18 via `drush cset`. This hook is the
- * portable version: idempotent, safe to re-run, generates UUIDs only where
- * missing/invalid, persists via the entity API so config_dependency caches
- * stay consistent.
+ * portable version: idempotent, safe to re-run, and raw-storage based because
+ * ConfigEntityStorage refuses UUID identity changes via the entity API.
  *
  * Same surface as scripts/repair-config-entity-uuids.php in client repos,
  * but a real post_update so `drush updb` picks it up on every tenant
  * without manual intervention.
  */
 function markaspot_update_11919(): string {
-  $entityTypeManager = \Drupal::entityTypeManager();
-  $uuidService = \Drupal::service('uuid');
-  $repaired = 0;
+  return _markaspot_repair_config_entity_uuid_drift();
+}
+
+/**
+ * Repair config-entity UUID drift in active config and runtime sync storage.
+ */
+function _markaspot_repair_config_entity_uuid_drift(): string {
+  $active = \Drupal::service('config.storage');
+  $sync = \Drupal::service('config.storage.sync');
+  $uuid_service = \Drupal::service('uuid');
+  $prefixes = _markaspot_config_entity_prefixes();
+  $id_keys = _markaspot_config_entity_id_keys();
+
+  $active_uuid_index = _markaspot_config_entity_uuid_index($active, $prefixes);
+  $sync_uuid_index = _markaspot_config_entity_uuid_index($sync, $prefixes);
+  $active_repaired = [];
+  $sync_repaired = [];
   $failed = [];
 
-  foreach ($entityTypeManager->getDefinitions() as $entityTypeId => $definition) {
-    if (!$definition->entityClassImplements(ConfigEntityInterface::class)) {
+  foreach ($active->listAll() as $name) {
+    if (!_markaspot_is_config_entity_name($name, $prefixes)) {
       continue;
     }
 
+    $active_data = $active->read($name);
+    if (!is_array($active_data)) {
+      continue;
+    }
+
+    $sync_data = $sync->read($name);
+    $current = $active_data['uuid'] ?? NULL;
+    $current_valid = is_string($current) && Uuid::isValid($current);
+    $sync_uuid = is_array($sync_data) ? ($sync_data['uuid'] ?? NULL) : NULL;
+    $sync_valid = is_string($sync_uuid) && Uuid::isValid($sync_uuid);
+
+    if (is_array($sync_data)) {
+      $id_key = _markaspot_config_entity_id_key($name, $id_keys);
+      if ($id_key !== NULL) {
+        if (!array_key_exists($id_key, $active_data) || !array_key_exists($id_key, $sync_data)) {
+          $failed[] = "$name: active or sync config is missing identity key $id_key";
+          continue;
+        }
+        if ($active_data[$id_key] !== $sync_data[$id_key]) {
+          $failed[] = "$name: active $id_key {$active_data[$id_key]} does not match sync $id_key {$sync_data[$id_key]}";
+          continue;
+        }
+      }
+    }
+
+    if ($sync_valid) {
+      $target_uuid = $sync_uuid;
+      $source = 'sync';
+    }
+    elseif ($current_valid) {
+      $active_conflicts = _markaspot_config_uuid_conflicts($active_uuid_index, $current, $name);
+      if ($active_conflicts !== []) {
+        $failed[] = "$name: active UUID $current already used by active " . implode(', ', $active_conflicts);
+        continue;
+      }
+
+      if (is_array($sync_data)) {
+        $conflicts = _markaspot_config_uuid_conflicts($sync_uuid_index, $current, $name);
+        if ($conflicts !== []) {
+          $failed[] = "$name: active UUID $current already used by sync " . implode(', ', $conflicts);
+          continue;
+        }
+
+        $sync_data['uuid'] = $current;
+        try {
+          $sync->write($name, $sync_data);
+          $sync_uuid_index[$current][] = $name;
+          $sync_repaired[] = "$name: sync -> $current (active)";
+        }
+        catch (\Throwable $e) {
+          $failed[] = "$name: failed writing sync UUID from active: " . $e->getMessage();
+        }
+      }
+      continue;
+    }
+    else {
+      do {
+        $target_uuid = $uuid_service->generate();
+      } while (isset($active_uuid_index[$target_uuid]) || isset($sync_uuid_index[$target_uuid]));
+      $source = 'generated';
+    }
+
+    $active_conflicts = _markaspot_config_uuid_conflicts($active_uuid_index, $target_uuid, $name);
+    if ($active_conflicts !== []) {
+      $failed[] = "$name: target UUID $target_uuid ($source) already used by active " . implode(', ', $active_conflicts);
+      continue;
+    }
+
+    $sync_conflicts = _markaspot_config_uuid_conflicts($sync_uuid_index, $target_uuid, $name);
+    if ($sync_conflicts !== []) {
+      $failed[] = "$name: target UUID $target_uuid ($source) already used by sync " . implode(', ', $sync_conflicts);
+      continue;
+    }
+
+    if ($current === $target_uuid) {
+      continue;
+    }
+
+    $active_data['uuid'] = $target_uuid;
     try {
-      $storage = $entityTypeManager->getStorage($entityTypeId);
-      $entities = method_exists($storage, 'loadMultipleOverrideFree')
-        ? $storage->loadMultipleOverrideFree()
-        : $storage->loadMultiple();
+      $active->write($name, $active_data);
+      $active_uuid_index[$target_uuid][] = $name;
+      $active_repaired[] = "$name: active " . var_export($current, TRUE) . " -> $target_uuid ($source)";
     }
     catch (\Throwable $e) {
-      $failed[] = "$entityTypeId: " . $e->getMessage();
+      $failed[] = "$name: failed writing active UUID: " . $e->getMessage();
       continue;
     }
 
-    foreach ($entities as $entity) {
-      if (!$entity instanceof ConfigEntityInterface) {
-        continue;
-      }
-      $uuid = $entity->uuid();
-      if (is_string($uuid) && Uuid::isValid($uuid)) {
-        continue;
-      }
+    if (!$sync_valid && is_array($sync_data)) {
+      $sync_data['uuid'] = $target_uuid;
       try {
-        $entity->set('uuid', $uuidService->generate());
-        $entity->save();
-        $repaired++;
+        $sync->write($name, $sync_data);
+        $sync_uuid_index[$target_uuid][] = $name;
+        $sync_repaired[] = "$name: sync -> $target_uuid ($source)";
       }
       catch (\Throwable $e) {
-        $failed[] = $entity->getConfigDependencyName() . ': ' . $e->getMessage();
+        $failed[] = "$name: failed writing sync UUID: " . $e->getMessage();
+        continue;
       }
     }
   }
 
-  $msg = sprintf('Repaired %d config-entity UUIDs (NULL/invalid).', $repaired);
+  foreach ($sync->listAll() as $name) {
+    if (!_markaspot_is_config_entity_name($name, $prefixes)) {
+      continue;
+    }
+
+    if (is_array($active->read($name))) {
+      continue;
+    }
+
+    $sync_data = $sync->read($name);
+    if (!is_array($sync_data)) {
+      continue;
+    }
+
+    $sync_uuid = $sync_data['uuid'] ?? NULL;
+    if (is_string($sync_uuid) && Uuid::isValid($sync_uuid)) {
+      $active_conflicts = _markaspot_config_uuid_conflicts($active_uuid_index, $sync_uuid, $name);
+      if ($active_conflicts !== []) {
+        $failed[] = "$name: sync UUID $sync_uuid already used by active " . implode(', ', $active_conflicts);
+      }
+
+      $sync_conflicts = _markaspot_config_uuid_conflicts($sync_uuid_index, $sync_uuid, $name);
+      if ($sync_conflicts !== []) {
+        $failed[] = "$name: sync UUID $sync_uuid already used by sync " . implode(', ', $sync_conflicts);
+      }
+      continue;
+    }
+
+    do {
+      $target_uuid = $uuid_service->generate();
+    } while (isset($active_uuid_index[$target_uuid]) || isset($sync_uuid_index[$target_uuid]));
+
+    $sync_data['uuid'] = $target_uuid;
+    try {
+      $sync->write($name, $sync_data);
+      $sync_uuid_index[$target_uuid][] = $name;
+      $sync_repaired[] = "$name: sync " . var_export($sync_uuid, TRUE) . " -> $target_uuid (generated)";
+    }
+    catch (\Throwable $e) {
+      $failed[] = "$name: failed writing sync UUID: " . $e->getMessage();
+    }
+  }
+
+  if (!empty($active_repaired) || !empty($sync_repaired)) {
+    \Drupal::service('config.factory')->reset();
+    \Drupal::service('cache.config')->deleteAll();
+  }
+
+  $msg = sprintf(
+    'Repaired config-entity UUID drift: active=%d, sync=%d.',
+    count($active_repaired),
+    count($sync_repaired)
+  );
   if (!empty($failed)) {
     $msg .= ' Failed: ' . implode('; ', array_slice($failed, 0, 5));
     if (count($failed) > 5) {
       $msg .= ' (and ' . (count($failed) - 5) . ' more)';
     }
+    throw new \RuntimeException($msg);
   }
   return $msg;
+}
+
+/**
+ * Get known config entity prefixes.
+ *
+ * @return array<int, string>
+ *   Config entity prefixes with trailing dots.
+ */
+function _markaspot_config_entity_prefixes(): array {
+  $prefixes = [];
+  foreach (\Drupal::entityTypeManager()->getDefinitions() as $definition) {
+    if ($definition->entityClassImplements(ConfigEntityInterface::class)) {
+      $prefixes[] = $definition->getConfigPrefix() . '.';
+    }
+  }
+  return $prefixes;
+}
+
+/**
+ * Get config entity identity keys keyed by config prefix.
+ *
+ * @return array<string, string>
+ *   Config entity ID keys keyed by config prefixes with trailing dots.
+ */
+function _markaspot_config_entity_id_keys(): array {
+  $id_keys = [];
+  foreach (\Drupal::entityTypeManager()->getDefinitions() as $definition) {
+    if ($definition->entityClassImplements(ConfigEntityInterface::class)) {
+      $id_key = $definition->getKey('id');
+      if (is_string($id_key) && $id_key !== '') {
+        $id_keys[$definition->getConfigPrefix() . '.'] = $id_key;
+      }
+    }
+  }
+  return $id_keys;
+}
+
+/**
+ * Resolve the identity key for a config entity name.
+ *
+ * @param string $name
+ *   The raw config name.
+ * @param array<string, string> $id_keys
+ *   Config entity ID keys keyed by config prefixes with trailing dots.
+ */
+function _markaspot_config_entity_id_key(string $name, array $id_keys): ?string {
+  foreach ($id_keys as $prefix => $id_key) {
+    if (str_starts_with($name, $prefix)) {
+      return $id_key;
+    }
+  }
+  return NULL;
+}
+
+/**
+ * Determine whether a raw config name belongs to a config entity type.
+ *
+ * @param string $name
+ *   The raw config name.
+ * @param array<int, string> $prefixes
+ *   Config entity prefixes with trailing dots.
+ */
+function _markaspot_is_config_entity_name(string $name, array $prefixes): bool {
+  foreach ($prefixes as $prefix) {
+    if (str_starts_with($name, $prefix)) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+/**
+ * Find other config names that already use a UUID.
+ *
+ * @param array<string, array<int, string>> $uuid_index
+ *   Config names keyed by valid UUID.
+ * @param string $uuid
+ *   The target UUID.
+ * @param string $name
+ *   The config name currently being repaired.
+ *
+ * @return array<int, string>
+ *   Other config names already using the UUID.
+ */
+function _markaspot_config_uuid_conflicts(array $uuid_index, string $uuid, string $name): array {
+  return array_values(array_diff($uuid_index[$uuid] ?? [], [$name]));
+}
+
+/**
+ * Build a UUID to config name index for config entities in a storage.
+ *
+ * @param \Drupal\Core\Config\StorageInterface $storage
+ *   The config storage.
+ * @param array<int, string> $prefixes
+ *   Config entity prefixes with trailing dots.
+ *
+ * @return array<string, array<int, string>>
+ *   Config names keyed by valid UUID.
+ */
+function _markaspot_config_entity_uuid_index($storage, array $prefixes): array {
+  $index = [];
+  foreach ($storage->listAll() as $name) {
+    if (!_markaspot_is_config_entity_name($name, $prefixes)) {
+      continue;
+    }
+
+    $data = $storage->read($name);
+    if (!is_array($data) || empty($data['uuid']) || !Uuid::isValid($data['uuid'])) {
+      continue;
+    }
+
+    $index[$data['uuid']][] = $name;
+  }
+  return $index;
 }
 
 /**
@@ -3551,6 +3804,13 @@ function markaspot_update_11926(): string {
   return $changes
     ? 'Repaired API roles: ' . implode(', ', $changes) . '.'
     : 'API roles already present with their valid permissions.';
+}
+
+/**
+ * Re-run raw config-entity UUID drift repair after the entity-API 11919 hook.
+ */
+function markaspot_update_11927(): string {
+  return _markaspot_repair_config_entity_uuid_drift();
 }
 
 /**
