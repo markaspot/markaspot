@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.105](https://github.com/markaspot/markaspot/compare/11.9.104...11.9.105) (2026-06-05)
+
+### Features
+
+* **profile:** guard profile-owned config during config import ([7cdcc23](https://github.com/markaspot/markaspot/commit/7cdcc23fe1a366889eef75ecb4852252be493523))
+
+### Bug Fixes
+
+* **install:** make a fresh site:install fully functional end-to-end ([e0e7bcd](https://github.com/markaspot/markaspot/commit/e0e7bcd8e79d5cb0dd67e03dbc9602bd6b17bf6a))
+
 ## [11.9.104](https://github.com/markaspot/markaspot/compare/11.9.103...11.9.104) (2026-06-05)
 
 ### Bug Fixes
