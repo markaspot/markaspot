@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_nuxt\Resource;
 
 use Drupal\Core\Cache\CacheableMetadata;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Datetime\DateFormatterInterface;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -87,6 +88,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
     protected AccountInterface $currentUser,
     protected DateFormatterInterface $dateFormatter,
     protected LoggerInterface $logger,
+    protected Connection $database,
   ) {}
 
   /**
@@ -101,6 +103,7 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
       $container->get('current_user'),
       $container->get('date.formatter'),
       $container->get('logger.factory')->get('markaspot_nuxt'),
+      $container->get('database'),
     );
   }
 
@@ -165,33 +168,26 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
    *   capped at MAX_REVISIONS.
    */
   protected function buildRevisionItems(NodeInterface $entity): array {
-    $node_storage = $this->entityTypeManager->getStorage('node');
+    // Read revision METADATA in ONE query against the node_revision table,
+    // rather than loading each full node revision. Loading a revision pulls
+    // every field, paragraph and media reference, so the old per-vid
+    // loadRevision() loop was O(n) full entity loads — a 16-revision history
+    // took tens of seconds. Only revision metadata is exposed, and the route
+    // already gates staff access + node 'view', so a direct read is safe.
+    // node_revision rows are returned oldest -> newest by the ASC vid sort.
+    $rows = $this->database->select('node_revision', 'nr')
+      ->fields('nr', ['vid', 'revision_uid', 'revision_timestamp', 'revision_log'])
+      ->condition('nr.nid', $entity->id())
+      ->orderBy('nr.vid', 'ASC')
+      ->execute()
+      ->fetchAll();
 
-    // Enumerate revisions via an entity query (NodeStorage::revisionIds() is
-    // deprecated in drupal:11.3 / removed in 13.0). allRevisions() + ascending
-    // sort on the revision id gives oldest -> newest. accessCheck(FALSE) is
-    // safe here: the route already gates on the staff revision permission and
-    // the underlying node 'view' access, and only revision metadata (not field
-    // values) is exposed.
-    $entity_type = $this->entityTypeManager->getDefinition('node');
-    $revision_key = $entity_type->getKey('revision');
-    // An allRevisions() query returns [revision_id => entity_id]; the revision
-    // ids (vids) we need are the keys. The ASC sort on the revision id yields
-    // oldest -> newest.
-    $result = $node_storage->getQuery()
-      ->allRevisions()
-      ->condition($entity_type->getKey('id'), $entity->id())
-      ->sort($revision_key, 'ASC')
-      ->accessCheck(FALSE)
-      ->execute();
-    $revision_ids = array_map('intval', array_keys($result));
-
-    $total = count($revision_ids);
+    $total = count($rows);
     $truncated = FALSE;
     if ($total > static::MAX_REVISIONS) {
       $truncated = TRUE;
       // Keep the MAX_REVISIONS most-recent, preserving oldest->newest order.
-      $revision_ids = array_slice($revision_ids, -static::MAX_REVISIONS);
+      $rows = array_slice($rows, -static::MAX_REVISIONS);
       // No silent cap: surface it in the operator log so a request with an
       // unusually long history is observable.
       $this->logger->info(
@@ -204,37 +200,40 @@ class ServiceRequestVersionHistory extends ResourceBase implements ContainerInje
       );
     }
 
+    // Resolve author display labels in ONE batch load of the distinct revision
+    // users (never the raw account entity, mirroring the revision_uid
+    // hardening). uid 0 (system) and deleted users resolve to a null author.
+    $author_uids = array_values(array_unique(array_filter(
+      array_map(static fn($row): int => (int) $row->revision_uid, $rows)
+    )));
+    $users = $author_uids !== []
+      ? $this->entityTypeManager->getStorage('user')->loadMultiple($author_uids)
+      : [];
+
     // The default revision's vid is the current/default revision pointer.
     $current_vid = (int) $entity->getRevisionId();
 
     $resource_type = $this->buildResourceType();
     $items = [];
-    foreach ($revision_ids as $vid) {
-      $revision = $node_storage->loadRevision($vid);
-      if (!$revision instanceof NodeInterface) {
-        continue;
-      }
+    foreach ($rows as $row) {
+      $vid = (int) $row->vid;
+      $author_uid = (int) $row->revision_uid;
+      $author = isset($users[$author_uid]) ? $users[$author_uid]->label() : NULL;
 
-      $revision_user = $revision->getRevisionUser();
-      $author_uid = (int) $revision->getRevisionUserId();
-      // Only expose a human-readable author label, never the raw account
-      // entity, mirroring the revision_uid hardening. Deleted users -> null.
-      $author = $revision_user !== NULL ? $revision_user->label() : NULL;
-
-      $created = $revision->getRevisionCreationTime();
+      $created = $row->revision_timestamp;
       $timestamp = $created !== NULL
         ? $this->dateFormatter->format((int) $created, 'custom', \DateTime::ATOM)
         : NULL;
 
-      $log_message = (string) ($revision->getRevisionLogMessage() ?? '');
+      $log_message = (string) ($row->revision_log ?? '');
 
       $fields = [
-        'vid' => (int) $vid,
+        'vid' => $vid,
         'author' => $author,
         'author_uid' => $author_uid,
         'timestamp' => $timestamp,
         'log_message' => $log_message,
-        'is_current' => (int) $vid === $current_vid,
+        'is_current' => $vid === $current_vid,
       ];
 
       // Each item is keyed by the vid so the JSON:API `id` is stable and

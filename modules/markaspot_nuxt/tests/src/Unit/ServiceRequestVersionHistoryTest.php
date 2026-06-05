@@ -6,15 +6,16 @@ namespace Drupal\Tests\markaspot_nuxt\Unit;
 
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\Component\Serialization\Yaml;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\SelectInterface;
+use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\Datetime\DateFormatterInterface;
-use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\jsonapi\JsonApiResource\ResourceObject;
 use Drupal\markaspot_nuxt\Resource\ServiceRequestVersionHistory;
 use Drupal\node\NodeInterface;
-use Drupal\node\NodeStorageInterface;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
@@ -24,9 +25,10 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
  * Tests the service request version-history JSON:API resource.
  *
  * Unit-level: the revision enumeration, ordering, attribute mapping and
- * truncation are exercised through buildRevisionItems() with mocked entity
- * storage. Route-level concerns (staff-only permission gate, entity param) are
- * asserted against the shipped routing definition.
+ * truncation are exercised through buildRevisionItems() with a mocked
+ * node_revision metadata query and a mocked user batch load. Route-level
+ * concerns (staff-only permission gate, entity param) are asserted against the
+ * shipped routing definition.
  *
  * @group markaspot_nuxt
  * @coversDefaultClass \Drupal\markaspot_nuxt\Resource\ServiceRequestVersionHistory
@@ -41,11 +43,18 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   protected $entityTypeManager;
 
   /**
-   * The node storage mock.
+   * The user storage mock (for author label batch loads).
    *
-   * @var \Drupal\node\NodeStorageInterface&\PHPUnit\Framework\MockObject\MockObject
+   * @var \Drupal\Core\Entity\EntityStorageInterface&\PHPUnit\Framework\MockObject\MockObject
    */
-  protected $nodeStorage;
+  protected $userStorage;
+
+  /**
+   * The database connection mock.
+   *
+   * @var \Drupal\Core\Database\Connection&\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $database;
 
   /**
    * The date formatter mock.
@@ -67,18 +76,13 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   protected function setUp(): void {
     parent::setUp();
 
-    $this->nodeStorage = $this->createMock(NodeStorageInterface::class);
+    // Author labels are resolved through one user-storage batch load.
+    $this->userStorage = $this->createMock(EntityStorageInterface::class);
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
-    $this->entityTypeManager->method('getStorage')->with('node')->willReturn($this->nodeStorage);
+    $this->entityTypeManager->method('getStorage')->with('user')->willReturn($this->userStorage);
 
-    // The resource enumerates revisions through an allRevisions() entity query
-    // and reads the node entity type's id / revision keys.
-    $entity_type = $this->createMock(EntityTypeInterface::class);
-    $entity_type->method('getKey')->willReturnMap([
-      ['id', 'nid'],
-      ['revision', 'vid'],
-    ]);
-    $this->entityTypeManager->method('getDefinition')->with('node')->willReturn($entity_type);
+    // Revision metadata is read with one node_revision select.
+    $this->database = $this->createMock(Connection::class);
 
     $this->dateFormatter = $this->createMock(DateFormatterInterface::class);
     // Render any timestamp deterministically as an ISO 8601 string so the test
@@ -98,20 +102,21 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
       $this->entityTypeManager,
       $this->createMock(AccountInterface::class),
       $this->dateFormatter,
-      $this->logger
+      $this->logger,
+      $this->database
     );
   }
 
   /**
-   * Creates a revision mock with the given metadata.
+   * Builds a node_revision metadata row as fetchAll() (FETCH_OBJ) returns it.
    */
-  protected function revision(int $vid, ?UserInterface $author, int $author_uid, ?int $created, string $log): NodeInterface {
-    $revision = $this->createMock(NodeInterface::class);
-    $revision->method('getRevisionUser')->willReturn($author);
-    $revision->method('getRevisionUserId')->willReturn($author_uid);
-    $revision->method('getRevisionCreationTime')->willReturn($created);
-    $revision->method('getRevisionLogMessage')->willReturn($log);
-    return $revision;
+  protected function row(int $vid, int $uid, ?int $timestamp, string $log): \stdClass {
+    return (object) [
+      'vid' => $vid,
+      'revision_uid' => $uid,
+      'revision_timestamp' => $timestamp,
+      'revision_log' => $log,
+    ];
   }
 
   /**
@@ -124,23 +129,46 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   }
 
   /**
-   * Stubs the allRevisions() entity query to return the given vids.
+   * Stubs the node_revision select to return the given metadata rows.
    *
-   * The query result is keyed by revision id (vid) with the entity id as the
-   * value, exactly like a real allRevisions() result.
+   * The rows are returned in the order the (ASC vid) query yields them
+   * (oldest -> newest), exactly like the real node_revision read.
    *
-   * @param int[] $vids
-   *   The revision ids, in the order the (sorted) query would return them.
+   * @param \stdClass[] $rows
+   *   The revision metadata rows.
    */
-  protected function stubRevisionQuery(array $vids): void {
-    $query = $this->createMock(QueryInterface::class);
-    $query->method('allRevisions')->willReturnSelf();
-    $query->method('condition')->willReturnSelf();
-    $query->method('sort')->willReturnSelf();
-    $query->method('accessCheck')->willReturnSelf();
-    // [vid => entity_id]; entity id is irrelevant to the resource.
-    $query->method('execute')->willReturn(array_fill_keys($vids, 1));
-    $this->nodeStorage->method('getQuery')->willReturn($query);
+  protected function stubRevisionRows(array $rows): void {
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchAll')->willReturn($rows);
+
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('orderBy')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $this->database->method('select')->willReturn($select);
+  }
+
+  /**
+   * Stubs the user batch load to resolve the given uid -> user map.
+   *
+   * @param array<int, \Drupal\user\UserInterface> $users
+   *   Keyed by uid; uids not present resolve to a null author label.
+   */
+  protected function stubUsers(array $users): void {
+    $this->userStorage->method('loadMultiple')->willReturn($users);
+  }
+
+  /**
+   * Mocks the default-revision node passed to buildRevisionItems().
+   */
+  protected function node(int $nid, int $current_vid, string $bundle = 'service_request'): NodeInterface {
+    $entity = $this->createMock(NodeInterface::class);
+    $entity->method('bundle')->willReturn($bundle);
+    $entity->method('id')->willReturn($nid);
+    $entity->method('getRevisionId')->willReturn($current_vid);
+    return $entity;
   }
 
   /**
@@ -161,20 +189,16 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
   public function testRevisionsSortedOldestToNewestWithAttributes(): void {
     $editor = $this->user('Editor Eve');
 
-    // The allRevisions() query sorts ASC on the revision id, so it returns
-    // oldest -> newest. The resource preserves that order.
-    $this->stubRevisionQuery([1, 2, 3]);
-    $this->nodeStorage->method('loadRevision')->willReturnMap([
-      [1, $this->revision(1, NULL, 0, 1000, '')],
-      [2, $this->revision(2, $editor, 7, 2000, 'Status changed to in progress')],
-      [3, $this->revision(3, $editor, 7, 3000, 'Closed')],
+    // node_revision is read ASC on vid, so rows arrive oldest -> newest.
+    $this->stubRevisionRows([
+      $this->row(1, 0, 1000, ''),
+      $this->row(2, 7, 2000, 'Status changed to in progress'),
+      $this->row(3, 7, 3000, 'Closed'),
     ]);
+    // Distinct non-zero author uids ([7]) resolve in one batch load.
+    $this->stubUsers([7 => $editor]);
 
-    $entity = $this->createMock(NodeInterface::class);
-    $entity->method('bundle')->willReturn('service_request');
-    $entity->method('getRevisionId')->willReturn(3);
-
-    $built = $this->resource()->callBuildRevisionItems($entity);
+    $built = $this->resource()->callBuildRevisionItems($this->node(1, 3));
     $items = $built['items'];
 
     $this->assertFalse($built['truncated']);
@@ -183,7 +207,7 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
     // Oldest first.
     $this->assertSame([1, 2, 3], array_map(fn(ResourceObject $o) => $this->attr($o, 'vid'), $items));
 
-    // First (oldest) revision: anonymous/system author, empty log.
+    // First (oldest) revision: anonymous/system author (uid 0), empty log.
     $first = $items[0];
     $this->assertSame('1', $first->getId());
     $this->assertSame(1, $this->attr($first, 'vid'));
@@ -212,17 +236,12 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
    * @covers ::buildRevisionItems
    */
   public function testDeletedAuthorYieldsNull(): void {
-    $this->stubRevisionQuery([1]);
-    $this->nodeStorage->method('loadRevision')->willReturnMap([
-      // Revision user entity deleted (null) but the uid is retained.
-      [1, $this->revision(1, NULL, 42, 1000, 'edit')],
-    ]);
+    // Revision user uid retained, but the account was deleted so the batch
+    // load returns no user for it.
+    $this->stubRevisionRows([$this->row(1, 42, 1000, 'edit')]);
+    $this->stubUsers([]);
 
-    $entity = $this->createMock(NodeInterface::class);
-    $entity->method('bundle')->willReturn('service_request');
-    $entity->method('getRevisionId')->willReturn(1);
-
-    $items = $this->resource()->callBuildRevisionItems($entity)['items'];
+    $items = $this->resource()->callBuildRevisionItems($this->node(1, 1))['items'];
 
     $this->assertNull($this->attr($items[0], 'author'));
     $this->assertSame(42, $this->attr($items[0], 'author_uid'));
@@ -235,20 +254,14 @@ class ServiceRequestVersionHistoryTest extends UnitTestCase {
    * @covers ::buildRevisionItems
    */
   public function testTruncationCapsAtFiftyMostRecent(): void {
-    // 60 revisions: vids 1..60, oldest -> newest from the ASC-sorted query.
-    $this->stubRevisionQuery(range(1, 60));
-    $this->nodeStorage->method('loadRevision')->willReturnCallback(
-      fn(int $vid) => $this->revision($vid, NULL, 0, 1000 + $vid, '')
-    );
-
-    $entity = $this->createMock(NodeInterface::class);
-    $entity->method('bundle')->willReturn('service_request');
-    $entity->method('getRevisionId')->willReturn(60);
+    // 60 revisions: vids 1..60, oldest -> newest, all system-authored.
+    $rows = array_map(fn(int $vid) => $this->row($vid, 0, 1000 + $vid, ''), range(1, 60));
+    $this->stubRevisionRows($rows);
 
     // The truncation event must be logged, never silent.
     $this->logger->expects($this->once())->method('info');
 
-    $built = $this->resource()->callBuildRevisionItems($entity);
+    $built = $this->resource()->callBuildRevisionItems($this->node(1, 60));
     $items = $built['items'];
 
     $this->assertTrue($built['truncated']);
