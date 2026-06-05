@@ -1241,6 +1241,52 @@ function markaspot_update_11908(): void {
 }
 
 /**
+ * Ensure the GeoReport api_key (nuxt) resolves to a POST-capable, jur-scoped api_user.
+ *
+ * Fresh site:install ships services_api_key_auth.api_key.nuxt with user_uuid:null,
+ * so api-key POSTs fall back to anonymous (no 'restful post
+ * georeport_request_index_resource'), and JurisdictionScopeValidator needs the
+ * api_user to belong to a 'jur' group. start.sh/georeport-client.sh wire this up
+ * for script installs; site:install does not. Idempotent + existing-site-safe:
+ * acts only when user_uuid is empty, so an admin/production-linked key is never
+ * re-pointed. jur-membership grants only public-field view (== jur-outsider); PII
+ * stays locked by field_permissions.
+ */
+function _markaspot_ensure_api_user_link(): void {
+  $key_config = \Drupal::configFactory()->getEditable('services_api_key_auth.api_key.nuxt');
+  if ($key_config->isNew() || !empty($key_config->get('user_uuid'))) {
+    return;
+  }
+  $user_storage = \Drupal::entityTypeManager()->getStorage('user');
+  $existing = $user_storage->loadByProperties(['name' => 'api_user']);
+  $api_user = $existing ? reset($existing) : NULL;
+  if (!$api_user) {
+    $api_user = $user_storage->create(['name' => 'api_user', 'status' => 1, 'roles' => ['api_user']]);
+    $api_user->save();
+    \Drupal::logger('markaspot')->notice('Created api_user account for GeoReport api-key authentication.');
+  }
+  elseif (!$api_user->hasRole('api_user')) {
+    $api_user->addRole('api_user');
+    $api_user->save();
+  }
+  $key_config->set('user_uuid', $api_user->uuid())->save();
+
+  // Scope the api_user to every jurisdiction group so api-key POSTs resolve a
+  // jurisdiction. On the pure site:install path the jur group may not exist yet
+  // (it is created by the content/seed step); start.sh/georeport-client.sh then
+  // add the membership. This loop is a safe no-op when no jur group exists.
+  $group_type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type') ?: 'jur';
+  if (\Drupal::entityTypeManager()->hasDefinition('group')) {
+    $jur_groups = \Drupal::entityTypeManager()->getStorage('group')->loadByProperties(['type' => $group_type]);
+    foreach ($jur_groups as $group) {
+      if (!$group->getMember($api_user)) {
+        $group->addMember($api_user);
+      }
+    }
+  }
+}
+
+/**
  * Implements hook_install() for the markaspot profile.
  *
  * Runs after all modules are installed and their config is imported. Repairs
@@ -1250,6 +1296,168 @@ function markaspot_update_11908(): void {
  */
 function markaspot_install() {
   _markaspot_repair_field_permissions();
+  _markaspot_grant_service_provider_api_perms();
+  _markaspot_ensure_api_user_link();
+  _markaspot_ensure_category_jurisdiction();
+}
+
+/**
+ * Grants optional service_provider field permissions to the API roles.
+ *
+ * The api_user and api_editor roles ship in config/install. Their YAMLs used to
+ * list three field_permissions perms for fields that live in submodule
+ * config/optional (field_service_provider, field_service_provider_notes). Those
+ * fields do not exist when the role config is first imported, so Drupal's config
+ * installer rejected the ENTIRE role entity (it does not strip individual
+ * permissions). The roles never got created, which broke api_key POSTs (the
+ * 'restful post georeport_request_index_resource' perm went missing with the
+ * role) -> Open311 returned 403/404.
+ *
+ * Fix: the three optional-field perms were removed from the install YAMLs so the
+ * roles import cleanly with their valid perms. This helper re-grants those three
+ * perms AFTER install, but only when the field actually exists (i.e. the
+ * service_provider submodule/vocabulary is present). On installs where the
+ * fields are absent it is a clean no-op, so it neither over- nor under-privileges
+ * any site.
+ *
+ * Idempotent and existing-site safe: only grants perms that are valid and not
+ * already present, and only to roles that exist.
+ */
+function _markaspot_grant_service_provider_api_perms(): void {
+  // The three perms that used to break role import. Each is only valid once its
+  // backing field exists (field_permissions registers them per field_storage).
+  $optional_perms = [
+    'view field_service_provider',
+    'view field_service_provider_notes',
+    'create field_service_provider_notes',
+  ];
+
+  $valid_permissions = array_keys(\Drupal::service('user.permissions')->getPermissions());
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  $granted = [];
+
+  foreach (['api_user', 'api_editor'] as $role_id) {
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      continue;
+    }
+    $count = 0;
+    foreach ($optional_perms as $perm) {
+      // Only api_user keeps the bare 'view field_service_provider*' set; the
+      // original YAMLs granted all three to both roles, so mirror that here.
+      if (in_array($perm, $valid_permissions, TRUE) && !$role->hasPermission($perm)) {
+        $role->grantPermission($perm);
+        $count++;
+      }
+    }
+    if ($count > 0) {
+      $role->save();
+      $granted[] = "$role_id (+$count)";
+    }
+  }
+
+  if (!empty($granted)) {
+    \Drupal::logger('markaspot')->notice(
+      'Granted optional service_provider field permissions to API roles: @roles',
+      ['@roles' => implode(', ', $granted)]
+    );
+  }
+}
+
+/**
+ * Ensures service_category terms are resolvable by the GeoReport endpoint.
+ *
+ * The category->jurisdiction link (field_jurisdiction ON the term) is the
+ * canonical relation used by GeoreportProcessorService::mapServiceCodeToTaxonomy()
+ * to resolve an Open311 service_code to a taxonomy term for a jurisdiction.
+ *
+ * On a fresh install this link is meant to arrive via markaspot_group's
+ * config/optional field plus the default-content migration's
+ * field_jurisdiction process. Both depend on install-time ordering
+ * (the service_category vocabulary and the jurisdiction group existing at
+ * the moment the optional config / migration runs). When that ordering is
+ * not satisfied, the bundle field never attaches and every term is left
+ * with an empty field_jurisdiction, so the first categorised POST 404s with
+ * "Service code not found". This repair closes that gap deterministically.
+ *
+ * Mirrors markaspot_update_11900() steps 1 + 3 (the existing-site repair) so
+ * fresh installs and updated installs converge on the same state. Idempotent:
+ * skips the field when already attached and only backfills empty terms.
+ * Multi-tenant safe: only runs when exactly one root jurisdiction exists, to
+ * avoid cross-tenant category reassignment.
+ */
+function _markaspot_ensure_category_jurisdiction(): void {
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  // Skip cleanly if the taxonomy/group stack is not present.
+  if (!$entity_type_manager->hasDefinition('taxonomy_term') || !$entity_type_manager->hasDefinition('group')) {
+    return;
+  }
+
+  // Step 1: attach field_jurisdiction to service_category if missing.
+  $field_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_jurisdiction');
+  if (!$field_storage) {
+    $field_storage = FieldStorageConfig::create([
+      'field_name' => 'field_jurisdiction',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+      'cardinality' => 1,
+      'translatable' => FALSE,
+    ]);
+    $field_storage->save();
+  }
+
+  $field_config = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_jurisdiction');
+  if (!$field_config) {
+    FieldConfig::create([
+      'field_storage' => $field_storage,
+      'bundle' => 'service_category',
+      'label' => 'Jurisdiction',
+      'description' => 'The jurisdiction this category belongs to.',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => ['jur' => 'jur'],
+          'sort' => ['field' => 'label', 'direction' => 'ASC'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  }
+
+  // Step 2: backfill empty terms to the single root jurisdiction. Bail out on
+  // multi-tenant installs (more than one root jur) to avoid mis-assignment.
+  $jur_type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type') ?: 'jur';
+  $groups = $entity_type_manager->getStorage('group')->loadByProperties(['type' => $jur_type]);
+  $roots = array_filter($groups, static function ($group) {
+    return !$group->hasField('field_parent_jurisdiction')
+      || $group->get('field_parent_jurisdiction')->isEmpty();
+  });
+  if (count($roots) !== 1) {
+    return;
+  }
+  $root = reset($roots);
+
+  $categories = $entity_type_manager->getStorage('taxonomy_term')
+    ->loadByProperties(['vid' => 'service_category']);
+  $count = 0;
+  foreach ($categories as $term) {
+    if ($term->hasField('field_jurisdiction') && $term->get('field_jurisdiction')->isEmpty()) {
+      $term->set('field_jurisdiction', ['target_id' => $root->id()]);
+      $term->save();
+      $count++;
+    }
+  }
+
+  if ($count > 0) {
+    \Drupal::logger('markaspot')->notice(
+      'Backfilled field_jurisdiction on @count service_category term(s) to jurisdiction @gid during install.',
+      ['@count' => $count, '@gid' => $root->id()]
+    );
+  }
 }
 
 /**
@@ -2694,13 +2902,18 @@ function _markaspot_update_11921_sync_form_displays(array &$changes): void {
     ]);
   }
   if (FieldConfig::loadByName('taxonomy_term', 'internal_status', 'field_status_definition')) {
+    // Fall back to a plain textarea when json_form_widget (which provides the
+    // status_definition_json_form widget's base class) is not enabled; saving a
+    // form display that references an unavailable widget aborts the update.
+    $has_json_widget = \Drupal::service('plugin.manager.field.widget')
+      ->hasDefinition('status_definition_json_form');
     $term_display->setComponent('field_status_definition', [
-      'type' => 'status_definition_json_form',
+      'type' => $has_json_widget ? 'status_definition_json_form' : 'text_textarea',
       'weight' => 4,
-      'settings' => [
+      'settings' => $has_json_widget ? [
         'schema_type' => 'object',
         'schema_properties' => '',
-      ],
+      ] : [],
     ]);
   }
 
@@ -3258,6 +3471,86 @@ function markaspot_update_11924(): string {
 
   $display->save();
   return 'Moved field_request_attributes into the management form Administration group.';
+}
+
+/**
+ * Link the GeoReport api_key to a POST-capable, jur-scoped api_user when unlinked.
+ */
+function markaspot_update_11925(): string {
+  _markaspot_ensure_api_user_link();
+  $linked = \Drupal::config('services_api_key_auth.api_key.nuxt')->get('user_uuid');
+  return $linked ? 'GeoReport api_key linked to a POST-capable api_user.' : 'GeoReport api_key already linked or absent; no change.';
+}
+
+/**
+ * Repair api_user/api_editor roles and grant service_provider API perms.
+ *
+ * Fixes a fresh-install regression where the api_user and api_editor role
+ * config (config/install) listed three field_permissions perms for fields that
+ * live in submodule config/optional. Those fields are absent at role-import
+ * time, so Drupal's config installer rejected the WHOLE role entity (it does not
+ * strip individual perms). The roles never installed and api_key POSTs lost
+ * 'restful post georeport_request_index_resource' -> 403/404.
+ *
+ * The install YAMLs no longer carry the three optional-field perms, so fresh
+ * installs import the roles cleanly. This hook converges existing sites:
+ *
+ * 1. Ensures both roles EXIST. If a past install rejected one (e.g. api_editor),
+ *    it is recreated from the (now valid) install YAML with its valid perms.
+ * 2. Grants the valid perms each role's YAML declares (idempotent).
+ * 3. Re-grants the three optional service_provider field perms, but only when
+ *    the backing field exists (clean no-op otherwise).
+ *
+ * Idempotent and existing-site safe: never removes perms, only adds valid ones.
+ */
+function markaspot_update_11926(): string {
+  $valid_permissions = array_keys(\Drupal::service('user.permissions')->getPermissions());
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $changes = [];
+
+  foreach (['api_user', 'api_editor'] as $role_id) {
+    $file = $profile_path . '/config/install/user.role.' . $role_id . '.yml';
+    if (!is_file($file)) {
+      continue;
+    }
+    $yaml = Yaml::decode(file_get_contents($file));
+    if (empty($yaml['id'])) {
+      continue;
+    }
+
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      // The role was rejected on a past install; recreate it from the shipped
+      // definition (label/weight) so the valid perms below can attach.
+      $role = $role_storage->create([
+        'id' => $yaml['id'],
+        'label' => $yaml['label'] ?? $yaml['id'],
+        'weight' => $yaml['weight'] ?? 0,
+      ]);
+      $role->save();
+      $changes[] = "created missing role $role_id";
+    }
+
+    $granted = 0;
+    foreach (($yaml['permissions'] ?? []) as $perm) {
+      if (in_array($perm, $valid_permissions, TRUE) && !$role->hasPermission($perm)) {
+        $role->grantPermission($perm);
+        $granted++;
+      }
+    }
+    if ($granted > 0) {
+      $role->save();
+      $changes[] = "$role_id (+$granted valid perms)";
+    }
+  }
+
+  // Re-grant the three optional service_provider field perms where present.
+  _markaspot_grant_service_provider_api_perms();
+
+  return $changes
+    ? 'Repaired API roles: ' . implode(', ', $changes) . '.'
+    : 'API roles already present with their valid permissions.';
 }
 
 /**

@@ -5,6 +5,7 @@
  * Install, update and uninstall functions for the markaspot_media module.
  */
 
+use Drupal\Component\Serialization\Yaml;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\field\Entity\FieldConfig;
 
@@ -16,7 +17,65 @@ use Drupal\field\Entity\FieldConfig;
  * ships the deprecated field_request_image; this hook replaces it.
  */
 function markaspot_media_install(): void {
+  _markaspot_media_ensure_image_field();
   _markaspot_media_ensure_form_display();
+}
+
+/**
+ * Ensures the request_image media type and its image field are present.
+ *
+ * media.type.request_image and field_media_image ship in this module's
+ * config/install and normally arrive automatically. On an interrupted /
+ * partial profile install the module can register as installed while its
+ * config/install was skipped, leaving field_media_image absent. The GeoReport
+ * POST handler then crashes in GeoreportProcessorService::handleMediaUrls()
+ * with "Call to a member function getSetting() on null" whenever a media_url
+ * is supplied, surfacing as a redacted 502. This repair re-creates the media
+ * type and image field from this module's own config/install so media-bearing
+ * reports succeed. Idempotent: each piece is skipped when already present.
+ */
+function _markaspot_media_ensure_image_field(): void {
+  $path = \Drupal::service('extension.list.module')->getPath('markaspot_media') . '/config/install';
+
+  // 1. field_media_image storage on the media entity type.
+  if (!FieldStorageConfig::loadByName('media', 'field_media_image')) {
+    $file = $path . '/field.storage.media.field_media_image.yml';
+    if (file_exists($file)) {
+      $data = Yaml::decode(file_get_contents($file));
+      unset($data['uuid'], $data['_core']);
+      FieldStorageConfig::create($data)->save();
+    }
+  }
+
+  // 2. request_image media type bundle.
+  $media_type_storage = \Drupal::entityTypeManager()->getStorage('media_type');
+  foreach (['request_image', 'catalog_image'] as $bundle) {
+    if (!$media_type_storage->load($bundle)) {
+      $file = $path . '/media.type.' . $bundle . '.yml';
+      if (file_exists($file)) {
+        $data = Yaml::decode(file_get_contents($file));
+        unset($data['uuid'], $data['_core']);
+        $media_type_storage->create($data)->save();
+      }
+    }
+  }
+
+  // 3. field_media_image bundle binding on each media type.
+  foreach (['request_image', 'catalog_image'] as $bundle) {
+    if (!$media_type_storage->load($bundle)) {
+      continue;
+    }
+    if (!FieldConfig::loadByName('media', $bundle, 'field_media_image')) {
+      $file = $path . '/field.field.media.' . $bundle . '.field_media_image.yml';
+      if (file_exists($file)) {
+        $data = Yaml::decode(file_get_contents($file));
+        unset($data['uuid'], $data['_core']);
+        FieldConfig::create($data)->save();
+      }
+    }
+  }
+
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
 }
 
 /**
@@ -226,4 +285,22 @@ function markaspot_media_update_11904(): void {
   \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
 
   \Drupal::logger('markaspot_media')->info('Switched field_request_media selection handler to request_media:media (allows referencing unpublished request_image media during AI screening).');
+}
+
+/**
+ * Repairs a missing request_image media type / field_media_image field.
+ *
+ * Fixes installs where this module's config/install was skipped (partial
+ * profile install), leaving field_media_image absent and every media_url POST
+ * failing with a redacted 502. Idempotent and a no-op on healthy installs.
+ */
+function markaspot_media_update_11905(): string {
+  $had_field = (bool) FieldStorageConfig::loadByName('media', 'field_media_image');
+  _markaspot_media_ensure_image_field();
+  $has_field = (bool) FieldStorageConfig::loadByName('media', 'field_media_image');
+
+  if (!$had_field && $has_field) {
+    return 'Restored missing request_image media type and field_media_image field.';
+  }
+  return 'request_image media type and field_media_image field already present; nothing to repair.';
 }

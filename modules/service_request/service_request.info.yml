@@ -97,6 +97,3 @@ config_devel:
   - taxonomy.vocabulary.service_category
   - taxonomy.vocabulary.internal_status
   - taxonomy.vocabulary.service_status
-  - entity.view_display.node.service_request.default
-  - entity.view_display.node.service_request.teaser
-  - field.instance.node.service_request.body

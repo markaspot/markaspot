@@ -38,10 +38,10 @@ if [ -z "$DRUSH_CMD" ]; then
   fi
 fi
 
-# Install migration modules (skip in Docker where deps are pre-installed)
-if command -v composer >/dev/null 2>&1; then
-  composer require drupal/migrate_tools drupal/migrate_plus drupal/migrate_source_csv --update-no-dev --quiet 2>/dev/null || true
-fi
+# Migration dependencies (migrate_tools/migrate_plus/migrate_source_csv) are
+# declared in the project composer.json and already present in vendor/. We do
+# NOT run `composer require` here: it rewrites constraints to "*" mid-install
+# and corrupts the autoloader.
 
 $DRUSH_CMD $DRUSH_URI en markaspot_default_content -y 2>/dev/null || true
 $DRUSH_CMD $DRUSH_URI en migrate_tools migrate_plus migrate_source_csv -y
@@ -77,19 +77,10 @@ for MIGRATION_ID in $MIGRATIONS; do
     printf "\e[33mMigration %s failed or already imported\e[0m\n" "$MIGRATION_ID"
 done
 
-printf "\e[36mChecking for optional block configs...\e[0m\n"
-
-# Set the source path using project root (not $PWD which may differ)
-source_path="$PROJECT_ROOT/web/profiles/contrib/markaspot/modules/markaspot_default_content/config/_optional/"
-
-# Check if the directory exists before importing
-if [ -d "$source_path" ]; then
-  printf "\e[36mImporting the config for blocks...\e[0m\n"
-  $DRUSH_CMD $DRUSH_URI cim --source "$source_path" --partial -y
-else
-  printf "\e[33mOptional config directory not found at: $source_path\e[0m\n"
-  printf "\e[33mSkipping optional config import...\e[0m\n"
-fi
+# Note: the legacy config/_optional block-config import was removed. That
+# directory does not exist in this profile, so the cim --partial step was always
+# a no-op that printed a misleading "not found" warning. Block content ships via
+# the markaspot_migrate_default_content_block migration above.
 
 # Uninstall migration modules (keep files, only remove from DB)
 $DRUSH_CMD $DRUSH_URI pmu migrate_source_csv migrate_plus migrate_tools markaspot_default_content -y 2>/dev/null || true

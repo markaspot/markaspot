@@ -78,6 +78,19 @@ else
   echo "Warning: Could not get api_user UUID"
 fi
 
+# Scope api_user into every jur group so JurisdictionScopeValidator grants POST
+# scope. jur-membership == jur-outsider (public-field view only); PII stays
+# field_permissions-locked. Idempotent: skips groups the user already belongs to.
+$DRUSH $DRUSH_ARGS php:eval '
+  $u = user_load_by_name("api_user");
+  if ($u && \Drupal::entityTypeManager()->hasDefinition("group")) {
+    $gt = \Drupal::config("markaspot_open311.settings")->get("jurisdiction_group_type") ?: "jur";
+    foreach (\Drupal::entityTypeManager()->getStorage("group")->loadByProperties(["type"=>$gt]) as $g) {
+      if (!$g->getMember($u)) { $g->addMember($u); }
+    }
+  }
+' 2>/dev/null || true
+
 # Get the API key from the configuration
 API_KEY=${GEOREPORT_API_KEY:-$($DRUSH $DRUSH_ARGS config-get services_api_key_auth.api_key.nuxt key --format=string 2>/dev/null || echo "*")}
 printf "  Using API key: %s\n" "$API_KEY"

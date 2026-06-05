@@ -6,11 +6,16 @@
  */
 
 /**
- * Implements hook_install().
+ * Defines the markaspot_request_id table schema.
+ *
+ * Single source of truth shared by hook_schema(), hook_install() and the
+ * repair update hook so the definition can never drift between them.
+ *
+ * @return array
+ *   The schema definition for the markaspot_request_id table.
  */
-function markaspot_request_id_install() {
-  // Define the initial table schema.
-  $schema = [
+function _markaspot_request_id_table_schema(): array {
+  return [
     'description' => 'Mark-a-Spot request_id',
     'fields' => [
       'id' => [
@@ -63,10 +68,34 @@ function markaspot_request_id_install() {
       'jurisdiction_timestamp' => ['jurisdiction_id', 'timestamp'],
     ],
   ];
+}
 
-  // Create table from schema.
+/**
+ * Implements hook_schema().
+ *
+ * Declaring the table here lets Drupal's module installer provision it
+ * automatically. Previously the table was only created imperatively in
+ * hook_install(); if that hook was skipped (e.g. an interrupted profile
+ * install that still flagged the module installed), the table was missing
+ * and every service_request save threw a redacted 502 from the GeoReport
+ * POST handler via markaspot_request_id_node_presave().
+ */
+function markaspot_request_id_schema(): array {
+  return [
+    'markaspot_request_id' => _markaspot_request_id_table_schema(),
+  ];
+}
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_request_id_install() {
+  // hook_schema() already provisions the table on a clean install. Guard the
+  // createTable so install stays idempotent and never double-creates.
   $connection = \Drupal::database();
-  $connection->schema()->createTable('markaspot_request_id', $schema);
+  if (!$connection->schema()->tableExists('markaspot_request_id')) {
+    $connection->schema()->createTable('markaspot_request_id', _markaspot_request_id_table_schema());
+  }
 
   // Query for the last service_request to retrieve last service request.
   $query = \Drupal::entityQuery('node')
@@ -474,4 +503,57 @@ function _markaspot_request_id_current_varchar_length(string $table, string $fie
   }
 
   return $length === FALSE || $length === NULL ? NULL : (int) $length;
+}
+
+/**
+ * Creates the markaspot_request_id table if it is missing.
+ *
+ * Repairs installs where the module registered as installed but its
+ * hook_install() table creation was skipped (e.g. an interrupted profile
+ * install). Without the table, every service_request save fails in
+ * markaspot_request_id_node_presave() and the GeoReport POST handler
+ * surfaces a redacted 502. Idempotent: a no-op when the table already
+ * exists, so existing healthy installs are untouched.
+ */
+function markaspot_request_id_update_11901(): string {
+  $schema = \Drupal::database()->schema();
+  if ($schema->tableExists('markaspot_request_id')) {
+    return 'markaspot_request_id table already present; nothing to repair.';
+  }
+
+  $schema->createTable('markaspot_request_id', _markaspot_request_id_table_schema());
+
+  // Seed the sequence from the highest existing node request_id so freshly
+  // generated IDs continue the series instead of restarting at 1.
+  try {
+    $node_storage = \Drupal::entityTypeManager()->getStorage('node');
+    $ids = $node_storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->sort('nid', 'DESC')
+      ->range(0, 1)
+      ->execute();
+    $last = $ids ? $node_storage->load(reset($ids)) : NULL;
+    if ($last && isset($last->request_id->value) && $last->request_id->value !== '') {
+      $last_request_id = (string) $last->request_id->value;
+      $id_parts = explode('-', $last_request_id);
+      if (isset($id_parts[0]) && is_numeric($id_parts[0])) {
+        $seq = (int) $id_parts[0];
+        \Drupal::database()->insert('markaspot_request_id')
+          ->fields([
+            'id' => $seq,
+            'jurisdiction_id' => 0,
+            'seq' => $seq,
+            'request_id' => $last_request_id,
+          ])
+          ->execute();
+        return 'Created markaspot_request_id table and seeded sequence from last request ID ' . $last_request_id . '.';
+      }
+    }
+  }
+  catch (\Throwable $e) {
+    \Drupal::logger('markaspot_request_id')->warning('Created markaspot_request_id table but could not seed sequence: @message', ['@message' => $e->getMessage()]);
+  }
+
+  return 'Created missing markaspot_request_id table.';
 }

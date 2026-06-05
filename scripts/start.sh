@@ -1115,9 +1115,10 @@ EOF
     \$dept_ids = array_values(\$dept_ids);
     \$dept1 = isset(\$dept_ids[0]) ? \$group_storage->load(\$dept_ids[0]) : NULL;
     \$dept2 = isset(\$dept_ids[1]) ? \$group_storage->load(\$dept_ids[1]) : NULL;
-    // api_user must NOT be a group member: members get jur-member role which
-    // lacks view access via entity query. As outsider, jur-outsider grants view.
-    foreach (['moderation_1', 'moderation_2'] as \$name) {
+    // api_user needs jur membership so JurisdictionScopeValidator grants POST
+    // scope; jur-membership == jur-outsider (public-field view only), PII stays
+    // field_permissions-locked.
+    foreach (['api_user', 'moderation_1', 'moderation_2'] as \$name) {
       \$users = \$user_storage->loadByProperties(['name' => \$name]);
       \$user = reset(\$users);
       if (\$user && \$jur && !\$jur->getMember(\$user)) {

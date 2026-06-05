@@ -3477,7 +3477,20 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     if (isset($requestData['media_url'])) {
       $urls = explode(',', $requestData['media_url']);
-      $storageSetting = $this->entityFieldManager->getFieldStorageDefinitions('media')['field_media_image']->getSetting('uri_scheme');
+      // Guard against an incompletely-installed media stack: on a fresh
+      // install where markaspot_media's config/install did not land, the
+      // media `field_media_image` storage definition is absent and calling
+      // ->getSetting() on the missing entry raises a fatal \Error that the
+      // POST handler can only surface as a redacted 502. Degrade gracefully
+      // by skipping image handling instead — the report itself still saves.
+      $mediaStorageDefinitions = $this->entityFieldManager->getFieldStorageDefinitions('media');
+      if (!isset($mediaStorageDefinitions['field_media_image'])) {
+        $this->logger?->warning(
+          'media_url received but the media field_media_image storage is missing; skipping image import. Run drush updb / re-import markaspot_media config to restore media support.'
+        );
+        return $mediaUrls;
+      }
+      $storageSetting = $mediaStorageDefinitions['field_media_image']->getSetting('uri_scheme');
       $wrapperScheme = $this->getWrapperScheme($storageSetting);
       $fieldConfig = $this->configFactory->get('field.field.media.request_image.field_media_image');
       $fieldSettings = $fieldConfig->get('settings');

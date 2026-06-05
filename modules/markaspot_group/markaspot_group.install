@@ -5,6 +5,7 @@
  * Install, update and uninstall functions for markaspot_group module.
  */
 
+use Drupal\Component\Serialization\Yaml;
 use Drupal\user\Entity\Role;
 
 /**
@@ -1788,6 +1789,12 @@ function markaspot_group_update_11907(): void {
     ]);
   }
 
+  // nuxt_config_json_form extends json_form_widget's base class; fall back to a
+  // plain textarea on tenants where json_form_widget is not enabled so saving
+  // the jur form display does not abort the update with "plugin does not exist".
+  $nuxt_config_widget = \Drupal::service('plugin.manager.field.widget')
+    ->hasDefinition('nuxt_config_json_form') ? 'nuxt_config_json_form' : 'text_textarea';
+
   $display_components = [
     'field_slug' => [
       'type' => 'string_textfield',
@@ -1831,7 +1838,7 @@ function markaspot_group_update_11907(): void {
       ],
     ],
     'field_nuxt_config' => [
-      'type' => 'nuxt_config_json_form',
+      'type' => $nuxt_config_widget,
       'weight' => 6,
       'region' => 'content',
       'settings' => [],
@@ -4054,4 +4061,318 @@ function _markaspot_group_resolve_org_backfill_jurisdiction($org_group): ?\Drupa
     && $jur_group->bundle() === _markaspot_group_update_jurisdiction_group_type()
     ? $jur_group
     : NULL;
+}
+
+/**
+ * Implements hook_install().
+ *
+ * Guarantees the service_request bundle carries field_jurisdiction and
+ * field_organisation, which the whole group-assignment machinery
+ * (markaspot_group_node_insert / _markaspot_group_set_jurisdiction_field /
+ * _markaspot_group_reconcile_service_request_relationships) is gated on.
+ *
+ * These two bundle fields ship in markaspot_group/config/optional. Optional
+ * config is evaluated once, at module-install time, and silently skipped when
+ * ANY dependency is not yet present. On a fresh profile install that ordering is
+ * not guaranteed, so the fields can be missing -> every hook_node_insert branch
+ * no-ops -> service_request nodes are never added to the jurisdiction group ->
+ * the GeoReport jurisdiction filter returns 0 and the frontend shows nothing.
+ *
+ * Mirrors the page-node repair in markaspot_group_update_11904(). Idempotent.
+ */
+function markaspot_group_install(): void {
+  _markaspot_group_ensure_service_request_jurisdiction_fields();
+}
+
+/**
+ * Ensures field_jurisdiction + field_organisation exist on service_request.
+ *
+ * Creates the field storages and bundle field instances programmatically when
+ * the optional config did not install. Existing-site safe: every step is
+ * guarded by an existence check, so on installs where the fields are already
+ * present (the normal case) this is a no-op. Skips cleanly when the
+ * service_request node type or the group types are not present.
+ *
+ * @return string[]
+ *   Human-readable list of the fields that were created (empty when none).
+ */
+function _markaspot_group_ensure_service_request_jurisdiction_fields(): array {
+  $etm = \Drupal::entityTypeManager();
+  $logger = \Drupal::logger('markaspot_group');
+  $created = [];
+
+  // Bail cleanly if the node type is not present yet.
+  if (!$etm->getStorage('node_type')->load('service_request')) {
+    return $created;
+  }
+
+  $jur_type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type') ?? 'jur';
+  $org_type = \Drupal::config('markaspot_group.settings')->get('org_group_type') ?? 'org';
+
+  // Adding a field to the bundle makes core's EntityDisplayRebuilder load every
+  // service_request entity display. A display config left structurally
+  // incomplete by a failed/partial fresh-install (missing targetEntityType /
+  // bundle / mode) makes that load throw and aborts the field creation. Prune
+  // such corrupt stubs first; the shipped optional config recreates the valid
+  // display. Guarded: only removes configs that are genuinely missing required
+  // structural keys, so it never touches a healthy display.
+  _markaspot_group_prune_corrupt_service_request_displays();
+
+  $field_storage_storage = $etm->getStorage('field_storage_config');
+  $field_config_storage = $etm->getStorage('field_config');
+
+  // --- field_jurisdiction ---------------------------------------------------
+  // Storage ships in config/install, so it is normally present already.
+  $jur_storage = $field_storage_storage->load('node.field_jurisdiction');
+  if (!$jur_storage) {
+    $jur_storage = $field_storage_storage->create([
+      'field_name' => 'field_jurisdiction',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+      'cardinality' => -1,
+    ]);
+    $jur_storage->save();
+    $created[] = 'node.field_jurisdiction storage';
+  }
+  if (!$field_config_storage->load('node.service_request.field_jurisdiction')) {
+    $field_config_storage->create([
+      'field_storage' => $jur_storage,
+      'bundle' => 'service_request',
+      'label' => 'Jurisdiction',
+      'description' => 'The jurisdiction this service request belongs to. Set automatically on creation.',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => [$jur_type => $jur_type],
+          'sort' => ['field' => 'label', 'direction' => 'ASC'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+    $created[] = 'node.service_request.field_jurisdiction';
+    $logger->info('Created field instance node.service_request.field_jurisdiction.');
+  }
+
+  // --- field_organisation ---------------------------------------------------
+  // Both storage and field ship in config/optional, so either may be missing.
+  $org_storage = $field_storage_storage->load('node.field_organisation');
+  if (!$org_storage) {
+    $org_storage = $field_storage_storage->create([
+      'field_name' => 'field_organisation',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => ['target_type' => 'group'],
+      'cardinality' => -1,
+    ]);
+    $org_storage->save();
+    $created[] = 'node.field_organisation storage';
+  }
+  if (!$field_config_storage->load('node.service_request.field_organisation')) {
+    $field_config_storage->create([
+      'field_storage' => $org_storage,
+      'bundle' => 'service_request',
+      'label' => 'Organisation',
+      'description' => 'The organisation responsible for this service request.',
+      'required' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => [$org_type => $org_type],
+          'sort' => ['field' => 'label', 'direction' => 'ASC'],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+    $created[] = 'node.service_request.field_organisation';
+    $logger->info('Created field instance node.service_request.field_organisation.');
+  }
+
+  if ($created) {
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  }
+
+  return $created;
+}
+
+/**
+ * Repairs structurally incomplete service_request entity display configs.
+ *
+ * A fresh install can leave a service_request form/view display config that has
+ * a content payload but lacks the required structural keys (targetEntityType,
+ * bundle, mode). Drupal's EntityDisplayRebuilder loads all displays whenever a
+ * field is added to the bundle and throws on such a stub, which would abort
+ * _markaspot_group_ensure_service_request_jurisdiction_fields().
+ *
+ * For each incomplete display this re-imports the shipped definition (restoring
+ * the structural keys) when a matching config/optional or config/install YAML
+ * exists in any installed module; otherwise it deletes the unusable stub.
+ *
+ * Guarded: only acts on configs that are actually missing a required key, so a
+ * healthy display is never touched. Reads raw config to avoid instantiating the
+ * corrupt entity (which is what throws).
+ */
+function _markaspot_group_prune_corrupt_service_request_displays(): void {
+  $config_factory = \Drupal::configFactory();
+  $prefixes = [
+    'core.entity_form_display.node.service_request.',
+    'core.entity_view_display.node.service_request.',
+  ];
+  $logger = \Drupal::logger('markaspot_group');
+
+  foreach ($prefixes as $prefix) {
+    foreach ($config_factory->listAll($prefix) as $name) {
+      $data = $config_factory->get($name)->getRawData();
+      $incomplete = empty($data['targetEntityType'])
+        || empty($data['bundle'])
+        || empty($data['mode']);
+      if (!$incomplete) {
+        continue;
+      }
+
+      $shipped = _markaspot_group_find_shipped_config($name);
+      if ($shipped !== NULL) {
+        if (empty($shipped['uuid']) && !empty($data['uuid'])) {
+          $shipped['uuid'] = $data['uuid'];
+        }
+        if (empty($shipped['uuid'])) {
+          $shipped['uuid'] = \Drupal::service('uuid')->generate();
+        }
+        $config_factory->getEditable($name)->setData($shipped)->save();
+        $logger->warning('Repaired incomplete entity display config @name from shipped definition.', ['@name' => $name]);
+      }
+      else {
+        $config_factory->getEditable($name)->delete();
+        $logger->warning('Deleted incomplete entity display config @name (missing structural keys, no shipped source found).', ['@name' => $name]);
+      }
+    }
+  }
+}
+
+/**
+ * Locates a shipped config YAML by name across installed modules and profile.
+ *
+ * @param string $name
+ *   The config object name (without .yml).
+ *
+ * @return array<string, mixed>|null
+ *   The decoded YAML data, or NULL when no shipped source exists.
+ */
+function _markaspot_group_find_shipped_config(string $name): ?array {
+  $extension_path_resolver = \Drupal::service('extension.path.resolver');
+  $module_handler = \Drupal::moduleHandler();
+
+  $providers = [];
+  foreach (array_keys($module_handler->getModuleList()) as $module) {
+    $providers[] = ['module', $module];
+  }
+  $providers[] = ['profile', 'markaspot'];
+
+  foreach ($providers as [$type, $extension]) {
+    try {
+      $base = $extension_path_resolver->getPath($type, $extension);
+    }
+    catch (\Throwable) {
+      continue;
+    }
+    foreach (['/config/optional/', '/config/install/'] as $dir) {
+      $file = $base . $dir . $name . '.yml';
+      if (is_file($file)) {
+        $decoded = Yaml::decode(file_get_contents($file));
+        return is_array($decoded) ? $decoded : NULL;
+      }
+    }
+  }
+
+  return NULL;
+}
+
+/**
+ * Ensure service_request carries field_jurisdiction + field_organisation.
+ *
+ * Repairs existing sites where the optional bundle fields never installed,
+ * which left service_request nodes unable to be assigned to their jurisdiction
+ * group (GeoReport jurisdiction filter returned 0). After attaching the fields,
+ * backfills field_jurisdiction on any service_request that lacks it and lets the
+ * standard node-save reconciler create the missing jur group relationships.
+ *
+ * Idempotent and existing-site safe: fields are only created when missing, and
+ * only nodes with an empty field_jurisdiction are touched. Multi-tenant safe:
+ * the jurisdiction is derived per node from its category term's
+ * field_jurisdiction (the canonical root link), falling back to the single root
+ * jurisdiction only when exactly one exists.
+ */
+function markaspot_group_update_11932(): string {
+  $created = _markaspot_group_ensure_service_request_jurisdiction_fields();
+
+  // If field_jurisdiction is still absent we cannot backfill; report and stop.
+  $field_config_storage = \Drupal::entityTypeManager()->getStorage('field_config');
+  if (!$field_config_storage->load('node.service_request.field_jurisdiction')) {
+    return $created
+      ? 'Created ' . implode(', ', $created) . '.'
+      : 'service_request field_jurisdiction unavailable; nothing changed.';
+  }
+
+  $etm = \Drupal::entityTypeManager();
+  $node_storage = $etm->getStorage('node');
+  $group_storage = $etm->getStorage('group');
+
+  // Resolve the single root jurisdiction (used only when exactly one exists).
+  $jur_type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type') ?? 'jur';
+  $has_parent_field = $etm->getStorage('field_storage_config')->load('group.field_parent_jurisdiction') !== NULL;
+  $root_query = $group_storage->getQuery()->accessCheck(FALSE)->condition('type', $jur_type);
+  if ($has_parent_field) {
+    $root_query->notExists('field_parent_jurisdiction');
+  }
+  $root_ids = $root_query->execute();
+  $single_root_id = count($root_ids) === 1 ? (int) reset($root_ids) : NULL;
+
+  $nids = $node_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', 'service_request')
+    ->notExists('field_jurisdiction')
+    ->execute();
+
+  $backfilled = 0;
+  foreach ($nids as $nid) {
+    $node = $node_storage->load($nid);
+    if (!$node instanceof \Drupal\node\NodeInterface || !$node->hasField('field_jurisdiction')) {
+      continue;
+    }
+
+    // Prefer the category term's field_jurisdiction (canonical root link).
+    $jur_id = NULL;
+    if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+      $term = $node->get('field_category')->entity;
+      if ($term && $term->hasField('field_jurisdiction') && !$term->get('field_jurisdiction')->isEmpty()) {
+        $jur_id = (int) $term->get('field_jurisdiction')->target_id;
+      }
+    }
+    if ($jur_id === NULL) {
+      $jur_id = $single_root_id;
+    }
+    if ($jur_id === NULL) {
+      // Multiple roots and no category link: do not guess.
+      continue;
+    }
+
+    $node->set('field_jurisdiction', ['target_id' => $jur_id]);
+    // Saving fires markaspot_group_node_update() -> reconciler, which creates
+    // the jur group relationship the frontend filters on.
+    $node->save();
+    $backfilled++;
+  }
+
+  $parts = [];
+  if ($created) {
+    $parts[] = 'Created ' . implode(', ', $created);
+  }
+  if ($backfilled > 0) {
+    $parts[] = sprintf('backfilled field_jurisdiction on %d service request(s)', $backfilled);
+  }
+
+  return $parts
+    ? implode('; ', $parts) . '.'
+    : 'service_request jurisdiction fields already present and all nodes assigned.';
 }

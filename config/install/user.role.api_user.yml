@@ -8,11 +8,8 @@ label: 'API User'
 weight: -3
 is_admin: null
 permissions:
-  - 'create field_service_provider_notes'
   - 'restful get georeport_request_index_resource'
   - 'restful get georeport_request_resource'
   - 'restful get georeport_service_index_resource'
   - 'restful post georeport_request_index_resource'
-  - 'view field_service_provider'
-  - 'view field_service_provider_notes'
   - 'view field_sp_attachment'
