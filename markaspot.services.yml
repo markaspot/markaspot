@@ -1,0 +1,14 @@
+services:
+  markaspot.profile_config_guard:
+    class: Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber
+    arguments:
+      - '@extension.list.module'
+      - '@config.storage'
+      - '%install_profile%'
+      - '@logger.channel.markaspot'
+    tags:
+      - { name: event_subscriber }
+
+  logger.channel.markaspot:
+    parent: logger.channel_base
+    arguments: ['markaspot']
