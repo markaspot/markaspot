@@ -1,5 +1,29 @@
 # Changelog
 
+## [11.9.103](https://github.com/markaspot/markaspot/compare/11.9.102...11.9.103) (2026-06-05)
+
+### Features
+
+* dedicated ai_analysis image style for Vision API ([#227](https://github.com/markaspot/markaspot/issues/227)) ([1f2801a](https://github.com/markaspot/markaspot/commit/1f2801a9faa793aa18c7c468610a9c9b3e3d4b9b))
+* **nuxt:** JSON:API version-history resource via jsonapi_resources (markaspot-ui[#329](https://github.com/markaspot/markaspot/issues/329)) ([89ca1b2](https://github.com/markaspot/markaspot/commit/89ca1b253f2cfe24d09fedb96d8c4c427657200a))
+* **open311:** expose revision author + enable service_request revisions (markaspot-ui[#472](https://github.com/markaspot/markaspot/issues/472)) ([a7eb8d8](https://github.com/markaspot/markaspot/commit/a7eb8d845faf9777be97cc39c3ae1cc911b4622c))
+
+### Bug Fixes
+
+* **facility:** guard cross-tenant field_facility + accept display fields ([#367](https://github.com/markaspot/markaspot/issues/367), [#368](https://github.com/markaspot/markaspot/issues/368)) ([6270666](https://github.com/markaspot/markaspot/commit/6270666fef4ccb90aa64d63e65ad8a9e8de51932))
+* **facility:** make FacilityOwnershipConstraintValidator final (phpstan new static) ([d2bb731](https://github.com/markaspot/markaspot/commit/d2bb73141127ecde6eb416ea7e67f5d279fe0727))
+* **facility:** persist + validate icon/description/url, clear foreign tag ([#368](https://github.com/markaspot/markaspot/issues/368), [#367](https://github.com/markaspot/markaspot/issues/367)) ([7e0f508](https://github.com/markaspot/markaspot/commit/7e0f508d656b689712c44e735943d2f7ff0f630e))
+* **facility:** strip control chars + require non-empty host in facility url ([ec6a29c](https://github.com/markaspot/markaspot/commit/ec6a29c42e986e29a4680cce2a59c54653663020))
+* **jsonapi:** hide revision_uid/log/timestamp on public service_request resource (update_11904) ([c3062ca](https://github.com/markaspot/markaspot/commit/c3062ca06b2475c99f61e69f3b5fa46b42e00292))
+
+### Performance
+
+* **nuxt:** version-history reads revision metadata in one query, not per-vid entity loads (markaspot-ui[#329](https://github.com/markaspot/markaspot/issues/329)) ([36420db](https://github.com/markaspot/markaspot/commit/36420db7eacfd69945ecce944387981a315fd48d))
+
+### Refactoring
+
+* centralise gpt-4.1-mini fallback into AiClientService::DEFAULT_CHAT_MODEL ([#341](https://github.com/markaspot/markaspot/issues/341)) ([58ffacb](https://github.com/markaspot/markaspot/commit/58ffacb89138228ba1f65908c02a021841392939))
+
 ## [11.9.102](https://github.com/markaspot/markaspot/compare/11.9.101...11.9.102) (2026-06-04)
 
 ### Features
