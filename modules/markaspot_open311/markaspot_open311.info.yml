@@ -12,3 +12,4 @@ dependencies:
   - markaspot_group
   - markaspot_validation
   - markaspot_nuxt
+  - json_form_widget
