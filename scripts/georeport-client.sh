@@ -52,9 +52,12 @@ fi
 
 printf "\e[36mCreating users...\e[0m\n"
 
-# Create API user
+# Create API user. It authenticates via the Open311 API key, never a password,
+# so we give it a throwaway random password instead of a hardcoded one (this
+# script ships in the public profile repo). Nothing reads this value.
 printf "  Creating api_user...\n"
-$DRUSH $DRUSH_ARGS user:create "api_user" --password="api_password" 2>/dev/null || echo "  api_user already exists"
+API_USER_PASS=$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)
+$DRUSH $DRUSH_ARGS user:create "api_user" --password="$API_USER_PASS" 2>/dev/null || echo "  api_user already exists"
 $DRUSH $DRUSH_ARGS user:role:add "api_user" "api_user" 2>/dev/null || true
 
 # Create 2 moderator users
@@ -78,22 +81,43 @@ else
   echo "Warning: Could not get api_user UUID"
 fi
 
-# Scope api_user into every jur group so JurisdictionScopeValidator grants POST
-# scope. jur-membership == jur-outsider (public-field view only); PII stays
-# field_permissions-locked. Idempotent: skips groups the user already belongs to.
+# Scope api_user into every jur group (JurisdictionScopeValidator derives the
+# API-key scope from jur memberships) AND assign the view-only {type}-member
+# role. A roleless group member gets NEITHER member nor outsider permissions, so
+# it ends up with LESS access than an anonymous outsider and cannot view public
+# reports -- the headless frontend (reading as api_user via the api_key) then
+# returns 0 results. {type}-member is view-only (no create/update/delete); PII
+# stays field_permissions-locked. Idempotent: backfills the role on pre-existing
+# roleless memberships too.
 $DRUSH $DRUSH_ARGS php:eval '
   $u = user_load_by_name("api_user");
   if ($u && \Drupal::entityTypeManager()->hasDefinition("group")) {
     $gt = \Drupal::config("markaspot_open311.settings")->get("jurisdiction_group_type") ?: "jur";
+    $memberRole = $gt . "-member";
+    $roleExists = (bool) \Drupal::entityTypeManager()->getStorage("group_role")->load($memberRole);
+    $relStorage = \Drupal::entityTypeManager()->getStorage("group_relationship");
     foreach (\Drupal::entityTypeManager()->getStorage("group")->loadByProperties(["type"=>$gt]) as $g) {
-      if (!$g->getMember($u)) { $g->addMember($u); }
+      if (!$g->getMember($u)) {
+        $g->addMember($u, $roleExists ? ["group_roles" => [$memberRole]] : []);
+      }
+      elseif ($roleExists) {
+        $rels = $relStorage->loadByProperties(["gid"=>$g->id(), "entity_id"=>$u->id(), "plugin_id"=>"group_membership"]);
+        $rel = reset($rels);
+        if ($rel) {
+          $have = array_column($rel->get("group_roles")->getValue(), "target_id");
+          if (!in_array($memberRole, $have, TRUE)) {
+            $rel->get("group_roles")->appendItem($memberRole);
+            $rel->save();
+          }
+        }
+      }
     }
   }
 ' 2>/dev/null || true
 
 # Get the API key from the configuration
 API_KEY=${GEOREPORT_API_KEY:-$($DRUSH $DRUSH_ARGS config-get services_api_key_auth.api_key.nuxt key --format=string 2>/dev/null || echo "*")}
-printf "  Using API key: %s\n" "$API_KEY"
+printf "  Using API key: %.8s...\n" "$API_KEY"
 
 # Set the center latitude and longitude
 CENTER_LAT=$($DRUSH $DRUSH_ARGS cget markaspot_nuxt.settings center_lat --format=string 2>/dev/null || echo "50.0")
@@ -179,7 +203,7 @@ echo "--------------------------------------------------------------------------
 
 printf "\n\e[32m Setup Complete!\e[0m\n\n"
 printf "  Users: api_user, moderation_1, moderation_2\n"
-printf "  API Key: %s\n" "$API_KEY"
+printf "  API Key: %.8s...\n" "$API_KEY"
 printf "  Test requests: %s\n\n" "$REQUEST_COUNT"
 
 # Find project root for DDEV config update
@@ -196,7 +220,10 @@ done
 DDEV_NODE_CONFIG="$_PROJECT_ROOT/.ddev/docker-compose.node-dev.yaml"
 if [ -f "$DDEV_NODE_CONFIG" ] && [ -n "$API_KEY" ] && [ "$API_KEY" != "*" ]; then
   printf "\e[36mUpdating DDEV node-dev configuration with API key...\e[0m\n"
-  sed -i.bak "s/GEOREPORT_API_KEY=.*/GEOREPORT_API_KEY=$API_KEY/" "$DDEV_NODE_CONFIG"
+  # Escape sed replacement metacharacters (& / \) so an unusual key cannot
+  # corrupt the substitution.
+  ESCAPED_KEY=$(printf '%s' "$API_KEY" | sed 's/[&/\\]/\\&/g')
+  sed -i.bak "s/GEOREPORT_API_KEY=.*/GEOREPORT_API_KEY=$ESCAPED_KEY/" "$DDEV_NODE_CONFIG"
   rm -f "${DDEV_NODE_CONFIG}.bak"
   printf "\e[32m+\e[0m Updated %s\n" "$DDEV_NODE_CONFIG"
   printf "\e[33m  Run 'ddev restart' to apply the API key to frontend.\e[0m\n\n"
