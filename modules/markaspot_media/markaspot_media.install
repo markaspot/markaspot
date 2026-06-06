@@ -395,3 +395,31 @@ function markaspot_media_update_11906(): string {
     count($aligned)
   );
 }
+
+/**
+ * Set max_filesize on request_image field_media_image to 10 MB.
+ *
+ * The field shipped with an empty max_filesize, leaving anonymous media uploads
+ * bounded only by the PHP post_max_size / upload_max_filesize setting (64 MB).
+ * A 10 MB cap reduces the DoS surface for anonymous photo uploads while still
+ * accommodating typical smartphone photos (average 3-8 MB compressed JPEG).
+ *
+ * Idempotent: only writes when the current value is empty or larger than 10 MB.
+ */
+function markaspot_media_update_11907(): string {
+  $field = FieldConfig::loadByName('media', 'request_image', 'field_media_image');
+  if (!$field) {
+    return 'Field media.request_image.field_media_image not found. Skipped.';
+  }
+
+  $current = $field->getSetting('max_filesize');
+  // Only update if not yet set (empty string or null).
+  if (!empty($current)) {
+    return "max_filesize already set to '$current'. Skipped.";
+  }
+
+  $field->setSetting('max_filesize', '10 MB');
+  $field->save();
+
+  return 'Set max_filesize to 10 MB on media.request_image.field_media_image.';
+}

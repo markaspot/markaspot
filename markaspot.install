@@ -1290,15 +1290,15 @@ function _markaspot_ensure_api_user_link(): void {
  * Implements hook_install() for the markaspot profile.
  *
  * Runs after all modules are installed and their config is imported. Repairs
- * field_permissions-based permissions that Drupal strips during install because
- * field_permissions registers its dynamic permissions from field_storage_config
- * entities, which are not yet loaded when role config is first imported.
+ * permissions that Drupal strips during install due to install-order races,
+ * and ensures required config (text formats) is present.
  */
 function markaspot_install() {
-  _markaspot_repair_field_permissions();
+  _markaspot_repair_all_role_permissions();
   _markaspot_grant_service_provider_api_perms();
   _markaspot_ensure_api_user_link();
   _markaspot_ensure_category_jurisdiction();
+  _markaspot_ensure_text_formats();
 }
 
 /**
@@ -1461,18 +1461,31 @@ function _markaspot_ensure_category_jurisdiction(): void {
 }
 
 /**
- * Repair field_permissions stripped during site install.
+ * Restore all role permissions from profile YAML files after site install.
  *
- * During drush site:install, role config YAMLs are imported before
+ * During drush site:install two independent races strip permissions from roles:
+ *
+ * Race A (field_permissions): Role config YAMLs are imported before
  * field_permissions has registered its dynamic permissions (which depend on
- * field_storage_config entities). Drupal validates permissions during role
- * import and strips any it considers "non-existent". This function re-reads
- * the intended permissions from config YAML files and re-grants them.
+ * field_storage_config entities). Drupal validates permissions at import time
+ * and strips any it considers "non-existent". The anonymous role loses perms
+ * like 'create field_address', 'view field_address', etc.
  *
- * This function is idempotent: it only grants permissions that are both
- * defined in the YAML files and currently valid in the permission system.
+ * Race B (install order): The profile's config/optional/user.role.anonymous.yml
+ * depends on media.type.request_image and node.type.service_request. When those
+ * config entities are not yet present at the moment optional configs are
+ * processed, Drupal skips the entire role entity silently. The anonymous role
+ * then only carries core-default perms, losing 'create service_request content',
+ * 'create media', 'create request_image media', and other essential permissions
+ * that allow anonymous citizen reporting (the platform's core feature).
+ *
+ * This function fixes both races by re-reading ALL intended permissions from the
+ * profile's YAML files and granting any that are valid but currently absent. It
+ * is idempotent and existing-site-safe: only grants perms that are both defined
+ * in YAML and currently valid in the permission system, and only to roles that
+ * already exist.
  */
-function _markaspot_repair_field_permissions(): void {
+function _markaspot_repair_all_role_permissions(): void {
   // Rebuild permission cache so field_permissions registers its dynamic
   // permissions from the now-loaded field_storage_config entities.
   \Drupal::service('plugin.manager.field.field_type')->clearCachedDefinitions();
@@ -1482,11 +1495,8 @@ function _markaspot_repair_field_permissions(): void {
   $permission_handler = \Drupal::service('user.permissions');
   $valid_permissions = array_keys($permission_handler->getPermissions());
 
-  // Field permission pattern: (create|edit|edit own|view|view own) field_*.
-  $field_perm_pattern = '/^(create|edit|edit own|view|view own) field_/';
-
-  // Collect intended field permissions from both config/install and
-  // config/optional YAML files.
+  // Collect intended permissions from both config/install and config/optional.
+  // config/optional wins for the same role ID (more complete set).
   $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
   $role_files = [];
   foreach (['config/install', 'config/optional'] as $dir) {
@@ -1494,7 +1504,6 @@ function _markaspot_repair_field_permissions(): void {
     if (is_dir($path)) {
       $files = glob($path . '/user.role.*.yml');
       foreach ($files as $file) {
-        // Extract role ID from filename.
         $basename = basename($file, '.yml');
         $role_id = preg_replace('/^user\.role\./', '', $basename);
         // config/optional overrides config/install for the same role.
@@ -1519,11 +1528,9 @@ function _markaspot_repair_field_permissions(): void {
 
     $granted = 0;
     foreach ($yaml['permissions'] as $perm) {
-      // Only process field_permissions-style permissions.
-      if (!preg_match($field_perm_pattern, $perm)) {
-        continue;
-      }
-      // Only grant if valid and not already present.
+      // Grant any valid permission not yet present (covers both field_permissions
+      // dynamic perms and static perms like 'create service_request content',
+      // 'create media', 'create request_image media', etc.).
       if (in_array($perm, $valid_permissions, TRUE) && !$role->hasPermission($perm)) {
         $role->grantPermission($perm);
         $granted++;
@@ -1538,10 +1545,22 @@ function _markaspot_repair_field_permissions(): void {
 
   if (!empty($repaired)) {
     \Drupal::logger('markaspot')->notice(
-      'Repaired field permissions stripped during install: @roles',
+      'Restored role permissions after install: @roles',
       ['@roles' => implode(', ', $repaired)]
     );
   }
+}
+
+/**
+ * Backward-compat wrapper: repair only field_permissions-style perms.
+ *
+ * Kept for callers that reference this function by name. New code should call
+ * _markaspot_repair_all_role_permissions() which also covers non-field-perms.
+ *
+ * @deprecated Use _markaspot_repair_all_role_permissions() instead.
+ */
+function _markaspot_repair_field_permissions(): void {
+  _markaspot_repair_all_role_permissions();
 }
 
 /**
@@ -1553,7 +1572,61 @@ function _markaspot_repair_field_permissions(): void {
  * config is imported. Safe to run on existing sites (idempotent).
  */
 function markaspot_update_11909(): void {
-  _markaspot_repair_field_permissions();
+  _markaspot_repair_all_role_permissions();
+}
+
+/**
+ * Restore all role permissions lost during site:install (both race A and B).
+ *
+ * Extends the earlier field-only repair (update_11909) to also restore
+ * non-field permissions ('create service_request content', 'create media',
+ * 'create request_image media', etc.) that were silently dropped when the
+ * profile's config/optional role entities were skipped due to unresolved
+ * config dependencies at install time. Idempotent and existing-site-safe.
+ */
+function markaspot_update_11928(): void {
+  _markaspot_repair_all_role_permissions();
+}
+
+/**
+ * Ensure required text formats are present after fresh install.
+ *
+ * The profile ships filter.format.basic_html in config/install, but edge-case
+ * install paths (e.g. partial cloud-image rebuilds or --existing-config with an
+ * empty config/sync) can leave the format absent. Without basic_html, the
+ * authenticated role YAML's 'use text format basic_html' permission is invalid
+ * and gets stripped, and the CKEditor5 editor association fails to load.
+ *
+ * This function reads filter.format.basic_html from the profile's config/install
+ * and creates it programmatically when absent. Idempotent: no-op when the
+ * format already exists.
+ */
+function _markaspot_ensure_text_formats(): void {
+  $format_storage = \Drupal::entityTypeManager()->getStorage('filter_format');
+
+  // Only repair basic_html; plain_text and restricted_html are Drupal core
+  // formats that core's install always creates.
+  if ($format_storage->load('basic_html')) {
+    return;
+  }
+
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $config_file = $profile_path . '/config/install/filter.format.basic_html.yml';
+  if (!file_exists($config_file)) {
+    return;
+  }
+
+  $data = Yaml::decode(file_get_contents($config_file));
+  // Strip non-entity keys so FilterFormat::create() doesn't choke.
+  unset($data['uuid'], $data['_core']);
+
+  try {
+    $format_storage->create($data)->save();
+    \Drupal::logger('markaspot')->notice('Created missing text format: basic_html');
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot')->warning('Could not create basic_html text format: @msg', ['@msg' => $e->getMessage()]);
+  }
 }
 
 /**
