@@ -36,11 +36,19 @@ function _markaspot_open311_configure_status_attribute_surfaces(): array {
     $status_form_display = $entity_type_manager->getStorage('entity_form_display')
       ->load('taxonomy_term.service_status.default');
     if ($status_form_display) {
+      $has_json_widget = \Drupal::service('plugin.manager.field.widget')
+        ->hasDefinition('status_definition_json_form');
       $status_form_display->setComponent('field_status_definition', [
-        'type' => 'status_definition_json_form',
+        'type' => $has_json_widget ? 'status_definition_json_form' : 'text_textarea',
         'weight' => 20,
+        'settings' => $has_json_widget ? [] : [
+          'rows' => 5,
+          'placeholder' => '',
+        ],
       ])->save();
-      $messages[] = 'Added status_definition_json_form widget to service_status form display.';
+      $messages[] = $has_json_widget
+        ? 'Added status_definition_json_form widget to service_status form display.'
+        : 'Added text_textarea fallback widget to service_status form display.';
     }
   }
 
