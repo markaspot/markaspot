@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.108](https://github.com/markaspot/markaspot/compare/11.9.107...11.9.108) (2026-06-06)
+
+### Bug Fixes
+
+* keep config uuid repair off read-only sync ([52c2895](https://github.com/markaspot/markaspot/commit/52c28951))
+
 ## [11.9.107](https://github.com/markaspot/markaspot/compare/11.9.106...11.9.107) (2026-06-06)
 
 ### Bug Fixes
