@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.107](https://github.com/markaspot/markaspot/compare/11.9.106...11.9.107) (2026-06-06)
+
+### Bug Fixes
+
+* **open311:** add json_form_widget as hard dependency ([1e177d0](https://github.com/markaspot/markaspot/commit/1e177d0f1c5de1d63f47b333e1321ac828049d84))
+* **open311:** tolerate missing status widget during updates ([b8c470a](https://github.com/markaspot/markaspot/commit/b8c470ac01d3550dc0a5dfc4fed604a7f089cf67))
+* prepare catalog image config before import ([aaef150](https://github.com/markaspot/markaspot/commit/aaef150edb626d604cad69701163dc018dddd037))
+
 ## [11.9.106](https://github.com/markaspot/markaspot/compare/11.9.105...11.9.106) (2026-06-05)
 
 ### Bug Fixes
