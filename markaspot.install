@@ -2469,11 +2469,12 @@ function markaspot_update_11919(): string {
 }
 
 /**
- * Repair config-entity UUID drift in active config and runtime sync storage.
+ * Repair config-entity UUID drift in active config.
  */
 function _markaspot_repair_config_entity_uuid_drift(): string {
   $active = \Drupal::service('config.storage');
   $sync = \Drupal::service('config.storage.sync');
+  $sync_write_allowed = _markaspot_sync_storage_write_allowed($sync);
   $uuid_service = \Drupal::service('uuid');
   $prefixes = _markaspot_config_entity_prefixes();
   $id_keys = _markaspot_config_entity_id_keys();
@@ -2482,6 +2483,7 @@ function _markaspot_repair_config_entity_uuid_drift(): string {
   $sync_uuid_index = _markaspot_config_entity_uuid_index($sync, $prefixes);
   $active_repaired = [];
   $sync_repaired = [];
+  $sync_skipped = [];
   $failed = [];
 
   foreach ($active->listAll() as $name) {
@@ -2532,14 +2534,19 @@ function _markaspot_repair_config_entity_uuid_drift(): string {
           continue;
         }
 
-        $sync_data['uuid'] = $current;
-        try {
-          $sync->write($name, $sync_data);
-          $sync_uuid_index[$current][] = $name;
-          $sync_repaired[] = "$name: sync -> $current (active)";
+        if ($sync_write_allowed) {
+          $sync_data['uuid'] = $current;
+          try {
+            $sync->write($name, $sync_data);
+            $sync_uuid_index[$current][] = $name;
+            $sync_repaired[] = "$name: sync -> $current (active)";
+          }
+          catch (\Throwable $e) {
+            $failed[] = "$name: failed writing sync UUID from active: " . $e->getMessage();
+          }
         }
-        catch (\Throwable $e) {
-          $failed[] = "$name: failed writing sync UUID from active: " . $e->getMessage();
+        else {
+          $sync_skipped[] = "$name: sync UUID missing, kept active UUID $current";
         }
       }
       continue;
@@ -2579,15 +2586,20 @@ function _markaspot_repair_config_entity_uuid_drift(): string {
     }
 
     if (!$sync_valid && is_array($sync_data)) {
-      $sync_data['uuid'] = $target_uuid;
-      try {
-        $sync->write($name, $sync_data);
-        $sync_uuid_index[$target_uuid][] = $name;
-        $sync_repaired[] = "$name: sync -> $target_uuid ($source)";
+      if ($sync_write_allowed) {
+        $sync_data['uuid'] = $target_uuid;
+        try {
+          $sync->write($name, $sync_data);
+          $sync_uuid_index[$target_uuid][] = $name;
+          $sync_repaired[] = "$name: sync -> $target_uuid ($source)";
+        }
+        catch (\Throwable $e) {
+          $failed[] = "$name: failed writing sync UUID: " . $e->getMessage();
+          continue;
+        }
       }
-      catch (\Throwable $e) {
-        $failed[] = "$name: failed writing sync UUID: " . $e->getMessage();
-        continue;
+      else {
+        $sync_skipped[] = "$name: sync UUID missing, active repaired to $target_uuid";
       }
     }
   }
@@ -2624,6 +2636,11 @@ function _markaspot_repair_config_entity_uuid_drift(): string {
       $target_uuid = $uuid_service->generate();
     } while (isset($active_uuid_index[$target_uuid]) || isset($sync_uuid_index[$target_uuid]));
 
+    if (!$sync_write_allowed) {
+      $sync_skipped[] = "$name: sync UUID missing, sync storage read-only";
+      continue;
+    }
+
     $sync_data['uuid'] = $target_uuid;
     try {
       $sync->write($name, $sync_data);
@@ -2641,9 +2658,10 @@ function _markaspot_repair_config_entity_uuid_drift(): string {
   }
 
   $msg = sprintf(
-    'Repaired config-entity UUID drift: active=%d, sync=%d.',
+    'Repaired config-entity UUID drift: active=%d, sync=%d, sync_skipped=%d.',
     count($active_repaired),
-    count($sync_repaired)
+    count($sync_repaired),
+    count($sync_skipped)
   );
   if (!empty($failed)) {
     $msg .= ' Failed: ' . implode('; ', array_slice($failed, 0, 5));
@@ -2653,6 +2671,17 @@ function _markaspot_repair_config_entity_uuid_drift(): string {
     throw new \RuntimeException($msg);
   }
   return $msg;
+}
+
+/**
+ * Checks whether runtime sync storage can be written by the current process.
+ */
+function _markaspot_sync_storage_write_allowed($storage): bool {
+  if (!$storage instanceof FileStorage) {
+    return TRUE;
+  }
+
+  return is_writable(dirname($storage->getFilePath('core.extension')));
 }
 
 /**
