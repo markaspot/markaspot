@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.109](https://github.com/markaspot/markaspot/compare/11.9.108...11.9.109) (2026-06-06)
+
+### Bug Fixes
+
+* **install:** repair all role permissions after site:install and cap media upload size ([4d5ff1e](https://github.com/markaspot/markaspot/commit/4d5ff1e9d6e07843f0848fcc90612009e0480d3c))
+
 ## [11.9.108](https://github.com/markaspot/markaspot/compare/11.9.107...11.9.108) (2026-06-06)
 
 ### Bug Fixes
