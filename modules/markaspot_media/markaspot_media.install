@@ -24,7 +24,7 @@ function markaspot_media_install(): void {
 /**
  * Ensures the request_image media type and its image field are present.
  *
- * media.type.request_image and field_media_image ship in this module's
+ * Media.type.request_image and field_media_image ship in this module's
  * config/install and normally arrive automatically. On an interrupted /
  * partial profile install the module can register as installed while its
  * config/install was skipped, leaving field_media_image absent. The GeoReport
@@ -303,4 +303,95 @@ function markaspot_media_update_11905(): string {
     return 'Restored missing request_image media type and field_media_image field.';
   }
   return 'request_image media type and field_media_image field already present; nothing to repair.';
+}
+
+/**
+ * Align catalog-image media config with sync before drush deploy imports.
+ *
+ * Some upgraded tenant dumps already have this module schema marked past
+ * 11903, but still miss the catalog_image field configs. drush deploy then runs
+ * update hooks, creates the media type, and the following config import sees a
+ * UUID conflict: delete the freshly created bundle but update field configs
+ * whose active target is missing. Create missing config entities from sync and
+ * align UUIDs now, while updatedb still runs before config import.
+ */
+function markaspot_media_update_11906(): string {
+  $sync = \Drupal::service('config.storage.sync');
+  $active = \Drupal::service('config.storage');
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $created = [];
+  $aligned = [];
+
+  $media_type_data = $sync->read('media.type.catalog_image');
+  if (is_array($media_type_data) && !$entity_type_manager->getStorage('media_type')->load('catalog_image')) {
+    $entity_type_manager->getStorage('media_type')->create($media_type_data)->save();
+    $created[] = 'media.type.catalog_image';
+  }
+
+  $field_storage_names = [
+    'field.storage.media.field_media_image' => ['media', 'field_media_image'],
+    'field.storage.media.field_definition_group' => ['media', 'field_definition_group'],
+  ];
+  foreach ($field_storage_names as $config_name => [$entity_type, $field_name]) {
+    $data = $sync->read($config_name);
+    if (!is_array($data) || FieldStorageConfig::loadByName($entity_type, $field_name)) {
+      continue;
+    }
+    FieldStorageConfig::create($data)->save();
+    $created[] = $config_name;
+  }
+
+  $field_config_names = [
+    'field.field.media.catalog_image.field_media_image' => ['media', 'catalog_image', 'field_media_image'],
+    'field.field.media.catalog_image.field_definition_group' => ['media', 'catalog_image', 'field_definition_group'],
+  ];
+  foreach ($field_config_names as $config_name => [$entity_type, $bundle, $field_name]) {
+    $data = $sync->read($config_name);
+    if (!is_array($data) || FieldConfig::loadByName($entity_type, $bundle, $field_name)) {
+      continue;
+    }
+    FieldConfig::create($data)->save();
+    $created[] = $config_name;
+  }
+
+  $entity_form_display_data = $sync->read('core.entity_form_display.media.catalog_image.default');
+  if (is_array($entity_form_display_data)
+    && !$entity_type_manager->getStorage('entity_form_display')->load('media.catalog_image.default')) {
+    $entity_type_manager->getStorage('entity_form_display')->create($entity_form_display_data)->save();
+    $created[] = 'core.entity_form_display.media.catalog_image.default';
+  }
+
+  $uuid_aligned_names = [
+    'media.type.catalog_image',
+    'field.storage.media.field_media_image',
+    'field.storage.media.field_definition_group',
+    'field.field.media.catalog_image.field_media_image',
+    'field.field.media.catalog_image.field_definition_group',
+    'core.entity_form_display.media.catalog_image.default',
+  ];
+  foreach ($uuid_aligned_names as $config_name) {
+    $sync_data = $sync->read($config_name);
+    $active_data = $active->read($config_name);
+    if (!is_array($sync_data) || !is_array($active_data) || empty($sync_data['uuid'])) {
+      continue;
+    }
+    if (($active_data['uuid'] ?? NULL) === $sync_data['uuid']) {
+      continue;
+    }
+    $active_data['uuid'] = $sync_data['uuid'];
+    $active->write($config_name, $active_data);
+    $aligned[] = $config_name;
+  }
+
+  if ($created || $aligned) {
+    \Drupal::service('config.factory')->reset();
+    \Drupal::service('cache.config')->deleteAll();
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  }
+
+  return sprintf(
+    'Catalog image media config prepared: created=%d, uuid_aligned=%d.',
+    count($created),
+    count($aligned)
+  );
 }
