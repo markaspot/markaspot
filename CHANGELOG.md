@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.111](https://github.com/markaspot/markaspot/compare/11.9.110...11.9.111) (2026-06-07)
+
+### Features
+
+* add markaspot_sso ([92393ad](https://github.com/markaspot/markaspot/commit/92393ad6d5c4e7a27a36127fae3bf01c725cdd12))
+
 ## [11.9.110](https://github.com/markaspot/markaspot/compare/11.9.109...11.9.110) (2026-06-07)
 
 ### Bug Fixes
