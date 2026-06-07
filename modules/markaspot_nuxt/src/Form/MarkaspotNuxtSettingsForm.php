@@ -52,7 +52,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#type' => 'url',
       '#title' => $this->t('Frontend Base URL'),
       '#default_value' => $config->get('frontend_base_url') ?: '',
-      '#description' => $this->t('The base URL of your Nuxt frontend application (e.g., https://example.com:3001). This URL will be used for generating frontend links in emails and other communications and is available via the [markaspot_frontend:url] token. If empty, frontend link tokens return an empty value.'),
+      '#description' => $this->t('The base URL of your Nuxt frontend application (e.g., https://example.com:3001). This URL will be used for generating frontend links in emails and other communications and is available via the [markaspot_frontend:url] token. If neither this field nor a safe FRONTEND_BASE_URL environment value is available, frontend link tokens return an empty value.'),
       '#placeholder' => 'https://example.com:3001',
     ];
 
