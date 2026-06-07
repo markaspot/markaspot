@@ -23,12 +23,21 @@ final class FrontendUrlServiceTest extends UnitTestCase {
   private string|false $previousFrontendBaseUrl;
 
   /**
+   * Previous MARKASPOT_MAIL_FRONTEND_BASE_URL environment value.
+   *
+   * @var string|false
+   */
+  private string|false $previousMailFrontendBaseUrl;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
     $this->previousFrontendBaseUrl = getenv('FRONTEND_BASE_URL');
+    $this->previousMailFrontendBaseUrl = getenv('MARKASPOT_MAIL_FRONTEND_BASE_URL');
     putenv('FRONTEND_BASE_URL');
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL');
   }
 
   /**
@@ -40,6 +49,12 @@ final class FrontendUrlServiceTest extends UnitTestCase {
     }
     else {
       putenv('FRONTEND_BASE_URL=' . $this->previousFrontendBaseUrl);
+    }
+    if ($this->previousMailFrontendBaseUrl === FALSE) {
+      putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL');
+    }
+    else {
+      putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=' . $this->previousMailFrontendBaseUrl);
     }
     parent::tearDown();
   }
@@ -127,6 +142,16 @@ final class FrontendUrlServiceTest extends UnitTestCase {
    */
   public function testReturnsNormalizedFrontendEnvFallback(): void {
     putenv('FRONTEND_BASE_URL=https://bonn-mobility.example/');
+    $service = $this->service(FALSE, '');
+
+    $this->assertSame('https://bonn-mobility.example', $service->getFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getFrontendBaseUrl
+   */
+  public function testReturnsNormalizedMailFrontendEnvFallback(): void {
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://bonn-mobility.example/');
     $service = $this->service(FALSE, '');
 
     $this->assertSame('https://bonn-mobility.example', $service->getFrontendBaseUrl());

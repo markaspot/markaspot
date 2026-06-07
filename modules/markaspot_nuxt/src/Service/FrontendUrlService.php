@@ -43,10 +43,12 @@ class FrontendUrlService {
       }
     }
 
-    // Fallback to environment variable for backward compatibility.
-    $frontend_base_url_env = $this->normalizeFrontendBaseUrl((string) getenv('FRONTEND_BASE_URL'));
-    if ($frontend_base_url_env !== NULL) {
-      return $frontend_base_url_env;
+    // Fallback to runtime environment variables for host-specific deploys.
+    foreach (['FRONTEND_BASE_URL', 'MARKASPOT_MAIL_FRONTEND_BASE_URL'] as $env_name) {
+      $frontend_base_url_env = $this->normalizeFrontendBaseUrl((string) getenv($env_name));
+      if ($frontend_base_url_env !== NULL) {
+        return $frontend_base_url_env;
+      }
     }
 
     return NULL;
