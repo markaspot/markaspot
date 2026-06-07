@@ -6,7 +6,7 @@ providers:
     profile: generic
     jurisdiction_id: 1
     org_id: 0
-    default_role: service_request_manager
+    default_role: member
     create_users: true
     link_by_email: false
     sp_entity_id: ''
@@ -51,7 +51,7 @@ providers:
     mock: true
     jurisdiction_id: 1
     org_id: 0
-    default_role: service_request_manager
+    default_role: member
     create_users: true
     link_by_email: true
     sp_entity_id: ''

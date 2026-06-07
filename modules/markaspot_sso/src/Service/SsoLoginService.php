@@ -53,22 +53,24 @@ final class SsoLoginService {
    */
   public function processAcs(string $provider_id, Request $request, SessionInterface $session): array {
     $provider = $this->providerManager->enabledProvider($provider_id);
-    if ($this->providerManager->isMockProvider($provider)) {
-      throw new BadRequestHttpException('Mock providers do not accept SAMLResponse payloads.');
-    }
-
-    $sso_response = $request->request->get('SAMLResponse');
-    if (!is_string($sso_response) || trim($sso_response) === '') {
-      throw new BadRequestHttpException('Missing SAMLResponse.');
-    }
-
-    $request_id = $session->get($this->requestIdKey($provider_id));
-    $request_id = is_string($request_id) && $request_id !== '' ? $request_id : NULL;
-    if ($request_id === NULL) {
-      throw new AccessDeniedHttpException('Missing SSO request correlation.');
-    }
+    $request_id_key = $this->requestIdKey($provider_id);
 
     try {
+      if ($this->providerManager->isMockProvider($provider)) {
+        throw new BadRequestHttpException('Mock providers do not accept SAMLResponse payloads.');
+      }
+
+      $sso_response = $request->request->get('SAMLResponse');
+      if (!is_string($sso_response) || trim($sso_response) === '') {
+        throw new BadRequestHttpException('Missing SAMLResponse.');
+      }
+
+      $request_id = $session->get($request_id_key);
+      $request_id = is_string($request_id) && $request_id !== '' ? $request_id : NULL;
+      if ($request_id === NULL) {
+        throw new AccessDeniedHttpException('Missing SSO request correlation.');
+      }
+
       $auth = $this->clientFactory->auth($provider_id);
       $this->processResponse($auth, $request, $request_id);
 
@@ -95,12 +97,12 @@ final class SsoLoginService {
         );
     }
     catch (\Throwable $exception) {
-      $session->remove($this->requestIdKey($provider_id));
+      $session->remove($request_id_key);
       throw $exception;
     }
 
     $this->storeLastLogin($session, $provider_id, $user);
-    $session->remove($this->requestIdKey($provider_id));
+    $session->remove($request_id_key);
     return $user;
   }
 

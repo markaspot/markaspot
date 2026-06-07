@@ -145,9 +145,9 @@ final class SsoSettingsForm extends ConfigFormBase {
     $form['account']['default_role'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Default group role'),
-      '#default_value' => $provider['default_role'] ?? 'service_request_manager',
+      '#default_value' => $provider['default_role'] ?? 'member',
       '#required' => TRUE,
-      '#description' => $this->t('Accepts group role IDs or aliases such as service_request_manager. Use staff roles only with IdP clients or groups that are restricted to staff for this jurisdiction. Tenant admin identities must be pre-linked.'),
+      '#description' => $this->t('Accepts group role IDs or aliases. Use member for first-login auto-provisioning. Staff roles such as service_request_manager, editorial_board, moderator, and tenant-admin aliases require pre-linked SSO identities.'),
     ];
 
     $form['sp'] = [

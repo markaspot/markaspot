@@ -76,7 +76,7 @@ namespace Drupal\Tests\markaspot_sso\Unit\Service {
         );
 
       $this->expectException(\RuntimeException::class);
-      $this->expectExceptionMessage('Jurisdiction admin SSO identities must be pre-linked before login.');
+      $this->expectExceptionMessage('SSO role "jur-tenant_admin" requires a pre-linked identity before login.');
 
       $linker->authenticate(
             'keycloak',

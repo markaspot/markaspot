@@ -30,6 +30,16 @@ final class SsoGroupMembershipService {
   ];
 
   /**
+   * Staff group roles that must not be granted to a fresh SSO identity.
+   */
+  private const FIRST_LOGIN_PRELINK_REQUIRED_SUFFIXES = [
+    'editorial',
+    'insider',
+    'moderator',
+    'tenant_admin',
+  ];
+
+  /**
    * Constructs the group membership service.
    */
   public function __construct(
@@ -62,17 +72,24 @@ final class SsoGroupMembershipService {
     $default_role = $this->providerRole($provider);
     $jurisdiction_role = $this->resolveRoleId($default_role, $jurisdiction);
     $this->assertPrivilegedRoleAllowed($jurisdiction_role, $existing_identity);
+
+    $org_id = $this->positiveInt($provider['org_id'] ?? NULL);
+    $organisation = NULL;
+    $organisation_role = NULL;
+    if ($org_id !== NULL) {
+      $organisation = $this->loadGroup($org_id, $this->organisationGroupType(), 'organisation');
+      $this->assertOrganisationBelongsToJurisdiction($organisation, $jurisdiction_id);
+      $organisation_role = $this->resolveRoleId($default_role, $organisation);
+      $this->assertOrganisationRoleAllowed($organisation_role, $existing_identity);
+    }
+
     $this->upsertMembership($jurisdiction, $user, [$jurisdiction_role]);
 
     $groups = [
       $this->groupPayload($jurisdiction, $user),
     ];
 
-    $org_id = $this->positiveInt($provider['org_id'] ?? NULL);
-    if ($org_id !== NULL) {
-      $organisation = $this->loadGroup($org_id, $this->organisationGroupType(), 'organisation');
-      $this->assertOrganisationBelongsToJurisdiction($organisation, $jurisdiction_id);
-      $organisation_role = $this->resolveRoleId($default_role, $organisation);
+    if ($organisation instanceof GroupInterface && is_string($organisation_role)) {
       $this->upsertMembership($organisation, $user, [$organisation_role]);
       $groups[] = $this->groupPayload($organisation, $user);
     }
@@ -172,8 +189,27 @@ final class SsoGroupMembershipService {
    * Blocks first-login privilege elevation.
    */
   private function assertPrivilegedRoleAllowed(string $role_id, bool $existing_identity): void {
-    if (!$existing_identity && str_ends_with($role_id, '-tenant_admin')) {
-      throw new \RuntimeException('Jurisdiction admin SSO identities must be pre-linked before login.');
+    if ($existing_identity) {
+      return;
+    }
+
+    foreach (self::FIRST_LOGIN_PRELINK_REQUIRED_SUFFIXES as $suffix) {
+      if (str_ends_with($role_id, '-' . $suffix)) {
+        throw new \RuntimeException(sprintf('SSO role "%s" requires a pre-linked identity before login.', $role_id));
+      }
+    }
+  }
+
+  /**
+   * Blocks first-login organisation membership.
+   */
+  private function assertOrganisationRoleAllowed(string $role_id, bool $existing_identity): void {
+    if ($existing_identity) {
+      return;
+    }
+
+    if (str_starts_with($role_id, $this->organisationGroupType() . '-')) {
+      throw new \RuntimeException(sprintf('SSO organisation role "%s" requires a pre-linked identity before login.', $role_id));
     }
   }
 

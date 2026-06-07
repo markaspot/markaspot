@@ -106,16 +106,15 @@ final class SsoAuthController extends ControllerBase {
    */
   public function acs(Request $request, string $provider): RedirectResponse {
     $session = $this->session($request);
+    $target = $this->loginService->consumeRelayState($provider, $session);
     try {
       $this->loginService->processAcs($provider, $request, $session);
-      $target = $this->loginService->consumeRelayState($provider, $session);
     }
     catch (\Throwable $exception) {
       $this->logger->warning('Rejected SSO response for @provider: @message', [
         '@provider' => $provider,
         '@message' => $exception->getMessage(),
       ]);
-      $target = $this->loginService->consumeRelayState($provider, $session);
       $response = new RedirectResponse($this->withSsoError($target));
       $this->noStore($response);
       return $response;

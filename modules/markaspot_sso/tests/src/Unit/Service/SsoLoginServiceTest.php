@@ -79,6 +79,29 @@ final class SsoLoginServiceTest extends UnitTestCase {
   }
 
   /**
+   * Malformed ACS posts also consume the stored request id.
+   */
+  public function testMalformedAcsConsumesStoredRequestId(): void {
+    $service = $this->loginService();
+    $request = Request::create('/auth/sso/keycloak/acs', 'POST', [
+      'RelayState' => '/dashboard',
+    ]);
+    $session = new Session(new MockArraySessionStorage());
+    $session->set('markaspot_sso.keycloak.request_id', 'request-123');
+
+    $exception = NULL;
+    try {
+      $service->processAcs('keycloak', $request, $session);
+    }
+    catch (\Throwable $caught) {
+      $exception = $caught;
+    }
+
+    $this->assertInstanceOf(\Throwable::class, $exception);
+    $this->assertFalse($session->has('markaspot_sso.keycloak.request_id'));
+  }
+
+  /**
    * Dev mock login starts at a visible mock identity provider page.
    */
   public function testMockLoginStartsAtVisibleMockIdp(): void {
