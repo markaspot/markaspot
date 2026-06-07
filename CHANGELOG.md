@@ -1,5 +1,13 @@
 # Changelog
 
+## [11.9.110](https://github.com/markaspot/markaspot/compare/11.9.109...11.9.110) (2026-06-07)
+
+### Bug Fixes
+
+* **open311:** add api_key_auth to GET supported_auth for all GeoReport REST resources ([728e87f](https://github.com/markaspot/markaspot/commit/728e87fa3756f9fa5363c492629e31577f1ca5c9))
+* **open311:** assign jur-member to api_user so headless reads return reports ([a6320b9](https://github.com/markaspot/markaspot/commit/a6320b9071f640c5e2949afdbcc2a48fe8ad1351))
+* **open311:** update hook 11810 to add api_key_auth to GeoReport REST GET methods ([258cb8e](https://github.com/markaspot/markaspot/commit/258cb8eebdc6fc7ef012b77298c1ce78d3892fe5))
+
 ## [11.9.109](https://github.com/markaspot/markaspot/compare/11.9.108...11.9.109) (2026-06-06)
 
 ### Bug Fixes
