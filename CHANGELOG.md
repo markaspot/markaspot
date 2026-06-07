@@ -1,5 +1,23 @@
 # Changelog
 
+## [11.9.112](https://github.com/markaspot/markaspot/compare/11.9.111...11.9.112) (2026-06-07)
+
+### Bug Fixes
+
+* clarify frontend fallback precedence copy ([f8dc49f](https://github.com/markaspot/markaspot/commit/f8dc49f24cb1175ea3b30b4ae61468425ff8de1c))
+* clarify frontend link fallback copy ([2f93e48](https://github.com/markaspot/markaspot/commit/2f93e48a8ead821b819321afd8ccef4aa2dd3e63))
+* harden frontend mail links ([d50326b](https://github.com/markaspot/markaspot/commit/d50326be4a849848074f0a9b3de55f72ee91792b))
+* install stark as a profile theme dependency ([fa84490](https://github.com/markaspot/markaspot/commit/fa844903541cf0936a5236f5d751909f14a2e628))
+* route markaspot_frontend:url token through the notification resolver ([a3bde0d](https://github.com/markaspot/markaspot/commit/a3bde0d6b20d41c3454e78a10a5b96913b688df4))
+* scope mail frontend fallback to notification tokens ([f5a61d9](https://github.com/markaspot/markaspot/commit/f5a61d9680c872ca167db672dbe6d0492870ba29))
+* **sso:** convert first-login role guard to allowlist and disable mock email linking ([aa9cb2b](https://github.com/markaspot/markaspot/commit/aa9cb2bd1b89869348a012b8c79107e6a0607f18))
+* **sso:** harden first-login provisioning and ACS session handling ([5240a13](https://github.com/markaspot/markaspot/commit/5240a13473d8f8bfc51bb233c78be17298485cd2))
+* support mail frontend env links ([a416f6f](https://github.com/markaspot/markaspot/commit/a416f6f80dcb63ef29c67c61c2765ded562290cf))
+
+### Documentation
+
+* **sso:** annotate FIRST_LOGIN_ALLOWED_SUFFIXES with member-suffix assumption ([dbbc441](https://github.com/markaspot/markaspot/commit/dbbc441215a6e944e6340b59deb6640bc26e9dbf))
+
 ## [11.9.111](https://github.com/markaspot/markaspot/compare/11.9.110...11.9.111) (2026-06-07)
 
 ### Features

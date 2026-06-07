@@ -2,7 +2,7 @@ name: Mark-a-Spot
 description: Mark-a-Spot Installation Profile
 type: profile
 core_version_requirement: ^10 || ^11
-version: 11.9.111
+version: 11.9.112
 distribution:
   name: Mark-a-Spot
   install:
@@ -83,8 +83,4 @@ dependencies:
   - markaspot_notification
 themes:
   - gin
-  # stark is the default theme in config/install/system.theme.yml (headless
-  # setup: the Drupal frontend stays minimal, Nuxt is the actual frontend).
-  # It must be installed too, otherwise a fresh install fails with "theme stark
-  # does not exist or is not installed" when rendering (e.g. the node edit form).
   - stark
