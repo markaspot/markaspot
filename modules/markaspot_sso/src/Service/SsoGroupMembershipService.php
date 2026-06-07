@@ -37,6 +37,11 @@ final class SsoGroupMembershipService {
    * non-privileged roles must be added here explicitly, so the guard fails
    * closed by construction instead of relying on a blocklist staying in sync
    * with ROLE_ALIASES.
+   *
+   * The match is suffix-based ("-member"), so it is intended to cover only the
+   * single shipped "<group_type>-member" base role. A future custom group role
+   * whose ID also ends in "-member" (e.g. "jur-senior-member") would likewise
+   * be auto-grantable on first login; tighten this list if that is not wanted.
    */
   private const FIRST_LOGIN_ALLOWED_SUFFIXES = [
     'member',
