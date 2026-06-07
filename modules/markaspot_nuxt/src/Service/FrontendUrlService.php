@@ -3,7 +3,6 @@
 namespace Drupal\markaspot_nuxt\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Url;
 
 /**
  * Service for generating frontend URLs.
@@ -38,16 +37,16 @@ class FrontendUrlService {
     $frontend_enabled = $config->get('frontend_enabled');
 
     if ($frontend_enabled) {
-      $frontend_url = $config->get('frontend_base_url');
+      $frontend_url = $this->normalizeFrontendBaseUrl((string) $config->get('frontend_base_url'));
       if ($frontend_url) {
-        return rtrim($frontend_url, '/');
+        return $frontend_url;
       }
     }
 
     // Fallback to environment variable for backward compatibility.
-    $frontend_base_url_env = getenv('FRONTEND_BASE_URL');
-    if ($frontend_base_url_env) {
-      return rtrim($frontend_base_url_env, '/');
+    $frontend_base_url_env = $this->normalizeFrontendBaseUrl((string) getenv('FRONTEND_BASE_URL'));
+    if ($frontend_base_url_env !== NULL) {
+      return $frontend_base_url_env;
     }
 
     return NULL;
@@ -59,12 +58,14 @@ class FrontendUrlService {
    * @param string $path
    *   The path to append to the frontend base URL.
    * @param string $fallback_route
-   *   Optional Drupal route to use as fallback if no frontend URL is configured.
+   *   Deprecated. Backend URL fallback is intentionally disabled for mail-safe
+   *   frontend links.
    * @param array $route_parameters
    *   Optional parameters for the fallback route.
    *
    * @return string
-   *   The complete URL.
+   *   The complete frontend URL, or an empty string when no safe frontend base
+   *   URL is configured.
    */
   public function generateFrontendUrl($path, $fallback_route = NULL, array $route_parameters = []) {
     $frontend_base_url = $this->getFrontendBaseUrl();
@@ -73,15 +74,7 @@ class FrontendUrlService {
       return $frontend_base_url . '/' . ltrim($path, '/');
     }
 
-    // Fallback to Drupal route if provided.
-    if ($fallback_route) {
-      $url = Url::fromRoute($fallback_route, $route_parameters);
-      return $url->setAbsolute()->toString();
-    }
-
-    // Final fallback to current site base URL + path.
-    global $base_url;
-    return rtrim($base_url, '/') . '/' . ltrim($path, '/');
+    return '';
   }
 
   /**
@@ -110,6 +103,43 @@ class FrontendUrlService {
   public function isFrontendEnabled() {
     $config = $this->configFactory->get('markaspot_nuxt.settings');
     return (bool) $config->get('frontend_enabled');
+  }
+
+  /**
+   * Normalizes a public frontend base URL.
+   *
+   * @param string $url
+   *   Candidate frontend base URL.
+   *
+   * @return string|null
+   *   Normalized URL without trailing slash, or NULL for unsafe/internal URLs.
+   */
+  protected function normalizeFrontendBaseUrl(string $url): ?string {
+    $url = trim($url);
+    if ($url === '' || filter_var($url, FILTER_VALIDATE_URL) === FALSE) {
+      return NULL;
+    }
+
+    $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+    if (!in_array($scheme, ['http', 'https'], TRUE)) {
+      return NULL;
+    }
+
+    $host = rtrim(strtolower(trim((string) parse_url($url, PHP_URL_HOST), '[]')), '.');
+    if (in_array($host, ['default', 'localhost', '127.0.0.1', '0.0.0.0', '::1'], TRUE)) {
+      return NULL;
+    }
+    if (filter_var($host, FILTER_VALIDATE_IP) !== FALSE) {
+      return NULL;
+    }
+    if (!str_contains($host, '.')) {
+      return NULL;
+    }
+    if (preg_match('/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+))*$/i', $host)) {
+      return NULL;
+    }
+
+    return rtrim($url, '/');
   }
 
 }

@@ -18,7 +18,7 @@ function markaspot_nuxt_token_info() {
 
   $info['tokens']['markaspot_frontend']['url'] = [
     'name' => t('Frontend base URL'),
-    'description' => t('Returns the configured Nuxt frontend base URL, falling back to the Drupal site URL if disabled.'),
+    'description' => t('Returns the configured Nuxt frontend base URL. Returns an empty value when no safe public frontend URL is configured.'),
   ];
 
   // Node-level token for complete frontend request detail URL.
@@ -51,13 +51,7 @@ function markaspot_nuxt_tokens($type, $tokens, array $data, array $options, Bubb
       switch ($name) {
         case 'url':
           $frontend_url = $frontend_url_service->getFrontendBaseUrl();
-
-          if (!$frontend_url) {
-            $frontend_url = \Drupal::service('router.request_context')->getCompleteBaseUrl();
-            $bubbleable_metadata->addCacheContexts(['url.site']);
-          }
-
-          $replacements[$original] = $frontend_url;
+          $replacements[$original] = $frontend_url ?: '';
           break;
       }
     }
@@ -90,8 +84,8 @@ function markaspot_nuxt_tokens($type, $tokens, array $data, array $options, Bubb
       // Get frontend base URL.
       $base_url = $frontend_url_service->getFrontendBaseUrl();
       if (!$base_url) {
-        $base_url = \Drupal::service('router.request_context')->getCompleteBaseUrl();
-        $bubbleable_metadata->addCacheContexts(['url.site']);
+        $replacements[$original] = '';
+        continue;
       }
       $base_url = rtrim($base_url, '/');
 
@@ -137,7 +131,7 @@ function _markaspot_nuxt_get_frontend_media_url($node, BubbleableMetadata $bubbl
   $frontend_url_service = \Drupal::service('markaspot_nuxt.frontend_url');
   $frontend_url = $frontend_url_service->getFrontendBaseUrl();
   if (!$frontend_url) {
-    $frontend_url = \Drupal::service('router.request_context')->getCompleteBaseUrl();
+    return '';
   }
   $base = rtrim($frontend_url, '/') . '/api/';
 
