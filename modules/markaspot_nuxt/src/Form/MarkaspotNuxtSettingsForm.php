@@ -52,7 +52,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#type' => 'url',
       '#title' => $this->t('Frontend Base URL'),
       '#default_value' => $config->get('frontend_base_url') ?: '',
-      '#description' => $this->t('The base URL of your Nuxt frontend application (e.g., https://example.com:3001). When frontend URL generation is enabled, this configured value is used first for frontend links and the [markaspot_frontend:url] token. Otherwise generic frontend links use a safe FRONTEND_BASE_URL value. Notification tokens such as [node:markaspot_frontend_url] use FRONTEND_BASE_URL first, then MARKASPOT_MAIL_FRONTEND_BASE_URL.'),
+      '#description' => $this->t('The base URL of your Nuxt frontend application (e.g., https://example.com:3001). When frontend URL generation is enabled, this configured value is used first for generic frontend links, confirmation links, the [markaspot_frontend:url] token, and notification tokens such as [node:markaspot_frontend_url]. If this field is disabled or empty, generic links use safe FRONTEND_BASE_URL only. Notification tokens then use safe FRONTEND_BASE_URL first, then MARKASPOT_MAIL_FRONTEND_BASE_URL.'),
       '#placeholder' => 'https://example.com:3001',
     ];
 
@@ -60,7 +60,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Enable Frontend URL Generation'),
       '#default_value' => $config->get('frontend_enabled') ?: FALSE,
-      '#description' => $this->t('When enabled, system-generated URLs (like confirmation links) will point to the frontend instead of the Drupal backend.'),
+      '#description' => $this->t('Controls whether the stored Frontend Base URL field is used for generated frontend links. Safe environment fallbacks can still generate frontend links when this is disabled.'),
     ];
 
     $form['markaspot_nuxt']['api'] = [
