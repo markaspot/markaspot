@@ -53,7 +53,7 @@ providers:
     org_id: 0
     default_role: member
     create_users: true
-    link_by_email: true
+    link_by_email: false
     sp_entity_id: ''
     sp_acs_url: ''
     sp_x509_cert: ''

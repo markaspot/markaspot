@@ -80,6 +80,31 @@ final class SsoGroupMembershipServiceTest extends UnitTestCase {
   }
 
   /**
+   * The allowlisted member role is grantable on first login.
+   */
+  public function testMemberRoleAllowedForFirstLogin(): void {
+    $service = $this->service();
+
+    $this->invokePrivilegedRoleGuard($service, 'jur-member', FALSE);
+    $this->addToAssertionCount(1);
+  }
+
+  /**
+   * Unrecognised roles fail closed: not on the allowlist means pre-link.
+   *
+   * This is the allowlist guarantee a blocklist could not give: a role that
+   * is neither member nor a known staff suffix is still rejected on first
+   * login instead of silently slipping through.
+   */
+  public function testUnknownRoleRequiresExistingIdentity(): void {
+    $service = $this->service();
+
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('SSO role "jur-viewer" requires a pre-linked identity before login.');
+    $this->invokePrivilegedRoleGuard($service, 'jur-viewer', FALSE);
+  }
+
+  /**
    * First-login organisation membership assignment is fail-closed.
    */
   public function testOrganisationRoleRequiresExistingIdentity(): void {

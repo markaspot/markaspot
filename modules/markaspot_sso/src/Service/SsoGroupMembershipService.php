@@ -30,13 +30,16 @@ final class SsoGroupMembershipService {
   ];
 
   /**
-   * Staff group roles that must not be granted to a fresh SSO identity.
+   * Group role suffixes a fresh SSO identity may receive on first login.
+   *
+   * This is an allowlist, not a blocklist: any resolved jurisdiction role
+   * whose suffix is not listed here requires a pre-linked identity. New
+   * non-privileged roles must be added here explicitly, so the guard fails
+   * closed by construction instead of relying on a blocklist staying in sync
+   * with ROLE_ALIASES.
    */
-  private const FIRST_LOGIN_PRELINK_REQUIRED_SUFFIXES = [
-    'editorial',
-    'insider',
-    'moderator',
-    'tenant_admin',
+  private const FIRST_LOGIN_ALLOWED_SUFFIXES = [
+    'member',
   ];
 
   /**
@@ -187,21 +190,30 @@ final class SsoGroupMembershipService {
 
   /**
    * Blocks first-login privilege elevation.
+   *
+   * Fails closed: a fresh identity may only receive a role whose suffix is on
+   * the FIRST_LOGIN_ALLOWED_SUFFIXES allowlist. Every other role (staff,
+   * tenant-admin, or any unrecognised role) requires a pre-linked identity.
    */
   private function assertPrivilegedRoleAllowed(string $role_id, bool $existing_identity): void {
     if ($existing_identity) {
       return;
     }
 
-    foreach (self::FIRST_LOGIN_PRELINK_REQUIRED_SUFFIXES as $suffix) {
+    foreach (self::FIRST_LOGIN_ALLOWED_SUFFIXES as $suffix) {
       if (str_ends_with($role_id, '-' . $suffix)) {
-        throw new \RuntimeException(sprintf('SSO role "%s" requires a pre-linked identity before login.', $role_id));
+        return;
       }
     }
+
+    throw new \RuntimeException(sprintf('SSO role "%s" requires a pre-linked identity before login.', $role_id));
   }
 
   /**
-   * Blocks first-login organisation membership.
+   * Blocks all first-login organisation membership.
+   *
+   * Any organisation group role requires a pre-linked identity; organisation
+   * membership is never auto-provisioned on a fresh SSO identity's first login.
    */
   private function assertOrganisationRoleAllowed(string $role_id, bool $existing_identity): void {
     if ($existing_identity) {
