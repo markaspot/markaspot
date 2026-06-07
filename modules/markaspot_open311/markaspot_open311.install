@@ -457,3 +457,44 @@ function markaspot_open311_update_11809(): TranslatableMarkup {
     '@messages' => implode(' ', $messages) ?: 'Status attribute fields already installed.',
   ]);
 }
+
+/**
+ * Add api_key_auth to GET supported_auth for all GeoReport REST resources.
+ *
+ * The install configs only listed 'cookie' for GET methods. services_api_key_auth
+ * headers are now used by the Nuxt proxy, so api_key_auth must also be allowed
+ * or Drupal returns 403 "authentication method not allowed on this route".
+ */
+function markaspot_open311_update_11810(): TranslatableMarkup {
+  $messages = [];
+  $config_factory = \Drupal::configFactory();
+
+  $rest_resources = [
+    'rest.resource.georeport_request_resource',
+    'rest.resource.georeport_request_index_resource',
+    'rest.resource.georeport_service_index_resource',
+    'rest.resource.georeport_discovery_resource',
+  ];
+
+  foreach ($rest_resources as $config_name) {
+    $config = $config_factory->getEditable($config_name);
+    if ($config->isNew()) {
+      $messages[] = "$config_name not found, skipping.";
+      continue;
+    }
+
+    $supported_auth = $config->get('configuration.GET.supported_auth') ?? [];
+    if (!in_array('api_key_auth', $supported_auth, TRUE)) {
+      array_unshift($supported_auth, 'api_key_auth');
+      $config->set('configuration.GET.supported_auth', $supported_auth)->save();
+      $messages[] = "Added api_key_auth to GET for $config_name.";
+    }
+    else {
+      $messages[] = "$config_name already has api_key_auth for GET.";
+    }
+  }
+
+  return new TranslatableMarkup('@messages', [
+    '@messages' => implode(' ', $messages),
+  ]);
+}
