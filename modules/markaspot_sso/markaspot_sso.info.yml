@@ -1,0 +1,10 @@
+name: 'Mark-a-Spot SSO'
+type: module
+description: 'Generic staff SSO service provider integration for SAML identity providers.'
+package: Mark-a-Spot
+core_version_requirement: ^11
+dependencies:
+  - drupal:user
+  - drupal:group
+  - markaspot:markaspot_group
+  - markaspot:markaspot_nuxt

@@ -1,0 +1,150 @@
+<?php
+
+/**
+ * @file
+ * Install and update hooks for markaspot_sso.
+ */
+
+declare(strict_types=1);
+
+use Drupal\Core\StringTranslation\TranslatableMarkup;
+
+/**
+ * Implements hook_requirements().
+ */
+function markaspot_sso_requirements($phase): array {
+  if ($phase !== 'runtime') {
+    return [];
+  }
+
+  $providers = \Drupal::config('markaspot_sso.settings')->get('providers');
+  if (!is_array($providers)) {
+    return [];
+  }
+
+  $provider_manager = \Drupal::service('markaspot_sso.provider_manager');
+  $blocked = [];
+  foreach ($providers as $provider_id => $provider) {
+    if (!is_string($provider_id) || !is_array($provider) || empty($provider['enabled'])) {
+      continue;
+    }
+    if ($provider_manager->isMockProvider($provider) && !$provider_manager->mockAllowed()) {
+      $blocked[] = $provider_id;
+    }
+  }
+
+  if ($blocked === []) {
+    return [];
+  }
+
+  return [
+    'markaspot_sso_mock_provider' => [
+      'title' => new TranslatableMarkup('Mark-a-Spot SSO mock providers'),
+      'value' => new TranslatableMarkup('Misconfigured'),
+      'severity' => REQUIREMENT_WARNING,
+      'description' => new TranslatableMarkup(
+        'Mock SSO provider(s) @providers are enabled, but this environment does not allow mock login. Set MARKASPOT_SSO_MOCK=true together with IS_DDEV_PROJECT=true or a dev MARKASPOT_ENV, or disable the provider(s).',
+        ['@providers' => implode(', ', $blocked)],
+      ),
+    ],
+  ];
+}
+
+/**
+ * Implements hook_schema().
+ */
+function markaspot_sso_schema(): array {
+  $schema['markaspot_sso_identities'] = [
+    'description' => 'Maps external SSO subjects to Drupal users without storing raw NameIDs.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'provider' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ],
+      'subject_hash' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ],
+      'uid' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'assurance_level' => [
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => FALSE,
+      ],
+      'created' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'changed' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'provider_subject' => ['provider', 'subject_hash'],
+    ],
+    'indexes' => [
+      'uid' => ['uid'],
+    ],
+  ];
+
+  $schema['markaspot_sso_replay'] = [
+    'description' => 'Stores processed SSO message and assertion IDs for replay protection.',
+    'fields' => [
+      'id' => [
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'provider' => [
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ],
+      'message_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ],
+      'assertion_id' => [
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => FALSE,
+      ],
+      'expires' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'created' => [
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'provider_message' => ['provider', 'message_id'],
+      'provider_assertion' => ['provider', 'assertion_id'],
+    ],
+    'indexes' => [
+      'expires' => ['expires'],
+    ],
+  ];
+
+  return $schema;
+}

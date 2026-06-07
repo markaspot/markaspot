@@ -1,0 +1,52 @@
+services:
+  logger.channel.markaspot_sso:
+    parent: logger.channel_base
+    arguments: ['markaspot_sso']
+
+  markaspot_sso.provider_manager:
+    class: Drupal\markaspot_sso\Service\SsoProviderManager
+    arguments:
+      - '@config.factory'
+
+  markaspot_sso.client_factory:
+    class: Drupal\markaspot_sso\Service\SsoClientFactory
+    arguments:
+      - '@markaspot_sso.provider_manager'
+      - '@request_stack'
+
+  markaspot_sso.relay_state:
+    class: Drupal\markaspot_sso\Service\SsoRelayStateValidator
+    arguments:
+      - '@config.factory'
+      - '@request_stack'
+
+  markaspot_sso.replay_cache:
+    class: Drupal\markaspot_sso\Service\SsoReplayCache
+    arguments:
+      - '@database'
+      - '@datetime.time'
+
+  markaspot_sso.identity_linker:
+    class: Drupal\markaspot_sso\Service\SsoIdentityLinker
+    arguments:
+      - '@database'
+      - '@entity_type.manager'
+      - '@markaspot_sso.group_membership'
+      - '@config.factory'
+      - '@logger.channel.markaspot_sso'
+
+  markaspot_sso.group_membership:
+    class: Drupal\markaspot_sso\Service\SsoGroupMembershipService
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@logger.channel.markaspot_sso'
+
+  markaspot_sso.login_service:
+    class: Drupal\markaspot_sso\Service\SsoLoginService
+    arguments:
+      - '@markaspot_sso.provider_manager'
+      - '@markaspot_sso.client_factory'
+      - '@markaspot_sso.replay_cache'
+      - '@markaspot_sso.identity_linker'
+      - '@logger.channel.markaspot_sso'

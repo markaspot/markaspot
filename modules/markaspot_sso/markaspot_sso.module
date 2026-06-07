@@ -1,0 +1,24 @@
+<?php
+
+/**
+ * @file
+ * Hooks for the markaspot_sso module.
+ */
+
+declare(strict_types=1);
+
+use Drupal\group\Entity\GroupInterface;
+
+/**
+ * Implements hook_markaspot_nuxt_settings_alter().
+ */
+function markaspot_sso_markaspot_nuxt_settings_alter(array &$settings, ?GroupInterface $group = NULL): void {
+  if (!$group instanceof GroupInterface || !\Drupal::hasService('markaspot_sso.provider_manager')) {
+    return;
+  }
+
+  $settings['sso'] = [
+    'providers' => \Drupal::service('markaspot_sso.provider_manager')
+      ->providersForJurisdiction((int) $group->id()),
+  ];
+}

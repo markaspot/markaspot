@@ -112,6 +112,7 @@ class MarkASpotSettingsController extends ControllerBase {
     // are installed/uninstalled (ensures feature flags update immediately).
     $cache_metadata->addCacheTags([
       'config:markaspot_nuxt.settings',
+      'config:markaspot_sso.settings',
       'config:core.extension',
     ]);
 
@@ -155,8 +156,8 @@ class MarkASpotSettingsController extends ControllerBase {
     $group = NULL;
 
     // Add list cache tag for when groups are added/removed.
-    // Group entities invalidate 'group_list' (not bundle-specific 'group_list:jur'),
-    // so we must use the generic tag for proper cache invalidation.
+    // Group entities invalidate 'group_list', not bundle-specific
+    // 'group_list:jur', so use the generic tag for cache invalidation.
     $cache_metadata->addCacheTags(['group_list']);
 
     if ($jurisdiction_param) {
@@ -176,14 +177,16 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // If a specific jurisdiction was requested but not found, return 404.
-    // Do NOT fall back to default (prevents tenant enumeration via ID brute-force).
+    // Do NOT fall back to default. This prevents tenant enumeration via ID
+    // brute-force.
     if ($group === NULL && $jurisdiction_param) {
       $error_response = new CacheableJsonResponse(['error' => 'Jurisdiction not found'], 404);
       $error_response->addCacheableDependency($cache_metadata);
       return $error_response;
     }
 
-    // Default to first published jurisdiction group only when NO param specified.
+    // Default to first published jurisdiction group only when NO param was
+    // specified.
     if ($group === NULL) {
       $group_ids = $this->entityTypeManager->getStorage('group')
         ->getQuery()
@@ -204,7 +207,8 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Resolve root jurisdiction ID for taxonomy filtering.
-    // Child jurisdictions inherit the parent's service catalog (categories, statuses).
+    // Child jurisdictions inherit the parent's service catalog categories and
+    // statuses.
     $taxonomyJurisdictionId = $group
       ? $this->hierarchyResolver->getRootJurisdictionId((int) $group->id())
       : NULL;
@@ -233,7 +237,7 @@ class MarkASpotSettingsController extends ControllerBase {
         // These override/extend the base settings.
         // Keys must match the nuxt_config.schema.json properties.
         // The 'facilities' key is intentionally absent here. It is delivered
-        // exclusively by markaspot_facility via hook_markaspot_nuxt_settings_alter
+        // by markaspot_facility via hook_markaspot_nuxt_settings_alter
         // from the canonical field_facilities field on the jurisdiction group.
         $config_keys = [
           'client',
@@ -382,7 +386,8 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Add groupTypes if not set from jurisdiction config.
-    // Auto-detect from markaspot_open311 config (supports legacy 'organisation' naming).
+    // Auto-detect from markaspot_open311 config. This supports legacy
+    // 'organisation' naming.
     if (empty($settings['groupTypes'])) {
       $org_type = $open311_config->get('organisation_group_type') ?? 'org';
 
@@ -402,7 +407,8 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Add file URLs from group's file fields if available.
-    // Return relative paths - frontend will proxy through /api/images/ or /api/fonts/.
+    // Return relative paths. Frontend proxies through /api/images/ or
+    // /api/fonts/.
     if ($group) {
       // Helper to convert file URI to relative path.
       $getRelativePath = function ($file) {
@@ -519,7 +525,7 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     // Add boundary GeoJSON from group's field_boundary if available.
-    // Skip if 'exclude=boundary' query param is set (for faster initial page load).
+    // Skip when 'exclude=boundary' is set for faster initial page loads.
     $exclude = $request->query->get('exclude');
     $excludeBoundary = $exclude === 'boundary' || (is_array($exclude) && in_array('boundary', $exclude));
     if (!$excludeBoundary && $group && $group->hasField('field_boundary') && !$group->get('field_boundary')->isEmpty()) {
@@ -528,7 +534,8 @@ class MarkASpotSettingsController extends ControllerBase {
       $boundary_json = strip_tags($boundary_json);
       $boundary_data = json_decode($boundary_json, TRUE);
       if (is_array($boundary_data)) {
-        // Ensure boundary is a FeatureCollection (wrap single Feature if needed)
+        // Ensure boundary is a FeatureCollection. Wrap a single Feature if
+        // needed.
         if (isset($boundary_data['type']) && $boundary_data['type'] === 'Feature') {
           $settings['boundary'] = [
             'type' => 'FeatureCollection',
@@ -560,10 +567,12 @@ class MarkASpotSettingsController extends ControllerBase {
     // can further filter categories via field_service_categories.
     $settings['services'] = $this->loadServices($taxonomyJurisdictionId, $group);
     $settings['statuses'] = $this->loadStatuses($taxonomyJurisdictionId);
-    // Districts and sublocalities are loaded globally (not jurisdiction-filtered)
+    // Districts and sublocalities are loaded globally, not
+    // jurisdiction-filtered.
     // because they represent geographic areas that are typically shared across
     // all jurisdictions within an installation. Unlike categories and statuses
-    // which have field_jurisdiction, district terms have no jurisdiction reference.
+    // which have field_jurisdiction, district terms have no jurisdiction
+    // reference.
     $settings['districts'] = $this->loadTaxonomyOptions('district');
     $settings['sublocalities'] = $this->loadTaxonomyOptions('sublocality');
 
@@ -608,7 +617,8 @@ class MarkASpotSettingsController extends ControllerBase {
       ->loadByProperties($properties);
 
     // Apply child jurisdiction category allow-list if configured.
-    // Root jurisdictions and children without restrictions return NULL (show all).
+    // Root jurisdictions and children without restrictions return NULL, which
+    // means show all.
     if ($group) {
       $allowedIds = $this->hierarchyResolver->getAllowedCategoryIds((int) $group->id());
       if ($allowedIds !== NULL) {
@@ -754,7 +764,7 @@ class MarkASpotSettingsController extends ControllerBase {
   }
 
   /**
-   * Returns form display settings, including field settings and media reference info.
+   * Returns form display settings.
    *
    * Cached with appropriate cache tags - automatically invalidates when:
    * - Entity form display configuration changes
@@ -871,7 +881,8 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
-    // Return the form display settings with fields and groups as a cacheable JSON response.
+    // Return the form display settings with fields and groups as cacheable
+    // JSON.
     $response = new CacheableJsonResponse([
       'entity_type' => $entity_type,
       'bundle' => $bundle,
@@ -931,13 +942,13 @@ class MarkASpotSettingsController extends ControllerBase {
   }
 
   /**
-   * Retrieves detailed information about media types referenced by the field, including cardinality.
+   * Retrieves referenced media type details, including cardinality.
    *
    * @param \Drupal\field\Entity\FieldConfig $field_config
    *   The field configuration entity.
    *
    * @return array
-   *   A detailed array of information about media types referenced by this field.
+   *   A detailed array of information about referenced media types.
    */
   private function getReferencedMediaTypes(FieldConfig $field_config) {
     $media_details = [];
@@ -1172,7 +1183,7 @@ class MarkASpotSettingsController extends ControllerBase {
    * for filtering and assignment purposes.
    *
    * Supports both 'org' (new) and 'organisation' (legacy) group types.
-   * The type can be configured via markaspot_open311.settings.organisation_group_type.
+   * The type can be configured through markaspot_open311.settings.
    *
    * When a 'jurisdiction' query parameter is provided (numeric group ID),
    * only organisations belonging to that jurisdiction are returned.
@@ -1200,7 +1211,8 @@ class MarkASpotSettingsController extends ControllerBase {
     $cache_metadata->addCacheContexts(['url.query_args:jurisdiction', 'user']);
     $cache_metadata->setCacheMaxAge(3600);
 
-    // Optional jurisdiction filter: only return orgs directly assigned to this jur.
+    // Optional jurisdiction filter: only return orgs directly assigned to this
+    // jurisdiction.
     // Strict filtering: no hierarchy traversal, only exact match.
     // Supports both numeric IDs and slugs (e.g. "amsterdam").
     $jurisdiction_param = $request->query->get('jurisdiction');

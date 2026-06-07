@@ -1,0 +1,121 @@
+markaspot_sso.settings:
+  type: config_object
+  label: 'Mark-a-Spot SSO settings'
+  mapping:
+    default_provider:
+      type: string
+      label: 'Default provider'
+    providers:
+      type: sequence
+      label: 'Providers'
+      sequence:
+        type: mapping
+        label: 'Provider'
+        mapping:
+          enabled:
+            type: boolean
+            label: 'Enabled'
+          label:
+            type: label
+            label: 'Label'
+          profile:
+            type: string
+            label: 'Provider profile'
+          mock:
+            type: boolean
+            label: 'Mock provider'
+          jurisdiction_id:
+            type: integer
+            label: 'Jurisdiction group ID'
+          org_id:
+            type: integer
+            label: 'Organisation group ID'
+          default_role:
+            type: string
+            label: 'Default group role'
+          create_users:
+            type: boolean
+            label: 'Create users'
+          link_by_email:
+            type: boolean
+            label: 'Link by email'
+          sp_entity_id:
+            type: string
+            label: 'SP entity ID'
+          sp_acs_url:
+            type: uri
+            label: 'SP ACS URL'
+          sp_x509_cert:
+            type: string
+            label: 'SP X.509 certificate'
+          sp_private_key_path:
+            type: string
+            label: 'SP private key path'
+          minimum_assurance_level:
+            type: string
+            label: 'Minimum assurance level'
+          idp_entity_id:
+            type: string
+            label: 'IdP entity ID'
+          idp_sso_url:
+            type: uri
+            label: 'IdP SSO URL'
+          idp_x509_cert:
+            type: string
+            label: 'IdP X.509 certificate'
+          name_id_format:
+            type: string
+            label: 'NameID format'
+          allowed_relay_hosts:
+            type: sequence
+            label: 'Allowed RelayState hosts'
+            sequence:
+              type: string
+              label: 'Host'
+          default_relay_path:
+            type: string
+            label: 'Default RelayState path'
+          attribute_map:
+            type: sequence
+            label: 'Attribute mapping'
+            sequence:
+              type: sequence
+              label: 'Attribute names'
+              sequence:
+                type: string
+                label: 'Attribute name'
+          mock_claims:
+            type: mapping
+            label: 'Mock claims'
+            mapping:
+              subject:
+                type: string
+                label: 'Subject'
+              email:
+                type: email
+                label: 'Email'
+              first_name:
+                type: string
+                label: 'First name'
+              last_name:
+                type: string
+                label: 'Last name'
+              full_name:
+                type: string
+                label: 'Full name'
+              assurance_level:
+                type: string
+                label: 'Assurance level'
+          security:
+            type: mapping
+            label: 'Security'
+            mapping:
+              authn_requests_signed:
+                type: boolean
+                label: 'Sign AuthnRequests'
+              want_assertions_signed:
+                type: boolean
+                label: 'Require signed assertions'
+              want_messages_signed:
+                type: boolean
+                label: 'Require signed messages'

@@ -1,0 +1,4 @@
+administer markaspot sso:
+  title: 'Administer Mark-a-Spot SSO'
+  description: 'Configure SSO identity providers and service provider metadata.'
+  restrict access: true

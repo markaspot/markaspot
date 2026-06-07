@@ -64,7 +64,8 @@
         "drupal/shs": "^3",
         "drupal/json_form_widget": "^1",
         "drupal/jsonapi_resources": "^1.5",
-        "enshrined/svg-sanitize": "^0.22"
+        "enshrined/svg-sanitize": "^0.22",
+        "onelogin/php-saml": "^4.3"
     },
     "suggest": {
         "drupal/redis": "Optional Redis cache backend for improved performance"

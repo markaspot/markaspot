@@ -276,6 +276,10 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(50.9, $data['center_lat']);
     $this->assertEquals(6.9, $data['center_lng']);
     $this->assertEquals('DE', $data['geocoding_country']);
+    $this->assertContains(
+      'config:markaspot_sso.settings',
+      $response->getCacheableMetadata()->getCacheTags()
+    );
   }
 
   /**

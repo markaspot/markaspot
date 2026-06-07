@@ -1,0 +1,67 @@
+markaspot_sso.metadata:
+  path: '/auth/sso/{provider}/metadata'
+  defaults:
+    _controller: '\Drupal\markaspot_sso\Controller\SsoAuthController::metadata'
+  methods: [GET]
+  requirements:
+    # Public SAML metadata, no user session required.
+    _access: 'TRUE'
+    provider: '[a-zA-Z0-9_-]+'
+  options:
+    no_cache: 'TRUE'
+
+markaspot_sso.login:
+  path: '/auth/sso/{provider}/login'
+  defaults:
+    _controller: '\Drupal\markaspot_sso\Controller\SsoAuthController::login'
+  methods: [GET]
+  requirements:
+    # Access is enforced by enabled provider config and RelayState validation.
+    _access: 'TRUE'
+    provider: '[a-zA-Z0-9_-]+'
+  options:
+    no_cache: 'TRUE'
+
+markaspot_sso.acs:
+  path: '/auth/sso/{provider}/acs'
+  defaults:
+    _controller: '\Drupal\markaspot_sso\Controller\SsoAuthController::acs'
+  methods: [POST]
+  requirements:
+    # Access is enforced by signed SAML response validation and replay checks.
+    _access: 'TRUE'
+    provider: '[a-zA-Z0-9_-]+'
+  options:
+    no_cache: 'TRUE'
+
+markaspot_sso.mock_login:
+  path: '/auth/sso/{provider}/mock-login'
+  defaults:
+    _controller: '\Drupal\markaspot_sso\Controller\SsoAuthController::mockLogin'
+  methods: [GET]
+  requirements:
+    # Access is enforced by mock-state and dev-environment guards.
+    _access: 'TRUE'
+    provider: '[a-zA-Z0-9_-]+'
+  options:
+    no_cache: 'TRUE'
+
+markaspot_sso.mock_idp:
+  path: '/auth/sso/{provider}/mock-idp'
+  defaults:
+    _controller: '\Drupal\markaspot_sso\Controller\SsoAuthController::mockIdp'
+  methods: [GET]
+  requirements:
+    # Access is enforced by explicit mock provider and dev-environment guards.
+    _access: 'TRUE'
+    provider: '[a-zA-Z0-9_-]+'
+  options:
+    no_cache: 'TRUE'
+
+markaspot_sso.settings:
+  path: '/admin/config/system/markaspot-sso'
+  defaults:
+    _form: '\Drupal\markaspot_sso\Form\SsoSettingsForm'
+    _title: 'SSO identity providers'
+  requirements:
+    _permission: 'administer markaspot sso'
