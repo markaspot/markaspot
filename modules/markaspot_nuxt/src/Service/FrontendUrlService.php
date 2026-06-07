@@ -33,6 +33,32 @@ class FrontendUrlService {
    *   The frontend base URL or NULL if not configured.
    */
   public function getFrontendBaseUrl() {
+    return $this->resolveFrontendBaseUrl(['FRONTEND_BASE_URL']);
+  }
+
+  /**
+   * Get the frontend base URL for notification and mail links.
+   *
+   * @return string|null
+   *   The frontend base URL or NULL if not configured.
+   */
+  public function getNotificationFrontendBaseUrl(): ?string {
+    return $this->resolveFrontendBaseUrl([
+      'FRONTEND_BASE_URL',
+      'MARKASPOT_MAIL_FRONTEND_BASE_URL',
+    ]);
+  }
+
+  /**
+   * Resolve the configured frontend URL plus selected environment fallbacks.
+   *
+   * @param string[] $env_names
+   *   Environment variable names to try after active config.
+   *
+   * @return string|null
+   *   The normalized frontend base URL or NULL if not configured.
+   */
+  protected function resolveFrontendBaseUrl(array $env_names): ?string {
     $config = $this->configFactory->get('markaspot_nuxt.settings');
     $frontend_enabled = $config->get('frontend_enabled');
 
@@ -44,7 +70,7 @@ class FrontendUrlService {
     }
 
     // Fallback to runtime environment variables for host-specific deploys.
-    foreach (['FRONTEND_BASE_URL', 'MARKASPOT_MAIL_FRONTEND_BASE_URL'] as $env_name) {
+    foreach ($env_names as $env_name) {
       $frontend_base_url_env = $this->normalizeFrontendBaseUrl((string) getenv($env_name));
       if ($frontend_base_url_env !== NULL) {
         return $frontend_base_url_env;

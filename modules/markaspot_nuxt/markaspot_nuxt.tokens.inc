@@ -81,8 +81,8 @@ function markaspot_nuxt_tokens($type, $tokens, array $data, array $options, Bubb
       $config = \Drupal::config('markaspot_nuxt.settings');
       $bubbleable_metadata->addCacheableDependency($config);
 
-      // Get frontend base URL.
-      $base_url = $frontend_url_service->getFrontendBaseUrl();
+      // Get notification-safe frontend base URL.
+      $base_url = $frontend_url_service->getNotificationFrontendBaseUrl();
       if (!$base_url) {
         $replacements[$original] = '';
         continue;
@@ -129,7 +129,7 @@ function _markaspot_nuxt_get_frontend_media_url($node, BubbleableMetadata $bubbl
 
   /** @var \Drupal\markaspot_nuxt\Service\FrontendUrlService $frontend_url_service */
   $frontend_url_service = \Drupal::service('markaspot_nuxt.frontend_url');
-  $frontend_url = $frontend_url_service->getFrontendBaseUrl();
+  $frontend_url = $frontend_url_service->getNotificationFrontendBaseUrl();
   if (!$frontend_url) {
     return '';
   }

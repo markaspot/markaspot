@@ -59,6 +59,25 @@ final class MarkaspotNuxtTokensTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::markaspot_nuxt_tokens
+   */
+  public function testRequestTokenUsesNotificationFrontendBase(): void {
+    $this->setContainerWithFrontendUrls('https://generic.example', NULL);
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+
+    $replacements = markaspot_nuxt_tokens(
+      'node',
+      ['markaspot_frontend_url' => '[node:markaspot_frontend_url]'],
+      ['node' => $node],
+      [],
+      new BubbleableMetadata()
+    );
+
+    $this->assertSame(['[node:markaspot_frontend_url]' => ''], $replacements);
+  }
+
+  /**
    * @covers ::_markaspot_nuxt_get_frontend_media_url
    */
   public function testMediaTokenReturnsEmptyWithoutPublicFrontend(): void {
@@ -89,8 +108,16 @@ final class MarkaspotNuxtTokensTest extends UnitTestCase {
    * Installs the minimal container needed by the token hooks.
    */
   private function setContainerWithFrontendUrl(?string $frontendUrl): void {
+    $this->setContainerWithFrontendUrls($frontendUrl, $frontendUrl);
+  }
+
+  /**
+   * Installs the minimal container needed by the token hooks.
+   */
+  private function setContainerWithFrontendUrls(?string $frontendUrl, ?string $notificationFrontendUrl): void {
     $frontendUrlService = $this->createMock(FrontendUrlService::class);
     $frontendUrlService->method('getFrontendBaseUrl')->willReturn($frontendUrl);
+    $frontendUrlService->method('getNotificationFrontendBaseUrl')->willReturn($notificationFrontendUrl);
 
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('getCacheContexts')->willReturn([]);

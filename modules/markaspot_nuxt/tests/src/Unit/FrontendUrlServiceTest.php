@@ -150,11 +150,32 @@ final class FrontendUrlServiceTest extends UnitTestCase {
   /**
    * @covers ::getFrontendBaseUrl
    */
-  public function testReturnsNormalizedMailFrontendEnvFallback(): void {
+  public function testGenericFrontendBaseUrlIgnoresMailFrontendEnvFallback(): void {
     putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://bonn-mobility.example/');
     $service = $this->service(FALSE, '');
 
-    $this->assertSame('https://bonn-mobility.example', $service->getFrontendBaseUrl());
+    $this->assertNull($service->getFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getNotificationFrontendBaseUrl
+   */
+  public function testReturnsNormalizedMailFrontendEnvFallbackForNotifications(): void {
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://bonn-mobility.example/');
+    $service = $this->service(FALSE, '');
+
+    $this->assertSame('https://bonn-mobility.example', $service->getNotificationFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getNotificationFrontendBaseUrl
+   */
+  public function testFrontendEnvPrecedesMailFrontendEnvForNotifications(): void {
+    putenv('FRONTEND_BASE_URL=https://generic.example/');
+    putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://mail.example/');
+    $service = $this->service(FALSE, '');
+
+    $this->assertSame('https://generic.example', $service->getNotificationFrontendBaseUrl());
   }
 
   /**
