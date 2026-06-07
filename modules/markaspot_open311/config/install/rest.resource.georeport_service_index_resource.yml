@@ -15,4 +15,5 @@ configuration:
       - xml
       - json
     supported_auth:
+      - api_key_auth
       - cookie
