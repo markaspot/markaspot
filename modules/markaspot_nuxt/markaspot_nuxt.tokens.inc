@@ -50,7 +50,12 @@ function markaspot_nuxt_tokens($type, $tokens, array $data, array $options, Bubb
     foreach ($tokens as $name => $original) {
       switch ($name) {
         case 'url':
-          $frontend_url = $frontend_url_service->getFrontendBaseUrl();
+          // This token is only consumed by mail templates (the feedback CTA in
+          // markaspot_feedback.mail.yml), so it must resolve through the
+          // notification base to honor MARKASPOT_MAIL_FRONTEND_BASE_URL like the
+          // other mail tokens. Using the generic resolver here left the feedback
+          // link empty on mail-env-only deploys.
+          $frontend_url = $frontend_url_service->getNotificationFrontendBaseUrl();
           $replacements[$original] = $frontend_url ?: '';
           break;
       }

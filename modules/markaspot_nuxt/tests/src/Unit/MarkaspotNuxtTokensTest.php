@@ -40,6 +40,29 @@ final class MarkaspotNuxtTokensTest extends UnitTestCase {
   }
 
   /**
+   * The [markaspot_frontend:url] mail token uses the notification resolver.
+   *
+   * @covers ::markaspot_nuxt_tokens
+   */
+  public function testFrontendBaseTokenUsesNotificationFrontendBase(): void {
+    // The token is a mail CTA (feedback mail), so it must resolve through the
+    // notification base, not the generic one. With only the generic URL set and
+    // the notification base NULL it must return empty; otherwise it would leak
+    // the generic URL and silently bypass MARKASPOT_MAIL_FRONTEND_BASE_URL.
+    $this->setContainerWithFrontendUrls('https://generic.example', NULL);
+
+    $replacements = markaspot_nuxt_tokens(
+      'markaspot_frontend',
+      ['url' => '[markaspot_frontend:url]'],
+      [],
+      [],
+      new BubbleableMetadata()
+    );
+
+    $this->assertSame(['[markaspot_frontend:url]' => ''], $replacements);
+  }
+
+  /**
    * @covers ::markaspot_nuxt_tokens
    */
   public function testRequestTokenReturnsEmptyWithoutPublicFrontend(): void {
