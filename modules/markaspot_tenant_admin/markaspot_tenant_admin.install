@@ -169,3 +169,39 @@ function markaspot_tenant_admin_install(): void {
     ]));
   }
 }
+
+/**
+ * Grant field_sentiment view permissions to tenant_admin.
+ *
+ * field_sentiment uses field_permissions with permission_type: custom,
+ * generating discrete "view field_sentiment" / "view own field_sentiment"
+ * permissions. Without these, JSON:API omits the sentiment value from the
+ * node--service_request collection response even when the user holds the
+ * route-level "view ai sentiment" permission (which only gates the dedicated
+ * SentimentController routes). This fix brings the live DB role in line with
+ * the canonical config/optional/user.role.tenant_admin.yml.
+ */
+function markaspot_tenant_admin_update_10005(): void {
+  $role = Role::load('tenant_admin');
+  if (!$role) {
+    return;
+  }
+
+  $permissions = [
+    'view field_sentiment',
+    'view own field_sentiment',
+  ];
+
+  $changed = FALSE;
+  foreach ($permissions as $permission) {
+    if (!$role->hasPermission($permission)) {
+      $role->grantPermission($permission);
+      $changed = TRUE;
+    }
+  }
+
+  if ($changed) {
+    $role->save();
+    \Drupal::logger('markaspot_tenant_admin')->notice('Granted field_sentiment view permissions to tenant_admin.');
+  }
+}

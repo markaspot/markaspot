@@ -29,4 +29,6 @@ permissions:
   - 'access ai insights'
   - 'review ai duplicates'
   - 'view ai sentiment'
+  - 'view field_sentiment'
+  - 'view own field_sentiment'
   - 'access dashboard kpis'
