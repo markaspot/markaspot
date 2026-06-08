@@ -6,6 +6,20 @@
  */
 
 /**
+ * Implements hook_install().
+ *
+ * Ensures field_author exists on the status paragraph type on fresh installs.
+ * The field is shipped programmatically (not via config/install) and was
+ * historically only created by markaspot_dashboard_update_11900(). Update
+ * hooks do not run on a fresh site install, so without this hook a clean
+ * install would lack paragraph.status.field_author, breaking the Pro
+ * dashboard request detail (JSON:API include field_status_notes.field_author).
+ */
+function markaspot_dashboard_install(): void {
+  _markaspot_dashboard_ensure_field_author('status');
+}
+
+/**
  * Add field_author (entity_reference to user) on status paragraph type.
  *
  * StatusNoteController sets field_author on paragraph creation. This hook
