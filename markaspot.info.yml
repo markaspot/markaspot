@@ -42,6 +42,7 @@ dependencies:
   - image_effects
   - content_translation
   - language
+  - locale
   - menu_link_content
   - menu_ui
   - node
