@@ -7,7 +7,7 @@ declare(strict_types=1);
  * Install, update, and uninstall functions for the Mark-a-Spot AI module.
  */
 
-use Drupal\Core\Serialization\Yaml;
+use Drupal\Component\Serialization\Yaml;
 use Drupal\markaspot_ai\Service\AiClientService;
 
 /**
@@ -621,7 +621,67 @@ function markaspot_ai_update_10010(): string {
  * Implements hook_install().
  */
 function markaspot_ai_install(): void {
+  // Grant duplicate-detection permissions to tenant_admin so the Pro dashboard
+  // (the SimilarRequestsCard endpoint /api/ai/duplicates/{node}) is usable
+  // without manual permission setup. config/optional cannot do this because it
+  // never overwrites a pre-existing tenant_admin role (the common case when
+  // markaspot_ai is enabled per-tenant after the profile install).
+  _markaspot_ai_grant_permissions();
+
   \Drupal::messenger()->addStatus(t('Mark-a-Spot AI module has been installed. Please configure the AI provider settings at /admin/config/services/markaspot-ai.'));
+}
+
+/**
+ * Grants AI duplicate-detection permissions to tenant_admin.
+ *
+ * Only tenant_admin is granted: the AI controllers (DuplicateController etc.)
+ * hard-gate jurisdiction access to the tenant_admin role, so granting these
+ * permissions to moderator/editorial_board would be inert (route passes,
+ * controller returns 403) and would create a latent privilege-escalation risk
+ * if that controller guard were ever relaxed.
+ *
+ * "view ai sentiment" is intentionally NOT granted here: sentiment exposes an
+ * LLM-generated "reasoning" field (derived PII) and is a separate feature
+ * outside the duplicate-detection scope; it must be enabled deliberately under
+ * a documented DPA. "administer markaspot ai" stays admin-only by design.
+ */
+function _markaspot_ai_grant_permissions(): void {
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+
+  $roles = ['tenant_admin'];
+  $permissions = [
+    'access ai insights',
+    'review ai duplicates',
+  ];
+
+  foreach ($roles as $role_id) {
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      continue;
+    }
+    $changed = FALSE;
+    foreach ($permissions as $permission) {
+      if (!$role->hasPermission($permission)) {
+        $role->grantPermission($permission);
+        $changed = TRUE;
+      }
+    }
+    if ($changed) {
+      $role->save();
+      \Drupal::logger('markaspot_ai')->notice('Granted AI insight permissions to @role.', ['@role' => $role_id]);
+    }
+  }
+}
+
+/**
+ * Grant AI insight permissions to management roles on existing installs.
+ *
+ * Sites that enabled markaspot_ai before the install-time permission grant
+ * was added would otherwise leave management roles unable to view AI insights
+ * (the dashboard SimilarRequestsCard would 403).
+ */
+function markaspot_ai_update_11900(): void {
+  _markaspot_ai_grant_permissions();
 }
 
 /**
