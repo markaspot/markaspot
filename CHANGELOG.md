@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.113](https://github.com/markaspot/markaspot/compare/11.9.112...11.9.113) (2026-06-08)
+
+### Bug Fixes
+
+* harden status note smoke fixture ([f81c639](https://github.com/markaspot/markaspot/commit/f81c639d9750cfbf14ccaceb3bca4ccefd2f6d34))
+* **vision:** fall back to a writable temp derivative when public://styles is not writable ([993de53](https://github.com/markaspot/markaspot/commit/993de530865a7c7f4f071f727668e1a8d6450c74))
+
 ## [11.9.112](https://github.com/markaspot/markaspot/compare/11.9.111...11.9.112) (2026-06-07)
 
 ### Bug Fixes
