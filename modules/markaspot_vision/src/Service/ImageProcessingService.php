@@ -24,6 +24,17 @@ class ImageProcessingService {
   use JurisdictionIdResolverTrait;
 
   /**
+   * Max bytes for the unscaled original-image fallback sent to the AI.
+   *
+   * Only applies when no scaled derivative could be produced (neither the
+   * canonical nor the temporary:// location was writable). The scaled
+   * ai_analysis derivative is normally well under 1 MB; a multi-megabyte
+   * original would inflate AI input-token cost and risk a provider 413, so
+   * such an image is skipped from analysis with a loud error instead.
+   */
+  protected const MAX_ORIGINAL_FALLBACK_BYTES = 4194304;
+
+  /**
    * The HTTP client.
    *
    * @var \GuzzleHttp\ClientInterface
@@ -213,6 +224,7 @@ class ImageProcessingService {
    *   The blurred image bytes.
    * @param string $originalUri
    *   The URI of the original file, used for deriving the filename.
+   *
    * @throws \RuntimeException
    *   Thrown when the blurred image cannot replace the original.
    */
@@ -313,9 +325,44 @@ class ImageProcessingService {
       $blur_applied = FALSE;
       foreach ($file_uris as $file_uri) {
         $styled_file_path = $this->getStyledImagePath($file_uri);
-        $contents = file_get_contents($styled_file_path);
+        // The temporary:// fallback derivative holds an unblurred copy of the
+        // citizen image; guarantee it is removed once its bytes are read, even
+        // if the read throws, so unblurred PII never lingers in the temp dir.
+        $is_temp = str_starts_with($styled_file_path, 'temporary://');
+        // True when no scaled derivative could be produced and the original
+        // (full-size) image was handed back by getStyledImagePath().
+        $is_original_fallback = ($styled_file_path === $file_uri);
+        try {
+          $contents = file_get_contents($styled_file_path);
+        }
+        finally {
+          if ($is_temp && file_exists($styled_file_path)) {
+            try {
+              $this->fileSystem->unlink($styled_file_path);
+            }
+            catch (\Exception $e) {
+              $this->logger->warning('Could not remove temporary derivative @path: @msg', [
+                '@path' => $styled_file_path,
+                '@msg' => $e->getMessage(),
+              ]);
+            }
+          }
+        }
         if ($contents === FALSE) {
           $this->logger->warning('Failed to read image file: @path', ['@path' => $styled_file_path]);
+          continue;
+        }
+        // Cost guard: only the unscaled original-image fallback can be large
+        // here (derivatives are downscaled). Skip an oversized original rather
+        // than inflate AI token cost / risk a provider 413. This path only
+        // triggers when derivative generation is broken (e.g. public://styles
+        // unwritable) AND the original exceeds the limit, so log it loudly.
+        if ($is_original_fallback && strlen($contents) > self::MAX_ORIGINAL_FALLBACK_BYTES) {
+          $this->logger->error('Skipping AI analysis for @uri: no scaled derivative could be created and the original (@bytes bytes) exceeds the @max byte limit. Check that public://styles is writable.', [
+            '@uri' => $file_uri,
+            '@bytes' => strlen($contents),
+            '@max' => self::MAX_ORIGINAL_FALLBACK_BYTES,
+          ]);
           continue;
         }
         // Detect actual MIME type (image style may convert format).
@@ -776,10 +823,38 @@ class ImageProcessingService {
       throw new \Exception('The "ai_analysis" image style was not found. Please ensure it exists.');
     }
     $styled_file_path = $style->buildUri($uri);
-    if (!file_exists($styled_file_path)) {
-      $style->createDerivative($uri, $styled_file_path);
+    // Reuse an already-generated derivative.
+    if (file_exists($styled_file_path)) {
+      return $styled_file_path;
     }
-    return $styled_file_path;
+    // Generate the derivative in its canonical location. createDerivative()
+    // returns FALSE when the destination is not writable (e.g. public://styles
+    // on a deployment where that path is not writable by the web user); the
+    // return value MUST be checked, otherwise a failed generation surfaces only
+    // as a downstream "failed to read" and the image is silently dropped from
+    // AI analysis AND privacy blurring.
+    if ($style->createDerivative($uri, $styled_file_path) && file_exists($styled_file_path)) {
+      return $styled_file_path;
+    }
+    // Fallback: build the same scaled derivative in temporary:// (the system
+    // temp dir, writable even when public://styles is not). This preserves the
+    // AI token savings of the downscaled image and keeps blur preprocessing
+    // working. The caller removes the temp file after reading it.
+    // Constrain the extension to a known image type (the derivative still holds
+    // an unblurred copy of the citizen image) and make the name per-process
+    // unique so concurrent workers analysing the same media never race on, or
+    // unlink, each other's temp file.
+    $raw_extension = strtolower(pathinfo($uri, PATHINFO_EXTENSION));
+    $extension = in_array($raw_extension, ['jpg', 'jpeg', 'png', 'gif', 'webp'], TRUE) ? $raw_extension : 'jpg';
+    $temp_path = 'temporary://markaspot_vision_ai_' . md5($uri) . '_' . getmypid() . '_' . uniqid() . '.' . $extension;
+    if ($style->createDerivative($uri, $temp_path) && file_exists($temp_path)) {
+      $this->logger->warning('The "ai_analysis" derivative could not be written to its canonical location for @uri; used a temporary:// fallback. Check that public://styles is writable.', ['@uri' => $uri]);
+      return $temp_path;
+    }
+    // Last resort: hand back the original. AI then runs on the full-size image
+    // (higher token cost) but analysis and privacy blurring still happen.
+    $this->logger->warning('Could not create the "ai_analysis" derivative for @uri; falling back to the original image (higher AI token cost).', ['@uri' => $uri]);
+    return $uri;
   }
 
   /**
