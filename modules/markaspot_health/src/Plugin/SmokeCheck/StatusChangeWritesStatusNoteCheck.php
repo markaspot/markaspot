@@ -50,13 +50,32 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
  *   description = @Translation("Drives a POST update against /georeport/v2/requests/<id>.json with field_status + field_status_notes and asserts a new status_note paragraph appears with the new status reference and the run-id-tagged note text."),
  *   fix_hint = @Translation("Inspect GeoreportRequestResource::specialFieldHandling() — the field_status_notes path constructs the paragraph via GeoreportProcessorService::createStatusNoteParagraph(). The most likely regression is missing field_status_notes propagation in processUpdateFields()."),
  * )
+ *
+ * @phpstan-consistent-constructor
  */
 class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
+
+  /**
+   * Permission required for POST updates on single Open311 request resources.
+   */
+  protected const OPEN311_REQUEST_POST_PERMISSION = 'restful post georeport_request_resource';
+
+  /**
+   * Permission required to update advanced Open311 status-note fields.
+   */
+  protected const OPEN311_ADVANCED_PROPERTIES_PERMISSION = 'access open311 advanced properties';
 
   /**
    * Last error message captured during createServiceRequestNode().
    */
   protected ?string $lastCreateError = NULL;
+
+  /**
+   * Last fixture discovery trace safe for CLI/JSON smoke output.
+   *
+   * @var array<string, mixed>
+   */
+  protected array $lastFixtureDiscoveryEvidence = [];
 
   public function __construct(
     array $configuration,
@@ -93,9 +112,24 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
 
     $fixture = $this->discoverFixture($context);
     if ($fixture === NULL) {
+      $discoveryEvidence = $this->lastFixtureDiscoveryEvidence ?: ['attempted' => 'fixture auto-discovery'];
+      if (
+        $mode === SmokeCheckResult::MODE_FULL &&
+        !empty($discoveryEvidence['api_key_candidates_missing_permissions'])
+      ) {
+        return $this->fail(
+          1,
+          'No usable fixture: API key(s) scoped to the jurisdiction exist, but the owner lacks the required Open311 update permissions.',
+          $discoveryEvidence,
+          $mode,
+          [],
+          0,
+          $this->discoveryTenantId($discoveryEvidence),
+        );
+      }
       return $this->skip(
         'No usable fixture: need a jurisdiction with a service_category, two service_status terms, an api_key whose owner is a member of that jurisdiction, and a parseable boundary GeoJSON.',
-        ['attempted' => 'fixture auto-discovery'],
+        $discoveryEvidence,
         $mode,
       );
     }
@@ -106,7 +140,7 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
       return $this->fail(
         1,
         sprintf('Could not create the test service_request node: %s', $this->lastCreateError ?? 'unknown'),
-        ['fixture' => $fixture, 'run_id' => $runId, 'error' => $this->lastCreateError],
+        ['fixture' => $this->fixtureEvidence($fixture), 'run_id' => $runId, 'error' => $this->lastCreateError],
         $mode,
       );
     }
@@ -115,7 +149,7 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
     $beforeCount = (int) $node->get('field_status_notes')->count();
     $statusNoteFields = $this->resolveStatusNoteFields();
     $evidence = [
-      'fixture' => $fixture,
+      'fixture' => $this->fixtureEvidence($fixture),
       'run_id' => $runId,
       'nid' => $nid,
       'request_id' => $requestId,
@@ -287,12 +321,70 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
   }
 
   /**
+   * Returns fixture metadata safe for CLI/JSON smoke output.
+   *
+   * @param array{api_key_id: string, api_key_value: string, owner_uid: int, jurisdiction_id: int, service_tid: int, status_a: int, status_b: int, lat: float, lng: float} $fixture
+   *   Full fixture including the private API key value.
+   *
+   * @return array{api_key_id: string, owner_uid: int, jurisdiction_id: int, service_tid: int, status_a: int, status_b: int, lat: float, lng: float}
+   *   Public fixture fields safe to serialize as smoke evidence.
+   */
+  protected function fixtureEvidence(array $fixture): array {
+    return [
+      'api_key_id' => $fixture['api_key_id'],
+      'owner_uid' => $fixture['owner_uid'],
+      'jurisdiction_id' => $fixture['jurisdiction_id'],
+      'service_tid' => $fixture['service_tid'],
+      'status_a' => $fixture['status_a'],
+      'status_b' => $fixture['status_b'],
+      'lat' => $fixture['lat'],
+      'lng' => $fixture['lng'],
+    ];
+  }
+
+  /**
+   * Returns the first tenant id represented by credential discovery evidence.
+   */
+  protected function discoveryTenantId(array $evidence): ?int {
+    $candidates = $evidence['api_key_candidates_missing_permissions'] ?? NULL;
+    if (!is_array($candidates) || $candidates === []) {
+      return NULL;
+    }
+    $first = reset($candidates);
+    if (!is_array($first) || !isset($first['jurisdiction_id'])) {
+      return NULL;
+    }
+    return is_int($first['jurisdiction_id']) ? $first['jurisdiction_id'] : NULL;
+  }
+
+  /**
+   * Returns the Open311 update permissions missing from an API-key owner.
+   *
+   * @param mixed $account
+   *   User account object resolved from the API-key owner UUID.
+   *
+   * @return string[]
+   *   Missing permission machine names.
+   */
+  protected function missingUpdatePermissions($account): array {
+    $missing = [];
+    foreach ([self::OPEN311_REQUEST_POST_PERMISSION, self::OPEN311_ADVANCED_PROPERTIES_PERMISSION] as $permission) {
+      if (!$account->hasPermission($permission)) {
+        $missing[] = $permission;
+      }
+    }
+    return $missing;
+  }
+
+  /**
    * Picks api_key + jurisdiction + service_code + status_a + status_b combo.
    *
    * @return array{api_key_id: string, api_key_value: string, owner_uid: int, jurisdiction_id: int, service_tid: int, status_a: int, status_b: int, lat: float, lng: float}|null
    *   Resolved fixture, or NULL when nothing usable exists on this tenant.
    */
   protected function discoverFixture(array $context): ?array {
+    $this->lastFixtureDiscoveryEvidence = ['attempted' => 'fixture auto-discovery'];
+
     $statusPair = $this->discoverStatusPair();
     if ($statusPair === NULL) {
       return NULL;
@@ -309,6 +401,7 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
       ->accessCheck(FALSE)
       ->range(0, 50)
       ->execute();
+    $permissionMismatches = [];
 
     foreach ($apiKeyStorage->loadMultiple($apiKeyIds) as $apiKey) {
       $userUuid = $apiKey->get('user_uuid');
@@ -344,6 +437,16 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
       if (!is_string($keyValue) || $keyValue === '') {
         continue;
       }
+      $missingPermissions = $this->missingUpdatePermissions($owner);
+      if ($missingPermissions !== []) {
+        $permissionMismatches[] = [
+          'api_key_id' => (string) $apiKey->id(),
+          'owner_uid' => (int) $owner->id(),
+          'jurisdiction_id' => $jurId,
+          'missing_permissions' => $missingPermissions,
+        ];
+        continue;
+      }
       return [
         'api_key_id' => (string) $apiKey->id(),
         'api_key_value' => $keyValue,
@@ -355,6 +458,9 @@ class StatusChangeWritesStatusNoteCheck extends SmokeCheckPluginBase {
         'lat' => $centroid[0],
         'lng' => $centroid[1],
       ];
+    }
+    if ($permissionMismatches !== []) {
+      $this->lastFixtureDiscoveryEvidence['api_key_candidates_missing_permissions'] = $permissionMismatches;
     }
     return NULL;
   }
