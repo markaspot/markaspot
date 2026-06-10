@@ -59,7 +59,8 @@ markaspot_dashboard.duplicates:
   defaults:
     _controller: '\Drupal\markaspot_dashboard\Controller\DuplicateController::getDuplicates'
   requirements:
-    _permission: 'access mark-a-spot api'
+    # Aligned with markaspot_ai.duplicates permission (access ai insights).
+    _permission: 'access ai insights'
     nid: \d+
   methods: [GET]
 
@@ -68,7 +69,8 @@ markaspot_dashboard.duplicates_pending:
   defaults:
     _controller: '\Drupal\markaspot_dashboard\Controller\DuplicateController::getPendingDuplicates'
   requirements:
-    _permission: 'access mark-a-spot api'
+    # Aligned with markaspot_ai.duplicate_pending permission (review ai duplicates).
+    _permission: 'review ai duplicates'
   methods: [GET]
 
 markaspot_dashboard.duplicates_review:
@@ -76,7 +78,8 @@ markaspot_dashboard.duplicates_review:
   defaults:
     _controller: '\Drupal\markaspot_dashboard\Controller\DuplicateController::reviewMatch'
   requirements:
-    _permission: 'access mark-a-spot api'
+    # Aligned with markaspot_ai.duplicate_review permission (review ai duplicates).
+    _permission: 'review ai duplicates'
     match_id: \d+
   methods: [POST]
 

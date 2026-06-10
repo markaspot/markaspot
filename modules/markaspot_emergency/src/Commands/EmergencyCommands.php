@@ -38,8 +38,8 @@ class EmergencyCommands extends DrushCommands {
   /**
    * Get emergency mode status.
    */
-  #[CLI\Command(name: 'emergency:status', aliases: ['emer:status'])]
-  #[CLI\Usage(name: 'emergency:status', description: 'Show current emergency mode status.')]
+  #[CLI\Command(name: 'markaspot:emergency:status', aliases: ['emergency:status', 'emer:status'])]
+  #[CLI\Usage(name: 'markaspot:emergency:status', description: 'Show current emergency mode status.')]
   public function status() {
     $config = $this->configFactory->get('markaspot_emergency.settings');
     $status = $config->get('emergency_mode.status');
@@ -59,10 +59,10 @@ class EmergencyCommands extends DrushCommands {
   /**
    * Activate emergency mode.
    */
-  #[CLI\Command(name: 'emergency:activate', aliases: ['emer:on'])]
+  #[CLI\Command(name: 'markaspot:emergency:activate', aliases: ['emergency:activate', 'emer:on'])]
   #[CLI\Option(name: 'mode-type', description: 'The type of emergency mode (disaster, crisis, maintenance).')]
-  #[CLI\Usage(name: 'emergency:activate', description: 'Activate emergency mode with default settings.')]
-  #[CLI\Usage(name: 'emergency:activate --mode-type=disaster', description: 'Activate disaster mode specifically.')]
+  #[CLI\Usage(name: 'markaspot:emergency:activate', description: 'Activate emergency mode with default settings.')]
+  #[CLI\Usage(name: 'markaspot:emergency:activate --mode-type=disaster', description: 'Activate disaster mode specifically.')]
   public function activate($options = ['mode-type' => 'disaster']) {
     $config = $this->configFactory->get('markaspot_emergency.settings');
 
@@ -90,10 +90,10 @@ class EmergencyCommands extends DrushCommands {
   /**
    * Deactivate emergency mode.
    */
-  #[CLI\Command(name: 'emergency:deactivate', aliases: ['emer:off'])]
+  #[CLI\Command(name: 'markaspot:emergency:deactivate', aliases: ['emergency:deactivate', 'emer:off'])]
   #[CLI\Option(name: 'restore-categories', description: 'Restore regular categories to published state.')]
-  #[CLI\Usage(name: 'emergency:deactivate', description: 'Deactivate emergency mode and restore regular categories.')]
-  #[CLI\Usage(name: 'emergency:deactivate --restore-categories=0', description: 'Deactivate without restoring categories.')]
+  #[CLI\Usage(name: 'markaspot:emergency:deactivate', description: 'Deactivate emergency mode and restore regular categories.')]
+  #[CLI\Usage(name: 'markaspot:emergency:deactivate --restore-categories=0', description: 'Deactivate without restoring categories.')]
   public function deactivate($options = ['restore-categories' => TRUE]) {
     $config = $this->configFactory->get('markaspot_emergency.settings');
 

@@ -197,14 +197,15 @@ class HealthCommands extends DrushCommands {
   }
 
   /**
-   * Adds an administrator user as admin-role member of every jur and org group.
+   * Adds an administrator user as member of every jur and org group.
    *
    * Drupal Group module's UI does not have a bulk "add me to all groups"
    * action. Operators who land on the health-check page after a `cim` or
    * after a tenant created a new group regularly hit the case where they
-   * have site-level admin access but no group-level membership. This
-   * command bulk-adds the chosen user as the admin group-role member of
-   * every jur and org group they are not already a member of.
+   * have site-level admin access but no group-level membership. Admin
+   * permissions come from insider-scoped group roles mapped to the Drupal
+   * administrator role, so this command creates plain memberships and removes
+   * accidental non-individual role assignments from existing memberships.
    *
    * @param array $options
    *   Command options.
@@ -225,7 +226,7 @@ class HealthCommands extends DrushCommands {
     'group_type' => 'Type',
     'group_label' => 'Label',
     'action' => 'Action',
-    'group_role' => 'Group role',
+    'group_role' => 'Removed role(s)',
   ])]
   public function onboardAdmin(
     array $options = [
@@ -248,7 +249,7 @@ class HealthCommands extends DrushCommands {
     if (!$dryRun) {
       // Drush respects -y / --yes globally and skips the prompt when set.
       $confirmed = $this->io()->confirm(
-        sprintf('Add %s as admin of every jur/org group? This cannot be undone automatically.', $user->getAccountName()),
+        sprintf('Add %s as member of every jur/org group and clean invalid membership roles? This cannot be undone automatically.', $user->getAccountName()),
         FALSE,
       );
       if (!$confirmed) {
@@ -276,25 +277,27 @@ class HealthCommands extends DrushCommands {
         continue;
       }
       $type = $group->bundle();
-      $adminRole = $this->resolveAdminGroupRole($type);
       $member = $group->getMember($user);
       if ($member) {
+        $nonIndividualRoles = $this->nonIndividualMembershipRoleIds($member);
+        if ($nonIndividualRoles !== [] && !$dryRun) {
+          $this->removeMembershipRoleIds($member, $nonIndividualRoles);
+          $this->logger()->notice('Removed non-individual role(s) @roles from @user (uid @uid) on group @gid (@label).', [
+            '@roles' => implode(',', $nonIndividualRoles),
+            '@user' => $user->getAccountName(),
+            '@uid' => $user->id(),
+            '@gid' => $group->id(),
+            '@label' => $group->label(),
+          ]);
+        }
         $rows[] = [
           'group_id' => (string) $group->id(),
           'group_type' => $type,
           'group_label' => (string) $group->label(),
-          'action' => 'already member',
-          'group_role' => '',
-        ];
-        continue;
-      }
-      if ($adminRole === NULL) {
-        $rows[] = [
-          'group_id' => (string) $group->id(),
-          'group_type' => $type,
-          'group_label' => (string) $group->label(),
-          'action' => 'no admin role',
-          'group_role' => '',
+          'action' => $nonIndividualRoles === []
+            ? 'already member'
+            : ($dryRun ? 'would remove non-individual roles' : 'removed non-individual roles'),
+          'group_role' => implode(',', $nonIndividualRoles),
         ];
         continue;
       }
@@ -304,16 +307,15 @@ class HealthCommands extends DrushCommands {
           'group_type' => $type,
           'group_label' => (string) $group->label(),
           'action' => 'would add',
-          'group_role' => $adminRole,
+          'group_role' => '',
         ];
         continue;
       }
       try {
-        $group->addMember($user, ['group_roles' => [$adminRole]]);
-        $this->logger()->notice('Onboarded @user (uid @uid) as @role on group @gid (@label).', [
+        $group->addMember($user);
+        $this->logger()->notice('Onboarded @user (uid @uid) as member on group @gid (@label).', [
           '@user' => $user->getAccountName(),
           '@uid' => $user->id(),
-          '@role' => $adminRole,
           '@gid' => $group->id(),
           '@label' => $group->label(),
         ]);
@@ -332,7 +334,7 @@ class HealthCommands extends DrushCommands {
         'group_type' => $type,
         'group_label' => (string) $group->label(),
         'action' => $action,
-        'group_role' => $adminRole,
+        'group_role' => '',
       ];
     }
 
@@ -340,24 +342,62 @@ class HealthCommands extends DrushCommands {
   }
 
   /**
-   * Resolves the type-specific admin group_role machine name.
+   * Returns non-individual group_roles assigned directly to a membership.
    *
-   * Looks up the group_role with admin = TRUE for the given group_type
-   * via Entity API instead of relying on a string-concat convention. A
-   * future custom group type without a flagged admin role returns NULL,
-   * which the caller surfaces as a "no admin role" output row.
+   * @return string[]
+   *   Role IDs assigned directly although their scope is not individual.
    */
-  protected function resolveAdminGroupRole(string $groupType): ?string {
-    $matches = $this->entityTypeManager
-      ->getStorage('group_role')
-      ->loadByProperties([
-        'group_type' => $groupType,
-        'admin' => TRUE,
-      ]);
-    if ($matches === []) {
-      return NULL;
+  protected function nonIndividualMembershipRoleIds($member): array {
+    $relationship = $member->getGroupRelationship();
+    if (!$relationship->hasField('group_roles')) {
+      return [];
     }
-    return (string) array_key_first($matches);
+
+    $values = $relationship->get('group_roles')->getValue();
+    $roleIds = array_values(array_filter(array_column($values, 'target_id'), 'is_string'));
+    if ($roleIds === []) {
+      return [];
+    }
+
+    $roles = $this->entityTypeManager
+      ->getStorage('group_role')
+      ->loadMultiple($roleIds);
+
+    $nonIndividual = [];
+    foreach ($roleIds as $roleId) {
+      $role = $roles[$roleId] ?? NULL;
+      if ($role && method_exists($role, 'getScope') && $role->getScope() !== 'individual') {
+        $nonIndividual[] = $roleId;
+      }
+    }
+
+    return array_values(array_unique($nonIndividual));
+  }
+
+  /**
+   * Removes selected role IDs from a membership's group_roles field.
+   *
+   * @param mixed $member
+   *   The group membership entity or adapter.
+   * @param string[] $roleIdsToRemove
+   *   Role IDs to remove.
+   */
+  protected function removeMembershipRoleIds($member, array $roleIdsToRemove): void {
+    if ($roleIdsToRemove === []) {
+      return;
+    }
+
+    $relationship = $member->getGroupRelationship();
+    if (!$relationship->hasField('group_roles')) {
+      return;
+    }
+
+    $filtered = array_values(array_filter(
+      $relationship->get('group_roles')->getValue(),
+      static fn(array $value): bool => !in_array($value['target_id'] ?? NULL, $roleIdsToRemove, TRUE),
+    ));
+    $relationship->set('group_roles', $filtered);
+    $relationship->save();
   }
 
   /**

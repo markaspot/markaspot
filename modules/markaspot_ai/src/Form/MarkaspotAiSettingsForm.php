@@ -9,6 +9,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\TypedConfigManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_ai\Service\NlpClientService;
 use Drupal\markaspot_ai\Service\TokenTrackingService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -37,8 +38,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container): static {
-    return new static(
+  public static function create(ContainerInterface $container): self {
+    return new self(
       $container->get('config.factory'),
       $container->get('config.typed'),
       $container->get('markaspot_ai.nlp_client'),
@@ -156,7 +157,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Chat Model'),
       '#description' => $this->t('Model to use for chat completions (e.g., gpt-4o, gpt-4o-mini, gpt-3.5-turbo).'),
-      '#default_value' => $config->get('providers.openai.chat_model') ?? 'gpt-4o',
+      '#default_value' => $config->get('providers.openai.chat_model') ?? AiClientService::DEFAULT_CHAT_MODEL,
       '#required' => TRUE,
     ];
 
@@ -236,8 +237,8 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
     $form['provider']['azure']['azure_chat_model'] = [
       '#type' => 'textfield',
       '#title' => $this->t('Chat Deployment Name'),
-      '#description' => $this->t('The deployment name for chat completions (e.g., gpt-4.1-mini).'),
-      '#default_value' => $config->get('providers.azure.chat_model') ?? 'gpt-4.1-mini',
+      '#description' => $this->t('The deployment name for chat completions (e.g., @model).', ['@model' => AiClientService::DEFAULT_CHAT_MODEL]),
+      '#default_value' => $config->get('providers.azure.chat_model') ?? AiClientService::DEFAULT_CHAT_MODEL,
       '#required' => TRUE,
     ];
 
@@ -698,7 +699,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
       '#type' => 'textfield',
       '#title' => $this->t('Sentiment Model'),
       '#description' => $this->t('Chat model used for sentiment and text hazard analysis.'),
-      '#default_value' => $config->get('sentiment_analysis.model') ?? 'gpt-4.1-mini',
+      '#default_value' => $config->get('sentiment_analysis.model') ?? AiClientService::DEFAULT_CHAT_MODEL,
       '#states' => [
         'visible' => [
           ':input[name="sentiment_enabled"]' => ['checked' => TRUE],
@@ -907,7 +908,7 @@ class MarkaspotAiSettingsForm extends ConfigFormBase {
 
     // Save sentiment analysis settings.
     $config->set('sentiment_analysis.enabled', (bool) $form_state->getValue('sentiment_enabled'));
-    $config->set('sentiment_analysis.model', $form_state->getValue('sentiment_model') ?: 'gpt-4.1-mini');
+    $config->set('sentiment_analysis.model', $form_state->getValue('sentiment_model') ?: AiClientService::DEFAULT_CHAT_MODEL);
 
     $config->save();
 

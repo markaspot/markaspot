@@ -329,6 +329,10 @@ class GeoreportRequestResource extends ResourceBase {
   public function get(string $id) {
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
 
+    // Internal serialization-scope marker set further down; never accept
+    // it from the wire.
+    unset($parameters['_jurisdiction_read_scope']);
+
     // Resolve language code from Accept-Language header or query parameter.
     $parameters['langcode'] = $this->resolveLanguageCode($parameters);
 
@@ -349,9 +353,25 @@ class GeoreportRequestResource extends ResourceBase {
       $query->condition('request_id', $parameters['id']);
     }
 
-    $node = $this->loadScopedRequestNode($id, $parameters);
+    // Read path: membership in the requested jurisdiction is not a hard
+    // gate (markaspot-ui#427, degrade-don't-deny). The serialization
+    // shape is scoped below instead.
+    $node = $this->loadScopedRequestNode($id, $parameters, FALSE);
     if ($node) {
       $query->condition('nid', $node->id());
+
+      // Scope the serialization shape to the claimed jurisdiction, or to
+      // the request's own jurisdiction when no claim is given.
+      // getResults() downgrades dashboard-capable non-members of that
+      // jurisdiction to the anonymous/public response shape.
+      $scopeJurisdictionId = NULL;
+      if ($this->hasJurisdictionClaim($parameters)) {
+        $scopeJurisdictionId = $this->georeportProcessor->resolveJurisdictionId($parameters);
+      }
+      $scopeJurisdictionId = $scopeJurisdictionId ?: $this->resolveNodeJurisdictionId($node);
+      if ($scopeJurisdictionId) {
+        $parameters['_jurisdiction_read_scope'] = $scopeJurisdictionId;
+      }
     }
     else {
       $query->condition('nid', [0], 'IN');
@@ -383,6 +403,9 @@ class GeoreportRequestResource extends ResourceBase {
       }
 
       $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
+      // Internal serialization-scope marker; never accept it from the wire
+      // (defensive mirror of the GET-path strip).
+      unset($parameters['_jurisdiction_read_scope']);
       $parameters['langcode'] = $this->resolveLanguageCode($parameters);
       $scopeParameters = $this->mergeJurisdictionClaims($parameters, $request_data);
       $node = $this->loadScopedRequestNode($id, $scopeParameters);
@@ -458,14 +481,27 @@ class GeoreportRequestResource extends ResourceBase {
 
   /**
    * Loads a single request through the same scoped query as GET responses.
+   *
+   * @param string $id
+   *   The service request ID from the route.
+   * @param array $parameters
+   *   Query (and merged body) parameters, possibly with jurisdiction claims.
+   * @param bool $enforceMembership
+   *   Whether membership in the request's jurisdiction is a hard access
+   *   gate. TRUE (default) for write paths: non-members receive a 403 via
+   *   validateJurisdictionAccess(). FALSE for read paths
+   *   (markaspot-ui#427, degrade-don't-deny): non-members still get the
+   *   node, and the caller scopes the serialization shape instead. API-key
+   *   jurisdiction scoping and invalid-claim handling are unaffected by
+   *   this flag.
    */
-  protected function loadScopedRequestNode(string $id, array $parameters): ?ContentEntityInterface {
+  protected function loadScopedRequestNode(string $id, array $parameters, bool $enforceMembership = TRUE): ?ContentEntityInterface {
     $requestId = $id !== '' ? $this->getRequestId($id) : ($parameters['id'] ?? '');
     if ($requestId === '') {
       return NULL;
     }
 
-    $scopeJurisdictionId = $this->resolveSingleRequestJurisdictionScope($parameters);
+    $scopeJurisdictionId = $this->resolveSingleRequestJurisdictionScope($parameters, $enforceMembership);
     $query = $this->georeportProcessor->createNodeQuery(
       $this->stripJurisdictionClaims($parameters),
       $this->currentUser
@@ -501,7 +537,8 @@ class GeoreportRequestResource extends ResourceBase {
     }
 
     $node = reset($matches);
-    if (!$this->currentUser->isAnonymous()
+    if ($enforceMembership
+      && !$this->currentUser->isAnonymous()
       && !$this->currentRequestUsesApiKey()
       && $scopeJurisdictionId === NULL) {
       $this->validateScopedRequestAccess($node);
@@ -512,8 +549,17 @@ class GeoreportRequestResource extends ResourceBase {
 
   /**
    * Resolves and validates the optional single-request jurisdiction scope.
+   *
+   * @param array $parameters
+   *   Query (and merged body) parameters, possibly with jurisdiction claims.
+   * @param bool $enforceMembership
+   *   Whether jurisdiction membership is enforced with a 403 for
+   *   session-authenticated claims (write paths). FALSE on read paths
+   *   (markaspot-ui#427): the claim is still resolved and validated for
+   *   existence (400 on invalid claims) and API-key scoping still applies,
+   *   but non-membership no longer denies access.
    */
-  protected function resolveSingleRequestJurisdictionScope(array $parameters): ?int {
+  protected function resolveSingleRequestJurisdictionScope(array $parameters, bool $enforceMembership = TRUE): ?int {
     if ($this->hasJurisdictionClaim($parameters)) {
       $jurisdictionId = $this->georeportProcessor
         ->resolveJurisdictionId($parameters);
@@ -533,7 +579,7 @@ class GeoreportRequestResource extends ResourceBase {
         $this->jurisdictionScopeValidator
           ->resolveSubmissionJurisdiction($jurisdictionId, $this->currentUser);
       }
-      elseif (!$this->currentUser->isAnonymous()) {
+      elseif (!$this->currentUser->isAnonymous() && $enforceMembership) {
         $this->georeportProcessor
           ->validateJurisdictionAccess($jurisdictionId, $this->currentUser);
       }

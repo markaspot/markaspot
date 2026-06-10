@@ -55,6 +55,15 @@ services:
       - '@markaspot_mail.renderer'
       - '@logger.channel.markaspot_mail'
 
+  # Non-prod recipient fence (markaspot-ui#388, defense layer L3). Reads the
+  # markaspot_mail_recipient_override settings key (env-fed, never config/DB)
+  # and redirects every outgoing mail when set. Runs unconditionally for all
+  # mails, after the branding hook.
+  markaspot_mail.recipient_override_hook:
+    class: Drupal\markaspot_mail\Hook\RecipientOverrideHook
+    arguments:
+      - '@logger.channel.markaspot_mail'
+
   # Stage 2 ECA builders. Each claims a single ($module, $key) pair via
   # supports(). Adding a new ECA mail = adding a class + a tag here; no
   # changes to MailAlterHook or the registry.

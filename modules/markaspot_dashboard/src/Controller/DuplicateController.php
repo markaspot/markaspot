@@ -13,7 +13,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
-use Drupal\group\GroupMembershipLoaderInterface;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\node\NodeInterface;
@@ -46,11 +46,6 @@ class DuplicateController extends ControllerBase {
   protected TimeInterface $time;
 
   /**
-   * The group membership loader.
-   */
-  protected GroupMembershipLoaderInterface $membershipLoader;
-
-  /**
    * The optional jurisdiction hierarchy resolver.
    */
   protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
@@ -65,7 +60,6 @@ class DuplicateController extends ControllerBase {
     LanguageManagerInterface $language_manager,
     TimeInterface $time,
     ConfigFactoryInterface $config_factory,
-    GroupMembershipLoaderInterface $membership_loader,
     ModuleHandlerInterface $module_handler,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
@@ -75,7 +69,6 @@ class DuplicateController extends ControllerBase {
     $this->languageManager = $language_manager;
     $this->time = $time;
     $this->configFactory = $config_factory;
-    $this->membershipLoader = $membership_loader;
     $this->moduleHandler = $module_handler;
     $this->hierarchyResolver = $hierarchy_resolver;
   }
@@ -83,15 +76,14 @@ class DuplicateController extends ControllerBase {
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container): static {
-    return new static(
+  public static function create(ContainerInterface $container): self {
+    return new self(
       $container->get('database'),
       $container->get('entity_type.manager'),
       $container->get('current_user'),
       $container->get('language_manager'),
       $container->get('datetime.time'),
       $container->get('config.factory'),
-      $container->get('group.membership_loader'),
       $container->get('module_handler'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
@@ -265,6 +257,15 @@ class DuplicateController extends ControllerBase {
    *   JSON response with success/error.
    */
   public function reviewMatch(int $match_id, Request $request): JsonResponse {
+    // Guard first: avoids a DatabaseExceptionWrapper on vision-only tenants
+    // where markaspot_ai_duplicate_matches does not exist.
+    if (!$this->isDuplicateDetectionEnabled()) {
+      return new JsonResponse([
+        'success' => FALSE,
+        'message' => 'Access denied.',
+      ], 403);
+    }
+
     // Parse request body.
     $data = json_decode($request->getContent(), TRUE);
     if (!isset($data['status']) || !in_array($data['status'], ['confirmed', 'rejected'])) {
@@ -296,8 +297,7 @@ class DuplicateController extends ControllerBase {
       throw new NotFoundHttpException('Source service request not found');
     }
 
-    if (!$this->isDuplicateDetectionEnabled()
-      || !$this->canAccessNode($duplicate_node, 'update')
+    if (!$this->canAccessNode($duplicate_node, 'update')
       || !$this->canAccessNode($source_node, 'view')) {
       return new JsonResponse([
         'success' => FALSE,
@@ -389,7 +389,7 @@ class DuplicateController extends ControllerBase {
     if (!$node->access($operation)) {
       return FALSE;
     }
-    if (!$this->isNodeAiProcessingEnabled($node)) {
+    if (!$this->isNodeDuplicateDetectionEnabled($node)) {
       return FALSE;
     }
 
@@ -397,18 +397,18 @@ class DuplicateController extends ControllerBase {
   }
 
   /**
-   * Checks whether a node belongs to a tenant opted in to AI text processing.
+   * Checks whether a node belongs to a duplicate-detection-enabled tenant.
    */
-  protected function isNodeAiProcessingEnabled(NodeInterface $node): bool {
+  protected function isNodeDuplicateDetectionEnabled(NodeInterface $node): bool {
     if (!$this->moduleHandler->moduleExists('markaspot_ai')) {
       return FALSE;
     }
     $this->moduleHandler->loadInclude('markaspot_ai', 'module');
-    if (!function_exists('_markaspot_ai_is_ai_enabled_for_node')) {
+    if (!function_exists('_markaspot_ai_is_duplicate_detection_enabled_for_node')) {
       return FALSE;
     }
 
-    return _markaspot_ai_is_ai_enabled_for_node($node);
+    return _markaspot_ai_is_duplicate_detection_enabled_for_node($node);
   }
 
   /**
@@ -440,7 +440,7 @@ class DuplicateController extends ControllerBase {
       return FALSE;
     }
 
-    $memberships = $this->membershipLoader->loadByUser(
+    $memberships = GroupMembership::loadByUser(
       $this->currentUser,
       $this->jurisdictionRoleIds('tenant_admin')
     );
@@ -593,7 +593,8 @@ class DuplicateController extends ControllerBase {
     $this->addStatusNote($duplicate_node, $note_text);
 
     // Resolve the "closed" status term for the node's jurisdiction.
-    // Status terms are jurisdiction-specific (field_jurisdiction + field_open311_mapping).
+    // Status terms are jurisdiction-specific.
+    // They are mapped by field_jurisdiction and field_open311_mapping.
     $closed_tid = $this->resolveClosedStatusTid($duplicate_node);
     if ($closed_tid && $duplicate_node->hasField('field_status')) {
       $duplicate_node->set('field_status', ['target_id' => $closed_tid]);

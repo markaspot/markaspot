@@ -90,4 +90,24 @@ class PiiRedactionTest extends UnitTestCase {
     $this->assertSame('Ein Schlagloch auf der Hauptstrasse.', $result['text']);
   }
 
+  /**
+   * Anonymous reports must NOT attribute the remark to uid 1 (site admin).
+   *
+   * Regression guard for markaspot/markaspot-ui#344 finding 2: the previous
+   * `id() ?: 1` fallback mis-attributed every system-generated internal_remark
+   * on an anonymous submission to User 1. The author must be left empty (NULL)
+   * for anonymous (uid 0) origin.
+   */
+  public function testAnonymousRemarkHasNoAuthor(): void {
+    $this->assertNull(_markaspot_ai_internal_remark_author_uid(0));
+  }
+
+  /**
+   * An authenticated user is recorded as the remark author.
+   */
+  public function testAuthenticatedUserIsRecordedAsAuthor(): void {
+    $this->assertSame(7, _markaspot_ai_internal_remark_author_uid(7));
+    $this->assertSame(1, _markaspot_ai_internal_remark_author_uid(1));
+  }
+
 }

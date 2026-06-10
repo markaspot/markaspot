@@ -242,6 +242,57 @@ interface GeoreportProcessorServiceInterface {
   public function validateJurisdictionAccess(?int $jurisdictionId, $account = NULL): void;
 
   /**
+   * Checks whether an account is a member of a jurisdiction group.
+   *
+   * Boolean counterpart of validateJurisdictionAccess() used by read paths
+   * to degrade the response shape for non-members instead of denying
+   * access (markaspot-ui#427).
+   *
+   * @param int|null $jurisdictionId
+   *   The jurisdiction group ID, or NULL/0 when no tenant scope applies.
+   * @param \Drupal\Core\Session\AccountInterface|null $account
+   *   The user account. Defaults to current user.
+   *
+   * @return bool
+   *   TRUE if the account is a direct member of the jurisdiction group,
+   *   is uid 1, or no tenant scoping applies. FALSE otherwise.
+   */
+  public function isJurisdictionMember(?int $jurisdictionId, $account = NULL): bool;
+
+  /**
+   * Resolves the most specific jurisdiction group ID for a request node.
+   *
+   * Rich lookup (node field_jurisdiction, direct jur group_relationship
+   * rows with deepest-child preference, organisation fallback), memoized
+   * per request. Richer than getJurisdictionIdFromNode(), which only
+   * follows the category chain.
+   *
+   * @param object $node
+   *   The service request node.
+   *
+   * @return int|null
+   *   The jurisdiction group ID, or NULL if none can be resolved. A NULL in
+   *   a multi-tenant install (hasJurisdictionGroups() returns TRUE) should
+   *   be treated as fail-closed; in single-tenant installs
+   *   (hasJurisdictionGroups() returns FALSE) NULL means no tenant scoping
+   *   applies. Callers intending to fail closed on NULL must pair this with
+   *   hasJurisdictionGroups() to preserve legacy single-tenant behavior.
+   */
+  public function resolveNodeJurisdictionId(object $node): ?int;
+
+  /**
+   * Checks whether any jurisdiction groups exist in this install.
+   *
+   * Multi-tenant guard for fail-closed serialization decisions; legacy
+   * single-tenant installs (zero jur groups) have no cross-tenant
+   * exposure. Memoized per request.
+   *
+   * @return bool
+   *   TRUE when at least one jurisdiction group exists.
+   */
+  public function hasJurisdictionGroups(): bool;
+
+  /**
    * Resolves a jurisdiction ID from request parameters.
    *
    * Accepts numeric group IDs, slugs, and deprecated aliases (jurisdiction,

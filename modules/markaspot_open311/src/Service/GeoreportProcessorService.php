@@ -200,6 +200,35 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected $accountSwitcher;
 
   /**
+   * Per-request memo of jurisdiction membership checks, keyed "gid:uid".
+   *
+   * Avoids repeated group loads / membership queries when serializing
+   * large request lists (markaspot-ui#427).
+   *
+   * @var array<string, bool>
+   */
+  protected array $jurisdictionMembershipCache = [];
+
+  /**
+   * Per-request memo of resolved node jurisdictions, keyed by node ID.
+   *
+   * @var array<int, int|null>
+   */
+  protected array $nodeJurisdictionIdCache = [];
+
+  /**
+   * Memoized result of the "any jurisdiction groups exist" install check.
+   *
+   * In long-running PHP runtimes (FrankenPHP worker mode, RoadRunner) this
+   * memo persists across requests and could serve a stale FALSE after the
+   * first jur group is created. If such a runtime is adopted, reset this
+   * property at request boundaries or declare the service shared: false.
+   *
+   * @var bool|null
+   */
+  protected ?bool $jurisdictionGroupsExist = NULL;
+
+  /**
    * GeoreportProcessorService constructor.
    *
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
@@ -1036,8 +1065,20 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     $nodes = $this->orderLoadedNodes($nodes, $nids);
 
-    // Use the proper role determination method.
-    $extendedRole = $this->determineExtendedRole($user);
+    // Use the proper role determination method, scoped to the response's
+    // jurisdiction read scope (markaspot-ui#427).
+    $extendedRole = $this->scopeExtendedRoleToReadScope(
+      $this->determineExtendedRole($user),
+      $parameters,
+      $user
+    );
+
+    // Without an explicit jurisdiction claim the manager shape must be
+    // scoped per NODE: in multi-tenant installs the unclaimed list spans
+    // all tenants (jur-outsider grants), so each node's own jurisdiction
+    // decides whether this caller gets the extended or the public shape.
+    $unclaimedManagerScope = $extendedRole === 'manager'
+      && empty($parameters['_jurisdiction_read_scope']);
 
     // Preload all taxonomy terms needed by these nodes.
     $this->preloadTaxonomyTerms($nodes);
@@ -1045,7 +1086,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $serviceRequests = [];
     $lastNode = NULL;
     foreach ($nodes as $node) {
-      $serviceRequests[] = $this->mapNodeToServiceRequest($node, $extendedRole, $parameters);
+      $nodeRole = $unclaimedManagerScope
+        ? $this->scopeManagerRoleToNode($node, $user)
+        : $extendedRole;
+      $serviceRequests[] = $this->mapNodeToServiceRequest($node, $nodeRole, $parameters);
       $lastNode = $node;
     }
 
@@ -1480,6 +1524,87 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     return 'anonymous';
+  }
+
+  /**
+   * Scopes the extended role to the response's jurisdiction read scope.
+   *
+   * Tenant isolation of the serialization shape (markaspot-ui#427): the
+   * extended "manager" shape is member-only per jurisdiction. Read
+   * resources resolve the effective jurisdiction scope of the response
+   * (explicit jurisdiction_id claim, or the single request's own
+   * jurisdiction) into the internal '_jurisdiction_read_scope' parameter.
+   * A dashboard-capable user from another tenant keeps read access to
+   * public data, but is serialized with the anonymous/public shape
+   * instead of receiving a hard 403 (degrade, don't deny). Elevated
+   * request parameters (extended_attributes, extensions, fields) cannot
+   * re-elevate the shape because every shape decision keys off the role,
+   * not the permission.
+   *
+   * The 'user' role (access open311 extension, API service identities) is
+   * intentionally not membership-scoped; it was never subject to the
+   * jurisdiction isolation gate.
+   *
+   * @param string $extendedRole
+   *   The role determined by determineExtendedRole().
+   * @param array $parameters
+   *   Request parameters, optionally carrying '_jurisdiction_read_scope'.
+   * @param \Drupal\Core\Session\AccountInterface $user
+   *   The account the response is serialized for.
+   *
+   * @return string
+   *   The effective role: unchanged, or 'anonymous' when a manager is not
+   *   a member of the scoped jurisdiction.
+   */
+  private function scopeExtendedRoleToReadScope(string $extendedRole, array $parameters, $user): string {
+    if ($extendedRole !== 'manager' || empty($parameters['_jurisdiction_read_scope'])) {
+      return $extendedRole;
+    }
+
+    if ($this->isJurisdictionMember((int) $parameters['_jurisdiction_read_scope'], $user)) {
+      return 'manager';
+    }
+
+    return 'anonymous';
+  }
+
+  /**
+   * Scopes the manager role to a single node's own jurisdiction.
+   *
+   * Used for reads WITHOUT an explicit jurisdiction claim
+   * (markaspot-ui#427): in multi-tenant installs the unclaimed request
+   * list spans every tenant's published nodes via the jur-outsider query
+   * grants, so a manager-shaped serialization must be decided per node.
+   * Nodes of jurisdictions the caller belongs to keep the manager shape;
+   * foreign nodes get the anonymous/public shape.
+   *
+   * Fail-closed: a node whose jurisdiction cannot be resolved is
+   * serialized as public — but only when jurisdiction groups exist at
+   * all. Legacy single-tenant installs (Group module enabled, zero jur
+   * groups) keep the manager shape, because zero tenants means zero
+   * cross-tenant exposure and staff there legitimately read without a
+   * jurisdiction_id.
+   *
+   * @param object $node
+   *   The service request node being serialized.
+   * @param \Drupal\Core\Session\AccountInterface $user
+   *   The account the response is serialized for.
+   *
+   * @return string
+   *   'manager' or 'anonymous'.
+   */
+  private function scopeManagerRoleToNode(object $node, $user): string {
+    // Uid 1 and installs without any jurisdiction groups are never scoped.
+    if ($user->id() == 1 || !$this->hasJurisdictionGroups()) {
+      return 'manager';
+    }
+
+    $jurisdictionId = $this->resolveNodeJurisdictionId($node);
+    if ($jurisdictionId === NULL) {
+      return 'anonymous';
+    }
+
+    return $this->isJurisdictionMember($jurisdictionId, $user) ? 'manager' : 'anonymous';
   }
 
   /**
@@ -2548,13 +2673,133 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       );
     }
 
-    // Check if user is a member of this jurisdiction group.
-    $membership = $group->getMember($account);
-    if (!$membership) {
+    // Check if user is a member of this jurisdiction group. Delegated to
+    // the memoized boolean counterpart so both gates share exactly one
+    // membership semantic (markaspot-ui#427).
+    if (!$this->isJurisdictionMember($jurisdictionId, $account)) {
       throw new AccessDeniedHttpException(
         'Access denied: user is not a member of this jurisdiction.'
       );
     }
+  }
+
+  /**
+   * Checks whether an account is a member of a jurisdiction group.
+   *
+   * Mirrors the membership semantics of validateJurisdictionAccess() but
+   * returns a boolean instead of throwing, so read paths can degrade the
+   * response shape to the public/anonymous serialization for non-members
+   * instead of denying access outright (markaspot-ui#427).
+   *
+   * Semantics to be aware of:
+   * - Any group membership counts, including pending or self-joined
+   *   (opt-in) memberships if such a flow ever exists for jur groups.
+   *   Jurisdiction memberships must therefore remain strictly
+   *   admin-assigned; do not enable open/request joining on the jur
+   *   group type.
+   * - Direct membership only, no hierarchy walk: an admin of a PARENT
+   *   jurisdiction is not a member of its children, so a child-scoped
+   *   read serializes as public for them. This mirrors the previous hard
+   *   403 gate, which used the same direct getMember() check.
+   *
+   * Results are memoized per request (gid:uid), so repeated checks while
+   * serializing large lists cost one group load at most.
+   *
+   * @param int|null $jurisdictionId
+   *   The jurisdiction group ID, or NULL/0 when no tenant scope applies.
+   * @param \Drupal\Core\Session\AccountInterface|null $account
+   *   The user account. Defaults to current user.
+   *
+   * @return bool
+   *   TRUE if the account is a direct member of the jurisdiction group,
+   *   is uid 1, or no tenant scoping applies (no jurisdiction given,
+   *   Group module missing). FALSE for non-members and for IDs that do
+   *   not resolve to a jurisdiction group.
+   */
+  public function isJurisdictionMember(?int $jurisdictionId, $account = NULL): bool {
+    // No jurisdiction scope (single-tenant mode): nothing to isolate.
+    if (!$jurisdictionId) {
+      return TRUE;
+    }
+
+    // Without the Group module there is no tenant concept.
+    if (!$this->moduleHandler->moduleExists('group')) {
+      return TRUE;
+    }
+
+    $account = $account ?? $this->currentUser;
+
+    // Only super-admin (uid 1) bypasses jurisdiction scoping.
+    if ($account->id() == 1) {
+      return TRUE;
+    }
+
+    $cacheKey = $jurisdictionId . ':' . $account->id();
+    if (isset($this->jurisdictionMembershipCache[$cacheKey])) {
+      return $this->jurisdictionMembershipCache[$cacheKey];
+    }
+
+    $group = $this->entityTypeManager->getStorage('group')->load($jurisdictionId);
+    if (!$group instanceof GroupInterface || !$this->isJurisdictionGroup($group)) {
+      return $this->jurisdictionMembershipCache[$cacheKey] = FALSE;
+    }
+
+    return $this->jurisdictionMembershipCache[$cacheKey] = (bool) $group->getMember($account);
+  }
+
+  /**
+   * Resolves the most specific jurisdiction group ID for a request node.
+   *
+   * Public, memoized counterpart of resolveNodeJurisdiction(): primary
+   * lookup via the node's field_jurisdiction, secondary via direct
+   * jur-type group_relationship rows (deepest child wins), fallback via
+   * the organisation's field_jurisdiction. Richer than
+   * getJurisdictionIdFromNode(), which only follows the category chain.
+   *
+   * @param object $node
+   *   The service request node.
+   *
+   * @return int|null
+   *   The jurisdiction group ID, or NULL if none can be resolved.
+   */
+  public function resolveNodeJurisdictionId(object $node): ?int {
+    $nodeId = (int) $node->id();
+    if (array_key_exists($nodeId, $this->nodeJurisdictionIdCache)) {
+      return $this->nodeJurisdictionIdCache[$nodeId];
+    }
+
+    $group = $this->resolveNodeJurisdiction($node);
+
+    return $this->nodeJurisdictionIdCache[$nodeId] = $group ? (int) $group->id() : NULL;
+  }
+
+  /**
+   * Checks whether any jurisdiction groups exist in this install.
+   *
+   * Multi-tenant guard for fail-closed serialization decisions: with zero
+   * jur groups (legacy single-tenant installs) there is no cross-tenant
+   * exposure, so an unresolvable node jurisdiction must not degrade staff
+   * responses there. Memoized per request.
+   *
+   * @return bool
+   *   TRUE when at least one jurisdiction group exists.
+   */
+  public function hasJurisdictionGroups(): bool {
+    if ($this->jurisdictionGroupsExist !== NULL) {
+      return $this->jurisdictionGroupsExist;
+    }
+
+    if (!$this->moduleHandler->moduleExists('group')) {
+      return $this->jurisdictionGroupsExist = FALSE;
+    }
+
+    $ids = $this->entityTypeManager->getStorage('group')->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $this->jurisdictionGroupType())
+      ->range(0, 1)
+      ->execute();
+
+    return $this->jurisdictionGroupsExist = !empty($ids);
   }
 
   /**

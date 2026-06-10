@@ -703,6 +703,7 @@ function _markaspot_group_count_group_content_relationships(int $group_id): int 
  */
 function markaspot_group_group_insert(GroupInterface $group): void {
   _markaspot_group_add_all_groups_members_to_group($group);
+  _markaspot_group_add_root_admin_to_group($group);
 }
 
 /**
@@ -1112,6 +1113,50 @@ function _markaspot_group_add_member_to_group(GroupInterface $group, UserInterfa
       '@group' => $group->label(),
     ]
   );
+}
+
+/**
+ * Adds uid 1 to a new jur/org group.
+ *
+ * Admin permissions come from insider-scoped group roles mapped to the Drupal
+ * administrator role. Explicitly writing those roles to group_roles would feed
+ * non-individual roles into the individual permission calculator.
+ */
+function _markaspot_group_add_root_admin_to_group(GroupInterface $group): void {
+  if (!in_array($group->bundle(), _markaspot_group_root_admin_group_types(), TRUE)) {
+    return;
+  }
+
+  $account = User::load(1);
+  if (!$account instanceof UserInterface || $account->isBlocked()) {
+    return;
+  }
+  if (!$account->hasRole('administrator')) {
+    \Drupal::logger('markaspot_group')->warning('Cannot auto-onboard uid 1 to group @gid: uid 1 lacks the administrator role.', [
+      '@gid' => $group->id(),
+    ]);
+    return;
+  }
+  if ($group->getMember($account)) {
+    return;
+  }
+
+  $group->addMember($account);
+  \Drupal::logger('markaspot_group')->notice('Auto-onboarded uid 1 as member on group @gid (@label).', [
+    '@gid' => $group->id(),
+    '@label' => $group->label(),
+  ]);
+}
+
+/**
+ * Returns group types where uid 1 must keep runtime admin membership.
+ *
+ * @return string[]
+ *   Group bundle machine names.
+ */
+function _markaspot_group_root_admin_group_types(): array {
+  $jurisdiction_type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type') ?: 'jur';
+  return array_values(array_unique([$jurisdiction_type, 'org']));
 }
 
 /**

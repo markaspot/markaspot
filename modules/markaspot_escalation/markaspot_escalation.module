@@ -75,6 +75,26 @@ function markaspot_escalation_markaspot_open311_request_alter(array &$request, $
   $currentUser = \Drupal::currentUser();
   if ($currentUser->hasPermission('escalate service requests')
       || $currentUser->hasPermission('delegate service requests')) {
+    // Tenant isolation (markaspot-ui#427): escalation capability flags and
+    // especially the escalation target label are member-only. Staff of
+    // another jurisdiction reading this request get the public shape;
+    // their sitewide escalate/delegate permissions must not expose a
+    // foreign tenant's internal escalation structure. Fail-closed: a node
+    // whose jurisdiction cannot be resolved exposes nothing — except in
+    // legacy single-tenant installs (zero jur groups), where there is no
+    // cross-tenant risk and behavior stays unchanged.
+    /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
+    $processor = \Drupal::service('markaspot_open311.processor');
+    $jurisdictionId = $processor->resolveNodeJurisdictionId($node);
+    if ($jurisdictionId === NULL) {
+      if ($processor->hasJurisdictionGroups()) {
+        return;
+      }
+    }
+    elseif (!$processor->isJurisdictionMember($jurisdictionId, $currentUser)) {
+      return;
+    }
+
     /** @var \Drupal\markaspot_escalation\Service\EscalationServiceInterface $escalationService */
     $escalationService = \Drupal::service('markaspot_escalation.service');
 

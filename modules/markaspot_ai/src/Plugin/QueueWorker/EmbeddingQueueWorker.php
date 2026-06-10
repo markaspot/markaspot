@@ -122,8 +122,8 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
     array $configuration,
     $plugin_id,
     $plugin_definition,
-  ): static {
-    return new static(
+  ): self {
+    return new self(
       $configuration,
       $plugin_id,
       $plugin_definition,
@@ -222,7 +222,7 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
 
         // Still queue for duplicate scan if this is a new node.
         if (!empty($data['is_new'])) {
-          $this->queueDuplicateScan($nid);
+          $this->queueDuplicateScan($node);
         }
 
         // Still analyze sentiment (idempotent - skips if already analyzed).
@@ -252,7 +252,7 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
       ]);
 
       // Queue for duplicate scanning.
-      $this->queueDuplicateScan($nid);
+      $this->queueDuplicateScan($node);
 
       // Analyze sentiment if enabled.
       $this->analyzeSentiment($node);
@@ -272,21 +272,27 @@ class EmbeddingQueueWorker extends QueueWorkerBase implements ContainerFactoryPl
   /**
    * Queues a node for duplicate scanning.
    *
-   * @param int $nid
-   *   The node ID to queue.
+   * @param \Drupal\node\NodeInterface $node
+   *   The node to queue.
    */
-  protected function queueDuplicateScan(int $nid): void {
+  protected function queueDuplicateScan(NodeInterface $node): void {
     $config = $this->configFactory->get('markaspot_ai.settings');
 
     // Only queue if duplicate detection is enabled.
     if (!$config->get('duplicate_detection.enabled')) {
       return;
     }
+    if (!_markaspot_ai_is_duplicate_detection_enabled_for_node($node)) {
+      $this->logger->debug('Duplicate detection disabled for node @nid jurisdiction, skipping duplicate queue.', [
+        '@nid' => $node->id(),
+      ]);
+      return;
+    }
 
     $queue = $this->queueFactory->get('markaspot_ai_duplicate_scan');
-    $queue->createItem(['nid' => $nid]);
+    $queue->createItem(['nid' => (int) $node->id()]);
 
-    $this->logger->debug('Queued node @nid for duplicate scanning.', ['@nid' => $nid]);
+    $this->logger->debug('Queued node @nid for duplicate scanning.', ['@nid' => $node->id()]);
   }
 
   /**

@@ -126,6 +126,13 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   protected $mediaStorage;
 
   /**
+   * Mocked group relationship storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $relationshipStorage;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -143,6 +150,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
     $this->termStorage = $this->createMock(EntityStorageInterface::class);
     $this->mediaStorage = $this->createMock(EntityStorageInterface::class);
+    $this->relationshipStorage = $this->createMock(EntityStorageInterface::class);
 
     $this->entityTypeManager->method('getStorage')
       ->willReturnMap([
@@ -150,6 +158,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         ['group', $this->groupStorage],
         ['taxonomy_term', $this->termStorage],
         ['media', $this->mediaStorage],
+        ['group_relationship', $this->relationshipStorage],
       ]);
 
     // Default config mock.
@@ -521,6 +530,518 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
 
     $result = $this->invokeMethod($this->processor, 'determineExtendedRole', [$user]);
     $this->assertEquals('anonymous', $result);
+  }
+
+  // =========================================================================
+  // isJurisdictionMember() tests (markaspot-ui#427)
+  // =========================================================================
+
+  /**
+   * @covers ::isJurisdictionMember
+   */
+  public function testIsJurisdictionMemberUnscopedReturnsTrue(): void {
+    // No jurisdiction scope (single-tenant mode).
+    $this->assertTrue($this->processor->isJurisdictionMember(NULL));
+    $this->assertTrue($this->processor->isJurisdictionMember(0));
+  }
+
+  /**
+   * @covers ::isJurisdictionMember
+   */
+  public function testIsJurisdictionMemberGroupModuleDisabledReturnsTrue(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(FALSE);
+
+    $this->assertTrue($this->processor->isJurisdictionMember(42));
+  }
+
+  /**
+   * @covers ::isJurisdictionMember
+   */
+  public function testIsJurisdictionMemberUid1Bypasses(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $admin = $this->createMock(AccountProxyInterface::class);
+    $admin->method('id')->willReturn(1);
+
+    $this->assertTrue($this->processor->isJurisdictionMember(42, $admin));
+  }
+
+  /**
+   * @covers ::isJurisdictionMember
+   */
+  public function testIsJurisdictionMemberMemberReturnsTrue(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $membership = $this->createMock(GroupMembership::class);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jur');
+    $group->method('getMember')->willReturn($membership);
+
+    $this->groupStorage->method('load')
+      ->with(42)
+      ->willReturn($group);
+
+    $this->assertTrue($this->processor->isJurisdictionMember(42, $user));
+  }
+
+  /**
+   * @covers ::isJurisdictionMember
+   */
+  public function testIsJurisdictionMemberNonMemberReturnsFalse(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jur');
+    $group->method('getMember')->willReturn(NULL);
+
+    $this->groupStorage->method('load')
+      ->with(42)
+      ->willReturn($group);
+
+    $this->assertFalse($this->processor->isJurisdictionMember(42, $user));
+  }
+
+  /**
+   * @covers ::isJurisdictionMember
+   */
+  public function testIsJurisdictionMemberUnknownGroupReturnsFalse(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $this->groupStorage->method('load')
+      ->with(999)
+      ->willReturn(NULL);
+
+    $this->assertFalse($this->processor->isJurisdictionMember(999, $user));
+  }
+
+  /**
+   * @covers ::isJurisdictionMember
+   */
+  public function testIsJurisdictionMemberNonJurGroupReturnsFalse(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('org');
+
+    $this->groupStorage->method('load')
+      ->with(42)
+      ->willReturn($group);
+
+    $this->assertFalse($this->processor->isJurisdictionMember(42, $user));
+  }
+
+  // =========================================================================
+  // scopeExtendedRoleToReadScope() tests (markaspot-ui#427, via reflection)
+  // =========================================================================
+
+  /**
+   * Foreign tenant manager is downgraded to the anonymous/public shape.
+   *
+   * A dashboard-capable user (access open311 advanced properties) who is
+   * NOT a member of the jurisdiction the response is scoped to must be
+   * serialized as 'anonymous'. Elevated request parameters
+   * (extended_attributes, extensions, fields) must not re-elevate.
+   */
+  public function testReadScopeDowngradesForeignManagerToAnonymous(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+    $user->method('isAnonymous')->willReturn(FALSE);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jur');
+    $group->method('getMember')->willReturn(NULL);
+
+    $this->groupStorage->method('load')
+      ->with(42)
+      ->willReturn($group);
+
+    $parameters = [
+      '_jurisdiction_read_scope' => 42,
+      'extended_attributes' => 'true',
+      'extensions' => 'true',
+      'fields' => 'field_sentiment,field_hazard_level',
+    ];
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeExtendedRoleToReadScope',
+      ['manager', $parameters, $user]
+    );
+    $this->assertEquals('anonymous', $result);
+  }
+
+  /**
+   * A member of the scoped jurisdiction keeps the manager shape.
+   */
+  public function testReadScopeKeepsMemberManager(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+    $user->method('isAnonymous')->willReturn(FALSE);
+
+    $membership = $this->createMock(GroupMembership::class);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jur');
+    $group->method('getMember')->willReturn($membership);
+
+    $this->groupStorage->method('load')
+      ->with(42)
+      ->willReturn($group);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeExtendedRoleToReadScope',
+      ['manager', ['_jurisdiction_read_scope' => 42], $user]
+    );
+    $this->assertEquals('manager', $result);
+  }
+
+  /**
+   * Without a read scope (single-tenant mode) the role is unchanged.
+   */
+  public function testReadScopeWithoutScopeKeepsManager(): void {
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeExtendedRoleToReadScope',
+      ['manager', [], $user]
+    );
+    $this->assertEquals('manager', $result);
+  }
+
+  /**
+   * The anonymous role passes through untouched.
+   */
+  public function testReadScopeLeavesAnonymousRole(): void {
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(0);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeExtendedRoleToReadScope',
+      ['anonymous', ['_jurisdiction_read_scope' => 42], $user]
+    );
+    $this->assertEquals('anonymous', $result);
+  }
+
+  /**
+   * The 'user' role (API service identities) is not membership-scoped.
+   */
+  public function testReadScopeLeavesUserRole(): void {
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeExtendedRoleToReadScope',
+      ['user', ['_jurisdiction_read_scope' => 42], $user]
+    );
+    $this->assertEquals('user', $result);
+  }
+
+  // =========================================================================
+  // scopeManagerRoleToNode() tests (markaspot-ui#427 F1, via reflection)
+  // =========================================================================
+
+  /**
+   * Builds a node stub whose field_jurisdiction resolves to a group ID.
+   */
+  protected function buildNodeWithJurisdiction(int $nodeId, int $jurisdictionId): object {
+    $jurGroup = new class($jurisdictionId) {
+
+      /**
+       * Constructs the jurisdiction group stub.
+       */
+      public function __construct(private int $groupId) {}
+
+      /**
+       * Returns the group ID.
+       */
+      public function id(): int {
+        return $this->groupId;
+      }
+
+    };
+
+    $jurisdictionField = new class($jurGroup) {
+
+      /**
+       * The referenced jurisdiction group.
+       */
+      public object $entity;
+
+      /**
+       * Constructs the field stub.
+       */
+      public function __construct(object $entity) {
+        $this->entity = $entity;
+      }
+
+      /**
+       * Checks if the field is empty.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn($nodeId);
+    $node->method('hasField')
+      ->willReturnCallback(fn($name) => $name === 'field_jurisdiction');
+    $node->method('get')
+      ->willReturnCallback(function ($name) use ($jurisdictionField) {
+        if ($name === 'field_jurisdiction') {
+          return $jurisdictionField;
+        }
+        return $this->createMock(FieldItemListInterface::class);
+      });
+
+    return $node;
+  }
+
+  /**
+   * Builds a node stub whose jurisdiction cannot be resolved.
+   */
+  protected function buildNodeWithoutJurisdiction(int $nodeId): object {
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn($nodeId);
+    $node->method('hasField')->willReturn(FALSE);
+
+    // No field_jurisdiction, no organisation; the relationship lookup
+    // finds nothing either.
+    $this->relationshipStorage->method('loadByProperties')->willReturn([]);
+
+    return $node;
+  }
+
+  /**
+   * Configures the group storage query for the jur-groups-exist check.
+   */
+  protected function mockJurisdictionGroupsExist(bool $exists): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('range')->willReturnSelf();
+    $query->method('execute')->willReturn($exists ? [1 => '1'] : []);
+    $this->groupStorage->method('getQuery')->willReturn($query);
+  }
+
+  /**
+   * Unclaimed read: a foreign node degrades the manager to anonymous.
+   */
+  public function testUnclaimedScopeForeignNodeDegradesToAnonymous(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+    $this->mockJurisdictionGroupsExist(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    // The node belongs to jurisdiction 42; the user is not a member.
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jur');
+    $group->method('getMember')->willReturn(NULL);
+    $this->groupStorage->method('load')->with(42)->willReturn($group);
+
+    $node = $this->buildNodeWithJurisdiction(7, 42);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeManagerRoleToNode',
+      [$node, $user]
+    );
+    $this->assertEquals('anonymous', $result);
+  }
+
+  /**
+   * Unclaimed read: a node of the user's own jurisdiction keeps manager.
+   */
+  public function testUnclaimedScopeMemberNodeKeepsManager(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+    $this->mockJurisdictionGroupsExist(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $membership = $this->createMock(GroupMembership::class);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jur');
+    $group->method('getMember')->willReturn($membership);
+    $this->groupStorage->method('load')->with(42)->willReturn($group);
+
+    $node = $this->buildNodeWithJurisdiction(7, 42);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeManagerRoleToNode',
+      [$node, $user]
+    );
+    $this->assertEquals('manager', $result);
+  }
+
+  /**
+   * Unclaimed read: unresolvable node jurisdiction fails closed.
+   *
+   * In multi-tenant installs (jur groups exist), a node whose
+   * jurisdiction cannot be resolved must be serialized publicly.
+   */
+  public function testUnclaimedScopeNullJurisdictionFailsClosed(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+    $this->mockJurisdictionGroupsExist(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $node = $this->buildNodeWithoutJurisdiction(7);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeManagerRoleToNode',
+      [$node, $user]
+    );
+    $this->assertEquals('anonymous', $result);
+  }
+
+  /**
+   * Unclaimed read: legacy single-tenant installs keep the manager shape.
+   *
+   * Group module enabled but zero jur groups: no cross-tenant risk, staff
+   * reads without jurisdiction_id must not regress.
+   */
+  public function testUnclaimedScopeWithoutJurGroupsKeepsManager(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+    $this->mockJurisdictionGroupsExist(FALSE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $node = $this->buildNodeWithoutJurisdiction(7);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeManagerRoleToNode',
+      [$node, $user]
+    );
+    $this->assertEquals('manager', $result);
+  }
+
+  /**
+   * Unclaimed read: uid 1 is never scoped per node.
+   */
+  public function testUnclaimedScopeUid1KeepsManager(): void {
+    $admin = $this->createMock(AccountProxyInterface::class);
+    $admin->method('id')->willReturn(1);
+
+    $node = $this->createMock(NodeInterface::class);
+
+    $result = $this->invokeMethod(
+      $this->processor,
+      'scopeManagerRoleToNode',
+      [$node, $admin]
+    );
+    $this->assertEquals('manager', $result);
+  }
+
+  // =========================================================================
+  // Memoization tests (markaspot-ui#427 F1)
+  // =========================================================================
+
+  /**
+   * Repeated membership checks load the group exactly once.
+   */
+  public function testIsJurisdictionMemberIsMemoizedPerGidUid(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('id')->willReturn(5);
+
+    $membership = $this->createMock(GroupMembership::class);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jur');
+    $group->expects($this->once())->method('getMember')->willReturn($membership);
+    $this->groupStorage->expects($this->once())
+      ->method('load')
+      ->with(42)
+      ->willReturn($group);
+
+    $this->assertTrue($this->processor->isJurisdictionMember(42, $user));
+    $this->assertTrue($this->processor->isJurisdictionMember(42, $user));
+    $this->assertTrue($this->processor->isJurisdictionMember(42, $user));
+  }
+
+  /**
+   * The jur-groups-exist install check queries exactly once.
+   */
+  public function testHasJurisdictionGroupsIsMemoized(): void {
+    $this->moduleHandler->method('moduleExists')
+      ->with('group')
+      ->willReturn(TRUE);
+
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('range')->willReturnSelf();
+    $query->method('execute')->willReturn([1 => '1']);
+    $this->groupStorage->expects($this->once())
+      ->method('getQuery')
+      ->willReturn($query);
+
+    $this->assertTrue($this->processor->hasJurisdictionGroups());
+    $this->assertTrue($this->processor->hasJurisdictionGroups());
+  }
+
+  /**
+   * Node jurisdiction resolution is memoized per node ID.
+   */
+  public function testResolveNodeJurisdictionIdIsMemoized(): void {
+    $node = $this->buildNodeWithJurisdiction(7, 42);
+
+    $this->assertSame(42, $this->processor->resolveNodeJurisdictionId($node));
+    $this->assertSame(42, $this->processor->resolveNodeJurisdictionId($node));
   }
 
   /**

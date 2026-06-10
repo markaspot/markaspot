@@ -392,19 +392,27 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     // Restore preserved API parameters.
     $parameters = array_merge($parameters, $preservedParams);
 
+    // Internal serialization-scope marker set further down; never accept
+    // it from the wire.
+    unset($parameters['_jurisdiction_read_scope']);
+
     // Resolve language code from Accept-Language header or query param.
     $parameters['langcode'] = $this->resolveLanguageCode($parameters);
 
     // Start with the secure base query from the processor service.
     $query = $this->georeportProcessor->createNodeQuery($parameters, $this->currentUser);
 
-    // Jurisdiction access enforcement: prevent dashboard-level users
-    // (tenant admins, moderators, editorial) from reading foreign
-    // jurisdictions. The service method itself gates on the
-    // 'access open311 advanced properties' capability, so anonymous
-    // users, API service identities, and regular authenticated citizens
-    // short-circuit inside validateJurisdictionAccess() and are
-    // governed by Group module's query-level access grants.
+    // Jurisdiction isolation for dashboard-level users (tenant admins,
+    // moderators, editorial) reading foreign jurisdictions follows a
+    // degrade-don't-deny model (markaspot-ui#427): membership in the
+    // requested jurisdiction is no longer a hard 403 gate for list reads.
+    // Instead the resolved jurisdiction is handed to getResults() as the
+    // serialization read scope, where non-members holding 'access open311
+    // advanced properties' are downgraded to the anonymous/public response
+    // shape. Which nodes are readable at all keeps being governed by Group
+    // module's query-level access grants (jur-outsider = published-only).
+    // Writes keep strict membership enforcement via
+    // validateJurisdictionAccess() in GeoreportRequestResource.
     $resolvedJurisdictionId = $this->georeportProcessor->resolveJurisdictionId($parameters);
     $this->applyInvalidJurisdictionClaimScope($query, $parameters, $resolvedJurisdictionId);
     $anonymousJurisdictionClaimIsUnreadable = $this->anonymousJurisdictionClaimIsUnreadable($parameters, $resolvedJurisdictionId);
@@ -414,7 +422,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     else {
       $this->applyApiKeyJurisdictionReadScope($query, $parameters, $resolvedJurisdictionId);
       if ($resolvedJurisdictionId) {
-        $this->georeportProcessor->validateJurisdictionAccess($resolvedJurisdictionId, $this->currentUser);
+        $parameters['_jurisdiction_read_scope'] = $resolvedJurisdictionId;
       }
     }
 

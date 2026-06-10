@@ -123,10 +123,21 @@ function markaspot_ai_node_presave(NodeInterface $node): void {
       'format' => 'plain_text',
     ]);
 
-    // System-generated remark: use current user if authenticated,
-    // otherwise uid 1 (field_author rejects uid 0).
-    $author_uid = \Drupal::currentUser()->id() ?: 1;
-    $paragraph->set('field_author', ['target_id' => $author_uid]);
+    // Privacy / data-integrity policy (markaspot/markaspot-ui#344):
+    // The original, unredacted text is intentionally RETAINED here for
+    // legitimate staff review and abuse checking. Read access to the
+    // internal_remark paragraph is gated to staff roles only (the
+    // 'view own field_internal_remark' grant was revoked from the
+    // authenticated role in markaspot_update_11917).
+    //
+    // Authorship: only attribute the remark to a real, authenticated user.
+    // For anonymous reports there is no human author, so field_author is
+    // left empty rather than being falsely attributed to uid 1 (User 1 /
+    // site admin). See _markaspot_ai_internal_remark_author_uid().
+    $author_uid = _markaspot_ai_internal_remark_author_uid((int) \Drupal::currentUser()->id());
+    if ($author_uid !== NULL) {
+      $paragraph->set('field_author', ['target_id' => $author_uid]);
+    }
     $paragraph->save();
 
     $current = $node->get('field_internal_remark')->getValue();
@@ -500,6 +511,36 @@ function _markaspot_ai_is_ai_enabled_for_node(NodeInterface $node): bool {
 }
 
 /**
+ * Checks whether duplicate detection is enabled for a node's jurisdiction.
+ *
+ * Duplicate detection consumes the same citizen text embeddings as AI
+ * processing. A tenant is eligible only when the tenant explicitly opted into
+ * AI processing, global duplicate detection is enabled, and the optional tenant
+ * duplicate flag has not been disabled.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service request node.
+ *
+ * @return bool
+ *   TRUE if duplicate detection may run for the node.
+ */
+function _markaspot_ai_is_duplicate_detection_enabled_for_node(NodeInterface $node): bool {
+  $group = _markaspot_ai_load_jurisdiction_for_node($node);
+  if (!_markaspot_ai_is_feature_enabled_for_jurisdiction($group, 'aiProcessing')) {
+    return FALSE;
+  }
+
+  if (!\Drupal::config('markaspot_ai.settings')->get('duplicate_detection.enabled')) {
+    return FALSE;
+  }
+
+  $config = _markaspot_ai_read_jurisdiction_nuxt_config($group);
+  $duplicate_flag = $config['features']['aiDuplicates'] ?? TRUE;
+
+  return _markaspot_ai_read_boolean_feature($duplicate_flag);
+}
+
+/**
  * Checks if a specific feature is enabled for a node's jurisdiction.
  *
  * Reads features.{feature} from the jurisdiction's field_nuxt_config.
@@ -676,6 +717,30 @@ function _markaspot_ai_redact_pii_regex(string $text, string $node_key = ''): ar
     'text' => $redacted,
     'pii_found' => $pii_found,
   ];
+}
+
+/**
+ * Resolves the author uid for a system-generated internal_remark paragraph.
+ *
+ * Privacy / data-integrity policy (markaspot/markaspot-ui#344): the original,
+ * unredacted submission text is preserved in the internal_remark paragraph for
+ * legitimate staff review and abuse checking, with read access gated to staff
+ * roles. The remark must only be attributed to a real, authenticated user.
+ *
+ * For anonymous reports there is no human author, so the optional field_author
+ * is left empty (NULL) rather than being falsely attributed to uid 1 (User 1 /
+ * site admin). The field_author reference handler is configured with
+ * include_anonymous: false, so uid 0 is not a valid target anyway — an empty
+ * field is the correct system/ownerless representation.
+ *
+ * @param int $current_uid
+ *   The uid of the acting user (e.g. \Drupal::currentUser()->id()).
+ *
+ * @return int|null
+ *   The uid to set on field_author, or NULL to leave the field unset.
+ */
+function _markaspot_ai_internal_remark_author_uid(int $current_uid): ?int {
+  return $current_uid > 0 ? $current_uid : NULL;
 }
 
 /**

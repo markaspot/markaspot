@@ -4376,3 +4376,175 @@ function markaspot_group_update_11932(): string {
     ? implode('; ', $parts) . '.'
     : 'service_request jurisdiction fields already present and all nodes assigned.';
 }
+
+/**
+ * Ensures uid 1 keeps membership on every jur/org group.
+ *
+ * Site-level uid 1 access is not enough for every operator workflow: frontend
+ * auth status, GeoReport editability, and Group module entity access all use
+ * runtime group memberships. Migrations and old config imports can leave uid 1
+ * as Drupal administrator while missing memberships for some tenant groups.
+ * Admin permissions come from insider-scoped group roles mapped to the Drupal
+ * administrator role, so this update does not write those roles to group_roles.
+ */
+function markaspot_group_update_11933(): string {
+  $result = _markaspot_group_update_onboard_root_admin();
+
+  if (!empty($result['failures'])) {
+    throw new \RuntimeException(sprintf(
+      'Failed to converge uid 1 group admin membership for %d group(s): %s',
+      count($result['failures']),
+      implode('; ', array_slice($result['failures'], 0, 5)),
+    ));
+  }
+
+  $message = sprintf(
+    'Checked %d jur/org group(s); added %d missing uid 1 membership(s); removed %d non-individual group role assignment(s); %d already converged.',
+    $result['checked'],
+    $result['added'],
+    $result['roles_removed'],
+    $result['already'],
+  );
+
+  return $message;
+}
+
+/**
+ * Adds uid 1 to every jur/org group where membership is missing.
+ *
+ * @return array<string, mixed>
+ *   Counts and failure details for the update hook.
+ */
+function _markaspot_group_update_onboard_root_admin(): array {
+  $result = [
+    'checked' => 0,
+    'added' => 0,
+    'roles_removed' => 0,
+    'already' => 0,
+    'failures' => [],
+  ];
+
+  $user = \Drupal::entityTypeManager()->getStorage('user')->load(1);
+  if (!$user instanceof \Drupal\user\UserInterface) {
+    $result['failures'][] = 'uid 1 is missing';
+    return $result;
+  }
+  if ($user->isBlocked()) {
+    $result['failures'][] = 'uid 1 is blocked';
+    return $result;
+  }
+  if (!$user->hasRole('administrator')) {
+    $result['failures'][] = 'uid 1 lacks the administrator role';
+    return $result;
+  }
+
+  $group_storage = \Drupal::entityTypeManager()->getStorage('group');
+  $group_types = _markaspot_group_update_root_admin_group_types();
+  $ids = $group_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition('type', $group_types, 'IN')
+    ->execute();
+
+  if ($ids === []) {
+    return $result;
+  }
+
+  foreach ($group_storage->loadMultiple($ids) as $group) {
+    if (!$group instanceof \Drupal\group\Entity\GroupInterface) {
+      continue;
+    }
+
+    $result['checked']++;
+    $member = $group->getMember($user);
+    if ($member) {
+      $removed = _markaspot_group_update_remove_non_individual_group_roles($member);
+      if ($removed > 0) {
+        $result['roles_removed'] += $removed;
+        \Drupal::logger('markaspot_group')->notice('Removed @count non-individual group role assignment(s) from uid 1 membership on group @gid (@label).', [
+          '@count' => $removed,
+          '@gid' => $group->id(),
+          '@label' => $group->label(),
+        ]);
+      }
+      else {
+        $result['already']++;
+      }
+      continue;
+    }
+
+    try {
+      $group->addMember($user);
+      $result['added']++;
+      \Drupal::logger('markaspot_group')->notice('Onboarded uid 1 as member on group @gid (@label).', [
+        '@gid' => $group->id(),
+        '@label' => $group->label(),
+      ]);
+    }
+    catch (\Throwable $e) {
+      $result['failures'][] = sprintf('group %s: %s', $group->id(), $e->getMessage());
+      \Drupal::logger('markaspot_group')->error('Failed to onboard uid 1 on group @gid: @msg', [
+        '@gid' => $group->id(),
+        '@msg' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  return $result;
+}
+
+/**
+ * Removes non-individual group roles from an existing membership.
+ *
+ * @return int
+ *   Number of removed role assignments.
+ */
+function _markaspot_group_update_remove_non_individual_group_roles($member): int {
+  $relationship = $member->getGroupRelationship();
+  if (!$relationship->hasField('group_roles')) {
+    return 0;
+  }
+
+  $values = $relationship->get('group_roles')->getValue();
+  $role_ids = array_values(array_filter(array_column($values, 'target_id'), 'is_string'));
+  if ($role_ids === []) {
+    return 0;
+  }
+
+  $roles = \Drupal::entityTypeManager()
+    ->getStorage('group_role')
+    ->loadMultiple($role_ids);
+
+  $filtered = [];
+  $removed = 0;
+  foreach ($values as $value) {
+    $role_id = $value['target_id'] ?? NULL;
+    $role = is_string($role_id) ? ($roles[$role_id] ?? NULL) : NULL;
+    if ($role && method_exists($role, 'getScope') && $role->getScope() !== 'individual') {
+      $removed++;
+      continue;
+    }
+    $filtered[] = $value;
+  }
+
+  if ($removed === 0) {
+    return 0;
+  }
+
+  $relationship->set('group_roles', $filtered);
+  $relationship->save();
+
+  return $removed;
+}
+
+/**
+ * Returns group types where uid 1 must keep runtime admin membership.
+ *
+ * @return string[]
+ *   Group bundle machine names.
+ */
+function _markaspot_group_update_root_admin_group_types(): array {
+  return array_values(array_unique([
+    _markaspot_group_update_jurisdiction_group_type(),
+    'org',
+  ]));
+}

@@ -91,6 +91,48 @@ final class FeatureGateTest extends UnitTestCase {
   }
 
   /**
+   * Duplicate detection requires global enablement and tenant AI opt-in.
+   */
+  public function testDuplicateDetectionRequiresAiProcessingAndGlobalEnablement(): void {
+    $node = $this->buildNode(42);
+
+    $this->setGroupStorage(
+      $this->buildGroup(json_encode(['features' => ['aiProcessing' => TRUE]])),
+      duplicateDetectionEnabled: TRUE,
+    );
+    $this->assertTrue(_markaspot_ai_is_duplicate_detection_enabled_for_node($node));
+
+    $this->setGroupStorage(
+      $this->buildGroup(json_encode(['features' => ['aiProcessing' => FALSE]])),
+      duplicateDetectionEnabled: TRUE,
+    );
+    $this->assertFalse(_markaspot_ai_is_duplicate_detection_enabled_for_node($node));
+
+    $this->setGroupStorage(
+      $this->buildGroup(json_encode(['features' => ['aiProcessing' => TRUE]])),
+      duplicateDetectionEnabled: FALSE,
+    );
+    $this->assertFalse(_markaspot_ai_is_duplicate_detection_enabled_for_node($node));
+  }
+
+  /**
+   * Duplicate detection honours explicit tenant opt-out.
+   */
+  public function testDuplicateDetectionHonoursTenantOptOut(): void {
+    $this->setGroupStorage(
+      $this->buildGroup(json_encode([
+        'features' => [
+          'aiProcessing' => TRUE,
+          'aiDuplicates' => FALSE,
+        ],
+      ])),
+      duplicateDetectionEnabled: TRUE,
+    );
+
+    $this->assertFalse(_markaspot_ai_is_duplicate_detection_enabled_for_node($this->buildNode(42)));
+  }
+
+  /**
    * Cron does not auto-backfill when ai_processing.auto_backfill is absent/off.
    */
   public function testCronDoesNotBackfillWithoutExplicitConfig(): void {
@@ -146,7 +188,7 @@ final class FeatureGateTest extends UnitTestCase {
   /**
    * Installs a mock group storage in the Drupal container.
    */
-  private function setGroupStorage(?GroupInterface $group): void {
+  private function setGroupStorage(?GroupInterface $group, bool $duplicateDetectionEnabled = TRUE): void {
     $groupStorage = $this->createMock(EntityStorageInterface::class);
     $groupStorage->method('load')->willReturnCallback(
       static fn(int|string $id): ?GroupInterface => (string) $id === '42' ? $group : NULL,
@@ -157,8 +199,18 @@ final class FeatureGateTest extends UnitTestCase {
       ->with('group')
       ->willReturn($groupStorage);
 
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnCallback(
+      static fn(string $key): mixed => $key === 'duplicate_detection.enabled'
+        ? $duplicateDetectionEnabled
+        : NULL,
+    );
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($config);
+
     $container = new ContainerBuilder();
     $container->set('entity_type.manager', $entityTypeManager);
+    $container->set('config.factory', $configFactory);
     \Drupal::setContainer($container);
   }
 

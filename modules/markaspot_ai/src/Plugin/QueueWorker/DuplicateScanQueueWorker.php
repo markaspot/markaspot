@@ -109,8 +109,8 @@ class DuplicateScanQueueWorker extends QueueWorkerBase implements ContainerFacto
     array $configuration,
     $plugin_id,
     $plugin_definition,
-  ): static {
-    return new static(
+  ): self {
+    return new self(
       $configuration,
       $plugin_id,
       $plugin_definition,
@@ -170,9 +170,9 @@ class DuplicateScanQueueWorker extends QueueWorkerBase implements ContainerFacto
       return;
     }
 
-    if (!_markaspot_ai_is_ai_enabled_for_node($node)) {
+    if (!_markaspot_ai_is_duplicate_detection_enabled_for_node($node)) {
       $this->logger->debug(
-        'AI disabled for node @nid jurisdiction, skipping duplicate scan.',
+        'Duplicate detection disabled for node @nid jurisdiction, skipping duplicate scan.',
         ['@nid' => $nid]
       );
       return;
@@ -247,7 +247,7 @@ class DuplicateScanQueueWorker extends QueueWorkerBase implements ContainerFacto
       return FALSE;
     }
 
-    return _markaspot_ai_is_ai_enabled_for_node($node);
+    return _markaspot_ai_is_duplicate_detection_enabled_for_node($node);
   }
 
   /**
@@ -266,6 +266,7 @@ class DuplicateScanQueueWorker extends QueueWorkerBase implements ContainerFacto
       if ($this->moduleHandler->moduleExists('flag')) {
         try {
           /** @var \Drupal\flag\FlagServiceInterface $flag_service */
+          // @phpstan-ignore-next-line globalDrupalDependencyInjection.useDependencyInjection
           $flag_service = \Drupal::service('flag');
           $flag = $flag_service->getFlagById('potential_duplicate');
 

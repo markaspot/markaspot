@@ -119,7 +119,7 @@ class AiClientService {
     $provider = $options['provider'] ?? $config->get('default_provider') ?? 'openai';
     $provider_config = $config->get("providers.{$provider}") ?? [];
 
-    $model = $options['model'] ?? $provider_config['chat_model'] ?? 'gpt-4o';
+    $model = $options['model'] ?? $provider_config['chat_model'] ?? self::DEFAULT_CHAT_MODEL;
     if ($provider === 'anthropic') {
       return $this->chatAnthropic($messages, $provider_config, $model, $options);
     }

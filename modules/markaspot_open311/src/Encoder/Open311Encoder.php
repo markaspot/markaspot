@@ -4,6 +4,10 @@ namespace Drupal\markaspot_open311\Encoder;
 
 use Symfony\Component\Serializer\Encoder\EncoderInterface;
 use Symfony\Component\Serializer\Encoder\DecoderInterface;
+use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
+use Symfony\Component\Serializer\SerializerAwareInterface;
+use Symfony\Component\Serializer\SerializerInterface;
 
 /**
  * Adds XML support for serializer.
@@ -11,7 +15,7 @@ use Symfony\Component\Serializer\Encoder\DecoderInterface;
  * This acts as a wrapper class for Symfony's XmlEncoder so that it is not
  * implementing NormalizationAwareInterface, and can be normalized externally.
  */
-class Open311Encoder implements EncoderInterface, DecoderInterface {
+class Open311Encoder implements EncoderInterface, DecoderInterface, SerializerAwareInterface {
   /**
    * The XML document.
    *
@@ -30,12 +34,28 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
    * @var context
    */
   private $context;
+
+  /**
+   * The serializer normalizer.
+   */
+  private ?NormalizerInterface $serializer = NULL;
   /**
    * Set root node name.
    *
    * @var null
    */
   private $rootNodeName = NULL;
+
+  /**
+   * {@inheritdoc}
+   */
+  public function setSerializer(SerializerInterface $serializer): void {
+    if (!$serializer instanceof NormalizerInterface) {
+      throw new NotNormalizableValueException('Open311Encoder requires a normalizing serializer.');
+    }
+
+    $this->serializer = $serializer;
+  }
 
   /**
    * Get all possible nodes.
@@ -124,7 +144,6 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
 
     $rootNode = $dom->firstChild;
 
-    // @todo throw an exception if the root node name is not correctly configured (bc)
     if ($rootNode->hasChildNodes()) {
       $xpath = new \DOMXPath($dom);
       $data = [];
@@ -462,7 +481,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
     }
 
     if (is_object($data)) {
-      $data = $this->serializer->normalize($data, $this->format, $this->context);
+      $data = $this->normalizeObject($data);
       if (NULL !== $data && !is_scalar($data)) {
         return $this->buildXml($parentNode, $data, $xmlRootNodeName);
       }
@@ -543,7 +562,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
       $this->buildXml($node, $val);
     }
     elseif (is_object($val)) {
-      return $this->buildXml($node, $this->serializer->normalize($val, $this->format, $this->context));
+      return $this->buildXml($node, $this->normalizeObject($val));
     }
     elseif (is_numeric($val)) {
       return $this->appendText($node, (string) $val);
@@ -563,6 +582,17 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
     }
 
     return TRUE;
+  }
+
+  /**
+   * Normalizes an object value before XML rendering.
+   */
+  private function normalizeObject(object $value): mixed {
+    if (!$this->serializer instanceof NormalizerInterface) {
+      throw new NotNormalizableValueException('Open311Encoder requires a normalizing serializer.');
+    }
+
+    return $this->serializer->normalize($value, $this->format, $this->context);
   }
 
   /**
@@ -590,7 +620,7 @@ class Open311Encoder implements EncoderInterface, DecoderInterface {
   private function createDomDocument(array $context) {
     $document = new \DOMDocument();
 
-    // Set an attribute on the DOM document specifying, as part of the XML declaration,.
+    // Set DOM document attributes that control the XML declaration.
     $xmlOptions = [
       // Nicely formats output with indentation and extra space.
       'xml_format_output' => 'formatOutput',

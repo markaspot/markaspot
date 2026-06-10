@@ -789,4 +789,268 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertContains('user.roles', $response->getCacheableMetadata()->getCacheContexts());
   }
 
+  /**
+   * Tests that aiDuplicates is FALSE when markaspot_ai is absent.
+   *
+   * Vision-only tenant: markaspot_vision is installed, markaspot_ai is not.
+   * The backend must emit features.aiDuplicates = false so the frontend
+   * skips the Duplicate Review nav, duplicates page, and SimilarRequestsCard.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testAiDuplicatesIsFalseWhenMarkaSpotAiAbsent(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(fn(string $module) => match ($module) {
+        // Vision enabled for photo/AI analysis, AI text not installed.
+        'markaspot_vision' => TRUE,
+        'markaspot_ai' => FALSE,
+        default => FALSE,
+      });
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => ['aiAnalysis' => TRUE],
+      ]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertFalse(
+      $data['features']['aiDuplicates'] ?? TRUE,
+      'aiDuplicates must be false when markaspot_ai is not installed'
+    );
+    // Vision-based flags must still reflect the module being present.
+    $this->assertTrue(
+      $data['features']['aiAnalysis'] ?? FALSE,
+      'aiAnalysis must still be true when markaspot_vision is installed'
+    );
+  }
+
+  /**
+   * Creates a config factory with markaspot_ai.settings duplicate_detection.
+   *
+   * Used by tests that need markaspot_ai installed and enabled.
+   *
+   * @param bool $duplicateDetectionEnabled
+   *   Whether duplicate_detection.enabled is TRUE.
+   *
+   * @return \Drupal\Core\Config\ConfigFactoryInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   A config factory mock.
+   */
+  protected function createConfigFactoryWithAiSettings(bool $duplicateDetectionEnabled): ConfigFactoryInterface {
+    $nuxtConfig = $this->createMock(ImmutableConfig::class);
+    $nuxtConfig->method('isNew')->willReturn(FALSE);
+    $nuxtConfig->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'mapbox_style' => 'https://tiles.example.com/style.json',
+        'mapbox_style_dark' => 'https://tiles.example.com/dark.json',
+        'zoom_initial' => 13,
+        'center_lat' => 50.9,
+        'center_lng' => 6.9,
+        'geocoding_country' => 'DE',
+        'geocoding_region' => '',
+        default => NULL,
+      });
+
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'jurisdiction_group_type' => 'jur',
+        'organisation_group_type' => 'org',
+        default => NULL,
+      });
+
+    $aiSettings = $this->createMock(ImmutableConfig::class);
+    $aiSettings->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'duplicate_detection.enabled' => $duplicateDetectionEnabled,
+        default => NULL,
+      });
+
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->method('get')
+      ->willReturnCallback(fn(string $name) => match ($name) {
+        'markaspot_nuxt.settings' => $nuxtConfig,
+        'markaspot_open311.settings' => $open311Config,
+        'markaspot_ai.settings' => $aiSettings,
+        default => $this->createMock(ImmutableConfig::class),
+      });
+
+    return $factory;
+  }
+
+  /**
+   * Tests that aiDuplicates is TRUE when the tenant and global config allow it.
+   *
+   * Full-AI tenant: both markaspot_vision and markaspot_ai are installed, and
+   * duplicate_detection.enabled = true in markaspot_ai.settings.
+   * The backend must emit features.aiDuplicates = true (default-on).
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testAiDuplicatesIsTrueWhenMarkaSpotAiPresent(): void {
+    // Inject a configFactory that returns duplicate_detection.enabled = TRUE
+    // for markaspot_ai.settings by replacing the property on the controller.
+    $configFactory = $this->createConfigFactoryWithAiSettings(TRUE);
+    (new \ReflectionProperty($this->controller, 'configFactory'))
+      ->setValue($this->controller, $configFactory);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(fn(string $module) => match ($module) {
+        'markaspot_vision' => TRUE,
+        'markaspot_ai' => TRUE,
+        default => FALSE,
+      });
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => ['aiAnalysis' => TRUE, 'aiProcessing' => TRUE],
+      ]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertTrue(
+      $data['features']['aiDuplicates'] ?? FALSE,
+      'aiDuplicates must be true when markaspot_ai is installed and duplicate_detection enabled'
+    );
+  }
+
+  /**
+   * Tests aiDuplicates is FALSE when tenant AI processing is disabled.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testAiDuplicatesIsFalseWhenAiProcessingDisabled(): void {
+    $configFactory = $this->createConfigFactoryWithAiSettings(TRUE);
+    (new \ReflectionProperty($this->controller, 'configFactory'))
+      ->setValue($this->controller, $configFactory);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(fn(string $module) => match ($module) {
+        'markaspot_ai' => TRUE,
+        default => FALSE,
+      });
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => ['aiProcessing' => FALSE],
+      ]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertFalse(
+      $data['features']['aiDuplicates'] ?? TRUE,
+      'aiDuplicates must be false when tenant aiProcessing is false'
+    );
+  }
+
+  /**
+   * Tests aiDuplicates is FALSE when markaspot_ai is installed but disabled.
+   *
+   * Module installed but duplicate_detection.enabled = false (the install
+   * default). The backend must emit false so the UI stays hidden.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testAiDuplicatesIsFalseWhenDuplicateDetectionDisabled(): void {
+    // duplicate_detection.enabled = false is the install default; the default
+    // configFactory mock returns NULL for 'markaspot_ai.settings' which casts
+    // to false — this test documents the intent explicitly.
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(fn(string $module) => match ($module) {
+        'markaspot_ai' => TRUE,
+        default => FALSE,
+      });
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => ['aiProcessing' => TRUE],
+      ]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertFalse(
+      $data['features']['aiDuplicates'] ?? TRUE,
+      'aiDuplicates must be false when duplicate_detection.enabled is false'
+    );
+  }
+
+  /**
+   * Tests tenant opt-out: aiDuplicates can be disabled even with markaspot_ai.
+   *
+   * A tenant with markaspot_ai installed and duplicate_detection enabled, but
+   * features.aiDuplicates = false in their field_nuxt_config, should have
+   * aiDuplicates forced to false.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testAiDuplicatesCanBeOptedOutViaNuxtConfig(): void {
+    // Inject duplicate_detection.enabled = TRUE so we test the opt-out path.
+    $configFactory = $this->createConfigFactoryWithAiSettings(TRUE);
+    (new \ReflectionProperty($this->controller, 'configFactory'))
+      ->setValue($this->controller, $configFactory);
+
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(fn(string $module) => match ($module) {
+        'markaspot_ai' => TRUE,
+        default => FALSE,
+      });
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => ['aiProcessing' => TRUE, 'aiDuplicates' => FALSE],
+      ]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertFalse(
+      $data['features']['aiDuplicates'] ?? TRUE,
+      'aiDuplicates must honour explicit false in field_nuxt_config'
+    );
+  }
+
 }

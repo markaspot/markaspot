@@ -38,7 +38,7 @@ class MarkaspotAiCommands extends DrushCommands {
   /**
    * Scan new workspaces for likely spam activity.
    */
-  #[CLI\Command(name: 'mas:ai:spam-scan')]
+  #[CLI\Command(name: 'markaspot:ai:spam-scan', aliases: ['mas:ai:spam-scan'])]
   #[CLI\Option(name: 'hours', description: 'Look back this many hours for service requests.')]
   #[CLI\Option(name: 'workspace', description: 'Restrict scan to one workspace ID or slug.')]
   #[CLI\Option(name: 'limit', description: 'Maximum recent requests to inspect before bucketing.')]
@@ -59,9 +59,9 @@ class MarkaspotAiCommands extends DrushCommands {
     'request_ids' => 'Samples',
     'reasons' => 'Reasons',
   ])]
-  #[CLI\Usage(name: 'mas:ai:spam-scan --hours=24', description: 'Dry-run deterministic scan of new workspaces.')]
-  #[CLI\Usage(name: 'mas:ai:spam-scan --hours=24 --use-ai --provider=anthropic', description: 'Send only suspicious, redacted first-request samples to Anthropic.')]
-  #[CLI\Usage(name: 'mas:ai:spam-scan --workspace=test --use-ai --provider=anthropic --apply', description: 'Scan one workspace and block it automatically when the score reaches the threshold.')]
+  #[CLI\Usage(name: 'markaspot:ai:spam-scan --hours=24', description: 'Dry-run deterministic scan of new workspaces.')]
+  #[CLI\Usage(name: 'markaspot:ai:spam-scan --hours=24 --use-ai --provider=anthropic', description: 'Send only suspicious, redacted first-request samples to Anthropic.')]
+  #[CLI\Usage(name: 'markaspot:ai:spam-scan --workspace=test --use-ai --provider=anthropic --apply', description: 'Scan one workspace and block it automatically when the score reaches the threshold.')]
   public function spamScan(
     array $options = [
       'hours' => 24,
@@ -109,15 +109,15 @@ class MarkaspotAiCommands extends DrushCommands {
   /**
    * Queue service requests for AI processing (embeddings + sentiment).
    */
-  #[CLI\Command(name: 'mas:ai:queue', aliases: ['maiq'])]
+  #[CLI\Command(name: 'markaspot:ai:queue', aliases: ['mas:ai:queue', 'maiq'])]
   #[CLI\Argument(name: 'scope', description: 'What to queue among tenants with features.aiProcessing=true: all, missing, sentiment, or a specific node ID')]
   #[CLI\Option(name: 'limit', description: 'Maximum number of nodes to queue (default: 100)')]
   #[CLI\Option(name: 'force', description: 'Force re-processing even if already processed')]
-  #[CLI\Usage(name: 'mas:ai:queue all', description: 'Queue all AI-enabled service requests')]
-  #[CLI\Usage(name: 'mas:ai:queue missing', description: 'Queue AI-enabled requests without embeddings')]
-  #[CLI\Usage(name: 'mas:ai:queue sentiment', description: 'Queue AI-enabled requests with embeddings but missing sentiment')]
-  #[CLI\Usage(name: 'mas:ai:queue 64', description: 'Queue specific node ID only if its tenant has AI text processing enabled')]
-  #[CLI\Usage(name: 'mas:ai:queue all --limit=500', description: 'Queue up to 500 AI-enabled requests')]
+  #[CLI\Usage(name: 'markaspot:ai:queue all', description: 'Queue all AI-enabled service requests')]
+  #[CLI\Usage(name: 'markaspot:ai:queue missing', description: 'Queue AI-enabled requests without embeddings')]
+  #[CLI\Usage(name: 'markaspot:ai:queue sentiment', description: 'Queue AI-enabled requests with embeddings but missing sentiment')]
+  #[CLI\Usage(name: 'markaspot:ai:queue 64', description: 'Queue specific node ID only if its tenant has AI text processing enabled')]
+  #[CLI\Usage(name: 'markaspot:ai:queue all --limit=500', description: 'Queue up to 500 AI-enabled requests')]
   public function queueRequests(string $scope = 'missing', array $options = ['limit' => 100, 'force' => FALSE]): void {
     $limit = (int) $options['limit'];
     $force = (bool) $options['force'];
@@ -186,8 +186,8 @@ class MarkaspotAiCommands extends DrushCommands {
   /**
    * Show AI processing statistics.
    */
-  #[CLI\Command(name: 'mas:ai:status', aliases: ['mais'])]
-  #[CLI\Usage(name: 'mas:ai:status', description: 'Show AI processing statistics')]
+  #[CLI\Command(name: 'markaspot:ai:status', aliases: ['mas:ai:status', 'mais'])]
+  #[CLI\Usage(name: 'markaspot:ai:status', description: 'Show AI processing statistics')]
   public function showStatus(): void {
     // Count total service requests.
     $total = $this->database->select('node_field_data', 'n')
@@ -256,18 +256,18 @@ class MarkaspotAiCommands extends DrushCommands {
     );
 
     if ($eligibleMissing > 0) {
-      $this->io()->note("{$eligibleMissing} AI-enabled requests need AI processing. Run: drush mas:ai:queue missing");
+      $this->io()->note("{$eligibleMissing} AI-enabled requests need AI processing. Run: drush markaspot:ai:queue missing");
     }
   }
 
   /**
    * Process the AI queues immediately.
    */
-  #[CLI\Command(name: 'mas:ai:process', aliases: ['maip'])]
+  #[CLI\Command(name: 'markaspot:ai:process', aliases: ['mas:ai:process', 'maip'])]
   #[CLI\Option(name: 'limit', description: 'Maximum items to process per queue (default: 50)')]
   #[CLI\Option(name: 'time-limit', description: 'Maximum time in seconds (default: 60)')]
-  #[CLI\Usage(name: 'mas:ai:process', description: 'Process up to 50 queued items per queue')]
-  #[CLI\Usage(name: 'mas:ai:process --limit=200', description: 'Process up to 200 items per queue')]
+  #[CLI\Usage(name: 'markaspot:ai:process', description: 'Process up to 50 queued items per queue')]
+  #[CLI\Usage(name: 'markaspot:ai:process --limit=200', description: 'Process up to 200 items per queue')]
   public function processQueue(array $options = ['limit' => 50, 'time-limit' => 60]): void {
     $limit = (int) $options['limit'];
     $timeLimit = (int) $options['time-limit'];

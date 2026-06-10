@@ -60,4 +60,44 @@ function markaspot_mail_mail_alter(&$message) {
   /** @var \Drupal\markaspot_mail\Hook\MailAlterHook $hook */
   $hook = \Drupal::service('markaspot_mail.mail_alter_hook');
   $hook->alter($message);
+
+  // Non-prod recipient fence (markaspot-ui#388 L3). Must run AFTER the
+  // branding hook: builders overwrite $message['subject'], and the override
+  // prefix ("[DEV→original@example.com]") has to survive that overwrite.
+  // Unlike the branding hook this one is unconditional (no builder gate, no
+  // blocklist): when the override is configured, NO mail may keep its real
+  // recipients, including password resets and contrib mails.
+  /** @var \Drupal\markaspot_mail\Hook\RecipientOverrideHook $override_hook */
+  $override_hook = \Drupal::service('markaspot_mail.recipient_override_hook');
+  $override_hook->alter($message);
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * GDPR retention guard (markaspot-ui#388 review): the dev_logger mail mode
+ * writes complete mails — recipient addresses and bodies included — into the
+ * devel_mail_logger table, which has no retention of its own. Purge rows
+ * older than 30 days so dev/test tenants don't accumulate citizen PII
+ * indefinitely.
+ *
+ * Deliberately guarded instead of declared as a dependency: markaspot_mail
+ * must keep working on tenants without devel_mail_logger. The logic stays
+ * trivial (no service, no unit test) because everything interesting is in
+ * the two guards; behavior is covered by the deploy smoke runbook
+ * (markaspot-cloud/docs/mail-modes.md).
+ */
+function markaspot_mail_cron(): void {
+  if (!\Drupal::moduleHandler()->moduleExists('devel_mail_logger')) {
+    return;
+  }
+  $connection = \Drupal::database();
+  // The module can be enabled while its schema is missing after partial
+  // config imports; never let cron fatal on a missing table.
+  if (!$connection->schema()->tableExists('devel_mail_logger')) {
+    return;
+  }
+  $connection->delete('devel_mail_logger')
+    ->condition('timestamp', \Drupal::time()->getRequestTime() - 30 * 86400, '<')
+    ->execute();
 }

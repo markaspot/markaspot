@@ -114,6 +114,8 @@ class MarkASpotSettingsController extends ControllerBase {
       'config:markaspot_nuxt.settings',
       'config:markaspot_sso.settings',
       'config:core.extension',
+      // Invalidate when duplicate_detection.enabled is toggled in markaspot_ai.
+      'config:markaspot_ai.settings',
     ]);
 
     // Load group type settings from markaspot_open311 (supports legacy naming).
@@ -331,6 +333,9 @@ class MarkASpotSettingsController extends ControllerBase {
     // If a module is not installed, force the feature to FALSE regardless
     // of what field_nuxt_config says. This prevents the frontend from
     // exposing routes for features whose backend modules are absent.
+    // Module-to-feature gating: if a module is not installed, force its
+    // features to FALSE regardless of field_nuxt_config. aiDuplicates is
+    // handled separately below (needs config check, not just module presence).
     $module_feature_map = [
       'markaspot_ai' => ['aiProcessing', 'piiRedaction'],
       'markaspot_stats' => ['statistics'],
@@ -354,12 +359,29 @@ class MarkASpotSettingsController extends ControllerBase {
       );
     }
     $module_handler = $this->moduleHandler();
+
     foreach ($module_feature_map as $module => $features) {
       if (!$module_handler->moduleExists($module)) {
         foreach ($features as $feature) {
           $settings['features'][$feature] = FALSE;
         }
       }
+    }
+
+    // aiDuplicates capability flag. Requires the module, tenant AI processing,
+    // and duplicate_detection.enabled = true in markaspot_ai.settings. When all
+    // three conditions are met, the flag defaults to TRUE so existing
+    // AI-enabled tenants get duplicate detection automatically. Tenants can
+    // still opt out with features.aiDuplicates=false.
+    if ($module_handler->moduleExists('markaspot_ai')
+      && $settings['features']['aiProcessing'] === TRUE
+      && (bool) $this->configFactory->get('markaspot_ai.settings')->get('duplicate_detection.enabled')) {
+      $settings['features']['aiDuplicates'] = $this->readBooleanFeatureFlag(
+        $settings['features']['aiDuplicates'] ?? TRUE
+      );
+    }
+    else {
+      $settings['features']['aiDuplicates'] = FALSE;
     }
 
     // Tier-gate: tenant-supplied WMS layer URLs (features.map.wmsLayers[].url)

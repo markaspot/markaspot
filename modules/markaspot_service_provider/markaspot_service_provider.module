@@ -170,13 +170,13 @@ function markaspot_service_provider_cron() {
     $count = count($nids);
 
     if ($count > 0) {
-      // Dispatch an event or trigger ECA rules here.
-      // For now, just log that nodes are ready for notification.
+      // For now this only logs that nodes are ready for notification.
+      // Dispatching an event (or feeding a queue worker) so that ECA models
+      // can react to it is tracked in
+      // https://github.com/markaspot/markaspot-ui/issues/480.
       \Drupal::logger('markaspot_service_provider')
         ->notice('Found @count service requests with assigned providers ready for cron notification.',
           ['@count' => $count]);
-
-      // @todo Implement event dispatching or queue worker for ECA integration.
     }
 
     // Set the next execution time.

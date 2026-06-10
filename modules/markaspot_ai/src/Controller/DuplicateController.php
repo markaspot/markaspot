@@ -7,7 +7,7 @@ namespace Drupal\markaspot_ai\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
-use Drupal\group\GroupMembershipLoaderInterface;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_ai\Service\DuplicateDetectionService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
@@ -44,8 +44,6 @@ class DuplicateController extends ControllerBase {
    *   The entity type manager.
    * @param \Drupal\Core\Database\Connection $database
    *   The database connection.
-   * @param \Drupal\group\GroupMembershipLoaderInterface $membershipLoader
-   *   The group membership loader.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchyResolver
    *   The jurisdiction hierarchy resolver.
    */
@@ -53,7 +51,6 @@ class DuplicateController extends ControllerBase {
     DuplicateDetectionService $duplicate_detection_service,
     EntityTypeManagerInterface $entity_type_manager,
     protected Connection $database,
-    protected GroupMembershipLoaderInterface $membershipLoader,
     protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {
     $this->duplicateDetectionService = $duplicate_detection_service;
@@ -63,12 +60,11 @@ class DuplicateController extends ControllerBase {
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container): static {
-    return new static(
+  public static function create(ContainerInterface $container): self {
+    return new self(
       $container->get('markaspot_ai.duplicate_detection'),
       $container->get('entity_type.manager'),
       $container->get('database'),
-      $container->get('group.membership_loader'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
         : NULL
@@ -336,7 +332,7 @@ class DuplicateController extends ControllerBase {
     if (!$this->canAccessNode($node, 'update')) {
       return new JsonResponse([
         'success' => FALSE,
-        'message' => 'AI processing is disabled for this jurisdiction.',
+        'message' => 'Duplicate data is disabled for this jurisdiction.',
       ], 403);
     }
 
@@ -392,7 +388,6 @@ class DuplicateController extends ControllerBase {
     $resolved = $this->resolveJurisdictionId($request->query->get('jurisdiction_id'));
 
     // Admins can see all by omitting the parameter, or filter by choice.
-    $currentUser = $this->currentUser();
     if ($this->currentUserCanSeeAllJurisdictions()) {
       return $resolved;
     }
@@ -442,7 +437,7 @@ class DuplicateController extends ControllerBase {
   }
 
   /**
-   * Checks node access, tenant membership and tenant AI opt-in.
+   * Checks node access, tenant membership and tenant duplicate opt-in.
    */
   protected function canAccessNode(NodeInterface $node, string $operation): bool {
     if (!$node->access($operation)) {
@@ -451,7 +446,7 @@ class DuplicateController extends ControllerBase {
 
     $jurisdiction_id = _markaspot_ai_get_jurisdiction_id_for_node($node);
     return $this->currentUserCanAccessJurisdiction($jurisdiction_id)
-      && _markaspot_ai_is_ai_enabled_for_node($node);
+      && _markaspot_ai_is_duplicate_detection_enabled_for_node($node);
   }
 
   /**
@@ -470,7 +465,7 @@ class DuplicateController extends ControllerBase {
       return FALSE;
     }
 
-    $memberships = $this->membershipLoader->loadByUser($account, array_values(array_unique([
+    $memberships = GroupMembership::loadByUser($account, array_values(array_unique([
       $this->getJurisdictionGroupType() . '-tenant_admin',
       'jur-tenant_admin',
     ])));

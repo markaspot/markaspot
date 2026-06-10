@@ -21,9 +21,11 @@ Admin-controlled system mode switching for emergencies and maintenance.
   - Note: Activation/deactivation is performed via the Drupal admin UI. No admin mutation routes are exposed by default to minimize attack surface. If needed later, admin-only routes can be added.
 
 ## Drush
-- `emergency:status` — Show current emergency mode status
-- `emergency:activate --mode-type=disaster` — Activate emergency mode
-- `emergency:deactivate --restore-categories=1` — Deactivate and restore categories
+- `markaspot:emergency:status` — Show current emergency mode status
+- `markaspot:emergency:activate --mode-type=disaster` — Activate emergency mode
+- `markaspot:emergency:deactivate --restore-categories=1` — Deactivate and restore categories
+
+Legacy names (`emergency:status`, `emergency:activate`, `emergency:deactivate`, `emer:*`) remain available as aliases.
 
 ## Frontend Integration (Optional)
 - Middleware can read `/api/emergency-mode/status` to redirect or show a banner.
