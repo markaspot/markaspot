@@ -1,5 +1,14 @@
 # Changelog
 
+## [11.9.114](https://github.com/markaspot/markaspot/compare/11.9.113...11.9.114) (2026-06-10)
+
+### Bug Fixes
+
+* **ai:** grant duplicate-detection perms to tenant_admin on install ([72e93b8](https://github.com/markaspot/markaspot/commit/72e93b836f1db5d3e469f4a452f524492aa6793e))
+* **dashboard:** create field_author on fresh install ([7da2c96](https://github.com/markaspot/markaspot/commit/7da2c968f8aa07f0d272631180581c36f167c3b2))
+* harden tenant safety gates ([5674b4e](https://github.com/markaspot/markaspot/commit/5674b4e369912a7612d4cb86c1b8ce4d6f3cadcc))
+* **tenant_admin:** grant view field_sentiment to tenant_admin ([b6344f5](https://github.com/markaspot/markaspot/commit/b6344f5be59f0cea5c379ff64de7543352bcbb26))
+
 ## [11.9.113](https://github.com/markaspot/markaspot/compare/11.9.112...11.9.113) (2026-06-08)
 
 ### Bug Fixes
