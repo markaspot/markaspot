@@ -12,6 +12,9 @@ use Symfony\Component\DependencyInjection\Reference;
  * Registers json_form_widget dependent services only when that module is
  * available. This allows the module to be enabled before json_form_widget
  * during updates from older versions.
+ *
+ * Also overrides jsonapi.entity_resource with CachedCountEntityResource to
+ * cache expensive COUNT queries for service_request collections.
  */
 class MarkaspotNuxtServiceProvider extends ServiceProviderBase {
 
@@ -19,8 +22,15 @@ class MarkaspotNuxtServiceProvider extends ServiceProviderBase {
    * {@inheritdoc}
    */
   public function alter(ContainerBuilder $container) {
+    // Override the JSON:API entity resource controller with our cached version.
+    // Guard: only when the jsonapi module is enabled (service must exist).
+    if ($container->has('jsonapi.entity_resource')) {
+      $definition = $container->getDefinition('jsonapi.entity_resource');
+      $definition->setClass('Drupal\markaspot_nuxt\JsonApi\CachedCountEntityResource');
+    }
+
     // Only register json_form dependent services if json_form_widget is active.
-    // Check if the json_form.string_helper service exists (defined by json_form_widget).
+    // Check if json_form.string_helper exists (defined by json_form_widget).
     if ($container->has('json_form.string_helper')) {
       // Register boolean helper using fully qualified class name.
       $container->register('markaspot_nuxt.boolean_helper', 'Drupal\markaspot_nuxt\BooleanHelper');
