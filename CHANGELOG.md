@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.115](https://github.com/markaspot/markaspot/compare/11.9.114...11.9.115) (2026-06-11)
+
+### Features
+
+* add visibility tier to WMS layer config schema ([7079372](https://github.com/markaspot/markaspot/commit/7079372959d0345e5b1ba4d54431bcb58c2bb2d9))
+* **emergency,cap:** extract EmergencyModeService, harden CAP pipeline ([eb35ae5](https://github.com/markaspot/markaspot/commit/eb35ae5399e6f836a46aea041125177e570c5c7a))
+* **mail_inbound:** inbound email staging pipeline with manual triage ([#467](https://github.com/markaspot/markaspot/issues/467)) ([9cd5f17](https://github.com/markaspot/markaspot/commit/9cd5f17b17db4ade7fe470201339bb8c1b89a2f7))
+* **mail_inbound:** triage dashboard API, return channel and AI suggestions ([#482](https://github.com/markaspot/markaspot/issues/482)) ([6621a93](https://github.com/markaspot/markaspot/commit/6621a93cf0db1fdff344479aa63ca11fcc5f0a2e))
+* **sec:** lock anonymous Drupal Views to authenticated (headless hardening) ([c5f15d3](https://github.com/markaspot/markaspot/commit/c5f15d3bd33fece7b803e9de27b5b5956ca96806))
+
 ## [11.9.114](https://github.com/markaspot/markaspot/compare/11.9.113...11.9.114) (2026-06-10)
 
 ### Bug Fixes
