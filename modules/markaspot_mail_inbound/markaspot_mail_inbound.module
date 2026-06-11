@@ -30,6 +30,50 @@ function markaspot_mail_inbound_help($route_name, RouteMatchInterface $route_mat
 }
 
 /**
+ * Implements hook_mail().
+ *
+ * The return channel (#482): triage_reply (a staff answer to a staged mail)
+ * and auto_reply_missing_location (the automatic location request after an
+ * ungeolocated promotion). InboundMailReplyService assembles the params:
+ * subject, body, the threading headers (Message-ID / In-Reply-To /
+ * References) and the jurisdiction From / Reply-To. When markaspot_mail is
+ * enabled its MailAlterHook re-brands the body via the tagged
+ * TriageReplyBuilder and re-asserts Reply-To from the jurisdiction branding
+ * (the same field_jurisdiction_e_mail address set here, so the jurisdiction
+ * address wins on both paths).
+ */
+function markaspot_mail_inbound_mail(string $key, array &$message, array $params): void {
+  if (!in_array($key, ['triage_reply', 'auto_reply_missing_location'], TRUE)) {
+    return;
+  }
+  $message['subject'] = (string) ($params['subject'] ?? '');
+  $message['body'][] = (string) ($params['body'] ?? '');
+  foreach (($params['headers'] ?? []) as $name => $value) {
+    // Values are pre-sanitized by InboundMailReplyService; strip CR/LF/NUL
+    // again as the last line of defense against header injection.
+    $message['headers'][$name] = str_replace(["\r", "\n", "\0"], '', (string) $value);
+  }
+  if (!empty($params['from'])) {
+    $message['from'] = str_replace(["\r", "\n", "\0"], '', (string) $params['from']);
+  }
+}
+
+/**
+ * Implements hook_mail_alter().
+ *
+ * Threads OTHER modules' outgoing node mails (status notifications, ECA
+ * action mails) into an email-origin citizen's conversation by adding
+ * Message-ID / In-Reply-To / References headers from the inbound mail's
+ * thread chain. Conservative: only acts when the message demonstrably
+ * relates to a promoted email-origin service request AND goes to the
+ * verified reporter; everything else is left untouched. See
+ * OutboundMailThreader.
+ */
+function markaspot_mail_inbound_mail_alter(array &$message): void {
+  \Drupal::service('markaspot_mail_inbound.outbound_threader')->alter($message);
+}
+
+/**
  * Implements hook_cron().
  *
  * Keeps cron lean: connect, enqueue raw messages, done. A failing mailbox is

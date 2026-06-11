@@ -118,4 +118,44 @@ class MailTextUtilsTest extends UnitTestCase {
     );
   }
 
+  /**
+   * @covers ::appendConversationEntry
+   */
+  public function testAppendConversationEntry(): void {
+    $this->assertSame(
+      "Original body\n\n---\nReply from citizen@example.org:\nIt is near the church.",
+      MailTextUtils::appendConversationEntry('Original body', 'Reply from citizen@example.org', 'It is near the church.', 10000)
+    );
+    // The combined log is capped at the configured maximum length.
+    $capped = MailTextUtils::appendConversationEntry('12345', 'Staff reply (2026-06-10 12:00 UTC)', str_repeat('x', 100), 40);
+    $this->assertSame(40, mb_strlen($capped));
+    $this->assertStringStartsWith("12345\n\n---\nStaff reply", $capped);
+  }
+
+  /**
+   * @covers ::extractOriginalMessage
+   * @covers ::hasConversationEntries
+   */
+  public function testExtractOriginalMessage(): void {
+    $original = "A streetlight is broken.\nIt flickers at night.";
+
+    // A log without appended entries IS the original message.
+    $this->assertSame($original, MailTextUtils::extractOriginalMessage($original));
+    $this->assertFalse(MailTextUtils::hasConversationEntries($original));
+
+    // One appended entry (a citizen reply to the staged mail).
+    $oneEntry = MailTextUtils::appendConversationEntry($original, 'Reply from citizen@example.org', 'It is near the church.', 10000);
+    $this->assertTrue(MailTextUtils::hasConversationEntries($oneEntry));
+    $this->assertSame($original, MailTextUtils::extractOriginalMessage($oneEntry));
+
+    // Multiple entries (citizen + staff) still yield only the original.
+    $twoEntries = MailTextUtils::appendConversationEntry($oneEntry, 'Staff reply (2026-06-10 12:00 UTC)', 'Which church exactly?', 10000);
+    $this->assertSame($original, MailTextUtils::extractOriginalMessage($twoEntries));
+    $this->assertTrue(MailTextUtils::hasConversationEntries($twoEntries));
+
+    // Empty log.
+    $this->assertSame('', MailTextUtils::extractOriginalMessage(''));
+    $this->assertFalse(MailTextUtils::hasConversationEntries(''));
+  }
+
 }

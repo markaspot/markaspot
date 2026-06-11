@@ -42,7 +42,7 @@ use Drupal\node\NodeInterface;
  *     "view_builder" = "Drupal\Core\Entity\EntityViewBuilder",
  *     "views_data" = "Drupal\views\EntityViewsData",
  *     "list_builder" = "Drupal\markaspot_mail_inbound\InboundMailListBuilder",
- *     "access" = "Drupal\Core\Entity\EntityAccessControlHandler",
+ *     "access" = "Drupal\markaspot_mail_inbound\InboundMailAccessControlHandler",
  *     "route_provider" = {
  *       "html" = "Drupal\Core\Entity\Routing\AdminHtmlRouteProvider",
  *     },
@@ -68,6 +68,33 @@ class InboundMail extends ContentEntityBase {
    * Discarded: a moderator rejected it as not a report.
    */
   public const STATE_DISCARDED = 'discarded';
+
+  /**
+   * Suggestion status: no AI suggestion requested or applicable.
+   */
+  public const SUGGESTION_NONE = 'none';
+
+  /**
+   * Suggestion status: queued for AI processing, not yet attempted.
+   */
+  public const SUGGESTION_PENDING = 'pending';
+
+  /**
+   * Suggestion status: AI suggestion completed successfully.
+   */
+  public const SUGGESTION_DONE = 'done';
+
+  /**
+   * Suggestion status: AI suggestion attempted but an error occurred.
+   */
+  public const SUGGESTION_FAILED = 'failed';
+
+  /**
+   * Suggestion status: skipped because a gate blocked the attempt.
+   *
+   * Gates: module setting, feature flag, token limit, service unavailability.
+   */
+  public const SUGGESTION_SKIPPED = 'skipped';
 
   /**
    * {@inheritdoc}
@@ -139,6 +166,37 @@ class InboundMail extends ContentEntityBase {
       ->setSetting('target_type', 'file')
       ->setSetting('handler', 'default')
       ->setCardinality(BaseFieldDefinition::CARDINALITY_UNLIMITED);
+
+    $fields['suggested_category'] = BaseFieldDefinition::create('entity_reference')
+      ->setLabel(t('Suggested category'))
+      ->setDescription(t('The AI-suggested service category term, or NULL when no suggestion is available yet.'))
+      ->setSetting('target_type', 'taxonomy_term')
+      ->setSetting('handler', 'default');
+
+    $fields['suggestion_confidence'] = BaseFieldDefinition::create('float')
+      ->setLabel(t('Suggestion confidence'))
+      ->setDescription(t('Confidence score (0–1) for the AI category suggestion. NULL for vision-path suggestions where no numeric confidence is available.'));
+
+    $fields['suggestion_status'] = BaseFieldDefinition::create('list_string')
+      ->setLabel(t('Suggestion status'))
+      ->setDescription(t('Lifecycle of the AI categorization attempt for this mail.'))
+      ->setSetting('allowed_values', [
+        self::SUGGESTION_NONE => t('None'),
+        self::SUGGESTION_PENDING => t('Pending'),
+        self::SUGGESTION_DONE => t('Done'),
+        self::SUGGESTION_FAILED => t('Failed'),
+        self::SUGGESTION_SKIPPED => t('Skipped'),
+      ])
+      ->setDefaultValue(self::SUGGESTION_NONE);
+
+    $fields['suggested_address'] = BaseFieldDefinition::create('string')
+      ->setLabel(t('Suggested address'))
+      ->setDescription(t('NER-extracted address from the AI text-classification path; passed to the promoter for geocoding.'))
+      ->setSetting('max_length', 500);
+
+    $fields['suggested_description'] = BaseFieldDefinition::create('string_long')
+      ->setLabel(t('Suggested description'))
+      ->setDescription(t('AI-generated neutral problem description for the public report, without salutation, sign-off, names or other PII. Used as the promoted node body when non-empty; falls back to the original mail text.'));
 
     $fields['created'] = BaseFieldDefinition::create('created')
       ->setLabel(t('Received'))
@@ -240,6 +298,89 @@ class InboundMail extends ContentEntityBase {
   public function getServiceRequest(): ?NodeInterface {
     $node = $this->get('nid')->entity;
     return $node instanceof NodeInterface ? $node : NULL;
+  }
+
+  /**
+   * Returns the AI-suggested category term id, or NULL when absent.
+   */
+  public function getSuggestedCategoryTid(): ?int {
+    $target_id = $this->get('suggested_category')->target_id ?? NULL;
+    return $target_id !== NULL ? (int) $target_id : NULL;
+  }
+
+  /**
+   * Sets the suggested category term id.
+   */
+  public function setSuggestedCategoryTid(?int $tid): self {
+    $this->set('suggested_category', $tid !== NULL ? ['target_id' => $tid] : NULL);
+    return $this;
+  }
+
+  /**
+   * Returns the suggestion confidence (0–1), or NULL when not available.
+   */
+  public function getSuggestionConfidence(): ?float {
+    $value = $this->get('suggestion_confidence')->value;
+    return $value !== NULL ? (float) $value : NULL;
+  }
+
+  /**
+   * Sets the suggestion confidence.
+   */
+  public function setSuggestionConfidence(?float $confidence): self {
+    $this->set('suggestion_confidence', $confidence);
+    return $this;
+  }
+
+  /**
+   * Returns the suggestion status string.
+   */
+  public function getSuggestionStatus(): string {
+    return (string) ($this->get('suggestion_status')->value ?? self::SUGGESTION_NONE);
+  }
+
+  /**
+   * Sets the suggestion status.
+   */
+  public function setSuggestionStatus(string $status): self {
+    $this->set('suggestion_status', $status);
+    return $this;
+  }
+
+  /**
+   * Returns the NER-extracted address from AI text classification, or NULL.
+   */
+  public function getSuggestedAddress(): ?string {
+    $value = $this->get('suggested_address')->value;
+    return ($value !== NULL && $value !== '') ? (string) $value : NULL;
+  }
+
+  /**
+   * Sets the NER-extracted suggested address.
+   */
+  public function setSuggestedAddress(?string $address): self {
+    $this->set('suggested_address', $address);
+    return $this;
+  }
+
+  /**
+   * Returns the AI-generated problem description, or NULL when not available.
+   *
+   * When non-empty, this is the description used for the public report body on
+   * promotion; it is free of salutation, sign-off, names and other PII. The
+   * citizen's original wording is always preserved as an internal remark.
+   */
+  public function getSuggestedDescription(): ?string {
+    $value = $this->get('suggested_description')->value;
+    return ($value !== NULL && $value !== '') ? (string) $value : NULL;
+  }
+
+  /**
+   * Sets the AI-generated problem description.
+   */
+  public function setSuggestedDescription(?string $description): self {
+    $this->set('suggested_description', $description);
+    return $this;
   }
 
 }

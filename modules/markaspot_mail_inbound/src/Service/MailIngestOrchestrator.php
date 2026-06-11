@@ -9,6 +9,7 @@ use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\Core\Queue\QueueFactory;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\markaspot_mail_inbound\Dto\InboundMessage;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
@@ -58,6 +59,9 @@ class MailIngestOrchestrator {
     protected FileSystemInterface $fileSystem,
     protected StreamWrapperManagerInterface $streamWrapperManager,
     protected LoggerChannelInterface $logger,
+    protected InternalRemarkWriter $remarkWriter,
+    protected QueueFactory $queueFactory,
+    protected ?object $suggestionService = NULL,
   ) {
   }
 
@@ -145,10 +149,22 @@ class MailIngestOrchestrator {
 
       // 4b. Reply to a PROMOTED service request: keep the existing reply-to-SR
       // behavior with the H1 sender-match check (the node carries
-      // field_email_message_id once promoted).
+      // field_email_message_id once promoted). Phase 2 (#482): the citizen
+      // may reply to OUR outbound reply, whose Message-ID lives only on the
+      // PROMOTED inbound_mail's thread chain (the node stores just the
+      // original id) — so hop from the matched promoted mail to its node.
       $node = $this->findNodeByMessageIds($threadIds);
+      if ($node === NULL && $stagedParent !== NULL && $stagedParent->getState() === InboundMail::STATE_PROMOTED) {
+        $node = $stagedParent->getServiceRequest();
+      }
       if ($node !== NULL && $this->replySenderMatchesReporter($node, $message)) {
         $this->appendReplyRemark($node, $message, $settings);
+        // Keep the conversation chain alive for the NEXT round: record the
+        // reply's ids on the promoted mail so a follow-up reply to any
+        // message of this thread still resolves (idempotent).
+        if ($stagedParent !== NULL && $stagedParent->getState() === InboundMail::STATE_PROMOTED) {
+          $this->recordThreadIds($stagedParent, $message);
+        }
         // A reply to a promoted request also consumes a flood slot, so the
         // rate limit applies uniformly to new mails and both reply paths.
         $this->flood->register(self::FLOOD_NAME, $settings['flood_window'], $floodId);
@@ -253,9 +269,28 @@ class MailIngestOrchestrator {
       }
     }
 
+    // AI suggestion gate: only set pending and enqueue for newly STAGED mails
+    // (not discarded), and only when the suggestion service reports it could
+    // ever run (cheap static check: module setting + service wired). The queue
+    // worker will re-check all runtime gates before making any API call.
+    $willSuggest = $state === InboundMail::STATE_STAGED
+      && $this->suggestionService !== NULL
+      && method_exists($this->suggestionService, 'couldRun')
+      && $this->suggestionService->couldRun();
+
+    if ($willSuggest) {
+      $values['suggestion_status'] = InboundMail::SUGGESTION_PENDING;
+    }
+
     /** @var \Drupal\markaspot_mail_inbound\Entity\InboundMail $mail */
     $mail = $this->entityTypeManager->getStorage('inbound_mail')->create($values);
     $mail->save();
+
+    if ($willSuggest) {
+      $this->queueFactory->get('markaspot_mail_inbound_suggest')
+        ->createItem(['mail_id' => (int) $mail->id()]);
+    }
+
     return $mail;
   }
 
@@ -431,14 +466,14 @@ class MailIngestOrchestrator {
     }
 
     $replyBody = $this->extractBody($message, $settings);
-    $combined = $mail->getBody();
-    // Plain-text separator stored on the staged mail body. Not translated:
-    // this is internal staging content, and the orchestrator is a plain
-    // service (no StringTranslationTrait).
-    $combined .= "\n\n---\nReply from " . $message->fromAddress . ":\n" . $replyBody;
-    if (mb_strlen($combined) > $settings['max_body_length']) {
-      $combined = mb_substr($combined, 0, $settings['max_body_length']);
-    }
+    // Shared conversation-log format (also used by InboundMailReplyService
+    // for staff and auto replies). Not translated: internal staging content.
+    $combined = MailTextUtils::appendConversationEntry(
+      $mail->getBody(),
+      'Reply from ' . $message->fromAddress,
+      $replyBody,
+      (int) $settings['max_body_length']
+    );
 
     $threadIds = $existing;
     foreach (array_merge([$message->messageId], $message->getThreadingIds()) as $id) {
@@ -451,6 +486,30 @@ class MailIngestOrchestrator {
     $mail->set('body', ['value' => $combined, 'format' => 'plain_text']);
     $mail->set('thread_message_ids', $threadIds);
     $mail->save();
+  }
+
+  /**
+   * Records a reply's Message-IDs on a mail's thread chain (idempotent).
+   *
+   * Used for the promoted-mail case (#482): the conversation continues on
+   * the node (internal remarks), but the thread chain stays on the
+   * inbound_mail so every future reply — to the citizen's own mails or to
+   * OUR outbound ones — keeps resolving to this conversation.
+   */
+  protected function recordThreadIds(InboundMail $mail, InboundMessage $message): void {
+    $threadIds = $mail->getThreadMessageIds();
+    $added = FALSE;
+    foreach (array_merge([$message->messageId], $message->getThreadingIds()) as $id) {
+      $id = trim($id);
+      if ($id !== '' && !in_array($id, $threadIds, TRUE)) {
+        $threadIds[] = mb_substr($id, 0, 998);
+        $added = TRUE;
+      }
+    }
+    if ($added) {
+      $mail->set('thread_message_ids', $threadIds);
+      $mail->save();
+    }
   }
 
   /**
@@ -491,22 +550,15 @@ class MailIngestOrchestrator {
    * Appends a reply as internal remark paragraph to the promoted request.
    *
    * Unchanged behavior from the first cut. Idempotent via a hidden, stable
-   * marker derived from the reply's own Message-ID.
+   * marker derived from the reply's own Message-ID. The paragraph creation
+   * itself (including the degrade-gracefully guards) lives in the shared
+   * InternalRemarkWriter, which InboundMailPromoter also uses to preserve a
+   * staged conversation log at promotion.
    */
   protected function appendReplyRemark(NodeInterface $node, InboundMessage $message, array $settings): bool {
-    if (!$node->hasField('field_internal_remark')) {
-      $this->logger->notice('Node @nid has no field_internal_remark; reply recorded via event only.', ['@nid' => $node->id()]);
-      return FALSE;
-    }
     try {
-      $bundleInfo = $this->entityTypeManager->getStorage('paragraphs_type')->load('internal_remark');
-      if ($bundleInfo === NULL) {
-        $this->logger->notice('Paragraph bundle internal_remark missing; reply to node @nid recorded via event only.', ['@nid' => $node->id()]);
-        return FALSE;
-      }
-
       $marker = $this->replyRemarkMarker($message->messageId);
-      if ($marker !== '' && $this->nodeHasReplyMarker($node, $marker)) {
+      if ($marker !== '' && $node->hasField('field_internal_remark') && $this->nodeHasReplyMarker($node, $marker)) {
         $this->logger->info('Reply @marker already recorded on node @nid; skipping duplicate append.', [
           '@marker' => $marker,
           '@nid' => $node->id(),
@@ -519,30 +571,7 @@ class MailIngestOrchestrator {
       if ($marker !== '') {
         $remark .= "\n\n" . $marker;
       }
-
-      /** @var \Drupal\paragraphs\ParagraphInterface $paragraph */
-      $paragraph = $this->entityTypeManager->getStorage('paragraph')->create([
-        'type' => 'internal_remark',
-        'langcode' => $node->language()->getId(),
-      ]);
-      $paragraph->set('field_internal_remark_text', [
-        'value' => $remark,
-        'format' => 'plain_text',
-      ]);
-      if ($paragraph->hasField('field_author')) {
-        // Anonymous: the remark originates from the citizen, not from staff.
-        $paragraph->set('field_author', 0);
-      }
-      $paragraph->save();
-
-      $current = $node->get('field_internal_remark')->getValue();
-      $current[] = [
-        'target_id' => $paragraph->id(),
-        'target_revision_id' => $paragraph->getRevisionId(),
-      ];
-      $node->set('field_internal_remark', $current);
-      $node->save();
-      return TRUE;
+      return $this->remarkWriter->append($node, $remark);
     }
     catch (\Throwable $e) {
       $this->logger->error('Failed to append reply remark to node @nid: @message', [

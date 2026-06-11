@@ -148,6 +148,44 @@ class MailInboundSettingsForm extends ConfigFormBase {
       '#required' => TRUE,
     ];
 
+    $form['return_channel'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Return channel'),
+    ];
+    $form['return_channel']['auto_reply_missing_location'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Auto-reply when a promoted email report has no location'),
+      '#description' => $this->t('After a staged mail is promoted without coordinates, automatically ask the citizen (and only the verified sender) for the exact location, including the request id. The reply threads into their original conversation. Degrades silently when outbound mail is unavailable.'),
+      '#default_value' => $config->get('auto_reply_missing_location') ?? TRUE,
+    ];
+
+    $form['ai_suggestions'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('AI suggestions'),
+      '#description' => $this->t('When enabled and at least one AI service (markaspot_vision or markaspot_ai) is available, each staged mail receives a category suggestion. The suggestion is visible in the triage inbox; moderators can accept or override it. Auto-promote is separately gated by the confidence threshold and is off by default.'),
+    ];
+    $form['ai_suggestions']['ai_suggestions_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Enable AI category suggestions for staged mails'),
+      '#description' => $this->t('Requires markaspot_vision (image mails) or markaspot_ai (text mails). When neither service is available this setting has no effect.'),
+      '#default_value' => $config->get('ai_suggestions_enabled') ?? TRUE,
+    ];
+    $form['ai_suggestions']['auto_promote_enabled'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Auto-promote when AI confidence meets the threshold (default: OFF)'),
+      '#description' => $this->t('When enabled, a staged mail is automatically promoted to a service request when the AI text-classification confidence is at or above the threshold AND the suggested category is promotable (has a service code). Vision-path suggestions (images only, no confidence score) are never auto-promoted.'),
+      '#default_value' => $config->get('auto_promote_enabled') ?? FALSE,
+    ];
+    $form['ai_suggestions']['auto_promote_confidence_threshold'] = [
+      '#type' => 'number',
+      '#title' => $this->t('Auto-promote confidence threshold (0–1)'),
+      '#default_value' => $config->get('auto_promote_confidence_threshold') ?? 0.85,
+      '#min' => 0,
+      '#max' => 1,
+      '#step' => 0.01,
+      '#description' => $this->t('A confidence score at or above this value triggers auto-promotion. 0.85 is a conservative default; raise it to require higher certainty.'),
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -192,6 +230,10 @@ class MailInboundSettingsForm extends ConfigFormBase {
       ->set('max_body_length', (int) $form_state->getValue('max_body_length'))
       ->set('flood_limit', (int) $form_state->getValue('flood_limit'))
       ->set('flood_window', (int) $form_state->getValue('flood_window'))
+      ->set('auto_reply_missing_location', (bool) $form_state->getValue('auto_reply_missing_location'))
+      ->set('ai_suggestions_enabled', (bool) $form_state->getValue('ai_suggestions_enabled'))
+      ->set('auto_promote_enabled', (bool) $form_state->getValue('auto_promote_enabled'))
+      ->set('auto_promote_confidence_threshold', (float) $form_state->getValue('auto_promote_confidence_threshold'))
       ->save();
 
     parent::submitForm($form, $form_state);

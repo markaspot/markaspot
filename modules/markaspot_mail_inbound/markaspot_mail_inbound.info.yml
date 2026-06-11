@@ -12,6 +12,9 @@ dependencies:
   - drupal:options
   - field_permissions:field_permissions
   - group:group
+  # Required by the shipped jsonapi_extras.jsonapi_resource_config that
+  # disables the inbound_mail JSON:API resource (config/install).
+  - jsonapi_extras:jsonapi_extras
   - markaspot:service_request
   - markaspot:markaspot_open311
   - markaspot:markaspot_request_id

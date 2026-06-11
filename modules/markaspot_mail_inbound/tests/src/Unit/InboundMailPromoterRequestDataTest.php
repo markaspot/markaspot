@@ -13,6 +13,7 @@ use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Utility\Token;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
+use Drupal\markaspot_mail_inbound\Service\InternalRemarkWriter;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -22,8 +23,10 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  *
  * Covers the three load-bearing pieces of the promotion contract that do not
  * need a saved entity:
- * - category tid -> service_code derivation (the promotion gate maps through
- *   the term's field_service_code, which the processor then re-resolves),
+ * - category tid -> service_code derivation (coded path: the processor maps
+ *   the code back to the jurisdiction-scoped term for field_category; codeless
+ *   path: resolveServiceCode returns NULL and the promoter sets field_category
+ *   directly after the processor call),
  * - the description = subject + body assembly (subject must NOT become title),
  * - the trivial address extraction (simple regex, NO NER).
  *
@@ -51,6 +54,7 @@ class InboundMailPromoterRequestDataTest extends UnitTestCase {
       $this->createMock(ConfigFactoryInterface::class),
       $this->createMock(FileSystemInterface::class),
       $this->createMock(Token::class),
+      $this->createMock(InternalRemarkWriter::class),
       NULL,
       NULL,
     );
@@ -83,7 +87,10 @@ class InboundMailPromoterRequestDataTest extends UnitTestCase {
   }
 
   /**
-   * A term without a service code resolves to NULL (promotion is blocked).
+   * A term without a service code resolves to NULL (codeless path is used).
+   *
+   * The promoter then sets field_category directly on the node after the
+   * processor call rather than via the service_code mapping.
    *
    * @covers ::resolveServiceCode
    */

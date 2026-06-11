@@ -9,3 +9,7 @@ allowed_mime_types:
 max_body_length: 10000
 flood_limit: 10
 flood_window: 3600
+auto_reply_missing_location: true
+ai_suggestions_enabled: true
+auto_promote_enabled: false
+auto_promote_confidence_threshold: 0.85

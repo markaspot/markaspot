@@ -1,0 +1,11 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - markaspot_mail_inbound
+id: inbound_mail--inbound_mail
+disabled: true
+path: inbound_mail/inbound_mail
+resourceType: inbound_mail--inbound_mail
+resourceFields: {  }

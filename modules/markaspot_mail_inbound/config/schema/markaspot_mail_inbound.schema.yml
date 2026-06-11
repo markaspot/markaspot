@@ -29,6 +29,18 @@ markaspot_mail_inbound.settings:
     flood_window:
       type: integer
       label: 'Flood window in seconds'
+    auto_reply_missing_location:
+      type: boolean
+      label: 'Auto-reply asking for the location when a promoted email report has no coordinates'
+    ai_suggestions_enabled:
+      type: boolean
+      label: 'Enable AI category suggestions for staged inbound mails'
+    auto_promote_enabled:
+      type: boolean
+      label: 'Automatically promote a staged mail when the AI suggestion confidence meets the threshold'
+    auto_promote_confidence_threshold:
+      type: float
+      label: 'Minimum AI confidence score (0–1) required for auto-promotion'
 
 markaspot_mail_inbound.mailbox:
   type: mapping

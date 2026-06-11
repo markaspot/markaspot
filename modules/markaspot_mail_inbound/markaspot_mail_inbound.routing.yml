@@ -18,6 +18,9 @@ markaspot_mail_inbound.promote:
         type: 'entity:inbound_mail'
   requirements:
     _permission: 'triage inbound mail'
+    # Jurisdiction-scoped (#482): the entity access handler additionally
+    # requires membership in the mail's jurisdiction (global admins bypass).
+    _entity_access: 'inbound_mail.update'
     inbound_mail: \d+
 
 markaspot_mail_inbound.discard:
@@ -32,4 +35,108 @@ markaspot_mail_inbound.discard:
         type: 'entity:inbound_mail'
   requirements:
     _permission: 'triage inbound mail'
+    _entity_access: 'inbound_mail.update'
     inbound_mail: \d+
+
+# Dashboard REST API (#482). Custom controller, NOT JSON:API — inbound_mail
+# carries unredacted citizen content; the JSON:API resource core would derive
+# for the entity type is disabled by the shipped
+# jsonapi_extras.jsonapi_resource_config.inbound_mail--inbound_mail config,
+# so these routes are the entity's only HTTP surface.
+# Mutations follow the markaspot_group CSRF convention
+# (_csrf_request_header_token + cookie auth); entity access is re-checked
+# per entity in the controller on top of the route permission.
+markaspot_mail_inbound.api_list:
+  path: '/api/inbound-mail'
+  defaults:
+    _controller: '\Drupal\markaspot_mail_inbound\Controller\InboundMailApiController::list'
+    _title: 'Inbound mail triage list'
+  methods: [GET]
+  requirements:
+    _permission: 'triage inbound mail'
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+
+markaspot_mail_inbound.api_detail:
+  path: '/api/inbound-mail/{inbound_mail}'
+  defaults:
+    _controller: '\Drupal\markaspot_mail_inbound\Controller\InboundMailApiController::detail'
+    _title: 'Inbound mail detail'
+  methods: [GET]
+  requirements:
+    _permission: 'triage inbound mail'
+    inbound_mail: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+    parameters:
+      inbound_mail:
+        type: 'entity:inbound_mail'
+
+markaspot_mail_inbound.api_attachment:
+  path: '/api/inbound-mail/{inbound_mail}/attachment/{fid}'
+  defaults:
+    _controller: '\Drupal\markaspot_mail_inbound\Controller\InboundMailApiController::attachment'
+    _title: 'Inbound mail attachment'
+  methods: [GET]
+  requirements:
+    _permission: 'triage inbound mail'
+    inbound_mail: \d+
+    fid: \d+
+  options:
+    _auth: ['cookie']
+    parameters:
+      inbound_mail:
+        type: 'entity:inbound_mail'
+
+markaspot_mail_inbound.api_promote:
+  path: '/api/inbound-mail/{inbound_mail}/promote'
+  defaults:
+    _controller: '\Drupal\markaspot_mail_inbound\Controller\InboundMailApiController::promote'
+    _title: 'Promote inbound mail'
+  methods: [POST]
+  requirements:
+    _permission: 'triage inbound mail'
+    _csrf_request_header_token: 'TRUE'
+    inbound_mail: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+    parameters:
+      inbound_mail:
+        type: 'entity:inbound_mail'
+
+markaspot_mail_inbound.api_discard:
+  path: '/api/inbound-mail/{inbound_mail}/discard'
+  defaults:
+    _controller: '\Drupal\markaspot_mail_inbound\Controller\InboundMailApiController::discard'
+    _title: 'Discard inbound mail'
+  methods: [POST]
+  requirements:
+    _permission: 'triage inbound mail'
+    _csrf_request_header_token: 'TRUE'
+    inbound_mail: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+    parameters:
+      inbound_mail:
+        type: 'entity:inbound_mail'
+
+markaspot_mail_inbound.api_reply:
+  path: '/api/inbound-mail/{inbound_mail}/reply'
+  defaults:
+    _controller: '\Drupal\markaspot_mail_inbound\Controller\InboundMailApiController::reply'
+    _title: 'Reply to inbound mail'
+  methods: [POST]
+  requirements:
+    _permission: 'triage inbound mail'
+    _csrf_request_header_token: 'TRUE'
+    inbound_mail: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+    parameters:
+      inbound_mail:
+        type: 'entity:inbound_mail'

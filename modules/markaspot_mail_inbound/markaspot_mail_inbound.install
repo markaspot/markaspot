@@ -13,13 +13,15 @@
 
 declare(strict_types=1);
 
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\markaspot_mail_inbound\Entity\InboundMail;
+
 /**
  * Implements hook_requirements().
  *
  * Surfaces the active fidelity level of the email intake (the discoverability
  * promise from the rebuild design): whether IMAP is configured, whether the
- * geocoder is available, and that AI auto-categorization is not enabled in
- * Phase 1 (manual triage). Runtime phase only.
+ * geocoder is available, and the AI suggestion status. Runtime phase only.
  */
 function markaspot_mail_inbound_requirements(string $phase): array {
   if ($phase !== 'runtime') {
@@ -28,14 +30,21 @@ function markaspot_mail_inbound_requirements(string $phase): array {
 
   $requirements = [];
 
+  // The individual checks live in the shared fidelity service so the
+  // dashboard API's "fidelity" block and this report never drift (#482).
+  /** @var \Drupal\markaspot_mail_inbound\Service\MailIntakeFidelity $fidelity */
+  $fidelity = \Drupal::service('markaspot_mail_inbound.fidelity');
+
   // IMAP mailbox configuration.
   /** @var \Drupal\markaspot_mail_inbound\Service\MailboxResolver $resolver */
   $resolver = \Drupal::service('markaspot_mail_inbound.mailbox_resolver');
   $mailboxes = $resolver->getMailboxes(TRUE);
-  $withImap = array_filter(
-    $mailboxes,
-    static fn(array $mailbox): bool => !empty($mailbox['imap']['host']) && !empty($mailbox['imap']['username'])
-  );
+  $withImap = $fidelity->imapConfigured()
+    ? array_filter(
+      $mailboxes,
+      static fn(array $mailbox): bool => !empty($mailbox['imap']['host']) && !empty($mailbox['imap']['username'])
+    )
+    : [];
 
   if ($mailboxes === []) {
     $requirements['markaspot_mail_inbound_imap'] = [
@@ -74,19 +83,51 @@ function markaspot_mail_inbound_requirements(string $phase): array {
     'severity' => REQUIREMENT_OK,
   ];
 
-  // AI auto-categorization status (Phase 1: manual triage only).
-  $requirements['markaspot_mail_inbound_categorization'] = [
-    'title' => t('Mark-a-Spot inbound mail: categorization'),
-    'value' => t('Manual triage (AI auto-categorization not enabled)'),
-    'description' => t('Staged emails are categorized and promoted manually in the triage inbox. AI auto-categorization is a later additive phase.'),
-    'severity' => REQUIREMENT_OK,
+  // AI suggestion status (Phase 2: suggest-first, auto-promote default off).
+  /** @var \Drupal\markaspot_mail_inbound\Service\MailIntakeFidelity $fidelity */
+  $aiAvailable = $fidelity->aiAvailable();
+  $settings = \Drupal::config('markaspot_mail_inbound.settings');
+  $autoPromote = (bool) ($settings->get('auto_promote_enabled') ?? FALSE);
+  if ($aiAvailable) {
+    $requirements['markaspot_mail_inbound_categorization'] = [
+      'title' => t('Mark-a-Spot inbound mail: AI categorization'),
+      'value' => $autoPromote
+        ? t('AI suggestions active (auto-promote ON, threshold @threshold)', [
+          '@threshold' => $settings->get('auto_promote_confidence_threshold') ?? 0.85,
+        ])
+        : t('AI suggestions active (auto-promote OFF – manual promotion required)'),
+      'description' => t('Staged emails receive an AI category suggestion. Moderators see the suggestion in the triage inbox. Auto-promote is separately gated by the confidence threshold and requires a promotable (coded) category.'),
+      'severity' => REQUIREMENT_OK,
+    ];
+  }
+  else {
+    $requirements['markaspot_mail_inbound_categorization'] = [
+      'title' => t('Mark-a-Spot inbound mail: AI categorization'),
+      'value' => t('AI suggestions inactive'),
+      'description' => t('AI category suggestions are disabled (ai_suggestions_enabled=false) or no AI service is wired (markaspot_vision / markaspot_ai). Staged emails are categorized manually.'),
+      'severity' => REQUIREMENT_INFO,
+    ];
+  }
+
+  // Outbound return channel (#482): when no mail plugin is configured the
+  // reply endpoints degrade to record-only ("in-system notes only, no send").
+  $hasOutbound = $fidelity->outboundAvailable();
+  $requirements['markaspot_mail_inbound_outbound'] = [
+    'title' => t('Mark-a-Spot inbound mail: return channel'),
+    'value' => $hasOutbound
+      ? t('Outbound mail available (replies and auto-replies are sent)')
+      : t('Outbound mail unavailable (replies are recorded as in-system notes only)'),
+    'description' => $hasOutbound
+      ? t('Staff replies, the missing-location auto-reply and status notifications to email citizens go out over the configured mail system.')
+      : t('No default mail plugin is configured, so the triage reply channel records replies on the conversation log without sending. Configure the mail system (e.g. PHPMailer SMTP) to enable the return channel.'),
+    'severity' => $hasOutbound ? REQUIREMENT_OK : REQUIREMENT_WARNING,
   ];
 
   // Private filesystem: staged citizen photos must not be publicly reachable
   // before a moderator promotes the mail (review HIGH 1). Without the private
   // filesystem they are stored in a public subdir only protected by an
   // .htaccess deny rule, which not every web server honors.
-  $hasPrivate = \Drupal::service('stream_wrapper_manager')->isValidScheme('private');
+  $hasPrivate = $fidelity->privateFilesystemConfigured();
   $requirements['markaspot_mail_inbound_private_files'] = [
     'title' => t('Mark-a-Spot inbound mail: staged attachment privacy'),
     'value' => $hasPrivate
@@ -98,43 +139,15 @@ function markaspot_mail_inbound_requirements(string $phase): array {
     'severity' => $hasPrivate ? REQUIREMENT_OK : REQUIREMENT_WARNING,
   ];
 
-  // Codeless categories cannot be promoted: the promote form filters to
-  // categories carrying a field_service_code (review MEDIUM 5).
-  $codelessCount = 0;
-  try {
-    $termStorage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
-    $allIds = $termStorage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('vid', 'service_category')
-      ->execute();
-    if ($allIds !== []) {
-      $codedIds = $termStorage->getQuery()
-        ->accessCheck(FALSE)
-        ->condition('vid', 'service_category')
-        ->exists('field_service_code')
-        ->execute();
-      $codelessCount = count($allIds) - count($codedIds);
-    }
-  }
-  catch (\Throwable) {
-    // Taxonomy / field not available; leave the count at zero.
-  }
-  if ($codelessCount > 0) {
-    $requirements['markaspot_mail_inbound_codeless_categories'] = [
-      'title' => t('Mark-a-Spot inbound mail: promotable categories'),
-      'value' => t('@count categories have no service code', ['@count' => $codelessCount]),
-      'description' => t('@count service categories have no service code and cannot receive promoted email reports. Assign a field_service_code to every category that should be selectable when promoting a staged mail.', ['@count' => $codelessCount]),
-      'severity' => REQUIREMENT_WARNING,
-    ];
-  }
-
-  // Permission scoping caveat (review MEDIUM 5): the "triage inbound mail"
-  // permission is global in Phase 1, not jurisdiction-scoped.
+  // Permission scoping: resolved in Phase 2 (#482). The
+  // InboundMailAccessControlHandler scopes view/update/delete on a mail to
+  // members of its jurisdiction; the dashboard API additionally scopes its
+  // collection query. Global admins (uid 1 / administrator) bypass.
   $requirements['markaspot_mail_inbound_permission_scope'] = [
     'title' => t('Mark-a-Spot inbound mail: permission scope'),
-    'value' => t('Triage permission is global (not yet jurisdiction-scoped)'),
-    'description' => t('The "triage inbound mail" permission is NOT jurisdiction-scoped in Phase 1. A user granted it can see and promote every jurisdiction\'s staged mail, including unredacted citizen content. Do not grant it to staff who should only handle their own jurisdiction\'s mail until per-jurisdiction scoping (Phase 2) lands.'),
-    'severity' => REQUIREMENT_WARNING,
+    'value' => t('Triage access is jurisdiction-scoped'),
+    'description' => t('A "triage inbound mail" holder can only see and act on mail of jurisdictions they are a member of (plus mail without a jurisdiction). Site administrators see everything.'),
+    'severity' => REQUIREMENT_INFO,
   ];
 
   return $requirements;
@@ -237,4 +250,161 @@ function _markaspot_mail_inbound_install_inbound_mail_entity(): void {
 function markaspot_mail_inbound_update_11901(): string {
   _markaspot_mail_inbound_install_inbound_mail_entity();
   return (string) t('Installed the inbound_mail staging entity schema.');
+}
+
+/**
+ * Enable the missing-location auto-reply by default (Phase 2, #482).
+ *
+ * Fresh installs get the flag from config/install; sites that installed the
+ * Phase 1 cut receive the documented default (TRUE) here. Operators can turn
+ * it off on the inbound mail settings form.
+ */
+function markaspot_mail_inbound_update_11902(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_mail_inbound.settings');
+  if ($config->get('auto_reply_missing_location') === NULL) {
+    $config->set('auto_reply_missing_location', TRUE)->save(TRUE);
+  }
+  return (string) t('Enabled the missing-location auto-reply (default).');
+}
+
+/**
+ * Disable the inbound_mail JSON:API resource on existing installs (#482).
+ *
+ * The inbound_mail entity carries unredacted citizen content; its only HTTP
+ * surface is the custom triage API. Fresh installs get the disabled
+ * jsonapi_extras.jsonapi_resource_config from config/install; existing
+ * installs receive it here. Idempotent: an existing resource config (however
+ * configured) is left untouched.
+ */
+function markaspot_mail_inbound_update_11903(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('jsonapi_extras')) {
+    // jsonapi_extras is a profile guarantee (and now an info.yml dependency),
+    // but never break updb over a missing optional surface tweak.
+    return (string) t('jsonapi_extras is not installed; nothing to do.');
+  }
+  $storage = \Drupal::entityTypeManager()->getStorage('jsonapi_resource_config');
+  if ($storage->load('inbound_mail--inbound_mail') !== NULL) {
+    return (string) t('The inbound_mail JSON:API resource config already exists; left untouched.');
+  }
+  $storage->create([
+    'id' => 'inbound_mail--inbound_mail',
+    'disabled' => TRUE,
+    'path' => 'inbound_mail/inbound_mail',
+    'resourceType' => 'inbound_mail--inbound_mail',
+    'resourceFields' => [],
+  ])->save();
+  return (string) t('Disabled the inbound_mail JSON:API resource.');
+}
+
+/**
+ * Add AI suggestion fields to inbound_mail and seed the new settings (#482).
+ *
+ * Installs four new base fields:
+ *   - suggested_category (entity_reference → taxonomy_term)
+ *   - suggestion_confidence (float, nullable)
+ *   - suggestion_status (list_string: none|pending|done|failed|skipped)
+ *   - suggested_address (string, nullable)
+ *
+ * Also seeds the three new config keys for existing installs (fresh installs
+ * receive them from config/install):
+ *   - ai_suggestions_enabled  (default TRUE)
+ *   - auto_promote_enabled    (default FALSE)
+ *   - auto_promote_confidence_threshold (default 0.85)
+ */
+function markaspot_mail_inbound_update_11904(): string {
+  $updateManager = \Drupal::entityDefinitionUpdateManager();
+
+  $fields = [];
+
+  // suggested_category: entity_reference → taxonomy_term.
+  $fields['suggested_category'] = BaseFieldDefinition::create('entity_reference')
+    ->setLabel(t('Suggested category'))
+    ->setDescription(t('The AI-suggested service category term.'))
+    ->setSetting('target_type', 'taxonomy_term')
+    ->setSetting('handler', 'default');
+
+  // suggestion_confidence: float (nullable).
+  $fields['suggestion_confidence'] = BaseFieldDefinition::create('float')
+    ->setLabel(t('Suggestion confidence'))
+    ->setDescription(t('Confidence score (0–1) for the AI category suggestion.'));
+
+  // suggestion_status: list_string with default "none".
+  $fields['suggestion_status'] = BaseFieldDefinition::create('list_string')
+    ->setLabel(t('Suggestion status'))
+    ->setDescription(t('Lifecycle of the AI categorization attempt.'))
+    ->setSetting('allowed_values', [
+      InboundMail::SUGGESTION_NONE => t('None'),
+      InboundMail::SUGGESTION_PENDING => t('Pending'),
+      InboundMail::SUGGESTION_DONE => t('Done'),
+      InboundMail::SUGGESTION_FAILED => t('Failed'),
+      InboundMail::SUGGESTION_SKIPPED => t('Skipped'),
+    ])
+    ->setDefaultValue(InboundMail::SUGGESTION_NONE);
+
+  // suggested_address: plain string (nullable).
+  $fields['suggested_address'] = BaseFieldDefinition::create('string')
+    ->setLabel(t('Suggested address'))
+    ->setDescription(t('NER-extracted address from AI text classification.'))
+    ->setSetting('max_length', 500);
+
+  $installed = [];
+  foreach ($fields as $name => $definition) {
+    if ($updateManager->getFieldStorageDefinition($name, 'inbound_mail') === NULL) {
+      $updateManager->installFieldStorageDefinition($name, 'inbound_mail', 'markaspot_mail_inbound', $definition);
+      $installed[] = $name;
+    }
+  }
+
+  // Seed the three new config keys for existing installs. Fresh installs
+  // already receive them from config/install/markaspot_mail_inbound.settings.yml.
+  $config = \Drupal::configFactory()->getEditable('markaspot_mail_inbound.settings');
+  $seeded = [];
+  if ($config->get('ai_suggestions_enabled') === NULL) {
+    $config->set('ai_suggestions_enabled', TRUE);
+    $seeded[] = 'ai_suggestions_enabled=true';
+  }
+  if ($config->get('auto_promote_enabled') === NULL) {
+    $config->set('auto_promote_enabled', FALSE);
+    $seeded[] = 'auto_promote_enabled=false';
+  }
+  if ($config->get('auto_promote_confidence_threshold') === NULL) {
+    $config->set('auto_promote_confidence_threshold', 0.85);
+    $seeded[] = 'auto_promote_confidence_threshold=0.85';
+  }
+  if ($seeded !== []) {
+    $config->save(TRUE);
+  }
+
+  $parts = [];
+  if ($installed !== []) {
+    $parts[] = 'Installed fields: ' . implode(', ', $installed) . '.';
+  }
+  if ($seeded !== []) {
+    $parts[] = 'Seeded config: ' . implode(', ', $seeded) . '.';
+  }
+  return $parts !== []
+    ? implode(' ', $parts)
+    : (string) t('AI suggestion fields and config already installed; nothing to do.');
+}
+
+/**
+ * Add suggested_description field to inbound_mail (#482).
+ *
+ * Stores the AI-generated neutral problem description that replaces the raw
+ * mail text in the promoted node's public body. When the field is non-empty,
+ * the promoter uses it as the description; otherwise it falls back to the
+ * original mail text (today's behavior). The citizen's exact wording is ALWAYS
+ * preserved as an internal remark on promotion regardless of which path was
+ * taken.
+ */
+function markaspot_mail_inbound_update_11905(): string {
+  $updateManager = \Drupal::entityDefinitionUpdateManager();
+  if ($updateManager->getFieldStorageDefinition('suggested_description', 'inbound_mail') !== NULL) {
+    return (string) t('The suggested_description field already exists; nothing to do.');
+  }
+  $definition = BaseFieldDefinition::create('string_long')
+    ->setLabel(t('Suggested description'))
+    ->setDescription(t('AI-generated neutral problem description for the public report, without salutation, sign-off, names or other PII. Used as the promoted node body when non-empty; falls back to the original mail text.'));
+  $updateManager->installFieldStorageDefinition('suggested_description', 'inbound_mail', 'markaspot_mail_inbound', $definition);
+  return (string) t('Installed the suggested_description field on inbound_mail.');
 }

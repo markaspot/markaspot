@@ -20,6 +20,15 @@ services:
   markaspot_mail_inbound.spam_filter:
     class: Drupal\markaspot_mail_inbound\Service\SpamHeuristicFilter
 
+  # ONE guarded internal_remark paragraph mechanism, shared by the
+  # orchestrator (citizen replies arriving AFTER promotion) and the promoter
+  # (the staged conversation log preserved AT promotion).
+  markaspot_mail_inbound.internal_remark_writer:
+    class: Drupal\markaspot_mail_inbound\Service\InternalRemarkWriter
+    arguments:
+      - '@entity_type.manager'
+      - '@logger.channel.markaspot_mail_inbound'
+
   markaspot_mail_inbound.orchestrator:
     class: Drupal\markaspot_mail_inbound\Service\MailIngestOrchestrator
     arguments:
@@ -31,6 +40,9 @@ services:
       - '@file_system'
       - '@stream_wrapper_manager'
       - '@logger.channel.markaspot_mail_inbound'
+      - '@markaspot_mail_inbound.internal_remark_writer'
+      - '@queue'
+      - '@?markaspot_mail_inbound.category_suggestion'
 
   markaspot_mail_inbound.promoter:
     class: Drupal\markaspot_mail_inbound\Service\InboundMailPromoter
@@ -43,5 +55,89 @@ services:
       - '@config.factory'
       - '@file_system'
       - '@token'
+      - '@markaspot_mail_inbound.internal_remark_writer'
       - '@?markaspot_open311.processor'
       - '@?markaspot_geocoder.geocoder'
+
+  # Shared fidelity / degradation checks: hook_requirements() and the
+  # dashboard API's "fidelity" block consume the same answers (#482).
+  markaspot_mail_inbound.fidelity:
+    class: Drupal\markaspot_mail_inbound\Service\MailIntakeFidelity
+    arguments:
+      - '@markaspot_mail_inbound.mailbox_resolver'
+      - '@config.factory'
+      - '@stream_wrapper_manager'
+      - '@?markaspot_mail_inbound.category_suggestion'
+
+  # One definition of "promotable category", shared by the admin promote
+  # form and the dashboard promote endpoint (#482).
+  markaspot_mail_inbound.category_repository:
+    class: Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository
+    arguments:
+      - '@entity_type.manager'
+
+  # The outbound return channel: staff/auto replies to the verified sender,
+  # threading-aware, recorded on the mail's conversation log (#482).
+  markaspot_mail_inbound.reply:
+    class: Drupal\markaspot_mail_inbound\Service\InboundMailReplyService
+    arguments:
+      - '@plugin.manager.mail'
+      - '@entity_type.manager'
+      - '@language_manager'
+      - '@config.factory'
+      - '@uuid'
+      - '@request_stack'
+      - '@markaspot_mail_inbound.mailbox_resolver'
+      - '@markaspot_mail_inbound.fidelity'
+      - '@logger.channel.markaspot_mail_inbound'
+
+  # Threads status notifications for email-origin citizens into their
+  # original mail conversation; backs hook_mail_alter() (#482).
+  markaspot_mail_inbound.outbound_threader:
+    class: Drupal\markaspot_mail_inbound\Service\OutboundMailThreader
+    arguments:
+      - '@entity_type.manager'
+      - '@uuid'
+      - '@request_stack'
+      - '@logger.channel.markaspot_mail_inbound'
+
+  # Auto-reply asking the citizen for the location when a promoted email
+  # report is ungeolocated. Gated by settings:auto_reply_missing_location.
+  markaspot_mail_inbound.missing_location_auto_reply:
+    class: Drupal\markaspot_mail_inbound\EventSubscriber\MissingLocationAutoReplySubscriber
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@markaspot_mail_inbound.reply'
+      - '@logger.channel.markaspot_mail_inbound'
+    tags:
+      - { name: event_subscriber }
+
+  # Branded rendering for the return-channel keys. The tag is consumed by
+  # markaspot_mail's builder registry; when markaspot_mail is absent the
+  # tag is inert, the class is never instantiated and the container still
+  # compiles (replies then go out as plain hook_mail text).
+  markaspot_mail_inbound.builder.triage_reply:
+    class: Drupal\markaspot_mail_inbound\Mail\TriageReplyBuilder
+    arguments:
+      - '@logger.channel.markaspot_mail_inbound'
+    tags:
+      - { name: markaspot_mail.builder }
+
+  # AI category suggestion service. Decides vision vs text path, gates on
+  # module setting + tenant feature flag + token budget + service availability,
+  # and writes the result to the inbound_mail entity. All AI services are
+  # injected optionally so the module compiles and operates normally when they
+  # are absent. The suggestion worker and orchestrator consume this service.
+  markaspot_mail_inbound.category_suggestion:
+    class: Drupal\markaspot_mail_inbound\Service\MailCategorySuggestionService
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+      - '@markaspot_mail_inbound.category_repository'
+      - '@logger.channel.markaspot_mail_inbound'
+      - '@language_manager'
+      - '@?markaspot_vision.image_processing'
+      - '@?markaspot_ai.client'
+      - '@?markaspot_ai.token_tracking'
+      - '@?markaspot_nuxt.feature_flag_checker'

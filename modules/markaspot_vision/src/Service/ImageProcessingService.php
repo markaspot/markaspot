@@ -860,6 +860,11 @@ class ImageProcessingService {
   /**
    * Retrieves all leaf categories with their IDs and full paths.
    *
+   * Public so that markaspot_mail_inbound's MailCategorySuggestionService can
+   * reuse the same category list for text classification without duplicating
+   * this query. No other callers outside these two modules should use it
+   * directly; treat it as package-internal.
+   *
    * @param int|null $jurisdictionId
    *   Optional jurisdiction group ID to filter categories.
    *   Without jurisdiction, loads all categories (single-installation mode).
@@ -871,7 +876,7 @@ class ImageProcessingService {
    * @return array
    *   Array of leaf categories with tid, path, and label.
    */
-  private function getAllCategoriesHierarchical(?int $jurisdictionId = NULL, ?string $langcode = NULL): array {
+  public function getAllCategoriesHierarchical(?int $jurisdictionId = NULL, ?string $langcode = NULL): array {
     try {
       $vid = 'service_category';
       $properties = ['vid' => $vid, 'status' => 1];

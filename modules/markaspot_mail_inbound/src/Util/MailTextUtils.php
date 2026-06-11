@@ -13,6 +13,15 @@ namespace Drupal\markaspot_mail_inbound\Util;
 final class MailTextUtils {
 
   /**
+   * The marker that starts one appended conversation entry in a body log.
+   *
+   * ONE definition shared by the appender (appendConversationEntry()) and
+   * the extractors (extractOriginalMessage(), hasConversationEntries()), so
+   * the log format cannot drift apart between writing and reading.
+   */
+  private const CONVERSATION_SEPARATOR = "\n\n---\n";
+
+  /**
    * Decodes a MIME encoded-word header (RFC 2047) to UTF-8.
    *
    * @param string $value
@@ -122,6 +131,77 @@ final class MailTextUtils {
    */
   public static function normalizeMessageId(string $id): string {
     return trim($id, " \t\r\n<>");
+  }
+
+  /**
+   * Appends one conversation entry to a mail's plain-text body log.
+   *
+   * The staged mail's body is the conversation record: the original text plus
+   * every citizen reply (appended by MailIngestOrchestrator) and every staff
+   * or auto reply (appended by InboundMailReplyService). All appenders share
+   * this ONE format so the log stays uniform and parseable:
+   *
+   * @code
+   * <existing body>
+   *
+   * ---
+   * <label>:
+   * <entry>
+   * @endcode
+   *
+   * @param string $body
+   *   The current body log.
+   * @param string $label
+   *   The entry label, e.g. "Reply from citizen@example.org" or
+   *   "Staff reply (2026-06-10 12:00 UTC)". Plain text only.
+   * @param string $entry
+   *   The entry text (already normalized plain text).
+   * @param int $maxLength
+   *   The configured maximum body length; the combined log is truncated.
+   *
+   * @return string
+   *   The combined, length-capped body log.
+   */
+  public static function appendConversationEntry(string $body, string $label, string $entry, int $maxLength): string {
+    $combined = $body . self::CONVERSATION_SEPARATOR . $label . ":\n" . $entry;
+    if (mb_strlen($combined) > $maxLength) {
+      $combined = mb_substr($combined, 0, $maxLength);
+    }
+    return $combined;
+  }
+
+  /**
+   * Extracts the original citizen message from a conversation body log.
+   *
+   * The counterpart to appendConversationEntry(): returns everything BEFORE
+   * the first appended conversation entry, i.e. the text of the citizen's
+   * original mail. A log without appended entries is returned whole.
+   *
+   * @param string $log
+   *   The body log (original message plus zero or more appended entries).
+   *
+   * @return string
+   *   The trimmed original message; empty string for an empty log.
+   */
+  public static function extractOriginalMessage(string $log): string {
+    $pos = strpos($log, self::CONVERSATION_SEPARATOR);
+    if ($pos === FALSE) {
+      return trim($log);
+    }
+    return trim(substr($log, 0, $pos));
+  }
+
+  /**
+   * Checks whether a body log carries any appended conversation entries.
+   *
+   * @param string $log
+   *   The body log.
+   *
+   * @return bool
+   *   TRUE when at least one entry was appended after the original message.
+   */
+  public static function hasConversationEntries(string $log): bool {
+    return str_contains($log, self::CONVERSATION_SEPARATOR);
   }
 
   /**

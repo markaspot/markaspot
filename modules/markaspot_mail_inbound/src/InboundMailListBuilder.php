@@ -54,6 +54,13 @@ class InboundMailListBuilder extends EntityListBuilder {
    */
   public function load(): array {
     $entities = parent::load();
+    // Jurisdiction scoping (#482): a content entity query's accessCheck(TRUE)
+    // does not consult the entity access handler for inbound_mail, so rows
+    // are filtered here. Global admins keep the full list; a jur-scoped
+    // triage user only sees their own jurisdictions' mail (plus unscoped
+    // mail). The pager may under-fill a page for scoped users; the scoped
+    // surface of record is the dashboard API, which scopes its query.
+    $entities = array_filter($entities, static fn(EntityInterface $mail): bool => $mail->access('view'));
     // Stable order: staged mails (the actionable inbox) before promoted /
     // discarded ones, then by recency.
     uasort($entities, static function (EntityInterface $a, EntityInterface $b): int {

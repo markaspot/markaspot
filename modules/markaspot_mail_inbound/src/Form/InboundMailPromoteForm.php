@@ -10,6 +10,7 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
+use Drupal\markaspot_mail_inbound\Service\PromotableCategoryRepository;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -29,6 +30,7 @@ class InboundMailPromoteForm extends FormBase {
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManager,
     protected InboundMailPromoter $promoter,
+    protected PromotableCategoryRepository $categoryRepository,
   ) {
   }
 
@@ -39,6 +41,7 @@ class InboundMailPromoteForm extends FormBase {
     return new static(
       $container->get('entity_type.manager'),
       $container->get('markaspot_mail_inbound.promoter'),
+      $container->get('markaspot_mail_inbound.category_repository'),
     );
   }
 
@@ -83,7 +86,7 @@ class InboundMailPromoteForm extends FormBase {
 
     $options = $this->categoryOptions($inbound_mail->getJurisdictionId());
     if ($options === []) {
-      $this->messenger()->addWarning($this->t('No service categories with a service code are available for this jurisdiction. Configure categories before promoting.'));
+      $this->messenger()->addWarning($this->t('No service categories are available for this jurisdiction. Configure service categories before promoting.'));
     }
 
     $form['category_tid'] = [
@@ -147,11 +150,8 @@ class InboundMailPromoteForm extends FormBase {
   /**
    * Builds the category select options scoped to a jurisdiction.
    *
-   * Only categories that carry a field_service_code are offered (the code is
-   * the promotion gate the processor maps against). Root-jurisdiction
-   * inheritance is intentionally left to the processor on submit; here we list
-   * the categories assigned to the mail's jurisdiction, falling back to all
-   * coded service categories when no jurisdiction scoping is present.
+   * Delegates to the shared PromotableCategoryRepository (#482) so the admin
+   * form and the dashboard API enforce ONE definition of "promotable".
    *
    * @param int $jurisdictionGid
    *   The jurisdiction group id, or 0 when unassigned.
@@ -160,48 +160,7 @@ class InboundMailPromoteForm extends FormBase {
    *   Term id keyed option labels.
    */
   protected function categoryOptions(int $jurisdictionGid): array {
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $query = $storage->getQuery()
-      ->accessCheck(TRUE)
-      ->condition('vid', 'service_category')
-      ->exists('field_service_code')
-      ->sort('name', 'ASC');
-    if ($jurisdictionGid > 0) {
-      // Scope to the jurisdiction when the term carries field_jurisdiction.
-      $orphanAware = $storage->getQuery()
-        ->accessCheck(TRUE)
-        ->condition('vid', 'service_category')
-        ->exists('field_service_code')
-        ->condition('field_jurisdiction', $jurisdictionGid)
-        ->sort('name', 'ASC')
-        ->execute();
-      if ($orphanAware !== []) {
-        return $this->labelOptions($storage->loadMultiple($orphanAware));
-      }
-    }
-    $tids = $query->execute();
-    return $tids === [] ? [] : $this->labelOptions($storage->loadMultiple($tids));
-  }
-
-  /**
-   * Maps loaded terms to id => "label (code)" options.
-   *
-   * @param array<int, \Drupal\Core\Entity\EntityInterface> $terms
-   *   The loaded terms.
-   *
-   * @return array<int, string>
-   *   Options.
-   */
-  protected function labelOptions(array $terms): array {
-    $options = [];
-    foreach ($terms as $term) {
-      $code = $term->hasField('field_service_code') && !$term->get('field_service_code')->isEmpty()
-        ? (string) $term->get('field_service_code')->value
-        : '';
-      $label = (string) $term->label();
-      $options[(int) $term->id()] = $code !== '' ? $label . ' (' . $code . ')' : $label;
-    }
-    return $options;
+    return $this->categoryRepository->getOptions($jurisdictionGid);
   }
 
   /**

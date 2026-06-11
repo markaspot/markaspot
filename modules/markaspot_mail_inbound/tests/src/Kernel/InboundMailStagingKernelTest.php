@@ -63,6 +63,12 @@ class InboundMailStagingKernelTest extends KernelTestBase {
     'flexible_permissions',
     'group',
     'gnode',
+    // The module ships a jsonapi_extras.jsonapi_resource_config in
+    // config/install (the disabled inbound_mail JSON:API resource), so
+    // installConfig(['markaspot_mail_inbound']) needs the stack present.
+    'serialization',
+    'jsonapi',
+    'jsonapi_extras',
     'markaspot_mail_inbound',
   ];
 
@@ -400,6 +406,47 @@ class InboundMailStagingKernelTest extends KernelTestBase {
   }
 
   /**
+   * Promoting into a codeless category sets field_category directly.
+   *
+   * When the chosen service_category term has no field_service_code, the
+   * promoter cannot pass a service_code to the Open311 processor (which
+   * would then resolve it back to a term). Instead it sets field_category
+   * directly on the created node after the processor call. The resulting node
+   * must carry the correct field_category tid and a generated title (via the
+   * presave hook, absent here but mirrored by the processor double).
+   */
+  public function testPromotionIntoCodelessCategorySetsFieldCategoryDirectly(): void {
+    // Create a codeless term — no field_service_code assigned.
+    $codelessTerm = Term::create(['vid' => 'service_category', 'name' => 'Graffiti']);
+    $codelessTerm->save();
+    $codelessTid = (int) $codelessTerm->id();
+
+    $staged = $this->ingest($this->makeRaw('codeless-001@example.org'));
+    $this->assertSame(IngestResult::STAGED, $staged->status);
+    $mail = $this->loadMail((int) $staged->entityId);
+
+    $node = $this->makePromoter()->promoteToServiceRequest($mail, $codelessTid);
+
+    $this->assertInstanceOf(NodeInterface::class, $node);
+    $this->assertSame(1, $this->countNodes());
+    $this->assertFalse($node->isPublished());
+    // field_category must be the codeless term's tid, set directly by the
+    // promoter (not via the processor's service_code mapping).
+    $this->assertSame($codelessTid, (int) $node->get('field_category')->target_id, 'field_category holds the codeless term set directly by the promoter.');
+    // Channel and jurisdiction tracking still apply on the codeless path.
+    $this->assertSame('email', $node->get('field_source')->value);
+    $this->assertSame($this->gid, (int) $node->get('field_jurisdiction')->target_id);
+    $this->assertTrue((bool) $node->get('field_gdpr')->value);
+    // Description still quotes the original mail.
+    $this->assertStringContainsString('Broken light', (string) $node->get('body')->value);
+
+    // The mail is promoted and references the node.
+    $reloaded = $this->loadMail((int) $staged->entityId);
+    $this->assertSame(InboundMail::STATE_PROMOTED, $reloaded->getState());
+    $this->assertSame((int) $node->id(), (int) $reloaded->get('nid')->target_id);
+  }
+
+  /**
    * The MEDIUM 4 fallback fills an empty status note with the default string.
    */
   public function testPromotionFallsBackToDefaultStatusNote(): void {
@@ -482,6 +529,134 @@ class InboundMailStagingKernelTest extends KernelTestBase {
     // a stale reference would re-delete it at discard or uninstall.
     $reloaded = $this->loadMail((int) $staged->entityId);
     $this->assertSame([], $reloaded->getAttachmentFileIds());
+  }
+
+  /**
+   * Creates the internal_remark paragraph stack (mirrors the distribution).
+   */
+  protected function setUpInternalRemarkStack(): void {
+    ParagraphsType::create(['id' => 'internal_remark', 'label' => 'Internal remark'])->save();
+    $this->createParagraphField('field_internal_remark_text', 'text_long', [], 'internal_remark');
+    $this->createNodeField('field_internal_remark', 'entity_reference_revisions', ['target_type' => 'paragraph'], -1);
+  }
+
+  /**
+   * Promotion with a staged-phase reply: original text description + remark.
+   *
+   * No AI suggestion stored: falls back to the original mail text. The FULL
+   * conversation log (including the citizen reply) is preserved as ONE
+   * internal_remark paragraph (unconditional, product decision 2026-06-11).
+   */
+  public function testPromotionWithStagedReplyQuotesOriginalAndStoresLogAsRemark(): void {
+    $this->setUpInternalRemarkStack();
+
+    $staged = $this->ingest($this->makeRaw('convo-001@example.org'));
+    $this->assertSame(IngestResult::STAGED, $staged->status);
+
+    // A citizen reply to the staged mail appends a conversation entry.
+    $reply = "From: Citizen <citizen@example.org>\r\n"
+      . "To: report@city.example\r\n"
+      . "Subject: Re: Broken light\r\n"
+      . "Message-ID: <convo-reply-001@example.org>\r\n"
+      . "In-Reply-To: <convo-001@example.org>\r\n"
+      . "References: <convo-001@example.org>\r\n"
+      . "Date: Wed, 10 Jun 2026 09:00:00 +0200\r\n"
+      . "Content-Type: text/plain; charset=utf-8\r\n"
+      . "\r\n"
+      . "It is the one near the church.\r\n";
+    $this->assertSame(IngestResult::REPLY, $this->ingest($reply)->status);
+
+    $mail = $this->loadMail((int) $staged->entityId);
+    $node = $this->makePromoter()->promoteToServiceRequest($mail, $this->categoryTid);
+
+    // No suggested_description set: description = subject + ORIGINAL text
+    // only (no reply content, no conversation marker, no staff dialogue).
+    $this->assertSame(
+      "Broken light\n\nA streetlight is broken.",
+      (string) $node->get('body')->value
+    );
+
+    // ONE internal remark carries the FULL conversation log with the label.
+    $items = $node->get('field_internal_remark')->getValue();
+    $this->assertCount(1, $items);
+    /** @var \Drupal\paragraphs\ParagraphInterface $paragraph */
+    $paragraph = $this->container->get('entity_type.manager')
+      ->getStorage('paragraph')->load($items[0]['target_id']);
+    $text = (string) $paragraph->get('field_internal_remark_text')->value;
+    $this->assertStringContainsString('E-Mail-Konversation aus dem Posteingang (vor Übernahme)', $text);
+    $this->assertStringContainsString('A streetlight is broken.', $text);
+    $this->assertStringContainsString('Reply from citizen@example.org', $text);
+    $this->assertStringContainsString('It is the one near the church.', $text);
+  }
+
+  /**
+   * Promoting a clean one-message mail ALWAYS creates a remark (unconditional).
+   *
+   * Product decision (2026-06-11): even a single-message mail gets a remark
+   * so staff can always read what the citizen actually wrote, regardless of
+   * whether the description came from an AI paraphrase or the original text.
+   */
+  public function testPromotionOfCleanMailAlwaysCreatesRemark(): void {
+    $this->setUpInternalRemarkStack();
+
+    $staged = $this->ingest($this->makeRaw('clean-001@example.org'));
+    $mail = $this->loadMail((int) $staged->entityId);
+    $node = $this->makePromoter()->promoteToServiceRequest($mail, $this->categoryTid);
+
+    // Fallback description (no suggested_description stored).
+    $this->assertSame(
+      "Broken light\n\nA streetlight is broken.",
+      (string) $node->get('body')->value
+    );
+    // Unconditional: even a clean mail produces one remark.
+    $items = $node->get('field_internal_remark')->getValue();
+    $this->assertCount(1, $items);
+    /** @var \Drupal\paragraphs\ParagraphInterface $paragraph */
+    $paragraph = $this->container->get('entity_type.manager')
+      ->getStorage('paragraph')->load($items[0]['target_id']);
+    $text = (string) $paragraph->get('field_internal_remark_text')->value;
+    $this->assertStringContainsString('E-Mail-Konversation aus dem Posteingang (vor Übernahme)', $text);
+    $this->assertStringContainsString('A streetlight is broken.', $text);
+  }
+
+  /**
+   * Promotion WITH a stored suggested_description uses AI text for the body.
+   *
+   * Product decision (2026-06-11): when the AI stored a suggested_description,
+   * that becomes the public node body (subject + AI text). The citizen's
+   * original wording is ALWAYS preserved in the internal remark.
+   */
+  public function testPromotionWithSuggestedDescriptionUsesAiText(): void {
+    $this->setUpInternalRemarkStack();
+
+    $staged = $this->ingest($this->makeRaw('ai-desc-001@example.org'));
+    $this->assertSame(IngestResult::STAGED, $staged->status);
+
+    // Simulate the AI suggestion service having stored a suggested_description.
+    $mail = $this->loadMail((int) $staged->entityId);
+    $mail->setSuggestedDescription('A streetlight on Hauptstrasse is out of order.');
+    $mail->save();
+
+    $node = $this->makePromoter()->promoteToServiceRequest($mail, $this->categoryTid);
+
+    // Description = subject + AI-generated text (NOT the raw mail body).
+    $this->assertSame(
+      "Broken light\n\nA streetlight on Hauptstrasse is out of order.",
+      (string) $node->get('body')->value
+    );
+
+    // The internal remark ALWAYS contains the citizen's original wording.
+    $items = $node->get('field_internal_remark')->getValue();
+    $this->assertCount(1, $items);
+    /** @var \Drupal\paragraphs\ParagraphInterface $paragraph */
+    $paragraph = $this->container->get('entity_type.manager')
+      ->getStorage('paragraph')->load($items[0]['target_id']);
+    $text = (string) $paragraph->get('field_internal_remark_text')->value;
+    $this->assertStringContainsString('E-Mail-Konversation aus dem Posteingang (vor Übernahme)', $text);
+    // Original citizen text preserved in the remark, not the AI paraphrase.
+    $this->assertStringContainsString('A streetlight is broken.', $text);
+    // AI text is in the node body, not the remark.
+    $this->assertStringNotContainsString('Hauptstrasse is out of order', $text);
   }
 
   /**
@@ -600,6 +775,7 @@ class InboundMailStagingKernelTest extends KernelTestBase {
       $this->container->get('config.factory'),
       $this->container->get('file_system'),
       $this->container->get('token'),
+      $this->container->get('markaspot_mail_inbound.internal_remark_writer'),
       $processor,
       NULL,
     );
