@@ -1,0 +1,11 @@
+mailboxes: []
+max_attachments: 5
+max_attachment_size_mb: 8
+allowed_mime_types:
+  - image/jpeg
+  - image/png
+  - image/webp
+  - image/heic
+max_body_length: 10000
+flood_limit: 10
+flood_window: 3600

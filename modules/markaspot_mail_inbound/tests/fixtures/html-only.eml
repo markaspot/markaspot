@@ -1,0 +1,13 @@
+From: Erika Beispiel <erika@example.org>
+To: report@city.example
+Subject: Overflowing litter bin
+Message-ID: <html-002@example.org>
+Date: Tue, 09 Jun 2026 11:00:00 +0200
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+<html><head><title>ignore</title><style>p{color:red}</style></head>
+<body><p>The litter bin at <b>Park Lane 3</b> is overflowing.</p>
+<script>alert('xss')</script>
+<p>It smells &amp; attracts rats.</p></body></html>

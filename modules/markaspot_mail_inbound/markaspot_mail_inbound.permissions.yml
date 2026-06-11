@@ -1,0 +1,9 @@
+'administer markaspot mail inbound':
+  title: 'Administer Mark-a-Spot inbound mail'
+  description: 'Configure IMAP mailboxes, jurisdiction routing and ingestion limits. IMAP credentials are visible to users with this permission.'
+  restrict access: true
+
+'triage inbound mail':
+  title: 'Triage inbound mail'
+  description: 'Review the inbound-mail triage inbox, promote a staged mail to a service request or discard it. Staged mails contain unredacted citizen content.'
+  restrict access: true

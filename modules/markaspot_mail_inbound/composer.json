@@ -1,0 +1,12 @@
+{
+  "name": "drupal/markaspot_mail_inbound",
+  "type": "drupal-module",
+  "description": "Inbound email-to-report pipeline for Mark-a-Spot (IMAP fetch, MIME parsing, service request creation).",
+  "keywords": ["Drupal", "Open311", "email"],
+  "license": "GPL-2.0+",
+  "homepage": "https://github.com/markaspot/markaspot",
+  "minimum-stability": "dev",
+  "require": {
+    "webklex/php-imap": "^6.2"
+  }
+}

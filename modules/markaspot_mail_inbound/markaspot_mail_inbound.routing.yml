@@ -1,0 +1,35 @@
+markaspot_mail_inbound.settings:
+  path: '/admin/config/markaspot/mail-inbound'
+  defaults:
+    _form: '\Drupal\markaspot_mail_inbound\Form\MailInboundSettingsForm'
+    _title: 'Mark-a-Spot Inbound Mail'
+  requirements:
+    _permission: 'administer markaspot mail inbound'
+
+markaspot_mail_inbound.promote:
+  path: '/admin/mark-a-spot/inbound-mail/{inbound_mail}/promote'
+  defaults:
+    _form: '\Drupal\markaspot_mail_inbound\Form\InboundMailPromoteForm'
+    _title: 'Categorize & promote inbound mail'
+  options:
+    _admin_route: TRUE
+    parameters:
+      inbound_mail:
+        type: 'entity:inbound_mail'
+  requirements:
+    _permission: 'triage inbound mail'
+    inbound_mail: \d+
+
+markaspot_mail_inbound.discard:
+  path: '/admin/mark-a-spot/inbound-mail/{inbound_mail}/discard'
+  defaults:
+    _form: '\Drupal\markaspot_mail_inbound\Form\InboundMailDiscardForm'
+    _title: 'Discard inbound mail'
+  options:
+    _admin_route: TRUE
+    parameters:
+      inbound_mail:
+        type: 'entity:inbound_mail'
+  requirements:
+    _permission: 'triage inbound mail'
+    inbound_mail: \d+

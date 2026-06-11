@@ -1,0 +1,8 @@
+From: Citizen <bad.date@example.org>
+To: report@city.example
+Subject: Pothole report with a broken Date header
+Message-ID: <malformed-date-001@example.org>
+Date: total-kaputtes-datum
+Content-Type: text/plain; charset=utf-8
+
+There is a deep pothole on Market Street that needs fixing.

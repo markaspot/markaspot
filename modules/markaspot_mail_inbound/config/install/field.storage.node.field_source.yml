@@ -1,0 +1,39 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - markaspot_mail_inbound
+  module:
+    - field_permissions
+    - node
+    - options
+third_party_settings:
+  field_permissions:
+    permission_type: public
+id: node.field_source
+field_name: field_source
+entity_type: node
+type: list_string
+settings:
+  allowed_values:
+    - value: web
+      label: Web
+    - value: app
+      label: App
+    - value: email
+      label: Email
+    - value: phone
+      label: Phone
+    - value: letter
+      label: Letter
+    - value: api
+      label: API
+  allowed_values_function: ''
+module: options
+locked: false
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

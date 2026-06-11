@@ -1,0 +1,47 @@
+services:
+  logger.channel.markaspot_mail_inbound:
+    parent: logger.channel_base
+    arguments: ['markaspot_mail_inbound']
+
+  markaspot_mail_inbound.parser:
+    class: Drupal\markaspot_mail_inbound\Service\MailParserService
+
+  markaspot_mail_inbound.mailbox_resolver:
+    class: Drupal\markaspot_mail_inbound\Service\MailboxResolver
+    arguments:
+      - '@config.factory'
+
+  markaspot_mail_inbound.fetcher:
+    class: Drupal\markaspot_mail_inbound\Service\MailboxFetcher
+    arguments:
+      - '@queue'
+      - '@logger.channel.markaspot_mail_inbound'
+
+  markaspot_mail_inbound.spam_filter:
+    class: Drupal\markaspot_mail_inbound\Service\SpamHeuristicFilter
+
+  markaspot_mail_inbound.orchestrator:
+    class: Drupal\markaspot_mail_inbound\Service\MailIngestOrchestrator
+    arguments:
+      - '@entity_type.manager'
+      - '@markaspot_mail_inbound.mailbox_resolver'
+      - '@markaspot_mail_inbound.spam_filter'
+      - '@flood'
+      - '@event_dispatcher'
+      - '@file_system'
+      - '@stream_wrapper_manager'
+      - '@logger.channel.markaspot_mail_inbound'
+
+  markaspot_mail_inbound.promoter:
+    class: Drupal\markaspot_mail_inbound\Service\InboundMailPromoter
+    arguments:
+      - '@entity_type.manager'
+      - '@module_handler'
+      - '@event_dispatcher'
+      - '@logger.channel.markaspot_mail_inbound'
+      - '@entity_field.manager'
+      - '@config.factory'
+      - '@file_system'
+      - '@token'
+      - '@?markaspot_open311.processor'
+      - '@?markaspot_geocoder.geocoder'

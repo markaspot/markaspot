@@ -1,0 +1,17 @@
+name: 'Mark-a-Spot Mail Inbound'
+type: module
+description: 'Inbound email-to-report pipeline: fetches citizen emails via IMAP, parses them and creates service requests in the matching jurisdiction. Replies to existing requests are detected via Message-ID threading.'
+package: Mark-a-Spot
+core_version_requirement: ^10.3 || ^11
+configure: markaspot_mail_inbound.settings
+dependencies:
+  - drupal:node
+  - drupal:taxonomy
+  - drupal:media
+  - drupal:file
+  - drupal:options
+  - field_permissions:field_permissions
+  - group:group
+  - markaspot:service_request
+  - markaspot:markaspot_open311
+  - markaspot:markaspot_request_id

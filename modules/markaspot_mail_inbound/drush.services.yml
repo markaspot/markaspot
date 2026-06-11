@@ -1,0 +1,10 @@
+services:
+  markaspot_mail_inbound.commands:
+    class: Drupal\markaspot_mail_inbound\Commands\MailInboundCommands
+    arguments:
+      - '@markaspot_mail_inbound.parser'
+      - '@markaspot_mail_inbound.mailbox_resolver'
+      - '@markaspot_mail_inbound.orchestrator'
+      - '@markaspot_mail_inbound.fetcher'
+    tags:
+      - { name: drush.command }

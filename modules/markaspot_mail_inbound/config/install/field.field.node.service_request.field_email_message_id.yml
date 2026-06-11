@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_email_message_id
+    - node.type.service_request
+  enforced:
+    module:
+      - markaspot_mail_inbound
+id: node.service_request.field_email_message_id
+field_name: field_email_message_id
+entity_type: node
+bundle: service_request
+label: 'Email Message-ID'
+description: 'RFC 5322 Message-ID of the originating email. Used for dedupe and reply threading. Protected by field_permissions (custom): no role can read it unless explicitly granted, mirroring the PII gating of field_first_name and field_last_name.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

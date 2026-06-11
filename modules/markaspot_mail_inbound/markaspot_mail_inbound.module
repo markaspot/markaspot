@@ -1,0 +1,50 @@
+<?php
+
+/**
+ * @file
+ * Inbound email-to-report pipeline for Mark-a-Spot.
+ *
+ * Cron fetches unseen messages from configured IMAP mailboxes and enqueues
+ * the raw sources. Parsing and staging into the inbound_mail triage inbox
+ * happen in the queue worker (markaspot_mail_inbound), never in cron itself.
+ * Promotion of a staged mail to a service request is a separate, explicit
+ * moderator action in the triage inbox.
+ */
+
+declare(strict_types=1);
+
+use Drupal\Core\Routing\RouteMatchInterface;
+
+/**
+ * Implements hook_help().
+ */
+function markaspot_mail_inbound_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.markaspot_mail_inbound':
+      $output = '<h3>' . t('About') . '</h3>';
+      $output .= '<p>' . t('Citizens email a configured address, cron fetches the mailbox via IMAP and each genuine message is staged as an inbound mail in the triage inbox. A moderator categorizes a staged mail to promote it to an unpublished service request, or discards it. Auto-replies, bulk and mailing-list mail are filtered out by a heuristic. Replies thread back onto the staged mail or onto the promoted request via Message-ID matching.') . '</p>';
+      $output .= '<p>' . t('Test locally without IMAP: <code>drush markaspot:mail-inbound:ingest message.eml --mailbox=ID</code>.') . '</p>';
+      return $output;
+  }
+  return NULL;
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Keeps cron lean: connect, enqueue raw messages, done. A failing mailbox is
+ * logged by the fetcher and never crashes cron or blocks other mailboxes.
+ */
+function markaspot_mail_inbound_cron(): void {
+  /** @var \Drupal\markaspot_mail_inbound\Service\MailboxResolver $resolver */
+  $resolver = \Drupal::service('markaspot_mail_inbound.mailbox_resolver');
+  /** @var \Drupal\markaspot_mail_inbound\Service\MailboxFetcher $fetcher */
+  $fetcher = \Drupal::service('markaspot_mail_inbound.fetcher');
+
+  foreach ($resolver->getMailboxes() as $mailbox) {
+    if (empty($mailbox['imap']['host']) || empty($mailbox['imap']['username'])) {
+      continue;
+    }
+    $fetcher->fetchMailbox($mailbox);
+  }
+}

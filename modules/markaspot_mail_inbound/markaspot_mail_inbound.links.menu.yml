@@ -1,0 +1,11 @@
+markaspot_mail_inbound.settings:
+  title: 'Mark-a-Spot Inbound Mail'
+  description: 'Configure inbound email-to-report mailboxes.'
+  route_name: markaspot_mail_inbound.settings
+  parent: system.admin_config_services
+
+markaspot_mail_inbound.triage:
+  title: 'Inbound Mail Triage'
+  description: 'Review staged citizen emails: promote to a service request or discard.'
+  route_name: entity.inbound_mail.collection
+  parent: system.admin_content

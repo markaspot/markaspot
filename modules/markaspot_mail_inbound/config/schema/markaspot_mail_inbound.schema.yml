@@ -1,0 +1,97 @@
+markaspot_mail_inbound.settings:
+  type: config_object
+  label: 'Mark-a-Spot Inbound Mail Settings'
+  mapping:
+    mailboxes:
+      type: sequence
+      label: 'Mailboxes'
+      sequence:
+        type: markaspot_mail_inbound.mailbox
+        label: 'Mailbox'
+    max_attachments:
+      type: integer
+      label: 'Maximum attachments per message'
+    max_attachment_size_mb:
+      type: integer
+      label: 'Maximum attachment size in MB'
+    allowed_mime_types:
+      type: sequence
+      label: 'Allowed attachment MIME types (verified by content sniffing)'
+      sequence:
+        type: string
+        label: 'MIME type'
+    max_body_length:
+      type: integer
+      label: 'Maximum body length in characters'
+    flood_limit:
+      type: integer
+      label: 'Maximum mails per sender within the flood window'
+    flood_window:
+      type: integer
+      label: 'Flood window in seconds'
+
+markaspot_mail_inbound.mailbox:
+  type: mapping
+  label: 'Inbound mailbox'
+  mapping:
+    id:
+      type: string
+      label: 'Machine id'
+    label:
+      type: label
+      label: 'Label'
+    enabled:
+      type: boolean
+      label: 'Enabled'
+    imap:
+      type: mapping
+      label: 'IMAP connection'
+      mapping:
+        host:
+          type: string
+          label: 'Host'
+        port:
+          type: integer
+          label: 'Port'
+        encryption:
+          type: string
+          label: 'Encryption (ssl, tls, starttls or none)'
+        username:
+          type: string
+          label: 'Username'
+        password:
+          type: string
+          label: 'Password (override via settings.php for production)'
+        folder:
+          type: string
+          label: 'Folder to fetch from'
+        processed_folder:
+          type: string
+          label: 'Folder to move processed messages to'
+        fetch_limit:
+          type: integer
+          label: 'Maximum messages fetched per run (default 50)'
+    recipient_addresses:
+      type: sequence
+      label: 'Recipient addresses matched against To/Cc/Delivered-To'
+      sequence:
+        type: email
+        label: 'Email address'
+    jurisdiction_gid:
+      type: integer
+      label: 'Jurisdiction group id (jur group)'
+    default_category_tid:
+      type: integer
+      label: 'Default service category term id'
+    sender_allowlist:
+      type: sequence
+      label: 'Sender allowlist (empty allows all senders)'
+      sequence:
+        type: string
+        label: 'Address or domain'
+    sender_blocklist:
+      type: sequence
+      label: 'Sender blocklist'
+      sequence:
+        type: string
+        label: 'Address or domain'

@@ -1,0 +1,240 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for markaspot_mail_inbound.
+ *
+ * The module ships the inbound_mail staging content entity. Drupal does not
+ * auto-create the SQL schema for a content entity on a CONFIG-only install of
+ * the module, so the schema is installed explicitly here in hook_install() for
+ * fresh installs and via an update hook for sites that already had an earlier
+ * version of this module.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Implements hook_requirements().
+ *
+ * Surfaces the active fidelity level of the email intake (the discoverability
+ * promise from the rebuild design): whether IMAP is configured, whether the
+ * geocoder is available, and that AI auto-categorization is not enabled in
+ * Phase 1 (manual triage). Runtime phase only.
+ */
+function markaspot_mail_inbound_requirements(string $phase): array {
+  if ($phase !== 'runtime') {
+    return [];
+  }
+
+  $requirements = [];
+
+  // IMAP mailbox configuration.
+  /** @var \Drupal\markaspot_mail_inbound\Service\MailboxResolver $resolver */
+  $resolver = \Drupal::service('markaspot_mail_inbound.mailbox_resolver');
+  $mailboxes = $resolver->getMailboxes(TRUE);
+  $withImap = array_filter(
+    $mailboxes,
+    static fn(array $mailbox): bool => !empty($mailbox['imap']['host']) && !empty($mailbox['imap']['username'])
+  );
+
+  if ($mailboxes === []) {
+    $requirements['markaspot_mail_inbound_imap'] = [
+      'title' => t('Mark-a-Spot inbound mail: IMAP'),
+      'value' => t('No enabled mailbox configured'),
+      'description' => t('Email intake is enabled but no mailbox is configured. Configure an IMAP mailbox at the inbound mail settings, or disable the module if intake is not wanted.'),
+      'severity' => REQUIREMENT_WARNING,
+    ];
+  }
+  elseif ($withImap === []) {
+    $requirements['markaspot_mail_inbound_imap'] = [
+      'title' => t('Mark-a-Spot inbound mail: IMAP'),
+      'value' => t('Mailbox(es) configured without IMAP credentials'),
+      'description' => t('Mailboxes exist but none have an IMAP host and username, so cron cannot fetch mail. Complete the IMAP connection or supply the credentials out-of-band.'),
+      'severity' => REQUIREMENT_WARNING,
+    ];
+  }
+  else {
+    $requirements['markaspot_mail_inbound_imap'] = [
+      'title' => t('Mark-a-Spot inbound mail: IMAP'),
+      'value' => t('@count mailbox(es) ready to fetch', ['@count' => count($withImap)]),
+      'severity' => REQUIREMENT_OK,
+    ];
+  }
+
+  // Geocoder availability (info: ungeolocated fallback when absent).
+  $hasGeocoder = \Drupal::hasService('markaspot_geocoder.geocoder');
+  $requirements['markaspot_mail_inbound_geocoder'] = [
+    'title' => t('Mark-a-Spot inbound mail: geocoding'),
+    'value' => $hasGeocoder
+      ? t('Geocoder available')
+      : t('Geocoder unavailable (reports stay ungeolocated)'),
+    'description' => $hasGeocoder
+      ? t('Promoted mails with a trivial address in the text are geocoded; the rest are completed in moderation.')
+      : t('The markaspot_geocoder module is not available, so promoted email reports have no coordinates and are located in the moderation queue.'),
+    'severity' => REQUIREMENT_OK,
+  ];
+
+  // AI auto-categorization status (Phase 1: manual triage only).
+  $requirements['markaspot_mail_inbound_categorization'] = [
+    'title' => t('Mark-a-Spot inbound mail: categorization'),
+    'value' => t('Manual triage (AI auto-categorization not enabled)'),
+    'description' => t('Staged emails are categorized and promoted manually in the triage inbox. AI auto-categorization is a later additive phase.'),
+    'severity' => REQUIREMENT_OK,
+  ];
+
+  // Private filesystem: staged citizen photos must not be publicly reachable
+  // before a moderator promotes the mail (review HIGH 1). Without the private
+  // filesystem they are stored in a public subdir only protected by an
+  // .htaccess deny rule, which not every web server honors.
+  $hasPrivate = \Drupal::service('stream_wrapper_manager')->isValidScheme('private');
+  $requirements['markaspot_mail_inbound_private_files'] = [
+    'title' => t('Mark-a-Spot inbound mail: staged attachment privacy'),
+    'value' => $hasPrivate
+      ? t('Private filesystem configured (staged photos are access-restricted)')
+      : t('Private filesystem NOT configured'),
+    'description' => $hasPrivate
+      ? t('Staged email attachments are kept in private://mail-inbound-staged/ until promotion, so citizen photos are not downloadable before moderation.')
+      : t('Staged email attachments fall back to a public subdir hardened only with an .htaccess deny rule. Configure the private filesystem (settings.php: $settings["file_private_path"]) so staged citizen photos are properly access-restricted before moderation.'),
+    'severity' => $hasPrivate ? REQUIREMENT_OK : REQUIREMENT_WARNING,
+  ];
+
+  // Codeless categories cannot be promoted: the promote form filters to
+  // categories carrying a field_service_code (review MEDIUM 5).
+  $codelessCount = 0;
+  try {
+    $termStorage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+    $allIds = $termStorage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('vid', 'service_category')
+      ->execute();
+    if ($allIds !== []) {
+      $codedIds = $termStorage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('vid', 'service_category')
+        ->exists('field_service_code')
+        ->execute();
+      $codelessCount = count($allIds) - count($codedIds);
+    }
+  }
+  catch (\Throwable) {
+    // Taxonomy / field not available; leave the count at zero.
+  }
+  if ($codelessCount > 0) {
+    $requirements['markaspot_mail_inbound_codeless_categories'] = [
+      'title' => t('Mark-a-Spot inbound mail: promotable categories'),
+      'value' => t('@count categories have no service code', ['@count' => $codelessCount]),
+      'description' => t('@count service categories have no service code and cannot receive promoted email reports. Assign a field_service_code to every category that should be selectable when promoting a staged mail.', ['@count' => $codelessCount]),
+      'severity' => REQUIREMENT_WARNING,
+    ];
+  }
+
+  // Permission scoping caveat (review MEDIUM 5): the "triage inbound mail"
+  // permission is global in Phase 1, not jurisdiction-scoped.
+  $requirements['markaspot_mail_inbound_permission_scope'] = [
+    'title' => t('Mark-a-Spot inbound mail: permission scope'),
+    'value' => t('Triage permission is global (not yet jurisdiction-scoped)'),
+    'description' => t('The "triage inbound mail" permission is NOT jurisdiction-scoped in Phase 1. A user granted it can see and promote every jurisdiction\'s staged mail, including unredacted citizen content. Do not grant it to staff who should only handle their own jurisdiction\'s mail until per-jurisdiction scoping (Phase 2) lands.'),
+    'severity' => REQUIREMENT_WARNING,
+  ];
+
+  return $requirements;
+}
+
+/**
+ * Implements hook_install().
+ *
+ * Installs the inbound_mail entity schema for fresh installs.
+ */
+function markaspot_mail_inbound_install(): void {
+  _markaspot_mail_inbound_install_inbound_mail_entity();
+}
+
+/**
+ * Implements hook_uninstall().
+ *
+ * Removes all inbound_mail entities AND their attachment files. Staged
+ * attachments are PERMANENT managed files without a usage entry (see
+ * MailIngestOrchestrator::persistAttachmentFiles(): temporary files would be
+ * garbage-collected mid-triage), so file GC never touches them — they must be
+ * deleted explicitly here. Promoted mails carry no attachment references any
+ * more (their files belong to request_image media and survive). The entity
+ * type's SQL schema is removed by core when the entity type definition
+ * disappears with the module.
+ */
+function markaspot_mail_inbound_uninstall(): void {
+  $entityTypeManager = \Drupal::entityTypeManager();
+  if (!$entityTypeManager->hasDefinition('inbound_mail')) {
+    return;
+  }
+  $storage = $entityTypeManager->getStorage('inbound_mail');
+  $fileStorage = $entityTypeManager->hasDefinition('file')
+    ? $entityTypeManager->getStorage('file')
+    : NULL;
+
+  // Delete in bounded batches rather than loading every record at once
+  // (review LOW 10): a busy mailbox can accumulate a large backlog, and an
+  // unpaginated loadMultiple() would exhaust memory on uninstall.
+  $deleted = 0;
+  do {
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->range(0, 50)
+      ->execute();
+    if ($ids === []) {
+      break;
+    }
+    $mails = $storage->loadMultiple($ids);
+    if ($fileStorage !== NULL) {
+      $fids = [];
+      foreach ($mails as $mail) {
+        foreach ($mail->get('attachment_files') as $item) {
+          if (!empty($item->target_id)) {
+            $fids[] = (int) $item->target_id;
+          }
+        }
+      }
+      if ($fids !== []) {
+        $files = $fileStorage->loadMultiple(array_unique($fids));
+        if ($files !== []) {
+          $fileStorage->delete($files);
+        }
+      }
+    }
+    $storage->delete($mails);
+    $deleted += count($ids);
+  } while (count($ids) === 50);
+
+  if ($deleted > 0) {
+    \Drupal::logger('markaspot_mail_inbound')->notice('Deleted @count inbound mail record(s) on uninstall.', [
+      '@count' => $deleted,
+    ]);
+  }
+}
+
+/**
+ * Installs the inbound_mail content entity schema.
+ *
+ * Idempotent: only installs the entity type when its schema is not yet known
+ * to the entity definition update manager.
+ */
+function _markaspot_mail_inbound_install_inbound_mail_entity(): void {
+  $updateManager = \Drupal::entityDefinitionUpdateManager();
+  if ($updateManager->getEntityType('inbound_mail') !== NULL) {
+    // Already installed.
+    return;
+  }
+  $entityType = \Drupal::entityTypeManager()->getDefinition('inbound_mail');
+  $updateManager->installEntityType($entityType);
+}
+
+/**
+ * Install the inbound_mail staging entity (rebuild, issue #467).
+ *
+ * Sites that ran an earlier cut of markaspot_mail_inbound (which created a
+ * service request directly and had no staging entity) get the new
+ * inbound_mail table here.
+ */
+function markaspot_mail_inbound_update_11901(): string {
+  _markaspot_mail_inbound_install_inbound_mail_entity();
+  return (string) t('Installed the inbound_mail staging entity schema.');
+}

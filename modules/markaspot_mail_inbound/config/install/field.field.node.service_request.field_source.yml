@@ -1,0 +1,21 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_source
+    - node.type.service_request
+  enforced:
+    module:
+      - markaspot_mail_inbound
+id: node.service_request.field_source
+field_name: field_source
+entity_type: node
+bundle: service_request
+label: Source
+description: 'Channel through which the report reached the platform.'
+required: false
+translatable: false
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: list_string
