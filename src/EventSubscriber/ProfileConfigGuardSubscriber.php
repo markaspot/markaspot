@@ -106,6 +106,42 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * (any unexpected condition logs and returns, degrading to core's original
  * behaviour — strictly no worse), runs only on the default collection, and is
  * idempotent.
+ *
+ * NO ANONYMOUS DRUPAL HTML VIEWS
+ * ------------------------------
+ * WHY: Mark-a-Spot is a HEADLESS distribution. The citizen-facing UI is the
+ * Nuxt frontend talking to Open311 / JSON:API; Drupal itself must never serve
+ * an anonymous, server-rendered Views page. A View display left open to
+ * anonymous users (e.g. a stale `access: { type: none }` carried in a tenant's
+ * config/sync, or a re-injected default) is an unintended public surface that
+ * can leak content the headless contract never meant to expose. Because
+ * markaspot_nuxt is a HARD profile dependency, this hardening applies to ALL
+ * tenants on the 11.9.x profile by design — there is no headless gate to check.
+ *
+ * HOW: protectViewAccess() runs AFTER protectShippedConfig() (so it also
+ * catches any view re-injected from active by the shipped-config guard), walks
+ * every `views.view.*` in the import storage, and rewrites anonymous display
+ * access to `role: authenticated`. The comparer then imports the tightened
+ * source, and markaspot_update_11929() applies the same tightening to
+ * already-active views.
+ *
+ * SCOPE & LIMITATIONS:
+ *   - Scope is limited to `views.view.*` config objects in the default
+ *     collection. No other entity type is touched.
+ *   - "Anonymous" is defined narrowly as a display whose access plugin is
+ *     `none`, OR `perm` with the single perm `access content`. A view gated by
+ *     some OTHER perm that anonymous happens to hold (e.g.
+ *     `access open311 extension`) is INTENTIONALLY NOT touched: that is a
+ *     deliberate, named public surface, and silently locking it could break a
+ *     legitimate integration. The narrow definition is the honest, non-guessing
+ *     floor.
+ *   - The lock TARGET is `authenticated` — the portable floor that closes the
+ *     anonymous hole on every tenant without assuming any tenant-specific staff
+ *     role exists. Stricter per-tenant locks (a display already gated to a
+ *     staff role or a stricter perm) are PRESERVED, because only ANONYMOUS
+ *     displays are rewritten; the guard only ever TIGHTENS, never loosens.
+ *   - Idempotent: a display already locked to a role is not anonymous and is
+ *     skipped, so re-running is a no-op.
  */
 final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
 
@@ -186,6 +222,9 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
 
       $this->protectRequiredModules($importStorage);
       $this->protectShippedConfig($importStorage);
+      // Run AFTER protectShippedConfig so any view re-injected from active is
+      // also screened for anonymous access.
+      $this->protectViewAccess($importStorage);
     }
     catch (\Throwable $e) {
       // Never abort a deploy from inside the guard. Degrading to core's
@@ -267,6 +306,115 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
       }
       $importStorage->write($name, $data);
     }
+  }
+
+  /**
+   * Locks anonymous Views displays in the import storage to authenticated.
+   *
+   * Headless hardening: a Drupal-rendered Views page must never be anonymous
+   * on a Mark-a-Spot site. Walks every `views.view.*` in the import storage
+   * and, for any display whose access is anonymous (see ::accessIsAnonymous()),
+   * rewrites the access plugin to `role: authenticated`. Only anonymous
+   * displays are touched, so the method only ever TIGHTENS and is idempotent.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable import storage (transformed copy of config/sync).
+   */
+  private function protectViewAccess(StorageInterface $importStorage): void {
+    foreach ($importStorage->listAll('views.view.') as $name) {
+      $data = $importStorage->read($name);
+      if (!is_array($data) || !isset($data['display']) || !is_array($data['display'])) {
+        continue;
+      }
+
+      [$displays, $changed] = self::tightenAnonymousDisplays($data['display']);
+      if ($changed) {
+        $data['display'] = $displays;
+        $importStorage->write($name, $data);
+      }
+    }
+  }
+
+  /**
+   * Rewrites anonymous display access to `role: authenticated`.
+   *
+   * Shared, side-effect-free tightening logic used by both the import-transform
+   * guard (::protectViewAccess()) and the entity-based one-shot update hook
+   * (markaspot_update_11929()), so the "no anonymous Views" policy has a single
+   * definition. Operates on a View's `display` array and returns the (possibly
+   * rewritten) array plus whether anything changed. Only ANONYMOUS displays are
+   * rewritten — non-anonymous displays (already gated to a role or a stricter
+   * perm) are left untouched, so this only ever TIGHTENS and never loosens. A
+   * view that exposes a `rest_export` display is skipped entirely: it is a
+   * public REST API surface the headless frontend consumes anonymously, not an
+   * HTML page (see the body).
+   *
+   * @param array<string, mixed> $displays
+   *   The View's `display` array (display id => display definition).
+   *
+   * @return array{0: array<string, mixed>, 1: bool}
+   *   A tuple of [the displays array, whether any display was rewritten].
+   */
+  public static function tightenAnonymousDisplays(array $displays): array {
+    // A view that exposes a `rest_export` display is a public REST API surface
+    // the headless frontend consumes ANONYMOUSLY (e.g. markaspot_stats's
+    // stats/categories, stats/status and georeport/stats/requests endpoints,
+    // whose rest_export displays carry no own access and inherit the anonymous
+    // `default`). Locking such a view would 403 those endpoints and break the
+    // public stats widget. Leave the whole view untouched. Only `rest_export`
+    // is exempt — `feed`/`block`/`attachment`/`page` displays stay lockable.
+    foreach ($displays as $display) {
+      if (is_array($display) && ($display['display_plugin'] ?? NULL) === 'rest_export') {
+        return [$displays, FALSE];
+      }
+    }
+
+    $changed = FALSE;
+    foreach ($displays as $display_id => $display) {
+      if (!is_array($display)) {
+        continue;
+      }
+      $access = $display['display_options']['access'] ?? NULL;
+      if (!is_array($access) || !self::accessIsAnonymous($access)) {
+        continue;
+      }
+      $displays[$display_id]['display_options']['access'] = [
+        'type' => 'role',
+        'options' => [
+          'role' => ['authenticated' => 'authenticated'],
+        ],
+      ];
+      $changed = TRUE;
+    }
+
+    return [$displays, $changed];
+  }
+
+  /**
+   * Determines whether a Views display access definition is anonymous.
+   *
+   * Narrow, deliberate definition: a display is anonymous iff its access plugin
+   * is `none`, OR `perm` granting exactly `access content` (a perm anonymous
+   * holds by default). Any other perm-gated display (e.g. a deliberate
+   * `access open311 extension` public surface) is NOT considered anonymous and
+   * is left for the operator to manage.
+   *
+   * @param array<string, mixed> $access
+   *   A display's `display_options.access` definition.
+   *
+   * @return bool
+   *   TRUE if the display is open to anonymous users under this definition.
+   */
+  private static function accessIsAnonymous(array $access): bool {
+    $type = $access['type'] ?? NULL;
+    if ($type === 'none') {
+      return TRUE;
+    }
+    if ($type === 'perm') {
+      return ($access['options']['perm'] ?? '') === 'access content';
+    }
+
+    return FALSE;
   }
 
   /**

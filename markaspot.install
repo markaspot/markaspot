@@ -12,6 +12,7 @@ use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber;
 use Drupal\node\Entity\Node;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
@@ -1586,6 +1587,54 @@ function markaspot_update_11909(): void {
  */
 function markaspot_update_11928(): void {
   _markaspot_repair_all_role_permissions();
+}
+
+/**
+ * Lock anonymous Drupal Views displays to the authenticated role (headless).
+ *
+ * Mark-a-Spot is a HEADLESS distribution: the citizen UI is the Nuxt frontend
+ * over Open311 / JSON:API, and Drupal must never serve an anonymous,
+ * server-rendered Views page. A display left open to anonymous users (a stale
+ * `access: { type: none }` or `perm: access content`) is an unintended public
+ * surface. Because markaspot_nuxt is a HARD profile dependency, this applies to
+ * ALL tenants on the 11.9.x profile — no headless gate is needed.
+ *
+ * This one-shot hook tightens every already-active View; ProfileConfigGuard
+ * Subscriber::protectViewAccess() then keeps it enforced on every config import
+ * (drush deploy / cim), so a stale config/sync can never reopen the hole. The
+ * tightening logic is shared with the subscriber
+ * (::tightenAnonymousDisplays()) so both paths use one definition of
+ * "anonymous": access plugin `none`, or `perm` granting exactly
+ * `access content`. Only anonymous displays are rewritten, so stricter
+ * per-tenant staff-role locks are preserved and the hook only ever TIGHTENS.
+ * Idempotent: a display already gated to a role is skipped.
+ */
+function markaspot_update_11929(): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('view');
+  $changed_ids = [];
+
+  foreach ($storage->loadMultiple() as $view) {
+    $displays = $view->get('display');
+    if (!is_array($displays)) {
+      continue;
+    }
+
+    [$tightened, $changed] = ProfileConfigGuardSubscriber::tightenAnonymousDisplays($displays);
+    if ($changed) {
+      $view->set('display', $tightened)->save();
+      $changed_ids[] = $view->id();
+    }
+  }
+
+  if ($changed_ids === []) {
+    return 'No anonymous Views found.';
+  }
+
+  // Rebuild the router so any access changes on routed displays take effect.
+  \Drupal::service('router.builder')->rebuild();
+
+  sort($changed_ids);
+  return 'Locked anonymous Views to authenticated: ' . implode(', ', $changed_ids) . '.';
 }
 
 /**
