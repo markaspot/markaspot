@@ -522,6 +522,62 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests the per-layer visibility property survives the config merge.
+   *
+   * The wmsLayers array is copied wholesale as part of the 'map' key, so a
+   * new 'visibility' property on a layer item must pass through untouched.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testWmsLayerVisibilityPropertySurvivesMerge(): void {
+    $nuxtJson = json_encode([
+      'map' => [
+        'wmsLayers' => [
+          [
+            'id' => 'bike-paths',
+            'title' => 'Bike Paths',
+            'layerName' => 'cycle_network',
+            'visibility' => 'public',
+          ],
+          [
+            'id' => 'tree-cadastre',
+            'title' => 'Tree Cadastre',
+            'layerName' => 'tree_cadastre',
+            'visibility' => 'authenticated',
+          ],
+          [
+            'id' => 'staff-overlay',
+            'title' => 'Staff Overlay',
+            'layerName' => 'internal_assets',
+            'visibility' => 'staff',
+          ],
+        ],
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+
+    $layers = $data['map']['wmsLayers'];
+    $this->assertCount(3, $layers);
+    $this->assertSame('public', $layers[0]['visibility']);
+    $this->assertSame('authenticated', $layers[1]['visibility']);
+    $this->assertSame('staff', $layers[2]['visibility']);
+
+    // The pre-existing layer properties must remain intact alongside it.
+    $this->assertSame('bike-paths', $layers[0]['id']);
+    $this->assertSame('cycle_network', $layers[0]['layerName']);
+  }
+
+  /**
    * Tests map center parsing in array format [lng, lat].
    *
    * @covers ::getMarkASpotSettings

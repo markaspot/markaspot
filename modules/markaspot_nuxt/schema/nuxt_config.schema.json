@@ -1023,6 +1023,19 @@
                 "minimum": 0,
                 "maximum": 22,
                 "default": 20
+              },
+              "visibility": {
+                "type": "string",
+                "title": "Layer Visibility",
+                "description": "UI-only display control for who sees this layer's toggle: 'public' = everyone including anonymous visitors; 'authenticated' = logged-in citizens and the staff dashboard; 'staff' = the staff dashboard only. This is NOT access control: the WMS tile proxy (/api/wms) is unauthenticated, so anyone who knows a layer's layerName can fetch its tiles directly. 'visibility: staff' hides a layer from the citizen UI but does not protect confidential geodata; for that the upstream WMS server must require authentication itself.",
+                "enum": ["public", "authenticated", "staff"],
+                "default": "public"
+              },
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "title": "WMS GetMap Base URL",
+                "description": "Optional per-layer WMS GetMap base URL. When omitted, the layer falls back to the jurisdiction's default WMS endpoint."
               }
             }
           },
