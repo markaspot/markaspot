@@ -1,10 +1,12 @@
-uuid: null
 langcode: en
 status: true
 dependencies:
   config:
     - field.storage.taxonomy_term.field_emergency_category
     - taxonomy.vocabulary.service_category
+  enforced:
+    module:
+      - markaspot_emergency
 id: taxonomy_term.service_category.field_emergency_category
 field_name: field_emergency_category
 entity_type: taxonomy_term

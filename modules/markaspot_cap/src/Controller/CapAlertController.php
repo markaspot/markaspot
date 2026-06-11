@@ -3,9 +3,11 @@
 namespace Drupal\markaspot_cap\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\markaspot_cap\Service\CapProcessorService;
@@ -13,21 +15,33 @@ use Drupal\markaspot_cap\Encoder\CapEncoder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
  * Controller for CAP Alert endpoints.
  *
  * Provides CAP 1.2 XML export for service requests.
+ * Only available when emergency mode is active (gated by CapFormatSubscriber).
+ *
+ * Jurisdiction scoping: when field_jurisdiction exists on service_request
+ * nodes, the ?jurisdiction_id parameter is required (400 otherwise) and used
+ * as a query condition. On single-tenant installs without that field the
+ * parameter is accepted but silently ignored.
  */
 class CapAlertController extends ControllerBase {
+
+  /**
+   * Maximum number of alerts per request.
+   */
+  const MAX_LIMIT = 100;
 
   /**
    * The time service.
    *
    * @var \Drupal\Component\Datetime\TimeInterface
    */
-  protected $time;
+  protected TimeInterface $time;
 
   /**
    * The entity type manager.
@@ -35,6 +49,13 @@ class CapAlertController extends ControllerBase {
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface
    */
   protected $entityTypeManager;
+
+  /**
+   * The entity field manager.
+   *
+   * @var \Drupal\Core\Entity\EntityFieldManagerInterface
+   */
+  protected EntityFieldManagerInterface $entityFieldManager;
 
   /**
    * A current user instance.
@@ -55,58 +76,61 @@ class CapAlertController extends ControllerBase {
    *
    * @var \Drupal\markaspot_cap\Service\CapProcessorService
    */
-  protected $capProcessor;
+  protected CapProcessorService $capProcessor;
 
   /**
    * The CAP Encoder.
    *
    * @var \Drupal\markaspot_cap\Encoder\CapEncoder
    */
-  protected $capEncoder;
+  protected CapEncoder $capEncoder;
+
+  /**
+   * The state service.
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  protected StateInterface $state;
 
   /**
    * Constructs a CapAlertController object.
-   *
-   * @param \Drupal\Core\Session\AccountProxyInterface $current_user
-   *   A current user instance.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config
-   *   The config factory.
-   * @param \Drupal\Component\Datetime\TimeInterface $time
-   *   The time service.
-   * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
-   *   The entity type manager.
-   * @param \Drupal\markaspot_cap\Service\CapProcessorService $cap_processor
-   *   The CAP processor service.
-   * @param \Drupal\markaspot_cap\Encoder\CapEncoder $cap_encoder
-   *   The CAP encoder.
    */
   public function __construct(
     AccountProxyInterface $current_user,
     ConfigFactoryInterface $config,
     TimeInterface $time,
     EntityTypeManagerInterface $entity_type_manager,
+    EntityFieldManagerInterface $entity_field_manager,
     CapProcessorService $cap_processor,
     CapEncoder $cap_encoder,
+    StateInterface $state,
   ) {
     $this->currentUser = $current_user;
+    // Store the factory on the ControllerBase-inherited $configFactory property
+    // so system.site can be read for the Atom feed ID.
+    $this->configFactory = $config;
     $this->config = $config->get('markaspot_cap.settings');
     $this->time = $time;
     $this->entityTypeManager = $entity_type_manager;
+    $this->entityFieldManager = $entity_field_manager;
     $this->capProcessor = $cap_processor;
     $this->capEncoder = $cap_encoder;
+    $this->state = $state;
   }
 
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container) {
-    return new static(
+  public static function create(ContainerInterface $container): static {
+    return new self(
       $container->get('current_user'),
       $container->get('config.factory'),
       $container->get('datetime.time'),
       $container->get('entity_type.manager'),
+      $container->get('entity_field.manager'),
       $container->get('markaspot_cap.processor'),
-      $container->get('markaspot_cap.encoder')
+      $container->get('markaspot_cap.encoder'),
+      $container->get('state')
     );
   }
 
@@ -118,98 +142,89 @@ class CapAlertController extends ControllerBase {
    *
    * @return \Symfony\Component\HttpFoundation\Response
    *   The CAP XML response.
+   *
+   * @throws \Symfony\Component\HttpKernel\Exception\BadRequestHttpException
+   *   When jurisdiction_id is required but missing.
    */
   public function index(Request $request): Response {
-    $request_time = $this->time->getRequestTime();
-
-    // Get query parameters.
+    $requestTime = $this->time->getRequestTime();
     $parameters = UrlHelper::filterQueryParameters($request->query->all());
 
-    // Create base query.
-    $query = $this->entityTypeManager->getStorage('node')->getQuery()
-      ->accessCheck(TRUE);
-
-    // Apply common filters.
     $bundle = $this->config->get('bundle') ?? 'service_request';
-    $query->condition('changed', $request_time, '<')
+
+    // Resolve jurisdiction scoping.
+    $jurisdictionId = $this->resolveJurisdictionId($parameters, $bundle);
+
+    $query = $this->entityTypeManager->getStorage('node')->getQuery()
+      ->accessCheck(TRUE)
+      ->condition('changed', $requestTime, '<')
       ->condition('type', $bundle);
 
+    // Apply jurisdiction scope when the field exists.
+    if ($jurisdictionId !== NULL) {
+      $query->condition('field_jurisdiction', $jurisdictionId);
+    }
+
     // Only include requests created after emergency mode activation.
-    $emergencyConfig = \Drupal::config('markaspot_emergency.settings');
-    $activatedAt = $emergencyConfig->get('emergency_mode.activated_at');
+    $activatedAt = $this->state->get('markaspot_emergency.activated_at');
     if ($activatedAt) {
       $query->condition('created', $activatedAt, '>=');
     }
 
-    // Handle pagination.
-    $limit = isset($parameters['limit']) ? (int) $parameters['limit'] : 100;
-    $offset = 0;
+    // Clamp limit: min 1, max MAX_LIMIT (B5).
+    $limit = isset($parameters['limit']) ? max(1, min((int) $parameters['limit'], self::MAX_LIMIT)) : self::MAX_LIMIT;
 
+    $offset = 0;
     if (isset($parameters['page']) && $parameters['page'] > 0) {
-      $page = (int) $parameters['page'];
-      $offset = ($page - 1) * $limit;
+      $offset = ((int) $parameters['page'] - 1) * $limit;
     }
     elseif (isset($parameters['offset']) && $parameters['offset'] >= 0) {
       $offset = (int) $parameters['offset'];
     }
-
-    // Limit to reasonable size for CAP feed.
-    $limit = min($limit, 100);
     $query->range($offset, $limit);
 
-    // Handle date range filters.
-    if (isset($parameters['start_date']) && $parameters['start_date'] != '') {
-      $start_timestamp = strtotime($parameters['start_date']);
-      if ($start_timestamp !== FALSE) {
-        $query->condition('created', $start_timestamp, '>=');
+    // Date range filters.
+    if (!empty($parameters['start_date'])) {
+      $ts = strtotime($parameters['start_date']);
+      if ($ts !== FALSE) {
+        $query->condition('created', $ts, '>=');
+      }
+    }
+    if (!empty($parameters['end_date'])) {
+      $ts = strtotime($parameters['end_date']);
+      if ($ts !== FALSE) {
+        $query->condition('created', $ts, '<=');
       }
     }
 
-    if (isset($parameters['end_date']) && $parameters['end_date'] != '') {
-      $end_timestamp = strtotime($parameters['end_date']);
-      if ($end_timestamp !== FALSE) {
-        $query->condition('created', $end_timestamp, '<=');
-      }
-    }
-
-    // Sort by creation date, newest first.
     $query->sort('created', 'DESC');
 
-    // Handle status filtering.
-    if (isset($parameters['status'])) {
+    // Status filter: use real vocabulary vid 'service_status' (B5).
+    if (!empty($parameters['status'])) {
       $tids = $this->mapStatusToTaxonomyIds($parameters['status']);
       if (!empty($tids)) {
         $query->condition('field_status', $tids, 'IN');
       }
     }
 
-    // Handle service code filtering.
-    if (isset($parameters['service_code'])) {
-      $service_codes = explode(',', $parameters['service_code']);
-      if (count($service_codes) == 1) {
-        $tid = $this->mapServiceCodeToTaxonomy($service_codes[0]);
+    // Service code filter: use real vocabulary vid 'service_category'
+    // and real field 'field_service_code' (B5).
+    if (!empty($parameters['service_code'])) {
+      $serviceCodes = explode(',', $parameters['service_code']);
+      $categoryTids = [];
+      foreach ($serviceCodes as $code) {
+        $tid = $this->mapServiceCodeToTaxonomy(trim($code));
         if ($tid) {
-          $query->condition('field_category', $tid);
+          $categoryTids[] = $tid;
         }
       }
-      else {
-        $categoryTids = [];
-        foreach ($service_codes as $service_code) {
-          $tid = $this->mapServiceCodeToTaxonomy($service_code);
-          if ($tid) {
-            $categoryTids[] = $tid;
-          }
-        }
-        if (!empty($categoryTids)) {
-          $query->condition('field_category', $categoryTids, 'IN');
-        }
+      if (!empty($categoryTids)) {
+        $query->condition('field_category', $categoryTids, 'IN');
       }
     }
 
-    // Execute query.
     $nids = $query->execute();
 
-    // Convert nodes to CAP format.
     $alerts = [];
     if (!empty($nids)) {
       $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
@@ -218,12 +233,17 @@ class CapAlertController extends ControllerBase {
       }
     }
 
-    // Encode to CAP XML.
-    $xml = $this->capEncoder->encode($alerts, 'cap');
+    $siteUuid = (string) ($this->configFactory->get('system.site')->get('uuid') ?? '');
+    $encodeContext = $siteUuid
+      ? ['cap_feed_id' => 'urn:markaspot:cap:feed:' . $siteUuid]
+      : [];
 
-    // Return XML response.
+    $xml = $this->capEncoder->encode($alerts, 'cap', $encodeContext);
+
     $response = new Response($xml);
     $response->headers->set('Content-Type', 'application/cap+xml; charset=UTF-8');
+    // PII may be present in the feed; prevent HTTP-layer caching (B1).
+    $response->headers->set('Cache-Control', 'no-store');
     return $response;
   }
 
@@ -231,7 +251,7 @@ class CapAlertController extends ControllerBase {
    * Returns a single CAP alert for a service request.
    *
    * @param string $id
-   *   The Service Request ID.
+   *   The Service Request ID (may carry a .cap extension).
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   The request object.
    *
@@ -242,15 +262,20 @@ class CapAlertController extends ControllerBase {
    *   Thrown when the service request is not found.
    */
   public function show(string $id, Request $request): Response {
-    // Parse ID (remove .cap extension if present).
     $requestId = $this->getRequestId($id);
 
-    // Create query to find the node.
     $bundle = $this->config->get('bundle') ?? 'service_request';
+    $parameters = UrlHelper::filterQueryParameters($request->query->all());
+    $jurisdictionId = $this->resolveJurisdictionId($parameters, $bundle);
+
     $query = $this->entityTypeManager->getStorage('node')->getQuery()
       ->accessCheck(TRUE)
       ->condition('type', $bundle)
       ->condition('request_id', $requestId);
+
+    if ($jurisdictionId !== NULL) {
+      $query->condition('field_jurisdiction', $jurisdictionId);
+    }
 
     $nids = $query->execute();
 
@@ -258,45 +283,68 @@ class CapAlertController extends ControllerBase {
       throw new NotFoundHttpException('Service request not found.');
     }
 
-    $nid = reset($nids);
-    $node = $this->entityTypeManager->getStorage('node')->load($nid);
-
+    $node = $this->entityTypeManager->getStorage('node')->load(reset($nids));
     if (!$node) {
       throw new NotFoundHttpException('Service request not found.');
     }
 
-    // Convert to CAP format.
     $capAlert = $this->capProcessor->nodeToCapAlert($node);
-
-    // Encode to CAP XML.
     $xml = $this->capEncoder->encode($capAlert, 'cap');
 
-    // Return XML response.
     $response = new Response($xml);
     $response->headers->set('Content-Type', 'application/cap+xml; charset=UTF-8');
+    $response->headers->set('Cache-Control', 'no-store');
     return $response;
   }
 
   /**
-   * Extract request ID from path parameter.
+   * Resolves the jurisdiction ID for the request.
    *
-   * @param string $id_param
-   *   The ID parameter from the URL.
+   * When the bundle has a field_jurisdiction field, the parameter is
+   * required -- a 400 is thrown if absent. On bundles without the field
+   * the parameter is accepted but NULL is returned (field ignored).
    *
-   * @return string
-   *   The Request ID.
+   * @param array $parameters
+   *   Filtered query parameters.
+   * @param string $bundle
+   *   The node bundle to check.
+   *
+   * @return int|null
+   *   The jurisdiction ID, or NULL when not applicable.
+   *
+   * @throws \Symfony\Component\HttpKernel\Exception\BadRequestHttpException
+   *   When the field exists and the parameter is missing.
+   */
+  protected function resolveJurisdictionId(array $parameters, string $bundle): ?int {
+    $fields = $this->entityFieldManager->getFieldDefinitions('node', $bundle);
+    $hasField = isset($fields['field_jurisdiction']);
+
+    if (!$hasField) {
+      return NULL;
+    }
+
+    if (empty($parameters['jurisdiction_id'])) {
+      throw new BadRequestHttpException('The jurisdiction_id parameter is required for multi-tenant installations.');
+    }
+
+    return (int) $parameters['jurisdiction_id'];
+  }
+
+  /**
+   * Extract request ID from path parameter (removes .cap extension if present).
    */
   private function getRequestId(string $id_param): string {
-    // Remove .cap extension if present.
     $param = explode('.', $id_param);
     return $param[0];
   }
 
   /**
-   * Map status parameter to taxonomy IDs.
+   * Map status parameter value(s) to taxonomy term IDs.
+   *
+   * Uses the real vocabulary vid 'service_status' (B5).
    *
    * @param string $status
-   *   The status parameter.
+   *   Comma-separated status values.
    *
    * @return array
    *   Array of taxonomy term IDs.
@@ -305,26 +353,21 @@ class CapAlertController extends ControllerBase {
     $statuses = explode(',', $status);
     $tids = [];
 
-    foreach ($statuses as $status_value) {
-      // Map Open311 status to Mark-a-Spot taxonomy.
-      $status_map = [
-        'open' => 'open',
-        'closed' => 'closed',
-        'in_progress' => 'in_progress',
-      ];
+    foreach ($statuses as $statusValue) {
+      $statusValue = trim($statusValue);
+      if ($statusValue === '') {
+        continue;
+      }
 
-      $mapped_status = $status_map[$status_value] ?? $status_value;
-
-      // Load taxonomy term by name.
       $terms = $this->entityTypeManager->getStorage('taxonomy_term')
         ->loadByProperties([
-          'vid' => 'status',
-          'name' => $mapped_status,
+          'vid' => 'service_status',
+          'name' => $statusValue,
         ]);
 
       if (!empty($terms)) {
         $term = reset($terms);
-        $tids[] = $term->id();
+        $tids[] = (int) $term->id();
       }
     }
 
@@ -334,18 +377,26 @@ class CapAlertController extends ControllerBase {
   /**
    * Map service code to taxonomy term ID.
    *
-   * @param string $service_code
-   *   The service code.
+   * Uses the real vocabulary vid 'service_category' and the real field
+   * 'field_service_code' (B5). Guards for field existence.
+   *
+   * @param string $serviceCode
+   *   The service code value.
    *
    * @return int|null
    *   The taxonomy term ID or NULL.
    */
-  private function mapServiceCodeToTaxonomy(string $service_code): ?int {
-    // Load taxonomy term by machine name or label.
+  private function mapServiceCodeToTaxonomy(string $serviceCode): ?int {
+    // Guard: only query field_service_code if it actually exists on the bundle.
+    $fields = $this->entityFieldManager->getFieldDefinitions('taxonomy_term', 'service_category');
+    if (!isset($fields['field_service_code'])) {
+      return NULL;
+    }
+
     $terms = $this->entityTypeManager->getStorage('taxonomy_term')
       ->loadByProperties([
-        'vid' => 'category',
-        'field_category_id' => $service_code,
+        'vid' => 'service_category',
+        'field_service_code' => $serviceCode,
       ]);
 
     if (!empty($terms)) {

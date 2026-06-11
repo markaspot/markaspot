@@ -11,3 +11,5 @@ dependencies:
   - drupal:user
   - markaspot:markaspot_open311
 configure: markaspot_emergency.settings
+interface translation project: markaspot_emergency
+interface translation server pattern: modules/markaspot_emergency/translations/%language.po

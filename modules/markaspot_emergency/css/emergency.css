@@ -1,0 +1,17 @@
+/**
+ * @file
+ * Basic styles for the /sos emergency page.
+ */
+
+.emergency-sos-active {
+  max-width: 600px;
+  margin: 2rem auto;
+  padding: 1.5rem;
+  border: 2px solid #c00;
+  border-radius: 4px;
+  background: #fff8f8;
+}
+
+.emergency-sos-active h1 {
+  color: #c00;
+}

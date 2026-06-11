@@ -4,11 +4,14 @@ namespace Drupal\Tests\markaspot_emergency\Unit;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\markaspot_emergency\Controller\EmergencyModeController;
+use Drupal\markaspot_emergency\Service\EmergencyModeService;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -35,6 +38,13 @@ class EmergencyModeControllerTest extends UnitTestCase {
   protected $configFactory;
 
   /**
+   * Mocked state service.
+   *
+   * @var \Drupal\Core\State\StateInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $state;
+
+  /**
    * Mocked entity type manager.
    *
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -56,15 +66,32 @@ class EmergencyModeControllerTest extends UnitTestCase {
   protected $logger;
 
   /**
+   * Mocked emergency mode service.
+   *
+   * @var \Drupal\markaspot_emergency\Service\EmergencyModeService|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $emergencyService;
+
+  /**
+   * Mocked entity field manager.
+   *
+   * @var \Drupal\Core\Entity\EntityFieldManagerInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $entityFieldManager;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
 
     $this->configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $this->state = $this->createMock(StateInterface::class);
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->logger = $this->createMock(LoggerChannelInterface::class);
+    $this->emergencyService = $this->createMock(EmergencyModeService::class);
+    $this->entityFieldManager = $this->createMock(EntityFieldManagerInterface::class);
 
     $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
     $loggerFactory->method('get')
@@ -73,9 +100,12 @@ class EmergencyModeControllerTest extends UnitTestCase {
 
     $this->controller = new EmergencyModeController(
       $this->configFactory,
+      $this->state,
       $this->entityTypeManager,
       $this->currentUser,
-      $loggerFactory
+      $loggerFactory,
+      $this->emergencyService,
+      $this->entityFieldManager,
     );
   }
 
@@ -126,31 +156,61 @@ class EmergencyModeControllerTest extends UnitTestCase {
         ['emergency_mode.mode_type', 'disaster'],
       ]);
 
-    $ref = new \ReflectionMethod($this->controller, 'getBannerData');
-    $ref->setAccessible(TRUE);
-    $result = $ref->invoke($this->controller, $config, TRUE);
+    $result = $this->controller->getBannerData($config, TRUE);
 
     $this->assertNull($result);
   }
 
   /**
-   * Tests getBannerData returns NULL when message is empty.
+   * Tests getBannerData returns NULL when both messages are empty.
+   *
+   * Covers the case where banner.message and maintenance.banner_text are both
+   * empty strings.
    *
    * @covers ::getBannerData
    */
-  public function testGetBannerDataReturnsNullWhenMessageEmpty(): void {
+  public function testGetBannerDataReturnsNullWhenBothMessagesEmpty(): void {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')
       ->willReturnMap([
-        ['banner', ['enabled' => TRUE, 'message' => '']],
+        ['banner', [
+          'enabled' => TRUE,
+          'message' => '',
+          'display_conditions' => ['always_visible' => TRUE],
+        ]],
         ['emergency_mode.mode_type', 'disaster'],
+        ['maintenance.banner_text', ''],
       ]);
 
-    $ref = new \ReflectionMethod($this->controller, 'getBannerData');
-    $ref->setAccessible(TRUE);
-    $result = $ref->invoke($this->controller, $config, TRUE);
+    $result = $this->controller->getBannerData($config, TRUE);
 
     $this->assertNull($result);
+  }
+
+  /**
+   * Tests getBannerData uses maintenance.banner_text as fallback.
+   *
+   * @covers ::getBannerData
+   */
+  public function testGetBannerDataUsesMaintFallbackWhenBannerMessageEmpty(): void {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')
+      ->willReturnMap([
+        ['banner', [
+          'enabled' => TRUE,
+          'message' => '',
+          'level' => 'info',
+          'title' => '',
+          'display_conditions' => ['maintenance_mode' => TRUE],
+        ]],
+        ['emergency_mode.mode_type', 'maintenance'],
+        ['maintenance.banner_text', 'Maintenance in progress.'],
+      ]);
+
+    $result = $this->controller->getBannerData($config, TRUE);
+
+    $this->assertNotNull($result);
+    $this->assertEquals('Maintenance in progress.', $result['message']);
   }
 
   /**
@@ -173,9 +233,7 @@ class EmergencyModeControllerTest extends UnitTestCase {
         ['emergency_mode.mode_type', 'disaster'],
       ]);
 
-    $ref = new \ReflectionMethod($this->controller, 'getBannerData');
-    $ref->setAccessible(TRUE);
-    $result = $ref->invoke($this->controller, $config, TRUE);
+    $result = $this->controller->getBannerData($config, TRUE);
 
     $this->assertNotNull($result);
     $this->assertEquals('Test alert', $result['message']);
@@ -203,9 +261,7 @@ class EmergencyModeControllerTest extends UnitTestCase {
         ['emergency_mode.mode_type', $modeType],
       ]);
 
-    $ref = new \ReflectionMethod($this->controller, 'getBannerData');
-    $ref->setAccessible(TRUE);
-    $result = $ref->invoke($this->controller, $config, TRUE);
+    $result = $this->controller->getBannerData($config, TRUE);
 
     $this->assertEquals($expectedLevel, $result['level']);
   }
@@ -223,32 +279,6 @@ class EmergencyModeControllerTest extends UnitTestCase {
       'maintenance' => ['maintenance', 'warning'],
       'unknown' => ['other', 'moderate'],
     ];
-  }
-
-  /**
-   * Tests getStateKey returns correct keys.
-   *
-   * @covers ::getStateKey
-   */
-  public function testGetStateKeyWithoutJurisdiction(): void {
-    $ref = new \ReflectionMethod($this->controller, 'getStateKey');
-    $ref->setAccessible(TRUE);
-
-    $key = $ref->invoke($this->controller, NULL);
-    $this->assertEquals('markaspot_emergency.original_published_tids', $key);
-  }
-
-  /**
-   * Tests getStateKey with jurisdiction ID.
-   *
-   * @covers ::getStateKey
-   */
-  public function testGetStateKeyWithJurisdiction(): void {
-    $ref = new \ReflectionMethod($this->controller, 'getStateKey');
-    $ref->setAccessible(TRUE);
-
-    $key = $ref->invoke($this->controller, 42);
-    $this->assertEquals('markaspot_emergency.original_published_tids.42', $key);
   }
 
 }

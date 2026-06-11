@@ -4,7 +4,7 @@ markaspot_cap.alerts.index:
     _controller: '\Drupal\markaspot_cap\Controller\CapAlertController::index'
     _title: 'CAP Alert Feed'
   requirements:
-    _access: 'TRUE'
+    _cap_emergency_active: 'TRUE'
   methods: [GET, HEAD]
 
 markaspot_cap.alerts.show:
@@ -13,5 +13,5 @@ markaspot_cap.alerts.show:
     _controller: '\Drupal\markaspot_cap\Controller\CapAlertController::show'
     _title: 'CAP Alert'
   requirements:
-    _access: 'TRUE'
+    _cap_emergency_active: 'TRUE'
   methods: [GET, HEAD]

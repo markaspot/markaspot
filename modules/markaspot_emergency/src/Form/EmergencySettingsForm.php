@@ -2,14 +2,49 @@
 
 namespace Drupal\markaspot_emergency\Form;
 
+use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
-use Symfony\Component\HttpFoundation\Request;
+use Drupal\Core\State\StateInterface;
+use Drupal\markaspot_emergency\Service\EmergencyModeService;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
  * Configure emergency mode settings.
  */
 class EmergencySettingsForm extends ConfigFormBase {
+
+  /**
+   * The state service.
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  protected StateInterface $state;
+
+  /**
+   * The entity type manager.
+   *
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
+   */
+  protected EntityTypeManagerInterface $entityTypeManager;
+
+  /**
+   * The emergency mode service.
+   *
+   * @var \Drupal\markaspot_emergency\Service\EmergencyModeService
+   */
+  protected EmergencyModeService $emergencyService;
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container): static {
+    $instance = parent::create($container);
+    $instance->state = $container->get('state');
+    $instance->entityTypeManager = $container->get('entity_type.manager');
+    $instance->emergencyService = $container->get('markaspot_emergency.service');
+    return $instance;
+  }
 
   /**
    * {@inheritdoc}
@@ -30,9 +65,12 @@ class EmergencySettingsForm extends ConfigFormBase {
    */
   public function buildForm(array $form, FormStateInterface $form_state) {
     $config = $this->config('markaspot_emergency.settings');
-    $restore_queue = \Drupal::state()->get('markaspot_emergency.original_published_tids', []);
+
+    // Read runtime status from State (not Config).
+    $currentStatus = $this->emergencyService->getStatus();
+    $restore_queue = $this->state->get('markaspot_emergency.original_published_tids', []);
     $restore_count = is_array($restore_queue) ? count($restore_queue) : 0;
-    $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+    $term_storage = $this->entityTypeManager->getStorage('taxonomy_term');
 
     $form['emergency_mode'] = [
       '#type' => 'details',
@@ -45,10 +83,9 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#title' => $this->t('Current Status'),
       '#options' => [
         'off' => $this->t('Off'),
-        'standby' => $this->t('Standby'),
         'active' => $this->t('Active'),
       ],
-      '#default_value' => $config->get('emergency_mode.status'),
+      '#default_value' => $currentStatus,
       '#description' => $this->t('Current emergency mode status.'),
     ];
 
@@ -67,7 +104,7 @@ class EmergencySettingsForm extends ConfigFormBase {
     $form['emergency_mode']['force_redirect'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Force redirect to lite UI'),
-      '#default_value' => $config->get('emergency_mode.force_redirect'),
+      '#default_value' => (bool) $config->get('emergency_mode.force_redirect'),
       '#description' => $this->t('Automatically redirect all users to the lite UI when emergency mode is active.'),
     ];
 
@@ -88,14 +125,14 @@ class EmergencySettingsForm extends ConfigFormBase {
     $form['categories']['unpublish_regular'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Unpublish regular categories'),
-      '#default_value' => $config->get('categories.unpublish_regular'),
+      '#default_value' => (bool) $config->get('categories.unpublish_regular'),
       '#description' => $this->t('Automatically unpublish all regular (non-emergency) categories when activating emergency mode.'),
     ];
 
     $form['categories']['restore_on_deactivation'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Restore categories on deactivation'),
-      '#default_value' => $config->get('categories.restore_on_deactivation'),
+      '#default_value' => (bool) $config->get('categories.restore_on_deactivation'),
       '#description' => $this->t('Automatically restore regular categories when deactivating emergency mode.'),
     ];
 
@@ -108,7 +145,7 @@ class EmergencySettingsForm extends ConfigFormBase {
     $form['auto_deactivate']['enabled'] = [
       '#type' => 'checkbox',
       '#title' => $this->t('Enable auto-deactivation'),
-      '#default_value' => $config->get('auto_deactivate.enabled'),
+      '#default_value' => (bool) $config->get('auto_deactivate.enabled'),
       '#description' => $this->t('Automatically deactivate emergency mode after a specified duration.'),
     ];
 
@@ -118,12 +155,11 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#default_value' => $config->get('auto_deactivate.duration'),
       '#description' => $this->t('Number of hours after which emergency mode will be automatically deactivated.'),
       '#min' => 1,
-    // 1 week
       '#max' => 168,
       '#states' => [
         'visible' => [
-          // Match the nested element name to ensure the state works.
-          ':input[name="auto_deactivate[enabled]"]' => ['checked' => TRUE],
+          // #tree is FALSE; Drupal renders the input as name="enabled".
+          ':input[name="enabled"]' => ['checked' => TRUE],
         ],
       ],
     ];
@@ -134,7 +170,6 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#open' => FALSE,
     ];
 
-    // Routing exceptions (paths that should never be redirected to lite).
     $form['routing'] = [
       '#type' => 'details',
       '#title' => $this->t('Routing Exceptions'),
@@ -150,7 +185,6 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#rows' => 4,
     ];
 
-    // Maintenance mode configuration.
     $form['maintenance'] = [
       '#type' => 'details',
       '#title' => $this->t('Maintenance Mode'),
@@ -193,7 +227,6 @@ class EmergencySettingsForm extends ConfigFormBase {
       '#description' => $this->t('Optional message shown by the frontend while maintenance mode is active.'),
     ];
 
-    // CAP Banner Configuration.
     $form['banner'] = [
       '#type' => 'details',
       '#title' => $this->t('CAP Alert Banner System'),
@@ -305,42 +338,34 @@ class EmergencySettingsForm extends ConfigFormBase {
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
     // Detect status transition to trigger side-effects from the UI Save action.
-    $current = $this->config('markaspot_emergency.settings');
-    $previous_status = $current->get('emergency_mode.status');
-    $new_status = $form_state->getValue('status');
+    $previousStatus = $this->emergencyService->getStatus();
+    $newStatus = $form_state->getValue('status');
 
-    // Trigger activation/deactivation when status changed via Save.
-    if ($new_status !== $previous_status) {
-      $controller = \Drupal::service('markaspot_emergency.controller');
-
-      if ($new_status === 'active') {
-        $payload = json_encode([
-          'mode_type' => $form_state->getValue('mode_type'),
-          'force_redirect' => $form_state->getValue('force_redirect'),
-          'unpublish_categories' => $form_state->getValue('unpublish_regular'),
-          'create_emergency_categories' => TRUE,
-        ]);
-        $request = new Request([], [], [], [], [], [], $payload);
-        $controller->activate($request);
+    if ($newStatus !== $previousStatus) {
+      if ($newStatus === 'active') {
+        $this->emergencyService->activate(
+          modeType: $form_state->getValue('mode_type') ?? 'disaster',
+          forceRedirect: (bool) $form_state->getValue('force_redirect'),
+          liteUi: TRUE,
+          unpublishCategories: (bool) $form_state->getValue('unpublish_regular'),
+          createEmergencyCategories: TRUE,
+        );
       }
-      elseif ($previous_status === 'active' && $new_status === 'off') {
-        $payload = json_encode([
-          'restore_categories' => $form_state->getValue('restore_on_deactivation'),
-        ]);
-        $request = new Request([], [], [], [], [], [], $payload);
-        $controller->deactivate($request);
+      elseif ($previousStatus === 'active' && $newStatus === 'off') {
+        $this->emergencyService->deactivate(
+          restoreCategories: (bool) $form_state->getValue('restore_on_deactivation'),
+        );
       }
     }
 
+    // Save policy/display config (never runtime status here).
     $this->config('markaspot_emergency.settings')
-      ->set('emergency_mode.status', $new_status)
       ->set('emergency_mode.mode_type', $form_state->getValue('mode_type'))
-      ->set('emergency_mode.force_redirect', $form_state->getValue('force_redirect'))
-      ->set('categories.unpublish_regular', $form_state->getValue('unpublish_regular'))
-      ->set('categories.restore_on_deactivation', $form_state->getValue('restore_on_deactivation'))
-      ->set('auto_deactivate.enabled', $form_state->getValue('enabled'))
-      ->set('auto_deactivate.duration', $form_state->getValue('duration'))
-      // Normalize allowed URLs from textarea (one per line, ensure leading slash, unique, non-empty)
+      ->set('emergency_mode.force_redirect', (bool) $form_state->getValue('force_redirect'))
+      ->set('categories.unpublish_regular', (bool) $form_state->getValue('unpublish_regular'))
+      ->set('categories.restore_on_deactivation', (bool) $form_state->getValue('restore_on_deactivation'))
+      ->set('auto_deactivate.enabled', (bool) $form_state->getValue('enabled'))
+      ->set('auto_deactivate.duration', (int) $form_state->getValue('duration'))
       ->set('allowed_urls', (function ($raw) {
         $lines = preg_split('/\r\n|\r|\n/', (string) $raw);
         $clean = [];
@@ -362,7 +387,6 @@ class EmergencySettingsForm extends ConfigFormBase {
       ->set('maintenance.show_only_categories', array_values(array_filter(array_map(function ($item) {
         return isset($item['target_id']) ? (int) $item['target_id'] : NULL;
       }, (array) $form_state->getValue('maintenance_show_only_categories')))))
-      // CAP Banner configuration.
       ->set('banner.enabled', (bool) $form_state->getValue('banner_enabled'))
       ->set('banner.message', (string) $form_state->getValue('banner_message'))
       ->set('banner.level', (string) $form_state->getValue('banner_level'))
@@ -378,26 +402,18 @@ class EmergencySettingsForm extends ConfigFormBase {
   /**
    * Form submission handler for activating emergency mode.
    */
-  public function activateEmergencyMode(array &$form, FormStateInterface $form_state) {
+  public function activateEmergencyMode(array &$form, FormStateInterface $form_state): void {
     try {
-      $controller = \Drupal::service('markaspot_emergency.controller');
-      // Build a JSON request matching the controller signature.
-      $payload = json_encode([
-        'mode_type' => $form_state->getValue('mode_type'),
-        'force_redirect' => $form_state->getValue('force_redirect'),
-        'unpublish_categories' => $form_state->getValue('unpublish_regular'),
-        'create_emergency_categories' => TRUE,
-      ]);
-      $request = new Request([], [], [], [], [], [], $payload);
-
-      $controller->activate($request);
-
+      $this->emergencyService->activate(
+        modeType: $form_state->getValue('mode_type') ?? 'disaster',
+        forceRedirect: (bool) $form_state->getValue('force_redirect'),
+        liteUi: TRUE,
+        unpublishCategories: (bool) $form_state->getValue('unpublish_regular'),
+        createEmergencyCategories: TRUE,
+      );
       $this->messenger()->addStatus($this->t('Emergency mode has been activated.'));
     }
-    catch (\Exception $e) {
-      $this->messenger()->addError($this->t('Error activating emergency mode: @error', ['@error' => $e->getMessage()]));
-    }
-    catch (\Error $e) {
+    catch (\Throwable $e) {
       $this->messenger()->addError($this->t('Error activating emergency mode: @error', ['@error' => $e->getMessage()]));
     }
   }
@@ -405,22 +421,14 @@ class EmergencySettingsForm extends ConfigFormBase {
   /**
    * Form submission handler for deactivating emergency mode.
    */
-  public function deactivateEmergencyMode(array &$form, FormStateInterface $form_state) {
+  public function deactivateEmergencyMode(array &$form, FormStateInterface $form_state): void {
     try {
-      $controller = \Drupal::service('markaspot_emergency.controller');
-      $payload = json_encode([
-        'restore_categories' => $form_state->getValue('restore_on_deactivation'),
-      ]);
-      $request = new Request([], [], [], [], [], [], $payload);
-
-      $controller->deactivate($request);
-
+      $this->emergencyService->deactivate(
+        restoreCategories: (bool) $form_state->getValue('restore_on_deactivation'),
+      );
       $this->messenger()->addStatus($this->t('Emergency mode has been deactivated.'));
     }
-    catch (\Exception $e) {
-      $this->messenger()->addError($this->t('Error deactivating emergency mode: @error', ['@error' => $e->getMessage()]));
-    }
-    catch (\Error $e) {
+    catch (\Throwable $e) {
       $this->messenger()->addError($this->t('Error deactivating emergency mode: @error', ['@error' => $e->getMessage()]));
     }
   }

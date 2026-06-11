@@ -1,6 +1,6 @@
 services:
   markaspot_emergency.commands:
     class: Drupal\markaspot_emergency\Commands\EmergencyCommands
-    arguments: ['@config.factory', '@markaspot_emergency.controller']
+    arguments: ['@config.factory', '@markaspot_emergency.service', '@state']
     tags:
       - { name: drush.command }

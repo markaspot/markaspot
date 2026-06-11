@@ -1,4 +1,23 @@
 services:
+  markaspot_emergency.service:
+    class: Drupal\markaspot_emergency\Service\EmergencyModeService
+    arguments:
+      - '@config.factory'
+      - '@state'
+      - '@entity_type.manager'
+      - '@entity_field.manager'
+      - '@current_user'
+      - '@logger.factory'
+
+  # Backward-compat alias used by Form and legacy code; points to the controller
+  # which now delegates to EmergencyModeService.
   markaspot_emergency.controller:
     class: Drupal\markaspot_emergency\Controller\EmergencyModeController
-    arguments: ['@config.factory', '@entity_type.manager', '@current_user', '@logger.factory']
+    arguments:
+      - '@config.factory'
+      - '@state'
+      - '@entity_type.manager'
+      - '@current_user'
+      - '@logger.factory'
+      - '@markaspot_emergency.service'
+      - '@entity_field.manager'

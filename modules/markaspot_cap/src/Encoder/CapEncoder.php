@@ -10,6 +10,10 @@ use Symfony\Component\Serializer\Encoder\DecoderInterface;
  *
  * This encoder generates CAP (Common Alerting Protocol) 1.2 compliant XML
  * for emergency citizen reports.
+ *
+ * All text is inserted via createTextNode() so the DOM handles escaping
+ * internally -- there is NO pre-escaping via htmlspecialchars(), which would
+ * cause double-encoding (e.g. "&" -> "&amp;amp;").
  */
 class CapEncoder implements EncoderInterface, DecoderInterface {
 
@@ -79,11 +83,21 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
 
     libxml_clear_errors();
 
-    $dom = new \DOMDocument();
-    $dom->loadXML($data, LIBXML_NONET | LIBXML_NOBLANKS);
+    // Reject DTDs entirely: LIBXML_NOENT *enables* entity substitution and is
+    // therefore the wrong flag here. Use LIBXML_NONET | LIBXML_NOBLANKS only,
+    // and refuse documents that declare a DOCTYPE to prevent XXE attacks.
+    if (stripos($data, '<!DOCTYPE') !== FALSE) {
+      throw new \UnexpectedValueException('DTDs are not allowed in CAP documents.');
+    }
 
-    if ($error = libxml_get_last_error()) {
-      libxml_clear_errors();
+    $dom = new \DOMDocument();
+    $prevUseInternal = libxml_use_internal_errors(TRUE);
+    $dom->loadXML($data, LIBXML_NONET | LIBXML_NOBLANKS);
+    $error = libxml_get_last_error();
+    libxml_clear_errors();
+    libxml_use_internal_errors($prevUseInternal);
+
+    if ($error) {
       throw new \UnexpectedValueException($error->message);
     }
 
@@ -119,7 +133,6 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   The data to encode.
    */
   private function buildCapXml(\DOMNode $parentNode, array $data) {
-    // Handle single alert or multiple alerts.
     if (isset($data['identifier'])) {
       // Single alert - build directly under root.
       $this->buildAlertElements($parentNode, $data);
@@ -139,21 +152,21 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   Array of alert data.
    */
   private function buildAtomFeed(\DOMNode $parentNode, array $alerts) {
-    // Remove the alert element and create an Atom feed instead.
     $dom = $parentNode->ownerDocument;
     $dom->removeChild($parentNode);
 
-    // Create Atom feed root element.
     $feed = $dom->createElementNS('http://www.w3.org/2005/Atom', 'feed');
     $feed->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:cap', self::CAP_NAMESPACE);
     $dom->appendChild($feed);
 
-    // Add feed metadata.
     $this->appendAtomElement($feed, 'title', 'CAP Alert Feed');
     $this->appendAtomElement($feed, 'updated', gmdate('Y-m-d\TH:i:s\Z'));
-    $this->appendAtomElement($feed, 'id', 'urn:uuid:' . uniqid());
+    // Feed IRI is unique per installation. Callers pass 'cap_feed_id' in the
+    // encode context (e.g. 'urn:markaspot:cap:feed:<site-uuid>'). Fall back to
+    // the module-namespace IRI when the context key is absent.
+    $feedId = $this->context['cap_feed_id'] ?? 'urn:markaspot:cap:feed';
+    $this->appendAtomElement($feed, 'id', $feedId);
 
-    // Add each alert as an Atom entry.
     foreach ($alerts as $alertData) {
       if (isset($alertData['identifier'])) {
         $this->buildAtomEntry($feed, $alertData);
@@ -173,24 +186,22 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
     $entry = $this->dom->createElement('entry');
     $feed->appendChild($entry);
 
-    // Entry metadata.
-    $this->appendAtomElement($entry, 'id', 'urn:uuid:' . $alertData['identifier']);
+    // Deterministic entry ID based on the alert identifier (not random).
+    $this->appendAtomElement($entry, 'id', 'urn:markaspot:cap:alert:' . $alertData['identifier']);
     $this->appendAtomElement($entry, 'title', $alertData['info']['headline'] ?? 'Alert ' . $alertData['identifier']);
     $this->appendAtomElement($entry, 'updated', $alertData['sent'] ?? gmdate('Y-m-d\TH:i:s\Z'));
 
-    // Create CAP alert as content.
     $content = $this->dom->createElement('content');
     $content->setAttribute('type', 'application/cap+xml');
     $entry->appendChild($content);
 
-    // Build the CAP alert inside content.
     $alert = $this->dom->createElementNS(self::CAP_NAMESPACE, 'cap:alert');
     $content->appendChild($alert);
     $this->buildAlertElements($alert, $alertData);
   }
 
   /**
-   * Append Atom element to node.
+   * Append Atom element to node using createTextNode (no double-escaping).
    *
    * @param \DOMNode $node
    *   The node.
@@ -201,7 +212,8 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    */
   private function appendAtomElement(\DOMNode $node, string $name, string $value) {
     $element = $this->dom->createElement($name);
-    $element->nodeValue = htmlspecialchars($value, ENT_XML1, 'UTF-8');
+    // DOM escapes text content automatically; no htmlspecialchars() needed.
+    $element->appendChild($this->dom->createTextNode($value));
     $node->appendChild($element);
   }
 
@@ -214,7 +226,6 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   The alert data.
    */
   private function buildAlertElements(\DOMNode $parentNode, array $alert) {
-    // Required CAP elements.
     $requiredElements = [
       'identifier',
       'sender',
@@ -230,7 +241,6 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
       }
     }
 
-    // Optional elements.
     $optionalElements = [
       'source',
       'restriction',
@@ -247,7 +257,6 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
       }
     }
 
-    // Info element (required, can be multiple).
     if (isset($alert['info'])) {
       $infoList = is_array($alert['info']) && isset($alert['info'][0]) ? $alert['info'] : [$alert['info']];
       foreach ($infoList as $info) {
@@ -268,7 +277,6 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
     $infoNode = $this->dom->createElement('info');
     $parentNode->appendChild($infoNode);
 
-    // Required info elements.
     $requiredElements = ['category', 'event', 'urgency', 'severity', 'certainty'];
     foreach ($requiredElements as $element) {
       if (isset($info[$element])) {
@@ -276,7 +284,6 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
       }
     }
 
-    // Optional info elements.
     $optionalElements = [
       'language',
       'audience',
@@ -306,7 +313,6 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
       }
     }
 
-    // Resource element (optional, can be multiple).
     if (isset($info['resource'])) {
       $resources = is_array($info['resource']) && isset($info['resource'][0]) ? $info['resource'] : [$info['resource']];
       foreach ($resources as $resource) {
@@ -314,7 +320,6 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
       }
     }
 
-    // Area element (optional, can be multiple).
     if (isset($info['area'])) {
       $areas = is_array($info['area']) && isset($info['area'][0]) ? $info['area'] : [$info['area']];
       foreach ($areas as $area) {
@@ -355,16 +360,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
     $resourceNode = $this->dom->createElement('resource');
     $parentNode->appendChild($resourceNode);
 
-    $resourceElements = [
-      'resourceDesc',
-      'mimeType',
-      'size',
-      'uri',
-      'derefUri',
-      'digest',
-    ];
-
-    foreach ($resourceElements as $element) {
+    foreach (['resourceDesc', 'mimeType', 'size', 'uri', 'derefUri', 'digest'] as $element) {
       if (isset($resource[$element])) {
         $this->appendElement($resourceNode, $element, $resource[$element]);
       }
@@ -387,8 +383,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
       $this->appendElement($areaNode, 'areaDesc', $area['areaDesc']);
     }
 
-    $areaElements = ['polygon', 'circle', 'geocode', 'altitude', 'ceiling'];
-    foreach ($areaElements as $element) {
+    foreach (['polygon', 'circle', 'geocode', 'altitude', 'ceiling'] as $element) {
       if (isset($area[$element])) {
         if ($element === 'geocode' && is_array($area[$element])) {
           foreach ($area[$element] as $geocode) {
@@ -423,7 +418,11 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
   }
 
   /**
-   * Append element to node.
+   * Append a text element to a node using createTextNode.
+   *
+   * The DOM API escapes text content automatically. We must NOT call
+   * htmlspecialchars() here -- doing so would double-encode characters like
+   * "&" to "&amp;amp;" in the final serialized XML.
    *
    * @param \DOMNode $node
    *   The node.
@@ -435,7 +434,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
   private function appendElement(\DOMNode $node, string $name, $value) {
     if (is_scalar($value)) {
       $element = $this->dom->createElement($name);
-      $element->nodeValue = htmlspecialchars((string) $value, ENT_XML1, 'UTF-8');
+      $element->appendChild($this->dom->createTextNode((string) $value));
       $node->appendChild($element);
     }
   }

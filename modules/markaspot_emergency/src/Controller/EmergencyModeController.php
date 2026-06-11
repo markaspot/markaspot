@@ -2,14 +2,19 @@
 
 namespace Drupal\markaspot_emergency\Controller;
 
-use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Cache\CacheableJsonResponse;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\State\StateInterface;
+use Drupal\markaspot_emergency\Service\EmergencyModeService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
-use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 
 /**
  * Controller for emergency mode operations.
@@ -22,6 +27,13 @@ class EmergencyModeController extends ControllerBase {
    * @var \Drupal\Core\Config\ConfigFactoryInterface
    */
   protected $configFactory;
+
+  /**
+   * The state service.
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  protected StateInterface $state;
 
   /**
    * The entity type manager.
@@ -45,57 +57,261 @@ class EmergencyModeController extends ControllerBase {
   protected $logger;
 
   /**
+   * The emergency mode service.
+   *
+   * @var \Drupal\markaspot_emergency\Service\EmergencyModeService
+   */
+  protected EmergencyModeService $emergencyService;
+
+  /**
+   * The entity field manager.
+   *
+   * @var \Drupal\Core\Entity\EntityFieldManagerInterface
+   */
+  protected EntityFieldManagerInterface $entityFieldManager;
+
+  /**
    * Constructs a new EmergencyModeController object.
    */
-  public function __construct(ConfigFactoryInterface $config_factory, EntityTypeManagerInterface $entity_type_manager, AccountInterface $current_user, LoggerChannelFactoryInterface $logger_factory) {
+  public function __construct(
+    ConfigFactoryInterface $config_factory,
+    StateInterface $state,
+    EntityTypeManagerInterface $entity_type_manager,
+    AccountInterface $current_user,
+    LoggerChannelFactoryInterface $logger_factory,
+    EmergencyModeService $emergency_service,
+    EntityFieldManagerInterface $entity_field_manager,
+  ) {
     $this->configFactory = $config_factory;
+    $this->state = $state;
     $this->entityTypeManager = $entity_type_manager;
     $this->currentUser = $current_user;
     $this->logger = $logger_factory->get('markaspot_emergency');
+    $this->emergencyService = $emergency_service;
+    $this->entityFieldManager = $entity_field_manager;
   }
 
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container) {
-    return new static(
+  public static function create(ContainerInterface $container): static {
+    return new self(
       $container->get('config.factory'),
+      $container->get('state'),
       $container->get('entity_type.manager'),
       $container->get('current_user'),
-      $container->get('logger.factory')
+      $container->get('logger.factory'),
+      $container->get('markaspot_emergency.service'),
+      $container->get('entity_field.manager')
     );
   }
 
   /**
    * Get emergency mode status.
+   *
+   * Responds with the canonical emergency status payload. The `details`
+   * subtree is only included when the caller has 'view emergency status'.
+   * Response is cacheable with a 30-second max-age; status changes invalidate
+   * the custom cache tag 'markaspot_emergency:status'.
    */
   public function getStatus(?Request $request = NULL) {
     $config = $this->configFactory->get('markaspot_emergency.settings');
 
-    $status = (string) $config->get('emergency_mode.status');
-    $active = $status === 'active';
+    $status = $this->emergencyService->getStatus();
+    $active = $this->emergencyService->isActive();
+    $modeType = (string) $config->get('emergency_mode.mode_type');
 
-    // Get jurisdiction filter from query parameter.
-    $jurisdictionId = $request?->query->get('jurisdiction_id')
-      ? (int) $request->query->get('jurisdiction_id') : NULL;
+    // Jurisdiction filter: only apply if the field exists on the bundle (B5).
+    $jurisdictionId = NULL;
+    if ($request && $this->emergencyService->hasJurisdictionField()) {
+      $raw = $request->query->get('jurisdiction_id');
+      if ($raw !== NULL) {
+        $jurisdictionId = (int) $raw;
+      }
+    }
 
-    // Build list of currently available categories for the UI.
+    // Build available-categories list.
+    $available_categories = $this->buildAvailableCategories($active, $jurisdictionId);
+
+    // Banner data.
+    $banner = $this->getBannerData($config, $active);
+
+    // Determine force_redirect from the config key matching the mode type.
+    // Maintenance has its own toggle; other modes use emergency_mode key.
+    if ($modeType === 'maintenance') {
+      $forceRedirect = (bool) $config->get('maintenance.force_redirect');
+    }
+    else {
+      $forceRedirect = (bool) $config->get('emergency_mode.force_redirect');
+    }
+
+    $payload = [
+      'emergency_mode' => $active,
+      'status' => $status,
+      'mode_type' => $modeType,
+      'lite_ui' => (bool) $config->get('emergency_mode.lite_ui'),
+      'force_redirect' => $forceRedirect,
+      'available_categories' => $available_categories,
+      'allowed_urls' => (array) ($config->get('allowed_urls') ?: []),
+      'banner' => $banner,
+    ];
+
+    // Details subtree: only for callers with the view permission (H5).
+    if ($this->currentUser->hasPermission('view emergency status')) {
+      $activatedAt = $this->emergencyService->getActivatedAt();
+      $activatedBy = $this->emergencyService->getActivatedBy();
+
+      $payload['details'] = [
+        'emergency_mode' => [
+          'status' => $status,
+          'mode_type' => $modeType,
+          // Use the already-resolved $forceRedirect (mode-type-aware).
+          'force_redirect' => $forceRedirect,
+          'lite_ui' => (bool) $config->get('emergency_mode.lite_ui'),
+          'activated_at' => $activatedAt,
+          'activated_by' => $activatedBy,
+        ],
+        'auto_deactivate' => [
+          'enabled' => (bool) $config->get('auto_deactivate.enabled'),
+          'duration' => (int) ($config->get('auto_deactivate.duration') ?? 72),
+        ],
+        'network_detection' => [
+          'enabled' => (bool) $config->get('network_detection.enabled'),
+          'auto_switch_threshold' => (string) ($config->get('network_detection.auto_switch_threshold') ?? '2g'),
+        ],
+        'maintenance' => [
+          'force_redirect' => (bool) $config->get('maintenance.force_redirect'),
+          'banner_text' => (string) ($config->get('maintenance.banner_text') ?: ''),
+        ],
+      ];
+
+      // Expose restore queue size for operations dashboards.
+      if ($this->currentUser->hasPermission('administer emergency mode')) {
+        $snapshotKey = $this->emergencyService->getSnapshotKey($jurisdictionId);
+        $snapshot = $this->state->get($snapshotKey, []);
+        $payload['details']['restore_queue_count'] = is_array($snapshot) ? count($snapshot) : 0;
+      }
+    }
+
+    // Build cacheable response.
+    $response = new CacheableJsonResponse($payload);
+    $response->headers->set('Cache-Control', 'no-store');
+
+    $cacheability = new CacheableMetadata();
+    $cacheability->addCacheTags([
+      'config:markaspot_emergency.settings',
+      'taxonomy_term_list:service_category',
+      EmergencyModeService::CACHE_TAG,
+    ]);
+    $cacheability->addCacheContexts([
+      'url.query_args:jurisdiction_id',
+      'user.permissions',
+    ]);
+    // 5s TTL as a fallback only. Tag-based invalidation
+    // (markaspot_emergency:status) is the primary freshness guarantee and fires
+    // immediately when emergency state changes. The short TTL is a safety net
+    // in case cache invalidation is delayed or bypassed.
+    $cacheability->setCacheMaxAge(5);
+    $response->addCacheableDependency($cacheability);
+
+    return $response;
+  }
+
+  /**
+   * Activate emergency mode via HTTP.
+   */
+  public function activate(?Request $request = NULL) {
+    $data = $request ? json_decode($request->getContent(), TRUE) ?? [] : [];
+
+    if ($request !== NULL && !$this->currentUser->hasPermission('administer emergency mode')) {
+      return new JsonResponse(['error' => 'Access denied'], 403);
+    }
+
+    $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
+    $config = $this->configFactory->get('markaspot_emergency.settings');
+
+    $this->emergencyService->activate(
+      $data['mode_type'] ?? 'disaster',
+      (bool) ($data['force_redirect'] ?? TRUE),
+      (bool) ($data['lite_ui'] ?? TRUE),
+      (bool) ($data['unpublish_categories'] ?? $config->get('categories.unpublish_regular')),
+      (bool) ($data['create_emergency_categories'] ?? TRUE),
+      $jurisdictionId
+    );
+
+    return new JsonResponse([
+      'status' => 'success',
+      'message' => 'Emergency mode activated',
+      'emergency_mode' => [
+        'status' => 'active',
+        'activated_at' => $this->emergencyService->getActivatedAt(),
+        'activated_by' => $this->emergencyService->getActivatedBy(),
+      ],
+    ]);
+  }
+
+  /**
+   * Deactivate emergency mode via HTTP.
+   */
+  public function deactivate(?Request $request = NULL) {
+    $data = $request ? json_decode($request->getContent(), TRUE) ?? [] : [];
+
+    if ($request !== NULL && !$this->currentUser->hasPermission('administer emergency mode')) {
+      return new JsonResponse(['error' => 'Access denied'], 403);
+    }
+
+    $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
+    $config = $this->configFactory->get('markaspot_emergency.settings');
+    $restoreCategories = (bool) ($data['restore_categories'] ?? $config->get('categories.restore_on_deactivation'));
+
+    $this->emergencyService->deactivate($restoreCategories, $jurisdictionId);
+
+    return new JsonResponse([
+      'status' => 'success',
+      'message' => 'Emergency mode deactivated',
+      'emergency_mode' => ['status' => 'off'],
+    ]);
+  }
+
+  /**
+   * SOS redirect handler for emergency access.
+   */
+  public function sosRedirect() {
+    if ($this->emergencyService->isActive()) {
+      return [
+        '#markup' => '<div class="emergency-sos-active">'
+          . '<h1>' . $this->t('Emergency Mode Active') . '</h1>'
+          . '<p>' . $this->t('The system is currently in emergency mode. Please use the emergency reporting categories.') . '</p>'
+          . '<a href="/" class="button">' . $this->t('Go to Emergency Reporting') . '</a>'
+          . '</div>',
+        '#attached' => [
+          'library' => ['markaspot_emergency/emergency-styles'],
+        ],
+      ];
+    }
+
+    return $this->redirect('<front>');
+  }
+
+  /**
+   * Builds the available-categories list for the status response.
+   */
+  protected function buildAvailableCategories(bool $active, ?int $jurisdictionId = NULL): array {
     $storage = $this->entityTypeManager->getStorage('taxonomy_term');
     $query = $storage->getQuery()
       ->condition('vid', 'service_category')
       ->condition('status', 1)
       ->accessCheck(FALSE);
 
-    if ($jurisdictionId) {
+    // Jurisdiction scoping: only add the condition when the field exists.
+    if ($jurisdictionId && $this->emergencyService->hasJurisdictionField()) {
       $query->condition('field_jurisdiction', $jurisdictionId);
     }
 
     if ($active) {
-      // Emergency mode: only emergency categories.
       $query->condition('field_emergency_category', TRUE);
     }
     else {
-      // Normal mode: non-emergency categories (field false or missing).
       $group = $query->orConditionGroup()
         ->notExists('field_emergency_category')
         ->condition('field_emergency_category', FALSE);
@@ -104,17 +320,18 @@ class EmergencyModeController extends ControllerBase {
 
     $tids = $query->execute();
     $available_categories = [];
+
     if (!empty($tids)) {
       $terms = $storage->loadMultiple($tids);
       foreach ($terms as $term) {
         $color = NULL;
         $icon = NULL;
+
         if ($term->hasField('field_category_hex') && !$term->get('field_category_hex')->isEmpty()) {
           $color = (string) $term->get('field_category_hex')->value;
         }
         elseif ($term->hasField('field_color') && !$term->get('field_color')->isEmpty()) {
           $item = $term->get('field_color')->first();
-          // Color field stores 'color' property; fall back to value if present.
           if ($item && $item->get('color')) {
             $color = $item->get('color')->getString();
           }
@@ -126,9 +343,6 @@ class EmergencyModeController extends ControllerBase {
         if ($term->hasField('field_category_icon') && !$term->get('field_category_icon')->isEmpty()) {
           $icon = (string) $term->get('field_category_icon')->value;
         }
-        elseif ($term->hasField('field_icon') && !$term->get('field_icon')->isEmpty()) {
-          $icon = (string) $term->get('field_icon')->value;
-        }
 
         $available_categories[] = [
           'id' => (int) $term->id(),
@@ -138,503 +352,56 @@ class EmergencyModeController extends ControllerBase {
           'icon' => $icon,
         ];
       }
-      // Keep deterministic order for UI.
+
       usort($available_categories, fn($a, $b) => $a['weight'] <=> $b['weight'] ?: strcmp($a['name'], $b['name']));
     }
 
-    // Generate banner data based on configuration and current mode.
-    $banner = $this->getBannerData($config, $active);
-
-    $payload = [
-      // Simple flags for frontend consumption.
-      'emergency_mode' => $active,
-      'status' => $status,
-      'mode_type' => (string) $config->get('emergency_mode.mode_type'),
-      'lite_ui' => (bool) $config->get('emergency_mode.lite_ui'),
-      'available_categories' => $available_categories,
-      'allowed_urls' => (array) ($config->get('allowed_urls') ?: []),
-      'banner' => $banner,
-
-      // Detailed structure for advanced clients.
-      'details' => [
-        'emergency_mode' => [
-          'status' => $status,
-          'mode_type' => $config->get('emergency_mode.mode_type'),
-          'force_redirect' => $config->get('emergency_mode.force_redirect'),
-          'lite_ui' => $config->get('emergency_mode.lite_ui'),
-          'activated_at' => $config->get('emergency_mode.activated_at'),
-          'activated_by' => $config->get('emergency_mode.activated_by'),
-        ],
-        'auto_deactivate' => [
-          'enabled' => $config->get('auto_deactivate.enabled'),
-          'duration' => $config->get('auto_deactivate.duration'),
-        ],
-        'network_detection' => [
-          'enabled' => $config->get('network_detection.enabled'),
-          'auto_switch_threshold' => $config->get('network_detection.auto_switch_threshold'),
-        ],
-        'maintenance' => [
-          'force_redirect' => (bool) $config->get('maintenance.force_redirect'),
-          'banner_text' => (string) ($config->get('maintenance.banner_text') ?: ''),
-        ],
-      ],
-    ];
-
-    // Admin-only: expose restore queue size to assist operations dashboards.
-    if ($this->currentUser->hasPermission('administer emergency mode')) {
-      $stateKey = $this->getStateKey($jurisdictionId);
-      $snapshot = \Drupal::state()->get($stateKey, []);
-      $payload['details']['restore_queue_count'] = is_array($snapshot) ? count($snapshot) : 0;
-    }
-
-    $response = new JsonResponse($payload);
-
-    // Avoid stale frontend status by disabling caching at the HTTP level.
-    $response->headers->set('Cache-Control', 'no-cache, no-store, must-revalidate');
-    $response->headers->set('Pragma', 'no-cache');
-    $response->headers->set('Expires', '0');
-
-    return $response;
-  }
-
-  /**
-   * Activate emergency mode.
-   */
-  public function activate(?Request $request = NULL) {
-    $data = $request ? json_decode($request->getContent(), TRUE) ?? [] : [];
-
-    // Check permissions (only if called via HTTP request, CLI is trusted).
-    if ($request && !$this->currentUser->hasPermission('administer emergency mode')) {
-      return new JsonResponse(['error' => 'Access denied'], 403);
-    }
-
-    // Get jurisdiction ID for scoping (multi-tenant mode).
-    $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
-
-    $config = $this->configFactory->getEditable('markaspot_emergency.settings');
-
-    // Update configuration.
-    $config
-      ->set('emergency_mode.status', 'active')
-      ->set('emergency_mode.mode_type', $data['mode_type'] ?? 'disaster')
-      ->set('emergency_mode.force_redirect', $data['force_redirect'] ?? TRUE)
-      ->set('emergency_mode.lite_ui', $data['lite_ui'] ?? TRUE)
-      ->set('emergency_mode.activated_at', time())
-      ->set('emergency_mode.activated_by', $this->currentUser->id())
-      ->save();
-
-    // Behavior by mode type.
-    $mode_type = (string) ($data['mode_type'] ?? $config->get('emergency_mode.mode_type') ?? 'disaster');
-    $stateKey = $this->getStateKey($jurisdictionId);
-
-    if ($mode_type === 'maintenance') {
-      // Load maintenance settings.
-      $keep_tids = (array) $config->get('maintenance.show_only_categories') ?: [];
-      $hide_others = (bool) $config->get('maintenance.unpublish_non_selected');
-
-      if ($hide_others) {
-        // Snapshot all published categories once before unpublishing any.
-        $state = \Drupal::state();
-        if (empty($state->get($stateKey))) {
-          $state->set($stateKey, $this->getAllPublishedTermIds($jurisdictionId));
-        }
-        $this->unpublishNonSelectedCategories($keep_tids, $jurisdictionId);
-      }
-
-      if (!empty($keep_tids)) {
-        $this->publishSelectedCategories($keep_tids);
-      }
-    }
-    else {
-      // Emergency/crisis: unpublish regular categories if requested.
-      if ($data['unpublish_categories'] ?? $config->get('categories.unpublish_regular')) {
-        $state = \Drupal::state();
-        // Only capture once if not already set.
-        if (empty($state->get($stateKey))) {
-          $original_tids = $this->getRegularPublishedTermIds($jurisdictionId);
-          $state->set($stateKey, $original_tids);
-        }
-        $this->unpublishRegularCategories($jurisdictionId);
-      }
-
-      // Create/publish emergency categories.
-      if ($data['create_emergency_categories'] ?? TRUE) {
-        $this->createEmergencyCategories($jurisdictionId);
-      }
-    }
-
-    $this->logger->notice('Emergency mode activated by user @user (ID: @uid)', [
-      '@user' => $this->currentUser->getDisplayName(),
-      '@uid' => $this->currentUser->id(),
-    ]);
-
-    return new JsonResponse([
-      'status' => 'success',
-      'message' => 'Emergency mode activated',
-      'emergency_mode' => [
-        'status' => 'active',
-        'activated_at' => time(),
-        'activated_by' => $this->currentUser->id(),
-      ],
-    ]);
-  }
-
-  /**
-   * Deactivate emergency mode.
-   */
-  public function deactivate(?Request $request = NULL) {
-    $data = $request ? json_decode($request->getContent(), TRUE) ?? [] : [];
-
-    // Check permissions (only if called via HTTP request).
-    if ($request && !$this->currentUser->hasPermission('administer emergency mode')) {
-      return new JsonResponse(['error' => 'Access denied'], 403);
-    }
-
-    // Get jurisdiction ID for scoping (multi-tenant mode).
-    $jurisdictionId = isset($data['jurisdiction_id']) ? (int) $data['jurisdiction_id'] : NULL;
-
-    $config = $this->configFactory->getEditable('markaspot_emergency.settings');
-
-    // Update configuration.
-    $config
-      ->set('emergency_mode.status', 'off')
-      ->set('emergency_mode.activated_at', NULL)
-      ->set('emergency_mode.activated_by', NULL)
-      ->save();
-
-    // Restore categories if requested.
-    if ($data['restore_categories'] ?? $config->get('categories.restore_on_deactivation')) {
-      // Only unpublish emergency categories when we were in emergency/crisis.
-      $last_mode = (string) $config->get('emergency_mode.mode_type');
-      if ($last_mode !== 'maintenance') {
-        $this->unpublishEmergencyCategories($jurisdictionId);
-      }
-      $this->restoreRegularCategories($jurisdictionId);
-    }
-
-    $this->logger->notice('Emergency mode deactivated by user @user (ID: @uid)', [
-      '@user' => $this->currentUser->getDisplayName(),
-      '@uid' => $this->currentUser->id(),
-    ]);
-
-    if ($request) {
-      return new JsonResponse([
-        'status' => 'success',
-        'message' => 'Emergency mode deactivated',
-        'emergency_mode' => [
-          'status' => 'off',
-        ],
-      ]);
-    }
-  }
-
-  /**
-   * Unpublish all regular categories (non-emergency).
-   */
-  protected function unpublishRegularCategories(?int $jurisdictionId = NULL) {
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $tids = $this->getRegularPublishedTermIds($jurisdictionId);
-    if (!empty($tids)) {
-      $terms = $storage->loadMultiple($tids);
-      foreach ($terms as $term) {
-        $term->set('status', 0);
-        $term->save();
-      }
-      $this->logger->info('Unpublished @count regular categories.', [
-        '@count' => count($terms),
-      ]);
-    }
-  }
-
-  /**
-   * Restore regular categories to published state from State API.
-   */
-  protected function restoreRegularCategories(?int $jurisdictionId = NULL) {
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $state = \Drupal::state();
-    $key = $this->getStateKey($jurisdictionId);
-    $tids = $state->get($key, []);
-    if (!empty($tids)) {
-      $terms = $storage->loadMultiple($tids);
-      foreach ($terms as $term) {
-        if ($term) {
-          $term->set('status', 1);
-          $term->save();
-        }
-      }
-      $this->logger->info('Restored @count regular categories to published status.', [
-        '@count' => count($terms),
-      ]);
-      // Clear snapshot after successful restoration.
-      $state->delete($key);
-    }
-  }
-
-  /**
-   * Unpublish all emergency categories.
-   */
-  protected function unpublishEmergencyCategories(?int $jurisdictionId = NULL) {
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $query = $storage->getQuery()
-      ->condition('vid', 'service_category')
-      ->condition('field_emergency_category', TRUE)
-      ->condition('status', 1)
-      ->accessCheck(FALSE);
-
-    if ($jurisdictionId) {
-      $query->condition('field_jurisdiction', $jurisdictionId);
-    }
-
-    $tids = $query->execute();
-    if (!empty($tids)) {
-      $terms = $storage->loadMultiple($tids);
-      foreach ($terms as $term) {
-        $term->set('status', 0);
-        $term->save();
-      }
-      $this->logger->info('Unpublished @count emergency categories.', [
-        '@count' => count($terms),
-      ]);
-    }
-  }
-
-  /**
-   * Publish selected categories (ensure published). */
-  protected function publishSelectedCategories(array $tids): void {
-    $tids = array_values(array_filter(array_map('intval', $tids)));
-    if (!$tids) {
-      return;
-    }
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $terms = $storage->loadMultiple($tids);
-    foreach ($terms as $term) {
-      if ($term->get('vid')->value !== 'service_category') {
-        continue;
-      }
-      if (!$term->isPublished()) {
-        $term->set('status', 1);
-        $term->save();
-      }
-    }
-  }
-
-  /**
-   * Unpublish all published categories except the provided TIDs. */
-  protected function unpublishNonSelectedCategories(array $keep_tids, ?int $jurisdictionId = NULL): void {
-    $keep = array_values(array_unique(array_filter(array_map('intval', $keep_tids))));
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $query = $storage->getQuery()
-      ->condition('vid', 'service_category')
-      ->condition('status', 1)
-      ->accessCheck(FALSE);
-    if ($jurisdictionId) {
-      $query->condition('field_jurisdiction', $jurisdictionId);
-    }
-    if ($keep) {
-      $query->condition('tid', $keep, 'NOT IN');
-    }
-    $tounpublish = $query->execute();
-    if (!empty($tounpublish)) {
-      $terms = $storage->loadMultiple($tounpublish);
-      foreach ($terms as $term) {
-        $term->set('status', 0);
-        $term->save();
-      }
-      $this->logger->info('Unpublished @count non-selected maintenance categories.', ['@count' => count($terms)]);
-    }
-  }
-
-  /**
-   * Get IDs of currently published regular categories.
-   *
-   * Regular means terms that either do not have the emergency flag or have it set to FALSE.
-   */
-  protected function getRegularPublishedTermIds(?int $jurisdictionId = NULL): array {
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $query = $storage->getQuery()
-      ->condition('vid', 'service_category')
-      ->condition('status', 1)
-      ->accessCheck(FALSE);
-
-    if ($jurisdictionId) {
-      $query->condition('field_jurisdiction', $jurisdictionId);
-    }
-
-    $regular = $query->orConditionGroup()
-      ->notExists('field_emergency_category')
-      ->condition('field_emergency_category', FALSE);
-    $query->condition($regular);
-
-    return array_values($query->execute());
-  }
-
-  /**
-   * Get IDs of all currently published categories. */
-  protected function getAllPublishedTermIds(?int $jurisdictionId = NULL): array {
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $query = $storage->getQuery()
-      ->condition('vid', 'service_category')
-      ->condition('status', 1)
-      ->accessCheck(FALSE);
-    if ($jurisdictionId) {
-      $query->condition('field_jurisdiction', $jurisdictionId);
-    }
-    return array_values($query->execute());
-  }
-
-  /**
-   * Create or publish emergency categories from presets.
-   */
-  protected function createEmergencyCategories(?int $jurisdictionId = NULL) {
-    $config = $this->configFactory->get('markaspot_emergency.settings');
-    $presets = $config->get('categories.emergency_presets');
-
-    if (empty($presets)) {
-      return;
-    }
-
-    $storage = $this->entityTypeManager->getStorage('taxonomy_term');
-    $created_count = 0;
-    $published_count = 0;
-
-    foreach ($presets as $preset) {
-      // Check if emergency category already exists.
-      $existProps = [
-        'vid' => 'service_category',
-        'name' => $preset['name'],
-        'field_emergency_category' => TRUE,
-      ];
-      if ($jurisdictionId) {
-        $existProps['field_jurisdiction'] = $jurisdictionId;
-      }
-      $existing = $storage->loadByProperties($existProps);
-
-      if (!empty($existing)) {
-        // Category exists, just publish it.
-        $term = reset($existing);
-        $term->set('status', 1);
-        // Update optional metadata if fields exist.
-        if ($term->hasField('field_icon') && !empty($preset['icon'])) {
-          $term->set('field_icon', $preset['icon']);
-        }
-        if ($term->hasField('field_category_icon') && !empty($preset['icon'])) {
-          $term->set('field_category_icon', $preset['icon']);
-        }
-        if ($term->hasField('field_color') && !empty($preset['color'])) {
-          $term->set('field_color', $preset['color']);
-        }
-        if ($term->hasField('field_category_hex') && !empty($preset['color'])) {
-          $term->set('field_category_hex', $preset['color']);
-        }
-        $term->save();
-        $published_count++;
-      }
-      else {
-        // Create new emergency category.
-        $values = [
-          'vid' => 'service_category',
-          'name' => $preset['name'],
-          'status' => 1,
-          'weight' => $preset['weight'],
-          'field_emergency_category' => TRUE,
-        ];
-        if ($jurisdictionId) {
-          $values['field_jurisdiction'] = $jurisdictionId;
-        }
-        $term = $storage->create($values);
-        // Set optional fields if present on the bundle.
-        if ($term->hasField('field_icon') && !empty($preset['icon'])) {
-          $term->set('field_icon', $preset['icon']);
-        }
-        if ($term->hasField('field_category_icon') && !empty($preset['icon'])) {
-          $term->set('field_category_icon', $preset['icon']);
-        }
-        if ($term->hasField('field_color') && !empty($preset['color'])) {
-          $term->set('field_color', $preset['color']);
-        }
-        if ($term->hasField('field_category_hex') && !empty($preset['color'])) {
-          $term->set('field_category_hex', $preset['color']);
-        }
-        $term->save();
-        $created_count++;
-      }
-    }
-
-    if ($created_count > 0) {
-      $this->logger->info('Created @count new emergency categories.', [
-        '@count' => $created_count,
-      ]);
-    }
-
-    if ($published_count > 0) {
-      $this->logger->info('Published @count existing emergency categories.', [
-        '@count' => $published_count,
-      ]);
-    }
-  }
-
-  /**
-   * Gets the jurisdiction-scoped state key for storing snapshot TIDs.
-   */
-  private function getStateKey(?int $jurisdictionId = NULL): string {
-    $key = 'markaspot_emergency.original_published_tids';
-    if ($jurisdictionId) {
-      $key .= '.' . $jurisdictionId;
-    }
-    return $key;
+    return $available_categories;
   }
 
   /**
    * Get banner data based on configuration and current mode.
    */
-  protected function getBannerData($config, $emergency_active) {
+  public function getBannerData($config, bool $emergency_active): ?array {
     $banner_config = $config->get('banner') ?: [];
 
-    // Check if banner is enabled.
     if (!($banner_config['enabled'] ?? FALSE)) {
       return NULL;
     }
 
     $message = trim($banner_config['message'] ?? '');
-    if (empty($message)) {
-      return NULL;
-    }
-
-    // Check display conditions.
     $conditions = $banner_config['display_conditions'] ?? [];
     $mode_type = (string) $config->get('emergency_mode.mode_type');
     $maintenance_mode = $mode_type === 'maintenance';
 
     $should_display = FALSE;
 
-    // Always visible.
     if ($conditions['always_visible'] ?? FALSE) {
       $should_display = TRUE;
     }
-    // Emergency mode only.
     elseif (($conditions['emergency_mode_only'] ?? FALSE) && $emergency_active) {
       $should_display = TRUE;
     }
-    // Maintenance mode.
     elseif (($conditions['maintenance_mode'] ?? TRUE) && $maintenance_mode) {
       $should_display = TRUE;
-
-      // Use maintenance banner text if CAP banner message is empty.
-      $maintenance_text = trim($config->get('maintenance.banner_text') ?? '');
-      if (empty($message) && !empty($maintenance_text)) {
-        $message = $maintenance_text;
+      // Fall back to maintenance.banner_text when the banner message is empty.
+      if (empty($message)) {
+        $message = trim($config->get('maintenance.banner_text') ?? '');
       }
     }
-    // Emergency mode (non-maintenance)
     elseif ($emergency_active && !$maintenance_mode) {
       $should_display = TRUE;
+    }
+
+    // Both banner message and maintenance fallback are empty: nothing to show.
+    if (empty($message)) {
+      return NULL;
     }
 
     if (!$should_display) {
       return NULL;
     }
 
-    // Determine appropriate level based on mode if not explicitly set.
     $level = $banner_config['level'] ?? 'info';
     if ($emergency_active && $level === 'info') {
       switch ($mode_type) {
@@ -663,30 +430,6 @@ class EmergencyModeController extends ControllerBase {
       'mode_type' => $mode_type,
       'emergency_active' => $emergency_active,
     ];
-  }
-
-  /**
-   * SOS redirect handler for emergency access.
-   */
-  public function sosRedirect() {
-    $config = $this->configFactory->get('markaspot_emergency.settings');
-
-    // If emergency mode is active, show emergency UI.
-    if ($config->get('emergency_mode.status') === 'active') {
-      return [
-        '#markup' => '<div class="emergency-sos-active">
-          <h1>Emergency Mode Active</h1>
-          <p>The system is currently in emergency mode. Please use the emergency reporting categories.</p>
-          <a href="/" class="button">Go to Emergency Reporting</a>
-        </div>',
-        '#attached' => [
-          'library' => ['markaspot_emergency/emergency-styles'],
-        ],
-      ];
-    }
-
-    // If not active, redirect to normal homepage.
-    return $this->redirect('<front>');
   }
 
 }

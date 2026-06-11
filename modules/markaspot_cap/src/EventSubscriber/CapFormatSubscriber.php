@@ -2,71 +2,46 @@
 
 namespace Drupal\markaspot_cap\EventSubscriber;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
-use Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException;
 
 /**
- * Subscribes to kernel events to handle CAP format requests.
+ * Sets the request format to 'cap' for matched CAP routes.
+ *
+ * The access gate (emergency-active check) lives in EmergencyActiveAccessCheck.
+ * This subscriber only sets the format so the CapEncoder is invoked by the
+ * serializer. It matches on the '_route' request attribute, which Drupal sets
+ * after routing -- so percent-encoded paths like '/api/c%61p/v1/alerts' are
+ * already decoded and routed before we run (priority < 32 keeps us after the
+ * router subscriber at priority 32).
  */
 class CapFormatSubscriber implements EventSubscriberInterface {
-
-  /**
-   * The config factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
-   * Constructor.
-   *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
-   *   The config factory.
-   */
-  public function __construct(ConfigFactoryInterface $config_factory) {
-    $this->configFactory = $config_factory;
-  }
 
   /**
    * {@inheritdoc}
    */
   public static function getSubscribedEvents() {
-    // Priority 99 to run early, before routing.
     return [
-      KernelEvents::REQUEST => ['onKernelRequest', 99],
+      KernelEvents::REQUEST => ['onKernelRequest', 28],
     ];
   }
 
   /**
-   * Sets the request format based on URL path.
+   * Sets 'cap' as the request format for CAP alert routes.
    *
    * @param \Symfony\Component\HttpKernel\Event\RequestEvent $event
    *   The request event.
-   *
-   * @throws \Symfony\Component\HttpKernel\Exception\ServiceUnavailableHttpException
-   *   Thrown if emergency mode is not active.
    */
-  public function onKernelRequest(RequestEvent $event) {
+  public function onKernelRequest(RequestEvent $event): void {
+    if (!$event->isMainRequest()) {
+      return;
+    }
+
     $request = $event->getRequest();
-    $pathInfo = $request->getPathInfo();
+    $routeName = $request->attributes->get('_route', '');
 
-    // Check if the path is a CAP API endpoint.
-    if (preg_match('#^/api/cap/v1/alerts#', $pathInfo)) {
-      // Check if emergency mode is active.
-      $emergencyConfig = $this->configFactory->get('markaspot_emergency.settings');
-      $emergencyStatus = $emergencyConfig->get('emergency_mode.status');
-
-      if ($emergencyStatus !== 'active') {
-        throw new ServiceUnavailableHttpException(
-          NULL,
-          'CAP export is only available when emergency mode is active.'
-        );
-      }
-
-      // Set the request format to 'cap'.
+    if (str_starts_with($routeName, 'markaspot_cap.')) {
       $request->setRequestFormat('cap');
     }
   }

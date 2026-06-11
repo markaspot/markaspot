@@ -3,9 +3,8 @@
 # Node bundle to export as CAP alerts
 bundle: 'service_request'
 
-# Sender identification
+# Sender identification (used as PII-safe senderName and areaDesc)
 sender:
-  domain: 'example.gov'
   name: 'City Emergency Services'
 
 # Default CAP values
@@ -16,16 +15,12 @@ defaults:
   scope: 'Public'
   msg_type: 'Alert'
 
-# Priority to Severity mapping (CAP standard)
+# Severity mapping for field_hazard_level (0=Unknown/Minor, 1=Minor, 2=Moderate, 3=Severe, 4=Extreme)
+# Override these values per deployment if a different scale is used.
 severity_mapping:
-  0: 'Extreme'
-  1: 'Severe'
+  0: 'Minor'
+  1: 'Minor'
   2: 'Moderate'
-  3: 'Minor'
-  default: 'Unknown'
-
-# Status mapping (Open311 → CAP)
-status_mapping:
-  open: 'Actual'
-  in_progress: 'Actual'
-  closed: 'Cancel'
+  3: 'Severe'
+  4: 'Extreme'
+  default: 'Minor'

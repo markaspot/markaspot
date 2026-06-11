@@ -2,10 +2,11 @@
 
 namespace Drupal\markaspot_emergency\Commands;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\State\StateInterface;
+use Drupal\markaspot_emergency\Service\EmergencyModeService;
 use Drush\Commands\DrushCommands;
 use Drush\Attributes as CLI;
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\markaspot_emergency\Controller\EmergencyModeController;
 
 /**
  * Drush commands for emergency mode operations.
@@ -20,19 +21,31 @@ class EmergencyCommands extends DrushCommands {
   protected $configFactory;
 
   /**
-   * The emergency mode controller.
+   * The emergency mode service.
    *
-   * @var \Drupal\markaspot_emergency\Controller\EmergencyModeController
+   * @var \Drupal\markaspot_emergency\Service\EmergencyModeService
    */
-  protected $emergencyController;
+  protected EmergencyModeService $emergencyService;
+
+  /**
+   * The state service.
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  protected StateInterface $state;
 
   /**
    * EmergencyCommands constructor.
    */
-  public function __construct(ConfigFactoryInterface $config_factory, EmergencyModeController $emergency_controller) {
+  public function __construct(
+    ConfigFactoryInterface $config_factory,
+    EmergencyModeService $emergency_service,
+    StateInterface $state,
+  ) {
     parent::__construct();
     $this->configFactory = $config_factory;
-    $this->emergencyController = $emergency_controller;
+    $this->emergencyService = $emergency_service;
+    $this->state = $state;
   }
 
   /**
@@ -40,18 +53,18 @@ class EmergencyCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'markaspot:emergency:status', aliases: ['emergency:status', 'emer:status'])]
   #[CLI\Usage(name: 'markaspot:emergency:status', description: 'Show current emergency mode status.')]
-  public function status() {
+  public function status(): void {
+    $status = $this->emergencyService->getStatus();
     $config = $this->configFactory->get('markaspot_emergency.settings');
-    $status = $config->get('emergency_mode.status');
-    $mode_type = $config->get('emergency_mode.mode_type');
-    $activated_at = $config->get('emergency_mode.activated_at');
+    $modeType = $config->get('emergency_mode.mode_type');
+    $activatedAt = $this->emergencyService->getActivatedAt();
 
     $this->output()->writeln('Emergency Mode Status: ' . strtoupper($status));
 
     if ($status === 'active') {
-      $this->output()->writeln('Mode Type: ' . $mode_type);
-      if ($activated_at) {
-        $this->output()->writeln('Activated At: ' . date('Y-m-d H:i:s', $activated_at));
+      $this->output()->writeln('Mode Type: ' . $modeType);
+      if ($activatedAt) {
+        $this->output()->writeln('Activated At: ' . date('Y-m-d H:i:s', $activatedAt));
       }
     }
   }
@@ -61,29 +74,44 @@ class EmergencyCommands extends DrushCommands {
    */
   #[CLI\Command(name: 'markaspot:emergency:activate', aliases: ['emergency:activate', 'emer:on'])]
   #[CLI\Option(name: 'mode-type', description: 'The type of emergency mode (disaster, crisis, maintenance).')]
+  #[CLI\Option(name: 'no-unpublish', description: 'Skip unpublishing regular categories.')]
   #[CLI\Usage(name: 'markaspot:emergency:activate', description: 'Activate emergency mode with default settings.')]
   #[CLI\Usage(name: 'markaspot:emergency:activate --mode-type=disaster', description: 'Activate disaster mode specifically.')]
-  public function activate($options = ['mode-type' => 'disaster']) {
-    $config = $this->configFactory->get('markaspot_emergency.settings');
-
-    if ($config->get('emergency_mode.status') === 'active') {
+  #[CLI\Usage(name: 'markaspot:emergency:activate --mode-type=maintenance', description: 'Activate maintenance mode.')]
+  public function activate(array $options = ['mode-type' => 'disaster', 'no-unpublish' => FALSE]): void {
+    if ($this->emergencyService->isActive()) {
       $this->output()->writeln('Emergency mode is already active.');
       return;
     }
 
-    // Call controller without request to bypass permission check (CLI is trusted).
-    // Controller will use default values for category handling.
-    $this->emergencyController->activate(NULL);
-
-    // Update mode type if specified (controller uses 'disaster' default).
-    if ($options['mode-type'] !== 'disaster') {
-      $this->configFactory->getEditable('markaspot_emergency.settings')
-        ->set('emergency_mode.mode_type', $options['mode-type'])
-        ->save();
+    $modeType = $options['mode-type'];
+    $allowedTypes = ['disaster', 'crisis', 'maintenance'];
+    if (!in_array($modeType, $allowedTypes, TRUE)) {
+      $this->logger()->error('Invalid --mode-type "@type". Allowed values: disaster, crisis, maintenance.', ['@type' => $modeType]);
+      return;
     }
 
-    $this->output()->writeln('✅ Emergency mode activated successfully.');
-    $this->output()->writeln('Mode Type: ' . $options['mode-type']);
+    $unpublish = !$options['no-unpublish'];
+
+    // Read force_redirect from the config key that matches the mode type.
+    $config = $this->configFactory->get('markaspot_emergency.settings');
+    if ($modeType === 'maintenance') {
+      $forceRedirect = (bool) $config->get('maintenance.force_redirect');
+    }
+    else {
+      $forceRedirect = (bool) $config->get('emergency_mode.force_redirect');
+    }
+
+    $this->emergencyService->activate(
+      modeType: $modeType,
+      forceRedirect: $forceRedirect,
+      liteUi: TRUE,
+      unpublishCategories: $unpublish,
+      createEmergencyCategories: TRUE,
+    );
+
+    $this->output()->writeln('Emergency mode activated successfully.');
+    $this->output()->writeln('Mode Type: ' . $modeType);
     $this->output()->writeln('Activated At: ' . date('Y-m-d H:i:s'));
   }
 
@@ -91,24 +119,25 @@ class EmergencyCommands extends DrushCommands {
    * Deactivate emergency mode.
    */
   #[CLI\Command(name: 'markaspot:emergency:deactivate', aliases: ['emergency:deactivate', 'emer:off'])]
-  #[CLI\Option(name: 'restore-categories', description: 'Restore regular categories to published state.')]
+  #[CLI\Option(name: 'restore-categories', description: 'Restore regular categories to published state (default: 1).')]
   #[CLI\Usage(name: 'markaspot:emergency:deactivate', description: 'Deactivate emergency mode and restore regular categories.')]
   #[CLI\Usage(name: 'markaspot:emergency:deactivate --restore-categories=0', description: 'Deactivate without restoring categories.')]
-  public function deactivate($options = ['restore-categories' => TRUE]) {
-    $config = $this->configFactory->get('markaspot_emergency.settings');
-
-    if ($config->get('emergency_mode.status') !== 'active') {
+  public function deactivate(array $options = ['restore-categories' => TRUE]): void {
+    if (!$this->emergencyService->isActive()) {
       $this->output()->writeln('Emergency mode is not currently active.');
       return;
     }
 
-    // Call controller without request to bypass permission check (CLI is trusted).
-    // Pass NULL so controller skips HTTP permission check but still does category work.
-    $this->emergencyController->deactivate(NULL);
+    $restore = (bool) $options['restore-categories'];
 
-    $this->output()->writeln('✅ Emergency mode deactivated successfully.');
-    if ($options['restore-categories']) {
+    $this->emergencyService->deactivate(restoreCategories: $restore);
+
+    $this->output()->writeln('Emergency mode deactivated successfully.');
+    if ($restore) {
       $this->output()->writeln('Regular categories have been restored.');
+    }
+    else {
+      $this->output()->writeln('Category restore skipped.');
     }
   }
 

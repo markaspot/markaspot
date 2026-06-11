@@ -1,0 +1,39 @@
+markaspot_cap.settings:
+  type: config_object
+  label: 'CAP alert settings'
+  mapping:
+    bundle:
+      type: string
+      label: 'Node bundle'
+    sender:
+      type: mapping
+      label: 'Sender identification'
+      mapping:
+        name:
+          type: label
+          label: 'Sender name'
+    defaults:
+      type: mapping
+      label: 'Default CAP values'
+      mapping:
+        category:
+          type: string
+          label: 'Default category'
+        urgency:
+          type: string
+          label: 'Default urgency'
+        certainty:
+          type: string
+          label: 'Default certainty'
+        scope:
+          type: string
+          label: 'Default scope'
+        msg_type:
+          type: string
+          label: 'Default message type'
+    severity_mapping:
+      type: sequence
+      label: 'Severity mapping (field_hazard_level index to CAP severity)'
+      sequence:
+        type: string
+        label: 'CAP severity string'

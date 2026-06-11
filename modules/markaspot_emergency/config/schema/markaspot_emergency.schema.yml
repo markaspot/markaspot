@@ -1,0 +1,120 @@
+markaspot_emergency.settings:
+  type: config_object
+  label: 'Emergency mode settings'
+  mapping:
+    emergency_mode:
+      type: mapping
+      label: 'Emergency mode policy'
+      mapping:
+        mode_type:
+          type: string
+          label: 'Mode type (disaster, crisis, maintenance)'
+        force_redirect:
+          type: boolean
+          label: 'Force redirect to lite UI'
+        lite_ui:
+          type: boolean
+          label: 'Enable lite UI'
+    categories:
+      type: mapping
+      label: 'Category management'
+      mapping:
+        unpublish_regular:
+          type: boolean
+          label: 'Unpublish regular categories on activation'
+        restore_on_deactivation:
+          type: boolean
+          label: 'Restore categories on deactivation'
+        emergency_presets:
+          type: sequence
+          label: 'Emergency category presets'
+          sequence:
+            type: mapping
+            label: 'Preset'
+            mapping:
+              name:
+                type: label
+                label: 'Category name'
+              icon:
+                type: string
+                label: 'Icon identifier'
+              color:
+                type: string
+                label: 'Hex color'
+              weight:
+                type: integer
+                label: 'Sort weight'
+    auto_deactivate:
+      type: mapping
+      label: 'Auto-deactivation'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Enable auto-deactivation'
+        duration:
+          type: integer
+          label: 'Duration in hours'
+    network_detection:
+      type: mapping
+      label: 'Network detection'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Enable network detection'
+        auto_switch_threshold:
+          type: string
+          label: 'Auto-switch threshold'
+    allowed_urls:
+      type: sequence
+      label: 'Allowed URLs (not redirected during emergency)'
+      sequence:
+        type: string
+        label: 'URL path'
+    maintenance:
+      type: mapping
+      label: 'Maintenance mode'
+      mapping:
+        unpublish_non_selected:
+          type: boolean
+          label: 'Unpublish non-selected categories'
+        show_only_categories:
+          type: sequence
+          label: 'Categories to keep published'
+          sequence:
+            type: integer
+            label: 'Term ID'
+        force_redirect:
+          type: boolean
+          label: 'Force redirect in maintenance mode'
+        banner_text:
+          type: text
+          label: 'Maintenance banner text'
+    banner:
+      type: mapping
+      label: 'CAP banner system'
+      mapping:
+        enabled:
+          type: boolean
+          label: 'Enable banner'
+        message:
+          type: text
+          label: 'Banner message'
+        level:
+          type: string
+          label: 'Alert level'
+        title:
+          type: label
+          label: 'Banner title'
+        display_conditions:
+          type: mapping
+          label: 'Display conditions'
+          mapping:
+            emergency_mode_only:
+              type: boolean
+              label: 'Show only during emergency mode'
+            maintenance_mode:
+              type: boolean
+              label: 'Show during maintenance mode'
+            always_visible:
+              type: boolean
+              label: 'Always visible'

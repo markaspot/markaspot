@@ -33,43 +33,32 @@ function markaspot_emergency_help($route_name, RouteMatchInterface $route_match)
 }
 
 /**
- * Implements hook_theme().
- */
-function markaspot_emergency_theme() {
-  return [
-    'markaspot_emergency_status' => [
-      'variables' => [
-        'status' => NULL,
-        'mode_type' => NULL,
-        'activated_at' => NULL,
-        'activated_by' => NULL,
-        'auto_deactivate_at' => NULL,
-      ],
-    ],
-  ];
-}
-
-/**
  * Implements hook_cron().
+ *
+ * Checks for auto-deactivation of emergency mode. Status is read from State
+ * (not Config) so it survives deploys without being reset.
  */
 function markaspot_emergency_cron() {
+  /** @var \Drupal\markaspot_emergency\Service\EmergencyModeService $service */
+  $service = \Drupal::service('markaspot_emergency.service');
+
+  if (!$service->isActive()) {
+    return;
+  }
+
   $config = \Drupal::config('markaspot_emergency.settings');
+  $autoDeactivate = $config->get('auto_deactivate.enabled');
+  $duration = (int) $config->get('auto_deactivate.duration');
+  $activatedAt = $service->getActivatedAt();
 
-  // Check for auto-deactivation.
-  if ($config->get('emergency_mode.status') === 'active') {
-    $auto_deactivate = $config->get('auto_deactivate.enabled');
-    $duration = $config->get('auto_deactivate.duration');
-    $activated_at = $config->get('emergency_mode.activated_at');
-
-    if ($auto_deactivate && $activated_at && $duration) {
-      $deactivate_time = $activated_at + ($duration * 3600);
-      if (time() >= $deactivate_time) {
-        // Auto-deactivate emergency mode.
-        \Drupal::service('markaspot_emergency.controller')->deactivate();
-        \Drupal::logger('markaspot_emergency')->notice('Emergency mode auto-deactivated after @hours hours.', [
-          '@hours' => $duration,
-        ]);
-      }
+  if ($autoDeactivate && $activatedAt && $duration) {
+    $deactivateTime = $activatedAt + ($duration * 3600);
+    if (time() >= $deactivateTime) {
+      $service->deactivate();
+      \Drupal::logger('markaspot_emergency')->notice(
+        'Emergency mode auto-deactivated after @hours hours.',
+        ['@hours' => $duration]
+      );
     }
   }
 }
