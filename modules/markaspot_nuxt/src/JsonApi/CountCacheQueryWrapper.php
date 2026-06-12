@@ -78,17 +78,19 @@ final class CountCacheQueryWrapper implements QueryInterface {
    *   The current user.
    * @param string $resource_type_name
    *   The JSON:API resource type name (e.g. 'node--service_request').
-   * @param array $filter_params
-   *   The filter portion of the JSON:API params array. Sort and page MUST NOT
-   *   be included — they are irrelevant for the count and would fragment the
-   *   cache by page position, eliminating all benefit.
+   * @param string $filter_hash
+   *   Pre-computed hash of the JSON:API filter portion (the caller hashes,
+   *   because core passes filters as \Drupal\jsonapi\Query\Filter value
+   *   objects, not arrays). Sort and page MUST NOT be part of the hash — they
+   *   are irrelevant for the count and would fragment the cache by page
+   *   position, eliminating all benefit.
    */
   public function __construct(
     QueryInterface $inner,
     CacheBackendInterface $cache,
     AccountInterface $account,
     string $resource_type_name,
-    array $filter_params,
+    string $filter_hash,
   ) {
     $this->inner = $inner;
     $this->cache = $cache;
@@ -97,7 +99,6 @@ final class CountCacheQueryWrapper implements QueryInterface {
     $roles = $account->getRoles();
     sort($roles);
     $context = $account->id() . ':' . implode(',', $roles);
-    $filter_hash = hash('xxh64', serialize($filter_params));
     $this->cid = 'markaspot_nuxt:jsonapi_count:' . $resource_type_name . ':' . $context . ':' . $filter_hash;
   }
 

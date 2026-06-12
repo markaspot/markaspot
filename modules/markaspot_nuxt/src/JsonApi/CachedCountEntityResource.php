@@ -64,6 +64,12 @@ final class CachedCountEntityResource extends EntityResource {
       return $inner;
     }
 
+    // $params['filter'] is a \Drupal\jsonapi\Query\Filter VALUE OBJECT (built
+    // by Filter::createFromQueryParameter()), not an array. serialize() is
+    // deterministic for identical query strings, so hashing it is fine — but
+    // it must never meet an array type hint. Hash here, pass the string.
+    $filter_hash = hash('xxh64', serialize($params['filter'] ?? []));
+
     return new CountCacheQueryWrapper(
       $inner,
       // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (intentional, see method docblock)
@@ -71,7 +77,7 @@ final class CachedCountEntityResource extends EntityResource {
       // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (intentional, see method docblock)
       \Drupal::currentUser(),
       $resource_type->getTypeName(),
-      $params['filter'] ?? [],
+      $filter_hash,
     );
   }
 

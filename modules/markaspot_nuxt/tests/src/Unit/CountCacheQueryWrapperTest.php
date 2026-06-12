@@ -35,14 +35,14 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
     CacheBackendInterface $cache,
     AccountInterface $account,
     string $resource_type = 'node--service_request',
-    array $filter_params = [],
+    string $filter_hash = 'testhash',
   ): CountCacheQueryWrapper {
     return new CountCacheQueryWrapper(
       $inner,
       $cache,
       $account,
       $resource_type,
-      $filter_params,
+      $filter_hash,
     );
   }
 
@@ -135,8 +135,8 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
       });
 
     $account = $this->buildAccount();
-    $wrapper_a = $this->buildWrapper($inner_a, $cache, $account, 'node--service_request', ['status' => 'open']);
-    $wrapper_b = $this->buildWrapper($inner_b, $cache, $account, 'node--service_request', ['status' => 'closed']);
+    $wrapper_a = $this->buildWrapper($inner_a, $cache, $account, 'node--service_request', 'hash-open');
+    $wrapper_b = $this->buildWrapper($inner_b, $cache, $account, 'node--service_request', 'hash-closed');
 
     $wrapper_a->execute();
     $wrapper_b->execute();
