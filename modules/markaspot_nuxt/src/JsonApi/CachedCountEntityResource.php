@@ -4,40 +4,87 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_nuxt\JsonApi;
 
+use Drupal\Core\Entity\Query\Sql\Query;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\jsonapi\Controller\EntityResource;
 use Drupal\jsonapi\ResourceType\ResourceType;
 
 /**
- * Caches the count query for service_request JSON:API collections.
+ * Performance-optimised JSON:API collection handler for service_request.
  *
- * Overrides getCollectionCountQuery() from the @internal EntityResource to
- * wrap the query in a CountCacheQueryWrapper. The wrapper serves cached
- * counts on hit and populates the cache on miss, using Core's 'node_list'
- * and 'group_relationship_list' tags so counts are never stale (see the
- * wrapper's docblock for the invalidation rationale).
+ * Overrides two @internal EntityResource methods:
+ *
+ * 1. getCollectionQuery() — wraps the query in a DeferredAccessQueryWrapper
+ *    which runs a fast Phase-1 candidate fetch (no access joins, no aggregate
+ *    sort) and then a narrow Phase-2 access-checked query. This reduces
+ *    collection latency from 932-1439ms to ~2ms on a 155k-node tenant.
+ *
+ * 2. getCollectionCountQuery() — wraps the count query in a
+ *    CountCacheQueryWrapper that caches the result per user+filter so the
+ *    expensive count query is not re-run on every page navigation.
  *
  * INTENTIONAL USE OF @internal API:
  * Drupal\jsonapi\Controller\EntityResource is marked @internal. We accept
  * this consciously because:
  * - The profile pins Core versions via the markaspot-cloud base image; any
  *   Core update goes through image CI and DDEV smoke tests before prod.
- * - The method signature is extremely stable (has not changed since
- *   JSON:API was added to Core in 8.7).
- * - The performance gain (4-6 seconds per request on large tenants)
- *   far outweighs the maintenance risk.
- * When updating Core, verify the parent signature matches:
+ * - The method signatures are extremely stable (unchanged since JSON:API was
+ *   added to Core in 8.7).
+ * - The performance gains (getCollection: ~1s → ~2ms; count: 4-6s cached)
+ *   far outweigh the maintenance risk.
+ *
+ * When updating Core, verify these parent signatures remain unchanged:
+ *   protected function getCollectionQuery(
+ *     ResourceType $resource_type,
+ *     array $params,
+ *     CacheableMetadata $query_cacheability
+ *   ): QueryInterface
  *   protected function getCollectionCountQuery(
  *     ResourceType $resource_type,
  *     array $params,
  *     CacheableMetadata $query_cacheability
- *   )
+ *   ): QueryInterface
  *
  * @internal This class is part of the markaspot_nuxt module internals.
  *
  * @phpstan-ignore classExtendsInternalClass.classExtendsInternalClass
  */
 final class CachedCountEntityResource extends EntityResource {
+
+  /**
+   * {@inheritdoc}
+   *
+   * Wraps the collection query in a DeferredAccessQueryWrapper for
+   * node--service_request resources. Other resource types pass through
+   * unchanged.
+   *
+   * NO user-scope guard (unlike getCollectionCountQuery): the two-phase wrapper
+   * does not cache anything, so there is no cache-flooding risk for anonymous
+   * traffic. Phase 2 enforces the full access-checked query for every user,
+   * making this safe for all roles including anonymous.
+   *
+   * IMPORTANT: getCollectionCountQuery() calls
+   *   $this->getCollectionQuery(...)->range()->count()
+   * so this method is also invoked from the count path. The wrapper handles
+   * count() correctly by setting an isCount flag that causes execute() to
+   * pass straight through to the inner query.
+   */
+  protected function getCollectionQuery(ResourceType $resource_type, array $params, CacheableMetadata $query_cacheability) {
+    $inner = parent::getCollectionQuery($resource_type, $params, $query_cacheability);
+
+    if ($resource_type->getTypeName() !== 'node--service_request') {
+      return $inner;
+    }
+
+    // The inner query must be a Sql\Query for CandidateEntityQuery::fromQuery()
+    // to work. On alternative storage backends (e.g. search_api) the inner
+    // query is not a Sql\Query, so fall back to the unmodified query.
+    if (!($inner instanceof Query)) {
+      return $inner;
+    }
+
+    return new DeferredAccessQueryWrapper($inner);
+  }
 
   /**
    * {@inheritdoc}
@@ -56,6 +103,12 @@ final class CachedCountEntityResource extends EntityResource {
    * rebuilding its DI definition (the parent has 14 injected services), whereas
    * these two global accessors are stable and already used extensively inside
    * the @internal parent class itself.
+   *
+   * Authenticated users only. The dashboard (the consumer this cache exists
+   * for) is session-gated behind the Nuxt proxy. Anonymous traffic gains
+   * nothing from cached counts but, on deployments where /jsonapi is directly
+   * reachable, attacker-controlled filter combinations would mint unbounded
+   * permanent cache entries (security review findings 1+3).
    */
   protected function getCollectionCountQuery(ResourceType $resource_type, array $params, CacheableMetadata $query_cacheability) {
     $inner = parent::getCollectionCountQuery($resource_type, $params, $query_cacheability);
