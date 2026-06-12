@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.118](https://github.com/markaspot/markaspot/compare/11.9.117...11.9.118) (2026-06-12)
+
+### Performance
+
+* **nuxt:** defer access checks in service_request collection queries via candidate window ([c435226](https://github.com/markaspot/markaspot/commit/c4352269ae4244423289e464f4a15e7731a8be62))
+
 ## [11.9.117](https://github.com/markaspot/markaspot/compare/11.9.116...11.9.117) (2026-06-12)
 
 ### Bug Fixes
