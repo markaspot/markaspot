@@ -67,13 +67,13 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
    *   The field name.
    * @param string $entityType
    *   The target entity type id.
-   * @param string $bundle
+   * @param string|null $bundle
    *   The target bundle.
    *
    * @return \Drupal\Core\Field\FieldDefinitionInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked field definition.
    */
-  private function fieldDefinition(string $name, string $entityType, string $bundle): FieldDefinitionInterface {
+  private function fieldDefinition(string $name, string $entityType, ?string $bundle): FieldDefinitionInterface {
     $definition = $this->createMock(FieldDefinitionInterface::class);
     $definition->method('getName')->willReturn($name);
     $definition->method('getTargetEntityTypeId')->willReturn($entityType);
@@ -388,6 +388,19 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
     $result = markaspot_open311_entity_field_access(
       'view',
       $this->fieldDefinition('uid', 'node', 'service_request'),
+      $this->account([]),
+      $this->serviceRequestItems(),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Service request author gating falls back to the entity bundle when needed.
+   */
+  public function testServiceRequestAuthorForbiddenWhenFieldDefinitionBundleIsMissing(): void {
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('uid', 'node', NULL),
       $this->account([]),
       $this->serviceRequestItems(),
     );

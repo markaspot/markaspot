@@ -85,6 +85,15 @@ function markaspot_open311_entity_create_access(AccountInterface $account, array
  * Implements hook_entity_field_access().
  */
 function markaspot_open311_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
+  $field_target_bundle = $field_definition->getTargetBundle();
+  $field_entity = NULL;
+  if ($field_target_bundle === NULL && $items !== NULL) {
+    $field_entity = $items->getEntity();
+    if ($field_entity !== NULL && $field_entity->getEntityTypeId() === $field_definition->getTargetEntityTypeId()) {
+      $field_target_bundle = $field_entity->bundle();
+    }
+  }
+
   // The raw node author relationship exposes editor identities through
   // JSON:API include=uid. Dashboard creator display must use the Open311
   // manager shape, where tenant scoping is explicit and fail-closed.
@@ -92,7 +101,7 @@ function markaspot_open311_entity_field_access(string $operation, FieldDefinitio
     $operation === 'view'
     && $field_definition->getName() === 'uid'
     && $field_definition->getTargetEntityTypeId() === 'node'
-    && $field_definition->getTargetBundle() === 'service_request'
+    && $field_target_bundle === 'service_request'
   ) {
     if (!$account->hasPermission('access open311 advanced properties')) {
       return AccessResult::forbidden('Service request authors require dashboard manager access.')
@@ -106,7 +115,7 @@ function markaspot_open311_entity_field_access(string $operation, FieldDefinitio
         ->setCacheMaxAge(0);
     }
 
-    $entity = $items->getEntity();
+    $entity = $field_entity ?? $items->getEntity();
     /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
     $processor = \Drupal::service('markaspot_open311.georeport_processor');
     $jurisdictionId = $processor->resolveNodeJurisdictionId($entity);
