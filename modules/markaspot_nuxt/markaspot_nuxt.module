@@ -48,7 +48,7 @@ function markaspot_nuxt_entity_presave(EntityInterface $entity) {
         else {
           // Generate unique filename instead of deleting.
           $directory = dirname($original_uri);
-          $filename = \Drupal::service('file_system')->basename($original_uri);
+          $filename = basename($original_uri);
           $unique_filename = \Drupal::service('file.repository')->mungeFilename(uniqid() . '_' . $filename);
           $new_uri = $directory . '/' . $unique_filename;
           $entity->setFileUri($new_uri);
@@ -62,8 +62,8 @@ function markaspot_nuxt_entity_presave(EntityInterface $entity) {
       else {
         // Generate a new unique filename if the existing file is permanent.
         $directory = dirname($original_uri);
-        $filename = \Drupal::service('file_system')->basename($original_uri);
-        $unique_filename = \Drupal::service('file_system')->basename(uniqid() . '_' . $filename);
+        $filename = basename($original_uri);
+        $unique_filename = basename(uniqid() . '_' . $filename);
         $new_uri = $directory . '/' . $unique_filename;
         $entity->setFileUri($new_uri);
 
