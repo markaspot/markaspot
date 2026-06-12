@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_nuxt\JsonApi;
 
+use Drupal\Component\Assertion\Inspector;
 use Drupal\Core\Entity\Query\Sql\Query;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\jsonapi\Controller\EntityResource;
+use Drupal\jsonapi\JsonApiResource\Data;
+use Drupal\jsonapi\JsonApiResource\IncludedData;
+use Drupal\jsonapi\JsonApiResource\NullIncludedData;
+use Drupal\jsonapi\JsonApiResource\ResourceObjectData;
+use Drupal\jsonapi\Query\OffsetPage;
 use Drupal\jsonapi\ResourceType\ResourceType;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
  * Performance-optimised JSON:API collection handler for service_request.
@@ -117,6 +124,11 @@ final class CachedCountEntityResource extends EntityResource {
       return $inner;
     }
 
+    $query_cacheability->addCacheContexts([
+      'url.query_args:skipCount',
+      'url.query_args:skip-count',
+    ]);
+
     // Authenticated users only. The dashboard (the consumer this cache
     // exists for) is session-gated behind the Nuxt proxy. Anonymous traffic
     // gains nothing from cached counts but, on deployments where /jsonapi is
@@ -141,7 +153,60 @@ final class CachedCountEntityResource extends EntityResource {
       \Drupal::currentUser(),
       $resource_type->getTypeName(),
       $filter_hash,
+      self::requestWantsSkippedCount(),
     );
+  }
+
+  /**
+   * {@inheritdoc}
+   *
+   * Keeps negative count sentinels out of the Core pager link context. Core's
+   * implementation assumes every included count is a real total and would
+   * otherwise calculate a bogus `links.last` URL from `meta.count = -1`.
+   */
+  protected function respondWithCollection(ResourceObjectData $primary_data, Data $includes, Request $request, ResourceType $resource_type, OffsetPage $page_param) {
+    assert(Inspector::assertAllObjects([$includes], IncludedData::class, NullIncludedData::class));
+    $link_context = [
+      'has_next_page' => $primary_data->hasNextPage(),
+    ];
+    $meta = [];
+    $count_skipped = FALSE;
+    if ($resource_type->includeCount()) {
+      $total_count = $primary_data->getTotalCount();
+      $meta['count'] = $total_count;
+      if ((int) $total_count >= 0) {
+        $link_context['total_count'] = $total_count;
+      }
+      else {
+        $count_skipped = TRUE;
+      }
+    }
+    $collection_links = self::getPagerLinks($request, $page_param, $link_context);
+    $response = $this->buildWrappedResponse($primary_data, $request, $includes, 200, [], $collection_links, $meta);
+    if ($count_skipped) {
+      $response->getCacheableMetadata()->setCacheMaxAge(0);
+    }
+
+    $list_tag = $this->entityTypeManager->getDefinition($resource_type->getEntityTypeId())
+      ->getListCacheTags();
+    $response->getCacheableMetadata()->addCacheTags($list_tag);
+    foreach ($primary_data as $entity) {
+      $response->addCacheableDependency($entity);
+    }
+    return $response;
+  }
+
+  /**
+   * Whether the current JSON:API request asks to skip uncached counts.
+   */
+  private static function requestWantsSkippedCount(): bool {
+    // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (intentional, this decorates an internal Core service)
+    $query = \Drupal::request()->query->all();
+    $raw = $query['skipCount'] ?? $query['skip-count'] ?? NULL;
+    if (!is_scalar($raw)) {
+      return FALSE;
+    }
+    return filter_var($raw, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) === TRUE;
   }
 
 }

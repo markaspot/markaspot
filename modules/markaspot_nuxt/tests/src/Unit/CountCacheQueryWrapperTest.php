@@ -36,6 +36,7 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
     AccountInterface $account,
     string $resource_type = 'node--service_request',
     string $filter_hash = 'testhash',
+    bool $skip_on_cache_miss = FALSE,
   ): CountCacheQueryWrapper {
     return new CountCacheQueryWrapper(
       $inner,
@@ -43,6 +44,7 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
       $account,
       $resource_type,
       $filter_hash,
+      $skip_on_cache_miss,
     );
   }
 
@@ -96,6 +98,71 @@ final class CountCacheQueryWrapperTest extends UnitTestCase {
     $result = $wrapper->execute();
 
     $this->assertSame(99, $result);
+  }
+
+  /**
+   * @covers ::execute
+   * Skip-count cache miss: returns the sentinel without running the count.
+   */
+  public function testSkipCountCacheMissReturnsSentinelWithoutExecutingOrCaching(): void {
+    $inner = $this->createMock(QueryInterface::class);
+    $inner->expects($this->never())->method('execute');
+
+    $cache = $this->createMock(CacheBackendInterface::class);
+    $cache->expects($this->once())
+      ->method('get')
+      ->willReturn(FALSE);
+    $cache->expects($this->never())->method('set');
+
+    $wrapper = $this->buildWrapper(
+      $inner,
+      $cache,
+      $this->buildAccount(),
+      skip_on_cache_miss: TRUE,
+    );
+    $result = $wrapper->execute();
+
+    $this->assertSame(CountCacheQueryWrapper::SKIPPED_COUNT_SENTINEL, $result);
+  }
+
+  /**
+   * @covers ::execute
+   * Skip-count cache hit: returns the exact cached count.
+   */
+  public function testSkipCountCacheHitReturnsCachedCount(): void {
+    $inner = $this->createMock(QueryInterface::class);
+    $inner->expects($this->never())->method('execute');
+
+    $cached_item = new \stdClass();
+    $cached_item->data = 123;
+
+    $cache = $this->createMock(CacheBackendInterface::class);
+    $cache->expects($this->once())
+      ->method('get')
+      ->willReturn($cached_item);
+    $cache->expects($this->never())->method('set');
+
+    $wrapper = $this->buildWrapper(
+      $inner,
+      $cache,
+      $this->buildAccount(),
+      skip_on_cache_miss: TRUE,
+    );
+    $result = $wrapper->execute();
+
+    $this->assertSame(123, $result);
+  }
+
+  /**
+   * CachedCountEntityResource cacheability guard for skipped count responses.
+   */
+  public function testSkippedCountResponseCacheabilityIsGuarded(): void {
+    $source = file_get_contents(__DIR__ . '/../../../src/JsonApi/CachedCountEntityResource.php');
+
+    $this->assertIsString($source);
+    $this->assertStringContainsString("'url.query_args:skipCount'", $source);
+    $this->assertStringContainsString("'url.query_args:skip-count'", $source);
+    $this->assertStringContainsString('$response->getCacheableMetadata()->setCacheMaxAge(0);', $source);
   }
 
   /**

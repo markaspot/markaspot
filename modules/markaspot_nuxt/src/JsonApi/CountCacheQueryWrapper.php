@@ -40,6 +40,13 @@ use Drupal\Core\Session\AccountInterface;
 final class CountCacheQueryWrapper implements QueryInterface {
 
   /**
+   * Count sentinel returned for skip-count cache misses.
+   *
+   * @var int
+   */
+  public const SKIPPED_COUNT_SENTINEL = -1;
+
+  /**
    * The inner count query built by EntityResource.
    *
    * @var \Drupal\Core\Entity\Query\QueryInterface
@@ -68,6 +75,13 @@ final class CountCacheQueryWrapper implements QueryInterface {
   private string $cid;
 
   /**
+   * Whether a cache miss should skip the expensive count query.
+   *
+   * @var bool
+   */
+  private bool $skipOnCacheMiss;
+
+  /**
    * Constructs a CountCacheQueryWrapper.
    *
    * @param \Drupal\Core\Entity\Query\QueryInterface $inner
@@ -84,6 +98,10 @@ final class CountCacheQueryWrapper implements QueryInterface {
    *   objects, not arrays). Sort and page MUST NOT be part of the hash — they
    *   are irrelevant for the count and would fragment the cache by page
    *   position, eliminating all benefit.
+   * @param bool $skip_on_cache_miss
+   *   TRUE to return SKIPPED_COUNT_SENTINEL on cache miss without executing
+   *   or caching the inner count query. Cache hits still return the exact
+   *   cached count.
    */
   public function __construct(
     QueryInterface $inner,
@@ -91,10 +109,12 @@ final class CountCacheQueryWrapper implements QueryInterface {
     AccountInterface $account,
     string $resource_type_name,
     string $filter_hash,
+    bool $skip_on_cache_miss = FALSE,
   ) {
     $this->inner = $inner;
     $this->cache = $cache;
     $this->account = $account;
+    $this->skipOnCacheMiss = $skip_on_cache_miss;
 
     $roles = $account->getRoles();
     sort($roles);
@@ -109,6 +129,10 @@ final class CountCacheQueryWrapper implements QueryInterface {
     $cached = $this->cache->get($this->cid);
     if ($cached !== FALSE) {
       return $cached->data;
+    }
+
+    if ($this->skipOnCacheMiss) {
+      return self::SKIPPED_COUNT_SENTINEL;
     }
 
     $result = $this->inner->execute();
