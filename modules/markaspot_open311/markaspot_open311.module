@@ -85,6 +85,62 @@ function markaspot_open311_entity_create_access(AccountInterface $account, array
  * Implements hook_entity_field_access().
  */
 function markaspot_open311_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
+  // The raw node author relationship exposes editor identities through
+  // JSON:API include=uid. Dashboard creator display must use the Open311
+  // manager shape, where tenant scoping is explicit and fail-closed.
+  if (
+    $operation === 'view'
+    && $field_definition->getName() === 'uid'
+    && $field_definition->getTargetEntityTypeId() === 'node'
+    && $field_definition->getTargetBundle() === 'service_request'
+  ) {
+    if (!$account->hasPermission('access open311 advanced properties')) {
+      return AccessResult::forbidden('Service request authors require dashboard manager access.')
+        ->cachePerPermissions();
+    }
+
+    if ($items === NULL || $items->getEntity() === NULL) {
+      return AccessResult::forbidden('Service request author access requires an entity context.')
+        ->cachePerPermissions()
+        ->addCacheContexts(['user'])
+        ->setCacheMaxAge(0);
+    }
+
+    $entity = $items->getEntity();
+    /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
+    $processor = \Drupal::service('markaspot_open311.georeport_processor');
+    $jurisdictionId = $processor->resolveNodeJurisdictionId($entity);
+
+    if ($jurisdictionId === NULL) {
+      if ($processor->hasJurisdictionGroups()) {
+        return AccessResult::forbidden('Service request author access requires a resolvable jurisdiction.')
+          ->cachePerPermissions()
+          ->addCacheContexts(['user'])
+          ->addCacheableDependency($entity)
+          ->setCacheMaxAge(0);
+      }
+      return AccessResult::neutral()
+        ->cachePerPermissions()
+        ->addCacheContexts(['user'])
+        ->addCacheableDependency($entity)
+        ->setCacheMaxAge(0);
+    }
+
+    if (!$processor->isJurisdictionMember($jurisdictionId, $account)) {
+      return AccessResult::forbidden('Service request authors are restricted to the request jurisdiction.')
+        ->cachePerPermissions()
+        ->addCacheContexts(['user'])
+        ->addCacheableDependency($entity)
+        ->setCacheMaxAge(0);
+    }
+
+    return AccessResult::neutral()
+      ->cachePerPermissions()
+      ->addCacheContexts(['user'])
+      ->addCacheableDependency($entity)
+      ->setCacheMaxAge(0);
+  }
+
   // field_status_attributes stores internal process data on status paragraphs.
   // field_permissions already gates it, but a misconfiguration there would
   // leak captured values through JSON:API. This fail-closed branch hard-denies

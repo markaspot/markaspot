@@ -435,7 +435,7 @@ function markaspot_nuxt_update_11903(): string {
  *
  * Fresh installs ship the hardened config via config/optional; this hook
  * backfills already-installed tenants. Idempotent. The node author field (uid)
- * is intentionally left untouched (separate, broader decision).
+ * is hardened separately by markaspot_nuxt_update_11906().
  */
 function markaspot_nuxt_update_11904(): string {
   // jsonapi_extras (which provides the jsonapi_resource_config entity type) is
@@ -499,4 +499,49 @@ function markaspot_nuxt_update_11905(): string {
   \Drupal::service('module_installer')->install(['jsonapi_resources']);
 
   return 'Enabled jsonapi_resources for the service request version-history endpoint.';
+}
+
+/**
+ * Hide raw service request author relationships from public JSON:API.
+ *
+ * The dashboard creator/editor display is served through manager-gated Open311
+ * fields. Raw JSON:API relationships (uid/revision_uid) expose Drupal user
+ * identity and must remain disabled on existing tenants, independent of config
+ * import. Idempotent.
+ */
+function markaspot_nuxt_update_11906(): string {
+  if (!\Drupal::entityTypeManager()->hasDefinition('jsonapi_resource_config')) {
+    return 'Skipped node--service_request JSON:API resource config: jsonapi_extras not enabled on this tenant.';
+  }
+
+  $storage = \Drupal::entityTypeManager()->getStorage('jsonapi_resource_config');
+  $resource = $storage->load('node--service_request');
+
+  if (!$resource) {
+    return 'Skipped node--service_request JSON:API resource config: resource not enabled on this tenant.';
+  }
+
+  $fields = $resource->get('resourceFields') ?? [];
+  $fields = is_array($fields) ? $fields : [];
+
+  foreach (['uid', 'revision_uid'] as $field_name) {
+    $field = $fields[$field_name] ?? [];
+    $field = is_array($field) ? $field : [];
+    $field += [
+      'fieldName' => $field_name,
+      'publicName' => $field_name,
+      'enhancer' => ['id' => ''],
+    ];
+    $field['disabled'] = TRUE;
+    $fields[$field_name] = $field;
+  }
+
+  if ($resource->get('resourceFields') === $fields) {
+    return 'node--service_request JSON:API resource already hides uid / revision_uid.';
+  }
+
+  $resource->set('resourceFields', $fields);
+  $resource->save();
+
+  return 'Disabled uid / revision_uid on node--service_request JSON:API resource.';
 }

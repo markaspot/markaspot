@@ -174,4 +174,35 @@ final class JsonApiUserResourceConfigTest extends UnitTestCase {
     }
   }
 
+  /**
+   * Service request authors are only exposed through the gated Open311 shape.
+   */
+  public function testServiceRequestAuthorRelationshipsRemainDisabled(): void {
+    $path = dirname(__DIR__, 4) . '/markaspot_nuxt/config/optional/jsonapi_extras.jsonapi_resource_config.node--service_request.yml';
+    $this->assertFileExists($path, 'node--service_request resource config must ship with the profile.');
+    $config = Yaml::parseFile($path);
+
+    $this->assertFalse($config['disabled'] ?? TRUE);
+    $this->assertSame('node--service_request', $config['id'] ?? NULL);
+    foreach (['uid', 'revision_uid'] as $fieldName) {
+      $this->assertArrayHasKey($fieldName, $config['resourceFields']);
+      $this->assertTrue(
+        $config['resourceFields'][$fieldName]['disabled'] ?? FALSE,
+        sprintf('The raw service_request %s relationship must stay disabled; dashboard author display uses the Open311 manager-only shape.', $fieldName)
+      );
+    }
+  }
+
+  /**
+   * Existing tenants must be backfilled, not only fresh installs.
+   */
+  public function testServiceRequestAuthorRelationshipUpdateHookShips(): void {
+    $path = dirname(__DIR__, 4) . '/markaspot_nuxt/markaspot_nuxt.install';
+    $source = file_get_contents($path);
+    $this->assertIsString($source);
+    $this->assertStringContainsString('function markaspot_nuxt_update_11906()', $source);
+    $this->assertStringContainsString("foreach (['uid', 'revision_uid'] as \$field_name)", $source);
+    $this->assertStringContainsString("\$field['disabled'] = TRUE", $source);
+  }
+
 }
