@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.119](https://github.com/markaspot/markaspot/compare/11.9.118...11.9.119) (2026-06-12)
+
+### Performance
+
+* **nuxt:** decouple service request count queries ([618d253](https://github.com/markaspot/markaspot/commit/618d2538f285ed459b7193f221fa0bce30d7a293))
+
 ## [11.9.118](https://github.com/markaspot/markaspot/compare/11.9.117...11.9.118) (2026-06-12)
 
 ### Performance
