@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.117](https://github.com/markaspot/markaspot/compare/11.9.116...11.9.117) (2026-06-12)
+
+### Bug Fixes
+
+* **nuxt:** restrict count cache to authenticated users, document jsonapi_defaults conflict ([5cf08d9](https://github.com/markaspot/markaspot/commit/5cf08d917c565bea71756c52021faab86e43ee4e))
+
 ## [11.9.116](https://github.com/markaspot/markaspot/compare/11.9.115...11.9.116) (2026-06-12)
 
 ### Bug Fixes
