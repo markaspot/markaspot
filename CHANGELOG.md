@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.116](https://github.com/markaspot/markaspot/compare/11.9.115...11.9.116) (2026-06-12)
+
+### Bug Fixes
+
+* **nuxt:** JSON:API filter arrives as Filter object, hash it before the count-cache wrapper ([33c6679](https://github.com/markaspot/markaspot/commit/33c66795b08e3307de986a23f4c52da2e577b529))
+
+### Performance
+
+* **nuxt:** cache JSON:API collection count for service requests ([3ba655f](https://github.com/markaspot/markaspot/commit/3ba655ff6e487c47f260c2ddb52ed8a2379073be))
+
 ## [11.9.115](https://github.com/markaspot/markaspot/compare/11.9.114...11.9.115) (2026-06-11)
 
 ### Features
