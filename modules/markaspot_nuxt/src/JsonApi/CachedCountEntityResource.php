@@ -64,6 +64,16 @@ final class CachedCountEntityResource extends EntityResource {
       return $inner;
     }
 
+    // Authenticated users only. The dashboard (the consumer this cache
+    // exists for) is session-gated behind the Nuxt proxy. Anonymous traffic
+    // gains nothing from cached counts but, on deployments where /jsonapi is
+    // directly reachable, attacker-controlled filter combinations would mint
+    // unbounded permanent cache entries (security review findings 1+3).
+    // @phpstan-ignore globalDrupalDependencyInjection.useDependencyInjection (intentional, see method docblock)
+    if (!\Drupal::currentUser()->isAuthenticated()) {
+      return $inner;
+    }
+
     // $params['filter'] is a \Drupal\jsonapi\Query\Filter VALUE OBJECT (built
     // by Filter::createFromQueryParameter()), not an array. serialize() is
     // deterministic for identical query strings, so hashing it is fine — but

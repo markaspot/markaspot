@@ -24,6 +24,11 @@ class MarkaspotNuxtServiceProvider extends ServiceProviderBase {
   public function alter(ContainerBuilder $container) {
     // Override the JSON:API entity resource controller with our cached version.
     // Guard: only when the jsonapi module is enabled (service must exist).
+    // KNOWN CONFLICT (dormant): jsonapi_extras' jsonapi_defaults submodule
+    // would also setClass() on this service; whichever alter runs last wins
+    // silently and the loser's behavior is dropped. jsonapi_defaults is NOT
+    // enabled on this platform — if that ever changes, CachedCountEntityResource
+    // must extend the jsonapi_defaults resource class instead of core's.
     if ($container->has('jsonapi.entity_resource')) {
       $definition = $container->getDefinition('jsonapi.entity_resource');
       $definition->setClass('Drupal\markaspot_nuxt\JsonApi\CachedCountEntityResource');
