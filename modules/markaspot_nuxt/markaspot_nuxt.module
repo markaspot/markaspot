@@ -7,11 +7,15 @@
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Cache\Cache;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\file\Entity\File;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\node\NodeInterface;
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\user\UserInterface;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
 
 /**
@@ -150,6 +154,53 @@ function markaspot_nuxt_group_update(GroupInterface $group): void {
   }
 
   Cache::invalidateTags(['group:' . $group->id(), 'group_list']);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_access() for user entities.
+ */
+function markaspot_nuxt_user_access(UserInterface $user, $operation, AccountInterface $account): AccessResultInterface {
+  if ($operation === 'view label' && $account->isAnonymous()) {
+    return AccessResult::forbidden()
+      ->addCacheContexts(['user.roles:anonymous']);
+  }
+
+  return AccessResult::neutral()
+    ->addCacheContexts(['user.roles:anonymous']);
+}
+
+/**
+ * Implements hook_entity_field_access().
+ */
+function markaspot_nuxt_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResultInterface {
+  if ($operation === 'view' && $account->isAnonymous() && markaspot_nuxt_is_user_reference_field($field_definition)) {
+    return AccessResult::forbidden()
+      ->addCacheContexts(['user.roles:anonymous']);
+  }
+
+  return AccessResult::neutral()
+    ->addCacheContexts(['user.roles:anonymous']);
+}
+
+/**
+ * Implements hook_jsonapi_entity_field_filter_access().
+ */
+function markaspot_nuxt_jsonapi_entity_field_filter_access(FieldDefinitionInterface $field_definition, AccountInterface $account): AccessResultInterface {
+  if ($account->isAnonymous() && markaspot_nuxt_is_user_reference_field($field_definition)) {
+    return AccessResult::forbidden()
+      ->addCacheContexts(['user.roles:anonymous']);
+  }
+
+  return AccessResult::neutral()
+    ->addCacheContexts(['user.roles:anonymous']);
+}
+
+/**
+ * Determines whether a field exposes user entity references.
+ */
+function markaspot_nuxt_is_user_reference_field(FieldDefinitionInterface $field_definition): bool {
+  return $field_definition->getType() === 'entity_reference'
+    && $field_definition->getSetting('target_type') === 'user';
 }
 
 /**
