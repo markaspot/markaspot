@@ -1999,6 +1999,10 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertSame('Editing Moderator', $request['extended_attributes']['markaspot']['last_editor']);
     $this->assertNotSame('Original Author', $request['extended_attributes']['markaspot']['last_editor'], 'last_editor must reflect the revision user, not the node author');
     $this->assertSame(date('c', 1717500000), $request['extended_attributes']['markaspot']['last_edited']);
+    $this->assertSame([
+      'display_name' => 'Original Author',
+      'uid' => 8001,
+    ], $request['extended_attributes']['markaspot']['created_by']);
 
     // The author key keeps reflecting the node uid.
     $this->assertSame('Original Author', $request['extended_attributes']['author']);
@@ -2022,6 +2026,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $markaspot = $request['extended_attributes']['markaspot'] ?? [];
     $this->assertArrayNotHasKey('last_editor', $markaspot, 'last_editor must not leak to non-managers');
     $this->assertArrayNotHasKey('last_edited', $markaspot, 'last_edited must not leak to non-managers');
+    $this->assertArrayNotHasKey('created_by', $markaspot, 'created_by must not leak to non-managers');
     $this->assertArrayNotHasKey('author', $request['extended_attributes'] ?? []);
   }
 
@@ -2967,6 +2972,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
 
     // Author (uid) field item with a referenced user entity.
     $author = $this->createMock(UserInterface::class);
+    $author->method('id')->willReturn(8001);
     $author->method('label')->willReturn($authorName);
     $uidField = new class($author) {
 
@@ -3020,6 +3026,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $node->method('id')->willReturn($nid);
     $node->method('hasTranslation')->willReturn(FALSE);
     $node->method('getTitle')->willReturn('Broken streetlight');
+    $node->method('getOwner')->willReturn($author);
 
     // Only uid is a "present" optional field; everything else is absent so the
     // mapper skips it (media, status notes, address, PII fields, etc.).

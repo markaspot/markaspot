@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
@@ -115,6 +116,45 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
   }
 
   /**
+   * Builds a service_request field item list double.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface|null $entity
+   *   Optional entity to return from getEntity().
+   *
+   * @return \Drupal\Core\Field\FieldItemListInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked item list.
+   */
+  private function serviceRequestItems(?EntityInterface $entity = NULL): FieldItemListInterface {
+    $entity ??= $this->entity('node', 'service_request');
+
+    $items = $this->createMock(FieldItemListInterface::class);
+    $items->method('getEntity')->willReturn($entity);
+    return $items;
+  }
+
+  /**
+   * Registers a GeoReport processor double for service-request author gates.
+   *
+   * @param \Drupal\Core\Entity\EntityInterface $entity
+   *   The node entity expected by resolveNodeJurisdictionId().
+   * @param int|null $jurisdictionId
+   *   Jurisdiction id returned for the node.
+   * @param bool $hasJurisdictionGroups
+   *   Whether the install has jurisdiction groups.
+   * @param bool $isMember
+   *   Whether the tested account is a jurisdiction member.
+   */
+  private function setGeoreportProcessor(EntityInterface $entity, ?int $jurisdictionId, bool $hasJurisdictionGroups, bool $isMember): void {
+    $processor = $this->createMock(GeoreportProcessorServiceInterface::class);
+    $processor->method('resolveNodeJurisdictionId')
+      ->with($entity)
+      ->willReturn($jurisdictionId);
+    $processor->method('hasJurisdictionGroups')->willReturn($hasJurisdictionGroups);
+    $processor->method('isJurisdictionMember')->willReturn($isMember);
+    \Drupal::getContainer()->set('markaspot_open311.georeport_processor', $processor);
+  }
+
+  /**
    * Builds an entity double with the given type and bundle.
    *
    * @return \Drupal\Core\Entity\EntityInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -124,6 +164,9 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
     $entity = $this->createMock(EntityInterface::class);
     $entity->method('getEntityTypeId')->willReturn($entityTypeId);
     $entity->method('bundle')->willReturn($bundle);
+    $entity->method('getCacheContexts')->willReturn([]);
+    $entity->method('getCacheTags')->willReturn([]);
+    $entity->method('getCacheMaxAge')->willReturn(-1);
     return $entity;
   }
 
@@ -143,6 +186,7 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
       $this->statusTermItems(),
     );
     $this->assertInstanceOf(AccessResultForbidden::class, $result);
+    $this->assertContains('user.permissions', $result->getCacheContexts());
   }
 
   /**
@@ -335,6 +379,106 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
       NULL,
     );
     $this->assertFalse($result->isForbidden(), 'View is permitted with the field permission.');
+  }
+
+  /**
+   * Service request authors are hidden from anonymous JSON:API consumers.
+   */
+  public function testServiceRequestAuthorForbiddenForAnonymous(): void {
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('uid', 'node', 'service_request'),
+      $this->account([]),
+      $this->serviceRequestItems(),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Service request authors are hidden from non-manager authenticated users.
+   */
+  public function testServiceRequestAuthorForbiddenForNonManager(): void {
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('uid', 'node', 'service_request'),
+      $this->account(['access open311 extension']),
+      $this->serviceRequestItems(),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Dashboard managers can read authors inside their own jurisdiction.
+   */
+  public function testServiceRequestAuthorNeutralForJurisdictionManager(): void {
+    $entity = $this->entity('node', 'service_request');
+    $account = $this->account(['access open311 advanced properties']);
+    $this->setGeoreportProcessor($entity, 42, TRUE, TRUE);
+
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('uid', 'node', 'service_request'),
+      $account,
+      $this->serviceRequestItems($entity),
+    );
+    $this->assertTrue($result->isNeutral(), 'Jurisdiction managers keep normal uid field access.');
+    $this->assertContains('user', $result->getCacheContexts());
+    $this->assertContains('user.permissions', $result->getCacheContexts());
+    $this->assertSame(0, $result->getCacheMaxAge());
+  }
+
+  /**
+   * Dashboard managers cannot read authors for foreign jurisdictions.
+   */
+  public function testServiceRequestAuthorForbiddenForForeignManager(): void {
+    $entity = $this->entity('node', 'service_request');
+    $account = $this->account(['access open311 advanced properties']);
+    $this->setGeoreportProcessor($entity, 42, TRUE, FALSE);
+
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('uid', 'node', 'service_request'),
+      $account,
+      $this->serviceRequestItems($entity),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+    $this->assertContains('user', $result->getCacheContexts());
+    $this->assertContains('user.permissions', $result->getCacheContexts());
+    $this->assertSame(0, $result->getCacheMaxAge());
+  }
+
+  /**
+   * Unresolvable jurisdictions fail closed in multi-tenant installs.
+   */
+  public function testServiceRequestAuthorForbiddenWhenJurisdictionIsUnknownInMultiTenant(): void {
+    $entity = $this->entity('node', 'service_request');
+    $account = $this->account(['access open311 advanced properties']);
+    $this->setGeoreportProcessor($entity, NULL, TRUE, FALSE);
+
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('uid', 'node', 'service_request'),
+      $account,
+      $this->serviceRequestItems($entity),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+  }
+
+  /**
+   * Legacy single-tenant installs keep normal author field access for managers.
+   */
+  public function testServiceRequestAuthorNeutralWhenJurisdictionIsUnknownInSingleTenant(): void {
+    $entity = $this->entity('node', 'service_request');
+    $account = $this->account(['access open311 advanced properties']);
+    $this->setGeoreportProcessor($entity, NULL, FALSE, FALSE);
+
+    $result = markaspot_open311_entity_field_access(
+      'view',
+      $this->fieldDefinition('uid', 'node', 'service_request'),
+      $account,
+      $this->serviceRequestItems($entity),
+    );
+    $this->assertTrue($result->isNeutral(), 'Single-tenant managers keep normal uid field access.');
   }
 
   /**

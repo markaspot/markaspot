@@ -2129,6 +2129,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $request['extended_attributes']['author'] = $node->get('uid')->entity->label();
       }
 
+      $owner = $node->getOwner();
+      if ($owner !== NULL) {
+        $request['extended_attributes']['markaspot']['created_by'] = [
+          'display_name' => $owner->label(),
+          'uid' => (int) $owner->id(),
+        ];
+      }
+
       // Expose the latest revision author ("last edited by") to staff. The
       // dashboard edits via JSON:API PATCH, which creates a new revision and
       // records the editing user as the revision user (the bundle defaults to
