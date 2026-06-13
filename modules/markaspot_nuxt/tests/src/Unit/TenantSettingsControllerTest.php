@@ -1504,6 +1504,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertTrue($data['features']['operationsDashboard']);
     $this->assertTrue($data['features']['aiProcessing']);
     $this->assertFalse($data['features']['piiRedaction']);
+    $this->assertTrue($data['capabilities']['operationsDashboard']);
   }
 
   /**
@@ -1531,6 +1532,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['features']['dashboard']);
     $this->assertFalse($data['features']['operationsDashboard']);
+    $this->assertFalse($data['capabilities']['operationsDashboard']);
   }
 
   /**
@@ -1559,6 +1561,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['features']['dashboard']);
     $this->assertFalse($data['features']['operationsDashboard']);
+    $this->assertFalse($data['capabilities']['operationsDashboard']);
   }
 
   /**

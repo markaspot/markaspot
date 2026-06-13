@@ -1610,6 +1610,13 @@ final class TenantSettingsController extends ControllerBase {
         'boundaries' => ['enabled' => $features['boundaries']['enabled'] ?? FALSE],
         'privacyNotice' => ['enabled' => $features['privacyNotice']['enabled'] ?? FALSE],
       ],
+      'capabilities' => [
+        // Authoritative tier gate for the Operations Overview toggle. The
+        // frontend reads this instead of re-deriving tier rules, so the
+        // settings switch can never diverge from the backend enforcement
+        // (updateFeatureSettings scrubs the flag to FALSE when not permitted).
+        'operationsDashboard' => $this->canUseOperationsDashboard($group),
+      ],
     ]);
   }
 
