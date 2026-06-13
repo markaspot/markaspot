@@ -10,6 +10,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Utility\Token;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
@@ -57,6 +58,7 @@ class InboundMailPromoterRequestDataTest extends UnitTestCase {
       $this->createMock(InternalRemarkWriter::class),
       NULL,
       NULL,
+      $this->createMock(LanguageManagerInterface::class),
     );
   }
 

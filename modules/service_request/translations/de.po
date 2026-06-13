@@ -20,3 +20,8 @@ msgstr ""
 # the resolved status term has no description either.
 msgid "Status changed."
 msgstr "Status wurde geändert."
+
+# Default body for the initial auto-generated status note when the initial
+# status term has no description.
+msgid "The service request has been created."
+msgstr "Die Meldung wurde erstellt."

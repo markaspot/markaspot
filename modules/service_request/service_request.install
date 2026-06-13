@@ -1044,6 +1044,201 @@ function service_request_update_11018(): string {
 }
 
 /**
+ * Localizes existing initial status note fallback text.
+ */
+function service_request_update_11019(): string {
+  $messages = [_service_request_import_shipped_translations()];
+  $source = 'The service request has been created.';
+  $langcode = \Drupal::languageManager()->getDefaultLanguage()->getId();
+  $translated = (string) t('The service request has been created.', [], ['langcode' => $langcode]);
+
+  if ($translated === $source) {
+    $messages[] = 'No localized initial status note available for default language ' . $langcode . '.';
+    return implode("\n", $messages);
+  }
+
+  $current_ids = _service_request_initial_status_note_row_ids(
+    'paragraph__field_status_note',
+    'node__field_status_notes',
+    'field_status_notes_target_id',
+    'entity_id',
+    $source
+  );
+  $revision_ids = _service_request_initial_status_note_row_ids(
+    'paragraph_revision__field_status_note',
+    'node_revision__field_status_notes',
+    'field_status_notes_target_revision_id',
+    'revision_id',
+    $source
+  );
+
+  $updated = _service_request_localize_status_note_rows(
+    'paragraph__field_status_note',
+    'entity_id',
+    $current_ids,
+    $source,
+    $translated
+  );
+  $updated += _service_request_localize_status_note_rows(
+    'paragraph_revision__field_status_note',
+    'revision_id',
+    $revision_ids,
+    $source,
+    $translated
+  );
+
+  $messages[] = sprintf(
+    'Localized %d existing initial status note field rows to %s.',
+    $updated,
+    $langcode
+  );
+  return implode("\n", $messages);
+}
+
+/**
+ * Finds first status-note paragraph rows that carry the default source text.
+ *
+ * @return int[]
+ *   Current paragraph ids or paragraph revision ids from the note table.
+ */
+function _service_request_initial_status_note_row_ids(
+  string $note_table,
+  string $reference_table,
+  string $reference_target_column,
+  string $note_id_column,
+  string $source,
+): array {
+  $database = \Drupal::database();
+  $schema = $database->schema();
+  foreach ([$note_table, $reference_table, 'paragraphs_item_field_data'] as $table) {
+    if (!$schema->tableExists($table)) {
+      return [];
+    }
+  }
+
+  $query = $database->select($note_table, 'note')->distinct();
+  $query->innerJoin(
+    $reference_table,
+    'ref',
+    "ref.$reference_target_column = note.$note_id_column"
+  );
+  $query->innerJoin(
+    'paragraphs_item_field_data',
+    'paragraph',
+    'paragraph.id = note.entity_id'
+  );
+  $query
+    ->fields('note', [$note_id_column])
+    ->condition('note.field_status_note_value', $source)
+    ->condition('note.field_status_note_format', 'plain_text')
+    ->condition('note.deleted', 0)
+    ->condition('note.delta', 0)
+    ->condition('ref.bundle', 'service_request')
+    ->condition('ref.deleted', 0)
+    ->condition('ref.delta', 0)
+    ->condition('paragraph.type', 'status')
+    ->condition('paragraph.parent_type', 'node')
+    ->condition('paragraph.parent_field_name', 'field_status_notes');
+
+  return array_map('intval', $query->execute()->fetchCol());
+}
+
+/**
+ * Updates exact status-note rows by id.
+ *
+ * @param int[] $ids
+ *   Paragraph ids or paragraph revision ids.
+ */
+function _service_request_localize_status_note_rows(
+  string $table,
+  string $id_column,
+  array $ids,
+  string $source,
+  string $translated,
+): int {
+  if ($ids === [] || !\Drupal::database()->schema()->tableExists($table)) {
+    return 0;
+  }
+
+  return (int) \Drupal::database()->update($table)
+    ->fields([
+      'field_status_note_value' => $translated,
+      'field_status_note_format' => 'plain_text',
+    ])
+    ->condition($id_column, $ids, 'IN')
+    ->condition('field_status_note_value', $source)
+    ->condition('field_status_note_format', 'plain_text')
+    ->condition('deleted', 0)
+    ->condition('delta', 0)
+    ->execute();
+}
+
+/**
+ * Imports shipped service_request translations for enabled site languages.
+ */
+function _service_request_import_shipped_translations(): string {
+  if (!\Drupal::moduleHandler()->moduleExists('locale')) {
+    return 'locale module not installed, skipping translation import.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('service_request');
+  $translation_dir = \Drupal::root() . '/' . $module_path . '/translations';
+  if (!is_dir($translation_dir)) {
+    return 'service_request translation directory not found, skipping.';
+  }
+
+  $not_customized = defined('LOCALE_NOT_CUSTOMIZED')
+    ? (int) constant('LOCALE_NOT_CUSTOMIZED')
+    : 0;
+  $options = [
+    'overwrite_options' => [
+      'not_customized' => TRUE,
+      'customized' => FALSE,
+    ],
+    'customized' => $not_customized,
+    'finish_feedback' => FALSE,
+  ];
+
+  \Drupal::moduleHandler()->loadInclude('locale', 'inc', 'locale.bulk');
+  $imported = [];
+  $imported_langcodes = [];
+  $updated_lids = [];
+  foreach (array_keys(\Drupal::languageManager()->getLanguages()) as $langcode) {
+    if ($langcode === 'en') {
+      continue;
+    }
+
+    $po_file = $translation_dir . '/' . $langcode . '.po';
+    if (!is_readable($po_file)) {
+      continue;
+    }
+
+    $report = Gettext::fileToDatabase((object) [
+      'uri' => $po_file,
+      'filename' => basename($po_file),
+      'langcode' => $langcode,
+      'project' => 'service_request',
+    ], $options);
+    $changed = (int) ($report['additions'] ?? 0) + (int) ($report['updates'] ?? 0);
+    if ($changed > 0) {
+      $imported[] = $langcode . ':' . $changed;
+      $imported_langcodes[] = $langcode;
+      if (isset($report['strings']) && is_array($report['strings'])) {
+        $updated_lids = array_merge($updated_lids, $report['strings']);
+      }
+    }
+  }
+
+  if ($updated_lids && function_exists('_locale_refresh_translations')) {
+    _locale_refresh_translations($imported_langcodes, array_unique($updated_lids));
+  }
+
+  return $imported
+    ? 'Imported service_request translations: ' . implode(', ', $imported) . '.'
+    : 'service_request translations already up to date.';
+}
+
+/**
  * Loads profile update helpers from the parent install profile.
  */
 function _service_request_load_markaspot_profile_updates(): void {

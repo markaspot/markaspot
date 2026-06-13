@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Utility\Token;
 use Drupal\file\FileInterface;
@@ -113,6 +114,7 @@ class InboundMailPromoterAttachmentReleaseTest extends UnitTestCase {
       $this->createMock(InternalRemarkWriter::class),
       NULL,
       NULL,
+      $this->createMock(LanguageManagerInterface::class),
     );
   }
 

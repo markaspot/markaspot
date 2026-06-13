@@ -3,6 +3,8 @@ description: Open311 Service Requests content type.
 package: Mark-a-Spot
 type: module
 core_version_requirement: ^10 || ^11
+interface translation project: service_request
+interface translation server pattern: profiles/contrib/markaspot/modules/service_request/translations/%language.po
 
 dependencies:
   - node

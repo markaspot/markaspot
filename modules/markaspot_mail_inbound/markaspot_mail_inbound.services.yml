@@ -58,6 +58,7 @@ services:
       - '@markaspot_mail_inbound.internal_remark_writer'
       - '@?markaspot_open311.processor'
       - '@?markaspot_geocoder.geocoder'
+      - '@language_manager'
 
   # Shared fidelity / degradation checks: hook_requirements() and the
   # dashboard API's "fidelity" block consume the same answers (#482).

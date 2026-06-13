@@ -10,6 +10,9 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\Core\Language\LanguageDefault;
+use Drupal\Core\Language\LanguageManager;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
@@ -60,6 +63,7 @@ class InboundMailPromoter {
     protected InternalRemarkWriter $remarkWriter,
     protected ?object $georeportProcessor = NULL,
     protected ?object $geocoder = NULL,
+    protected ?LanguageManagerInterface $languageManager = NULL,
   ) {
   }
 
@@ -475,7 +479,9 @@ class InboundMailPromoter {
         $node->set('field_status', [['target_id' => $initialStatusTid]]);
       }
       if ($node->hasField('field_status_notes')) {
-        $langcode = $node->language()->getId();
+        $langcode = $this->statusNoteLanguageManager()
+          ->getDefaultLanguage()
+          ->getId();
         $paragraph = $this->georeportProcessor->createStatusNoteParagraph(
           ['status_term_id' => $initialStatusTid],
           $langcode
@@ -502,6 +508,14 @@ class InboundMailPromoter {
     catch (\Throwable $e) {
       $this->logger->warning('Could not apply initial status to promoted inbound mail: @message', ['@message' => $e->getMessage()]);
     }
+  }
+
+  /**
+   * Returns the language manager used for generated status note text.
+   */
+  private function statusNoteLanguageManager(): LanguageManagerInterface {
+    return $this->languageManager
+      ?? new LanguageManager(new LanguageDefault(['id' => 'en']));
   }
 
   /**

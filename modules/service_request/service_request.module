@@ -80,7 +80,7 @@ function _service_request_handle_creation(EntityInterface $node, $config, bool $
 
   /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
   $processor = \Drupal::service('markaspot_open311.processor');
-  $langcode = $node->language()->getId();
+  $langcode = _service_request_status_note_default_langcode();
 
   // Resolve jurisdiction from category for boilerplate lookup.
   $boilerplate_id = NULL;
@@ -113,6 +113,13 @@ function _service_request_handle_creation(EntityInterface $node, $config, bool $
       'target_revision_id' => $paragraph->getRevisionId(),
     ],
   ];
+}
+
+/**
+ * Returns the language for system-generated status note fallback text.
+ */
+function _service_request_status_note_default_langcode(): string {
+  return \Drupal::languageManager()->getDefaultLanguage()->getId();
 }
 
 /**

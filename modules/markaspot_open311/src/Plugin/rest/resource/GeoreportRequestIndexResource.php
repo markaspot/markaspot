@@ -1083,8 +1083,9 @@ final class GeoreportRequestIndexResource extends ResourceBase {
         $jurisdictionId = isset($request_data['jurisdiction_id']) ? (int) $request_data['jurisdiction_id'] : NULL;
         $initialStatusTid = $this->georeportProcessor->getInitialStatusTid($jurisdictionId);
 
-        // Uses status term description as note text; falls back to t() string.
-        $langcode = $node->language()->getId();
+        // Uses status term description as note text; falls back to the site
+        // default language because service request nodes are language-neutral.
+        $langcode = $this->languageManager->getDefaultLanguage()->getId();
         $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
           'status_term_id' => $initialStatusTid,
         ], $langcode);

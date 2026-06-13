@@ -778,6 +778,7 @@ class InboundMailStagingKernelTest extends KernelTestBase {
       $this->container->get('markaspot_mail_inbound.internal_remark_writer'),
       $processor,
       NULL,
+      $this->container->get('language_manager'),
     );
   }
 
