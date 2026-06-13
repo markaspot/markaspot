@@ -66,6 +66,7 @@ final class TenantSettingsController extends ControllerBase {
     'dashboard',
     'operationsDashboard',
     'contactForm',
+    'privacyBlockOnFlag',
   ];
 
   /**
@@ -1604,6 +1605,7 @@ final class TenantSettingsController extends ControllerBase {
         'dashboard' => $this->getBooleanFeatureValue($features, 'dashboard', TRUE),
         'operationsDashboard' => $operations_dashboard,
         'contactForm' => $features['contactForm'] ?? FALSE,
+        'privacyBlockOnFlag' => $this->getBooleanFeatureValue($features, 'privacyBlockOnFlag', FALSE),
         'emergency' => ['enabled' => $features['emergency']['enabled'] ?? FALSE],
         'funFacts' => ['enabled' => $features['funFacts']['enabled'] ?? FALSE],
         'search' => ['enabled' => $features['search']['enabled'] ?? TRUE],

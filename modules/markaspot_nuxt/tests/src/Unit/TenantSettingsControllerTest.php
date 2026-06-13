@@ -1486,6 +1486,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
         'operationsDashboard' => ['enabled' => TRUE],
         'aiProcessing' => ['enabled' => TRUE],
         'piiRedaction' => ['enabled' => FALSE],
+        'privacyBlockOnFlag' => TRUE,
       ],
     ]);
     $group = $this->createMockGroup([
@@ -1504,6 +1505,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertTrue($data['features']['operationsDashboard']);
     $this->assertTrue($data['features']['aiProcessing']);
     $this->assertFalse($data['features']['piiRedaction']);
+    $this->assertTrue($data['features']['privacyBlockOnFlag']);
     $this->assertTrue($data['capabilities']['operationsDashboard']);
   }
 
