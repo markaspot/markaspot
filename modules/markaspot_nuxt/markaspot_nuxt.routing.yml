@@ -146,6 +146,7 @@ markaspot_nuxt.tenant_settings_general_patch:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
@@ -170,6 +171,7 @@ markaspot_nuxt.tenant_settings_languages_patch:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
@@ -194,6 +196,7 @@ markaspot_nuxt.tenant_settings_branding_patch:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
@@ -231,6 +234,7 @@ markaspot_nuxt.tenant_settings_features_patch:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
@@ -255,6 +259,7 @@ markaspot_nuxt.tenant_settings_map_patch:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
@@ -279,6 +284,7 @@ markaspot_nuxt.tenant_settings_navigation_patch:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'
@@ -303,6 +309,7 @@ markaspot_nuxt.tenant_settings_dashboard_patch:
   methods: [PATCH]
   requirements:
     _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
     jurisdiction_id: '[a-z0-9_-]+'
   options:
     _format: 'json'

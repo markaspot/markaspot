@@ -1483,6 +1483,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
         'pwaInstallPrompt' => ['enabled' => FALSE],
         'formFirst' => ['enabled' => FALSE],
         'dashboard' => ['enabled' => TRUE],
+        'operationsDashboard' => ['enabled' => TRUE],
         'aiProcessing' => ['enabled' => TRUE],
         'piiRedaction' => ['enabled' => FALSE],
       ],
@@ -1500,8 +1501,145 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['pwaInstallPrompt']);
     $this->assertFalse($data['features']['formFirst']);
     $this->assertTrue($data['features']['dashboard']);
+    $this->assertTrue($data['features']['operationsDashboard']);
     $this->assertTrue($data['features']['aiProcessing']);
     $this->assertFalse($data['features']['piiRedaction']);
+  }
+
+  /**
+   * Tests getFeatureSettings() enforces the operations dashboard tier gate.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsForcesOperationsDashboardFalseForStarterTier(): void {
+    $nuxtConfig = json_encode([
+      'features' => [
+        'dashboard' => TRUE,
+        'operationsDashboard' => TRUE,
+      ],
+    ]);
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtConfig,
+      'field_tier' => 'starter',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['dashboard']);
+    $this->assertFalse($data['features']['operationsDashboard']);
+  }
+
+  /**
+   * Tests getFeatureSettings() fail-closes Operations Overview for demo tier.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsForcesOperationsDashboardFalseForEmptyFastMapTier(): void {
+    $nuxtConfig = json_encode([
+      'features' => [
+        'dashboard' => TRUE,
+        'operationsDashboard' => TRUE,
+      ],
+    ]);
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtConfig,
+      'field_tier' => NULL,
+      'field_expiry_date' => '2026-06-20',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['dashboard']);
+    $this->assertFalse($data['features']['operationsDashboard']);
+  }
+
+  /**
+   * Tests updateFeatureSettings() does not persist operations dashboard on demo.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsForcesOperationsDashboardFalseForEmptyFastMapTier(): void {
+    $storedNuxtConfig = json_encode([
+      'features' => [
+        'dashboard' => TRUE,
+        'operationsDashboard' => FALSE,
+      ],
+    ]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name) => in_array($name, ['field_nuxt_config', 'field_tier', 'field_expiry_date'], TRUE));
+    $group->method('get')
+      ->willReturnCallback(static function (string $name) use (&$storedNuxtConfig) {
+        $value = match ($name) {
+          'field_nuxt_config' => $storedNuxtConfig,
+          'field_tier' => NULL,
+          'field_expiry_date' => '2026-06-20',
+          default => NULL,
+        };
+        return new class ($value) {
+
+          /**
+           * The field value.
+           *
+           * @var mixed
+           */
+          public $value;
+
+          /**
+           * Constructs a field item stub.
+           */
+          public function __construct($value) {
+            $this->value = $value;
+          }
+
+          /**
+           * Returns whether the field is empty.
+           */
+          public function isEmpty(): bool {
+            return $this->value === NULL || $this->value === '';
+          }
+
+        };
+      });
+    $group->method('set')
+      ->willReturnCallback(function (string $field, string $value) use (&$storedNuxtConfig, $group) {
+        if ($field === 'field_nuxt_config') {
+          $storedNuxtConfig = $value;
+        }
+        return $group;
+      });
+    $group->expects($this->once())->method('save');
+
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['operationsDashboard' => TRUE])
+    );
+    $response = $this->controller->updateFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+    $this->assertFalse($data['features']['operationsDashboard']);
+    $this->assertFalse($updatedConfig['features']['operationsDashboard']);
   }
 
   /**

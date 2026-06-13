@@ -51,6 +51,7 @@ markaspot_moderation.dismiss_flags:
   methods: [POST]
   requirements:
     _permission: 'administer flags'
+    _csrf_request_header_token: 'TRUE'
     nid: \d+
   options:
     _format: 'json'
@@ -63,6 +64,7 @@ markaspot_moderation.hide_request:
   methods: [POST]
   requirements:
     _permission: 'administer flags'
+    _csrf_request_header_token: 'TRUE'
     nid: \d+
   options:
     _format: 'json'
@@ -75,6 +77,7 @@ markaspot_moderation.delete_request:
   methods: [DELETE]
   requirements:
     _permission: 'administer all flags'
+    _csrf_request_header_token: 'TRUE'
     nid: \d+
   options:
     _format: 'json'

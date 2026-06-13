@@ -64,6 +64,7 @@ final class TenantSettingsController extends ControllerBase {
     'party',
     'formFirst',
     'dashboard',
+    'operationsDashboard',
     'contactForm',
   ];
 
@@ -420,6 +421,21 @@ final class TenantSettingsController extends ControllerBase {
       return $value['enabled'];
     }
     return $default;
+  }
+
+  /**
+   * Checks whether the jurisdiction tier may use Operations Overview.
+   */
+  private function canUseOperationsDashboard(GroupInterface $group): bool {
+    if (!$group->hasField('field_tier')) {
+      return TRUE;
+    }
+
+    if ($group->get('field_tier')->isEmpty()) {
+      return FALSE;
+    }
+
+    return in_array((string) $group->get('field_tier')->value, ['pro', 'heart'], TRUE);
   }
 
   /**
@@ -1563,6 +1579,10 @@ final class TenantSettingsController extends ControllerBase {
     $config = $this->getNuxtConfig($group);
 
     $features = $config['features'] ?? [];
+    $operations_dashboard = $this->getBooleanFeatureValue($features, 'operationsDashboard', FALSE);
+    if (!$this->canUseOperationsDashboard($group)) {
+      $operations_dashboard = FALSE;
+    }
 
     return new JsonResponse([
       'jurisdiction_id' => (int) $group->id(),
@@ -1582,6 +1602,7 @@ final class TenantSettingsController extends ControllerBase {
         'party' => $features['party'] ?? FALSE,
         'formFirst' => $this->getBooleanFeatureValue($features, 'formFirst', FALSE),
         'dashboard' => $this->getBooleanFeatureValue($features, 'dashboard', TRUE),
+        'operationsDashboard' => $operations_dashboard,
         'contactForm' => $features['contactForm'] ?? FALSE,
         'emergency' => ['enabled' => $features['emergency']['enabled'] ?? FALSE],
         'funFacts' => ['enabled' => $features['funFacts']['enabled'] ?? FALSE],
@@ -1638,6 +1659,10 @@ final class TenantSettingsController extends ControllerBase {
           return new JsonResponse(['error' => "$flag.enabled must be a boolean."], 422);
         }
       }
+    }
+
+    if (($data['operationsDashboard'] ?? FALSE) === TRUE && !$this->canUseOperationsDashboard($group)) {
+      $data['operationsDashboard'] = FALSE;
     }
 
     // Read-modify-write: load existing config, update only the features key.

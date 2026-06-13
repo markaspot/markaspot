@@ -140,6 +140,12 @@
           "description": "Enable admin dashboard for staff",
           "default": true
         },
+        "operationsDashboard": {
+          "type": "boolean",
+          "title": "Operations Dashboard",
+          "description": "Use the Pro operations overview as the dashboard home.",
+          "default": false
+        },
         "passwordless": {
           "type": "boolean",
           "title": "Passwordless Auth",

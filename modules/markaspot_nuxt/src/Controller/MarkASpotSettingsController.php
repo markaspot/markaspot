@@ -339,7 +339,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $module_feature_map = [
       'markaspot_ai' => ['aiProcessing', 'piiRedaction'],
       'markaspot_stats' => ['statistics'],
-      'markaspot_dashboard' => ['dashboard'],
+      'markaspot_dashboard' => ['dashboard', 'operationsDashboard'],
       'markaspot_vision' => ['photoReporting', 'aiAnalysis'],
       'markaspot_feedback' => ['feedback'],
       'markaspot_passwordless' => ['passwordless'],
@@ -352,8 +352,9 @@ class MarkASpotSettingsController extends ControllerBase {
     $settings['features'] += [
       'aiProcessing' => FALSE,
       'piiRedaction' => FALSE,
+      'operationsDashboard' => FALSE,
     ];
-    foreach (['aiProcessing', 'piiRedaction'] as $feature) {
+    foreach (['aiProcessing', 'piiRedaction', 'operationsDashboard'] as $feature) {
       $settings['features'][$feature] = $this->readBooleanFeatureFlag(
         $settings['features'][$feature] ?? NULL
       );
@@ -366,6 +367,10 @@ class MarkASpotSettingsController extends ControllerBase {
           $settings['features'][$feature] = FALSE;
         }
       }
+    }
+
+    if ($group instanceof GroupInterface && !$this->canUseOperationsDashboard($group)) {
+      $settings['features']['operationsDashboard'] = FALSE;
     }
 
     // aiDuplicates capability flag. Requires the module, tenant AI processing,
@@ -1405,6 +1410,21 @@ class MarkASpotSettingsController extends ControllerBase {
       return $value['enabled'];
     }
     return FALSE;
+  }
+
+  /**
+   * Checks whether the jurisdiction tier may expose Operations Overview.
+   */
+  private function canUseOperationsDashboard(GroupInterface $group): bool {
+    if (!$group->hasField('field_tier')) {
+      return TRUE;
+    }
+
+    if ($group->get('field_tier')->isEmpty()) {
+      return FALSE;
+    }
+
+    return in_array((string) $group->get('field_tier')->value, ['pro', 'heart'], TRUE);
   }
 
   /**

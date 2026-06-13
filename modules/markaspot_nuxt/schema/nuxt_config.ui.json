@@ -95,6 +95,11 @@
           "description": "Admin dashboard for staff members"
         }
       },
+      "operationsDashboard": {
+        "ui:options": {
+          "description": "Pro operations overview for reporting teams"
+        }
+      },
       "passwordless": {
         "ui:options": {
           "description": "Email-based login (requires Drupal module)"

@@ -643,6 +643,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
         'piiRedaction' => TRUE,
         'statistics' => TRUE,
         'dashboard' => TRUE,
+        'operationsDashboard' => TRUE,
       ],
     ]);
 
@@ -661,6 +662,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['piiRedaction']);
     $this->assertFalse($data['features']['statistics']);
     $this->assertFalse($data['features']['dashboard']);
+    $this->assertFalse($data['features']['operationsDashboard']);
   }
 
   /**
@@ -671,7 +673,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   public function testAiFeatureFlagsAreNormalizedToBooleans(): void {
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
-      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_ai');
+      ->willReturnCallback(static fn(string $module): bool => in_array($module, ['markaspot_ai', 'markaspot_dashboard'], TRUE));
     $moduleHandler->method('alter');
     \Drupal::getContainer()->set('module_handler', $moduleHandler);
 
@@ -679,6 +681,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       'features' => [
         'aiProcessing' => ['enabled' => TRUE],
         'piiRedaction' => ['enabled' => FALSE],
+        'operationsDashboard' => ['enabled' => TRUE],
       ],
     ]);
 
@@ -693,6 +696,74 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertSame(TRUE, $data['features']['aiProcessing']);
     $this->assertSame(FALSE, $data['features']['piiRedaction']);
+    $this->assertSame(TRUE, $data['features']['operationsDashboard']);
+  }
+
+  /**
+   * Tests operations dashboard is tier-gated in public settings.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testOperationsDashboardForcedFalseForStarterTier(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $nuxtJson = json_encode([
+      'features' => [
+        'dashboard' => TRUE,
+        'operationsDashboard' => TRUE,
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+      'field_tier' => 'starter',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(TRUE, $data['features']['dashboard']);
+    $this->assertSame(FALSE, $data['features']['operationsDashboard']);
+  }
+
+  /**
+   * Tests operations dashboard is fail-closed for FastMap demo workspaces.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testOperationsDashboardForcedFalseForEmptyFastMapTier(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $nuxtJson = json_encode([
+      'features' => [
+        'dashboard' => TRUE,
+        'operationsDashboard' => TRUE,
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+      'field_tier' => NULL,
+      'field_expiry_date' => '2026-06-20',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(TRUE, $data['features']['dashboard']);
+    $this->assertSame(FALSE, $data['features']['operationsDashboard']);
   }
 
   /**
