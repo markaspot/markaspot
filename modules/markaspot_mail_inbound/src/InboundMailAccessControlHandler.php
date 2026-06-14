@@ -26,11 +26,10 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *   bypass markaspot_group's controllers use) skip the jurisdiction scope.
  * - A mail WITH a jurisdiction additionally requires membership in that
  *   jurisdiction group, resolved through markaspot_group's
- *   JurisdictionScopeValidator. The validator is injected OPTIONALLY
- *   (markaspot_group is a hard transitive dependency via markaspot_open311,
- *   but the optional-service pattern keeps the handler degradable, mirroring
- *   InboundMailPromoter); when it is unavailable the check degrades to
- *   permission-only.
+ *   JurisdictionScopeValidator. The validator is injected defensively even
+ *   though markaspot_group is a hard transitive dependency via
+ *   markaspot_open311; if it is unavailable, scoped mail fails closed for
+ *   non-global users rather than falling back to global triage access.
  * - A mail WITHOUT a jurisdiction (single-tenant installs, unrouted
  *   mailboxes) is permission-only: any triage-permission holder may handle
  *   it, consistent with the API list scoping in InboundMailApiController.
@@ -116,10 +115,10 @@ class InboundMailAccessControlHandler extends EntityAccessControlHandler impleme
     }
 
     if ($this->scopeValidator === NULL || !method_exists($this->scopeValidator, 'getAllowedJurisdictionIds')) {
-      // Degraded mode (validator unavailable): permission-only, matching the
-      // documented Phase 1 behavior. markaspot_group is a hard transitive
-      // dependency in this profile, so this branch is a safety net.
-      return AccessResult::allowed()
+      // Scoped mail carries unredacted citizen content. Without the validator
+      // there is no safe way to prove membership, so non-global access is
+      // denied until the dependency is restored.
+      return AccessResult::forbidden('The jurisdiction scope validator is unavailable.')
         ->cachePerPermissions()
         ->addCacheContexts(['user'])
         ->addCacheableDependency($entity);
@@ -130,6 +129,7 @@ class InboundMailAccessControlHandler extends EntityAccessControlHandler impleme
       return AccessResult::allowed()
         ->cachePerPermissions()
         ->addCacheContexts(['user'])
+        ->addCacheTags([static::membershipCacheTag($account)])
         ->addCacheableDependency($entity);
     }
 
@@ -138,7 +138,15 @@ class InboundMailAccessControlHandler extends EntityAccessControlHandler impleme
     return AccessResult::forbidden('The user is not a member of the mail\'s jurisdiction.')
       ->cachePerPermissions()
       ->addCacheContexts(['user'])
+      ->addCacheTags([static::membershipCacheTag($account)])
       ->addCacheableDependency($entity);
+  }
+
+  /**
+   * Cache tag invalidated when the account's group memberships change.
+   */
+  protected static function membershipCacheTag(AccountInterface $account): string {
+    return 'group_relationship_list:plugin:group_membership:entity:' . $account->id();
   }
 
   /**

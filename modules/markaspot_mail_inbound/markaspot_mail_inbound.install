@@ -139,15 +139,22 @@ function markaspot_mail_inbound_requirements(string $phase): array {
     'severity' => $hasPrivate ? REQUIREMENT_OK : REQUIREMENT_WARNING,
   ];
 
-  // Permission scoping: resolved in Phase 2 (#482). The
+  // Permission scoping: resolved in Phase 2 (#482/#489). The
   // InboundMailAccessControlHandler scopes view/update/delete on a mail to
   // members of its jurisdiction; the dashboard API additionally scopes its
-  // collection query. Global admins (uid 1 / administrator) bypass.
+  // collection query. Global admins (uid 1 / administrator) bypass. If the
+  // scope validator is unavailable, scoped mail fails closed for non-global
+  // users rather than falling back to global triage access.
+  $scopeValidatorAvailable = \Drupal::hasService('markaspot_group.jurisdiction_scope_validator');
   $requirements['markaspot_mail_inbound_permission_scope'] = [
     'title' => t('Mark-a-Spot inbound mail: permission scope'),
-    'value' => t('Triage access is jurisdiction-scoped'),
-    'description' => t('A "triage inbound mail" holder can only see and act on mail of jurisdictions they are a member of (plus mail without a jurisdiction). Site administrators see everything.'),
-    'severity' => REQUIREMENT_INFO,
+    'value' => $scopeValidatorAvailable
+      ? t('Triage access is jurisdiction-scoped')
+      : t('Scope validator unavailable (scoped mail fails closed)'),
+    'description' => $scopeValidatorAvailable
+      ? t('A "triage inbound mail" holder can only see and act on mail of jurisdictions they are a member of (plus mail without a jurisdiction). Site administrators see everything.')
+      : t('The jurisdiction scope validator service is unavailable. Non-admin triage users can only see mail without a jurisdiction until markaspot_group scope services are restored.'),
+    'severity' => $scopeValidatorAvailable ? REQUIREMENT_INFO : REQUIREMENT_WARNING,
   ];
 
   return $requirements;

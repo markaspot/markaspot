@@ -93,8 +93,9 @@ queue worker, so a large mailbox cannot stall cron.
   the `triage inbound mail` permission AND membership in the mail's
   jurisdiction (via markaspot_group's scope validator) for view/update/delete.
   Global admins (uid 1 / `administrator`) bypass; mail without a jurisdiction
-  is permission-only. The admin list and the promote/discard forms enforce
-  the same handler.
+  is permission-only. If the scope validator is unavailable, scoped mail fails
+  closed for non-admin triage users. The admin list and the promote/discard
+  forms enforce the same handler.
 - **Dashboard REST API** (custom controller, deliberately NOT JSON:API; the
   JSON:API resource core would derive for `inbound_mail` is disabled by a
   shipped `jsonapi_extras.jsonapi_resource_config` (config/install, update

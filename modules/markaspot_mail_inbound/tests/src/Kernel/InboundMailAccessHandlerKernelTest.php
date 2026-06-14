@@ -24,7 +24,7 @@ use Drupal\user\UserInterface;
  * - a global admin (administrator role) bypasses the scope,
  * - a mail WITHOUT a jurisdiction is permission-only,
  * - without the triage permission everything is denied,
- * - without the scope validator the handler degrades to permission-only.
+ * - without the scope validator scoped mail fails closed.
  *
  * The scope validator is the registered stub (see
  * StubJurisdictionScopeValidator), exercising the container-built handler
@@ -46,6 +46,7 @@ class InboundMailAccessHandlerKernelTest extends KernelTestBase {
     'text',
     'node',
     'options',
+    'taxonomy',
     'file',
     'entity',
     'flexible_permissions',
@@ -72,7 +73,8 @@ class InboundMailAccessHandlerKernelTest extends KernelTestBase {
     // picks the stub up exactly like the production validator. Must be
     // public: nothing references it at compile time, and a private
     // unreferenced definition is removed — $container->has() would then be
-    // FALSE and the handler would silently fall back to permission-only.
+    // FALSE and the handler would exercise the fail-closed fallback instead
+    // of the scoped path.
     $container->register('markaspot_group.jurisdiction_scope_validator', StubJurisdictionScopeValidator::class)
       ->setPublic(TRUE);
   }
@@ -84,6 +86,7 @@ class InboundMailAccessHandlerKernelTest extends KernelTestBase {
     parent::setUp();
 
     $this->installEntitySchema('user');
+    $this->installEntitySchema('taxonomy_term');
     $this->installEntitySchema('group');
     $this->installEntitySchema('group_relationship');
     $this->installEntitySchema('group_config_wrapper');
@@ -159,6 +162,10 @@ class InboundMailAccessHandlerKernelTest extends KernelTestBase {
     foreach (['view', 'update', 'delete'] as $op) {
       $this->assertTrue($mail->access($op, $member), "Member may $op their jurisdiction's mail.");
     }
+
+    $result = $mail->access('view', $member, TRUE);
+    $this->assertTrue($result->isAllowed());
+    $this->assertContains($this->membershipCacheTag($member), $result->getCacheTags());
   }
 
   /**
@@ -171,6 +178,10 @@ class InboundMailAccessHandlerKernelTest extends KernelTestBase {
     foreach (['view', 'update', 'delete'] as $op) {
       $this->assertFalse($mail->access($op, $outsider), "An outsider may NOT $op a foreign jurisdiction's mail.");
     }
+
+    $result = $mail->access('view', $outsider, TRUE);
+    $this->assertTrue($result->isForbidden());
+    $this->assertContains($this->membershipCacheTag($outsider), $result->getCacheTags());
   }
 
   /**
@@ -206,21 +217,37 @@ class InboundMailAccessHandlerKernelTest extends KernelTestBase {
   }
 
   /**
-   * Without the scope validator the handler degrades to permission-only.
+   * Without the scope validator scoped mail fails closed for non-global users.
    */
-  public function testDegradesToPermissionOnlyWithoutValidator(): void {
+  public function testFailsClosedForScopedMailWithoutValidator(): void {
+    $member = $this->user(['triage'], [$this->gidA]);
     $outsider = $this->user(['triage'], [$this->gidB]);
     $mail = $this->mail($this->gidA);
 
     $entityType = $this->container->get('entity_type.manager')->getDefinition('inbound_mail');
     $degraded = new InboundMailAccessControlHandler($entityType, NULL);
-    $this->assertTrue(
-      $degraded->access($mail, 'view', $outsider),
-      'Validator unavailable: permission-only fallback (the documented degradation).'
+    $this->assertFalse(
+      $degraded->access($mail, 'view', $member),
+      'Validator unavailable: even an intended member cannot access scoped mail because membership cannot be proven.'
     );
+    $this->assertFalse(
+      $degraded->access($mail, 'view', $outsider),
+      'Validator unavailable: foreign scoped mail stays denied.'
+    );
+
+    $this->assertTrue($degraded->access($this->mail(0), 'view', $outsider), 'Unscoped mail remains permission-only.');
+    $admin = $this->user(['administrator'], []);
+    $this->assertTrue($degraded->access($mail, 'view', $admin), 'Global admins keep the explicit bypass.');
 
     $noPermission = $this->user([], []);
     $this->assertFalse($degraded->access($mail, 'view', $noPermission));
+  }
+
+  /**
+   * Group membership cache tag for one account.
+   */
+  protected function membershipCacheTag(UserInterface $account): string {
+    return 'group_relationship_list:plugin:group_membership:entity:' . $account->id();
   }
 
 }

@@ -410,22 +410,20 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
   }
 
   /**
-   * Degraded mode (no scope validator): total never leaks beyond items.
+   * Missing scope validator: non-global list falls back to unscoped mail only.
    *
-   * Without the validator the collection query cannot be jurisdiction-scoped,
-   * so the raw count would reveal how much cross-jurisdiction mail exists.
-   * The total must degrade to the post-access-filter row count for a
-   * NON-global user — while a global user (whose NULL scope is the
-   * legitimate bypass, not a degradation) keeps the real total.
+   * Without the validator the collection query cannot prove membership, so it
+   * fails closed to unscoped mail for non-global users. A global user keeps the
+   * explicit bypass and sees the real total.
    */
-  public function testListDegradedScopeTotalDoesNotLeak(): void {
+  public function testListFailsClosedToUnscopedMailWithoutScopeValidator(): void {
     $this->mail($this->gidA);
     $this->mail($this->gidB);
     $unscoped = $this->mail(0);
 
-    // A controller built WITHOUT the scope validator (degraded mode). The
-    // entity access handler still comes from the container (with the stub),
-    // standing in for any defense-in-depth filtering of the unscoped rows.
+    // A controller built WITHOUT the scope validator. The query itself should
+    // restrict non-global users to unscoped mail, before any entity access
+    // defense-in-depth filter runs.
     $controller = new InboundMailApiController(
       $this->container->get('entity_type.manager'),
       $this->container->get('current_user'),
@@ -440,11 +438,11 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     // Non-global triage user with no allowed jurisdictions.
     $this->actAs(['triage'], []);
     $data = $this->json($controller->list(Request::create('/api/inbound-mail')));
-    $this->assertSame([(int) $unscoped->id()], array_column($data['items'], 'id'), 'The per-entity access filter still drops foreign rows.');
-    $this->assertSame(1, $data['total'], 'The degraded total matches the rows returned, never the unscoped query count (3).');
+    $this->assertSame([(int) $unscoped->id()], array_column($data['items'], 'id'), 'Missing validator: non-global users only receive unscoped mail.');
+    $this->assertSame(1, $data['total'], 'Missing validator: total is scoped to unscoped mail, never the full query count (3).');
 
-    // The global bypass through the same validator-less controller keeps
-    // the accurate full total.
+    // The global bypass through the same validator-less controller keeps the
+    // accurate full total.
     $this->actAs(['administrator']);
     $all = $this->json($controller->list(Request::create('/api/inbound-mail')));
     $this->assertSame(3, $all['total']);

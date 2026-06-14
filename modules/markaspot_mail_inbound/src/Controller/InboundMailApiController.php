@@ -119,12 +119,9 @@ class InboundMailApiController extends ControllerBase {
 
     // QUERY-LEVEL jurisdiction scoping (not only per-entity access): a
     // non-global user sees rows of their allowed jurisdictions plus
-    // unscoped mails. No allowed jurisdictions -> unscoped mails only.
-    // NULL means no query scoping for one of two reasons that must be told
-    // apart below: a GLOBAL user legitimately sees the full count, while a
-    // missing scope validator (degraded mode) must not leak one.
+    // unscoped mails. No allowed jurisdictions or missing validator ->
+    // unscoped mails only. NULL is reserved for the global bypass.
     $allowed = $this->allowedJurisdictionIds();
-    $scopeDegraded = $allowed === NULL && !InboundMailAccessControlHandler::hasGlobalBypass($this->currentUser);
     if ($allowed !== NULL) {
       $group = $query->orConditionGroup()->notExists('jurisdiction_id');
       if ($allowed !== []) {
@@ -159,15 +156,6 @@ class InboundMailApiController extends ControllerBase {
         continue;
       }
       $items[] = $this->listItem($mail);
-    }
-
-    // Degraded mode (scope validator unavailable, NOT the global bypass):
-    // the query above could not be jurisdiction-scoped, so the raw count
-    // would reveal how much cross-jurisdiction mail exists. Degrade the
-    // total to what this response actually carries; the normal scoped and
-    // global paths keep the accurate paginated total.
-    if ($scopeDegraded) {
-      $total = count($items);
     }
 
     return new JsonResponse([
@@ -515,17 +503,16 @@ class InboundMailApiController extends ControllerBase {
    * Jurisdiction ids the current user may see, or NULL for global users.
    *
    * @return int[]|null
-   *   NULL = no scoping (global bypass or validator unavailable, matching
-   *   the access handler's degradation); otherwise the allowed group ids.
-   *   list() distinguishes the two NULL cases via hasGlobalBypass(): only a
-   *   global user may receive the unscoped total.
+   *   NULL = no scoping for the global bypass; otherwise the allowed group
+   *   ids. Missing validator fails closed to an empty list for non-global
+   *   users, so the query only returns unscoped mail.
    */
   protected function allowedJurisdictionIds(): ?array {
     if (InboundMailAccessControlHandler::hasGlobalBypass($this->currentUser)) {
       return NULL;
     }
     if ($this->scopeValidator === NULL || !method_exists($this->scopeValidator, 'getAllowedJurisdictionIds')) {
-      return NULL;
+      return [];
     }
     return array_map('intval', $this->scopeValidator->getAllowedJurisdictionIds($this->currentUser));
   }
