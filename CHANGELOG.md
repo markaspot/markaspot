@@ -1,5 +1,20 @@
 # Changelog
 
+## [11.9.121](https://github.com/markaspot/markaspot/compare/11.9.120...11.9.121) (2026-06-14)
+
+### Features
+
+* assign organisations from facilities ([c0db258](https://github.com/markaspot/markaspot/commit/c0db2587c2b78a047044008ab19a7ad4efa00284))
+* normalize facility catalogue storage ([40df3f4](https://github.com/markaspot/markaspot/commit/40df3f4ca8487f18b07e82585fa3d99e85c90c79))
+* support facilities in Open311 flows ([7a0ecd0](https://github.com/markaspot/markaspot/commit/7a0ecd0376570aac708baabe7ac60bf660bc51b6))
+
+### Bug Fixes
+
+* **group:** grant uid 1 administrator in onboarding update instead of aborting updb ([12df383](https://github.com/markaspot/markaspot/commit/12df3836dcf2987071b336caa7e436678f9179b8))
+* guard facility catalogue clears ([cdc6584](https://github.com/markaspot/markaspot/commit/cdc6584d1e8d1845026eb247ae24dd1e6d9479be))
+* **mail-inbound:** fail closed on missing jurisdiction scope ([1a3d16e](https://github.com/markaspot/markaspot/commit/1a3d16ee0439b6abd0ea804a4846750e50d17e7e))
+* repair AI attribute discovery ([1c4b35e](https://github.com/markaspot/markaspot/commit/1c4b35e5257ae6add930278a4b5c46a0b0f444ff))
+
 ## [11.9.120](https://github.com/markaspot/markaspot/compare/11.9.119...11.9.120) (2026-06-14)
 
 ### Features
