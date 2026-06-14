@@ -42,7 +42,9 @@ class RootAdminGroupMembershipTest extends UnitTestCase {
     $this->assertStringContainsString('_markaspot_group_update_onboard_root_admin()', $source);
     $this->assertStringContainsString('uid 1 is missing', $source);
     $this->assertStringContainsString('uid 1 is blocked', $source);
-    $this->assertStringContainsString('uid 1 lacks the administrator role', $source);
+    // Self-heal: uid 1 is granted the administrator role instead of aborting updb.
+    $this->assertStringNotContainsString('uid 1 lacks the administrator role', $source);
+    $this->assertStringContainsString('Granted administrator role to uid 1', $source);
     $this->assertStringContainsString('Failed to converge uid 1 group admin membership for %d group(s)', $source);
     $this->assertStringContainsString('_markaspot_group_update_remove_non_individual_group_roles($member)', $source);
     $this->assertStringContainsString('$group->addMember($user);', $source);

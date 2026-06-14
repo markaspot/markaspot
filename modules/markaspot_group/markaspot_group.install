@@ -4434,8 +4434,13 @@ function _markaspot_group_update_onboard_root_admin(): array {
     return $result;
   }
   if (!$user->hasRole('administrator')) {
-    $result['failures'][] = 'uid 1 lacks the administrator role';
-    return $result;
+    // Self-heal the invariant rather than aborting the whole updb: uid 1 is the
+    // global administrator by definition. SaaS-seeded tenants may create a
+    // separate tenant-scoped admin and leave uid 1 without the role; grant it
+    // here so the onboarding below proceeds for every tenant.
+    $user->addRole('administrator');
+    $user->save();
+    \Drupal::logger('markaspot_group')->notice('Granted administrator role to uid 1 (root-admin invariant) before group onboarding.');
   }
 
   $group_storage = \Drupal::entityTypeManager()->getStorage('group');
