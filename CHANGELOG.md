@@ -1,5 +1,24 @@
 # Changelog
 
+## [11.9.120](https://github.com/markaspot/markaspot/compare/11.9.119...11.9.120) (2026-06-14)
+
+### Features
+
+* **nuxt:** expose operations-dashboard tier capability in feature settings ([5d02ea3](https://github.com/markaspot/markaspot/commit/5d02ea3e9abfcafce5337f6fa94e3252e17da076))
+* **nuxt:** expose privacyBlockOnFlag in tenant feature settings ([#477](https://github.com/markaspot/markaspot/issues/477)) ([78a8d35](https://github.com/markaspot/markaspot/commit/78a8d35f4683224ae47451c2d6f1f71bef0ca2bd))
+
+### Bug Fixes
+
+* **dashboard:** enforce operations overview gates ([87e9df0](https://github.com/markaspot/markaspot/commit/87e9df0c5466a7e8e655ab8ff17cf44f5941c5f9))
+* gate service request creator exposure ([7823143](https://github.com/markaspot/markaspot/commit/7823143135fc49701c95a6d2064e59c44203728c))
+* **nuxt:** block anonymous user enumeration ([3fb0d27](https://github.com/markaspot/markaspot/commit/3fb0d277a4df2b8e0d9f64cd72afac10bb531bdc))
+* **open311:** fall back to entity bundle for author gating ([9c09e3b](https://github.com/markaspot/markaspot/commit/9c09e3b33ad98409daa858f27bf0cef79bf2ea5f))
+* **open311:** localize initial status notes ([a17ed5f](https://github.com/markaspot/markaspot/commit/a17ed5f051686fde4670b505d0a4f234edd7a333))
+
+### Refactoring
+
+* **nuxt:** replace deprecated basename calls ([deae3f1](https://github.com/markaspot/markaspot/commit/deae3f1f4383865af13744ae7bbb8148e901fa97))
+
 ## [11.9.119](https://github.com/markaspot/markaspot/compare/11.9.118...11.9.119) (2026-06-12)
 
 ### Performance
