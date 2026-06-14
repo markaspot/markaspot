@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\markaspot_facility\Kernel;
 
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupType;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_facility\Service\FacilityManager;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 
 /**
@@ -47,6 +49,16 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
   /**
    * {@inheritdoc}
    */
+  public function register(ContainerBuilder $container): void {
+    parent::register($container);
+    $container->register('markaspot_group.hierarchy_resolver', JurisdictionHierarchyResolverInterface::class)
+      ->setSynthetic(TRUE)
+      ->setPublic(TRUE);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   protected function setUp(): void {
     parent::setUp();
 
@@ -59,6 +71,11 @@ class FacilityManagerStorageKernelTest extends KernelTestBase {
 
     GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
     $this->createGroupField('field_facilities', 'text_long');
+
+    $hierarchy_resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchy_resolver->method('getRootJurisdictionId')
+      ->willReturnCallback(static fn(int $gid): int => $gid);
+    $this->container->set('markaspot_group.hierarchy_resolver', $hierarchy_resolver);
 
     $this->manager = $this->container->get('markaspot_facility.manager');
   }
