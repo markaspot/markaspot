@@ -102,6 +102,30 @@ function markaspot_facility_update_11002(): string {
 }
 
 /**
+ * Installs normalized facility entity storage without backfilling tenant data.
+ *
+ * Existing tenant catalogues in field_facilities remain in place and are used
+ * as a read-only legacy fallback until an operator explicitly saves or seeds a
+ * facility catalogue. This avoids a silent data migration on production tenants.
+ */
+function markaspot_facility_update_11003(): string {
+  $definition_update_manager = \Drupal::entityDefinitionUpdateManager();
+  $entity_type_manager = \Drupal::entityTypeManager();
+
+  if (!$entity_type_manager->hasDefinition('markaspot_facility')) {
+    return 'markaspot_facility entity definition was not available.';
+  }
+
+  $entity_type = $entity_type_manager->getDefinition('markaspot_facility');
+  if ($definition_update_manager->getEntityType($entity_type->id()) === NULL) {
+    $definition_update_manager->installEntityType($entity_type);
+    return 'Installed markaspot_facility entity storage. Existing field_facilities data was not migrated.';
+  }
+
+  return 'markaspot_facility entity storage already exists. Existing field_facilities data was not migrated.';
+}
+
+/**
  * Creates the MVP facility storage fields if config import skipped them.
  */
 function _markaspot_facility_ensure_fields(): void {

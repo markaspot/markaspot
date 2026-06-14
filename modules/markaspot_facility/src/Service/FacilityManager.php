@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Drupal\markaspot_facility\Service;
 
 use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
@@ -52,6 +54,13 @@ class FacilityManager {
   private CountryRepositoryInterface $countryRepository;
 
   /**
+   * Database connection.
+   *
+   * @var \Drupal\Core\Database\Connection
+   */
+  private Connection $database;
+
+  /**
    * Tracks nodes whose address was locked from a selected facility.
    *
    * @var \SplObjectStorage<\Drupal\node\NodeInterface, bool>
@@ -65,10 +74,12 @@ class FacilityManager {
     EntityTypeManagerInterface $entity_type_manager,
     LoggerChannelFactoryInterface $logger_factory,
     CountryRepositoryInterface $country_repository,
+    Connection $database,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->logger = $logger_factory->get('markaspot_facility');
     $this->countryRepository = $country_repository;
+    $this->database = $database;
     $this->addressLocks = new \SplObjectStorage();
   }
 
@@ -76,14 +87,24 @@ class FacilityManager {
    * Returns the normalized facilities object for dashboard responses.
    */
   public function getDashboardSettings(?GroupInterface $group): array {
-    return $this->normalizeStoredSettings($this->decodeFacilitiesField($group), FALSE);
+    $settings = $this->decodeFacilitiesField($group);
+    $entity_items = $this->loadFacilityEntityItems($group, FALSE);
+    if ($entity_items !== NULL) {
+      $settings['items'] = $entity_items;
+    }
+    return $this->normalizeStoredSettings($settings, FALSE);
   }
 
   /**
    * Returns the normalized facilities object for public settings.
    */
   public function getPublicSettings(?GroupInterface $group): array {
-    return $this->normalizeStoredSettings($this->decodeFacilitiesField($group), TRUE);
+    $settings = $this->decodeFacilitiesField($group);
+    $entity_items = $this->loadFacilityEntityItems($group, TRUE);
+    if ($entity_items !== NULL) {
+      $settings['items'] = $entity_items;
+    }
+    return $this->normalizeStoredSettings($settings, TRUE);
   }
 
   /**
@@ -97,11 +118,26 @@ class FacilityManager {
       throw new \RuntimeException('field_facilities is missing on the jurisdiction group.');
     }
 
-    $source->set(
-          'field_facilities',
-          json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
-      );
-    $source->save();
+    $transaction = $this->database->startTransaction();
+    try {
+      $this->syncFacilityEntities($source, $normalized['items']);
+
+      // Store only the catalogue-level settings in the legacy JSON field. The
+      // normalized item catalogue now lives in markaspot_facility entities.
+      // This keeps the response contract stable while avoiding a second
+      // writable copy of the facility list.
+      $stored_settings = $normalized;
+      $stored_settings['items'] = [];
+      $source->set(
+            'field_facilities',
+            json_encode($stored_settings, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+      $source->save();
+    }
+    catch (\Throwable $e) {
+      $transaction->rollBack();
+      throw $e;
+    }
 
     return $normalized;
   }
@@ -261,6 +297,262 @@ class FacilityManager {
 
     $decoded = json_decode((string) $source->get('field_facilities')->value, TRUE);
     return is_array($decoded) ? $decoded : [];
+  }
+
+  /**
+   * Loads normalized facility catalogue items from the entity store.
+   *
+   * @return array<int, array<string, mixed>>|null
+   *   Facility items, an empty array when the entity catalogue exists but all
+   *   rows are inactive/invalid for the current view, or NULL when no entity
+   *   catalogue has been created for this jurisdiction yet. NULL deliberately
+   *   triggers the legacy field_facilities fallback so existing tenants do not
+   *   need an automatic migration.
+   */
+  private function loadFacilityEntityItems(?GroupInterface $group, bool $public): ?array {
+    if (!$group instanceof GroupInterface) {
+      return NULL;
+    }
+
+    $source = $this->getSourceGroup($group);
+    if (!$this->entityTypeManager->hasDefinition('markaspot_facility')) {
+      return NULL;
+    }
+
+    try {
+      $storage = $this->entityTypeManager->getStorage('markaspot_facility');
+      $ids = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('jurisdiction_id', (int) $source->id())
+        ->sort('weight')
+        ->sort('label')
+        ->sort('machine_name')
+        ->execute();
+
+      if ($ids === []) {
+        return NULL;
+      }
+
+      $items = [];
+      foreach ($storage->loadMultiple($ids) as $entity) {
+        if (!$entity instanceof ContentEntityInterface) {
+          continue;
+        }
+        if ($public && !$this->facilityEntityBool($entity, 'active', TRUE)) {
+          continue;
+        }
+        $item = $this->facilityEntityToItem($entity);
+        if ($item !== NULL) {
+          $items[] = $item;
+        }
+      }
+
+      return $items;
+    }
+    catch (\Throwable $e) {
+      $this->logger->warning(
+        'Facility entity catalogue could not be loaded for jurisdiction @jurisdiction; falling back to legacy field_facilities. Error: @message',
+        [
+          '@jurisdiction' => $source->id() ?? 'unknown',
+          '@message' => $e->getMessage(),
+        ]
+      );
+      return NULL;
+    }
+  }
+
+  /**
+   * Synchronizes normalized submitted facility items into content entities.
+   *
+   * Dashboard saves are explicit operator actions, so this is the conversion
+   * point from legacy JSON items to normalized rows. Update hooks do not
+   * backfill existing tenant data.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   Source jurisdiction group.
+   * @param array<int, array<string, mixed>> $items
+   *   Normalized facility items.
+   */
+  private function syncFacilityEntities(GroupInterface $group, array $items): void {
+    if (!$this->entityTypeManager->hasDefinition('markaspot_facility')) {
+      throw new \RuntimeException('markaspot_facility entity storage is not installed.');
+    }
+
+    $storage = $this->entityTypeManager->getStorage('markaspot_facility');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('jurisdiction_id', (int) $group->id())
+      ->execute();
+
+    $existing_by_key = [];
+    $duplicate_entities = [];
+    foreach ($storage->loadMultiple($ids) as $entity) {
+      if (!$entity instanceof ContentEntityInterface) {
+        continue;
+      }
+      $key = $this->facilityEntityString($entity, 'machine_name');
+      if ($key === '') {
+        $duplicate_entities[] = $entity;
+        continue;
+      }
+      if (isset($existing_by_key[$key])) {
+        $duplicate_entities[] = $entity;
+        continue;
+      }
+      $existing_by_key[$key] = $entity;
+    }
+
+    if ($duplicate_entities !== []) {
+      $storage->delete($duplicate_entities);
+    }
+
+    foreach (array_values($items) as $weight => $item) {
+      $key = (string) $item['id'];
+      $entity = $existing_by_key[$key] ?? $storage->create([
+        'jurisdiction_id' => (int) $group->id(),
+        'machine_name' => $key,
+      ]);
+
+      if (!$entity instanceof ContentEntityInterface) {
+        throw new \RuntimeException('markaspot_facility storage returned a non-content entity.');
+      }
+
+      $this->applyItemToFacilityEntity($entity, $item, $group, $weight);
+      $entity->save();
+      unset($existing_by_key[$key]);
+    }
+
+    if ($existing_by_key !== []) {
+      $storage->delete(array_values($existing_by_key));
+    }
+  }
+
+  /**
+   * Applies one normalized facility item to a content entity.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $entity
+   *   Facility content entity.
+   * @param array<string, mixed> $item
+   *   Normalized facility item.
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   Source jurisdiction group.
+   * @param int $weight
+   *   Facility sort weight.
+   */
+  private function applyItemToFacilityEntity(
+    ContentEntityInterface $entity,
+    array $item,
+    GroupInterface $group,
+    int $weight,
+  ): void {
+    $entity->set('jurisdiction_id', (int) $group->id());
+    $entity->set('machine_name', (string) $item['id']);
+    $entity->set('label', (string) $item['label']);
+    $entity->set('lat', (float) $item['lat']);
+    $entity->set('lng', (float) $item['lng']);
+    $entity->set('active', (bool) ($item['active'] ?? TRUE));
+    $entity->set('weight', $weight);
+    $entity->set(
+      'address',
+      array_key_exists('address', $item)
+        ? json_encode($item['address'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        : ''
+    );
+    $entity->set('organisation_id', (string) ($item['organisationId'] ?? ''));
+    $entity->set('icon', (string) ($item['icon'] ?? ''));
+    $entity->set('description', (string) ($item['description'] ?? ''));
+    $entity->set('url', (string) ($item['url'] ?? ''));
+  }
+
+  /**
+   * Converts a facility content entity into the public/dashboard item shape.
+   *
+   * @return array<string, mixed>|null
+   *   Normalized facility item, or NULL when required fields are incomplete.
+   */
+  private function facilityEntityToItem(ContentEntityInterface $entity): ?array {
+    $id = $this->facilityEntityString($entity, 'machine_name');
+    $label = $this->facilityEntityString($entity, 'label');
+    $lat = $this->facilityEntityFloat($entity, 'lat');
+    $lng = $this->facilityEntityFloat($entity, 'lng');
+    if ($id === '' || $label === '' || $lat === NULL || $lng === NULL) {
+      return NULL;
+    }
+
+    $item = [
+      'id' => $id,
+      'label' => $label,
+      'lat' => $lat,
+      'lng' => $lng,
+      'active' => $this->facilityEntityBool($entity, 'active', TRUE),
+    ];
+
+    $address = $this->decodeFacilityEntityAddress($entity);
+    if ($address !== NULL) {
+      $item['address'] = $address;
+    }
+
+    $organisation_id = $this->facilityEntityString($entity, 'organisation_id');
+    if ($organisation_id !== '') {
+      $item['organisationId'] = $organisation_id;
+    }
+
+    foreach (['icon', 'description', 'url'] as $field_name) {
+      $value = $this->facilityEntityString($entity, $field_name);
+      if ($value !== '') {
+        $item[$field_name] = $value;
+      }
+    }
+
+    return $item;
+  }
+
+  /**
+   * Decodes the JSON address stored on a facility entity.
+   */
+  private function decodeFacilityEntityAddress(ContentEntityInterface $entity): array|string|null {
+    $raw = $this->facilityEntityString($entity, 'address');
+    if ($raw === '') {
+      return NULL;
+    }
+
+    $decoded = json_decode($raw, TRUE);
+    if (json_last_error() === JSON_ERROR_NONE) {
+      return $this->normalizeStoredAddress($decoded);
+    }
+
+    return $this->normalizeStoredAddress($raw);
+  }
+
+  /**
+   * Reads a string value from a facility entity field.
+   */
+  private function facilityEntityString(ContentEntityInterface $entity, string $field_name): string {
+    if (!$entity->hasField($field_name) || $entity->get($field_name)->isEmpty()) {
+      return '';
+    }
+    return trim($entity->get($field_name)->getString());
+  }
+
+  /**
+   * Reads a float value from a facility entity field.
+   */
+  private function facilityEntityFloat(ContentEntityInterface $entity, string $field_name): ?float {
+    if (!$entity->hasField($field_name) || $entity->get($field_name)->isEmpty()) {
+      return NULL;
+    }
+    $value = $entity->get($field_name)->getString();
+    return is_numeric($value) ? (float) $value : NULL;
+  }
+
+  /**
+   * Reads a boolean value from a facility entity field.
+   */
+  private function facilityEntityBool(ContentEntityInterface $entity, string $field_name, bool $default): bool {
+    if (!$entity->hasField($field_name) || $entity->get($field_name)->isEmpty()) {
+      return $default;
+    }
+    return (bool) $entity->get($field_name)->getString();
   }
 
   /**

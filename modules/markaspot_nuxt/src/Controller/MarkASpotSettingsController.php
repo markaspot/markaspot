@@ -611,8 +611,9 @@ class MarkASpotSettingsController extends ControllerBase {
       'taxonomy_term_list:sublocality',
     ]);
 
-    // Allow other modules to alter the settings before response.
-    $this->moduleHandler()->alter('markaspot_nuxt_settings', $settings, $group);
+    // Allow other modules to alter the settings and add cache metadata before
+    // response.
+    $this->moduleHandler()->alter('markaspot_nuxt_settings', $settings, $group, $cache_metadata);
 
     // Return the configuration as a cacheable JSON response.
     $response = new CacheableJsonResponse($settings);

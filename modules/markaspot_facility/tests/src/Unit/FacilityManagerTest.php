@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_facility\Unit;
 
 use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Transaction;
+use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
@@ -30,11 +34,25 @@ class FacilityManagerTest extends UnitTestCase {
   protected EntityStorageInterface $groupStorage;
 
   /**
+   * Facility entity storage mock.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected EntityStorageInterface $facilityStorage;
+
+  /**
    * Country repository mock.
    *
    * @var \CommerceGuys\Addressing\Country\CountryRepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected CountryRepositoryInterface $countryRepository;
+
+  /**
+   * Database connection mock.
+   *
+   * @var \Drupal\Core\Database\Connection|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected Connection $database;
 
   /**
    * Facility manager under test.
@@ -50,10 +68,22 @@ class FacilityManagerTest extends UnitTestCase {
     parent::setUp();
 
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
+    $this->facilityStorage = $this->createMock(EntityStorageInterface::class);
+    $facility_query = $this->createMock(QueryInterface::class);
+    $facility_query->method('accessCheck')->willReturnSelf();
+    $facility_query->method('condition')->willReturnSelf();
+    $facility_query->method('sort')->willReturnSelf();
+    $facility_query->method('execute')->willReturn([]);
+    $this->facilityStorage->method('getQuery')->willReturn($facility_query);
+    $this->facilityStorage->method('loadMultiple')->willReturn([]);
+
     $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
+    $entity_type_manager->method('hasDefinition')
+      ->willReturnCallback(static fn(string $type): bool => $type === 'markaspot_facility');
     $entity_type_manager->method('getStorage')
       ->willReturnCallback(fn(string $type) => match ($type) {
             'group' => $this->groupStorage,
+            'markaspot_facility' => $this->facilityStorage,
             default => $this->createMock(EntityStorageInterface::class),
       });
 
@@ -67,10 +97,15 @@ class FacilityManagerTest extends UnitTestCase {
       'GB' => 'United Kingdom',
     ]);
 
+    $this->database = $this->createMock(Connection::class);
+    $this->database->method('startTransaction')
+      ->willReturn($this->transaction());
+
     $this->manager = new FacilityManager(
       $entity_type_manager,
       $logger_factory,
       $this->countryRepository,
+      $this->database,
     );
   }
 
@@ -770,6 +805,81 @@ class FacilityManagerTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::getDashboardSettings
+   * @covers ::getPublicSettings
+   */
+  public function testEntityCatalogueOverridesLegacyItems(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => TRUE,
+        'items' => [
+          [
+            'id' => 'legacy_school',
+            'label' => 'Legacy School',
+            'lat' => 51.0,
+            'lng' => 7.0,
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('sort')->willReturnSelf();
+    $query->method('execute')->willReturn([101, 102]);
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')->willReturn($query);
+    $storage->method('loadMultiple')->willReturn([
+      101 => $this->facilityEntity([
+        'machine_name' => 'school_a',
+        'label' => 'School A',
+        'lat' => 50.1,
+        'lng' => 8.1,
+        'active' => TRUE,
+        'address' => json_encode(['address_line1' => 'A Street 1']),
+        'icon' => 'i-lucide-school',
+      ]),
+      102 => $this->facilityEntity([
+        'machine_name' => 'school_b',
+        'label' => 'School B',
+        'lat' => 50.2,
+        'lng' => 8.2,
+        'active' => FALSE,
+      ]),
+    ]);
+
+    $entity_type_manager = $this->createMock(EntityTypeManagerInterface::class);
+    $entity_type_manager->method('hasDefinition')
+      ->willReturnCallback(static fn(string $type): bool => $type === 'markaspot_facility');
+    $entity_type_manager->method('getStorage')
+      ->willReturnCallback(fn(string $type) => match ($type) {
+            'group' => $this->groupStorage,
+            'markaspot_facility' => $storage,
+            default => $this->createMock(EntityStorageInterface::class),
+      });
+
+    $manager = new FacilityManager(
+      $entity_type_manager,
+      $this->loggerFactory(),
+      $this->countryRepository,
+      $this->database,
+    );
+
+    $dashboard = $manager->getDashboardSettings($group);
+    $this->assertSame(['school_a', 'school_b'], array_column($dashboard['items'], 'id'));
+    $this->assertSame('A Street 1', $dashboard['items'][0]['address']['address_line1']);
+    $this->assertSame('i-lucide-school', $dashboard['items'][0]['icon']);
+
+    $public = $manager->getPublicSettings($group);
+    $this->assertSame(['school_a'], array_column($public['items'], 'id'));
+  }
+
+  /**
    * @covers ::applyToServiceRequest
    */
   public function testApplyToServiceRequestSetsFacilityLocationAndAddress(): void {
@@ -1286,6 +1396,55 @@ class FacilityManagerTest extends UnitTestCase {
       });
 
     return $group;
+  }
+
+  /**
+   * Creates a facility content entity double.
+   */
+  private function facilityEntity(array $fields): ContentEntityInterface {
+    $entity = $this->createMock(ContentEntityInterface::class);
+    $entity->method('hasField')
+      ->willReturnCallback(static fn(string $name): bool => array_key_exists($name, $fields));
+    $entity->method('get')
+      ->willReturnCallback(fn(string $name): FieldItemListInterface => $this->fieldList($fields[$name] ?? NULL));
+    return $entity;
+  }
+
+  /**
+   * Creates a field list double exposing isEmpty() and value.
+   */
+  private function fieldList(mixed $value): FieldItemListInterface {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('isEmpty')->willReturn($value === NULL || $value === '');
+    $field->method('getString')->willReturn($value === NULL ? '' : (string) $value);
+    return $field;
+  }
+
+  /**
+   * Creates a logger factory double for ad-hoc manager instances.
+   */
+  private function loggerFactory(): LoggerChannelFactoryInterface {
+    $logger_factory = $this->createMock(LoggerChannelFactoryInterface::class);
+    $logger_factory->method('get')->willReturn($this->createMock(LoggerInterface::class));
+    return $logger_factory;
+  }
+
+  /**
+   * Creates a transaction double without invoking core transaction internals.
+   */
+  private function transaction(): Transaction {
+    return new class() extends Transaction {
+
+      public function __construct() {
+      }
+
+      public function __destruct() {
+      }
+
+      public function rollBack() {
+      }
+
+    };
   }
 
 }

@@ -16,7 +16,7 @@ use Symfony\Component\HttpFoundation\Request;
 /**
  * Controller for tenant facilities settings.
  */
-class FacilitySettingsController extends ControllerBase {
+final class FacilitySettingsController extends ControllerBase {
 
   use JurisdictionIdResolverTrait;
 

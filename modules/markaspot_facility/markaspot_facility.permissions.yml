@@ -1,0 +1,4 @@
+administer markaspot facility:
+  title: 'Administer Mark-a-Spot facilities'
+  description: 'Create, update and delete normalized facility catalogue entries.'
+  restrict access: true

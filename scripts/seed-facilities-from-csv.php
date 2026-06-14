@@ -3,14 +3,16 @@
 
 /**
  * @file
- * Seed facilities into the canonical field_facilities payload from a CSV.
+ * Seed facilities into normalized markaspot_facility entities from a CSV.
  *
  * Generic tenant tooling: reads facility rows from an operator-supplied CSV
- * and writes them into field_facilities on the target jurisdiction group via
+ * and writes them into the target jurisdiction's facility entity catalogue via
  * FacilityManager. Tenant-specific CSV fixtures live outside the profile.
  *
  * Usage:
- *   ddev drush php:script web/profiles/contrib/markaspot/scripts/seed-facilities-from-csv.php -- <jurisdiction> --csv=/absolute/path/to/facilities.csv [--replace] [--dry-run]
+ *   ddev drush php:script path/to/seed-facilities-from-csv.php -- \
+ *     <jurisdiction> --csv=/absolute/path/to/facilities.csv [--replace] \
+ *     [--dry-run]
  *
  * CSV columns (required): id, label, lat, lng, address, active
  *
@@ -18,6 +20,7 @@
  * - merge (default): upsert items by id into the existing payload.
  * - --replace: drop existing items and write the CSV content verbatim.
  *
+ * This is an explicit seeding tool, not an automatic tenant migration.
  * Requires markaspot_facility to be enabled; aborts otherwise.
  */
 
@@ -98,20 +101,7 @@ if (!$facility_manager instanceof FacilityManager || !$group->hasField('field_fa
 }
 
 $existing = $facility_manager->getDashboardSettings($group);
-$existing_source = 'field_facilities';
-
-if (($existing['items'] ?? []) === [] && $group->hasField('field_nuxt_config')) {
-  $nuxt_config = load_nuxt_config($group);
-  if ($nuxt_config === NULL) {
-    drush_print('ERROR: field_nuxt_config contains invalid JSON. Aborting without changes.');
-    return;
-  }
-
-  if (!empty($nuxt_config['facilities']) && is_array($nuxt_config['facilities'])) {
-    $existing = $nuxt_config['facilities'];
-    $existing_source = 'field_nuxt_config (legacy fallback, will migrate on save)';
-  }
-}
+$existing_source = 'dashboard settings (entity catalogue or legacy fallback)';
 
 $existing_items = [];
 foreach ($existing['items'] ?? [] as $item) {
@@ -137,7 +127,7 @@ foreach ($seed_items as $item) {
 
 $payload = [
   'enabled' => TRUE,
-  'mode' => 'facility',
+  'mode' => 'exclusive',
   'hideMapPicker' => TRUE,
   'label' => [
     'singular' => 'Einrichtung',
@@ -178,14 +168,7 @@ if ($dry_run) {
 $facility_manager->saveDashboardSettings($group, $payload);
 
 drush_print('');
-drush_print('Saved facilities into field_facilities successfully.');
-if ($existing_source !== 'field_facilities') {
-  drush_print('Legacy facilities were migrated from field_nuxt_config into the canonical facility field.');
-  if (strip_legacy_facilities_key($group)) {
-    drush_print('Legacy facilities key removed from field_nuxt_config. Canonical field is now the single source of truth.');
-  }
-}
-
+drush_print('Saved facilities into markaspot_facility entities successfully.');
 drush_print('Facility payload is live. Open the tenant URL with ?report=true&type=classic[&facility=<id>] to verify.');
 
 /**
@@ -236,50 +219,6 @@ function load_jurisdiction_group(string $selector): ?GroupInterface {
 
   $group = $storage->load((int) reset($candidate_ids));
   return $group instanceof GroupInterface ? $group : NULL;
-}
-
-/**
- * Loads and decodes field_nuxt_config.
- */
-function load_nuxt_config(GroupInterface $group): ?array {
-  if (!$group->hasField('field_nuxt_config')) {
-    return [];
-  }
-
-  $raw_nuxt_config = (string) $group->get('field_nuxt_config')->value;
-  if (trim($raw_nuxt_config) === '') {
-    return [];
-  }
-
-  $nuxt_config = json_decode($raw_nuxt_config, TRUE);
-  return is_array($nuxt_config) ? $nuxt_config : NULL;
-}
-
-/**
- * Strips the legacy facilities key from field_nuxt_config.
- *
- * Called after a successful migration from field_nuxt_config into the
- * canonical field_facilities storage, so we do not leave a stale payload
- * behind that could diverge from the canonical source.
- */
-function strip_legacy_facilities_key(GroupInterface $group): bool {
-  if (!$group->hasField('field_nuxt_config')) {
-    return FALSE;
-  }
-
-  $nuxt_config = load_nuxt_config($group);
-  if (!is_array($nuxt_config) || !array_key_exists('facilities', $nuxt_config)) {
-    return FALSE;
-  }
-
-  unset($nuxt_config['facilities']);
-  $group->set('field_nuxt_config', json_encode(
-    $nuxt_config,
-    JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-  ));
-  $group->save();
-
-  return TRUE;
 }
 
 /**
@@ -340,8 +279,8 @@ function load_seed_items_from_csv(string $csv_path): array {
     $rows[] = [
       'id' => $id,
       'label' => trim((string) ($row['label'] ?? '')),
-      'lat' => (float) ($row['lat'] ?? 0),
-      'lng' => (float) ($row['lng'] ?? 0),
+      'lat' => trim((string) ($row['lat'] ?? '')),
+      'lng' => trim((string) ($row['lng'] ?? '')),
       'address' => trim((string) ($row['address'] ?? '')),
       'active' => parse_csv_bool($row['active'] ?? '1'),
     ];
