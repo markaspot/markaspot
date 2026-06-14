@@ -10,6 +10,7 @@ use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -61,6 +62,13 @@ class FacilityManager {
   private Connection $database;
 
   /**
+   * Jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface
+   */
+  private JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Tracks nodes whose address was locked from a selected facility.
    *
    * @var \SplObjectStorage<\Drupal\node\NodeInterface, bool>
@@ -75,11 +83,13 @@ class FacilityManager {
     LoggerChannelFactoryInterface $logger_factory,
     CountryRepositoryInterface $country_repository,
     Connection $database,
+    JurisdictionHierarchyResolverInterface $hierarchy_resolver,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->logger = $logger_factory->get('markaspot_facility');
     $this->countryRepository = $country_repository;
     $this->database = $database;
+    $this->hierarchyResolver = $hierarchy_resolver;
     $this->addressLocks = new \SplObjectStorage();
   }
 
@@ -204,6 +214,8 @@ class FacilityManager {
         }
       }
 
+      $this->applyFacilityOrganisation($node, $facility, $jurisdiction_id);
+
       return;
     }
 
@@ -222,6 +234,104 @@ class FacilityManager {
             '@node' => $node->id() ?? 'new',
           ]
       );
+  }
+
+  /**
+   * Applies a facility's default organisation assignment when it is resolvable.
+   *
+   * The catalogue stores organisationId as a string for backwards-compatible
+   * settings transport. Only a numeric id that resolves to an org group scoped
+   * to the same jurisdiction is safe to stamp onto node.field_organisation.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   Service request node being saved.
+   * @param array<string, mixed> $facility
+   *   Normalized facility item selected on the request.
+   * @param int $jurisdiction_id
+   *   The request's jurisdiction group id.
+   */
+  private function applyFacilityOrganisation(NodeInterface $node, array $facility, int $jurisdiction_id): void {
+    if (!$node->hasField('field_organisation')) {
+      return;
+    }
+
+    if (!$node->get('field_organisation')->isEmpty()) {
+      return;
+    }
+
+    if (empty($facility['organisationId']) || !is_string($facility['organisationId'])) {
+      return;
+    }
+
+    $raw_organisation_id = trim($facility['organisationId']);
+    if ($raw_organisation_id === '') {
+      return;
+    }
+
+    if (!ctype_digit($raw_organisation_id)) {
+      $this->logger->warning(
+        'Facility "@facility" declares non-numeric organisationId "@organisation" for jurisdiction @jurisdiction; organisation assignment was skipped.',
+        [
+          '@facility' => (string) ($facility['id'] ?? 'unknown'),
+          '@organisation' => $raw_organisation_id,
+          '@jurisdiction' => $jurisdiction_id,
+        ]
+      );
+      return;
+    }
+
+    $organisation_id = (int) $raw_organisation_id;
+    if ($organisation_id <= 0) {
+      return;
+    }
+
+    $organisation = $this->entityTypeManager->getStorage('group')->load($organisation_id);
+    if (!$organisation instanceof GroupInterface || $organisation->bundle() !== 'org') {
+      $this->logger->warning(
+        'Facility "@facility" declares missing or non-org organisationId @organisation for jurisdiction @jurisdiction; organisation assignment was skipped.',
+        [
+          '@facility' => (string) ($facility['id'] ?? 'unknown'),
+          '@organisation' => $organisation_id,
+          '@jurisdiction' => $jurisdiction_id,
+        ]
+      );
+      return;
+    }
+
+    if (!$this->organisationBelongsToJurisdiction($organisation, $jurisdiction_id)) {
+      $this->logger->warning(
+        'Facility "@facility" declares organisationId @organisation outside jurisdiction @jurisdiction; organisation assignment was skipped.',
+        [
+          '@facility' => (string) ($facility['id'] ?? 'unknown'),
+          '@organisation' => $organisation_id,
+          '@jurisdiction' => $jurisdiction_id,
+        ]
+      );
+      return;
+    }
+
+    $node->set('field_organisation', [['target_id' => $organisation_id]]);
+  }
+
+  /**
+   * Returns whether an organisation group is scoped to a jurisdiction.
+   */
+  private function organisationBelongsToJurisdiction(GroupInterface $organisation, int $jurisdiction_id): bool {
+    if (!$organisation->hasField('field_jurisdiction') || $organisation->get('field_jurisdiction')->isEmpty()) {
+      return FALSE;
+    }
+
+    $target_id = (int) ($organisation->get('field_jurisdiction')->target_id ?? 0);
+    if ($target_id <= 0) {
+      $target_id = (int) ($organisation->get('field_jurisdiction')->first()?->target_id ?? 0);
+    }
+
+    if ($target_id === $jurisdiction_id) {
+      return TRUE;
+    }
+
+    $root_jurisdiction_id = $this->hierarchyResolver->getRootJurisdictionId($jurisdiction_id);
+    return $root_jurisdiction_id !== NULL && $target_id === $root_jurisdiction_id;
   }
 
   /**

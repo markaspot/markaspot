@@ -14,6 +14,7 @@ use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_facility\Service\FacilityManager;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
@@ -53,6 +54,13 @@ class FacilityManagerTest extends UnitTestCase {
    * @var \Drupal\Core\Database\Connection|\PHPUnit\Framework\MockObject\MockObject
    */
   protected Connection $database;
+
+  /**
+   * Jurisdiction hierarchy resolver mock.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
    * Facility manager under test.
@@ -101,11 +109,14 @@ class FacilityManagerTest extends UnitTestCase {
     $this->database->method('startTransaction')
       ->willReturn($this->transaction());
 
+    $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+
     $this->manager = new FacilityManager(
       $entity_type_manager,
       $logger_factory,
       $this->countryRepository,
       $this->database,
+      $this->hierarchyResolver,
     );
   }
 
@@ -868,6 +879,7 @@ class FacilityManagerTest extends UnitTestCase {
       $this->loggerFactory(),
       $this->countryRepository,
       $this->database,
+      $this->hierarchyResolver,
     );
 
     $dashboard = $manager->getDashboardSettings($group);
@@ -964,6 +976,344 @@ class FacilityManagerTest extends UnitTestCase {
       ['field_address', ['address_line1' => 'Main Street 1', 'country_code' => 'DE']],
     ], $set_calls);
     $this->assertTrue($this->manager->isAddressLocked($node));
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testApplyToServiceRequestSetsOrganisationForExclusiveFacility(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'organisationId' => '2',
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+    $organisation = $this->createMockGroup([
+      'field_jurisdiction' => (object) ['target_id' => 14],
+    ], 2, 'org');
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn(int $id): ?GroupInterface => match ($id) {
+        14 => $group,
+        2 => $organisation,
+        default => NULL,
+      });
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_organisation',
+      ],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_geolocation', ['lat' => 52.5, 'lng' => 13.4]],
+      ['field_organisation', [['target_id' => 2]]],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testApplyToServiceRequestAllowsRootOrganisationForChildJurisdiction(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'organisationId' => '2',
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 4);
+    $organisation = $this->createMockGroup([
+      'field_jurisdiction' => (object) ['target_id' => 1],
+    ], 2, 'org');
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn(int $id): ?GroupInterface => match ($id) {
+        4 => $group,
+        2 => $organisation,
+        default => NULL,
+      });
+    $this->hierarchyResolver->method('getRootJurisdictionId')
+      ->with(4)
+      ->willReturn(1);
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      4,
+      [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_organisation',
+      ],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_geolocation', ['lat' => 52.5, 'lng' => 13.4]],
+      ['field_organisation', [['target_id' => 2]]],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testApplyToServiceRequestPreservesExistingOrganisationAssignment(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'organisationId' => '2',
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_organisation',
+      ],
+      $set_calls,
+      [3],
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_geolocation', ['lat' => 52.5, 'lng' => 13.4]],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testApplyToServiceRequestSkipsEmptyFacilityOrganisationId(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'organisationId' => '',
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_organisation',
+      ],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_geolocation', ['lat' => 52.5, 'lng' => 13.4]],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testApplyToServiceRequestSkipsMissingFacilityOrganisationReference(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'organisationId' => '99',
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn(int $id): ?GroupInterface => $id === 14 ? $group : NULL);
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_organisation',
+      ],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_geolocation', ['lat' => 52.5, 'lng' => 13.4]],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testApplyToServiceRequestSkipsForeignFacilityOrganisationReference(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'organisationId' => '2',
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+    $organisation = $this->createMockGroup([
+      'field_jurisdiction' => (object) ['target_id' => 15],
+    ], 2, 'org');
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn(int $id): ?GroupInterface => match ($id) {
+        14 => $group,
+        2 => $organisation,
+        default => NULL,
+      });
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_organisation',
+      ],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_geolocation', ['lat' => 52.5, 'lng' => 13.4]],
+    ], $set_calls);
+  }
+
+  /**
+   * @covers ::applyToServiceRequest
+   */
+  public function testApplyToServiceRequestSkipsNonOrgFacilityOrganisationReference(): void {
+    $group = $this->createMockGroup([
+      'field_facilities' => json_encode([
+        'enabled' => TRUE,
+        'mode' => 'exclusive',
+        'hideMapPicker' => FALSE,
+        'items' => [
+          [
+            'id' => 'campus_north',
+            'label' => 'Campus North',
+            'lat' => 52.5,
+            'lng' => 13.4,
+            'organisationId' => '15',
+            'active' => TRUE,
+          ],
+        ],
+      ]),
+    ], 14);
+    $jurisdiction = $this->createMockGroup([], 15, 'jur');
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn(int $id): ?GroupInterface => match ($id) {
+        14 => $group,
+        15 => $jurisdiction,
+        default => NULL,
+      });
+
+    $set_calls = [];
+    $node = $this->facilityServiceRequestNode(
+      'campus_north',
+      14,
+      [
+        'field_facility',
+        'field_jurisdiction',
+        'field_geolocation',
+        'field_organisation',
+      ],
+      $set_calls,
+    );
+
+    $this->manager->applyToServiceRequest($node);
+
+    $this->assertSame([
+      ['field_geolocation', ['lat' => 52.5, 'lng' => 13.4]],
+    ], $set_calls);
   }
 
   /**
@@ -1367,9 +1717,10 @@ class FacilityManagerTest extends UnitTestCase {
   /**
    * Creates a simple group stub with configurable field values.
    */
-  private function createMockGroup(array $fields, int $id): GroupInterface {
+  private function createMockGroup(array $fields, int $id, string $bundle = 'jur'): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn((string) $id);
+    $group->method('bundle')->willReturn($bundle);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')
       ->willReturnCallback(fn(string $name) => array_key_exists($name, $fields));
@@ -1389,13 +1740,90 @@ class FacilityManagerTest extends UnitTestCase {
                     }
 
                 public function __get(string $name): mixed {
-              return $name === 'value' ? $this->value : NULL;
+              if ($name === 'value') {
+                return $this->value;
+              }
+              if (is_object($this->value) && isset($this->value->{$name})) {
+                return $this->value->{$name};
+              }
+              if (is_array($this->value) && array_key_exists($name, $this->value)) {
+                return $this->value[$name];
+              }
+              return NULL;
                     }
           };
         // phpcs:enable
       });
 
     return $group;
+  }
+
+  /**
+   * Creates a service request node double for facility derivation tests.
+   *
+   * @param string $facility_id
+   *   Selected facility machine key.
+   * @param int $jurisdiction_id
+   *   Referenced jurisdiction id.
+   * @param array<int, string> $available_fields
+   *   Fields reported as present by hasField().
+   * @param array<int, array{0: string, 1: mixed}> $set_calls
+   *   Captured node::set() calls.
+   * @param int[] $organisation_ids
+   *   Existing organisation target ids on the request.
+   */
+  private function facilityServiceRequestNode(
+    string $facility_id,
+    int $jurisdiction_id,
+    array $available_fields,
+    array &$set_calls,
+    array $organisation_ids = [],
+  ): NodeInterface {
+      // phpcs:disable
+      $facility_field = new class($facility_id) {
+            public function __construct(public string $value) {}
+
+            public function isEmpty(): bool { return FALSE; }
+      };
+      $jurisdiction_field = new class($jurisdiction_id) {
+            public function __construct(private int $targetId) {}
+
+            public function isEmpty(): bool { return FALSE; }
+
+            public function first(): object { return (object) ['target_id' => $this->targetId]; }
+      };
+      $organisation_field = new class($organisation_ids) {
+            /**
+             * @param int[] $targetIds
+             *   Existing organisation target ids.
+             */
+            public function __construct(private array $targetIds) {}
+
+            public function isEmpty(): bool { return $this->targetIds === []; }
+
+            public function getValue(): array {
+              return array_map(static fn(int $id): array => ['target_id' => $id], $this->targetIds);
+            }
+      };
+      // phpcs:enable
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('hasField')
+      ->willReturnCallback(static fn(string $field): bool => in_array($field, $available_fields, TRUE));
+    $node->method('get')
+      ->willReturnCallback(fn(string $field) => match ($field) {
+        'field_facility' => $facility_field,
+        'field_jurisdiction' => $jurisdiction_field,
+        'field_organisation' => $organisation_field,
+        default => $this->createMock(FieldItemListInterface::class),
+      });
+    $node->method('set')
+      ->willReturnCallback(static function (string $field_name, mixed $value) use (&$set_calls): void {
+        $set_calls[] = [$field_name, $value];
+      });
+
+    return $node;
   }
 
   /**
@@ -1435,12 +1863,21 @@ class FacilityManagerTest extends UnitTestCase {
   private function transaction(): Transaction {
     return new class() extends Transaction {
 
+      /**
+       * Constructs a no-op transaction double.
+       */
       public function __construct() {
       }
 
+      /**
+       * Prevents core transaction cleanup in the test double.
+       */
       public function __destruct() {
       }
 
+      /**
+       * Rolls back the no-op transaction double.
+       */
       public function rollBack() {
       }
 
