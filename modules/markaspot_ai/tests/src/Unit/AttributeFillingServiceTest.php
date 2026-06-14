@@ -17,6 +17,7 @@ use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_ai\Service\AttributeFillingService;
 use Drupal\markaspot_ai\Service\TokenTrackingService;
+use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
@@ -534,6 +535,71 @@ class AttributeFillingServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests translated service definitions are used when requested.
+   *
+   * @covers ::getVariableAttributes
+   */
+  public function testGetVariableAttributesUsesRequestedTranslation(): void {
+    $service = $this->createService();
+
+    $translated = $this->createMockTermWithRawValue(json_encode([
+      'attributes' => [
+        ['code' => 'condition', 'variable' => TRUE],
+      ],
+    ]));
+
+    $term = $this->createMock(TermInterface::class);
+    $term->method('hasTranslation')
+      ->with('de')
+      ->willReturn(TRUE);
+    $term->method('getTranslation')
+      ->with('de')
+      ->willReturn($translated);
+
+    $result = $service->getVariableAttributes($term, 'de');
+
+    $this->assertCount(1, $result);
+    $this->assertSame('condition', $result[0]['code']);
+  }
+
+  /**
+   * Tests empty stored request attribute values are treated as missing.
+   *
+   * @param string $rawValue
+   *   Raw field_request_attributes value.
+   * @param bool $expected
+   *   Expected result.
+   *
+   * @dataProvider requestAttributesProvider
+   * @covers ::nodeHasRequestAttributes
+   */
+  public function testNodeHasRequestAttributes(string $rawValue, bool $expected): void {
+    $service = $this->createService();
+    $node = $this->createMockNodeWithRequestAttributes($rawValue);
+
+    $result = $this->invokeMethod($service, 'nodeHasRequestAttributes', [$node]);
+
+    $this->assertSame($expected, $result);
+  }
+
+  /**
+   * Data provider for stored request attributes.
+   *
+   * @return array<string, array{string, bool}>
+   *   Raw field values and expected filled state.
+   */
+  public static function requestAttributesProvider(): array {
+    return [
+      'empty string' => ['', FALSE],
+      'empty array' => ['[]', FALSE],
+      'empty object' => ['{}', FALSE],
+      'json null' => ['null', FALSE],
+      'filled object' => ['{"condition":"broken"}', TRUE],
+      'legacy non-json string' => ['condition=broken', TRUE],
+    ];
+  }
+
+  /**
    * Tests extracting valid keys from attribute values.
    *
    * @covers ::getValidKeys
@@ -621,8 +687,53 @@ class AttributeFillingServiceTest extends UnitTestCase {
     $term->method('get')
       ->with('field_service_definition')
       ->willReturn($fieldItem);
+    $term->method('hasTranslation')->willReturn(FALSE);
 
     return $term;
+  }
+
+  /**
+   * Creates a mock node with request attributes.
+   *
+   * @param string $rawValue
+   *   The raw field_request_attributes value.
+   *
+   * @return \Drupal\node\NodeInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mock node.
+   */
+  protected function createMockNodeWithRequestAttributes(string $rawValue) {
+    $fieldItem = new class($rawValue) {
+
+      /**
+       * The field value.
+       */
+      public string $value;
+
+      /**
+       * Constructs the field item stub.
+       */
+      public function __construct(string $value) {
+        $this->value = $value;
+      }
+
+      /**
+       * Checks if the field is empty.
+       */
+      public function isEmpty(): bool {
+        return $this->value === '';
+      }
+
+    };
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('hasField')
+      ->with('field_request_attributes')
+      ->willReturn(TRUE);
+    $node->method('get')
+      ->with('field_request_attributes')
+      ->willReturn($fieldItem);
+
+    return $node;
   }
 
 }

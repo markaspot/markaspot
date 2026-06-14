@@ -626,40 +626,102 @@ class AttributeFillingService {
    *   Array of node IDs (integers) with missing attributes.
    */
   public function findMissingAttributes(int $limit, ?array $nodeIds = NULL, int $offset = 0): array {
-    // Use direct SQL to efficiently find nodes that:
-    // 1. Are service_request type
-    // 2. Have a category with a non-empty service definition
-    // 3. Do NOT have filled request attributes.
-    $query = $this->database->select('node_field_data', 'n');
-    $query->fields('n', ['nid']);
-    $query->condition('n.type', 'service_request');
-
-    // Join category reference.
-    $query->innerJoin('node__field_category', 'fc', 'n.nid = fc.entity_id');
-
-    // Join to ensure category has a service definition.
-    $query->innerJoin('taxonomy_term__field_service_definition', 'sd',
-      'fc.field_category_target_id = sd.entity_id');
-    $query->isNotNull('sd.field_service_definition_value');
-
-    // Exclude nodes that already have attributes.
-    $query->leftJoin('node__field_request_attributes', 'ra', 'n.nid = ra.entity_id');
-    $query->isNull('ra.entity_id');
-
-    // Filter to specific node IDs if provided (jurisdiction scoping).
     if ($nodeIds !== NULL) {
       if (empty($nodeIds)) {
         return [];
       }
+    }
+
+    $missing = [];
+    $seen_missing = 0;
+    $candidate_offset = 0;
+    $candidate_batch_size = min(500, max(50, $limit * 4));
+
+    while (count($missing) < $limit) {
+      $candidate_ids = $this->findAttributeCandidateNodeIds(
+        $candidate_batch_size,
+        $candidate_offset,
+        $nodeIds
+      );
+      if (empty($candidate_ids)) {
+        break;
+      }
+      $candidate_offset += count($candidate_ids);
+
+      $nodes = $this->entityTypeManager->getStorage('node')
+        ->loadMultiple($candidate_ids);
+
+      foreach ($nodes as $node) {
+        if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+          continue;
+        }
+        if (!$this->nodeHasVariableAttributes($node) || $this->nodeHasRequestAttributes($node)) {
+          continue;
+        }
+
+        if ($seen_missing++ < $offset) {
+          continue;
+        }
+
+        $missing[] = (int) $node->id();
+        if (count($missing) >= $limit) {
+          break 2;
+        }
+      }
+
+      if (count($candidate_ids) < $candidate_batch_size) {
+        break;
+      }
+    }
+
+    return $missing;
+  }
+
+  /**
+   * Finds candidate node IDs whose category stores any service definition.
+   *
+   * @param int $limit
+   *   Maximum number of candidate IDs to return.
+   * @param int $offset
+   *   Candidate result offset.
+   * @param array|null $nodeIds
+   *   Optional array of node IDs to filter.
+   *
+   * @return array<int>
+   *   Candidate node IDs.
+   */
+  protected function findAttributeCandidateNodeIds(int $limit, int $offset, ?array $nodeIds = NULL): array {
+    $query = $this->database->select('node_field_data', 'n');
+    $query->distinct();
+    $query->fields('n', ['nid']);
+    $query->condition('n.type', 'service_request');
+    $query->condition('n.default_langcode', 1);
+
+    // Join category reference.
+    $query->innerJoin(
+      'node__field_category',
+      'fc',
+      'n.nid = fc.entity_id AND fc.deleted = 0'
+    );
+
+    // Prefilter terms with a stored definition. Loading/parsing below decides
+    // whether the definition contains variable attributes.
+    $query->innerJoin(
+      'taxonomy_term__field_service_definition',
+      'sd',
+      'fc.field_category_target_id = sd.entity_id AND sd.deleted = 0'
+    );
+    $query->condition('sd.field_service_definition_value', '', '<>');
+
+    if ($nodeIds !== NULL) {
       $query->condition('n.nid', $nodeIds, 'IN');
     }
 
     $query->orderBy('n.created', 'DESC');
     $query->orderBy('n.nid', 'DESC');
     $query->range($offset, $limit);
-    $nids = $query->execute()->fetchCol();
 
-    return array_map('intval', $nids);
+    return array_map('intval', $query->execute()->fetchCol());
   }
 
   /**
@@ -705,6 +767,68 @@ class AttributeFillingService {
       ]);
       return [];
     }
+  }
+
+  /**
+   * Gets variable attribute definitions from a category term.
+   *
+   * @param \Drupal\taxonomy\TermInterface $term
+   *   The category taxonomy term.
+   * @param string|null $langcode
+   *   Optional language code for translated service definitions.
+   *
+   * @return array
+   *   Array of variable attribute definitions, or empty array.
+   */
+  public function getVariableAttributes(TermInterface $term, ?string $langcode = NULL): array {
+    if ($langcode && $term->hasTranslation($langcode)) {
+      $term = $term->getTranslation($langcode);
+    }
+
+    return $this->parseServiceDefinition($term);
+  }
+
+  /**
+   * Checks whether a request's category has variable service attributes.
+   */
+  protected function nodeHasVariableAttributes(NodeInterface $node): bool {
+    if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+      return FALSE;
+    }
+
+    $category = $node->get('field_category')->entity;
+    if (!$category instanceof TermInterface) {
+      return FALSE;
+    }
+
+    $langcode = $node->language()->getId();
+    if ($langcode === 'und' || $langcode === 'zxx') {
+      $langcode = NULL;
+    }
+
+    return !empty($this->getVariableAttributes($category, $langcode));
+  }
+
+  /**
+   * Checks whether a request has stored request attributes.
+   */
+  protected function nodeHasRequestAttributes(NodeInterface $node): bool {
+    if (!$node->hasField('field_request_attributes')
+        || $node->get('field_request_attributes')->isEmpty()) {
+      return FALSE;
+    }
+
+    $raw = $node->get('field_request_attributes')->value;
+    if (!is_string($raw) || trim($raw) === '') {
+      return FALSE;
+    }
+
+    $decoded = json_decode($raw, TRUE);
+    if (json_last_error() === JSON_ERROR_NONE) {
+      return is_array($decoded) ? !empty($decoded) : $decoded !== NULL;
+    }
+
+    return TRUE;
   }
 
   /**

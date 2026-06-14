@@ -7,10 +7,11 @@ namespace Drupal\markaspot_ai\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Queue\QueueFactory;
-use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_ai\Service\AttributeFillingService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\node\NodeInterface;
+use Drupal\taxonomy\TermInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -19,7 +20,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
 /**
  * Controller for AI attribute filling from the dashboard.
  */
-class AttributeController extends ControllerBase {
+final class AttributeController extends ControllerBase {
 
   use JurisdictionIdResolverTrait;
 
@@ -31,7 +32,6 @@ class AttributeController extends ControllerBase {
     protected QueueFactory $queueFactory,
     protected AttributeFillingService $attributeFillingService,
     protected RequestStack $requestStackService,
-    protected GroupMembershipLoaderInterface $membershipLoader,
     protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {}
 
@@ -44,7 +44,6 @@ class AttributeController extends ControllerBase {
       $container->get('queue'),
       $container->get('markaspot_ai.attribute_filling'),
       $container->get('request_stack'),
-      $container->get('group.membership_loader'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
         : NULL
@@ -87,15 +86,19 @@ class AttributeController extends ControllerBase {
     $missing = max(0, $totalWithDefs - $filled);
     $percentage = $totalWithDefs > 0 ? round(($filled / $totalWithDefs) * 100) : 0;
 
-    // Queue status.
+    // Queue status. Queue items only carry node IDs, so tenant-scoped users
+    // must not see global queue volume here.
     $queue = $this->queueFactory->get('markaspot_ai_attribute_filling');
+    $queue_count = ($jurisdiction_id !== NULL && !$this->currentUserCanSeeAllJurisdictions())
+      ? 0
+      : $queue->numberOfItems();
 
     return new JsonResponse([
       'total_with_definitions' => $totalWithDefs,
       'filled' => $filled,
       'missing' => $missing,
       'percentage' => $percentage,
-      'queue' => $queue->numberOfItems(),
+      'queue' => $queue_count,
     ]);
   }
 
@@ -367,6 +370,17 @@ class AttributeController extends ControllerBase {
     $jurisdiction_id = $this->resolveJurisdictionId(
       $content['jurisdiction_id'] ?? $request->query->get('jurisdiction_id')
     );
+
+    if (!$this->currentUserCanSeeAllJurisdictions()) {
+      if ($jurisdiction_id === NULL || !$this->currentUserCanAccessJurisdiction($jurisdiction_id)) {
+        return new JsonResponse([
+          'success' => FALSE,
+          'message' => 'Access denied for the requested jurisdiction.',
+          'queued' => 0,
+        ], 403);
+      }
+    }
+
     $jurisdiction_node_ids = $jurisdiction_id
       ? $this->getNodeIdsForJurisdiction($jurisdiction_id)
       : NULL;
@@ -430,22 +444,7 @@ class AttributeController extends ControllerBase {
    *   Count of matching nodes.
    */
   protected function countNodesWithDefinitions(?array $node_ids): int {
-    $query = $this->database->select('node_field_data', 'n');
-    $query->condition('n.type', 'service_request');
-
-    // Join to the category reference field.
-    $query->innerJoin('node__field_category', 'fc', 'n.nid = fc.entity_id');
-
-    // Join to check that the referenced term has a service definition.
-    $query->innerJoin('taxonomy_term__field_service_definition', 'sd',
-      'fc.field_category_target_id = sd.entity_id');
-    $query->isNotNull('sd.field_service_definition_value');
-
-    if ($node_ids !== NULL) {
-      $query->condition('n.nid', $node_ids, 'IN');
-    }
-
-    return (int) $query->countQuery()->execute()->fetchField();
+    return count($this->getNodeIdsWithVariableDefinitions($node_ids));
   }
 
   /**
@@ -458,25 +457,142 @@ class AttributeController extends ControllerBase {
    *   Count of nodes with filled attributes.
    */
   protected function countFilledAttributes(?array $node_ids): int {
+    $eligible_node_ids = $this->getNodeIdsWithVariableDefinitions($node_ids);
+    if (empty($eligible_node_ids)) {
+      return 0;
+    }
+
+    $nodes = $this->entityTypeManager()
+      ->getStorage('node')
+      ->loadMultiple($eligible_node_ids);
+
+    $filled = 0;
+    foreach ($nodes as $node) {
+      if ($node instanceof NodeInterface && $this->nodeHasFilledAttributes($node)) {
+        $filled++;
+      }
+    }
+
+    return $filled;
+  }
+
+  /**
+   * Gets service request IDs whose category has variable service attributes.
+   *
+   * @param array|null $node_ids
+   *   Optional array of node IDs to filter.
+   *
+   * @return array<int>
+   *   Node IDs with fillable category attributes.
+   */
+  protected function getNodeIdsWithVariableDefinitions(?array $node_ids): array {
+    $candidate_ids = $this->getCandidateNodeIdsWithServiceDefinition($node_ids);
+    if (empty($candidate_ids)) {
+      return [];
+    }
+
+    $nodes = $this->entityTypeManager()
+      ->getStorage('node')
+      ->loadMultiple($candidate_ids);
+
+    $eligible = [];
+    foreach ($nodes as $node) {
+      if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+        continue;
+      }
+      if ($this->nodeHasVariableAttributes($node)) {
+        $eligible[] = (int) $node->id();
+      }
+    }
+
+    return array_values(array_unique($eligible));
+  }
+
+  /**
+   * Gets candidate service request IDs with a non-empty definition field.
+   *
+   * The exact "has fillable attributes" check must be done by loading the term
+   * and using AttributeFillingService's parser. The field tables are
+   * translation- and revision-aware, so SQL joins alone can duplicate or miss
+   * rows depending on tenant language setup.
+   *
+   * @param array|null $node_ids
+   *   Optional array of node IDs to filter.
+   *
+   * @return array<int>
+   *   Candidate node IDs.
+   */
+  protected function getCandidateNodeIdsWithServiceDefinition(?array $node_ids): array {
     $query = $this->database->select('node_field_data', 'n');
+    $query->distinct();
+    $query->fields('n', ['nid']);
     $query->condition('n.type', 'service_request');
+    $query->condition('n.default_langcode', 1);
 
-    // Join to the category reference field (only count nodes whose
-    // category actually has a service definition).
-    $query->innerJoin('node__field_category', 'fc', 'n.nid = fc.entity_id');
-    $query->innerJoin('taxonomy_term__field_service_definition', 'sd',
-      'fc.field_category_target_id = sd.entity_id');
-    $query->isNotNull('sd.field_service_definition_value');
+    // Join to the category reference field.
+    $query->innerJoin(
+      'node__field_category',
+      'fc',
+      'n.nid = fc.entity_id AND fc.deleted = 0'
+    );
 
-    // Join to the attributes field and check it's not empty.
-    $query->innerJoin('node__field_request_attributes', 'ra', 'n.nid = ra.entity_id');
-    $query->isNotNull('ra.field_request_attributes_value');
+    // Prefilter terms that have any stored definition. The exact parse happens
+    // after loading the term translation.
+    $query->innerJoin(
+      'taxonomy_term__field_service_definition',
+      'sd',
+      'fc.field_category_target_id = sd.entity_id AND sd.deleted = 0'
+    );
+    $query->condition('sd.field_service_definition_value', '', '<>');
 
     if ($node_ids !== NULL) {
       $query->condition('n.nid', $node_ids, 'IN');
     }
 
-    return (int) $query->countQuery()->execute()->fetchField();
+    return array_map('intval', $query->execute()->fetchCol());
+  }
+
+  /**
+   * Checks whether a request's category has variable service attributes.
+   */
+  protected function nodeHasVariableAttributes(NodeInterface $node): bool {
+    if (!$node->hasField('field_category') || $node->get('field_category')->isEmpty()) {
+      return FALSE;
+    }
+
+    $category = $node->get('field_category')->entity;
+    if (!$category instanceof TermInterface) {
+      return FALSE;
+    }
+
+    $langcode = $node->language()->getId();
+    if ($langcode === 'und' || $langcode === 'zxx') {
+      $langcode = NULL;
+    }
+
+    return !empty($this->attributeFillingService->getVariableAttributes($category, $langcode));
+  }
+
+  /**
+   * Checks whether a request has non-empty filled request attributes.
+   */
+  protected function nodeHasFilledAttributes(NodeInterface $node): bool {
+    if (!$node->hasField('field_request_attributes')
+        || $node->get('field_request_attributes')->isEmpty()) {
+      return FALSE;
+    }
+
+    $raw = $node->get('field_request_attributes')->value;
+    if (!is_string($raw) || trim($raw) === '') {
+      return FALSE;
+    }
+
+    $decoded = json_decode($raw, TRUE);
+    if (json_last_error() === JSON_ERROR_NONE) {
+      return is_array($decoded) ? !empty($decoded) : $decoded !== NULL;
+    }
+
+    return TRUE;
   }
 
   /**
@@ -498,8 +614,13 @@ class AttributeController extends ControllerBase {
       return [];
     }
 
-    if ($this->hierarchyResolver) {
-      return $this->hierarchyResolver->getNodeIdsInJurisdiction($group_id);
+    $node_ids = $this->hierarchyResolver
+      ? $this->hierarchyResolver->getNodeIdsInJurisdiction($group_id)
+      : [];
+    $node_ids = array_merge($node_ids, $this->getNodeIdsByJurisdictionField($group_id));
+
+    if (!empty($node_ids)) {
+      return array_values(array_unique(array_map('intval', $node_ids)));
     }
 
     // Fallback: flat single-group query.
@@ -522,6 +643,39 @@ class AttributeController extends ControllerBase {
     }
 
     return array_values(array_unique($node_ids));
+  }
+
+  /**
+   * Gets node IDs from the canonical field_jurisdiction reference.
+   *
+   * @param int $group_id
+   *   The jurisdiction group ID.
+   *
+   * @return array<int>
+   *   Service request node IDs in the requested jurisdiction subtree.
+   */
+  protected function getNodeIdsByJurisdictionField(int $group_id): array {
+    $jurisdiction_ids = $this->hierarchyResolver
+      ? $this->hierarchyResolver->getDescendantIds($group_id)
+      : [$group_id];
+
+    if (empty($jurisdiction_ids)) {
+      return [];
+    }
+
+    $query = $this->database->select('node_field_data', 'n');
+    $query->distinct();
+    $query->fields('n', ['nid']);
+    $query->condition('n.type', 'service_request');
+    $query->condition('n.default_langcode', 1);
+    $query->innerJoin(
+      'node__field_jurisdiction',
+      'fj',
+      'n.nid = fj.entity_id AND fj.deleted = 0'
+    );
+    $query->condition('fj.field_jurisdiction_target_id', $jurisdiction_ids, 'IN');
+
+    return array_map('intval', $query->execute()->fetchCol());
   }
 
   /**
@@ -562,16 +716,11 @@ class AttributeController extends ControllerBase {
       return FALSE;
     }
 
-    $memberships = $this->membershipLoader->loadByUser($account, array_values(array_unique([
-      $this->getJurisdictionGroupType() . '-tenant_admin',
-      'jur-tenant_admin',
-    ])));
-    foreach ($memberships as $membership) {
-      $managed_group = $membership->getGroup();
+    foreach ($this->getTenantAdminJurisdictionIds((int) $account->id()) as $managed_id) {
+      $managed_group = $this->entityTypeManager()->getStorage('group')->load($managed_id);
       if (!$this->isJurisdictionGroup($managed_group)) {
         continue;
       }
-      $managed_id = (int) $managed_group->id();
       $scope_ids = $this->hierarchyResolver
         ? $this->hierarchyResolver->getDescendantIds($managed_id)
         : [$managed_id];
@@ -581,6 +730,43 @@ class AttributeController extends ControllerBase {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Gets jurisdiction IDs where the user has a tenant-admin group role.
+   *
+   * @param int $uid
+   *   User ID.
+   *
+   * @return array<int>
+   *   Managed jurisdiction group IDs.
+   */
+  protected function getTenantAdminJurisdictionIds(int $uid): array {
+    $group_type = $this->getJurisdictionGroupType();
+    $membership_types = array_values(array_unique([
+      $group_type . '-group_membership',
+      'jur-group_membership',
+    ]));
+    $role_ids = array_values(array_unique([
+      $group_type . '-tenant_admin',
+      'jur-tenant_admin',
+    ]));
+
+    $query = $this->database->select('group_relationship_field_data', 'gr');
+    $query->distinct();
+    $query->fields('gr', ['gid']);
+    $query->condition('gr.plugin_id', 'group_membership');
+    $query->condition('gr.entity_id', $uid);
+    $query->condition('gr.default_langcode', 1);
+    $query->condition('gr.type', $membership_types, 'IN');
+    $query->innerJoin(
+      'group_relationship__group_roles',
+      'roles',
+      'gr.id = roles.entity_id AND roles.deleted = 0'
+    );
+    $query->condition('roles.group_roles_target_id', $role_ids, 'IN');
+
+    return array_map('intval', $query->execute()->fetchCol());
   }
 
   /**
