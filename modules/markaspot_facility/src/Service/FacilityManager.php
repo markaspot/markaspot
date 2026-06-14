@@ -112,15 +112,20 @@ class FacilityManager {
    */
   public function saveDashboardSettings(GroupInterface $group, array $payload): array {
     $normalized = $this->normalizeSubmittedSettings($payload);
+    $clear_items = ($payload['clearItems'] ?? FALSE) === TRUE;
     $source = $this->getSourceGroup($group);
 
     if (!$source->hasField('field_facilities')) {
       throw new \RuntimeException('field_facilities is missing on the jurisdiction group.');
     }
 
+    if ($normalized['items'] === [] && !$clear_items && $this->hasLegacyFacilityItems($source)) {
+      throw new \InvalidArgumentException('Refusing to clear the facility catalogue without clearItems=true.');
+    }
+
     $transaction = $this->database->startTransaction();
     try {
-      $this->syncFacilityEntities($source, $normalized['items']);
+      $this->syncFacilityEntities($source, $normalized['items'], $clear_items);
 
       // Store only the catalogue-level settings in the legacy JSON field. The
       // normalized item catalogue now lives in markaspot_facility entities.
@@ -362,6 +367,14 @@ class FacilityManager {
   }
 
   /**
+   * Returns whether the legacy group JSON still contains catalogue rows.
+   */
+  private function hasLegacyFacilityItems(GroupInterface $group): bool {
+    $settings = $this->decodeFacilitiesField($group);
+    return !empty($settings['items']) && is_array($settings['items']);
+  }
+
+  /**
    * Synchronizes normalized submitted facility items into content entities.
    *
    * Dashboard saves are explicit operator actions, so this is the conversion
@@ -372,8 +385,10 @@ class FacilityManager {
    *   Source jurisdiction group.
    * @param array<int, array<string, mixed>> $items
    *   Normalized facility items.
+   * @param bool $clear_items
+   *   Whether an empty submitted catalogue is an explicit operator clear.
    */
-  private function syncFacilityEntities(GroupInterface $group, array $items): void {
+  private function syncFacilityEntities(GroupInterface $group, array $items, bool $clear_items): void {
     if (!$this->entityTypeManager->hasDefinition('markaspot_facility')) {
       throw new \RuntimeException('markaspot_facility entity storage is not installed.');
     }
@@ -400,6 +415,10 @@ class FacilityManager {
         continue;
       }
       $existing_by_key[$key] = $entity;
+    }
+
+    if ($items === [] && !$clear_items && ($existing_by_key !== [] || $duplicate_entities !== [])) {
+      throw new \InvalidArgumentException('Refusing to clear the facility catalogue without clearItems=true.');
     }
 
     if ($duplicate_entities !== []) {
@@ -648,7 +667,7 @@ class FacilityManager {
    * Validates dashboard payloads and returns canonical storage data.
    */
   public function normalizeSubmittedSettings(array $payload): array {
-    $allowed_keys = ['enabled', 'label', 'mode', 'hideMapPicker', 'items'];
+    $allowed_keys = ['enabled', 'label', 'mode', 'hideMapPicker', 'items', 'clearItems'];
     $unknown = array_diff(array_keys($payload), $allowed_keys);
     if ($unknown !== []) {
       throw new \InvalidArgumentException('Unknown facilities settings keys: ' . implode(', ', $unknown) . '.');
@@ -662,6 +681,9 @@ class FacilityManager {
     }
     if (!array_key_exists('items', $payload) || !is_array($payload['items'])) {
       throw new \InvalidArgumentException('items is required and must be an array.');
+    }
+    if (array_key_exists('clearItems', $payload) && !is_bool($payload['clearItems'])) {
+      throw new \InvalidArgumentException('clearItems must be a boolean when provided.');
     }
     if (count($payload['items']) > self::MAX_ITEMS) {
       throw new \InvalidArgumentException('items exceeds the maximum allowed number of facilities.');

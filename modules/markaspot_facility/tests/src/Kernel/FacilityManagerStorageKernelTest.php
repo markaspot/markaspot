@@ -1,0 +1,372 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Drupal\Tests\markaspot_facility\Kernel;
+
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\group\Entity\Group;
+use Drupal\group\Entity\GroupType;
+use Drupal\KernelTests\KernelTestBase;
+use Drupal\markaspot_facility\Service\FacilityManager;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+
+/**
+ * Kernel tests for the facility catalogue storage reconciliation.
+ *
+ * @group markaspot_facility
+ *
+ * @coversDefaultClass \Drupal\markaspot_facility\Service\FacilityManager
+ */
+#[RunTestsInSeparateProcesses]
+class FacilityManagerStorageKernelTest extends KernelTestBase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected static $modules = [
+    'system',
+    'user',
+    'field',
+    'text',
+    'filter',
+    'options',
+    'entity',
+    'flexible_permissions',
+    'group',
+    'address',
+    'markaspot_facility',
+  ];
+
+  /**
+   * Facility manager under test.
+   */
+  private FacilityManager $manager;
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+
+    $this->installEntitySchema('user');
+    $this->installEntitySchema('group');
+    $this->installEntitySchema('group_relationship');
+    $this->installEntitySchema('group_config_wrapper');
+    $this->installEntitySchema('markaspot_facility');
+    $this->installConfig(['system', 'user', 'field', 'filter', 'group']);
+
+    GroupType::create(['id' => 'jur', 'label' => 'Jurisdiction'])->save();
+    $this->createGroupField('field_facilities', 'text_long');
+
+    $this->manager = $this->container->get('markaspot_facility.manager');
+  }
+
+  /**
+   * Save migrates legacy JSON items into facility entities.
+   *
+   * @covers ::saveDashboardSettings
+   * @covers ::getDashboardSettings
+   */
+  public function testSaveDashboardSettingsMigratesLegacyItemsToEntities(): void {
+    $group = $this->createJurisdiction([
+      'enabled' => TRUE,
+      'mode' => 'exclusive',
+      'hideMapPicker' => TRUE,
+      'items' => [
+        [
+          'id' => 'legacy_school',
+          'label' => 'Legacy School',
+          'lat' => 51.0,
+          'lng' => 7.0,
+          'active' => TRUE,
+        ],
+      ],
+    ]);
+
+    $this->manager->saveDashboardSettings($group, $this->payload([
+      [
+        'id' => 'school_a',
+        'label' => 'School A',
+        'lat' => 50.1,
+        'lng' => 8.1,
+        'address' => [
+          'address_line1' => 'A Street 1',
+          'country_code' => 'DE',
+          'locality' => 'Cologne',
+          'postal_code' => '50667',
+        ],
+        'organisationId' => 'org-a',
+        'active' => TRUE,
+        'icon' => 'i-lucide-school',
+        'description' => 'Primary school.',
+        'url' => 'https://example.org/school-a',
+      ],
+      [
+        'id' => 'school_b',
+        'label' => 'School B',
+        'lat' => 50.2,
+        'lng' => 8.2,
+        'active' => FALSE,
+      ],
+    ]));
+
+    $entities = $this->loadFacilityEntities($group);
+    $this->assertSame(['school_a', 'school_b'], array_keys($entities));
+    $this->assertSame('School A', $entities['school_a']->label());
+    $this->assertSame('org-a', $entities['school_a']->get('organisation_id')->value);
+    $this->assertSame('i-lucide-school', $entities['school_a']->get('icon')->value);
+    $this->assertSame('https://example.org/school-a', $entities['school_a']->get('url')->value);
+
+    $stored_settings = $this->storedFacilitiesSettings($group);
+    $this->assertSame([], $stored_settings['items']);
+    $this->assertSame('exclusive', $stored_settings['mode']);
+
+    $dashboard = $this->manager->getDashboardSettings($this->reloadGroup($group));
+    $this->assertSame(['school_a', 'school_b'], array_column($dashboard['items'], 'id'));
+    $this->assertSame('A Street 1', $dashboard['items'][0]['address']['address_line1']);
+
+    $public = $this->manager->getPublicSettings($this->reloadGroup($group));
+    $this->assertSame(['school_a'], array_column($public['items'], 'id'));
+  }
+
+  /**
+   * Save reconciles updates and per-row deletes without a full clear flag.
+   *
+   * @covers ::saveDashboardSettings
+   */
+  public function testSaveDashboardSettingsReconcilesUpdateAndDelete(): void {
+    $group = $this->createJurisdiction();
+
+    $this->manager->saveDashboardSettings($group, $this->payload([
+      [
+        'id' => 'school_a',
+        'label' => 'School A',
+        'lat' => 50.1,
+        'lng' => 8.1,
+        'active' => TRUE,
+      ],
+      [
+        'id' => 'school_b',
+        'label' => 'School B',
+        'lat' => 50.2,
+        'lng' => 8.2,
+        'active' => TRUE,
+      ],
+    ]));
+
+    $this->manager->saveDashboardSettings($this->reloadGroup($group), $this->payload([
+      [
+        'id' => 'school_a',
+        'label' => 'School A Updated',
+        'lat' => 51.1,
+        'lng' => 9.1,
+        'active' => TRUE,
+      ],
+    ]));
+
+    $entities = $this->loadFacilityEntities($group);
+    $this->assertSame(['school_a'], array_keys($entities));
+    $this->assertSame('School A Updated', $entities['school_a']->label());
+    $this->assertSame('51.1', $entities['school_a']->get('lat')->getString());
+  }
+
+  /**
+   * Empty saves cannot clear an existing entity catalogue by accident.
+   *
+   * @covers ::saveDashboardSettings
+   */
+  public function testEmptySaveRequiresClearFlagForEntityCatalogue(): void {
+    $group = $this->createJurisdiction();
+    $this->manager->saveDashboardSettings($group, $this->payload([
+      [
+        'id' => 'school_a',
+        'label' => 'School A',
+        'lat' => 50.1,
+        'lng' => 8.1,
+        'active' => TRUE,
+      ],
+    ]));
+
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('Refusing to clear the facility catalogue without clearItems=true.');
+
+    try {
+      $this->manager->saveDashboardSettings($this->reloadGroup($group), $this->payload([]));
+    }
+    finally {
+      $entities = $this->loadFacilityEntities($group);
+      $this->assertSame(['school_a'], array_keys($entities));
+    }
+  }
+
+  /**
+   * Empty saves cannot clear a legacy JSON catalogue before normalization.
+   *
+   * @covers ::saveDashboardSettings
+   */
+  public function testEmptySaveRequiresClearFlagForLegacyCatalogue(): void {
+    $group = $this->createJurisdiction([
+      'enabled' => TRUE,
+      'mode' => 'exclusive',
+      'hideMapPicker' => TRUE,
+      'items' => [
+        [
+          'id' => 'legacy_school',
+          'label' => 'Legacy School',
+          'lat' => 51.0,
+          'lng' => 7.0,
+          'active' => TRUE,
+        ],
+      ],
+    ]);
+
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('Refusing to clear the facility catalogue without clearItems=true.');
+
+    try {
+      $this->manager->saveDashboardSettings($group, $this->payload([]));
+    }
+    finally {
+      $stored_settings = $this->storedFacilitiesSettings($group);
+      $this->assertSame(['legacy_school'], array_column($stored_settings['items'], 'id'));
+      $this->assertSame([], $this->loadFacilityEntities($group));
+    }
+  }
+
+  /**
+   * Explicit clear removes the entity catalogue and leaves settings intact.
+   *
+   * @covers ::saveDashboardSettings
+   */
+  public function testExplicitClearFlagClearsEntityCatalogue(): void {
+    $group = $this->createJurisdiction();
+    $this->manager->saveDashboardSettings($group, $this->payload([
+      [
+        'id' => 'school_a',
+        'label' => 'School A',
+        'lat' => 50.1,
+        'lng' => 8.1,
+        'active' => TRUE,
+      ],
+    ]));
+
+    $payload = $this->payload([]);
+    $payload['clearItems'] = TRUE;
+    $payload['enabled'] = FALSE;
+    $payload['mode'] = 'disabled';
+
+    $this->manager->saveDashboardSettings($this->reloadGroup($group), $payload);
+
+    $this->assertSame([], $this->loadFacilityEntities($group));
+    $stored_settings = $this->storedFacilitiesSettings($group);
+    $this->assertFalse($stored_settings['enabled']);
+    $this->assertSame('disabled', $stored_settings['mode']);
+    $this->assertSame([], $stored_settings['items']);
+  }
+
+  /**
+   * Creates a jurisdiction group with optional raw facility settings.
+   */
+  private function createJurisdiction(?array $facilities = NULL): Group {
+    $values = [
+      'type' => 'jur',
+      'label' => 'City',
+    ];
+    if ($facilities !== NULL) {
+      $values['field_facilities'] = json_encode($facilities, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+    $group = Group::create($values);
+    $group->save();
+    return $group;
+  }
+
+  /**
+   * Builds a full dashboard save payload.
+   *
+   * @param array<int, array<string, mixed>> $items
+   *   Facility items.
+   *
+   * @return array<string, mixed>
+   *   Dashboard save payload.
+   */
+  private function payload(array $items): array {
+    return [
+      'enabled' => TRUE,
+      'mode' => 'exclusive',
+      'hideMapPicker' => TRUE,
+      'label' => [
+        'singular' => 'School',
+        'plural' => 'Schools',
+      ],
+      'items' => $items,
+    ];
+  }
+
+  /**
+   * Loads markaspot_facility entities keyed by machine name.
+   *
+   * @return array<string, \Drupal\Core\Entity\ContentEntityInterface>
+   *   Facility entities keyed by machine name.
+   */
+  private function loadFacilityEntities(Group $group): array {
+    $storage = $this->container->get('entity_type.manager')->getStorage('markaspot_facility');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('jurisdiction_id', (int) $group->id())
+      ->sort('machine_name')
+      ->execute();
+
+    $entities = [];
+    foreach ($storage->loadMultiple($ids) as $entity) {
+      $entities[$entity->get('machine_name')->getString()] = $entity;
+    }
+    ksort($entities);
+    return $entities;
+  }
+
+  /**
+   * Returns decoded field_facilities JSON from a reloaded group.
+   *
+   * @return array<string, mixed>
+   *   Decoded settings.
+   */
+  private function storedFacilitiesSettings(Group $group): array {
+    $reloaded = $this->reloadGroup($group);
+    $raw = (string) $reloaded->get('field_facilities')->value;
+    $decoded = json_decode($raw, TRUE);
+    $this->assertIsArray($decoded);
+    return $decoded;
+  }
+
+  /**
+   * Reloads a group from storage.
+   */
+  private function reloadGroup(Group $group): Group {
+    $storage = $this->container->get('entity_type.manager')->getStorage('group');
+    $storage->resetCache([(int) $group->id()]);
+    $reloaded = $storage->load((int) $group->id());
+    $this->assertInstanceOf(Group::class, $reloaded);
+    return $reloaded;
+  }
+
+  /**
+   * Creates a configurable field on group.jur.
+   */
+  private function createGroupField(string $name, string $type): void {
+    FieldStorageConfig::create([
+      'field_name' => $name,
+      'entity_type' => 'group',
+      'type' => $type,
+    ])->save();
+    FieldConfig::create([
+      'field_name' => $name,
+      'entity_type' => 'group',
+      'bundle' => 'jur',
+      'label' => $name,
+      'required' => FALSE,
+    ])->save();
+  }
+
+}
