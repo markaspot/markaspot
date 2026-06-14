@@ -11,7 +11,9 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_facility\Plugin\Validation\Constraint\FacilityOwnershipConstraint;
 use Drupal\markaspot_facility\Plugin\Validation\Constraint\FacilityOwnershipConstraintValidator;
 use Drupal\markaspot_facility\Service\FacilityManager;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
 use Symfony\Component\Validator\Violation\ConstraintViolationBuilderInterface;
 
@@ -32,6 +34,7 @@ use Symfony\Component\Validator\Violation\ConstraintViolationBuilderInterface;
  * @group markaspot_facility
  * @coversDefaultClass \Drupal\markaspot_facility\Plugin\Validation\Constraint\FacilityOwnershipConstraintValidator
  */
+#[RunTestsInSeparateProcesses]
 class FacilityOwnershipConstraintTest extends KernelTestBase {
 
   /**
@@ -47,6 +50,18 @@ class FacilityOwnershipConstraintTest extends KernelTestBase {
   private array $catalogue = [
     100 => ['facility_a'],
     200 => ['facility_b'],
+    300 => [],
+  ];
+
+  /**
+   * Child-to-root jurisdiction map used by the hierarchy resolver double.
+   *
+   * @var array<int, int>
+   */
+  private array $rootMap = [
+    100 => 100,
+    200 => 200,
+    300 => 100,
   ];
 
   /**
@@ -88,6 +103,11 @@ class FacilityOwnershipConstraintTest extends KernelTestBase {
       $this->stubFacilityManager()
     );
 
+    $hierarchy_resolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchy_resolver->method('getRootJurisdictionId')
+      ->willReturnCallback(fn(int $gid): ?int => $this->rootMap[$gid] ?? NULL);
+    $this->container->set('markaspot_group.hierarchy_resolver', $hierarchy_resolver);
+
     // Build the validator exactly as Drupal would, through its factory.
     $this->validator = FacilityOwnershipConstraintValidator::create($this->container);
   }
@@ -119,6 +139,26 @@ class FacilityOwnershipConstraintTest extends KernelTestBase {
 
     $this->validator->validate(
       $this->serviceRequest('facility_b', 200),
+      new FacilityOwnershipConstraint()
+    );
+  }
+
+  /**
+   * A child jurisdiction may retain a facility owned by its root jurisdiction.
+   *
+   * Boundary routing can set field_jurisdiction to the child after create
+   * validation has resolved the facility against the root. The ownership guard
+   * must keep that request editable without allowing cross-tenant ids.
+   *
+   * @covers ::validate
+   */
+  public function testChildJurisdictionAcceptsRootFacility(): void {
+    $context = $this->createMock(ExecutionContextInterface::class);
+    $context->expects($this->never())->method('buildViolation');
+    $this->validator->initialize($context);
+
+    $this->validator->validate(
+      $this->serviceRequest('facility_a', 300),
       new FacilityOwnershipConstraint()
     );
   }

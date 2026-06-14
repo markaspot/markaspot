@@ -1294,6 +1294,42 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * Facility create requests accept the explicit public facility field only.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testCreateAcceptsTopLevelFacilityField(): void {
+    $values = $this->processor->prepareNodeProperties([
+      'field_facility' => 'campus_north',
+      'jurisdiction_id' => 42,
+    ], 'create');
+
+    $this->assertSame('campus_north', $values['field_facility']);
+    $this->assertSame(42, $values['field_jurisdiction']);
+  }
+
+  /**
+   * Open311 clients can use facility_id without raw Drupal field assignment.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testCreateAcceptsFacilityIdAlias(): void {
+    $values = $this->processor->prepareNodeProperties([
+      'facility_id' => 'school-centre',
+      'jurisdiction_id' => 42,
+      'extended_attributes' => [
+        'drupal' => [
+          'field_internal_remark' => 'must not be accepted',
+        ],
+      ],
+    ], 'create');
+
+    $this->assertSame('school-centre', $values['field_facility']);
+    $this->assertSame(42, $values['field_jurisdiction']);
+    $this->assertArrayNotHasKey('field_internal_remark', $values);
+  }
+
+  /**
    * Update requests without advanced API permission cannot mass-assign fields.
    *
    * @covers ::prepareNodeProperties

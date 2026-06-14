@@ -890,6 +890,22 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   }
 
   /**
+   * Tests prevalidated root jurisdiction can be replaced by a child boundary.
+   */
+  public function testNodeInsertAllowsMostSpecificChildAfterPrefilledJurisdiction(): void {
+    $source = file_get_contents(dirname(__DIR__, 3) . '/markaspot_group.module');
+
+    $nodeInsertPos = strpos($source, 'function markaspot_group_node_insert(NodeInterface $node): void');
+    $nodeUpdatePos = strpos($source, 'function markaspot_group_node_update(NodeInterface $node): void');
+    $nodeInsertSource = substr($source, $nodeInsertPos, $nodeUpdatePos - $nodeInsertPos);
+
+    $this->assertNotFalse($nodeInsertPos);
+    $this->assertNotFalse($nodeUpdatePos);
+    $this->assertStringContainsString('$needs_most_specific_child_jurisdiction = $child_jur_id && $strategy === \'most_specific\';', $nodeInsertSource);
+    $this->assertStringContainsString('if ($current_jurisdiction_empty || $needs_most_specific_child_jurisdiction) {', $nodeInsertSource);
+  }
+
+  /**
    * Installs the minimal Drupal container needed by notification helpers.
    */
   private function installNotificationContainer(

@@ -8,6 +8,7 @@ use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_facility\Service\FacilityManager;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\Validator\Constraint;
@@ -31,6 +32,7 @@ final class FacilityOwnershipConstraintValidator extends ConstraintValidator imp
   public function __construct(
     protected readonly EntityTypeManagerInterface $entityTypeManager,
     protected readonly FacilityManager $facilityManager,
+    protected readonly JurisdictionHierarchyResolverInterface $hierarchyResolver,
   ) {}
 
   /**
@@ -40,6 +42,7 @@ final class FacilityOwnershipConstraintValidator extends ConstraintValidator imp
     return new static(
       $container->get('entity_type.manager'),
       $container->get('markaspot_facility.manager'),
+      $container->get('markaspot_group.hierarchy_resolver'),
     );
   }
 
@@ -93,13 +96,14 @@ final class FacilityOwnershipConstraintValidator extends ConstraintValidator imp
       return;
     }
 
-    // Use the dashboard (full) catalogue, not the public one: an admin may
-    // have deactivated a facility that an existing report legitimately
-    // references. The gap we close is cross-tenant ownership, not active state,
-    // so any id owned by THIS jurisdiction passes.
-    $settings = $this->facilityManager->getDashboardSettings($group);
-    foreach ($settings['items'] ?? [] as $facility) {
-      if (($facility['id'] ?? '') === $facility_id) {
+    if ($this->facilityBelongsToGroup($facility_id, $group)) {
+      return;
+    }
+
+    $root_jurisdiction_id = $this->hierarchyResolver->getRootJurisdictionId($jurisdiction_id);
+    if ($root_jurisdiction_id !== NULL && $root_jurisdiction_id !== $jurisdiction_id) {
+      $root_group = $this->entityTypeManager->getStorage('group')->load($root_jurisdiction_id);
+      if ($root_group instanceof GroupInterface && $this->facilityBelongsToGroup($facility_id, $root_group)) {
         return;
       }
     }
@@ -107,6 +111,24 @@ final class FacilityOwnershipConstraintValidator extends ConstraintValidator imp
     $this->context->buildViolation($this->violationMessage($constraint))
       ->atPath('field_facility')
       ->addViolation();
+  }
+
+  /**
+   * Checks whether a facility id belongs to a jurisdiction catalogue.
+   */
+  private function facilityBelongsToGroup(string $facility_id, GroupInterface $group): bool {
+    // Use the dashboard (full) catalogue, not the public one: an admin may
+    // have deactivated a facility that an existing report legitimately
+    // references. The gap we close is cross-tenant ownership, not active state,
+    // so any id owned by THIS jurisdiction or its root jurisdiction passes.
+    $settings = $this->facilityManager->getDashboardSettings($group);
+    foreach ($settings['items'] ?? [] as $facility) {
+      if (($facility['id'] ?? '') === $facility_id) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
   }
 
   /**

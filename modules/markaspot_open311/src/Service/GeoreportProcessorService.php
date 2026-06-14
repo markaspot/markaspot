@@ -364,6 +364,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $values['field_gdpr'] = (bool) $requestData['field_gdpr'];
     }
 
+    if ($operation === 'create') {
+      $facilityId = $this->resolveSubmittedFacilityId($requestData);
+      if ($facilityId !== NULL) {
+        $values['field_facility'] = $facilityId;
+        if (isset($requestData['jurisdiction_id']) && is_numeric($requestData['jurisdiction_id'])) {
+          $values['field_jurisdiction'] = (int) $requestData['jurisdiction_id'];
+        }
+      }
+    }
+
     // Creating a tmp title to be created later via request_id
     // $values['title'] = $operation === 'create'  ? Html::escape(stripslashes($requestData['service_code'])) : NULL;.
     if (array_key_exists('description', $requestData)) {
@@ -3711,6 +3721,19 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    */
   private function getSafeValue(array $data, string $key): ?string {
     return isset($data[$key]) ? Html::escape(stripslashes($data[$key])) : NULL;
+  }
+
+  /**
+   * Resolves the public facility id submitted through the create endpoint.
+   */
+  private function resolveSubmittedFacilityId(array $requestData): ?string {
+    $raw = $requestData['field_facility'] ?? $requestData['facility_id'] ?? NULL;
+    if (!is_scalar($raw)) {
+      return NULL;
+    }
+
+    $facilityId = trim(Html::escape(stripslashes((string) $raw)));
+    return $facilityId !== '' ? $facilityId : NULL;
   }
 
   /**

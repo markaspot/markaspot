@@ -23,21 +23,21 @@ use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- *
+ * Tests ECA action mail message building.
  */
 #[CoversClass(\Drupal\markaspot_mail\Mail\Builder\EcaActionEmailBuilder::class)]
 #[Group('markaspot_mail')]
 final class EcaActionEmailBuilderTest extends UnitTestCase {
 
   /**
-   *
+   * Tests the builder type.
    */
   public function testGetTypeReturnsEcaAction(): void {
     $this->assertSame(MailType::ECA_ACTION, $this->buildBuilder()->getType());
   }
 
   /**
-   *
+   * Tests the supported ECA module and key.
    */
   public function testSupportsOnlySystemActionSendEmail(): void {
     $builder = $this->buildBuilder();
@@ -48,7 +48,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests build returns NULL without context data.
    */
   public function testBuildReturnsNullWhenContextIsMissing(): void {
     $builder = $this->buildBuilder();
@@ -65,7 +65,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests build returns NULL when the context subject is empty.
    */
   public function testBuildReturnsNullWhenContextSubjectIsEmpty(): void {
     $builder = $this->buildBuilder();
@@ -82,7 +82,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests build returns NULL when the final subject is empty.
    */
   public function testBuildReturnsNullWhenFinalSubjectIsEmpty(): void {
     $logger = $this->createMock(LoggerInterface::class);
@@ -101,7 +101,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests subject preservation and paragraph splitting.
    */
   public function testBuildPreservesSubjectAndSplitsBodyIntoParagraphs(): void {
     $builder = $this->buildBuilder();
@@ -131,7 +131,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests single line breaks are preserved inside paragraphs.
    */
   public function testBuildPreservesSingleLineBreaksInsideParagraphs(): void {
     $builder = $this->buildBuilder();
@@ -154,7 +154,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests structured HTML blocks are left untouched.
    */
   public function testBuildLeavesStructuredHtmlBlocksUntouched(): void {
     $builder = $this->buildBuilder();
@@ -180,7 +180,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests jurisdiction mode is resolved from node context.
    */
   public function testBuildResolvesJurisdictionModeFromNodeContext(): void {
     $group = $this->createMock(GroupInterface::class);
@@ -218,7 +218,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests platform fallback when node context has no jurisdiction.
    */
   public function testBuildFallsBackToPlatformWhenNodeHasNoJurisdiction(): void {
     $node = $this->createMock(NodeInterface::class);
@@ -246,6 +246,33 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
+   * Facility context renders even when no organisation is assigned.
+   */
+  public function testBuildAddsFacilityContextWithoutOrganisationAssignment(): void {
+    $node = $this->buildFacilityServiceRequestNode();
+    $builder = $this->buildBuilder();
+    $ctx = new MailContext(
+      module: 'system',
+      key: 'action_send_email',
+      langcode: 'en',
+      params: ['context' => [
+        'subject' => 'tok',
+        'message' => 'tok',
+        'node' => $node,
+      ]],
+      to: 'reporter@example.com',
+      subject: 'Report received',
+      body: ['Thanks for your report.'],
+    );
+
+    $msg = $builder->build($ctx);
+
+    $this->assertNotNull($msg);
+    $this->assertContains(['Facility' => 'school-centre'], $msg->content['features_block']);
+    $this->assertContains(['Location' => 'School Lane 7'], $msg->content['features_block']);
+  }
+
+  /**
    * Adversarial recipient cases from the round-3 security review.
    *
    * The reporter-gate decides whether citizen uploads get attached to
@@ -266,7 +293,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests spoofed display-name angle addresses do not match the spoof.
    */
   public function testRecipientSpoofedAngleInDisplayNameDoesNotMatchSpoof(): void {
     // Case 2: attacker-injected angle-addr in display-name, legit
@@ -282,7 +309,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests reporter-looking display names do not false-match.
    */
   public function testRecipientReporterSpoofedInDisplayNameDoesNotFalseMatch(): void {
     // Case 3: reporter-lookalike in display-name, actual recipient is
@@ -299,7 +326,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests angle addresses without display names.
    */
   public function testRecipientAngleAddressWithoutDisplayName(): void {
     // Case 4: <reporter@example.com>.
@@ -311,7 +338,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests comma-separated recipient lists containing the reporter.
    */
   public function testRecipientCommaSeparatedListContainingReporter(): void {
     // Case 5: comma-separated, reporter in the list.
@@ -323,7 +350,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests nested angle brackets in quoted display names.
    */
   public function testRecipientNestedAngleBracketsInQuotedString(): void {
     // Case 6: nested angle-brackets in quoted string. The character
@@ -337,7 +364,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests staff recipients trigger attachment resolution.
    */
   public function testStaffRecipientTriggersAttachmentResolve(): void {
     // Positive control: a plain staff address (no reporter match)
@@ -350,7 +377,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests non-service-request bundles do not resolve attachments.
    */
   public function testNonServiceRequestBundleDoesNotTriggerResolve(): void {
     // Bundle-gate: ECA workflows against other bundles (article,
@@ -386,7 +413,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests empty reporter email falls through to staff attachments.
    */
   public function testEmptyFieldEmailFallsThroughToAttach(): void {
     // field_e_mail empty (anonymous report): check returns FALSE, so
@@ -435,7 +462,7 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Tests resolved attachments are copied onto the mail message.
    */
   public function testAttachmentsFlowFromResolverToMailMessage(): void {
     // End-to-end check: if resolver produces attachments, they arrive
@@ -515,9 +542,10 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   * Helper: minimal service_request node with field_e_mail and an empty
-   * field_jurisdiction, bundle-gated so EcaActionEmailBuilder's
-   * bundle-check passes.
+   * Builds a minimal service_request node.
+   *
+   * The node has field_e_mail and an empty field_jurisdiction. It is
+   * bundle-gated so EcaActionEmailBuilder's bundle check passes.
    */
   private function buildServiceRequestNode(string $reporterEmail): NodeInterface&MockObject {
     $emailField = $this->createMock(FieldItemListInterface::class);
@@ -543,9 +571,53 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
   }
 
   /**
-   * Builds the subject with mocked deps. AttachmentResolver defaults to
-   * a mock that returns an empty list, matching pre-attachment-era
-   * expectations; tests asserting attachment flow pass a configured mock.
+   * Helper: service_request with facility context and no organisation.
+   */
+  private function buildFacilityServiceRequestNode(): NodeInterface&MockObject {
+    $emailField = $this->createMock(FieldItemListInterface::class);
+    $emailField->method('isEmpty')->willReturn(FALSE);
+    $emailField->method('getString')->willReturn('reporter@example.com');
+
+    $jurField = $this->createMock(EntityReferenceFieldItemListInterface::class);
+    $jurField->method('isEmpty')->willReturn(TRUE);
+
+    $facilityField = $this->createMock(FieldItemListInterface::class);
+    $facilityField->method('isEmpty')->willReturn(FALSE);
+    $facilityField->method('getString')->willReturn('school-centre');
+
+    $addressField = $this->createMock(FieldItemListInterface::class);
+    $addressField->method('isEmpty')->willReturn(FALSE);
+    $addressField->method('getString')->willReturn('School Lane 7');
+
+    $organisationField = $this->createMock(FieldItemListInterface::class);
+    $organisationField->method('isEmpty')->willReturn(TRUE);
+
+    $fields = [
+      'field_e_mail' => $emailField,
+      'field_jurisdiction' => $jurField,
+      'field_facility' => $facilityField,
+      'field_address' => $addressField,
+      'field_organisation' => $organisationField,
+    ];
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('getEntityTypeId')->willReturn('node');
+    $node->method('bundle')->willReturn('service_request');
+    $node->method('hasField')->willReturnCallback(
+      static fn(string $name): bool => array_key_exists($name, $fields),
+    );
+    $node->method('get')->willReturnCallback(
+      static fn(string $name): FieldItemListInterface => $fields[$name],
+    );
+    return $node;
+  }
+
+  /**
+   * Builds the subject with mocked deps.
+   *
+   * AttachmentResolver defaults to a mock that returns an empty list, matching
+   * pre-attachment-era expectations; attachment-flow tests pass a configured
+   * mock.
    */
   private function buildBuilder(
     ?LoggerInterface $logger = NULL,
@@ -559,10 +631,12 @@ final class EcaActionEmailBuilderTest extends UnitTestCase {
     if ($attachmentResolver === NULL) {
       $resolver->method('resolve')->willReturn([]);
     }
-    return new EcaActionEmailBuilder(
+    $builder = new EcaActionEmailBuilder(
       $logger ?? $this->createMock(LoggerInterface::class),
       $resolver,
     );
+    $builder->setStringTranslation($this->getStringTranslationStub());
+    return $builder;
   }
 
 }

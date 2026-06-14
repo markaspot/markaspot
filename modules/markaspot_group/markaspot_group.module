@@ -1514,8 +1514,19 @@ function markaspot_group_node_insert(NodeInterface $node): void {
   // 2. Set field_jurisdiction based on configured strategy before any
   // organisation-derived assignment can trust submitted field_organisation.
   $jur_set = FALSE;
-  if ($node->hasField('field_jurisdiction') && $node->get('field_jurisdiction')->isEmpty()) {
-    $jur_set = _markaspot_group_set_jurisdiction_field($node, $child_jur_id);
+  if ($node->hasField('field_jurisdiction')) {
+    $current_jurisdiction_empty = $node->get('field_jurisdiction')->isEmpty();
+    $strategy = \Drupal::config('markaspot_group.settings')
+      ->get('jurisdiction_field_strategy') ?? 'most_specific';
+    $needs_most_specific_child_jurisdiction = $child_jur_id && $strategy === 'most_specific';
+
+    // Open311 facility creates prefill field_jurisdiction before validation so
+    // FacilityOwnership can resolve the submitted facility. A later boundary
+    // hit must still be allowed to replace that root fallback with the most
+    // specific child jurisdiction.
+    if ($current_jurisdiction_empty || $needs_most_specific_child_jurisdiction) {
+      $jur_set = _markaspot_group_set_jurisdiction_field($node, $child_jur_id);
+    }
   }
 
   // Presave can run before field_jurisdiction is derived for new nodes. Once

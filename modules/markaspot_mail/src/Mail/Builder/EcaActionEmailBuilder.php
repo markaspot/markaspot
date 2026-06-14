@@ -6,6 +6,7 @@ namespace Drupal\markaspot_mail\Mail\Builder;
 
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
@@ -46,6 +47,7 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
 
   use ResolveJurisdictionFromNodeTrait;
   use SplitParagraphsTrait;
+  use StringTranslationTrait;
 
   public function __construct(
     private readonly LoggerInterface $logger,
@@ -125,6 +127,13 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
       'intro' => $intro,
       'body_blocks' => $bodyBlocks,
     ];
+    $facilityFeatures = $this->resolveFacilityFeatures(
+      $entity instanceof ContentEntityInterface ? $entity : NULL,
+      $ctx->langcode
+    );
+    if ($facilityFeatures !== []) {
+      $content['features_block'] = $facilityFeatures;
+    }
 
     return new MailMessage(
       subject: $subject,
@@ -199,6 +208,55 @@ final class EcaActionEmailBuilder implements MailBuilderInterface {
       }
     }
     return FALSE;
+  }
+
+  /**
+   * Builds facility context rows for service request ECA mails.
+   *
+   * The organisation assignment is deliberately not consulted here. Facility
+   * context is useful for citizen and staff mails even when field_organisation
+   * is still empty or intentionally unmanaged for the selected facility.
+   *
+   * @return array<int, array<string, string>>
+   *   Feature rows for the transactional mail card.
+   */
+  private function resolveFacilityFeatures(?ContentEntityInterface $entity, string $langcode): array {
+    if (
+      $entity === NULL ||
+      $entity->getEntityTypeId() !== 'node' ||
+      $entity->bundle() !== 'service_request' ||
+      !$entity->hasField('field_facility') ||
+      $entity->get('field_facility')->isEmpty()
+    ) {
+      return [];
+    }
+
+    $features = [];
+    $facilityId = trim($entity->get('field_facility')->getString());
+    if ($facilityId !== '') {
+      $features[] = [
+        (string) $this->t('Facility', [], ['langcode' => $langcode]) => $facilityId,
+      ];
+    }
+
+    $address = $this->resolveFieldString($entity, 'field_address');
+    if ($address !== '') {
+      $features[] = [
+        (string) $this->t('Location', [], ['langcode' => $langcode]) => $address,
+      ];
+    }
+
+    return $features;
+  }
+
+  /**
+   * Resolves a scalar node field value.
+   */
+  private function resolveFieldString(ContentEntityInterface $entity, string $fieldName): string {
+    if (!$entity->hasField($fieldName) || $entity->get($fieldName)->isEmpty()) {
+      return '';
+    }
+    return trim($entity->get($fieldName)->getString());
   }
 
   /**
