@@ -329,9 +329,13 @@ class GeoreportRequestResource extends ResourceBase {
   public function get(string $id) {
     $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
 
-    // Internal serialization-scope marker set further down; never accept
-    // it from the wire.
-    unset($parameters['_jurisdiction_read_scope']);
+    // Internal markers set further down; never accept them from the wire.
+    unset(
+      $parameters['_jurisdiction_read_scope'],
+      $parameters['_request_list_sort'],
+      $parameters['_request_list_pagination'],
+      $parameters['_request_list_total']
+    );
 
     // Resolve language code from Accept-Language header or query parameter.
     $parameters['langcode'] = $this->resolveLanguageCode($parameters);
@@ -356,6 +360,7 @@ class GeoreportRequestResource extends ResourceBase {
     // Read path: membership in the requested jurisdiction is not a hard
     // gate (markaspot-ui#427, degrade-don't-deny). The serialization
     // shape is scoped below instead.
+    $readScope = NULL;
     $node = $this->loadScopedRequestNode($id, $parameters, FALSE);
     if ($node) {
       $query->condition('nid', $node->id());
@@ -364,20 +369,16 @@ class GeoreportRequestResource extends ResourceBase {
       // the request's own jurisdiction when no claim is given.
       // getResults() downgrades dashboard-capable non-members of that
       // jurisdiction to the anonymous/public response shape.
-      $scopeJurisdictionId = NULL;
       if ($this->hasJurisdictionClaim($parameters)) {
-        $scopeJurisdictionId = $this->georeportProcessor->resolveJurisdictionId($parameters);
+        $readScope = $this->georeportProcessor->resolveJurisdictionId($parameters);
       }
-      $scopeJurisdictionId = $scopeJurisdictionId ?: $this->resolveNodeJurisdictionId($node);
-      if ($scopeJurisdictionId) {
-        $parameters['_jurisdiction_read_scope'] = $scopeJurisdictionId;
-      }
+      $readScope = $readScope ?: $this->resolveNodeJurisdictionId($node);
     }
     else {
       $query->condition('nid', [0], 'IN');
     }
 
-    return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
+    return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters, $readScope);
   }
 
   /**
@@ -403,9 +404,14 @@ class GeoreportRequestResource extends ResourceBase {
       }
 
       $parameters = UrlHelper::filterQueryParameters($this->requestStack->getCurrentRequest()->query->all());
-      // Internal serialization-scope marker; never accept it from the wire
-      // (defensive mirror of the GET-path strip).
-      unset($parameters['_jurisdiction_read_scope']);
+      // Internal markers; never accept them from the wire (defensive mirror
+      // of the GET-path strip).
+      unset(
+        $parameters['_jurisdiction_read_scope'],
+        $parameters['_request_list_sort'],
+        $parameters['_request_list_pagination'],
+        $parameters['_request_list_total']
+      );
       $parameters['langcode'] = $this->resolveLanguageCode($parameters);
       $scopeParameters = $this->mergeJurisdictionClaims($parameters, $request_data);
       $node = $this->loadScopedRequestNode($id, $scopeParameters);

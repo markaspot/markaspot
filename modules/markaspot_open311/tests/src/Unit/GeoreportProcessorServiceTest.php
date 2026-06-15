@@ -683,17 +683,10 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->with(42)
       ->willReturn($group);
 
-    $parameters = [
-      '_jurisdiction_read_scope' => 42,
-      'extended_attributes' => 'true',
-      'extensions' => 'true',
-      'fields' => 'field_sentiment,field_hazard_level',
-    ];
-
     $result = $this->invokeMethod(
       $this->processor,
       'scopeExtendedRoleToReadScope',
-      ['manager', $parameters, $user]
+      ['manager', 42, $user]
     );
     $this->assertEquals('anonymous', $result);
   }
@@ -722,7 +715,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $result = $this->invokeMethod(
       $this->processor,
       'scopeExtendedRoleToReadScope',
-      ['manager', ['_jurisdiction_read_scope' => 42], $user]
+      ['manager', 42, $user]
     );
     $this->assertEquals('manager', $result);
   }
@@ -737,7 +730,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $result = $this->invokeMethod(
       $this->processor,
       'scopeExtendedRoleToReadScope',
-      ['manager', [], $user]
+      ['manager', NULL, $user]
     );
     $this->assertEquals('manager', $result);
   }
@@ -752,7 +745,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $result = $this->invokeMethod(
       $this->processor,
       'scopeExtendedRoleToReadScope',
-      ['anonymous', ['_jurisdiction_read_scope' => 42], $user]
+      ['anonymous', 42, $user]
     );
     $this->assertEquals('anonymous', $result);
   }
@@ -767,7 +760,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $result = $this->invokeMethod(
       $this->processor,
       'scopeExtendedRoleToReadScope',
-      ['user', ['_jurisdiction_read_scope' => 42], $user]
+      ['user', 42, $user]
     );
     $this->assertEquals('user', $result);
   }

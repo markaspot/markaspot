@@ -392,9 +392,13 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     // Restore preserved API parameters.
     $parameters = array_merge($parameters, $preservedParams);
 
-    // Internal serialization-scope marker set further down; never accept
-    // it from the wire.
-    unset($parameters['_jurisdiction_read_scope']);
+    // Internal markers set further down; never accept them from the wire.
+    unset(
+      $parameters['_jurisdiction_read_scope'],
+      $parameters['_request_list_sort'],
+      $parameters['_request_list_pagination'],
+      $parameters['_request_list_total']
+    );
 
     // Resolve language code from Accept-Language header or query param.
     $parameters['langcode'] = $this->resolveLanguageCode($parameters);
@@ -416,13 +420,14 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     $resolvedJurisdictionId = $this->georeportProcessor->resolveJurisdictionId($parameters);
     $this->applyInvalidJurisdictionClaimScope($query, $parameters, $resolvedJurisdictionId);
     $anonymousJurisdictionClaimIsUnreadable = $this->anonymousJurisdictionClaimIsUnreadable($parameters, $resolvedJurisdictionId);
+    $readScope = NULL;
     if ($anonymousJurisdictionClaimIsUnreadable) {
       $query->condition('nid', [0], 'IN');
     }
     else {
       $this->applyApiKeyJurisdictionReadScope($query, $parameters, $resolvedJurisdictionId);
       if ($resolvedJurisdictionId) {
-        $parameters['_jurisdiction_read_scope'] = $resolvedJurisdictionId;
+        $readScope = $resolvedJurisdictionId;
       }
     }
 
@@ -434,13 +439,13 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       ->condition('type', $bundle);
 
     if ($anonymousJurisdictionClaimIsUnreadable) {
-      return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
+      return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters, $readScope);
     }
 
     // Optimize query for common cases - direct ID lookup is fastest.
     if (isset($parameters['id'])) {
       $query->condition('request_id', $parameters['id']);
-      return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
+      return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters, $readScope);
     }
 
     // Direct NID lookup is also fast.
@@ -638,7 +643,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       $this->georeportProcessor->applyRequestListSort($query, $parameters['_request_list_sort']);
     }
 
-    return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters);
+    return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters, $readScope);
   }
 
   /**

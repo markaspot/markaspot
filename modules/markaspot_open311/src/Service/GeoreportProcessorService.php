@@ -968,14 +968,22 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The user object.
    * @param array $parameters
    *   An array of query parameters.
+   * @param int|null $readScope
+   *   Optional jurisdiction group ID that scopes the serialized response shape.
    *
    * @return array
    *   An array of service request definitions, or structured response with
    *   metadata when meta=true.
    */
-  public function getResults(object $query, object $user, array $parameters): array {
+  public function getResults(
+    object $query,
+    object $user,
+    array $parameters,
+    ?int $readScope = NULL,
+  ): array {
     // Check if meta parameter requests wrapped response with metadata.
-    // Note: extensions=true alone returns plain array for backwards compatibility.
+    // Note: extensions=true alone returns a plain array for backwards
+    // compatibility.
     $includeMetadata = !empty($parameters['meta']) &&
                        (strtolower($parameters['meta']) === 'true' || $parameters['meta'] === '1');
 
@@ -988,7 +996,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $requestListTotal = $parameters['_request_list_total'] ?? NULL;
 
     if ($includeMetadata) {
-      // Extract limit/offset from parameters (they were set before query creation).
+      // Extract limit/offset from parameters. They were set before query
+      // creation.
       if (!empty($requestListPagination)) {
         $limit = (int) $requestListPagination['limit'];
         $offset = (int) $requestListPagination['offset'];
@@ -1079,7 +1088,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // jurisdiction read scope (markaspot-ui#427).
     $extendedRole = $this->scopeExtendedRoleToReadScope(
       $this->determineExtendedRole($user),
-      $parameters,
+      $readScope,
       $user
     );
 
@@ -1088,7 +1097,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // all tenants (jur-outsider grants), so each node's own jurisdiction
     // decides whether this caller gets the extended or the public shape.
     $unclaimedManagerScope = $extendedRole === 'manager'
-      && empty($parameters['_jurisdiction_read_scope']);
+      && empty($readScope);
 
     // Preload all taxonomy terms needed by these nodes.
     $this->preloadTaxonomyTerms($nodes);
@@ -1543,7 +1552,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * extended "manager" shape is member-only per jurisdiction. Read
    * resources resolve the effective jurisdiction scope of the response
    * (explicit jurisdiction_id claim, or the single request's own
-   * jurisdiction) into the internal '_jurisdiction_read_scope' parameter.
+   * jurisdiction) into an explicit read scope passed to getResults().
    * A dashboard-capable user from another tenant keeps read access to
    * public data, but is serialized with the anonymous/public shape
    * instead of receiving a hard 403 (degrade, don't deny). Elevated
@@ -1557,8 +1566,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @param string $extendedRole
    *   The role determined by determineExtendedRole().
-   * @param array $parameters
-   *   Request parameters, optionally carrying '_jurisdiction_read_scope'.
+   * @param int|null $readScope
+   *   Optional jurisdiction group ID that scopes the serialized response shape.
    * @param \Drupal\Core\Session\AccountInterface $user
    *   The account the response is serialized for.
    *
@@ -1566,12 +1575,12 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The effective role: unchanged, or 'anonymous' when a manager is not
    *   a member of the scoped jurisdiction.
    */
-  private function scopeExtendedRoleToReadScope(string $extendedRole, array $parameters, $user): string {
-    if ($extendedRole !== 'manager' || empty($parameters['_jurisdiction_read_scope'])) {
+  private function scopeExtendedRoleToReadScope(string $extendedRole, ?int $readScope, $user): string {
+    if ($extendedRole !== 'manager' || empty($readScope)) {
       return $extendedRole;
     }
 
-    if ($this->isJurisdictionMember((int) $parameters['_jurisdiction_read_scope'], $user)) {
+    if ($this->isJurisdictionMember($readScope, $user)) {
       return 'manager';
     }
 

@@ -106,11 +106,18 @@ interface GeoreportProcessorServiceInterface {
    *   The user object.
    * @param array $parameters
    *   An array of query parameters.
+   * @param int|null $readScope
+   *   Optional jurisdiction group ID that scopes the serialized response shape.
    *
    * @return array
    *   An array of service request definitions.
    */
-  public function getResults(object $query, object $user, array $parameters): array;
+  public function getResults(
+    object $query,
+    object $user,
+    array $parameters,
+    ?int $readScope = NULL,
+  ): array;
 
   /**
    * Creates a node query for service requests.
