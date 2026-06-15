@@ -8,7 +8,8 @@
  * to verify status codes, JSON structure, and basic contract compliance.
  *
  * Run: ddev drush php:script tests/test-endpoints.php
- *   or: ddev drush php:script web/profiles/contrib/markaspot/tests/test-endpoints.php
+ *   or: ddev drush php:script
+ *     web/profiles/contrib/markaspot/tests/test-endpoints.php
  */
 
 // ---------------------------------------------------------------------------
@@ -215,11 +216,14 @@ else {
   if ($data) {
     assert_json_keys($data, [
       'emergency_mode', 'status', 'mode_type', 'lite_ui',
-      'available_categories', 'banner', 'details',
+      'available_categories', 'banner',
     ], 'Emergency status');
     assert_true(is_bool($data['emergency_mode']), 'emergency_mode is boolean');
     assert_true(is_array($data['available_categories']), 'available_categories is array');
     assert_true(in_array($data['status'], ['off', 'active'], TRUE), "status is 'off' or 'active'");
+    if (isset($data['details'])) {
+      assert_true(is_array($data['details']), 'Emergency details is object when exposed');
+    }
   }
 
   // With jurisdiction_id.
@@ -451,7 +455,8 @@ else {
   [$code] = http_post("$base/api/auth/logout");
   assert_true(in_array($code, [200, 403]), "POST /api/auth/logout responds ($code)");
 
-  // GET /api/auth/switch-users (requires 'switch users' permission, should fail for anonymous)
+  // GET /api/auth/switch-users.
+  // Requires 'switch users' permission, so anonymous must fail.
   [$code] = http_get("$base/api/auth/switch-users");
   assert_equal(403, $code, 'GET /api/auth/switch-users returns 403 (anonymous)');
 
@@ -493,9 +498,16 @@ else {
     assert_equal(403, $code, "GET $ep returns 403 (anonymous)");
   }
 
-  // Status notes endpoints require auth (may return 400 if body validation runs first).
-  [$code] = http_post("$base/api/dashboard/status-notes", ['uuid' => 'test', 'note' => 'test']);
-  assert_true(in_array($code, [400, 403]), "POST /api/dashboard/status-notes returns 400 or 403 (anonymous, got $code)");
+  // Status notes endpoints require auth.
+  // They may return 400 if body validation runs first.
+  [$code] = http_post("$base/api/dashboard/status-notes", [
+    'uuid' => 'test',
+    'note' => 'test',
+  ]);
+  assert_true(
+    in_array($code, [400, 403], TRUE),
+    "POST /api/dashboard/status-notes returns 400 or 403 (anonymous, got $code)"
+  );
 }
 
 // ===========================================================================
@@ -573,13 +585,24 @@ if (!$module_handler->moduleExists('markaspot_cap')) {
   skip_test('markaspot_cap not enabled');
 }
 else {
-  [$code, $data] = http_get("$base/api/cap/v1/alerts");
-  assert_equal(200, $code, 'GET /api/cap/v1/alerts returns 200');
-  assert_true(is_array($data), 'CAP alerts returns array');
+  $emergency_status = \Drupal::state()->get('markaspot_emergency.status', 'off');
+  if ($emergency_status === 'off') {
+    [$code] = http_get("$base/api/cap/v1/alerts");
+    assert_equal(403, $code, 'GET /api/cap/v1/alerts returns 403 when emergency mode is inactive');
 
-  // Single alert (non-existent ID).
-  [$code] = http_get("$base/api/cap/v1/alerts/nonexistent");
-  assert_true(in_array($code, [200, 404]), "GET /api/cap/v1/alerts/{id} responds ($code)");
+    [$code] = http_get("$base/api/cap/v1/alerts/nonexistent");
+    assert_equal(403, $code, 'GET /api/cap/v1/alerts/{id} returns 403 when emergency mode is inactive');
+  }
+  else {
+    $cap_suffix = $jur_id ? "?jurisdiction_id=$jur_id" : '';
+    [$code, $data] = http_get("$base/api/cap/v1/alerts$cap_suffix");
+    assert_equal(200, $code, "GET /api/cap/v1/alerts$cap_suffix returns 200 when emergency mode is active");
+    assert_true(is_array($data), 'CAP alerts returns array');
+
+    // Single alert (non-existent ID).
+    [$code] = http_get("$base/api/cap/v1/alerts/nonexistent$cap_suffix");
+    assert_equal(404, $code, 'GET /api/cap/v1/alerts/{id} returns 404 for a nonexistent active alert');
+  }
 }
 
 // ===========================================================================
@@ -724,7 +747,7 @@ $stats_url = $jur_id ? "$base/stats/status?jurisdiction=$jur_id" : "$base/stats/
 [$code1, , $raw1] = http_get($stats_url);
 [$code2, , $raw2] = http_get($stats_url);
 assert_equal($code1, $code2, 'Idempotent: same status code');
-// Note: counts may change between requests in production, so we just check structure.
+// Counts may change between requests in production, so just check structure.
 $j1 = json_decode($raw1, TRUE);
 $j2 = json_decode($raw2, TRUE);
 if (is_array($j1) && is_array($j2)) {

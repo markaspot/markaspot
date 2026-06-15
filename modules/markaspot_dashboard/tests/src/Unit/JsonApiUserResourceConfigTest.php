@@ -194,6 +194,26 @@ final class JsonApiUserResourceConfigTest extends UnitTestCase {
   }
 
   /**
+   * Email channel source is public; raw message-id PII stays hidden.
+   */
+  public function testServiceRequestSourceFieldIsPublicButMessageIdStaysHidden(): void {
+    $path = dirname(__DIR__, 4) . '/markaspot_nuxt/config/optional/jsonapi_extras.jsonapi_resource_config.node--service_request.yml';
+    $this->assertFileExists($path, 'node--service_request resource config must ship with the profile.');
+    $config = Yaml::parseFile($path);
+
+    $this->assertArrayHasKey('field_source', $config['resourceFields']);
+    $this->assertFalse(
+      $config['resourceFields']['field_source']['disabled'] ?? TRUE,
+      'field_source must be public so the dashboard source column and filter can read it.'
+    );
+    $this->assertArrayNotHasKey(
+      'field_email_message_id',
+      $config['resourceFields'],
+      'field_email_message_id carries raw mail headers and must not be exposed through public JSON:API.'
+    );
+  }
+
+  /**
    * Existing tenants must be backfilled, not only fresh installs.
    */
   public function testServiceRequestAuthorRelationshipUpdateHookShips(): void {
@@ -203,6 +223,24 @@ final class JsonApiUserResourceConfigTest extends UnitTestCase {
     $this->assertStringContainsString('function markaspot_nuxt_update_11906()', $source);
     $this->assertStringContainsString("foreach (['uid', 'revision_uid'] as \$field_name)", $source);
     $this->assertStringContainsString("\$field['disabled'] = TRUE", $source);
+  }
+
+  /**
+   * Existing tenants receive the field_source JSON:API allowlist backfill.
+   */
+  public function testServiceRequestSourceFieldUpdateHookShips(): void {
+    $path = dirname(__DIR__, 4) . '/markaspot_mail_inbound/markaspot_mail_inbound.install';
+    $source = file_get_contents($path);
+    $this->assertIsString($source);
+    $this->assertStringContainsString('function markaspot_mail_inbound_update_11906()', $source);
+    $this->assertStringContainsString('function _markaspot_mail_inbound_configure_service_request_source_jsonapi()', $source);
+    $this->assertStringContainsString('_markaspot_mail_inbound_configure_service_request_source_jsonapi();', $source);
+    $this->assertStringContainsString("'fieldName' => 'field_source'", $source);
+    $this->assertStringContainsString("'publicName' => 'field_source'", $source);
+    $this->assertStringContainsString("'disabled' => FALSE", $source);
+    $this->assertStringContainsString("'fieldName' => 'field_email_message_id'", $source);
+    $this->assertStringContainsString("'publicName' => 'field_email_message_id'", $source);
+    $this->assertStringContainsString("'disabled' => TRUE", $source);
   }
 
 }

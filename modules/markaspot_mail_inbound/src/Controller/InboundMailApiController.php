@@ -210,6 +210,44 @@ class InboundMailApiController extends ControllerBase {
   }
 
   /**
+   * GET /api/inbound-mail/by-node/{node} — mail backing a service request.
+   */
+  public function byNode(NodeInterface $node): JsonResponse {
+    if ($node->bundle() !== 'service_request') {
+      return $this->errorResponse('Inbound mail not found for this node.', 404);
+    }
+
+    $storage = $this->entityTypeManager->getStorage('inbound_mail');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('nid', (int) $node->id())
+      ->condition('state', InboundMail::STATE_PROMOTED)
+      ->sort('changed', 'DESC')
+      ->range(0, 1)
+      ->execute();
+    $id = reset($ids);
+    $inbound_mail = $id ? $storage->load($id) : NULL;
+    if (!$inbound_mail instanceof InboundMail) {
+      return $this->errorResponse('Inbound mail not found for this node.', 404);
+    }
+    if (!$inbound_mail->access('view')) {
+      return $this->errorResponse('Access denied.', 403);
+    }
+
+    return new JsonResponse([
+      'id' => (int) $inbound_mail->id(),
+      'nid' => (int) $node->id(),
+      'from_name' => (string) $inbound_mail->get('from_name')->value,
+      'from_address' => $inbound_mail->getFromAddress(),
+      'subject' => $inbound_mail->getSubject(),
+      'message_id' => (string) $inbound_mail->get('message_id')->value,
+      'thread_message_ids' => $inbound_mail->getThreadMessageIds(),
+      'created' => (int) $inbound_mail->get('created')->value,
+      'body' => $inbound_mail->getBody(),
+    ]);
+  }
+
+  /**
    * GET /api/inbound-mail/{inbound_mail}/attachment/{fid} — staged file.
    *
    * Streams the (private/staged) file to an authorized triage user. No

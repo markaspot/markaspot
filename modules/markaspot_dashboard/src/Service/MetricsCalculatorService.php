@@ -102,6 +102,7 @@ class MetricsCalculatorService {
       'fcr_rate' => $this->calculateFcrRate($node_ids),
       'avg_processing_time' => $this->calculateAvgProcessingTime($node_ids),
       'status_distribution' => $this->getStatusDistribution($node_ids),
+      'source_distribution' => $this->getSourceDistribution($node_ids),
       'total_requests' => count($node_ids),
       'filters_applied' => $this->getAppliedFiltersInfo($filters),
     ];
@@ -150,16 +151,7 @@ class MetricsCalculatorService {
       $query->condition('fs.field_status_target_id', $filters['status_id']);
     }
 
-    // Jurisdiction filter (via group_relationship).
-    if (!empty($filters['jurisdiction_id'])) {
-      $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
-      $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
-      $query->condition('g.type', $this->jurisdictionGroupType());
-      $jurisdictionIds = $this->hierarchyResolver
-        ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
-        : [(int) $filters['jurisdiction_id']];
-      $query->condition('g.id', $jurisdictionIds, 'IN');
-    }
+    $this->applyJurisdictionFilter($query, $filters);
 
     // Organisation filter — only applicable when the node field table exists.
     if (!empty($filters['organisation_id']) && $this->hasOrganisationNodeField()) {
@@ -169,6 +161,62 @@ class MetricsCalculatorService {
 
     $result = $query->execute()->fetchCol();
     return array_map('intval', $result);
+  }
+
+  /**
+   * Applies one or many jurisdiction filters to a node-based SQL select.
+   *
+   * @param mixed $query
+   *   A Drupal database select query with node_field_data aliased as "n".
+   * @param array $filters
+   *   Dashboard filters.
+   */
+  protected function applyJurisdictionFilter($query, array $filters): void {
+    $jurisdictionIds = $this->getExpandedJurisdictionIds($filters);
+    if ($jurisdictionIds === []) {
+      return;
+    }
+
+    $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
+    $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
+    $query->condition('g.type', $this->jurisdictionGroupType());
+    $query->condition('g.id', $jurisdictionIds, 'IN');
+  }
+
+  /**
+   * Resolves direct jurisdiction filters to include configured descendants.
+   *
+   * @param array $filters
+   *   Dashboard filters. Supports jurisdiction_id and jurisdiction_ids.
+   *
+   * @return int[]
+   *   Unique jurisdiction group IDs.
+   */
+  protected function getExpandedJurisdictionIds(array $filters): array {
+    $requested = [];
+    if (!empty($filters['jurisdiction_ids']) && is_array($filters['jurisdiction_ids'])) {
+      $requested = array_map('intval', $filters['jurisdiction_ids']);
+    }
+    elseif (!empty($filters['jurisdiction_id'])) {
+      $requested = [(int) $filters['jurisdiction_id']];
+    }
+
+    $requested = array_values(array_filter($requested, static fn(int $id): bool => $id > 0));
+    if ($requested === []) {
+      return [];
+    }
+
+    $expanded = [];
+    foreach ($requested as $jurisdictionId) {
+      $scopeIds = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getDescendantIds($jurisdictionId)
+        : [$jurisdictionId];
+      foreach ($scopeIds as $scopeId) {
+        $expanded[] = (int) $scopeId;
+      }
+    }
+
+    return array_values(array_unique(array_filter($expanded, static fn(int $id): bool => $id > 0)));
   }
 
   /**
@@ -269,9 +317,9 @@ class MetricsCalculatorService {
     }
     $placeholder_string = implode(',', $named_placeholders);
 
-    // Get the "Closed" status term ID.
-    $closed_tid = $this->getClosedStatusTid();
-    if (!$closed_tid) {
+    // Get the "Closed" status term IDs.
+    $closed_tids = $this->getClosedStatusTids();
+    if ($closed_tids === []) {
       $this->logger->warning('Closed status term not found. FCR calculation may be incorrect.');
       return [
         'fcr_count' => 0,
@@ -286,7 +334,7 @@ class MetricsCalculatorService {
     // 2. Are currently closed (have a paragraph with closed status)
     // 3. Have no organisation changes (only when the forwarding table exists).
     $fcr_args = $args;
-    $fcr_args[':closed_tid'] = $closed_tid;
+    $closed_placeholder_string = $this->addIntegerPlaceholders($closed_tids, 'closed_tid', $fcr_args);
 
     // The NOT EXISTS clause is omitted on setups without forwarding support
     // (node__field_organisation table absent). On those setups all
@@ -325,7 +373,7 @@ class MetricsCalculatorService {
       INNER JOIN {paragraph__field_status_term} pst ON fsn.field_status_notes_target_id = pst.entity_id AND pst.deleted = 0
       WHERE n.nid IN ($placeholder_string)
         AND n.type = 'service_request'
-        AND pst.field_status_term_target_id = :closed_tid
+        AND pst.field_status_term_target_id IN ($closed_placeholder_string)
         $no_forwarding_clause
       GROUP BY n.nid
     ", $fcr_args);
@@ -335,14 +383,14 @@ class MetricsCalculatorService {
 
     // Eligible are closed requests only.
     $eligible_args = $args;
-    $eligible_args[':closed_tid'] = $closed_tid;
+    $eligible_closed_placeholder_string = $this->addIntegerPlaceholders($closed_tids, 'eligible_closed_tid', $eligible_args);
     $eligible_query = $this->database->query("
       SELECT COUNT(DISTINCT n.nid) as count
       FROM {node_field_data} n
       INNER JOIN {node__field_status} fs ON n.nid = fs.entity_id AND fs.deleted = 0
       WHERE n.nid IN ($placeholder_string)
         AND n.type = 'service_request'
-        AND fs.field_status_target_id = :closed_tid
+        AND fs.field_status_target_id IN ($eligible_closed_placeholder_string)
     ", $eligible_args);
 
     $eligible_count = (int) $eligible_query->fetchField();
@@ -388,9 +436,9 @@ class MetricsCalculatorService {
       $args[$key] = (int) $nid;
     }
     $placeholder_string = implode(',', $named_placeholders);
-    $closed_tid = $this->getClosedStatusTid();
+    $closed_tids = $this->getClosedStatusTids();
 
-    if (!$closed_tid) {
+    if ($closed_tids === []) {
       return [
         'avg_seconds' => 0,
         'avg_hours' => 0.0,
@@ -405,7 +453,7 @@ class MetricsCalculatorService {
 
     // Calculate processing time for each closed request.
     // First paragraph created -> Last paragraph with closed status.
-    $args[':closed_tid'] = $closed_tid;
+    $closed_placeholder_string = $this->addIntegerPlaceholders($closed_tids, 'closed_tid', $args);
     $query = $this->database->query("
       SELECT
         n.nid,
@@ -421,7 +469,7 @@ class MetricsCalculatorService {
       INNER JOIN {paragraph__field_status_term} pst ON p_closed.id = pst.entity_id AND pst.deleted = 0
       WHERE n.nid IN ($placeholder_string)
         AND n.type = 'service_request'
-        AND pst.field_status_term_target_id = :closed_tid
+        AND pst.field_status_term_target_id IN ($closed_placeholder_string)
       GROUP BY n.nid
       HAVING MIN(p_first.created) IS NOT NULL AND MAX(p_closed.created) IS NOT NULL
     ", $args);
@@ -540,6 +588,84 @@ class MetricsCalculatorService {
   }
 
   /**
+   * Get source-channel distribution for filtered nodes.
+   *
+   * Legacy rows without field_source are counted as web so totals reconcile.
+   *
+   * @param array $node_ids
+   *   Array of node IDs to analyze.
+   *
+   * @return array
+   *   Array of source counts.
+   */
+  public function getSourceDistribution(array $node_ids): array {
+    if (empty($node_ids)) {
+      return [];
+    }
+    if (!$this->database->schema()->tableExists('node__field_source')) {
+      return [
+        [
+          'source' => 'web',
+          'count' => count(array_unique(array_map('intval', $node_ids))),
+        ],
+      ];
+    }
+
+    $named_placeholders = [];
+    $args = [];
+    foreach ($node_ids as $i => $nid) {
+      $key = ':source_nid_' . $i;
+      $named_placeholders[] = $key;
+      $args[$key] = (int) $nid;
+    }
+    $placeholder_string = implode(',', $named_placeholders);
+
+    $query = $this->database->query("
+      SELECT
+        COALESCE(NULLIF(fs.field_source_value, ''), 'web') AS source,
+        COUNT(DISTINCT n.nid) AS count
+      FROM {node_field_data} n
+      LEFT JOIN {node__field_source} fs ON n.nid = fs.entity_id AND fs.deleted = 0
+      WHERE n.type = 'service_request' AND n.nid IN ($placeholder_string)
+      GROUP BY COALESCE(NULLIF(fs.field_source_value, ''), 'web')
+      ORDER BY count DESC, source ASC
+    ", $args);
+
+    $output = [];
+    foreach ($query->fetchAll() as $row) {
+      $output[] = [
+        'source' => (string) $row->source,
+        'count' => (int) $row->count,
+      ];
+    }
+
+    return $output;
+  }
+
+  /**
+   * Adds integer values to a named placeholder array.
+   *
+   * @param int[] $values
+   *   Integer values.
+   * @param string $prefix
+   *   Placeholder prefix, without the leading colon.
+   * @param array<string, int> $args
+   *   Query arguments, mutated by reference.
+   *
+   * @return string
+   *   Comma-separated placeholder list for raw SQL IN clauses.
+   */
+  protected function addIntegerPlaceholders(array $values, string $prefix, array &$args): string {
+    $placeholders = [];
+    foreach (array_values($values) as $i => $value) {
+      $key = ':' . $prefix . '_' . $i;
+      $placeholders[] = $key;
+      $args[$key] = (int) $value;
+    }
+    return implode(',', $placeholders);
+  }
+
+  /**
    * Get the taxonomy term IDs for "Closed" status from Open311 configuration.
    *
    * @return array
@@ -611,8 +737,8 @@ class MetricsCalculatorService {
     $date_format = $this->getDateFormatForGranularity($granularity);
     $group_expression = $this->getGroupExpressionForGranularity($granularity);
 
-    // Get closed status TID.
-    $closed_tid = $this->getClosedStatusTid();
+    // Get closed status TIDs.
+    $closed_tids = $this->getClosedStatusTids();
 
     // Build base query for created counts.
     $created_query = $this->database->select('node_field_data', 'n');
@@ -642,8 +768,8 @@ class MetricsCalculatorService {
     $closed_query->addExpression('COUNT(DISTINCT n.nid)', 'closed_count');
     $closed_query->condition('n.type', 'service_request');
 
-    if ($closed_tid) {
-      $closed_query->condition('pst.field_status_term_target_id', $closed_tid);
+    if ($closed_tids !== []) {
+      $closed_query->condition('pst.field_status_term_target_id', $closed_tids, 'IN');
     }
 
     // Apply date filters to paragraph creation time.
@@ -661,16 +787,7 @@ class MetricsCalculatorService {
       }
     }
 
-    // Jurisdiction filter.
-    if (!empty($filters['jurisdiction_id'])) {
-      $closed_query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
-      $closed_query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
-      $closed_query->condition('g.type', $this->jurisdictionGroupType());
-      $jurisdictionIds = $this->hierarchyResolver
-        ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
-        : [(int) $filters['jurisdiction_id']];
-      $closed_query->condition('g.id', $jurisdictionIds, 'IN');
-    }
+    $this->applyJurisdictionFilter($closed_query, $filters);
 
     // Category filter.
     if (!empty($filters['category_id'])) {
@@ -723,9 +840,9 @@ class MetricsCalculatorService {
     $granularity = $filters['granularity'] ?? 'day';
     $date_format = $this->getDateFormatForGranularity($granularity);
 
-    $closed_tid = $this->getClosedStatusTid();
+    $closed_tids = $this->getClosedStatusTids();
 
-    if (!$closed_tid) {
+    if ($closed_tids === []) {
       return [
         'data' => [],
         'granularity' => $granularity,
@@ -765,7 +882,7 @@ class MetricsCalculatorService {
         INNER JOIN {paragraph__field_status_term} pst ON p_closed.id = pst.entity_id AND pst.deleted = 0
         %s
         WHERE n.type = 'service_request'
-          AND pst.field_status_term_target_id = :closed_tid
+          AND pst.field_status_term_target_id IN (%s)
           AND p_closed.created > first_para.first_created
           %s
       ) closed_period
@@ -777,16 +894,17 @@ class MetricsCalculatorService {
     $group_expr = str_replace('n.created', 'p_closed.created', $this->getGroupExpressionForGranularity($granularity));
     $joins = '';
     $conditions = '';
-    $args = [':closed_tid' => $closed_tid];
+    $args = [];
+    $closed_placeholder_string = $this->addIntegerPlaceholders($closed_tids, 'closed_tid', $args);
 
     // Jurisdiction filter.
-    if (!empty($filters['jurisdiction_id'])) {
+    $jurisdiction_ids = $this->getExpandedJurisdictionIds($filters);
+    if ($jurisdiction_ids !== []) {
       $joins .= "
         INNER JOIN {group_relationship_field_data} gr ON n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'
         INNER JOIN {groups_field_data} g ON gr.gid = g.id AND g.type = :jurisdiction_group_type AND g.default_langcode = 1
       ";
-      $conditions .= ' AND g.id = :jurisdiction_id';
-      $args[':jurisdiction_id'] = $filters['jurisdiction_id'];
+      $conditions .= ' AND g.id IN (' . $this->addIntegerPlaceholders($jurisdiction_ids, 'jurisdiction_id', $args) . ')';
       $args[':jurisdiction_group_type'] = $this->jurisdictionGroupType();
     }
 
@@ -816,7 +934,7 @@ class MetricsCalculatorService {
       }
     }
 
-    $final_query = sprintf($query, $group_expr, $date_format, $joins, $conditions);
+    $final_query = sprintf($query, $group_expr, $date_format, $joins, $closed_placeholder_string, $conditions);
     $results = $this->database->query($final_query, $args)->fetchAll();
 
     $output = [];
@@ -1094,15 +1212,7 @@ class MetricsCalculatorService {
       }
     }
 
-    if (!empty($filters['jurisdiction_id'])) {
-      $query->innerJoin('group_relationship_field_data', 'gr', "n.nid = gr.entity_id AND gr.plugin_id = 'group_node:service_request'");
-      $query->innerJoin('groups_field_data', 'g', 'gr.gid = g.id AND g.default_langcode = 1');
-      $query->condition('g.type', $this->jurisdictionGroupType());
-      $jurisdictionIds = $this->hierarchyResolver
-        ? $this->hierarchyResolver->getDescendantIds((int) $filters['jurisdiction_id'])
-        : [(int) $filters['jurisdiction_id']];
-      $query->condition('g.id', $jurisdictionIds, 'IN');
-    }
+    $this->applyJurisdictionFilter($query, $filters);
 
     if (!empty($filters['category_id'])) {
       $query->innerJoin('node__field_category', 'fc', 'n.nid = fc.entity_id AND fc.deleted = 0');
@@ -1166,6 +1276,9 @@ class MetricsCalculatorService {
 
     if (!empty($filters['jurisdiction_id'])) {
       $info['jurisdiction_id'] = (int) $filters['jurisdiction_id'];
+    }
+    elseif (!empty($filters['jurisdiction_ids']) && is_array($filters['jurisdiction_ids'])) {
+      $info['jurisdiction_ids'] = array_values(array_map('intval', $filters['jurisdiction_ids']));
     }
 
     if (!empty($filters['organisation_id'])) {
@@ -1286,7 +1399,8 @@ class MetricsCalculatorService {
       }
     }
 
-    // Get hazard category breakdown (optional - requires markaspot_vision module).
+    // Get hazard category breakdown (optional, requires markaspot_vision
+    // module).
     $by_category = [];
     if ($this->database->schema()->tableExists('media__field_ai_hazard_category')) {
       $category_query = $this->database->query("

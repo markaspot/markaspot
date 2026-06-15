@@ -13,6 +13,7 @@ use Drupal\KernelTests\KernelTestBase;
 use Drupal\markaspot_mail_inbound\Controller\InboundMailApiController;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Service\InboundMailPromoter;
+use Drupal\node\Entity\Node;
 use Drupal\taxonomy\Entity\Term;
 use Drupal\taxonomy\Entity\Vocabulary;
 use Drupal\user\Entity\Role;
@@ -471,6 +472,75 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
   }
 
   /**
+   * By-node returns the promoted mail payload, with access re-checked.
+   */
+  public function testByNodePayloadAndAccess(): void {
+    $node = Node::create([
+      'type' => 'service_request',
+      'title' => 'Promoted email report',
+    ]);
+    $node->save();
+
+    $staged = $this->mail($this->gidA, InboundMail::STATE_STAGED, 'Staged stale');
+    $staged->set('nid', ['target_id' => (int) $node->id()]);
+    $staged->set('changed', 300);
+    $staged->save();
+
+    $oldPromoted = $this->mail($this->gidA, InboundMail::STATE_PROMOTED, 'Old promoted');
+    $oldPromoted->set('nid', ['target_id' => (int) $node->id()]);
+    $oldPromoted->set('changed', 100);
+    $oldPromoted->save();
+
+    $mail = $this->mail($this->gidA, InboundMail::STATE_PROMOTED);
+    $mail->set('body', [
+      'value' => "Original citizen text.\n\n---\nStaff reply:\nWe need more detail.",
+      'format' => 'plain_text',
+    ]);
+    $mail->set('thread_message_ids', ['orig@example.org', 'reply@example.org']);
+    $mail->set('nid', ['target_id' => (int) $node->id()]);
+    $mail->set('changed', 200);
+    $mail->save();
+
+    $this->actAs(['triage'], [$this->gidA]);
+    $data = $this->json($this->controller()->byNode($node));
+    $this->assertSame((int) $mail->id(), $data['id']);
+    $this->assertSame((int) $node->id(), $data['nid']);
+    $this->assertSame('Citizen', $data['from_name']);
+    $this->assertSame('citizen@example.org', $data['from_address']);
+    $this->assertSame('Broken light', $data['subject']);
+    $this->assertSame((string) $mail->get('message_id')->value, $data['message_id']);
+    $this->assertSame(['orig@example.org', 'reply@example.org'], $data['thread_message_ids']);
+    $this->assertIsInt($data['created']);
+    $this->assertStringContainsString('Original citizen text.', $data['body']);
+    $this->assertStringContainsString('Staff reply:', $data['body']);
+
+    $this->actAs(['triage'], [$this->gidB]);
+    $denied = $this->controller()->byNode($node);
+    $this->assertSame(403, $denied->getStatusCode());
+
+    $this->actAs(['triage'], [$this->gidA]);
+    $otherNode = Node::create([
+      'type' => 'service_request',
+      'title' => 'Web report',
+    ]);
+    $otherNode->save();
+    $missing = $this->controller()->byNode($otherNode);
+    $this->assertSame(404, $missing->getStatusCode());
+
+    \Drupal::entityTypeManager()->getStorage('node_type')->create([
+      'type' => 'page',
+      'name' => 'Page',
+    ])->save();
+    $pageNode = Node::create([
+      'type' => 'page',
+      'title' => 'Not a service request',
+    ]);
+    $pageNode->save();
+    $wrongBundle = $this->controller()->byNode($pageNode);
+    $this->assertSame(404, $wrongBundle->getStatusCode());
+  }
+
+  /**
    * Promote: success payload, 409 / 422 / 503 error contract.
    *
    * A codeless category is now promotable (the promoter sets field_category
@@ -583,12 +653,13 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->actAs(['administrator']);
 
     // A mail with no suggestion (default state).
-    $unsuggestedMail = $this->mail($this->gidA);
+    $this->mail($this->gidA);
     $listData = $this->json($this->controller()->list(Request::create('/api/inbound-mail')));
     $this->assertCount(1, $listData['items']);
     $row = $listData['items'][0];
 
-    // All four keys must be present in list rows, with their null/none defaults.
+    // All four keys must be present in list rows, with their null/none
+    // defaults.
     $this->assertArrayHasKey('suggested_category_tid', $row, 'List row must carry suggested_category_tid');
     $this->assertArrayHasKey('suggested_category_label', $row, 'List row must carry suggested_category_label');
     $this->assertArrayHasKey('suggestion_confidence', $row, 'List row must carry suggestion_confidence');
@@ -636,7 +707,7 @@ class InboundMailApiControllerKernelTest extends KernelTestBase {
     $this->assertEqualsWithDelta(0.92, (float) $detailData['suggestion_confidence'], 0.001);
     $this->assertSame(InboundMail::SUGGESTION_DONE, $detailData['suggestion_status']);
 
-    // Fidelity ai_available fidelity is present and boolean in the list response.
+    // Fidelity ai_available is present and boolean in the list response.
     // (The detail endpoint does not embed fidelity, only the list does.)
     $this->assertArrayHasKey('ai_available', $listData2['fidelity']);
     $this->assertIsBool($listData2['fidelity']['ai_available']);

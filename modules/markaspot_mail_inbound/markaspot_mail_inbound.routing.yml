@@ -74,6 +74,22 @@ markaspot_mail_inbound.api_detail:
       inbound_mail:
         type: 'entity:inbound_mail'
 
+markaspot_mail_inbound.api_by_node:
+  path: '/api/inbound-mail/by-node/{node}'
+  defaults:
+    _controller: '\Drupal\markaspot_mail_inbound\Controller\InboundMailApiController::byNode'
+    _title: 'Inbound mail by service request'
+  methods: [GET]
+  requirements:
+    _permission: 'triage inbound mail'
+    node: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+    parameters:
+      node:
+        type: 'entity:node'
+
 markaspot_mail_inbound.api_attachment:
   path: '/api/inbound-mail/{inbound_mail}/attachment/{fid}'
   defaults:

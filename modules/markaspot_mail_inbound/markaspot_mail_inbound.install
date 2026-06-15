@@ -167,6 +167,7 @@ function markaspot_mail_inbound_requirements(string $phase): array {
  */
 function markaspot_mail_inbound_install(): void {
   _markaspot_mail_inbound_install_inbound_mail_entity();
+  _markaspot_mail_inbound_configure_service_request_source_jsonapi();
 }
 
 /**
@@ -414,4 +415,62 @@ function markaspot_mail_inbound_update_11905(): string {
     ->setDescription(t('AI-generated neutral problem description for the public report, without salutation, sign-off, names or other PII. Used as the promoted node body when non-empty; falls back to the original mail text.'));
   $updateManager->installFieldStorageDefinition('suggested_description', 'inbound_mail', 'markaspot_mail_inbound', $definition);
   return (string) t('Installed the suggested_description field on inbound_mail.');
+}
+
+/**
+ * Expose the service_request source channel in JSON:API (#467).
+ *
+ * Existing tenants already have the node--service_request resource config; the
+ * fresh-install config/optional change alone would not update them. Load and
+ * mutate that config entity so jsonapi_extras rebuilds its resource metadata.
+ */
+function markaspot_mail_inbound_update_11906(): string {
+  return _markaspot_mail_inbound_configure_service_request_source_jsonapi();
+}
+
+/**
+ * Enables field_source and pins raw email message-id off for service requests.
+ *
+ * @return string
+ *   Human-readable result for update hooks.
+ */
+function _markaspot_mail_inbound_configure_service_request_source_jsonapi(): string {
+  if (!\Drupal::entityTypeManager()->hasDefinition('jsonapi_resource_config')) {
+    return (string) t('Skipped node--service_request JSON:API resource config: jsonapi_extras not enabled on this tenant.');
+  }
+
+  $storage = \Drupal::entityTypeManager()->getStorage('jsonapi_resource_config');
+  $resource = $storage->load('node--service_request');
+  if (!$resource) {
+    return (string) t('Skipped node--service_request JSON:API resource config: resource not enabled on this tenant.');
+  }
+
+  $fields = $resource->get('resourceFields') ?? [];
+  $fields = is_array($fields) ? $fields : [];
+  $original_fields = $fields;
+  $fields['field_source'] = [
+    'disabled' => FALSE,
+    'fieldName' => 'field_source',
+    'publicName' => 'field_source',
+    'enhancer' => [
+      'id' => '',
+    ],
+  ];
+  $fields['field_email_message_id'] = [
+    'disabled' => TRUE,
+    'fieldName' => 'field_email_message_id',
+    'publicName' => 'field_email_message_id',
+    'enhancer' => [
+      'id' => '',
+    ],
+  ];
+
+  if ($original_fields === $fields) {
+    return (string) t('The service_request source JSON:API resource field is already configured.');
+  }
+
+  $resource->set('resourceFields', $fields);
+  $resource->save();
+
+  return (string) t('Enabled service_request field_source and disabled field_email_message_id on the JSON:API resource.');
 }

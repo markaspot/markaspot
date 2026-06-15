@@ -7,7 +7,9 @@ namespace Drupal\markaspot_dashboard\Controller;
 use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_dashboard\Service\MetricsCalculatorService;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -23,6 +25,8 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * - Time series volume (created/closed counts over time)
  * - Time series processing (processing time trends)
  * - Forwarding details (breakdown by organisation and category)
+ *
+ * @phpstan-consistent-constructor
  */
 class DashboardController extends ControllerBase {
 
@@ -39,19 +43,28 @@ class DashboardController extends ControllerBase {
   protected RequestStack $requestStack;
 
   /**
+   * The jurisdiction hierarchy resolver.
+   */
+  protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
    * Constructs a DashboardController object.
    *
    * @param \Drupal\markaspot_dashboard\Service\MetricsCalculatorService $metrics_calculator
    *   The metrics calculator service.
    * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
    *   The request stack.
+   * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
+   *   The jurisdiction hierarchy resolver.
    */
   public function __construct(
     MetricsCalculatorService $metrics_calculator,
     RequestStack $request_stack,
+    ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
   ) {
     $this->metricsCalculator = $metrics_calculator;
     $this->requestStack = $request_stack;
+    $this->hierarchyResolver = $hierarchy_resolver;
   }
 
   /**
@@ -60,7 +73,10 @@ class DashboardController extends ControllerBase {
   public static function create(ContainerInterface $container): static {
     return new static(
       $container->get('markaspot_dashboard.metrics_calculator'),
-      $container->get('request_stack')
+      $container->get('request_stack'),
+      $container->has('markaspot_group.hierarchy_resolver')
+        ? $container->get('markaspot_group.hierarchy_resolver')
+        : NULL,
     );
   }
 
@@ -92,6 +108,10 @@ class DashboardController extends ControllerBase {
 
     // Remove empty filters.
     $filters = array_filter($filters, fn($value) => $value !== NULL && $value !== '');
+    $filters = $this->applyDashboardJurisdictionScope($filters);
+    if ($filters === NULL) {
+      return $this->forbiddenDashboardScopeResponse();
+    }
 
     // Calculate all KPIs.
     $kpis = $this->metricsCalculator->calculateAllKpis($filters);
@@ -117,6 +137,7 @@ class DashboardController extends ControllerBase {
       'url.query_args:organisation_id',
       'url.query_args:category_id',
       'url.query_args:status_id',
+      'user',
     ]);
 
     // Set max age (5 minutes for dashboard data).
@@ -158,6 +179,10 @@ class DashboardController extends ControllerBase {
     }
 
     $filters = array_filter($filters, fn($value) => $value !== NULL && $value !== '');
+    $filters = $this->applyDashboardJurisdictionScope($filters);
+    if ($filters === NULL) {
+      return $this->forbiddenDashboardScopeResponse();
+    }
 
     $data = $this->metricsCalculator->calculateTimeSeriesVolume($filters);
 
@@ -199,6 +224,10 @@ class DashboardController extends ControllerBase {
     }
 
     $filters = array_filter($filters, fn($value) => $value !== NULL && $value !== '');
+    $filters = $this->applyDashboardJurisdictionScope($filters);
+    if ($filters === NULL) {
+      return $this->forbiddenDashboardScopeResponse();
+    }
 
     $data = $this->metricsCalculator->calculateTimeSeriesProcessing($filters);
 
@@ -230,6 +259,10 @@ class DashboardController extends ControllerBase {
     ];
 
     $filters = array_filter($filters, fn($value) => $value !== NULL && $value !== '');
+    $filters = $this->applyDashboardJurisdictionScope($filters);
+    if ($filters === NULL) {
+      return $this->forbiddenDashboardScopeResponse();
+    }
 
     $data = $this->metricsCalculator->calculateForwardingDetails($filters);
 
@@ -245,6 +278,7 @@ class DashboardController extends ControllerBase {
       'url.query_args:start_date',
       'url.query_args:end_date',
       'url.query_args:jurisdiction_id',
+      'user',
     ]);
     $cache_metadata->setCacheMaxAge(300);
 
@@ -278,6 +312,7 @@ class DashboardController extends ControllerBase {
       'url.query_args:jurisdiction_id',
       'url.query_args:category_id',
       'url.query_args:status_id',
+      'user',
     ]);
 
     $cache_metadata->setCacheMaxAge(300);
@@ -315,6 +350,10 @@ class DashboardController extends ControllerBase {
 
     // Remove empty filters.
     $filters = array_filter($filters, fn($value) => $value !== NULL && $value !== '');
+    $filters = $this->applyDashboardJurisdictionScope($filters);
+    if ($filters === NULL) {
+      return $this->forbiddenDashboardScopeResponse();
+    }
 
     // Calculate hazard statistics.
     $data = $this->metricsCalculator->calculateHazardStatistics($filters);
@@ -334,11 +373,102 @@ class DashboardController extends ControllerBase {
       'url.query_args:organisation_id',
       'url.query_args:category_id',
       'url.query_args:status_id',
+      'user',
     ]);
     $cache_metadata->setCacheMaxAge(300);
 
     $response->addCacheableDependency($cache_metadata);
 
+    return $response;
+  }
+
+  /**
+   * Applies tenant-admin jurisdiction scope to dashboard metric filters.
+   *
+   * @param array $filters
+   *   Request filters.
+   *
+   * @return array|null
+   *   Scoped filters, or NULL when the requested scope is forbidden.
+   */
+  protected function applyDashboardJurisdictionScope(array $filters): ?array {
+    if ($this->currentUserCanSeeAllJurisdictions()) {
+      return $filters;
+    }
+
+    if (!in_array('tenant_admin', $this->currentUser()->getRoles(), TRUE)) {
+      return NULL;
+    }
+
+    $managedJurisdictionIds = $this->currentUserJurisdictionIds();
+    if ($managedJurisdictionIds === []) {
+      return NULL;
+    }
+
+    if (!empty($filters['jurisdiction_id'])) {
+      return $this->currentUserCanAccessJurisdiction((int) $filters['jurisdiction_id'])
+        ? $filters
+        : NULL;
+    }
+
+    $filters['jurisdiction_ids'] = $managedJurisdictionIds;
+    return $filters;
+  }
+
+  /**
+   * Checks if the current user has global dashboard scope.
+   */
+  protected function currentUserCanSeeAllJurisdictions(): bool {
+    $account = $this->currentUser();
+    return (int) $account->id() === 1
+      || $account->hasPermission('administer nodes')
+      || $account->hasPermission('administer site configuration');
+  }
+
+  /**
+   * Checks whether the current tenant admin can access a jurisdiction scope.
+   */
+  protected function currentUserCanAccessJurisdiction(int $jurisdictionId): bool {
+    foreach ($this->currentUserJurisdictionIds() as $managedId) {
+      $scopeIds = $this->hierarchyResolver
+        ? $this->hierarchyResolver->getDescendantIds($managedId)
+        : [$managedId];
+      if (in_array($jurisdictionId, array_map('intval', $scopeIds), TRUE)) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Gets jurisdiction group ids administered by the current user.
+   *
+   * @return int[]
+   *   Directly administered jurisdiction group ids.
+   */
+  protected function currentUserJurisdictionIds(): array {
+    $memberships = GroupMembership::loadByUser($this->currentUser(), $this->jurisdictionRoleIds('tenant_admin'));
+    $ids = [];
+    foreach ($memberships as $membership) {
+      $group = $membership->getGroup();
+      if ($this->isJurisdictionGroup($group)) {
+        $ids[] = (int) $group->id();
+      }
+    }
+
+    return array_values(array_unique($ids));
+  }
+
+  /**
+   * Returns a cache-safe forbidden response for foreign metric scopes.
+   */
+  protected function forbiddenDashboardScopeResponse(): CacheableJsonResponse {
+    $response = new CacheableJsonResponse(['error' => 'Access denied.'], 403);
+    $cache_metadata = new CacheableMetadata();
+    $cache_metadata->addCacheContexts(['user']);
+    $cache_metadata->setCacheMaxAge(0);
+    $response->addCacheableDependency($cache_metadata);
     return $response;
   }
 

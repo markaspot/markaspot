@@ -272,6 +272,12 @@ resourceFields:
     publicName: field_service_provider_notes
     enhancer:
       id: ''
+  field_source:
+    disabled: false
+    fieldName: field_source
+    publicName: field_source
+    enhancer:
+      id: ''
   field_sp_attachment:
     disabled: false
     fieldName: field_sp_attachment
