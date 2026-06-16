@@ -498,3 +498,25 @@ function markaspot_open311_update_11810(): TranslatableMarkup {
     '@messages' => implode(' ', $messages),
   ]);
 }
+
+/**
+ * Seed configurable Open311 rate-limit thresholds (#474).
+ */
+function markaspot_open311_update_11811(): TranslatableMarkup {
+  $config = \Drupal::configFactory()->getEditable('markaspot_open311.settings');
+  $rate_limit = $config->get('rate_limit') ?? [];
+
+  // Union keeps any operator-tuned values and only fills missing keys.
+  $rate_limit += [
+    'threshold' => 60,
+    'create_threshold' => 5,
+    'window' => 60,
+  ];
+
+  $config->set('rate_limit', $rate_limit)->save(TRUE);
+
+  return new TranslatableMarkup('Seeded Open311 rate_limit thresholds (create_threshold=@create per @window s).', [
+    '@create' => $rate_limit['create_threshold'],
+    '@window' => $rate_limit['window'],
+  ]);
+}

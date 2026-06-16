@@ -6,8 +6,6 @@ use Drupal\Core\Entity\EntityConstraintViolationListInterface;
 
 /**
  * A class to represent a 400.
- *
- * @property array $headers
  */
 class GeoreportException extends \Exception {
 
@@ -17,6 +15,13 @@ class GeoreportException extends \Exception {
    * @var \Drupal\Core\Entity\EntityConstraintViolationListInterface
    */
   protected $violations;
+
+  /**
+   * HTTP headers to attach to the error response.
+   *
+   * @var array
+   */
+  protected array $headers = [];
 
   /**
    * Gets the constraint violations associated with this exception.

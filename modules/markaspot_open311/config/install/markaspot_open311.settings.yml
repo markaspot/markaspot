@@ -45,3 +45,10 @@ response_visibility:
   public_organisation: false
   public_district: true
   jurisdiction_display: 'leaf'
+# Rate Limiting (flood control) for the Open311 REST resources.
+# create_threshold throttles report creation (POST) harder than reads as
+# anti-bombing defense-in-depth behind the Nuxt proxy (#474); 3-5 recommended.
+rate_limit:
+  threshold: 60
+  create_threshold: 5
+  window: 60

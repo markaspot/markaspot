@@ -21,6 +21,9 @@ use Drupal\markaspot_open311\Exception\GeoreportException;
  * - $this->currentUser (\Drupal\Core\Session\AccountInterface)
  * - $this->requestStack (\Symfony\Component\HttpFoundation\RequestStack)
  * - $this->logger (\Psr\Log\LoggerInterface)
+ * - $this->config (the markaspot_open311.settings config object) — supplies
+ *   the configurable rate_limit thresholds; the constants below are the
+ *   fallback defaults when a key is unset.
  *
  * The contract is documented at the property level on the consuming
  * class.
@@ -28,9 +31,18 @@ use Drupal\markaspot_open311\Exception\GeoreportException;
 trait Open311RateLimitTrait {
 
   /**
-   * Rate limit: max requests per window for regular users.
+   * Default max requests per window for read/search/update events.
    */
   protected const RATE_LIMIT_THRESHOLD = 60;
+
+  /**
+   * Default max create (POST) requests per window.
+   *
+   * Report creation is throttled harder than reads as anti-bombing
+   * defense-in-depth behind the Nuxt proxy (#474). Tune via
+   * markaspot_open311.settings:rate_limit.create_threshold (3-5 recommended).
+   */
+  protected const RATE_LIMIT_CREATE_THRESHOLD = 5;
 
   /**
    * Rate limit window in seconds (1 minute).
@@ -96,6 +108,41 @@ trait Open311RateLimitTrait {
   }
 
   /**
+   * Resolves the flood threshold for an event from config, with a default.
+   *
+   * The create path (georeport_api_create) carries its own stricter default
+   * so report creation can be throttled hard without lowering the read or
+   * search limit. Both are configurable under
+   * markaspot_open311.settings:rate_limit.
+   *
+   * @param string $name
+   *   The flood event name.
+   *
+   * @return int
+   *   The maximum number of requests allowed in the window.
+   */
+  protected function rateLimitThreshold(string $name): int {
+    $is_create = $name === 'georeport_api_create';
+    $key = $is_create ? 'rate_limit.create_threshold' : 'rate_limit.threshold';
+    $value = $this->config->get($key);
+    if (is_numeric($value) && (int) $value > 0) {
+      return (int) $value;
+    }
+    return $is_create ? self::RATE_LIMIT_CREATE_THRESHOLD : self::RATE_LIMIT_THRESHOLD;
+  }
+
+  /**
+   * Resolves the flood window in seconds from config, with a default.
+   *
+   * @return int
+   *   The flood window length in seconds.
+   */
+  protected function rateLimitWindow(): int {
+    $value = $this->config->get('rate_limit.window');
+    return is_numeric($value) && (int) $value > 0 ? (int) $value : self::RATE_LIMIT_WINDOW;
+  }
+
+  /**
    * Checks flood control and throws if the rate limit is exceeded.
    *
    * @param string $name
@@ -114,12 +161,16 @@ trait Open311RateLimitTrait {
       ? $this->requestStack->getCurrentRequest()->getClientIp()
       : (string) $this->currentUser->id();
 
-    if (!$this->flood->isAllowed($name, self::RATE_LIMIT_THRESHOLD, self::RATE_LIMIT_WINDOW, $identifier)) {
+    $threshold = $this->rateLimitThreshold($name);
+    $window = $this->rateLimitWindow();
+
+    if (!$this->flood->isAllowed($name, $threshold, $window, $identifier)) {
       // Path-info disambiguates which endpoint tripped the gate when
-      // multiple resources share a flood key (e.g. create + update both
-      // register under georeport_api_post). Without it the operator sees
-      // 429 spikes in the log without knowing whether /requests or
-      // /requests/{id} produced them.
+      // adjacent endpoints land in the same rate-limit log channel (e.g.
+      // georeport_api_create on /requests vs georeport_api_post on
+      // /requests/{id}). Without it the operator sees 429 spikes in the
+      // log without knowing whether /requests or /requests/{id} produced
+      // them.
       $request = $this->requestStack->getCurrentRequest();
       $this->logger->warning('Rate limit exceeded for @name by @identifier on @path', [
         '@name' => $name,
@@ -131,13 +182,13 @@ trait Open311RateLimitTrait {
       // 502 throws on the same endpoints already follow the same
       // pattern; mirroring it here keeps the contract consistent and
       // future-proofs the trait against shrinking RATE_LIMIT_WINDOW.
-      $retryAfter = self::RATE_LIMIT_WINDOW + random_int(0, (int) (self::RATE_LIMIT_WINDOW / 2));
+      $retryAfter = $window + random_int(0, (int) ($window / 2));
       $exception = new GeoreportException('Too many requests. Please slow down.', 429);
       $exception->setHeaders(['Retry-After' => (string) $retryAfter]);
       throw $exception;
     }
 
-    $this->flood->register($name, self::RATE_LIMIT_WINDOW, $identifier);
+    $this->flood->register($name, $window, $identifier);
   }
 
 }

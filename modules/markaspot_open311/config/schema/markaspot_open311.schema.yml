@@ -33,6 +33,21 @@ markaspot_open311.settings:
       type: boolean
       label: 'Auto-create status notes'
 
+    # Rate Limiting (flood control)
+    rate_limit:
+      type: mapping
+      label: 'Flood control thresholds'
+      mapping:
+        threshold:
+          type: integer
+          label: 'Max read/search/update requests per window'
+        create_threshold:
+          type: integer
+          label: 'Max create (POST) requests per window'
+        window:
+          type: integer
+          label: 'Flood window in seconds'
+
     # Field Access Configuration
     field_access:
       type: mapping

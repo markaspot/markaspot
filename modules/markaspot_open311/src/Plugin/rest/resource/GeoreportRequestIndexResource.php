@@ -655,9 +655,10 @@ final class GeoreportRequestIndexResource extends ResourceBase {
    *   Throws exception expected.
    */
   public function post($request_data) {
-    // Apply stricter rate limiting for POST requests (creates new content).
-    // Moderation, editorial, and admin users are exempt.
-    $this->checkRateLimit('georeport_api_post');
+    // Stricter, create-specific rate limiting for report creation (#474,
+    // anti-bombing defense-in-depth). Staff roles are exempt; configurable
+    // via rate_limit.create_threshold.
+    $this->checkRateLimit('georeport_api_create');
 
     try {
       $claimedJurisdictionId = $this->resolveClaimedJurisdictionId($request_data);
