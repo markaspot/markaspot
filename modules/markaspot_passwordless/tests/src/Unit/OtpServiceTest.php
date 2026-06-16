@@ -13,7 +13,6 @@ use Drupal\Core\Database\Query\Select;
 use Drupal\Core\Database\Query\Update;
 use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\Database\Transaction;
-use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityRepositoryInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -22,10 +21,10 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRoleInterface;
-use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Drupal\Tests\UnitTestCase;
@@ -61,6 +60,7 @@ class OtpServiceTest extends UnitTestCase {
     ?LanguageManagerInterface $languageManager = NULL,
     ?EntityTypeManagerInterface $entityTypeManager = NULL,
     string $jurisdictionGroupType = 'jur',
+    ?array $memberships = NULL,
   ): OtpService {
     $mail = $this->createMock(MailManagerInterface::class);
     $mail->method('mail')->willReturn(['result' => TRUE]);
@@ -110,6 +110,55 @@ class OtpServiceTest extends UnitTestCase {
     }
 
     $moduleHandler ??= $this->createMock(ModuleHandlerInterface::class);
+
+    if ($memberships !== NULL) {
+      return new class(
+        $database,
+        $mail,
+        $currentUser,
+        $logger,
+        $configFactory,
+        $entityTypeManager,
+        $languageManager,
+        $moduleHandler,
+        $entityRepository,
+        $memberships,
+      ) extends OtpService {
+
+        public function __construct(
+          Connection $database,
+          MailManagerInterface $mail_manager,
+          AccountProxyInterface $current_user,
+          LoggerInterface $logger,
+          ConfigFactoryInterface $config_factory,
+          EntityTypeManagerInterface $entity_type_manager,
+          LanguageManagerInterface $language_manager,
+          ModuleHandlerInterface $module_handler,
+          ?EntityRepositoryInterface $entityRepository,
+          private readonly array $testMemberships,
+        ) {
+          parent::__construct(
+            $database,
+            $mail_manager,
+            $current_user,
+            $logger,
+            $config_factory,
+            $entity_type_manager,
+            $language_manager,
+            $module_handler,
+            $entityRepository,
+          );
+        }
+
+        /**
+         * {@inheritdoc}
+         */
+        protected function loadUserGroupMemberships(AccountInterface $user): array {
+          return $this->testMemberships;
+        }
+
+      };
+    }
 
     return new OtpService(
       $database,
@@ -191,12 +240,6 @@ class OtpServiceTest extends UnitTestCase {
 
     };
 
-    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
-    $membershipLoader->expects($this->once())
-      ->method('loadByUser')
-      ->with($user)
-      ->willReturn([$membership]);
-
     $entityRepository = $this->createMock(EntityRepositoryInterface::class);
     $entityRepository->expects($this->once())
       ->method('getTranslationFromContext')
@@ -222,13 +265,17 @@ class OtpServiceTest extends UnitTestCase {
       ->with('de', 'group.role.jur-member')
       ->willReturn($override);
 
-    $container = new ContainerBuilder();
-    $container->set('group.membership_loader', $membershipLoader);
-    \Drupal::setContainer($container);
-
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
-    $service = $this->buildService($this->createMock(Connection::class), $moduleHandler, $entityRepository, $languageManager);
+    $service = $this->buildService(
+      $this->createMock(Connection::class),
+      $moduleHandler,
+      $entityRepository,
+      $languageManager,
+      NULL,
+      'jur',
+      [$membership],
+    );
 
     $method = new \ReflectionMethod($service, 'getUserGroups');
     $method->setAccessible(TRUE);
@@ -291,16 +338,6 @@ class OtpServiceTest extends UnitTestCase {
 
     };
 
-    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
-    $membershipLoader->expects($this->once())
-      ->method('loadByUser')
-      ->with($user)
-      ->willReturn([$membership]);
-
-    $container = new ContainerBuilder();
-    $container->set('group.membership_loader', $membershipLoader);
-    \Drupal::setContainer($container);
-
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
     $service = $this->buildService(
@@ -310,6 +347,7 @@ class OtpServiceTest extends UnitTestCase {
       NULL,
       NULL,
       'jurisdiction',
+      [$membership],
     );
 
     $method = new \ReflectionMethod($service, 'getUserGroups');
@@ -355,6 +393,30 @@ class OtpServiceTest extends UnitTestCase {
     $this->assertSame([
       'tos_accepted' => TRUE,
       'tos_accepted_at' => 1714567890,
+    ], $method->invoke($service, $user));
+  }
+
+  /**
+   * Tests frontend permissions expose only known dashboard capability keys.
+   *
+   * @covers ::getFrontendPermissions
+   */
+  public function testGetFrontendPermissionsReturnsDashboardCapabilities(): void {
+    $user = $this->createMock(User::class);
+    $user->method('hasPermission')
+      ->willReturnMap([
+        ['administer site configuration', FALSE],
+        ['triage inbound mail', TRUE],
+        ['delete any service_request content', TRUE],
+      ]);
+
+    $service = $this->buildService($this->createMock(Connection::class));
+    $method = new \ReflectionMethod($service, 'getFrontendPermissions');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame([
+      'triage inbound mail',
+      'delete requests',
     ], $method->invoke($service, $user));
   }
 

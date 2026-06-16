@@ -20,7 +20,6 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRoleInterface;
-use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
@@ -161,14 +160,79 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $container->set('string_translation', $this->getStringTranslationStub());
     \Drupal::setContainer($container);
 
-    $this->controller = new PasswordlessAuthController(
+    $this->controller = $this->buildController();
+  }
+
+  /**
+   * Builds the controller, optionally stubbing group membership loading.
+   */
+  protected function buildController(
+    ?ConfigFactoryInterface $configFactory = NULL,
+    ?EntityRepositoryInterface $entityRepository = NULL,
+    ?array $memberships = NULL,
+    ?FrontendUrlService $frontendUrlService = NULL,
+  ): PasswordlessAuthController {
+    $configFactory ??= $this->configFactory;
+
+    if ($memberships !== NULL) {
+      return new class(
+        $this->otpService,
+        $this->currentUser,
+        $this->flood,
+        $configFactory,
+        $this->sessionConfiguration,
+        $this->keyValueExpirable,
+        $this->featureFlagChecker,
+        $entityRepository,
+        $frontendUrlService,
+        $memberships,
+      ) extends PasswordlessAuthController {
+
+        public function __construct(
+          OtpService $otp_service,
+          AccountInterface $current_user,
+          FloodInterface $flood,
+          ConfigFactoryInterface $config_factory,
+          SessionConfigurationInterface $session_configuration,
+          KeyValueExpirableFactoryInterface $key_value_expirable,
+          FeatureFlagChecker $feature_flag_checker,
+          ?EntityRepositoryInterface $entityRepository,
+          ?FrontendUrlService $frontendUrlService,
+          private readonly array $testMemberships,
+        ) {
+          parent::__construct(
+            $otp_service,
+            $current_user,
+            $flood,
+            $config_factory,
+            $session_configuration,
+            $key_value_expirable,
+            $feature_flag_checker,
+            $entityRepository,
+            $frontendUrlService,
+          );
+        }
+
+        /**
+         * {@inheritdoc}
+         */
+        protected function loadUserGroupMemberships(AccountInterface $user): array {
+          return $this->testMemberships;
+        }
+
+      };
+    }
+
+    return new PasswordlessAuthController(
       $this->otpService,
       $this->currentUser,
       $this->flood,
-      $this->configFactory,
+      $configFactory,
       $this->sessionConfiguration,
       $this->keyValueExpirable,
       $this->featureFlagChecker,
+      $entityRepository,
+      $frontendUrlService,
     );
   }
 
@@ -241,12 +305,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     };
 
-    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
-    $membershipLoader->expects($this->once())
-      ->method('loadByUser')
-      ->with($user)
-      ->willReturn([$membership]);
-
     $entityRepository = $this->createMock(EntityRepositoryInterface::class);
     $entityRepository->expects($this->once())
       ->method('getTranslationFromContext')
@@ -277,19 +335,9 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     $container = \Drupal::getContainer();
     $container->set('module_handler', $moduleHandler);
-    $container->set('group.membership_loader', $membershipLoader);
     $container->set('language_manager', $languageManager);
 
-    $controller = new PasswordlessAuthController(
-      $this->otpService,
-      $this->currentUser,
-      $this->flood,
-      $this->configFactory,
-      $this->sessionConfiguration,
-      $this->keyValueExpirable,
-      $this->featureFlagChecker,
-      $entityRepository,
-    );
+    $controller = $this->buildController(NULL, $entityRepository, [$membership]);
 
     $method = new \ReflectionMethod($controller, 'getUserGroups');
     $method->setAccessible(TRUE);
@@ -353,12 +401,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     };
 
-    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
-    $membershipLoader->expects($this->once())
-      ->method('loadByUser')
-      ->with($user)
-      ->willReturn([$membership]);
-
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
 
@@ -373,17 +415,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     $container = \Drupal::getContainer();
     $container->set('module_handler', $moduleHandler);
-    $container->set('group.membership_loader', $membershipLoader);
 
-    $controller = new PasswordlessAuthController(
-      $this->otpService,
-      $this->currentUser,
-      $this->flood,
-      $configFactory,
-      $this->sessionConfiguration,
-      $this->keyValueExpirable,
-      $this->featureFlagChecker,
-    );
+    $controller = $this->buildController($configFactory, NULL, [$membership]);
 
     $method = new \ReflectionMethod($controller, 'getUserGroups');
     $method->setAccessible(TRUE);
@@ -469,28 +502,13 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     };
 
-    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
-    $membershipLoader->expects($this->once())
-      ->method('loadByUser')
-      ->with($user)
-      ->willReturn([$membership]);
-
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
 
     $container = \Drupal::getContainer();
     $container->set('module_handler', $moduleHandler);
-    $container->set('group.membership_loader', $membershipLoader);
 
-    $controller = new PasswordlessAuthController(
-      $this->otpService,
-      $this->currentUser,
-      $this->flood,
-      $this->configFactory,
-      $this->sessionConfiguration,
-      $this->keyValueExpirable,
-      $this->featureFlagChecker,
-    );
+    $controller = $this->buildController(NULL, NULL, [$membership]);
 
     $method = new \ReflectionMethod($controller, 'getUserGroups');
     $method->setAccessible(TRUE);
@@ -564,28 +582,13 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     };
 
-    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
-    $membershipLoader->expects($this->once())
-      ->method('loadByUser')
-      ->with($user)
-      ->willReturn([$membership]);
-
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
 
     $container = \Drupal::getContainer();
     $container->set('module_handler', $moduleHandler);
-    $container->set('group.membership_loader', $membershipLoader);
 
-    $controller = new PasswordlessAuthController(
-      $this->otpService,
-      $this->currentUser,
-      $this->flood,
-      $this->configFactory,
-      $this->sessionConfiguration,
-      $this->keyValueExpirable,
-      $this->featureFlagChecker,
-    );
+    $controller = $this->buildController(NULL, NULL, [$membership]);
 
     $method = new \ReflectionMethod($controller, 'getUserGroups');
     $method->setAccessible(TRUE);
@@ -636,28 +639,13 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     };
 
-    $membershipLoader = $this->createMock(GroupMembershipLoaderInterface::class);
-    $membershipLoader->expects($this->once())
-      ->method('loadByUser')
-      ->with($user)
-      ->willReturn([$membership]);
-
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')->with('group')->willReturn(TRUE);
 
     $container = \Drupal::getContainer();
     $container->set('module_handler', $moduleHandler);
-    $container->set('group.membership_loader', $membershipLoader);
 
-    $controller = new PasswordlessAuthController(
-      $this->otpService,
-      $this->currentUser,
-      $this->flood,
-      $this->configFactory,
-      $this->sessionConfiguration,
-      $this->keyValueExpirable,
-      $this->featureFlagChecker,
-    );
+    $controller = $this->buildController(NULL, NULL, [$membership]);
 
     $method = new \ReflectionMethod($controller, 'getUserGroups');
     $method->setAccessible(TRUE);
@@ -981,6 +969,12 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->currentUser->method('getAccountName')->willReturn('alice');
     $this->currentUser->method('getEmail')->willReturn('alice@example.com');
     $this->currentUser->method('getRoles')->willReturn(['authenticated']);
+    $this->currentUser->method('hasPermission')
+      ->willReturnMap([
+        ['administer site configuration', FALSE],
+        ['triage inbound mail', TRUE],
+        ['delete any service_request content', FALSE],
+      ]);
 
     $tosField = $this->createMock(FieldItemListInterface::class);
     $tosField->method('getString')->willReturn('1714567890');
@@ -1006,6 +1000,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['authenticated']);
+    $this->assertSame(['triage inbound mail'], $data['user']['permissions']);
     $this->assertTrue($data['user']['tos_accepted']);
     $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
   }
@@ -1543,17 +1538,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     $this->currentUser->method('id')->willReturn(42);
 
-    $userEntity = $this->getMockBuilder(\stdClass::class)
-      ->addMethods([
-        'set',
-        'save',
-        'id',
-        'getAccountName',
-        'getEmail',
-        'getRoles',
-        'getPreferredLangcode',
-      ])
-      ->getMock();
+    $userEntity = $this->createMock(UserInterface::class);
     $userEntity->expects($this->once())
       ->method('set')
       ->with('preferred_langcode', 'de');
@@ -1563,6 +1548,10 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $userEntity->method('getEmail')->willReturn('alice@example.com');
     $userEntity->method('getRoles')->willReturn(['authenticated']);
     $userEntity->method('getPreferredLangcode')->willReturn('de');
+    $userEntity->method('hasPermission')->willReturn(FALSE);
+    $userEntity->method('hasField')
+      ->with('field_tos_accepted_at')
+      ->willReturn(FALSE);
 
     $userStorage = $this->createMock(EntityStorageInterface::class);
     $userStorage->method('load')->with(42)->willReturn($userEntity);

@@ -14,6 +14,7 @@ use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Routing\TrustedRedirectResponse;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
@@ -27,6 +28,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Provides JSON API endpoints for passwordless OTP authentication.
+ *
+ * @phpstan-consistent-constructor
  */
 class PasswordlessAuthController extends ControllerBase {
 
@@ -39,6 +42,15 @@ class PasswordlessAuthController extends ControllerBase {
   protected const SESSION_HANDOFF_CLAIM_LIMIT = 30;
 
   protected const SESSION_HANDOFF_CLAIM_WINDOW = 300;
+
+  /**
+   * Drupal permissions exposed as narrow frontend dashboard capability keys.
+   */
+  protected const FRONTEND_PERMISSION_MAP = [
+    'administer site configuration' => 'administer site configuration',
+    'triage inbound mail' => 'triage inbound mail',
+    'delete requests' => 'delete any service_request content',
+  ];
 
   /**
    * The OTP service.
@@ -725,9 +737,23 @@ class PasswordlessAuthController extends ControllerBase {
       'name' => $account->getAccountName(),
       'email' => $account->getEmail(),
       'roles' => $account->getRoles(),
+      'permissions' => $this->getFrontendPermissions($account),
       'groups' => $user ? $this->getUserGroups($user) : [],
       'preferred_langcode' => $preferred_langcode,
     ] + $this->getTosAcceptancePayload($user);
+  }
+
+  /**
+   * Returns the small permission key set the Nuxt dashboard understands.
+   */
+  protected function getFrontendPermissions(AccountInterface $account): array {
+    $permissions = [];
+    foreach (static::FRONTEND_PERMISSION_MAP as $frontend_permission => $drupal_permission) {
+      if ($account->hasPermission($drupal_permission)) {
+        $permissions[] = $frontend_permission;
+      }
+    }
+    return $permissions;
   }
 
   /**
@@ -910,14 +936,7 @@ class PasswordlessAuthController extends ControllerBase {
 
       return new JsonResponse([
         'authenticated' => TRUE,
-        'user' => [
-          'uid' => $user->id(),
-          'name' => $user->getAccountName(),
-          'email' => $user->getEmail(),
-          'roles' => $user->getRoles(),
-          'groups' => $this->getUserGroups($user),
-          'preferred_langcode' => $user->getPreferredLangcode(FALSE),
-        ] + $this->getTosAcceptancePayload($user),
+        'user' => $this->buildAuthUserPayload($user, $user),
       ]);
     }
     catch (\Exception $e) {
@@ -1016,13 +1035,7 @@ class PasswordlessAuthController extends ControllerBase {
       return new JsonResponse([
         'success' => TRUE,
         'authenticated' => TRUE,
-        'user' => [
-          'uid' => $target_user->id(),
-          'name' => $target_user->getAccountName(),
-          'email' => $target_user->getEmail(),
-          'roles' => $target_user->getRoles(),
-          'groups' => $this->getUserGroups($target_user),
-        ] + $this->getTosAcceptancePayload($target_user),
+        'user' => $this->buildAuthUserPayload($target_user, $target_user),
       ]);
     }
     catch (\Exception $e) {
@@ -1268,13 +1281,7 @@ class PasswordlessAuthController extends ControllerBase {
       return new JsonResponse([
         'success' => TRUE,
         'authenticated' => TRUE,
-        'user' => [
-          'uid' => $target_user->id(),
-          'name' => $target_user->getAccountName(),
-          'email' => $target_user->getEmail(),
-          'roles' => $target_user->getRoles(),
-          'groups' => $this->getUserGroups($target_user),
-        ] + $this->getTosAcceptancePayload($target_user),
+        'user' => $this->buildAuthUserPayload($target_user, $target_user),
       ]);
     }
     catch (\Exception $e) {
@@ -1306,10 +1313,7 @@ class PasswordlessAuthController extends ControllerBase {
     }
 
     try {
-      // Dynamic lookup: group.membership_loader only exists when the Group
-      // module is enabled, so it cannot be constructor-injected.
-      $membership_loader = \Drupal::service('group.membership_loader');
-      $memberships = $membership_loader->loadByUser($user);
+      $memberships = $this->loadUserGroupMemberships($user);
 
       foreach ($memberships as $membership) {
         $group = $membership->getGroup();
@@ -1363,6 +1367,13 @@ class PasswordlessAuthController extends ControllerBase {
     }
 
     return $groups;
+  }
+
+  /**
+   * Loads group memberships for the given user.
+   */
+  protected function loadUserGroupMemberships(AccountInterface $user): array {
+    return GroupMembership::loadByUser($user);
   }
 
   /**

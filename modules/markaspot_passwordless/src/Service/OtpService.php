@@ -11,7 +11,9 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\user\Entity\User;
@@ -37,6 +39,15 @@ class OtpService {
    * enumeration via response time differences.
    */
   private const DUMMY_HASH = '$2y$12$Swf5KJU7Onq1XGRI0n8hdeWHWEiR033nChaJ6yHLG7mpvl/xa32aG';
+
+  /**
+   * Drupal permissions exposed as narrow frontend dashboard capability keys.
+   */
+  private const FRONTEND_PERMISSION_MAP = [
+    'administer site configuration' => 'administer site configuration',
+    'triage inbound mail' => 'triage inbound mail',
+    'delete requests' => 'delete any service_request content',
+  ];
 
   /**
    * The database connection.
@@ -394,6 +405,7 @@ class OtpService {
             'name' => $user->getAccountName(),
             'email' => $user->getEmail(),
             'roles' => $user->getRoles(),
+            'permissions' => $this->getFrontendPermissions($user),
             'groups' => $this->getUserGroups($user),
             'preferred_langcode' => $user->getPreferredLangcode(FALSE),
           ] + $this->getTosAcceptancePayload($user),
@@ -622,9 +634,7 @@ class OtpService {
     }
 
     try {
-      // Load group membership service.
-      $membership_loader = \Drupal::service('group.membership_loader');
-      $memberships = $membership_loader->loadByUser($user);
+      $memberships = $this->loadUserGroupMemberships($user);
 
       foreach ($memberships as $membership) {
         $group = $membership->getGroup();
@@ -662,6 +672,26 @@ class OtpService {
     }
 
     return $groups;
+  }
+
+  /**
+   * Loads group memberships for the given user.
+   */
+  protected function loadUserGroupMemberships(AccountInterface $user): array {
+    return GroupMembership::loadByUser($user);
+  }
+
+  /**
+   * Returns the small permission key set the Nuxt dashboard understands.
+   */
+  protected function getFrontendPermissions(AccountInterface $account): array {
+    $permissions = [];
+    foreach (static::FRONTEND_PERMISSION_MAP as $frontend_permission => $drupal_permission) {
+      if ($account->hasPermission($drupal_permission)) {
+        $permissions[] = $frontend_permission;
+      }
+    }
+    return $permissions;
   }
 
   /**
