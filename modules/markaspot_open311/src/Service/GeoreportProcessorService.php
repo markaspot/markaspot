@@ -3373,6 +3373,14 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       'nid' => $node->id(),
     ];
 
+    if ($node->hasField('field_source') && !$node->get('field_source')->isEmpty()) {
+      $source = (string) $node->get('field_source')->value;
+      $extendedAttributes['source'] = $source;
+      if ($source === 'staff') {
+        $extendedAttributes['channel'] = 'staff';
+      }
+    }
+
     // Preload taxonomy terms we'll need to avoid individual loads.
     $termIds = [];
     if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {

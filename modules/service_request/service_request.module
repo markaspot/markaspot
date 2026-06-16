@@ -17,6 +17,8 @@ function service_request_node_presave(EntityInterface $node) {
     return;
   }
 
+  _service_request_normalize_intake_metadata($node);
+
   // Enforce the configured default language for new service requests.
   // This respects the Drupal content type language settings:
   // Structure > Content types > Service Request > Language settings
@@ -50,6 +52,51 @@ function service_request_node_presave(EntityInterface $node) {
   // Service Request Update.
   else {
     _service_request_handle_update($node, $config, $auto_create);
+  }
+}
+
+/**
+ * Normalizes request source/channel metadata on every service_request save.
+ */
+function _service_request_normalize_intake_metadata(EntityInterface $node): void {
+  $account = \Drupal::currentUser();
+  $is_dashboard_staff = $account->hasPermission('manage dashboard notes')
+    || $account->hasPermission('administer nodes');
+  $can_set_source = $is_dashboard_staff
+    || $account->hasPermission('update open311 plus all properties');
+
+  if ($node->hasField('field_source')) {
+    $source = (string) ($node->get('field_source')->value ?? '');
+    if ($node->isNew() && $is_dashboard_staff) {
+      $node->set('field_source', 'staff');
+    }
+    elseif (!$can_set_source && $source !== '') {
+      $node->set('field_source', 'web');
+    }
+  }
+
+  if (!$node->hasField('field_request_attributes') || $node->get('field_request_attributes')->isEmpty()) {
+    return;
+  }
+
+  $raw = (string) ($node->get('field_request_attributes')->value ?? '');
+  $attributes = json_decode($raw, TRUE);
+  if (!is_array($attributes)) {
+    return;
+  }
+
+  $changed = FALSE;
+  if (!$is_dashboard_staff && array_key_exists('_markaspot_channel', $attributes)) {
+    unset($attributes['_markaspot_channel']);
+    $changed = TRUE;
+  }
+  elseif ($is_dashboard_staff && $node->isNew() && ($attributes['_markaspot_channel'] ?? NULL) !== 'staff') {
+    $attributes['_markaspot_channel'] = 'staff';
+    $changed = TRUE;
+  }
+
+  if ($changed) {
+    $node->set('field_request_attributes', $attributes === [] ? NULL : json_encode($attributes));
   }
 }
 

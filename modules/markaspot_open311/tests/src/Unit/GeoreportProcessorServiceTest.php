@@ -2022,7 +2022,10 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       revisionTimestamp: 1717500000,
     );
 
-    $request = $this->processor->mapNodeToServiceRequest($node, 'manager', ['langcode' => 'en']);
+    $request = $this->processor->mapNodeToServiceRequest($node, 'manager', [
+      'langcode' => 'en',
+      'extensions' => 'true',
+    ]);
 
     $this->assertArrayHasKey('markaspot', $request['extended_attributes']);
     $this->assertSame('Editing Moderator', $request['extended_attributes']['markaspot']['last_editor']);
@@ -2032,6 +2035,8 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       'display_name' => 'Original Author',
       'uid' => 8001,
     ], $request['extended_attributes']['markaspot']['created_by']);
+    $this->assertSame('staff', $request['extended_attributes']['markaspot']['source']);
+    $this->assertSame('staff', $request['extended_attributes']['markaspot']['channel']);
 
     // The author key keeps reflecting the node uid.
     $this->assertSame('Original Author', $request['extended_attributes']['author']);
@@ -3057,10 +3062,11 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $node->method('getTitle')->willReturn('Broken streetlight');
     $node->method('getOwner')->willReturn($author);
 
-    // Only uid is a "present" optional field; everything else is absent so the
-    // mapper skips it (media, status notes, address, PII fields, etc.).
+    // Only uid and field_source are "present" optional fields; everything else
+    // is absent so the mapper skips it (media, status notes, address, PII
+    // fields, etc.).
     $node->method('hasField')
-      ->willReturnCallback(fn($name) => $name === 'uid');
+      ->willReturnCallback(fn($name) => in_array($name, ['uid', 'field_source'], TRUE));
 
     $node->method('get')
       ->willReturnCallback(function (string $name) use ($emptyField, $uidField, $scalarField) {
@@ -3069,6 +3075,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
           'created' => $scalarField(1717400000),
           'changed' => $scalarField(1717450000),
           'uid' => $uidField,
+          'field_source' => $scalarField('staff'),
           default => $emptyField,
         };
       });

@@ -339,7 +339,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $module_feature_map = [
       'markaspot_ai' => ['aiProcessing', 'piiRedaction'],
       'markaspot_stats' => ['statistics'],
-      'markaspot_dashboard' => ['dashboard', 'operationsDashboard'],
+      'markaspot_dashboard' => ['dashboard', 'dashboardRequestCreate', 'operationsDashboard'],
       'markaspot_vision' => ['photoReporting', 'aiAnalysis'],
       'markaspot_feedback' => ['feedback'],
       'markaspot_passwordless' => ['passwordless'],
@@ -352,9 +352,10 @@ class MarkASpotSettingsController extends ControllerBase {
     $settings['features'] += [
       'aiProcessing' => FALSE,
       'piiRedaction' => FALSE,
+      'dashboardRequestCreate' => TRUE,
       'operationsDashboard' => FALSE,
     ];
-    foreach (['aiProcessing', 'piiRedaction', 'operationsDashboard'] as $feature) {
+    foreach (['aiProcessing', 'piiRedaction', 'dashboardRequestCreate', 'operationsDashboard'] as $feature) {
       $settings['features'][$feature] = $this->readBooleanFeatureFlag(
         $settings['features'][$feature] ?? NULL
       );

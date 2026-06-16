@@ -107,7 +107,7 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
    * Dashboard management form exposes request attributes for staff editing.
    */
   public function testManagementFormExposesRequestAttributes(): void {
-    $display = $this->loadYaml($this->moduleRoot . '/config/install/core.entity_form_display.node.service_request.management.yml');
+    $display = $this->loadYaml($this->profileRoot . '/modules/markaspot_open311/config/optional/core.entity_form_display.node.service_request.management.yml');
 
     $this->assertSame(
       'text_textarea',
@@ -136,12 +136,14 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
       'field_district',
       'field_facility',
       'field_feedback',
+      'field_email_message_id',
       'field_geolocation',
       'field_jurisdiction',
       'field_object_id',
       'field_organisation',
       'field_request_image',
       'field_request_media',
+      'field_source',
       'field_status',
       'field_sublocality',
       // Citizen-supplied private data.
@@ -240,6 +242,33 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
         "$fieldName must remain explicitly permissioned."
       );
     }
+  }
+
+  /**
+   * Source channels stay public, but staff dashboard is a server-owned value.
+   */
+  public function testSourceFieldIncludesStaffDashboardChannel(): void {
+    $storagePath = $this->serviceRequestFieldStoragePath('field_source');
+    $this->assertNotNull($storagePath, 'field_source storage config exists.');
+    $storage = $this->loadYaml($storagePath);
+
+    $this->assertSame(
+      'public',
+      $storage['third_party_settings']['field_permissions']['permission_type'] ?? NULL,
+      'field_source remains public so list filters and metrics can read it.'
+    );
+    $this->assertContains(
+      'staff',
+      array_column($storage['settings']['allowed_values'] ?? [], 'value'),
+      'field_source must include the staff dashboard channel.'
+    );
+
+    $moduleSource = file_get_contents($this->moduleRoot . '/service_request.module');
+    $this->assertIsString($moduleSource);
+    $this->assertStringContainsString('_service_request_normalize_intake_metadata($node);', $moduleSource);
+    $this->assertStringContainsString("hasPermission('manage dashboard notes')", $moduleSource);
+    $this->assertStringContainsString("\$node->set('field_source', 'staff')", $moduleSource);
+    $this->assertStringContainsString("unset(\$attributes['_markaspot_channel'])", $moduleSource);
   }
 
   /**
@@ -491,7 +520,8 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
     $this->assertStringContainsString('_markaspot_update_11921_normalize_status_definition_json', $hook);
     $this->assertStringContainsString("\$definition = ['attributes' => array_values(\$definition)];", $hook);
     $this->assertStringContainsString('_markaspot_update_11921_enable_internal_status_jsonapi_resource($changes)', $hook);
-    $this->assertStringContainsString("'type' => 'status_definition_json_form'", $hook);
+    $this->assertStringContainsString("hasDefinition('status_definition_json_form')", $hook);
+    $this->assertStringContainsString("'type' => \$has_json_widget ? 'status_definition_json_form' : 'text_textarea'", $hook);
     $this->assertStringContainsString("'manage dashboard notes'", $hook);
     $this->assertStringContainsString("'translate internal_status taxonomy_term'", $hook);
     $this->assertStringContainsString("FieldConfig::loadByName('taxonomy_term', 'service_status', 'field_jurisdiction')", $hook);

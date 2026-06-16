@@ -643,6 +643,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
         'piiRedaction' => TRUE,
         'statistics' => TRUE,
         'dashboard' => TRUE,
+        'dashboardRequestCreate' => TRUE,
         'operationsDashboard' => TRUE,
       ],
     ]);
@@ -662,6 +663,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['piiRedaction']);
     $this->assertFalse($data['features']['statistics']);
     $this->assertFalse($data['features']['dashboard']);
+    $this->assertFalse($data['features']['dashboardRequestCreate']);
     $this->assertFalse($data['features']['operationsDashboard']);
   }
 
@@ -681,6 +683,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       'features' => [
         'aiProcessing' => ['enabled' => TRUE],
         'piiRedaction' => ['enabled' => FALSE],
+        'dashboardRequestCreate' => ['enabled' => TRUE],
         'operationsDashboard' => ['enabled' => TRUE],
       ],
     ]);
@@ -696,6 +699,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertSame(TRUE, $data['features']['aiProcessing']);
     $this->assertSame(FALSE, $data['features']['piiRedaction']);
+    $this->assertSame(TRUE, $data['features']['dashboardRequestCreate']);
     $this->assertSame(TRUE, $data['features']['operationsDashboard']);
   }
 

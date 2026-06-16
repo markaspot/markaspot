@@ -14,6 +14,7 @@
 declare(strict_types=1);
 
 use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 
 /**
@@ -426,6 +427,33 @@ function markaspot_mail_inbound_update_11905(): string {
  */
 function markaspot_mail_inbound_update_11906(): string {
   return _markaspot_mail_inbound_configure_service_request_source_jsonapi();
+}
+
+/**
+ * Add the staff dashboard source channel to service requests (#479).
+ */
+function markaspot_mail_inbound_update_11907(): string {
+  $storage = FieldStorageConfig::loadByName('node', 'field_source');
+  if (!$storage) {
+    return (string) t('Skipped field_source channel update: field_source is not installed.');
+  }
+
+  $allowed_values = $storage->getSetting('allowed_values') ?? [];
+  $allowed_values = is_array($allowed_values) ? $allowed_values : [];
+  foreach ($allowed_values as $value) {
+    if (($value['value'] ?? NULL) === 'staff') {
+      return (string) t('The staff dashboard source channel already exists.');
+    }
+  }
+
+  $allowed_values[] = [
+    'value' => 'staff',
+    'label' => 'Staff dashboard',
+  ];
+  $storage->setSetting('allowed_values', $allowed_values);
+  $storage->save();
+
+  return (string) t('Added the staff dashboard source channel to service requests.');
 }
 
 /**

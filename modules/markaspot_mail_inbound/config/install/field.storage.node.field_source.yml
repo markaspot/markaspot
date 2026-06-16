@@ -23,6 +23,8 @@ settings:
       label: App
     - value: email
       label: Email
+    - value: staff
+      label: Staff dashboard
     - value: phone
       label: Phone
     - value: letter

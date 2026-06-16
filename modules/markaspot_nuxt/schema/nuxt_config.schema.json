@@ -140,6 +140,12 @@
           "description": "Enable admin dashboard for staff",
           "default": true
         },
+        "dashboardRequestCreate": {
+          "type": "boolean",
+          "title": "Dashboard Request Create",
+          "description": "Show staff request creation in the dashboard navigation and request list.",
+          "default": true
+        },
         "operationsDashboard": {
           "type": "boolean",
           "title": "Operations Dashboard",
@@ -1310,6 +1316,27 @@
           "description": "Banner color theme",
           "enum": ["primary", "secondary", "success", "info", "warning", "error", "neutral"],
           "default": "neutral"
+        }
+      }
+    },
+    "dashboard": {
+      "type": "object",
+      "title": "Dashboard",
+      "description": "Dashboard behavior and tenant preferences.",
+      "properties": {
+        "columns": {
+          "type": "object",
+          "title": "Dashboard Columns",
+          "description": "Per-column visibility defaults for the request list.",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "createDefaultPublished": {
+          "type": "boolean",
+          "title": "Create Requests Published By Default",
+          "description": "When enabled, staff-created dashboard requests are published immediately. When disabled or omitted, they start unpublished.",
+          "default": false
         }
       }
     },

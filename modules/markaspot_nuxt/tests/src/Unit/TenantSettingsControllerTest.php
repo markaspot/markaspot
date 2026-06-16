@@ -1483,6 +1483,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
         'pwaInstallPrompt' => ['enabled' => FALSE],
         'formFirst' => ['enabled' => FALSE],
         'dashboard' => ['enabled' => TRUE],
+        'dashboardRequestCreate' => ['enabled' => FALSE],
         'operationsDashboard' => ['enabled' => TRUE],
         'aiProcessing' => ['enabled' => TRUE],
         'piiRedaction' => ['enabled' => FALSE],
@@ -1502,6 +1503,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['pwaInstallPrompt']);
     $this->assertFalse($data['features']['formFirst']);
     $this->assertTrue($data['features']['dashboard']);
+    $this->assertFalse($data['features']['dashboardRequestCreate']);
     $this->assertTrue($data['features']['operationsDashboard']);
     $this->assertTrue($data['features']['aiProcessing']);
     $this->assertFalse($data['features']['piiRedaction']);
@@ -1518,6 +1520,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $nuxtConfig = json_encode([
       'features' => [
         'dashboard' => TRUE,
+        'dashboardRequestCreate' => FALSE,
         'operationsDashboard' => TRUE,
       ],
     ]);
@@ -1533,6 +1536,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['features']['dashboard']);
+    $this->assertFalse($data['features']['dashboardRequestCreate']);
     $this->assertFalse($data['features']['operationsDashboard']);
     $this->assertFalse($data['capabilities']['operationsDashboard']);
   }
@@ -1546,6 +1550,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $nuxtConfig = json_encode([
       'features' => [
         'dashboard' => TRUE,
+        'dashboardRequestCreate' => FALSE,
         'operationsDashboard' => TRUE,
       ],
     ]);
@@ -1562,6 +1567,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['features']['dashboard']);
+    $this->assertFalse($data['features']['dashboardRequestCreate']);
     $this->assertFalse($data['features']['operationsDashboard']);
     $this->assertFalse($data['capabilities']['operationsDashboard']);
   }
