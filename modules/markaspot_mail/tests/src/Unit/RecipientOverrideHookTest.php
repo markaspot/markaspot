@@ -107,12 +107,14 @@ final class RecipientOverrideHookTest extends UnitTestCase {
   }
 
   /**
-   * Reply-To is stripped case-insensitively and lands in the audit log.
+   * A citizen Reply-To is redirected to the override and the original logged.
    *
-   * A Reply-To pointing at a citizen would let a tester's reply in the dev
-   * mailbox leave the fence even though the mail itself was redirected.
+   * Stripping alone would let a tester's reply fall back to From, which on a
+   * prod DB pull can still be citizen-facing; the fence rewrites Reply-To to
+   * the override so every reply stays inside the dev mailbox. Any original
+   * case variant must be gone, replaced by exactly one canonical Reply-To.
    */
-  public function testReplyToIsStrippedAndLogged(): void {
+  public function testReplyToIsRedirectedToOverrideAndLogged(): void {
     new Settings([RecipientOverrideHook::SETTINGS_KEY => self::OVERRIDE]);
 
     $captured = [];
@@ -128,10 +130,88 @@ final class RecipientOverrideHookTest extends UnitTestCase {
 
     (new RecipientOverrideHook($logger))->alter($message);
 
-    foreach (array_keys($message['headers']) as $headerName) {
-      $this->assertNotSame(0, strcasecmp((string) $headerName, 'Reply-To'), 'No Reply-To header variant may survive.');
-    }
+    $this->assertArrayNotHasKey('reply-to', $message['headers'], 'The lowercase original variant must be dropped.');
+    $this->assertSame(self::OVERRIDE, $message['headers']['Reply-To'], 'Reply-To must be redirected to the override, not just stripped.');
     $this->assertSame('citizen-reply@example.org', $captured['@reply_to']);
+  }
+
+  /**
+   * Reply-To is added even when the original mail carried none.
+   *
+   * Without a Reply-To, a reply falls back to From; the fence sets one
+   * unconditionally so containment does not depend on the sender having
+   * supplied a Reply-To in the first place.
+   */
+  public function testReplyToIsAddedWhenOriginalHadNone(): void {
+    new Settings([RecipientOverrideHook::SETTINGS_KEY => self::OVERRIDE]);
+
+    $message = $this->buildMessage();
+    $this->assertArrayNotHasKey('Reply-To', $message['headers'], 'Precondition: no Reply-To in the fixture.');
+
+    (new RecipientOverrideHook($this->createMock(LoggerInterface::class)))->alter($message);
+
+    $this->assertSame(self::OVERRIDE, $message['headers']['Reply-To']);
+  }
+
+  /**
+   * Every case variant of Reply-To is dropped before the canonical redirect.
+   *
+   * PHP array keys make 'Reply-To', 'reply-to' and 'REPLY-TO' distinct
+   * headers; a case-sensitive strip would leave one live citizen reply path
+   * behind. All variants must be captured for the audit log and removed, with
+   * exactly one canonical Reply-To pointing at the override surviving.
+   */
+  public function testAllReplyToVariantsAreDroppedBeforeRedirect(): void {
+    new Settings([RecipientOverrideHook::SETTINGS_KEY => self::OVERRIDE]);
+
+    $captured = [];
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->once())
+      ->method('notice')
+      ->willReturnCallback(function (string $template, array $context) use (&$captured): void {
+        $captured = $context;
+      });
+
+    $message = $this->buildMessage();
+    $message['headers']['Reply-To'] = 'first-reply@example.org';
+    $message['headers']['reply-to'] = 'second-reply@example.org';
+
+    (new RecipientOverrideHook($logger))->alter($message);
+
+    // Both original citizen reply paths captured for audit.
+    $this->assertStringContainsString('first-reply@example.org', $captured['@reply_to']);
+    $this->assertStringContainsString('second-reply@example.org', $captured['@reply_to']);
+    // Exactly one canonical Reply-To survives, pointing at the override.
+    $replyToKeys = array_filter(
+      array_keys($message['headers']),
+      static fn ($name): bool => strcasecmp((string) $name, 'Reply-To') === 0,
+    );
+    $this->assertCount(1, $replyToKeys, 'Exactly one canonical Reply-To must survive.');
+    $this->assertSame(self::OVERRIDE, $message['headers'][reset($replyToKeys)]);
+  }
+
+  /**
+   * A CR/LF-laden override value cannot inject headers via To or Reply-To.
+   *
+   * The override is env-sourced and operator-controlled, but a malformed
+   * value (trailing newline, pasted multi-line block) must not splice extra
+   * headers into the rewritten To/Reply-To (CWE-93). Both are sanitized.
+   */
+  public function testOverrideValueIsSanitizedAgainstHeaderInjection(): void {
+    new Settings([
+      RecipientOverrideHook::SETTINGS_KEY => "devmail@civicpatches.de\r\nBcc: attacker@example.com",
+    ]);
+
+    $message = $this->buildMessage();
+    $message['headers']['To'] = 'citizen@example.org';
+    (new RecipientOverrideHook($this->createMock(LoggerInterface::class)))->alter($message);
+
+    $this->assertStringNotContainsString("\r", (string) $message['to']);
+    $this->assertStringNotContainsString("\n", (string) $message['to']);
+    foreach (['To', 'Reply-To'] as $header) {
+      $this->assertStringNotContainsString("\r", (string) $message['headers'][$header]);
+      $this->assertStringNotContainsString("\n", (string) $message['headers'][$header]);
+    }
   }
 
   /**

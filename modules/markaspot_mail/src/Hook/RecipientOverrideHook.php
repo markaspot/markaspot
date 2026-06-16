@@ -13,8 +13,8 @@ use Psr\Log\LoggerInterface;
  * Defense-in-depth layer L3 against the recurring incident class "dev/test
  * deployment with a production DB pull mails real citizens": when the
  * settings key 'markaspot_mail_recipient_override' is non-empty, EVERY
- * outgoing mail has its To rewritten to the override address and its
- * Cc/Bcc/Reply-To stripped before any mail plugin (phpmailer_smtp, smtp,
+ * outgoing mail has its To AND Reply-To rewritten to the override address
+ * and its Cc/Bcc stripped before any mail plugin (phpmailer_smtp, smtp,
  * php_mail) fires. The original recipients are written to watchdog for
  * audit, and the subject is prefixed with "[DEV→original@example.com]" so
  * redirected mail is recognizable at a glance in the dev mailbox.
@@ -66,6 +66,14 @@ final class RecipientOverrideHook {
       return;
     }
 
+    // The override feeds the To and Reply-To headers and the subject prefix
+    // raw. Strip CR/LF/NUL so a malformed value — an operator typo, a copied
+    // line with a trailing newline, a multi-value paste — can never become a
+    // header-injection vector (CWE-93) in a mail plugin that splices headers
+    // unescaped. The value is env-sourced and operator-controlled, so this is
+    // belt-and-suspenders, but the fence must not be the weak link.
+    $override = $this->sanitizeHeaderValue($override);
+
     $originalTo = trim((string) ($message['to'] ?? ''));
     $originalCc = [];
     $originalBcc = [];
@@ -90,7 +98,11 @@ final class RecipientOverrideHook {
       elseif (strcasecmp($name, 'Reply-To') === 0) {
         // A Reply-To pointing at a citizen would let a tester's reply in
         // the dev mailbox leave the fence even though the mail itself was
-        // redirected. Strip it; replies then go to the From address.
+        // redirected. Capture and drop every case variant here; a single
+        // canonical Reply-To pointing at the override is re-added after the
+        // loop (see below). Stripping alone would let replies fall back to
+        // From, which on a prod DB pull can still be a citizen-facing
+        // address — the very escape this layer exists to close.
         $originalReplyTo[] = trim((string) $message['headers'][$headerName]);
         unset($message['headers'][$headerName]);
       }
@@ -101,6 +113,13 @@ final class RecipientOverrideHook {
         $message['headers'][$headerName] = $override;
       }
     }
+
+    // Re-add one canonical Reply-To pointing at the override. Set
+    // unconditionally (even when the original carried none) so a reply from
+    // the dev mailbox always lands back in the dev mailbox and can never
+    // escape via the From fallback. Runs after the strip loop so it survives
+    // every case-variant unset above.
+    $message['headers']['Reply-To'] = $override;
 
     // Audit trail: the original recipients must remain reconstructable from
     // watchdog so a redirected mail can be re-sent manually if needed.
