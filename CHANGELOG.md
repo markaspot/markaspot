@@ -1,5 +1,21 @@
 # Changelog
 
+## [11.9.122](https://github.com/markaspot/markaspot/compare/11.9.121...11.9.122) (2026-06-16)
+
+### Features
+
+* expose intake source backend ([78d3b15](https://github.com/markaspot/markaspot/commit/78d3b1538cbba00573611bf8933cd8362636a981))
+* **nuxt:** add allowGeoreportPost and categoryDescriptions to config schema ([#323](https://github.com/markaspot/markaspot/issues/323)) ([be08242](https://github.com/markaspot/markaspot/commit/be0824282965de5a2c55c84c05c279d14bea9838))
+* **open311:** configurable create-specific flood control ([#474](https://github.com/markaspot/markaspot/issues/474)) ([520ec9f](https://github.com/markaspot/markaspot/commit/520ec9fe480919db68e161e3803995a3f5f076ed))
+* **service-provider:** expose field_organisation on JSON:API resource for existing tenants ([#429](https://github.com/markaspot/markaspot/issues/429)) ([c54f904](https://github.com/markaspot/markaspot/commit/c54f90435a6cd73f1ba695ba7bee1a661ce49aff))
+* support dashboard-created request intake ([30eb28c](https://github.com/markaspot/markaspot/commit/30eb28ca466ac16843c9781189b88f94c955c16d))
+
+### Bug Fixes
+
+* **auth:** expose dashboard permissions in auth payload ([cd73837](https://github.com/markaspot/markaspot/commit/cd73837285d03165d0c951623c34d4dcc8aacefe))
+* harden open311 read scope ([8788451](https://github.com/markaspot/markaspot/commit/87884519fd4a945d907093ed6c5f8efb52ead6e9))
+* **mail:** sanitize override + redirect Reply-To in recipient fence ([#388](https://github.com/markaspot/markaspot/issues/388)) ([4978ee9](https://github.com/markaspot/markaspot/commit/4978ee91da94bcbc9562e2eb3ffe9da0766d9b9b))
+
 ## [11.9.121](https://github.com/markaspot/markaspot/compare/11.9.120...11.9.121) (2026-06-14)
 
 ### Features
