@@ -910,6 +910,40 @@ function _markaspot_service_provider_ensure_sp_boilerplates_jsonapi() {
 }
 
 /**
+ * Ensure field_organisation is exposed on the service_provider taxonomy resource.
+ *
+ * Existing tenants installed the JSON:API resource config before #429 added
+ * field_organisation, so the scoped provider fetch silently fell back to a
+ * jurisdiction-wide list. Re-expose the field for them.
+ */
+function _markaspot_service_provider_ensure_sp_organisation_jsonapi() {
+  $config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.taxonomy_term--service_provider');
+  if ($config->isNew()) {
+    return FALSE;
+  }
+
+  $resource_fields = $config->get('resourceFields') ?: [];
+  $existing_field = $resource_fields['field_organisation'] ?? [];
+
+  $resource_fields['field_organisation'] = [
+    'disabled' => FALSE,
+    'fieldName' => 'field_organisation',
+    'publicName' => 'field_organisation',
+    'enhancer' => [
+      'id' => '',
+    ],
+  ];
+  if ($existing_field === $resource_fields['field_organisation']) {
+    return FALSE;
+  }
+
+  $config->set('resourceFields', $resource_fields)->save(TRUE);
+
+  return TRUE;
+}
+
+/**
  * Expose org groups so boilerplate organisation references include UUIDs.
  */
 function _markaspot_service_provider_ensure_org_group_jsonapi() {
@@ -1190,4 +1224,15 @@ function markaspot_service_provider_update_9006() {
   }
 
   return t('Service-provider boilerplate form mode configuration already up to date.');
+}
+
+/**
+ * Expose field_organisation on the service_provider taxonomy JSON:API resource (#429).
+ */
+function markaspot_service_provider_update_9007() {
+  if (_markaspot_service_provider_ensure_sp_organisation_jsonapi()) {
+    return t('Exposed field_organisation on the service_provider taxonomy JSON:API resource so provider org-scoping reaches existing tenants.');
+  }
+
+  return t('field_organisation is already exposed on the service_provider taxonomy JSON:API resource.');
 }
