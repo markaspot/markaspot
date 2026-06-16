@@ -308,6 +308,31 @@
             }
           }
         },
+        "allowGeoreportPost": {
+          "type": "boolean",
+          "title": "Allow GeoReport POST",
+          "description": "Allow external GeoReport API write access for this jurisdiction. The server write-gate reads the build-time baked value; this flag exposes the per-jurisdiction setting to the client config.",
+          "default": false
+        },
+        "categoryDescriptions": {
+          "type": "object",
+          "title": "Category Descriptions",
+          "description": "Show per-category description text fetched from an endpoint",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "title": "Enable Category Descriptions",
+              "default": false
+            },
+            "endpoint": {
+              "type": "string",
+              "title": "Descriptions Endpoint",
+              "description": "Relative API path that returns category descriptions (must start with /)",
+              "default": "/api/markaspotshstweak",
+              "pattern": "^/[a-zA-Z0-9/_-]+$"
+            }
+          }
+        },
         "search": {
           "type": "object",
           "title": "Search Configuration",
