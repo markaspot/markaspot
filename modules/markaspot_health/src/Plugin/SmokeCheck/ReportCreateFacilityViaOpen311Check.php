@@ -39,7 +39,7 @@ final class ReportCreateFacilityViaOpen311Check extends ReportCreateViaOpen311Ch
     EntityTypeManagerInterface $entityTypeManager,
     ConfigFactoryInterface $configFactory,
     Connection $database,
-    protected FacilityManager $facilityManager,
+    protected ?FacilityManager $facilityManager,
     protected JurisdictionHierarchyResolverInterface $hierarchyResolver,
   ) {
     parent::__construct(
@@ -57,7 +57,7 @@ final class ReportCreateFacilityViaOpen311Check extends ReportCreateViaOpen311Ch
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
-    return new static(
+    return new self(
       $configuration,
       $plugin_id,
       $plugin_definition,
@@ -65,7 +65,7 @@ final class ReportCreateFacilityViaOpen311Check extends ReportCreateViaOpen311Ch
       $container->get('entity_type.manager'),
       $container->get('config.factory'),
       $container->get('database'),
-      $container->get('markaspot_facility.manager'),
+      $container->has('markaspot_facility.manager') ? $container->get('markaspot_facility.manager') : NULL,
       $container->get('markaspot_group.hierarchy_resolver'),
     );
   }
@@ -75,6 +75,14 @@ final class ReportCreateFacilityViaOpen311Check extends ReportCreateViaOpen311Ch
    */
   public function run(array $context = []): SmokeCheckResult {
     $mode = $this->mode($context);
+    if ($this->facilityManager === NULL) {
+      return $this->skip(
+        'Facility manager service is unavailable; facility smoke check skipped.',
+        ['service' => 'markaspot_facility.manager'],
+        $mode,
+      );
+    }
+
     $fixture = $this->discoverFacilityFixture($context);
     if ($fixture === NULL) {
       return $this->skip(

@@ -8,6 +8,7 @@ use Drupal\Core\DrupalKernelInterface;
 use Drupal\markaspot_health\SmokeCheckPluginBase;
 use Drupal\markaspot_health\SmokeCheckResult;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
@@ -35,9 +36,13 @@ use Symfony\Component\Process\Process;
 class DrushCrSubprocessCheck extends SmokeCheckPluginBase {
 
   /**
-   * Process timeout in seconds; drush cr in a healthy install runs in ~3s.
+   * Process timeout in seconds.
+   *
+   * Small tenants rebuild caches in a few seconds, but local cloud-style DDEV
+   * tenants with full config exports and multiple languages can exceed 90
+   * seconds while still healthy.
    */
-  protected const TIMEOUT_SECONDS = 30;
+  protected const TIMEOUT_SECONDS = 180;
 
   /**
    * Bytes of stderr to retain in the evidence payload.
@@ -60,7 +65,7 @@ class DrushCrSubprocessCheck extends SmokeCheckPluginBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
-    return new static(
+    return new self(
       $configuration,
       $plugin_id,
       $plugin_definition,

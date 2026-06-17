@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_health\Plugin\SmokeCheck;
 
+use Drupal\Core\Session\AccountSwitcherInterface;
+use Drupal\Core\Session\AnonymousUserSession;
 use Drupal\markaspot_health\SmokeCheckPluginBase;
 use Drupal\markaspot_health\SmokeCheckResult;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -38,6 +40,7 @@ class HttpBackendLoginPageCheck extends SmokeCheckPluginBase {
     string $plugin_id,
     $plugin_definition,
     protected HttpKernelInterface $httpKernel,
+    protected AccountSwitcherInterface $accountSwitcher,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
   }
@@ -46,11 +49,12 @@ class HttpBackendLoginPageCheck extends SmokeCheckPluginBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
-    return new static(
+    return new self(
       $configuration,
       $plugin_id,
       $plugin_definition,
       $container->get('http_kernel'),
+      $container->get('account_switcher'),
     );
   }
 
@@ -60,7 +64,13 @@ class HttpBackendLoginPageCheck extends SmokeCheckPluginBase {
   public function run(array $context = []): SmokeCheckResult {
     $mode = $this->mode($context);
     $request = Request::create('/user/login', 'GET');
-    $response = $this->httpKernel->handle($request, HttpKernelInterface::SUB_REQUEST);
+    $this->accountSwitcher->switchTo(new AnonymousUserSession());
+    try {
+      $response = $this->httpKernel->handle($request, HttpKernelInterface::SUB_REQUEST);
+    }
+    finally {
+      $this->accountSwitcher->switchBack();
+    }
     $status = $response->getStatusCode();
     $evidence = ['status_code' => $status];
 
