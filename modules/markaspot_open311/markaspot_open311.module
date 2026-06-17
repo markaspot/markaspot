@@ -117,7 +117,7 @@ function markaspot_open311_entity_field_access(string $operation, FieldDefinitio
 
     $entity = $field_entity ?? $items->getEntity();
     /** @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface $processor */
-    $processor = \Drupal::service('markaspot_open311.georeport_processor');
+    $processor = \Drupal::service('markaspot_open311.processor');
     $jurisdictionId = $processor->resolveNodeJurisdictionId($entity);
 
     if ($jurisdictionId === NULL) {

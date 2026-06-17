@@ -151,7 +151,7 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
       ->willReturn($jurisdictionId);
     $processor->method('hasJurisdictionGroups')->willReturn($hasJurisdictionGroups);
     $processor->method('isJurisdictionMember')->willReturn($isMember);
-    \Drupal::getContainer()->set('markaspot_open311.georeport_processor', $processor);
+    \Drupal::getContainer()->set('markaspot_open311.processor', $processor);
   }
 
   /**
