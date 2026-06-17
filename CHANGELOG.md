@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.125](https://github.com/markaspot/markaspot/compare/11.9.124...11.9.125) (2026-06-17)
+
+### Bug Fixes
+
+* harden vision health runtime check ([506cd80](https://github.com/markaspot/markaspot/commit/506cd8080e0941d27547d9f64a0a3f4318d88e64))
+
 ## [11.9.124](https://github.com/markaspot/markaspot/compare/11.9.123...11.9.124) (2026-06-17)
 
 ### Bug Fixes
