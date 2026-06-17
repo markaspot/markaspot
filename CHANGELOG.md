@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.124](https://github.com/markaspot/markaspot/compare/11.9.123...11.9.124) (2026-06-17)
+
+### Bug Fixes
+
+* stabilize smoke checks for optional tenant features ([e078c8a](https://github.com/markaspot/markaspot/commit/e078c8a7f73a70ab6a0fed979d17518ecef2fcdf))
+
 ## [11.9.123](https://github.com/markaspot/markaspot/compare/11.9.122...11.9.123) (2026-06-17)
 
 ### Bug Fixes
