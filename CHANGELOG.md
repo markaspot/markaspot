@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.123](https://github.com/markaspot/markaspot/compare/11.9.122...11.9.123) (2026-06-17)
+
+### Bug Fixes
+
+* **open311:** restore service request author access ([ba4b123](https://github.com/markaspot/markaspot/commit/ba4b123e651bfe4387674a1eb9db45d58c4fa70c))
+
 ## [11.9.122](https://github.com/markaspot/markaspot/compare/11.9.121...11.9.122) (2026-06-16)
 
 ### Features
