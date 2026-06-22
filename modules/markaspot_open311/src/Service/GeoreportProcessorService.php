@@ -342,11 +342,20 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $values = [
       'type' => 'service_request',
       'langcode' => 'und',
-      'changed' => $this->time->getCurrentTime(),
       'field_first_name' => $this->getSafeValue($requestData, 'first_name'),
       'field_last_name' => $this->getSafeValue($requestData, 'last_name'),
       'field_phone' => $this->getSafeValue($requestData, 'phone'),
     ];
+
+    // Only stamp 'changed' on create. On update we leave it unset so an
+    // idempotent re-save of unchanged data does not advance the node's
+    // modified timestamp: Drupal's ChangedItem::preSave() bumps 'changed'
+    // only when a field actually differs, while the save (and its log entry)
+    // still happens. This keeps updated_datetime, which maps from node
+    // 'changed', meaningful for consumers that watch it for real changes.
+    if ($operation === 'create') {
+      $values['changed'] = $this->time->getCurrentTime();
+    }
 
     $values['title'] = isset($requestData['service_code']) ? Html::escape(stripslashes($requestData['service_code'])) : NULL;
 

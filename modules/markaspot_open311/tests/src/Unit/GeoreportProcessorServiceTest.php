@@ -3117,4 +3117,27 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     return $ref->invokeArgs($object, $args);
   }
 
+  // =========================================================================
+  // prepareNodeProperties() tests
+  // =========================================================================
+
+  /**
+   * An update must not force the 'changed' timestamp.
+   *
+   * Stamping 'changed' = now on every update makes an idempotent re-save of
+   * unchanged data advance updated_datetime (mapped from node 'changed') on
+   * each call. On update we leave 'changed' unset so Drupal's
+   * ChangedItem::preSave() advances it only when a field actually differs;
+   * create keeps stamping it.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testPrepareNodePropertiesOmitsChangedOnUpdate(): void {
+    $update = $this->processor->prepareNodeProperties(['first_name' => 'Test'], 'update');
+    $this->assertArrayNotHasKey('changed', $update, 'Update must not force the changed timestamp.');
+    // Sanity: the update payload is otherwise populated (so the assertion above
+    // is meaningful and not passing on an empty result).
+    $this->assertArrayHasKey('field_first_name', $update);
+  }
+
 }
