@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.128](https://github.com/markaspot/markaspot/compare/11.9.127...11.9.128) (2026-06-23)
+
+### Bug Fixes
+
+* gate blurred media visibility safely ([3af40de](https://github.com/markaspot/markaspot/commit/3af40de1ad502ae570d5366f5fbd4d915e7e39eb))
+
 ## [11.9.127](https://github.com/markaspot/markaspot/compare/11.9.126...11.9.127) (2026-06-23)
 
 ### Bug Fixes
