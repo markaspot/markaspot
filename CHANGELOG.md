@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.127](https://github.com/markaspot/markaspot/compare/11.9.126...11.9.127) (2026-06-23)
+
+### Bug Fixes
+
+* **vision:** publish safe anonymized media ([67f591c](https://github.com/markaspot/markaspot/commit/67f591c3b93baabb5cc627870c7788a53942366d))
+
 ## [11.9.126](https://github.com/markaspot/markaspot/compare/11.9.125...11.9.126) (2026-06-23)
 
 ### Bug Fixes
