@@ -554,8 +554,8 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $media = $this->createMockMedia(1);
     $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
 
-    // Privacy flag is set; the blur service blurred the face. The citizen
-    // notice is suppressed deterministically by the blur result, not the model.
+    // Privacy flag is set; the blur service blurred the face. The model may
+    // still describe a visible person, but that is covered by anonymisation.
     $aiResult = [
       'category' => 42,
       'description' => 'Privacy-safe description',
@@ -564,7 +564,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       'hazard_level' => 0,
       'hazard_issues' => [],
       'privacy_flag' => TRUE,
-      'privacy_issues' => ['blurred face visible'],
+      'privacy_issues' => ['person visible'],
     ];
 
     $this->imageProcessingService->method('processImages')
@@ -585,16 +585,24 @@ class ImageProcessingControllerTest extends UnitTestCase {
       ->method('saveBlurredImage')
       ->with($media, 'blurred-bytes', 'public://test.jpg');
 
-    // Residual AI privacy findings must keep the media unpublished even though
-    // the citizen warning is suppressed by blur.
-    $media->expects($this->never())->method('setPublished');
+    // Successful anonymisation publishes the media even when the AI still
+    // describes the blurred region as a privacy concern.
+    $media->expects($this->once())->method('setPublished');
 
     // Capture what gets persisted to the JSON:API-exposed field_ai_metadata.
     $capturedMetadata = NULL;
+    $capturedPrivacyFlag = NULL;
+    $capturedPrivacyIssues = NULL;
     $media->method('set')->willReturnCallback(
-      function (string $field, $value) use (&$capturedMetadata, $media) {
+      function (string $field, $value) use (&$capturedMetadata, &$capturedPrivacyFlag, &$capturedPrivacyIssues, $media) {
         if ($field === 'field_ai_metadata') {
           $capturedMetadata = $value;
+        }
+        if ($field === 'field_ai_privacy_flag') {
+          $capturedPrivacyFlag = $value;
+        }
+        if ($field === 'field_ai_privacy_issues') {
+          $capturedPrivacyIssues = $value;
         }
         return $media;
       }
@@ -605,10 +613,14 @@ class ImageProcessingControllerTest extends UnitTestCase {
 
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
-    $this->assertTrue($data['privacy_flag']);
-    $this->assertSame(['blurred face visible'], $data['privacy_issues']);
+    $this->assertFalse($data['privacy_flag']);
+    $this->assertSame([], $data['privacy_issues']);
     // Citizen warning is suppressed because the blur service blurred the face.
     $this->assertTrue($data['privacy_handled_by_blur']);
+    // Persisted moderation fields are also cleared so the node save hook does
+    // not unpublish the already-anonymised media later.
+    $this->assertFalse($capturedPrivacyFlag);
+    $this->assertSame('', $capturedPrivacyIssues);
     // privacy_flag is still persisted to field_ai_metadata for audit.
     $this->assertNotNull($capturedMetadata);
     $storedMeta = json_decode($capturedMetadata, TRUE);
@@ -787,15 +799,13 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
-   * Blur suppresses the citizen notice, but residual PII stays unpublished.
+   * Successful blur keeps unhandled PII findings unpublished.
    *
-   * Variant A trade-off: once the blur service blurred faces/plates, the
-   * citizen notice is suppressed deterministically, even if the AI also flagged
-   * unblurrable PII (e.g. a document). Internal moderation is unaffected:
-   * privacy_flag keeps the media unpublished so a moderator still catches it.
-   *
+   * Face and plate concerns are handled by the blur service. Other findings,
+   * such as readable documents, still need review after the image bytes were
+   * overwritten.
    */
-  public function testBlurSuppressesNoticeButResidualPiiStaysUnpublished(): void {
+  public function testSuccessfulBlurKeepsResidualUnhandledPiiUnpublished(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
 
     $media = $this->createMockMedia(1);
@@ -809,7 +819,10 @@ class ImageProcessingControllerTest extends UnitTestCase {
       'hazard_level' => 0,
       'hazard_issues' => [],
       'privacy_flag' => TRUE,
-      'privacy_issues' => ['readable ID document visible'],
+      'privacy_issues' => [
+        'readable ID document visible',
+        'identifiable person visible',
+      ],
     ];
 
     $this->imageProcessingService->method('processImages')
@@ -825,8 +838,21 @@ class ImageProcessingControllerTest extends UnitTestCase {
         ],
       ]);
 
-    // Moderation invariant: privacy_flag=TRUE keeps the media unpublished.
     $media->expects($this->never())->method('setPublished');
+
+    $capturedPrivacyFlag = NULL;
+    $capturedPrivacyIssues = NULL;
+    $media->method('set')->willReturnCallback(
+      function (string $field, $value) use (&$capturedPrivacyFlag, &$capturedPrivacyIssues, $media) {
+        if ($field === 'field_ai_privacy_flag') {
+          $capturedPrivacyFlag = $value;
+        }
+        if ($field === 'field_ai_privacy_issues') {
+          $capturedPrivacyIssues = $value;
+        }
+        return $media;
+      }
+    );
 
     $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
     $response = $this->controller->getAIResults($request);
@@ -834,9 +860,79 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['privacy_flag']);
-    // Blur ran, so the citizen notice is suppressed (Variant A trade-off),
-    // while the media stays unpublished for human review (asserted above).
+    $this->assertSame([
+      'readable ID document visible',
+      'identifiable person visible',
+    ], $data['privacy_issues']);
     $this->assertTrue($data['privacy_handled_by_blur']);
+    $this->assertTrue($capturedPrivacyFlag);
+    $this->assertSame('readable ID document visible, identifiable person visible', $capturedPrivacyIssues);
+  }
+
+  /**
+   * A privacy flag without classifiable issues stays fail-closed.
+   */
+  public function testSuccessfulBlurKeepsUnclassifiedPrivacyFlagUnpublished(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['A damaged bin near a building entrance'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => [],
+    ];
+
+    $this->imageProcessingService->method('processImages')
+      ->willReturn([
+        'ai_result' => json_encode($aiResult),
+        'blur_results' => [
+          'public://test.jpg' => [
+            'contents' => 'blurred-bytes',
+            'blurred' => TRUE,
+            'faces' => 1,
+            'plates' => 0,
+          ],
+        ],
+      ]);
+
+    $media->expects($this->never())->method('setPublished');
+
+    $capturedPrivacyFlag = NULL;
+    $capturedPrivacyIssues = NULL;
+    $media->method('set')->willReturnCallback(
+      function (string $field, $value) use (&$capturedPrivacyFlag, &$capturedPrivacyIssues, $media) {
+        if ($field === 'field_ai_privacy_flag') {
+          $capturedPrivacyFlag = $value;
+        }
+        if ($field === 'field_ai_privacy_issues') {
+          $capturedPrivacyIssues = $value;
+        }
+        return $media;
+      }
+    );
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['privacy_flag']);
+    $this->assertSame([
+      'AI privacy flag set without a classifiable privacy issue.',
+    ], $data['privacy_issues']);
+    $this->assertTrue($data['privacy_handled_by_blur']);
+    $this->assertTrue($capturedPrivacyFlag);
+    $this->assertSame(
+      'AI privacy flag set without a classifiable privacy issue.',
+      $capturedPrivacyIssues
+    );
   }
 
   /**

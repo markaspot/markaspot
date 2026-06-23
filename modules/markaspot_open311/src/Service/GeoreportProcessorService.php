@@ -2118,7 +2118,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     // Add media_url if available (standard optional field per GeoReport v2 spec)
-    $mediaUrls = $this->getMediaUrls($node);
+    $mediaUrls = $this->getMediaUrls($node, $extendedRole === 'manager');
     if (!empty($mediaUrls)) {
       $request['media_url'] = $mediaUrls;
     }
@@ -3233,7 +3233,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @return string
    *   A comma-separated list of media URLs.
    */
-  private function getMediaUrls(object $node): string {
+  private function getMediaUrls(object $node, bool $allowUnpublished = FALSE): string {
     $mediaUrls = [];
 
     if ($node->hasField('field_request_image') && !$node->get('field_request_image')->isEmpty()) {
@@ -3242,13 +3242,37 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
       foreach ($node->get('field_request_media')->referencedEntities() as $media) {
-        if ($media->isPublished() && $media->hasField('field_media_image') && !$media->get('field_media_image')->isEmpty()) {
+        if (
+          $media instanceof MediaInterface &&
+          $this->canExposeMediaUrl($media, $allowUnpublished) &&
+          $media->hasField('field_media_image') &&
+          !$media->get('field_media_image')->isEmpty()
+        ) {
           $mediaUrls[] = $this->fileUrlGenerator->generateAbsoluteString($media->get('field_media_image')->entity->getFileUri());
         }
       }
     }
 
     return implode(',', $mediaUrls);
+  }
+
+  /**
+   * Determines whether a media file URL may be exposed through GeoReport.
+   */
+  private function canExposeMediaUrl(MediaInterface $media, bool $allowUnpublished): bool {
+    if ($media->isPublished()) {
+      return TRUE;
+    }
+
+    if (!$allowUnpublished) {
+      return FALSE;
+    }
+
+    if (!$this->currentUser->hasPermission('access open311 advanced properties')) {
+      return FALSE;
+    }
+
+    return $media->access('view', $this->currentUser);
   }
 
   /**

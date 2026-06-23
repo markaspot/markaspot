@@ -20,6 +20,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
+use Drupal\media\MediaInterface;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -68,6 +69,13 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
    * @var \Drupal\Core\Session\AccountProxyInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected $currentUser;
+
+  /**
+   * Mocked file URL generator.
+   *
+   * @var \Drupal\Core\File\FileUrlGeneratorInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $fileUrlGenerator;
 
   /**
    * Mocked entity type manager.
@@ -205,7 +213,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $requestStack = $this->createMock(RequestStack::class);
     $request = new Request();
     $requestStack->method('getCurrentRequest')->willReturn($request);
-    $fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
+    $this->fileUrlGenerator = $this->createMock(FileUrlGeneratorInterface::class);
     $entityFieldManager = $this->createMock(EntityFieldManagerInterface::class);
     $streamWrapperManager = $this->createMock(StreamWrapperManagerInterface::class);
     $token = $this->createMock(Token::class);
@@ -222,7 +230,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       $time,
       $requestStack,
       $this->entityTypeManager,
-      $fileUrlGenerator,
+      $this->fileUrlGenerator,
       $this->moduleHandler,
       $entityFieldManager,
       $streamWrapperManager,
@@ -1260,6 +1268,138 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     ]);
 
     $this->assertSame('person@example.com', $result);
+  }
+
+  /**
+   * Public GeoReport media_url output stays limited to published media.
+   *
+   * @covers ::getMediaUrls
+   */
+  public function testMediaUrlsSkipUnpublishedMediaForPublicUsers(): void {
+    $media = $this->buildMediaWithImage(FALSE, TRUE, 'public://private.jpg');
+    $node = $this->buildNodeWithRequestMedia([$media]);
+
+    $this->currentUser->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(FALSE);
+    $media->expects($this->never())->method('access');
+    $this->fileUrlGenerator->expects($this->never())->method('generateAbsoluteString');
+
+    $result = $this->invokeMethod($this->processor, 'getMediaUrls', [$node, FALSE]);
+
+    $this->assertSame('', $result);
+  }
+
+  /**
+   * Advanced users still need the effective manager response shape.
+   *
+   * @covers ::getMediaUrls
+   */
+  public function testMediaUrlsSkipUnpublishedMediaWhenResponseShapeIsPublic(): void {
+    $media = $this->buildMediaWithImage(FALSE, TRUE, 'public://private.jpg');
+    $node = $this->buildNodeWithRequestMedia([$media]);
+
+    $this->currentUser->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
+    $media->expects($this->never())->method('access');
+    $this->fileUrlGenerator->expects($this->never())->method('generateAbsoluteString');
+
+    $result = $this->invokeMethod($this->processor, 'getMediaUrls', [$node, FALSE]);
+
+    $this->assertSame('', $result);
+  }
+
+  /**
+   * Authorized API users can receive URLs for viewable unpublished media.
+   *
+   * @covers ::getMediaUrls
+   */
+  public function testMediaUrlsExposeUnpublishedMediaForAuthorizedUsers(): void {
+    $media = $this->buildMediaWithImage(FALSE, TRUE, 'public://private.jpg');
+    $node = $this->buildNodeWithRequestMedia([$media]);
+
+    $this->currentUser->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
+    $media->expects($this->once())
+      ->method('access')
+      ->with('view', $this->currentUser)
+      ->willReturn(TRUE);
+    $this->fileUrlGenerator->expects($this->once())
+      ->method('generateAbsoluteString')
+      ->with('public://private.jpg')
+      ->willReturn('https://example.test/sites/default/files/private.jpg');
+
+    $result = $this->invokeMethod($this->processor, 'getMediaUrls', [$node, TRUE]);
+
+    $this->assertSame('https://example.test/sites/default/files/private.jpg', $result);
+  }
+
+  /**
+   * Advanced Open311 access still respects media entity view access.
+   *
+   * @covers ::getMediaUrls
+   */
+  public function testMediaUrlsSkipUnpublishedMediaWhenMediaAccessDenied(): void {
+    $media = $this->buildMediaWithImage(FALSE, TRUE, 'public://private.jpg');
+    $node = $this->buildNodeWithRequestMedia([$media]);
+
+    $this->currentUser->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
+    $media->expects($this->once())
+      ->method('access')
+      ->with('view', $this->currentUser)
+      ->willReturn(FALSE);
+    $this->fileUrlGenerator->expects($this->never())->method('generateAbsoluteString');
+
+    $result = $this->invokeMethod($this->processor, 'getMediaUrls', [$node, TRUE]);
+
+    $this->assertSame('', $result);
+  }
+
+  /**
+   * The mapped public/user response never exposes unpublished media_url.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testMapNodeToServiceRequestHidesUnpublishedMediaUrlForPublicShape(): void {
+    $media = $this->buildMediaWithImage(FALSE, TRUE, 'public://private.jpg');
+    $node = $this->buildMappedNodeWithRequestMedia(5001, [$media]);
+
+    $media->expects($this->never())->method('access');
+    $this->fileUrlGenerator->expects($this->never())->method('generateAbsoluteString');
+
+    $result = $this->processor->mapNodeToServiceRequest($node, 'user', ['langcode' => 'en']);
+
+    $this->assertArrayNotHasKey('media_url', $result);
+  }
+
+  /**
+   * The mapped manager response may expose viewable unpublished media_url.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testMapNodeToServiceRequestExposesUnpublishedMediaUrlForManagerShape(): void {
+    $media = $this->buildMediaWithImage(FALSE, TRUE, 'public://private.jpg');
+    $node = $this->buildMappedNodeWithRequestMedia(5002, [$media]);
+
+    $this->currentUser->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
+    $media->expects($this->once())
+      ->method('access')
+      ->with('view', $this->currentUser)
+      ->willReturn(TRUE);
+    $this->fileUrlGenerator->expects($this->once())
+      ->method('generateAbsoluteString')
+      ->with('public://private.jpg')
+      ->willReturn('https://example.test/sites/default/files/private.jpg');
+
+    $result = $this->processor->mapNodeToServiceRequest($node, 'manager', ['langcode' => 'en']);
+
+    $this->assertSame('https://example.test/sites/default/files/private.jpg', $result['media_url']);
   }
 
   /**
@@ -3115,6 +3255,238 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $ref = new \ReflectionMethod($object, $methodName);
     $ref->setAccessible(TRUE);
     return $ref->invokeArgs($object, $args);
+  }
+
+  /**
+   * Builds a service request node exposing field_request_media references.
+   *
+   * @param array $media
+   *   Referenced media entities.
+   */
+  protected function buildNodeWithRequestMedia(array $media): ContentEntityInterface {
+    $field = new class($media) {
+
+      /**
+       * Referenced media entities.
+       *
+       * @var array
+       */
+      private array $media;
+
+      /**
+       * Constructs the field stub.
+       */
+      public function __construct(array $media) {
+        $this->media = $media;
+      }
+
+      /**
+       * Field emptiness.
+       */
+      public function isEmpty(): bool {
+        return $this->media === [];
+      }
+
+      /**
+       * Referenced entities.
+       */
+      public function referencedEntities(): array {
+        return $this->media;
+      }
+
+    };
+
+    $node = $this->createMock(ContentEntityInterface::class);
+    $node->method('hasField')
+      ->willReturnCallback(
+        static fn (string $field_name): bool => $field_name === 'field_request_media'
+      );
+    $node->method('get')
+      ->with('field_request_media')
+      ->willReturn($field);
+
+    return $node;
+  }
+
+  /**
+   * Builds a service request node for mapNodeToServiceRequest media tests.
+   *
+   * @param int $nid
+   *   Node ID.
+   * @param array $media
+   *   Referenced media entities.
+   */
+  protected function buildMappedNodeWithRequestMedia(int $nid, array $media): NodeInterface {
+    $mediaField = new class($media) {
+
+      /**
+       * Referenced media entities.
+       *
+       * @var array
+       */
+      private array $media;
+
+      /**
+       * Constructs the field stub.
+       */
+      public function __construct(array $media) {
+        $this->media = $media;
+      }
+
+      /**
+       * Field emptiness.
+       */
+      public function isEmpty(): bool {
+        return $this->media === [];
+      }
+
+      /**
+       * Referenced entities.
+       */
+      public function referencedEntities(): array {
+        return $this->media;
+      }
+
+    };
+
+    $emptyField = new class {
+
+      /**
+       * Empty scalar value.
+       */
+      public mixed $value = NULL;
+
+      /**
+       * Empty target ID.
+       */
+      public mixed $target_id = NULL;
+
+      /**
+       * Field emptiness.
+       */
+      public function isEmpty(): bool {
+        return TRUE;
+      }
+
+    };
+
+    $scalarField = static function (int|string $value) {
+      return new class($value) {
+
+        /**
+         * Field scalar value.
+         */
+        public int|string $value;
+
+        /**
+         * Constructs the scalar field.
+         */
+        public function __construct(int|string $value) {
+          $this->value = $value;
+        }
+
+        /**
+         * Field emptiness.
+         */
+        public function isEmpty(): bool {
+          return FALSE;
+        }
+
+      };
+    };
+
+    $owner = $this->createMock(UserInterface::class);
+    $owner->method('id')->willReturn(8001);
+    $owner->method('label')->willReturn('Original Author');
+
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn($nid);
+    $node->method('hasTranslation')->willReturn(FALSE);
+    $node->method('getTitle')->willReturn('Mapped media request');
+    $node->method('getOwner')->willReturn($owner);
+    $node->method('getRevisionUser')->willReturn(NULL);
+    $node->method('getRevisionCreationTime')->willReturn(NULL);
+    $node->method('hasField')
+      ->willReturnCallback(
+        static fn (string $field_name): bool => $field_name === 'field_request_media'
+      );
+    $node->method('get')
+      ->willReturnCallback(function (string $field_name) use ($emptyField, $mediaField, $scalarField) {
+        return match ($field_name) {
+          'request_id' => $scalarField('REQ-' . uniqid()),
+          'created' => $scalarField(1717400000),
+          'changed' => $scalarField(1717450000),
+          'field_request_media' => $mediaField,
+          default => $emptyField,
+        };
+      });
+
+    return $node;
+  }
+
+  /**
+   * Builds a media mock with an image field.
+   */
+  protected function buildMediaWithImage(bool $published, bool $hasImage, string $uri): MediaInterface {
+    $media = $this->createMock(MediaInterface::class);
+    $media->method('isPublished')->willReturn($published);
+    $media->method('hasField')
+      ->with('field_media_image')
+      ->willReturn($hasImage);
+
+    if ($hasImage) {
+      $file = new class($uri) {
+
+        /**
+         * File URI.
+         */
+        private string $uri;
+
+        /**
+         * Constructs the file stub.
+         */
+        public function __construct(string $uri) {
+          $this->uri = $uri;
+        }
+
+        /**
+         * Returns the file URI.
+         */
+        public function getFileUri(): string {
+          return $this->uri;
+        }
+
+      };
+
+      $field = new class($file) {
+
+        /**
+         * Referenced file entity.
+         */
+        public object $entity;
+
+        /**
+         * Constructs the field stub.
+         */
+        public function __construct(object $file) {
+          $this->entity = $file;
+        }
+
+        /**
+         * Field emptiness.
+         */
+        public function isEmpty(): bool {
+          return FALSE;
+        }
+
+      };
+
+      $media->method('get')
+        ->with('field_media_image')
+        ->willReturn($field);
+    }
+
+    return $media;
   }
 
   // =========================================================================
