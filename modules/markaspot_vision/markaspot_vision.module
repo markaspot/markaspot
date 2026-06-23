@@ -62,8 +62,8 @@ function markaspot_vision_node_update(NodeInterface $node): void {
  *
  * When require_ai_screening is enabled (default), media stays unpublished
  * until AI analysis has completed successfully (field_ai_metadata is set)
- * and no privacy flag was raised. This prevents unanalyzed images from
- * being published (privacy by design, fail-closed).
+ * and no privacy flag or privacy issue was raised. This prevents unanalyzed
+ * images from being published (privacy by design, fail-closed).
  *
  * When require_ai_screening is disabled (legacy mode), media is published
  * unless it has been explicitly flagged by AI.
@@ -82,24 +82,28 @@ function _markaspot_vision_publish_safe_media(NodeInterface $node): void {
   foreach ($media_field->referencedEntities() as $media) {
     $ai_completed = !empty($media->get('field_ai_metadata')->value);
     $has_privacy_flag = !empty($media->get('field_ai_privacy_flag')->value);
+    $privacy_issues = $media->hasField('field_ai_privacy_issues')
+      ? trim((string) $media->get('field_ai_privacy_issues')->value)
+      : '';
+    $has_privacy_hold = $has_privacy_flag || $privacy_issues !== '';
 
-    if ($has_privacy_flag && $media->isPublished()) {
-      // Safety net: unpublish media flagged for PII (e.g. published by
-      // ImageProcessingController before a late privacy detection).
+    if ($has_privacy_hold && $media->isPublished()) {
+      // Safety net: unpublish media held for PII (e.g. published by
+      // ImageProcessingController before a late or inconsistent detection).
       $media->setUnpublished();
       $media->save();
     }
     elseif (!$media->isPublished()) {
       if ($require_screening) {
         // Strict mode: only publish if AI ran and found no privacy issues.
-        if ($ai_completed && !$has_privacy_flag) {
+        if ($ai_completed && !$has_privacy_hold) {
           $media->setPublished();
           $media->save();
         }
       }
       else {
         // Legacy mode: publish unless explicitly flagged.
-        if (!$has_privacy_flag) {
+        if (!$has_privacy_hold) {
           $media->setPublished();
           $media->save();
         }

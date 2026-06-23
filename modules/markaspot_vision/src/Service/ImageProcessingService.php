@@ -322,6 +322,7 @@ class ImageProcessingService {
       // Process all images together.
       $image_data = [];
       $blur_results = [];
+      $skipped_uris = [];
       $blur_applied = FALSE;
       foreach ($file_uris as $file_uri) {
         $styled_file_path = $this->getStyledImagePath($file_uri);
@@ -350,6 +351,7 @@ class ImageProcessingService {
         }
         if ($contents === FALSE) {
           $this->logger->warning('Failed to read image file: @path', ['@path' => $styled_file_path]);
+          $skipped_uris[$file_uri] = 'unreadable';
           continue;
         }
         // Cost guard: only the unscaled original-image fallback can be large
@@ -363,6 +365,7 @@ class ImageProcessingService {
             '@bytes' => strlen($contents),
             '@max' => self::MAX_ORIGINAL_FALLBACK_BYTES,
           ]);
+          $skipped_uris[$file_uri] = 'oversized_original_fallback';
           continue;
         }
         // Detect actual MIME type (image style may convert format).
@@ -383,6 +386,9 @@ class ImageProcessingService {
           'mime' => $mime,
         ];
       }
+      if (empty($image_data)) {
+        throw new \Exception('No images could be prepared for AI analysis.');
+      }
 
       $categories = $this->getAllCategoriesHierarchical($jurisdictionId, $langcode);
       $category_json = json_encode($categories, JSON_UNESCAPED_UNICODE);
@@ -392,7 +398,7 @@ class ImageProcessingService {
       $language = $this->resolveLanguageName($langcode);
 
       // Enhance the prompt to emphasize collective analysis.
-      $image_count = count($file_uris);
+      $image_count = count($image_data);
       $collective_prefix = "The following set of {$image_count} images shows a single situation or issue. " .
         "Please analyze them together as one complete scene. Consider how the images relate to and complement each other. ";
       $prompt = str_replace(
@@ -488,6 +494,7 @@ class ImageProcessingService {
       return [
         'ai_result' => $ai_result_content,
         'blur_results' => $blur_results,
+        'skipped_uris' => $skipped_uris,
       ];
 
     }
@@ -518,14 +525,13 @@ class ImageProcessingService {
       . "list the concerns in privacy_issues. ";
 
     if ($blur_applied) {
-      // Faces/plates were already blurred by preprocessing. The AI must STILL
-      // flag them so the report is reviewed internally; the citizen-facing
-      // notice is suppressed separately and deterministically by the controller
-      // based on the blur service result (not by the model).
+      // Faces/plates were already blurred by preprocessing. The AI must still
+      // flag any personal data that remains visible, readable, or insufficiently
+      // anonymised; the blur fact alone is not a moderation hold.
       $instruction .= "Some faces or license plates in these images have already "
-        . "been blurred by preprocessing. Still set privacy_flag to true whenever "
-        . "any personal data is present (including the already blurred regions) so "
-        . "the report is reviewed internally. ";
+        . "been blurred by preprocessing. Already blurred regions alone are not "
+        . "privacy concerns. Set privacy_flag to true only when personal data "
+        . "remains visible, readable, or insufficiently anonymised. ";
     }
 
     return $instruction

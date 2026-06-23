@@ -254,12 +254,26 @@ class ImageProcessingController extends ControllerBase {
       if (json_last_error() !== JSON_ERROR_NONE) {
         throw new \Exception('Failed to decode AI service response: ' . json_last_error_msg());
       }
+      $privacy_flag = !empty($decoded_result['privacy_flag']);
+      $privacy_issues = $decoded_result['privacy_issues'] ?? [];
+      if (!is_array($privacy_issues)) {
+        $privacy_issues = [$privacy_issues];
+      }
+      $privacy_issues = array_values(array_filter($privacy_issues, static function ($issue): bool {
+        if (is_string($issue)) {
+          return trim($issue) !== '';
+        }
+        return !empty($issue);
+      }));
+      $effective_privacy_flag = $privacy_flag || !empty($privacy_issues);
 
       // Extract blur results from the AI processing response. $blur_applied is
       // TRUE if the blur preprocessing service actually blurred faces/plates in
       // any image of the batch. This is the deterministic ground truth used to
       // suppress the citizen-facing privacy notice (see response below).
       $blur_results = $ai_result['blur_results'] ?? [];
+      $skipped_uris = $ai_result['skipped_uris'] ?? [];
+      $batch_has_skipped_media = !empty($skipped_uris);
       $blur_applied = FALSE;
       foreach ($blur_results as $blur_result) {
         if (!empty($blur_result['blurred'])) {
@@ -275,39 +289,42 @@ class ImageProcessingController extends ControllerBase {
       $media_index = 0;
       foreach ($media_entities as $media) {
         try {
-          $privacy_flag = !empty($decoded_result['privacy_flag']);
           $hazard_flag = !empty($decoded_result['hazard_flag']);
-          $privacy_issues = $decoded_result['privacy_issues'] ?? [];
           $hazard_issues = $decoded_result['hazard_issues'] ?? [];
 
           // Per-media blur ground truth: the blur service blurred a face/plate
-          // on THIS media. Used to save the blurred file and to hold it.
+          // on THIS media. Used to save the anonymised bytes.
           $media_uri = $media_uri_map[$media->id()] ?? NULL;
           $media_was_blurred = $media_uri && !empty($blur_results[$media_uri]['blurred']);
+          $media_was_skipped = $media_uri && isset($skipped_uris[$media_uri]);
+          $media_privacy_issues = $privacy_issues;
 
-          // Persisted moderation flag: a media is privacy-relevant if the AI
-          // flagged it OR the blur service blurred a face/plate on it. Folding
-          // the blur fact into field_ai_privacy_flag keeps this controller AND
-          // markaspot_vision's node hook (which reads field_ai_privacy_flag) in
-          // agreement, so a blurred media is never auto-published later even if
-          // the AI clears its privacy_flag inconsistently across runs.
-          $privacy_held = $privacy_flag || $media_was_blurred;
+          // Persisted moderation flag: a successfully blurred face/plate is not
+          // itself a moderation hold. The original bytes are overwritten below;
+          // once that succeeds, the anonymised media can be published and
+          // exported via GeoReport media_url. Residual AI privacy findings still
+          // hold the media for review, even if the model forgot privacy_flag.
+          // Media skipped from AI analysis is held fail-closed as unanalyzed.
+          $privacy_held = $effective_privacy_flag || $media_was_skipped;
 
-          // Ensure a blurred-but-AI-cleared media still carries a review reason
-          // so moderators see why it was held.
-          if ($media_was_blurred && empty($privacy_issues)) {
-            $privacy_issues = ['Faces or license plates blurred by preprocessing (auto-flagged for review)'];
+          // Ensure a blurred media with a residual privacy hold still carries a
+          // review reason so moderators see why it was held.
+          if ($privacy_held && $media_was_blurred && empty($media_privacy_issues)) {
+            $media_privacy_issues = ['Faces or license plates blurred by preprocessing (auto-flagged for review)'];
+          }
+          if ($media_was_skipped) {
+            $skip_reason = $skipped_uris[$media_uri] ?: 'unknown';
+            $media_privacy_issues[] = 'AI analysis skipped for this media (' . $skip_reason . ')';
           }
 
           // Deliberate split (do NOT reconcile): field_ai_metadata stores the
-          // RAW model output (provenance/audit), so its privacy_flag can be
-          // false while field_ai_privacy_flag below is the effective moderation
-          // verdict (model OR blur). The node hook reads field_ai_privacy_flag;
-          // collapsing them back to the raw value reintroduces the auto-publish
-          // of blurred media.
+          // RAW model output (provenance/audit), while field_ai_privacy_flag is
+          // the effective moderation verdict. The node hook reads
+          // field_ai_privacy_flag, so it must reflect residual privacy issues,
+          // not the mere fact that blur preprocessing ran successfully.
           $media->set('field_ai_metadata', json_encode($decoded_result));
           $media->set('field_ai_privacy_flag', $privacy_held);
-          $media->set('field_ai_privacy_issues', implode(', ', (array) $privacy_issues));
+          $media->set('field_ai_privacy_issues', implode(', ', (array) $media_privacy_issues));
           $media->set('field_ai_hazard_flag', $hazard_flag);
           $media->set('field_ai_hazard_issues', implode(', ', (array) $hazard_issues));
           $media->set('field_ai_hazard_level', $decoded_result['hazard_level'] ?? 0);
@@ -348,9 +365,9 @@ class ImageProcessingController extends ControllerBase {
           // Publish media immediately after successful AI screening if safe.
           // This must happen here (not only in hook_node_insert) because entity
           // reference validation rejects unpublished media for anonymous users.
-          // $privacy_held already folds in the per-media blur fact and is the
-          // same predicate markaspot_vision's node hook applies on later saves,
-          // so a blurred or AI-flagged media is consistently held for review.
+          // $privacy_held is the same predicate markaspot_vision's node hook
+          // applies on later saves, so a successfully anonymised media can stay
+          // published while an AI-flagged media is consistently held for review.
           if (!$privacy_held) {
             $media->setPublished();
           }
@@ -414,18 +431,20 @@ class ImageProcessingController extends ControllerBase {
 
       // Response-only signal for the citizen UI: suppress the privacy notice
       // when the blur service actually blurred faces/plates. This uses the
-      // blur service's deterministic ground truth, NOT the model's self-report
-      // (which proved unreliable: the model lists already-blurred faces as a
-      // privacy issue yet declines to mark them remediated). Internal
-      // moderation is independent and stricter: a media is published only when
-      // the AI raised no privacy_flag AND the blur service did not blur it
-      // (see publish loop above), so any blurred image or residual unblurrable
-      // PII keeps the media unpublished for review even though the citizen
-      // notice is suppressed.
+      // blur service's deterministic ground truth, NOT the model's self-report.
+      // Internal moderation is independent and fail-closed: media is published
+      // only when the AI raised neither privacy_flag nor privacy_issues (see
+      // publish loop above). Successful blur alone is not a moderation hold.
       $response_result = $decoded_result;
       // Strip any echo of our own response-only keys in case a non-compliant
       // provider returns them; the authoritative values are computed here.
       unset($response_result['privacy_handled_by_blur'], $response_result['blurred_previews']);
+      $response_privacy_issues = $privacy_issues;
+      if ($batch_has_skipped_media) {
+        $response_privacy_issues[] = 'One or more uploaded images could not be AI-screened.';
+      }
+      $response_result['privacy_flag'] = $effective_privacy_flag || $batch_has_skipped_media;
+      $response_result['privacy_issues'] = $response_privacy_issues;
       $response_result['privacy_handled_by_blur'] = $blur_applied;
       // Blurred thumbnails (data URLs) so the citizen preview shows the
       // privacy-protected version. Only present when something was blurred.

@@ -375,21 +375,23 @@ class ImageProcessingServiceTest extends UnitTestCase {
   }
 
   /**
-   * With blur applied, the AI must still flag for internal review.
+   * With blur applied, the AI must only flag residual privacy issues.
    *
    * The citizen-facing suppression is decided deterministically by the
-   * controller from the blur result, NOT by the model. So the prompt must not
-   * ask the model for any remediation verdict.
+   * controller from the blur result, NOT by the model. Successful blur alone is
+   * safe to publish, but visible or insufficiently anonymised PII must still be
+   * held for review.
    *
    */
-  public function testBuildPrivacyInstructionKeepsFlagForReviewWhenBlurred(): void {
+  public function testBuildPrivacyInstructionOnlyFlagsResidualIssuesWhenBlurred(): void {
     $service = $this->createService();
 
     $instruction = $this->invokeMethod($service, 'buildPrivacyInstruction', [TRUE]);
 
     $this->assertStringContainsString('blurred by preprocessing', $instruction);
-    // privacy_flag must still be set even for already-blurred regions.
-    $this->assertStringContainsString('including the already blurred regions', $instruction);
+    $this->assertStringContainsString('Already blurred regions alone are not privacy concerns', $instruction);
+    $this->assertStringContainsString('remains visible, readable, or insufficiently anonymised', $instruction);
+    $this->assertStringNotContainsString('including the already blurred regions', $instruction);
     // The model must NOT be asked to self-report a blur remediation verdict.
     $this->assertStringNotContainsString('privacy_remediated_by_blur', $instruction);
   }
