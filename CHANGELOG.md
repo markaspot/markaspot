@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.126](https://github.com/markaspot/markaspot/compare/11.9.125...11.9.126) (2026-06-23)
+
+### Bug Fixes
+
+* **open311:** stamp changed only on create so no-op updates keep updated_datetime ([291ac3c](https://github.com/markaspot/markaspot/commit/291ac3c2d8b352b49905307b5bce365c0232fb03))
+
 ## [11.9.125](https://github.com/markaspot/markaspot/compare/11.9.124...11.9.125) (2026-06-17)
 
 ### Bug Fixes
