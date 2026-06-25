@@ -11,6 +11,7 @@ use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Config\StorageTransformEvent;
 use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\Installer\InstallerKernel;
+use Drupal\Core\Site\Settings;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
@@ -107,6 +108,23 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * behaviour — strictly no worse), runs only on the default collection, and is
  * idempotent.
  *
+ * RUNTIME API KEY ENTITIES (OPT-IN)
+ * ---------------------------------
+ * services_api_key_auth stores credentials and the effective API-key owner in
+ * config entities, but cloud tenants often need to manage those values at
+ * runtime. With $settings['markaspot_preserve_runtime_api_keys'] enabled, this
+ * subscriber treats the active `services_api_key_auth.api_key.*` entities as
+ * runtime-owned during config import:
+ *
+ *   - Active API-key entities missing from the import source are re-injected
+ *     into the transformed source, so `cim` does not delete UI-created keys.
+ *   - Empty `key` / `user_uuid` values from sanitized sync are filled from raw
+ *     active config, so deploys do not wipe runtime credentials or owners.
+ *
+ * The guard reads raw active storage only. Settings.php config overrides such
+ * as GEOREPORT_API_KEYS are deliberately not visible here, so env-injected
+ * secrets are never copied into the import source or active config.
+ *
  * NO ANONYMOUS DRUPAL HTML VIEWS
  * ------------------------------
  * WHY: Mark-a-Spot is a HEADLESS distribution. The citizen-facing UI is the
@@ -149,6 +167,21 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
    * The config name core uses for the installed-extension map.
    */
   private const CORE_EXTENSION = 'core.extension';
+
+  /**
+   * Prefix for services_api_key_auth API-key config entities.
+   */
+  private const API_KEY_CONFIG_PREFIX = 'services_api_key_auth.api_key.';
+
+  /**
+   * Runtime opt-in for API-key entity preservation.
+   */
+  private const PRESERVE_RUNTIME_API_KEYS_SETTING = 'markaspot_preserve_runtime_api_keys';
+
+  /**
+   * Runtime-managed fields on services_api_key_auth API-key config entities.
+   */
+  private const API_KEY_RUNTIME_FIELDS = ['key', 'user_uuid'];
 
   /**
    * Memoised set of config names shipped by currently-enabled extensions.
@@ -222,6 +255,7 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
 
       $this->protectRequiredModules($importStorage);
       $this->protectShippedConfig($importStorage);
+      $this->protectRuntimeApiKeys($importStorage);
       // Run AFTER protectShippedConfig so any view re-injected from active is
       // also screened for anonymous access.
       $this->protectViewAccess($importStorage);
@@ -305,6 +339,54 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
         continue;
       }
       $importStorage->write($name, $data);
+    }
+  }
+
+  /**
+   * Preserves runtime-managed API-key config entity state during import.
+   *
+   * Cloud tenants keep services_api_key_auth config exports secret-free, while
+   * keys and effective owners can be created or changed in the running site.
+   * When enabled via settings.php, merge that runtime state into the
+   * transformed import source so full config imports do not delete active
+   * API-key entities or blank their credentials/owners.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable import storage (transformed copy of config/sync).
+   */
+  private function protectRuntimeApiKeys(StorageInterface $importStorage): void {
+    if (!self::runtimeApiKeyPreservationEnabled()) {
+      return;
+    }
+
+    foreach ($this->activeStorage->listAll(self::API_KEY_CONFIG_PREFIX) as $name) {
+      $activeData = $this->activeStorage->read($name);
+      if (!is_array($activeData) || !self::hasRuntimeApiKeyState($activeData)) {
+        continue;
+      }
+
+      if (!$importStorage->exists($name)) {
+        $importStorage->write($name, $activeData);
+        continue;
+      }
+
+      $importData = $importStorage->read($name);
+      if (!is_array($importData)) {
+        continue;
+      }
+
+      $changed = FALSE;
+      foreach (self::API_KEY_RUNTIME_FIELDS as $field) {
+        if (!self::hasNonEmptyStringValue($activeData, $field) || self::hasNonEmptyStringValue($importData, $field)) {
+          continue;
+        }
+        $importData[$field] = $activeData[$field];
+        $changed = TRUE;
+      }
+
+      if ($changed) {
+        $importStorage->write($name, $importData);
+      }
     }
   }
 
@@ -415,6 +497,60 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Returns whether runtime API-key preservation is enabled.
+   */
+  private static function runtimeApiKeyPreservationEnabled(): bool {
+    try {
+      $value = Settings::get(self::PRESERVE_RUNTIME_API_KEYS_SETTING, FALSE);
+    }
+    catch (\BadMethodCallException) {
+      return FALSE;
+    }
+
+    if (is_bool($value)) {
+      return $value;
+    }
+    if (is_string($value)) {
+      return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? FALSE;
+    }
+
+    return (bool) $value;
+  }
+
+  /**
+   * Returns whether an API-key entity carries raw runtime-managed state.
+   *
+   * A raw active `key` can come from UI-created config. A raw active
+   * `user_uuid` can belong to an env-injected key whose secret lives only in
+   * settings.php overrides. Treat either one as a reason to preserve the
+   * entity, without ever reading resolved config overrides.
+   *
+   * @param array<string, mixed> $data
+   *   API-key config entity data.
+   */
+  private static function hasRuntimeApiKeyState(array $data): bool {
+    foreach (self::API_KEY_RUNTIME_FIELDS as $field) {
+      if (self::hasNonEmptyStringValue($data, $field)) {
+        return TRUE;
+      }
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Returns whether a config field is a non-empty string.
+   *
+   * @param array<string, mixed> $data
+   *   Config data.
+   * @param string $field
+   *   Field name.
+   */
+  private static function hasNonEmptyStringValue(array $data, string $field): bool {
+    return isset($data[$field]) && is_string($data[$field]) && trim($data[$field]) !== '';
   }
 
   /**

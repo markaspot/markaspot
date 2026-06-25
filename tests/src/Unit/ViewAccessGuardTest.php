@@ -7,6 +7,7 @@ namespace Drupal\Tests\markaspot\Unit;
 use Drupal\Core\Config\MemoryStorage;
 use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\Site\Settings;
 use Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -60,6 +61,31 @@ class ViewAccessGuardTest extends TestCase {
   }
 
   /**
+   * Builds the subscriber for runtime API-key guard tests.
+   *
+   * @param \Drupal\Core\Config\MemoryStorage $activeStorage
+   *   The active config storage under test.
+   * @param array<string, mixed> $settings
+   *   Drupal settings to expose through Settings::get().
+   *
+   * @return array{0: \Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber, 1: \Drupal\Core\Config\MemoryStorage}
+   *   The subscriber and the import storage it will operate on.
+   */
+  private function buildRuntimeApiKeySubscriber(MemoryStorage $activeStorage, array $settings): array {
+    new Settings($settings);
+
+    $importStorage = new MemoryStorage();
+    $subscriber = new ProfileConfigGuardSubscriber(
+      $this->createMock(ModuleExtensionList::class),
+      $activeStorage,
+      'markaspot',
+      new NullLogger(),
+    );
+
+    return [$subscriber, $importStorage];
+  }
+
+  /**
    * Invokes the private protectViewAccess() against the given storage.
    *
    * @param \Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber $subscriber
@@ -71,6 +97,48 @@ class ViewAccessGuardTest extends TestCase {
     $method = new \ReflectionMethod($subscriber, 'protectViewAccess');
     $method->setAccessible(TRUE);
     $method->invoke($subscriber, $importStorage);
+  }
+
+  /**
+   * Invokes the private protectRuntimeApiKeys() against the given storage.
+   *
+   * @param \Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber $subscriber
+   *   The subscriber under test.
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The import storage to transform.
+   */
+  private function invokeProtectRuntimeApiKeys(ProfileConfigGuardSubscriber $subscriber, StorageInterface $importStorage): void {
+    $method = new \ReflectionMethod($subscriber, 'protectRuntimeApiKeys');
+    $method->setAccessible(TRUE);
+    $method->invoke($subscriber, $importStorage);
+  }
+
+  /**
+   * Returns a minimal services_api_key_auth API-key config entity.
+   *
+   * @param string $id
+   *   API-key entity id.
+   * @param string $key
+   *   Raw key value stored in active/import config.
+   * @param string $userUuid
+   *   Raw owner UUID stored in active/import config.
+   * @param string|null $label
+   *   Optional label.
+   *
+   * @return array<string, mixed>
+   *   API-key config data.
+   */
+  private function apiKeyConfig(string $id, string $key = '', string $userUuid = '', ?string $label = NULL): array {
+    return [
+      'uuid' => '00000000-0000-0000-0000-' . substr(md5($id), 0, 12),
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [],
+      'id' => $id,
+      'label' => $label ?? $id,
+      'key' => $key,
+      'user_uuid' => $userUuid,
+    ];
   }
 
   /**
@@ -103,6 +171,124 @@ class ViewAccessGuardTest extends TestCase {
       'base_table' => 'node_field_data',
       'display' => $displays,
     ];
+  }
+
+  /**
+   * Runtime API-key preservation is disabled unless settings.php opts in.
+   *
+   * @covers ::protectRuntimeApiKeys
+   * @covers ::runtimeApiKeyPreservationEnabled
+   */
+  public function testRuntimeApiKeyPreservationIsOptIn(): void {
+    $activeStorage = new MemoryStorage();
+    $name = 'services_api_key_auth.api_key.cim_extern';
+    $activeStorage->write($name, $this->apiKeyConfig('cim_extern', 'runtime-secret', 'owner-uuid'));
+
+    [$subscriber, $importStorage] = $this->buildRuntimeApiKeySubscriber($activeStorage, []);
+
+    $this->invokeProtectRuntimeApiKeys($subscriber, $importStorage);
+
+    $this->assertFalse($importStorage->exists($name), 'The guard is inactive by default in the profile.');
+  }
+
+  /**
+   * A runtime-only API-key entity is re-injected into the import source.
+   *
+   * @covers ::protectRuntimeApiKeys
+   * @covers ::runtimeApiKeyPreservationEnabled
+   * @covers ::hasRuntimeApiKeyState
+   * @covers ::hasNonEmptyStringValue
+   */
+  public function testRuntimeOnlyApiKeyEntityIsPreserved(): void {
+    $activeStorage = new MemoryStorage();
+    $name = 'services_api_key_auth.api_key.cim_extern';
+    $activeConfig = $this->apiKeyConfig('cim_extern', 'runtime-secret', 'owner-uuid', 'CIM extern');
+    $activeStorage->write($name, $activeConfig);
+
+    [$subscriber, $importStorage] = $this->buildRuntimeApiKeySubscriber($activeStorage, [
+      'markaspot_preserve_runtime_api_keys' => TRUE,
+    ]);
+
+    $this->invokeProtectRuntimeApiKeys($subscriber, $importStorage);
+
+    $this->assertSame($activeConfig, $importStorage->read($name));
+  }
+
+  /**
+   * Sanitized sync cannot blank runtime credentials or owners.
+   *
+   * Labels and other config fields still come from sync, but empty runtime
+   * fields are filled from raw active config.
+   *
+   * @covers ::protectRuntimeApiKeys
+   * @covers ::hasRuntimeApiKeyState
+   * @covers ::hasNonEmptyStringValue
+   */
+  public function testEmptySyncRuntimeFieldsAreFilledFromActive(): void {
+    $activeStorage = new MemoryStorage();
+    $name = 'services_api_key_auth.api_key.cim_extern';
+    $activeStorage->write($name, $this->apiKeyConfig('cim_extern', 'runtime-secret', 'owner-uuid', 'Active label'));
+
+    [$subscriber, $importStorage] = $this->buildRuntimeApiKeySubscriber($activeStorage, [
+      'markaspot_preserve_runtime_api_keys' => TRUE,
+    ]);
+    $importStorage->write($name, $this->apiKeyConfig('cim_extern', '', '', 'Sync label'));
+
+    $this->invokeProtectRuntimeApiKeys($subscriber, $importStorage);
+
+    $result = $importStorage->read($name);
+    $this->assertSame('runtime-secret', $result['key']);
+    $this->assertSame('owner-uuid', $result['user_uuid']);
+    $this->assertSame('Sync label', $result['label'], 'Non-runtime fields remain controlled by config/sync.');
+  }
+
+  /**
+   * Env-injected secrets are not captured, but a raw active owner is preserved.
+   *
+   * Settings.php $config overrides are not visible in raw active storage. If
+   * raw active key is empty, the guard must not invent a secret. It may still
+   * preserve the raw owner UUID that belongs to the env-injected key entity.
+   *
+   * @covers ::protectRuntimeApiKeys
+   * @covers ::hasRuntimeApiKeyState
+   * @covers ::hasNonEmptyStringValue
+   */
+  public function testRawEmptyKeyDoesNotCaptureSecretButPreservesOwner(): void {
+    $activeStorage = new MemoryStorage();
+    $name = 'services_api_key_auth.api_key.nuxt';
+    $activeStorage->write($name, $this->apiKeyConfig('nuxt', '', 'owner-uuid', 'Active nuxt'));
+
+    [$subscriber, $importStorage] = $this->buildRuntimeApiKeySubscriber($activeStorage, [
+      'markaspot_preserve_runtime_api_keys' => TRUE,
+    ]);
+    $importStorage->write($name, $this->apiKeyConfig('nuxt', '', '', 'Sync nuxt'));
+
+    $this->invokeProtectRuntimeApiKeys($subscriber, $importStorage);
+
+    $result = $importStorage->read($name);
+    $this->assertSame('', $result['key'], 'No key is copied when raw active config has no key.');
+    $this->assertSame('owner-uuid', $result['user_uuid']);
+    $this->assertSame('Sync nuxt', $result['label']);
+  }
+
+  /**
+   * Empty active API-key placeholders are not re-injected when sync omits them.
+   *
+   * @covers ::protectRuntimeApiKeys
+   * @covers ::hasRuntimeApiKeyState
+   */
+  public function testEmptyApiKeyPlaceholderIsNotPreservedWhenOmittedFromSync(): void {
+    $activeStorage = new MemoryStorage();
+    $name = 'services_api_key_auth.api_key.empty';
+    $activeStorage->write($name, $this->apiKeyConfig('empty'));
+
+    [$subscriber, $importStorage] = $this->buildRuntimeApiKeySubscriber($activeStorage, [
+      'markaspot_preserve_runtime_api_keys' => TRUE,
+    ]);
+
+    $this->invokeProtectRuntimeApiKeys($subscriber, $importStorage);
+
+    $this->assertFalse($importStorage->exists($name));
   }
 
   /**
