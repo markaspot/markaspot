@@ -146,7 +146,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     // Default: all flood checks pass.
     $this->flood->method('isAllowed')->willReturn(TRUE);
 
-    // Set up container for module_handler dependency (needed by ControllerBase).
+    // Set up container for module_handler dependency.
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')->willReturn(FALSE);
 
@@ -235,10 +235,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $frontendUrlService,
     );
   }
-
-  // ===========================================================================
-  // Tests for requestCode().
-  // ===========================================================================
 
   /**
    * Tests requestCode returns 403 when passwordless is disabled.
@@ -782,10 +778,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals(Response::HTTP_INTERNAL_SERVER_ERROR, $response->getStatusCode());
   }
 
-  // ===========================================================================
-  // Tests for verifyCode().
-  // ===========================================================================
-
   /**
    * Tests verifyCode with missing email and code returns 400.
    *
@@ -914,6 +906,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         'message' => 'Authentication successful',
         'user' => [
           'uid' => 5,
+          'uuid' => 'user-uuid-5',
           'name' => 'testuser',
           'email' => 'user@example.com',
           'roles' => ['authenticated'],
@@ -933,13 +926,10 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['success']);
     $this->assertEquals(5, $data['user']['uid']);
+    $this->assertSame('user-uuid-5', $data['user']['uuid']);
     $this->assertTrue($data['user']['tos_accepted']);
     $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
   }
-
-  // ===========================================================================
-  // Tests for status().
-  // ===========================================================================
 
   /**
    * Tests status returns unauthenticated for anonymous user.
@@ -980,6 +970,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $tosField->method('getString')->willReturn('1714567890');
 
     $userEntity = $this->createMock(UserInterface::class);
+    $userEntity->method('uuid')->willReturn('alice-user-uuid');
     $userEntity->method('getPreferredLangcode')->with(FALSE)->willReturn('en');
     $userEntity->method('hasField')
       ->with('field_tos_accepted_at')
@@ -1000,14 +991,11 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['authenticated']);
+    $this->assertSame('alice-user-uuid', $data['user']['uuid']);
     $this->assertSame(['triage inbound mail'], $data['user']['permissions']);
     $this->assertTrue($data['user']['tos_accepted']);
     $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
   }
-
-  // ===========================================================================
-  // Tests for session handoff.
-  // ===========================================================================
 
   /**
    * Tests anonymous session handoff starts at Drupal login.
@@ -1282,10 +1270,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
   }
 
-  // ===========================================================================
-  // Tests for switchUser().
-  // ===========================================================================
-
   /**
    * Tests switchUser fails when Devel module is not enabled.
    *
@@ -1311,10 +1295,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
   }
 
-  // ===========================================================================
-  // Tests for generateSwitchToken().
-  // ===========================================================================
-
   /**
    * Tests generateSwitchToken fails when Devel module is not enabled.
    *
@@ -1326,10 +1306,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
   }
-
-  // ===========================================================================
-  // Tests for claimSwitchToken().
-  // ===========================================================================
 
   /**
    * Tests claimSwitchToken fails when Devel module is not enabled.
@@ -1394,10 +1370,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
 
     $this->assertEquals(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
   }
-
-  // ===========================================================================
-  // Helper methods.
-  // ===========================================================================
 
   /**
    * Recreates the controller with current mocks.
@@ -1486,10 +1458,6 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     };
   }
 
-  // ===========================================================================
-  // Tests for updatePreferences().
-  // ===========================================================================
-
   /**
    * Tests updatePreferences with missing payload returns 400.
    *
@@ -1544,6 +1512,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       ->with('preferred_langcode', 'de');
     $userEntity->expects($this->once())->method('save');
     $userEntity->method('id')->willReturn(42);
+    $userEntity->method('uuid')->willReturn('alice-user-uuid');
     $userEntity->method('getAccountName')->willReturn('alice');
     $userEntity->method('getEmail')->willReturn('alice@example.com');
     $userEntity->method('getRoles')->willReturn(['authenticated']);

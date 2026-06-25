@@ -155,6 +155,7 @@ class DemoOtpService extends OtpService {
           'message' => 'Demo authentication successful',
           'user' => [
             'uid' => $user->id(),
+            'uuid' => $user->uuid(),
             'name' => $user->getAccountName(),
             'email' => $user->getEmail(),
             'roles' => $user->getRoles(),

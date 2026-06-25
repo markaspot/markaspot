@@ -221,10 +221,10 @@ class PasswordlessAuthController extends ControllerBase {
    * Checks whether passwordless auth is enabled for the request jurisdiction.
    *
    * Reads features.passwordless from field_nuxt_config. Default is FALSE
-   * (schema default), matching the frontend useFeatureFlags().passwordlessEnabled
-   * and the dashboard writer. Returns a 403 JsonResponse when disabled, a 400
-   * when the provided jurisdiction_id cannot be resolved, NULL when the call
-   * should proceed.
+   * (schema default), matching the frontend
+   * useFeatureFlags().passwordlessEnabled and the dashboard writer. Returns a
+   * 403 JsonResponse when disabled, a 400 when the provided jurisdiction_id
+   * cannot be resolved, NULL when the call should proceed.
    *
    * @param array $data
    *   The decoded request body.
@@ -513,7 +513,7 @@ class PasswordlessAuthController extends ControllerBase {
     ]);
 
     // Explicitly expire the session cookie to ensure browser deletes it.
-    // This is necessary because HttpOnly cookies can't be deleted by JavaScript.
+    // HttpOnly cookies cannot be deleted by JavaScript.
     $cookie_domain = $session_options['cookie_domain'] ?? '';
     $response->headers->setCookie(
       new Cookie(
@@ -571,7 +571,7 @@ class PasswordlessAuthController extends ControllerBase {
   /**
    * Starts a Drupal-to-Nuxt session handoff for the current user.
    *
-   * GET /api/auth/session-handoff/start?redirect=/amsterdam/dashboard
+   * GET /api/auth/session-handoff/start?redirect=/amsterdam/dashboard.
    *
    * If the caller has no Drupal session yet, redirect them to Drupal's login
    * form and preserve this endpoint as the login destination. Once logged in,
@@ -582,7 +582,7 @@ class PasswordlessAuthController extends ControllerBase {
    *   The request object.
    *
    * @return \Symfony\Component\HttpFoundation\Response
-   *   Redirect response or a JSON error when no frontend base URL is configured.
+   *   Redirect response, or JSON error when no frontend base URL is configured.
    */
   public function startSessionHandoff(Request $request): Response {
     if (!$this->currentUser->isAuthenticated()) {
@@ -728,12 +728,13 @@ class PasswordlessAuthController extends ControllerBase {
    *   The frontend auth user payload.
    */
   protected function buildAuthUserPayload(AccountInterface $account, $user): array {
-    $preferred_langcode = method_exists($user, 'getPreferredLangcode')
+    $preferred_langcode = $user && method_exists($user, 'getPreferredLangcode')
       ? (string) $user->getPreferredLangcode(FALSE)
       : '';
 
     return [
       'uid' => $account->id(),
+      'uuid' => $user && method_exists($user, 'uuid') ? (string) $user->uuid() : '',
       'name' => $account->getAccountName(),
       'email' => $account->getEmail(),
       'roles' => $account->getRoles(),
