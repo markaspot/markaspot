@@ -1233,7 +1233,7 @@ EOF
   printf "  Locale:    %s\n" "$locale"
   printf "  API Key:   %s\n" "$GEOREPORT_API_KEY"
   printf "  Users:     admin, api_user, moderation_1, moderation_2\n"
-  printf "  Data:      50 test service requests\n"
+  printf "  Data:      %s test service requests\n" "${NODE_COUNT:-0}"
 
   printf "\n"
   step "One-Time Login:"

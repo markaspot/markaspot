@@ -8,8 +8,11 @@ label: 'API User'
 weight: -3
 is_admin: null
 permissions:
+  - 'create field_address'
+  - 'edit own field_address'
   - 'restful get georeport_request_index_resource'
   - 'restful get georeport_request_resource'
   - 'restful get georeport_service_index_resource'
   - 'restful post georeport_request_index_resource'
+  - 'view field_address'
   - 'view field_sp_attachment'
