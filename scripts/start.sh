@@ -478,7 +478,7 @@ EOF
 
   # Ensure all profile modules are enabled (Docker site:install may skip some
   # due to config dependency issues during installation)
-  PROFILE_MODULES="language toolbar markaspot_group markaspot_nuxt markaspot_bbox_cache markaspot_media markaspot_token markaspot_request_id markaspot_icons markaspot_dashboard markaspot_escalation markaspot_open311 pathauto search_api search_api_db diff restui"
+  PROFILE_MODULES="language toolbar markaspot_group markaspot_nuxt markaspot_bbox_cache markaspot_media markaspot_token markaspot_request_id markaspot_icons markaspot_open311 pathauto search_api search_api_db diff restui"
   MISSING_MODULES=""
   for mod in $PROFILE_MODULES; do
     if ! $DRUSH_CMD $DRUSH_URI php:eval "echo \Drupal::moduleHandler()->moduleExists('$mod') ? '1' : '0';" 2>/dev/null | grep -q "1"; then
@@ -604,6 +604,21 @@ EOF
     # AVIF) via config/install + update hook, so the core "wide" style keeps
     # AVIF for web delivery. No image-style patching needed here.
     success "AI modules configured (vision + analysis)"
+  fi
+
+  # Enable optional pro/ops modules on demand. These are intentionally NOT part
+  # of the lean OSS install: dashboard KPIs (markaspot_dashboard), cross-
+  # jurisdiction escalation/delegation (markaspot_escalation), DSA notice-and-
+  # action moderation (markaspot_moderation) and the ECA notification drain
+  # (markaspot_notification). Opt in via a space-separated list, e.g.
+  #   MARKASPOT_EXTRA_MODULES="markaspot_dashboard markaspot_escalation"
+  # Enabling a module here also re-imports any config/optional (roles, views,
+  # form displays) that became installable once its dependency is met.
+  if [ -n "${MARKASPOT_EXTRA_MODULES:-}" ]; then
+    step "Enabling optional modules: ${MARKASPOT_EXTRA_MODULES}"
+    $DRUSH_CMD $DRUSH_URI en ${MARKASPOT_EXTRA_MODULES} -y 2>/dev/null || warn "Failed to enable some optional modules"
+    $DRUSH_CMD $DRUSH_URI cr >/dev/null 2>&1
+    success "Optional modules enabled"
   fi
 
   # Run pending update hooks (ensures install/update hooks from all modules run).
@@ -937,7 +952,27 @@ EOF
   fi
 
   step "Creating test data..."
-  DRUSH_URI="$DRUSH_URI" SITE_URI="$SITE_URI" $SCRIPT_DIR/georeport-client.sh >/dev/null 2>&1
+  # The Open311 create flood control (rate_limit.create_threshold, default 5/60s
+  # — anti-bombing defense-in-depth behind the Nuxt proxy, #474) would otherwise
+  # cap this seed burst at ~5 of 50 requests. Lift the threshold just for the
+  # seed, then restore the shipped production default so the installed site keeps
+  # its guard.
+  #
+  # Restore to the HARDCODED default (5), never a value read back from config:
+  # an earlier run interrupted between the lift and the restore would leave
+  # 100000 in the DB, and re-capturing it here would persist the disabled guard
+  # across re-runs. 5 == the shipped config/install value == the
+  # RATE_LIMIT_CREATE_THRESHOLD constant in Open311RateLimitTrait. (A threshold
+  # of 0 would itself fall back to that default, so the lift never uses 0.)
+  $DRUSH_CMD $DRUSH_URI cset markaspot_open311.settings rate_limit.create_threshold 100000 -y >/dev/null 2>&1 || true
+  # `|| true` keeps the restore below reachable even if the seed exits non-zero
+  # (and should this script ever adopt `set -e`) — the lifted threshold must
+  # never leak into the installed site.
+  DRUSH_URI="$DRUSH_URI" SITE_URI="$SITE_URI" $SCRIPT_DIR/georeport-client.sh >/dev/null 2>&1 || true
+  $DRUSH_CMD $DRUSH_URI cset markaspot_open311.settings rate_limit.create_threshold 5 -y >/dev/null 2>&1 || true
+  # Clear the seed's flood events so the restored guard starts from zero instead
+  # of seeing the 50 seed POSTs still inside the 60s window.
+  $DRUSH_CMD $DRUSH_URI php:eval "\Drupal::database()->delete('flood')->condition('event', 'georeport_api_create')->execute();" >/dev/null 2>&1 || true
   success "Test users and service requests created"
 
   step "Configuring groups..."

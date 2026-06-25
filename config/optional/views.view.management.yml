@@ -10,13 +10,11 @@ dependencies:
     - system.menu.admin
     - taxonomy.vocabulary.service_category
     - taxonomy.vocabulary.service_status
-    - user.role.administrator
-    - user.role.editorial_board
-    - user.role.moderator
   module:
     - address
     - color_field
     - image
+    - markaspot_open311
     - media
     - search_api
     - taxonomy
@@ -886,12 +884,9 @@ display:
           sort_asc_label: ASC
           sort_desc_label: DSC
       access:
-        type: role
+        type: perm
         options:
-          role:
-            administrator: administrator
-            moderator: moderator
-            editorial_board: editorial_board
+          perm: 'access open311 advanced properties'
       cache:
         type: search_api_none
         options: {  }

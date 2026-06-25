@@ -291,8 +291,12 @@ else {
   }
 
   // GET /api/mark-a-spot-form-mode-settings.
-  [$code, $data] = http_get("$base/api/mark-a-spot-form-mode-settings/node/service_request/nuxt");
-  assert_equal(200, $code, 'GET form-mode-settings/node/service_request/nuxt returns 200');
+  // The frontend reads the citizen report form via the 'default' form mode
+  // (useFormSettings.ts / useApiClient.ts) and the staff form via 'management';
+  // the legacy 'nuxt' form mode is not part of the lean profile. Assert the
+  // mode the frontend actually consumes.
+  [$code, $data] = http_get("$base/api/mark-a-spot-form-mode-settings/node/service_request/default");
+  assert_equal(200, $code, 'GET form-mode-settings/node/service_request/default returns 200');
   if ($data) {
     assert_json_keys($data, ['entity_type', 'bundle', 'form_mode', 'fields'], 'Form mode settings');
     assert_equal('node', $data['entity_type'], 'entity_type = node');

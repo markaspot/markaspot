@@ -7,7 +7,6 @@ dependencies:
     - field.storage.node.field_category
     - field.storage.node.field_e_mail
     - field.storage.node.field_organisation
-    - field.storage.node.field_phone
     - field.storage.node.field_status
     - field.storage.node.field_geolocation
     - search_api.server.database
@@ -132,14 +131,6 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.field_organisation
-  field_phone:
-    label: Phone
-    datasource_id: 'entity:node'
-    property_path: field_phone
-    type: text
-    dependencies:
-      config:
-        - field.storage.node.field_phone
   field_status:
     label: Status
     datasource_id: 'entity:node'
@@ -350,7 +341,6 @@ processor_settings:
       - family_name
       - field_e_mail
       - field_e_mail_1
-      - field_phone
       - given_name
       - langcode
       - locality

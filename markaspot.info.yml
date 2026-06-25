@@ -72,16 +72,11 @@ dependencies:
   - markaspot_token
   - markaspot_request_id
   - markaspot_icons
-  - markaspot_dashboard
-  - markaspot_escalation
-  - markaspot_moderation
   - markaspot_stats
   - markaspot_boilerplate
   - markaspot_feedback
   - markaspot_health
   - markaspot_mail
-  - markaspot_vision
-  - markaspot_notification
 themes:
   - gin
   - stark
