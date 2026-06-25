@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.129](https://github.com/markaspot/markaspot/compare/11.9.128...11.9.129) (2026-06-25)
+
+### Bug Fixes
+
+* **auth:** expose user uuid in auth payloads ([1556b88](https://github.com/markaspot/markaspot/commit/1556b88e5cdc49928b772e69234c121a68a55ef4))
+* preserve runtime API key config ([35f3138](https://github.com/markaspot/markaspot/commit/35f313894039c1f43d719acd9a6f4554025c1278))
+
 ## [11.9.128](https://github.com/markaspot/markaspot/compare/11.9.127...11.9.128) (2026-06-23)
 
 ### Bug Fixes
