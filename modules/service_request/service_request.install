@@ -333,6 +333,7 @@ function service_request_update_11005() {
   // Settings that nominatim supports but mapbox does not.
   $nominatim_defaults = [
     'maplibre' => '1',
+    'mapboxStyle' => 'https://tiles.openfreemap.org/styles/liberty',
     'addressFormat' => '${address.house_number}, ${address.road}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.city}, ${address.county}, ${address.postcode}',
     'serviceUrl' => 'https://nominatim.openstreetmap.org/',
     'LocationIQToken' => '',
@@ -1236,6 +1237,83 @@ function _service_request_import_shipped_translations(): string {
   return $imported
     ? 'Imported service_request translations: ' . implode(', ', $imported) . '.'
     : 'service_request translations already up to date.';
+}
+
+/**
+ * Completes geolocation components for service_request form displays.
+ */
+function service_request_update_11020(): string {
+  $storage = \Drupal::entityTypeManager()->getStorage('entity_form_display');
+  $form_displays = $storage->loadByProperties([
+    'targetEntityType' => 'node',
+    'bundle' => 'service_request',
+  ]);
+
+  $required_display_weights = [
+    'node.service_request.default' => 3,
+    'node.service_request.management' => 5,
+  ];
+  $default_mapbox_style = 'https://tiles.openfreemap.org/styles/liberty';
+  $settings_defaults = [
+    'maplibre' => '1',
+    'mapboxStyle' => $default_mapbox_style,
+    'addressFormat' => '${address.house_number}, ${address.road}, ${address.hamlet}, ${address.village}, ${address.suburb}, ${address.town}, ${address.city}, ${address.county}, ${address.postcode}',
+    'serviceUrl' => 'https://nominatim.openstreetmap.org/',
+    'LocationIQToken' => '',
+  ];
+
+  $messages = [];
+  foreach ($form_displays as $form_display) {
+    $display_id = $form_display->id();
+    $component = $form_display->getComponent('field_geolocation');
+    $is_required_display = array_key_exists($display_id, $required_display_weights);
+
+    if (!$component && !$is_required_display) {
+      continue;
+    }
+
+    $component = $component ?: [];
+    $changed = FALSE;
+
+    if (!array_key_exists('type', $component)) {
+      $component['type'] = 'geolocation_nominatim_widget';
+      $changed = TRUE;
+    }
+    if (!array_key_exists('weight', $component)) {
+      $component['weight'] = $required_display_weights[$display_id] ?? 3;
+      $changed = TRUE;
+    }
+    if (!array_key_exists('region', $component)) {
+      $component['region'] = 'content';
+      $changed = TRUE;
+    }
+    if (!array_key_exists('third_party_settings', $component)) {
+      $component['third_party_settings'] = [];
+      $changed = TRUE;
+    }
+
+    $settings = $component['settings'] ?? [];
+    foreach ($settings_defaults as $key => $default) {
+      if (!array_key_exists($key, $settings)) {
+        $settings[$key] = $default;
+        $changed = TRUE;
+      }
+    }
+    $mapbox_style = (string) ($settings['mapboxStyle'] ?? '');
+    if ($mapbox_style === '' || strpos($mapbox_style, 'mapbox://') === 0) {
+      $settings['mapboxStyle'] = $default_mapbox_style;
+      $changed = TRUE;
+    }
+    $component['settings'] = $settings;
+
+    if ($changed) {
+      $form_display->setComponent('field_geolocation', $component);
+      $form_display->save();
+      $messages[] = "Completed $display_id field_geolocation component.";
+    }
+  }
+
+  return $messages ? implode("\n", $messages) : 'service_request geolocation form components already complete.';
 }
 
 /**

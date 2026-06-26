@@ -84,6 +84,16 @@ final class TenantSettingsController extends ControllerBase {
   ];
 
   /**
+   * Feature flags stored below features.forms.
+   *
+   * Used to validate generic report-form behaviour flags. Client-specific
+   * form features stay outside this allowlist.
+   */
+  const FORM_FEATURE_FLAGS = [
+    'allowParentCategorySelection',
+  ];
+
+  /**
    * Allowed dashboard column IDs.
    *
    * Used to validate incoming PATCH data for the dashboard endpoint.
@@ -423,6 +433,26 @@ final class TenantSettingsController extends ControllerBase {
       return $value['enabled'];
     }
     return $default;
+  }
+
+  /**
+   * Reads generic form feature flags from canonical and legacy config paths.
+   *
+   * features.forms is the canonical path written by the dashboard. Top-level
+   * forms is kept as a read-only fallback for older JSON UI tenant configs.
+   * Explicit features.forms values win.
+   *
+   * @param array $config
+   *   Decoded field_nuxt_config.
+   *
+   * @return array
+   *   Merged form feature settings.
+   */
+  private function getFormFeatureSettings(array $config): array {
+    $legacy_forms = is_array($config['forms'] ?? NULL) ? $config['forms'] : [];
+    $feature_forms = is_array($config['features']['forms'] ?? NULL) ? $config['features']['forms'] : [];
+
+    return array_replace($legacy_forms, $feature_forms);
   }
 
   /**
@@ -1581,6 +1611,7 @@ final class TenantSettingsController extends ControllerBase {
     $config = $this->getNuxtConfig($group);
 
     $features = $config['features'] ?? [];
+    $forms = $this->getFormFeatureSettings($config);
     $operations_dashboard = $this->getBooleanFeatureValue($features, 'operationsDashboard', FALSE);
     if (!$this->canUseOperationsDashboard($group)) {
       $operations_dashboard = FALSE;
@@ -1613,6 +1644,9 @@ final class TenantSettingsController extends ControllerBase {
         'search' => ['enabled' => $features['search']['enabled'] ?? TRUE],
         'boundaries' => ['enabled' => $features['boundaries']['enabled'] ?? FALSE],
         'privacyNotice' => ['enabled' => $features['privacyNotice']['enabled'] ?? FALSE],
+        'forms' => [
+          'allowParentCategorySelection' => $this->getBooleanFeatureValue($forms, 'allowParentCategorySelection', FALSE),
+        ],
       ],
       'capabilities' => [
         // Authoritative tier gate for the Operations Overview toggle. The
@@ -1672,6 +1706,18 @@ final class TenantSettingsController extends ControllerBase {
       }
     }
 
+    // Validate generic form behaviour flags stored below features.forms.
+    if (array_key_exists('forms', $data)) {
+      if (!is_array($data['forms'])) {
+        return new JsonResponse(['error' => 'forms must be an object.'], 422);
+      }
+      foreach (self::FORM_FEATURE_FLAGS as $flag) {
+        if (array_key_exists($flag, $data['forms']) && !is_bool($data['forms'][$flag])) {
+          return new JsonResponse(['error' => "forms.$flag must be a boolean."], 422);
+        }
+      }
+    }
+
     if (($data['operationsDashboard'] ?? FALSE) === TRUE && !$this->canUseOperationsDashboard($group)) {
       $data['operationsDashboard'] = FALSE;
     }
@@ -1700,6 +1746,17 @@ final class TenantSettingsController extends ControllerBase {
           continue;
         }
         $config['features'][$key] = $value;
+      }
+    }
+
+    if (array_key_exists('forms', $data)) {
+      if (!isset($config['features']['forms']) || !is_array($config['features']['forms'])) {
+        $config['features']['forms'] = [];
+      }
+      foreach (self::FORM_FEATURE_FLAGS as $flag) {
+        if (array_key_exists($flag, $data['forms'])) {
+          $config['features']['forms'][$flag] = $data['forms'][$flag];
+        }
       }
     }
 

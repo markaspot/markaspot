@@ -835,12 +835,14 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * C-1 regression: tenant PATCH without field_visibility cannot clobber a
-   * concurrent admin block.
+   * C-1 regression.
+   *
+   * Tenant PATCH without field_visibility cannot clobber a concurrent admin
+   * block.
    *
    * Without the multi-field guard, $group->save() would write the in-memory
    * field_visibility (initial: 'public') back over the freshly-set 'blocked'
-   * state — silently unblocking the workspace from a non-admin caller.
+   * state, silently unblocking the workspace from a non-admin caller.
    *
    * @covers ::updateGeneralSettings
    */
@@ -1350,7 +1352,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests markBrandingSetupCompleted() persists the flag and preserves siblings.
+   * Tests branding setup completion preserves sibling config.
    *
    * @covers ::markBrandingSetupCompleted
    */
@@ -1488,6 +1490,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
         'aiProcessing' => ['enabled' => TRUE],
         'piiRedaction' => ['enabled' => FALSE],
         'privacyBlockOnFlag' => TRUE,
+        'forms' => [
+          'allowParentCategorySelection' => TRUE,
+        ],
       ],
     ]);
     $group = $this->createMockGroup([
@@ -1508,7 +1513,104 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertTrue($data['features']['aiProcessing']);
     $this->assertFalse($data['features']['piiRedaction']);
     $this->assertTrue($data['features']['privacyBlockOnFlag']);
+    $this->assertTrue($data['features']['forms']['allowParentCategorySelection']);
     $this->assertTrue($data['capabilities']['operationsDashboard']);
+  }
+
+  /**
+   * Tests getFeatureSettings() defaults form behaviour flags safely.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsDefaultsFormFeatures(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['forms']['allowParentCategorySelection']);
+  }
+
+  /**
+   * Tests getFeatureSettings() reads legacy top-level form flags.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsReadsLegacyFormFeatures(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => [],
+        'forms' => [
+          'allowParentCategorySelection' => TRUE,
+        ],
+      ]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['forms']['allowParentCategorySelection']);
+  }
+
+  /**
+   * Tests getFeatureSettings() prefers canonical feature form flags.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsPrefersFeatureFormFeatures(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => [
+          'forms' => [
+            'allowParentCategorySelection' => FALSE,
+          ],
+        ],
+        'forms' => [
+          'allowParentCategorySelection' => TRUE,
+        ],
+      ]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['forms']['allowParentCategorySelection']);
+  }
+
+  /**
+   * Tests getFeatureSettings() normalises malformed stored form flags.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsNormalisesMalformedFormFeatures(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => [
+          'forms' => [
+            'allowParentCategorySelection' => 'false',
+          ],
+        ],
+      ]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['forms']['allowParentCategorySelection']);
   }
 
   /**
@@ -1573,7 +1675,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests updateFeatureSettings() does not persist operations dashboard on demo.
+   * Tests updateFeatureSettings() blocks operations dashboard on demo.
    *
    * @covers ::updateFeatureSettings
    */
@@ -1590,7 +1692,11 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group->method('bundle')->willReturn('jur');
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')
-      ->willReturnCallback(static fn(string $name) => in_array($name, ['field_nuxt_config', 'field_tier', 'field_expiry_date'], TRUE));
+      ->willReturnCallback(static fn(string $name) => in_array($name, [
+        'field_nuxt_config',
+        'field_tier',
+        'field_expiry_date',
+      ], TRUE));
     $group->method('get')
       ->willReturnCallback(static function (string $name) use (&$storedNuxtConfig) {
         $value = match ($name) {
@@ -1651,6 +1757,120 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $updatedConfig = json_decode($storedNuxtConfig, TRUE);
     $this->assertFalse($data['features']['operationsDashboard']);
     $this->assertFalse($updatedConfig['features']['operationsDashboard']);
+  }
+
+  /**
+   * Tests updateFeatureSettings() stores generic form behaviour flags.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsStoresFormFeatures(): void {
+    $storedNuxtConfig = json_encode([
+      'features' => [
+        'forms' => [
+          'allowParentCategorySelection' => TRUE,
+          'customFutureFlag' => TRUE,
+        ],
+      ],
+    ]);
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_nuxt_config');
+    $group->method('get')
+      ->willReturnCallback(static function (string $name) use (&$storedNuxtConfig) {
+        $value = $name === 'field_nuxt_config' ? $storedNuxtConfig : '';
+        return new class ($value) {
+
+          /**
+           * The field value.
+           *
+           * @var string
+           */
+          public string $value;
+
+          /**
+           * Constructs a field item stub.
+           */
+          public function __construct(string $value) {
+            $this->value = $value;
+          }
+
+          /**
+           * Returns whether the field is empty.
+           */
+          public function isEmpty(): bool {
+            return $this->value === '';
+          }
+
+        };
+      });
+    $group->method('set')
+      ->willReturnCallback(function (string $field, string $value) use (&$storedNuxtConfig, $group) {
+        if ($field === 'field_nuxt_config') {
+          $storedNuxtConfig = $value;
+        }
+        return $group;
+      });
+    $group->expects($this->once())->method('save');
+
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'forms' => [
+          'allowParentCategorySelection' => FALSE,
+        ],
+      ])
+    );
+    $response = $this->controller->updateFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+    $this->assertFalse($data['features']['forms']['allowParentCategorySelection']);
+    $this->assertFalse($updatedConfig['features']['forms']['allowParentCategorySelection']);
+    $this->assertTrue($updatedConfig['features']['forms']['customFutureFlag']);
+  }
+
+  /**
+   * Tests updateFeatureSettings() validates form behaviour flag types.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsRejectsInvalidFormFeature(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'forms' => [
+          'allowParentCategorySelection' => 'yes',
+        ],
+      ])
+    );
+    $response = $this->controller->updateFeatureSettings($request, '14');
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame('forms.allowParentCategorySelection must be a boolean.', $data['error']);
   }
 
   /**

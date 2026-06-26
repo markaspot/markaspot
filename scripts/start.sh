@@ -754,6 +754,36 @@ EOF
   SIMPLE_CITY_NAME=$(echo "$city" | cut -d',' -f1 | tr -d "'\"\`\\")
 
   for form_mode in default management; do
+    FORM_DISPLAY_CONFIG="core.entity_form_display.node.service_request.$form_mode"
+    if ! $DRUSH_CMD $DRUSH_URI config:get "$FORM_DISPLAY_CONFIG" id >/dev/null 2>&1; then
+      continue
+    fi
+
+    if [ "$form_mode" = "default" ]; then
+      GEOLOCATION_WEIGHT=3
+    else
+      GEOLOCATION_WEIGHT=5
+    fi
+
+    # Keep the component complete. Setting only nested settings on an absent
+    # component creates a settings-only stub that the frontend filters out
+    # because it has no region.
+    if ! $DRUSH_CMD $DRUSH_URI config:get "$FORM_DISPLAY_CONFIG" content.field_geolocation.type >/dev/null 2>&1; then
+      $DRUSH_CMD $DRUSH_URI config:set "$FORM_DISPLAY_CONFIG" content.field_geolocation.type geolocation_nominatim_widget -y >/dev/null 2>&1 || true
+    fi
+    if ! $DRUSH_CMD $DRUSH_URI config:get "$FORM_DISPLAY_CONFIG" content.field_geolocation.weight >/dev/null 2>&1; then
+      $DRUSH_CMD $DRUSH_URI config:set "$FORM_DISPLAY_CONFIG" content.field_geolocation.weight "$GEOLOCATION_WEIGHT" -y >/dev/null 2>&1 || true
+    fi
+    if ! $DRUSH_CMD $DRUSH_URI config:get "$FORM_DISPLAY_CONFIG" content.field_geolocation.region >/dev/null 2>&1; then
+      $DRUSH_CMD $DRUSH_URI config:set "$FORM_DISPLAY_CONFIG" content.field_geolocation.region content -y >/dev/null 2>&1 || true
+    fi
+    if ! $DRUSH_CMD $DRUSH_URI config:get "$FORM_DISPLAY_CONFIG" content.field_geolocation.settings.maplibre >/dev/null 2>&1; then
+      $DRUSH_CMD $DRUSH_URI config:set "$FORM_DISPLAY_CONFIG" content.field_geolocation.settings.maplibre "1" -y >/dev/null 2>&1 || true
+    fi
+    CURRENT_MAPBOX_STYLE=$($DRUSH_CMD $DRUSH_URI config:get "$FORM_DISPLAY_CONFIG" content.field_geolocation.settings.mapboxStyle --format=string 2>/dev/null || true)
+    if [ -z "$CURRENT_MAPBOX_STYLE" ] || [ "${CURRENT_MAPBOX_STYLE#mapbox://}" != "$CURRENT_MAPBOX_STYLE" ]; then
+      $DRUSH_CMD $DRUSH_URI config:set "$FORM_DISPLAY_CONFIG" content.field_geolocation.settings.mapboxStyle "https://tiles.openfreemap.org/styles/liberty" -y >/dev/null 2>&1 || true
+    fi
     $DRUSH_CMD $DRUSH_URI config:set "core.entity_form_display.node.service_request.$form_mode" content.field_geolocation.settings.center_lat -y -- "$latitude" >/dev/null 2>&1 || true
     $DRUSH_CMD $DRUSH_URI config:set "core.entity_form_display.node.service_request.$form_mode" content.field_geolocation.settings.center_lng -y -- "$longitude" >/dev/null 2>&1 || true
     $DRUSH_CMD $DRUSH_URI config:set "core.entity_form_display.node.service_request.$form_mode" content.field_geolocation.settings.limit_viewbox -y -- "$LIMIT_VIEWBOX" >/dev/null 2>&1 || true

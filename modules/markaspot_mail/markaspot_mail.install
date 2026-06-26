@@ -8,6 +8,37 @@
 declare(strict_types=1);
 
 /**
+ * Implements hook_install().
+ */
+function markaspot_mail_install(): void {
+  $config_factory = \Drupal::configFactory();
+  $module_handler = \Drupal::moduleHandler();
+  $target_backend = _markaspot_mail_resolve_backend($module_handler, $config_factory);
+
+  $system_mail = $config_factory->getEditable('system.mail');
+  if ($system_mail->get('interface.default') !== $target_backend) {
+    $system_mail->set('interface.default', $target_backend)->save();
+  }
+
+  $mailsystem = $config_factory->getEditable('mailsystem.settings');
+  $mailsystem_changed = FALSE;
+  foreach (['defaults.sender', 'defaults.formatter'] as $key) {
+    if ($mailsystem->get($key) !== $target_backend) {
+      $mailsystem->set($key, $target_backend);
+      $mailsystem_changed = TRUE;
+    }
+  }
+  if ($mailsystem_changed) {
+    $mailsystem->save();
+  }
+
+  if ($target_backend === 'phpmailer_smtp') {
+    _markaspot_mail_ensure_phpmailer_html_format();
+  }
+  _markaspot_mail_seed_attachment_defaults();
+}
+
+/**
  * Switch phpmailer_smtp default format to html on existing installs.
  *
  * The phpmailer_smtp contrib module ships with `format: text_plain` as its

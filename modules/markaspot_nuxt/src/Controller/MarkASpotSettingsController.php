@@ -268,6 +268,8 @@ class MarkASpotSettingsController extends ControllerBase {
           }
         }
 
+        $this->normalizeFormFeatureSettings($settings);
+
         // Sync map center/zoom from jurisdiction config to top-level keys.
         // The frontend reads center_lat/center_lng/zoom_initial at top level,
         // but jurisdictions store these inside the nested 'map' object.
@@ -1412,6 +1414,32 @@ class MarkASpotSettingsController extends ControllerBase {
       return $value['enabled'];
     }
     return FALSE;
+  }
+
+  /**
+   * Normalises legacy top-level form settings into features.forms.
+   *
+   * The dashboard writes generic form behaviour flags under the canonical
+   * features.forms path. Older JSON UI configs may still store them at the
+   * top-level forms key, so expose both shapes while the feature layer reads
+   * the canonical one. Explicit features.forms values win.
+   *
+   * @param array $settings
+   *   Settings response array, mutated in place.
+   */
+  private function normalizeFormFeatureSettings(array &$settings): void {
+    $legacy_forms = is_array($settings['forms'] ?? NULL) ? $settings['forms'] : [];
+    $feature_forms = is_array($settings['features']['forms'] ?? NULL) ? $settings['features']['forms'] : [];
+
+    if ($legacy_forms === [] && $feature_forms === []) {
+      return;
+    }
+
+    if (!isset($settings['features']) || !is_array($settings['features'])) {
+      $settings['features'] = [];
+    }
+
+    $settings['features']['forms'] = array_replace($legacy_forms, $feature_forms);
   }
 
   /**

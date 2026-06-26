@@ -138,12 +138,14 @@ class NuxtConfigJsonFormWidget extends JsonFormWidgetBase {
       $cleaned_schema->required = $schema->required;
     }
 
-    // Check pro setting and remove pro features if disabled.
+    // Check pro setting and remove commercial features if disabled.
+    // AI image analysis is provided by the OSS markaspot_vision module, so it
+    // remains configurable outside the commercial pro layer.
     $config = $this->configFactory->get('markaspot_nuxt.settings');
     $isPro = $config->get('pro_enabled') ?? FALSE;
 
     if (!$isPro && isset($cleaned_schema->properties->features->properties)) {
-      $proFeatures = ['dashboard', 'operationsDashboard', 'aiAnalysis', 'aiProcessing', 'piiRedaction', 'feedback', 'offline'];
+      $proFeatures = ['dashboard', 'operationsDashboard', 'aiProcessing', 'piiRedaction', 'feedback', 'offline'];
       foreach ($proFeatures as $feature) {
         if (isset($cleaned_schema->properties->features->properties->$feature)) {
           unset($cleaned_schema->properties->features->properties->$feature);

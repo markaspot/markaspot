@@ -441,6 +441,72 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests legacy top-level forms are exposed as feature form settings.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsNormalisesLegacyFormConfig(): void {
+    $nuxtJson = json_encode([
+      'features' => [],
+      'forms' => [
+        'allowParentCategorySelection' => TRUE,
+        'autoTriggerGeolocation' => FALSE,
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+      'field_slug' => 'bonn',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertTrue($data['forms']['allowParentCategorySelection']);
+    $this->assertTrue($data['features']['forms']['allowParentCategorySelection']);
+    $this->assertFalse($data['features']['forms']['autoTriggerGeolocation']);
+  }
+
+  /**
+   * Tests canonical feature form settings override legacy forms.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testGetSettingsPrefersFeatureFormConfig(): void {
+    $nuxtJson = json_encode([
+      'features' => [
+        'forms' => [
+          'allowParentCategorySelection' => FALSE,
+        ],
+      ],
+      'forms' => [
+        'allowParentCategorySelection' => TRUE,
+        'autoTriggerGeolocation' => FALSE,
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+      'field_slug' => 'bonn',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertTrue($data['forms']['allowParentCategorySelection']);
+    $this->assertFalse($data['features']['forms']['allowParentCategorySelection']);
+    $this->assertFalse($data['features']['forms']['autoTriggerGeolocation']);
+  }
+
+  /**
    * Tests custom WMS layers are enabled for operator-managed tenants.
    *
    * @covers ::getMarkASpotSettings
