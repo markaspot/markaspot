@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.130](https://github.com/markaspot/markaspot/compare/11.9.129...11.9.130) (2026-06-26)
+
+### Features
+
+* lean OSS first-install — opt-in pro modules, lean-safe management view, uncapped seed ([aa56749](https://github.com/markaspot/markaspot/commit/aa56749f49f64f62ce6cddd5f47dff4de94706d8))
+* ship service_request management view to OSS profile ([e57f955](https://github.com/markaspot/markaspot/commit/e57f95568921205b0f4176f59368362ad49d4a56))
+
+### Bug Fixes
+
+* harden tenant form defaults ([b1d88cd](https://github.com/markaspot/markaspot/commit/b1d88cd8c919aae99f36876f3385319da8e4e9db))
+* seed api_user field_address perms + honest test-data count on OSS install ([c452a6f](https://github.com/markaspot/markaspot/commit/c452a6f94aac037f806a9933abc6e218418bbcc9))
+
 ## [11.9.129](https://github.com/markaspot/markaspot/compare/11.9.128...11.9.129) (2026-06-25)
 
 ### Bug Fixes
