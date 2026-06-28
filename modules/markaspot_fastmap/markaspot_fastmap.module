@@ -18,6 +18,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Drupal\user\EntityOwnerInterface;
+use Drupal\user\UserInterface;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
@@ -308,6 +309,15 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
     $message['body'][] = strtr($mail_config['body'], $replacements);
   }
   elseif ($key === 'demo_expiry_reminder') {
+    // Bcc the technical admin (uid 1) when the cron passes one. Set on the
+    // header array so it survives the markaspot_mail builder alter — which
+    // overwrites body/subject but leaves Bcc untouched — and is only stripped
+    // by the non-production recipient-override fence. Strip CR/LF/NUL as
+    // defense-in-depth against header injection (CWE-93), mirroring the
+    // sanitization the mail pipeline applies to every other header sink.
+    if (!empty($params['bcc'])) {
+      $message['headers']['Bcc'] = str_replace(["\r", "\n", "\0"], '', (string) $params['bcc']);
+    }
     $message['subject'] = t('Your demo workspace "@name" expires soon', [
       '@name' => $params['workspace_name'] ?? '',
     ]);
@@ -1110,28 +1120,40 @@ function markaspot_fastmap_cron(): void {
     foreach ($groupStorage->loadMultiple($reminderIds) as $group) {
       $stateKey = 'markaspot_fastmap.demo_reminder_sent.' . $group->id();
       if (!$state->get($stateKey)) {
-        // Send reminder to group owner.
-        $members = $group->getMembers();
-        foreach ($members as $member) {
-          $user = $member->getUser();
-          if ($user && $user->getEmail()) {
-            \Drupal::service('plugin.manager.mail')->mail(
-              'markaspot_fastmap',
-              'demo_expiry_reminder',
-              $user->getEmail(),
-              $user->getPreferredLangcode(),
-              [
-                'workspace_name' => $group->label(),
-                'workspace_slug' => $group->hasField('field_slug') ? ($group->get('field_slug')->value ?? '') : '',
-                'expiry_date' => \Drupal::service('date.formatter')->format(
-                  (int) $group->get('field_expiry_date')->value,
-                  'medium'
-                ),
-              ]
-            );
-            // Only email the first member (owner).
-            break;
+        // Resolve recipients: the workspace creator (tenant member) becomes the
+        // To, the technical admin (uid 1) the Bcc. Demo workspaces are owned by
+        // uid 1 and the 'jur' group type has creator_membership enabled, so
+        // uid 1 is ALWAYS the first member — the previous "first member" pick
+        // mailed the operator and the customer never heard about the expiry.
+        // See _markaspot_fastmap_resolve_reminder_recipients() for the rule.
+        $memberUsers = [];
+        foreach ($group->getMembers() as $member) {
+          $memberUser = $member->getUser();
+          if ($memberUser !== NULL) {
+            $memberUsers[] = $memberUser;
           }
+        }
+        $recipients = _markaspot_fastmap_resolve_reminder_recipients($memberUsers);
+        if ($recipients !== NULL) {
+          $toUser = $recipients['to'];
+          $params = [
+            'workspace_name' => $group->label(),
+            'workspace_slug' => $group->hasField('field_slug') ? ($group->get('field_slug')->value ?? '') : '',
+            'expiry_date' => \Drupal::service('date.formatter')->format(
+              (int) $group->get('field_expiry_date')->value,
+              'medium'
+            ),
+          ];
+          if ($recipients['bcc'] !== '') {
+            $params['bcc'] = $recipients['bcc'];
+          }
+          \Drupal::service('plugin.manager.mail')->mail(
+            'markaspot_fastmap',
+            'demo_expiry_reminder',
+            $toUser->getEmail(),
+            $toUser->getPreferredLangcode(),
+            $params
+          );
         }
         $state->set($stateKey, TRUE);
       }
@@ -1170,6 +1192,56 @@ function markaspot_fastmap_cron(): void {
       ]);
     }
   }
+}
+
+/**
+ * Resolves the To + Bcc recipients for a demo-expiry reminder.
+ *
+ * Demo workspaces are created with uid 1 as the technical owner, and the
+ * 'jur' group type enables creator_membership, so uid 1 is always present as
+ * a member (and, being created first, would win a naive "first member" pick).
+ * The reminder must reach the workspace creator — the tenant member added
+ * during provisioning — while uid 1 (the operator) is kept as a silent Bcc.
+ *
+ * Rules:
+ *   - To  = first member with an email whose uid is not 1 (the creator).
+ *           Falls back to uid 1 when no such member exists, so the reminder is
+ *           never silently dropped on a malformed workspace.
+ *   - Bcc = uid 1's email, but only when a distinct tenant member is the To.
+ *           Empty when uid 1 is itself the To (no self-Bcc) or absent.
+ *
+ * @param \Drupal\user\UserInterface[] $memberUsers
+ *   The workspace group's member users (already resolved, may include users
+ *   without an email address, which are skipped).
+ *
+ * @return array{to: \Drupal\user\UserInterface, bcc: string}|null
+ *   The resolved recipients, or NULL when no member carries an email.
+ */
+function _markaspot_fastmap_resolve_reminder_recipients(array $memberUsers): ?array {
+  $ownerUser = NULL;
+  $tenantUser = NULL;
+  foreach ($memberUsers as $user) {
+    if (!$user instanceof UserInterface || !$user->getEmail()) {
+      continue;
+    }
+    if ((int) $user->id() === 1) {
+      $ownerUser = $user;
+    }
+    elseif ($tenantUser === NULL) {
+      $tenantUser = $user;
+    }
+  }
+
+  $toUser = $tenantUser ?? $ownerUser;
+  if ($toUser === NULL) {
+    return NULL;
+  }
+
+  $bcc = ($tenantUser !== NULL && $ownerUser !== NULL)
+    ? (string) $ownerUser->getEmail()
+    : '';
+
+  return ['to' => $toUser, 'bcc' => $bcc];
 }
 
 /**
