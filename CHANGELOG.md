@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.131](https://github.com/markaspot/markaspot/compare/11.9.130...11.9.131) (2026-06-28)
+
+### Bug Fixes
+
+* send demo expiry reminder to workspace creator, bcc technical admin ([d6cff5f](https://github.com/markaspot/markaspot/commit/d6cff5fb57e740b4405352e2b8b9b3128bc7e5cf))
+
 ## [11.9.130](https://github.com/markaspot/markaspot/compare/11.9.129...11.9.130) (2026-06-26)
 
 ### Features
