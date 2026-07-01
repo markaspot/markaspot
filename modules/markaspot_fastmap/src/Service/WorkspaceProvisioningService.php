@@ -1216,6 +1216,11 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
       $values = [
         'type' => 'service_request',
+        // Requested langcode. Note service_request is not translatable and
+        // service_request_node_presave() force-normalizes every new node to
+        // the content-type default (currently 'und', LANGCODE_NOT_SPECIFIED),
+        // so the persisted node is language-neutral like all real reports.
+        // This value only shapes the in-memory entity before that presave.
         'langcode' => $lang,
         'title' => $title,
         'body' => [

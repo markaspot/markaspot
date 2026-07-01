@@ -464,22 +464,25 @@ class TierConfigServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests countRealRequests() excludes demo-content service requests.
+   * Tests getReportStats() splits total into demo and real counts.
    *
    * Contract: real = total minus nodes whose body carries the
    * "[demo-content]" marker. Here total = 3 (2 demo + 1 real) and demo = 2,
-   * so the method must return 1. Also asserts the demo query filters on
-   * body.value with a LIKE against the marker, jurisdiction-scoped.
+   * so real must be 1. Also asserts the demo query filters on body.value
+   * with a LIKE against the marker, jurisdiction-scoped.
    *
-   * @covers ::countRealRequests
+   * @covers ::getReportStats
+   * @covers ::countDemoRequests
    */
-  public function testCountRealRequestsExcludesDemoContent(): void {
+  public function testGetReportStatsSplitsDemoAndReal(): void {
+    // First getQuery(): countRequests(gid, 'total').
     $totalQuery = $this->createMock(QueryInterface::class);
     $totalQuery->method('accessCheck')->willReturnSelf();
     $totalQuery->method('condition')->willReturnSelf();
     $totalQuery->method('count')->willReturnSelf();
     $totalQuery->method('execute')->willReturn(3);
 
+    // Second getQuery(): countDemoRequests(gid).
     $demoConditions = [];
     $demoQuery = $this->createMock(QueryInterface::class);
     $demoQuery->method('accessCheck')->willReturnSelf();
@@ -502,7 +505,12 @@ class TierConfigServiceTest extends UnitTestCase {
     // escapeLike is a no-op passthrough for the marker (no LIKE wildcards).
     $this->database->method('escapeLike')->willReturnArgument(0);
 
-    $this->assertSame(1, $this->service->countRealRequests(14));
+    $stats = $this->service->getReportStats(14);
+    $this->assertSame([
+      'total_requests' => 3,
+      'demo_request_count' => 2,
+      'real_request_count' => 1,
+    ], $stats);
 
     // The demo query must filter body.value with a LIKE on the marker.
     $likeConditions = array_filter(
@@ -521,11 +529,11 @@ class TierConfigServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests countRealRequests() returns the full total when no demo nodes exist.
+   * Tests getReportStats() reports all requests as real when none are demo.
    *
-   * @covers ::countRealRequests
+   * @covers ::getReportStats
    */
-  public function testCountRealRequestsNoDemoNodes(): void {
+  public function testGetReportStatsNoDemoNodes(): void {
     $totalQuery = $this->createMock(QueryInterface::class);
     $totalQuery->method('accessCheck')->willReturnSelf();
     $totalQuery->method('condition')->willReturnSelf();
@@ -547,7 +555,11 @@ class TierConfigServiceTest extends UnitTestCase {
       ->willReturn($storage);
     $this->database->method('escapeLike')->willReturnArgument(0);
 
-    $this->assertSame(5, $this->service->countRealRequests(14));
+    $this->assertSame([
+      'total_requests' => 5,
+      'demo_request_count' => 0,
+      'real_request_count' => 5,
+    ], $this->service->getReportStats(14));
   }
 
   /**

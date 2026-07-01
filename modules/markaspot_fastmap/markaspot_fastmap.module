@@ -8,7 +8,6 @@
 declare(strict_types=1);
 
 use Drupal\Core\Access\AccessResult;
-use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageException;
@@ -954,7 +953,7 @@ function markaspot_fastmap_entity_type_alter(array &$entity_types): void {
 /**
  * Implements hook_markaspot_nuxt_settings_alter().
  */
-function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $group, ?CacheableMetadata $cacheMetadata = NULL): void {
+function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $group): void {
   if ($group && $group->hasField('field_tier') && !$group->get('field_tier')->isEmpty()) {
     $settings['jurisdiction']['tier'] = $group->get('field_tier')->value;
   }
@@ -985,22 +984,6 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
   // Workspace expiry timestamp (demo or checkout grace period).
   if ($group && $group->hasField('field_expiry_date') && !$group->get('field_expiry_date')->isEmpty()) {
     $settings['jurisdiction']['expiry_date'] = (int) $group->get('field_expiry_date')->value;
-  }
-
-  // Real (non-demo) report count. A demo report is a service_request whose
-  // body carries the "[demo-content]" marker; this exposes how many genuine
-  // citizen reports exist so the frontend can distinguish a freshly seeded
-  // demo workspace from one with real activity, without assuming any fixed
-  // seed baseline.
-  if ($group) {
-    /** @var \Drupal\markaspot_fastmap\Service\TierConfigService $tierConfig */
-    $tierConfig = \Drupal::service('markaspot_fastmap.tier_config');
-    $settings['jurisdiction']['real_request_count'] = $tierConfig->countRealRequests((int) $group->id());
-
-    // Keep the count fresh: invalidate when any service_request changes.
-    if ($cacheMetadata !== NULL) {
-      $cacheMetadata->addCacheTags(['node_list:service_request']);
-    }
   }
 
   // AI budget: expose limit, used, and remaining to the frontend.

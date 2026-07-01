@@ -181,41 +181,57 @@ class TierConfigService {
   }
 
   /**
-   * Counts real (non-demo) service requests in a jurisdiction.
+   * Returns total / demo / real service request counts for a jurisdiction.
    *
-   * Contract: a "demo report" is a service_request node whose body contains
-   * the literal marker "[demo-content]" (seeded by workspace provisioning).
-   * This returns every OTHER service_request in the jurisdiction, across all
-   * statuses. It is computed as total minus demo so that requests with an
-   * empty body (which cannot carry the marker) are correctly counted as real.
-   * Jurisdiction-scoped via field_jurisdiction, so no cross-tenant counts
+   * Contract (consumed verbatim by the frontend onboarding step):
+   * - total_requests: all service_request nodes in the jurisdiction, every
+   *   status.
+   * - demo_request_count: of those, the ones whose body carries the literal
+   *   marker "[demo-content]" (seeded by workspace provisioning).
+   * - real_request_count: total minus demo (reports WITHOUT the marker).
+   *
+   * Computing real as total minus demo keeps requests with an empty body
+   * (which cannot carry the marker) correctly counted as real. Both queries
+   * are jurisdiction-scoped via field_jurisdiction, so no cross-tenant counts
    * leak.
    *
    * @param int $groupId
    *   The jurisdiction group ID.
    *
-   * @return int
-   *   The number of non-demo service requests in the jurisdiction.
+   * @return array{total_requests: int, demo_request_count: int, real_request_count: int}
+   *   The report counts for the jurisdiction.
    */
-  public function countRealRequests(int $groupId): int {
-    $storage = $this->entityTypeManager->getStorage('node');
+  public function getReportStats(int $groupId): array {
+    $total = $this->countRequests($groupId, 'total');
+    $demo = $this->countDemoRequests($groupId);
 
-    $total = (int) $storage->getQuery()
-      ->accessCheck(FALSE)
-      ->condition('type', 'service_request')
-      ->condition('field_jurisdiction', $groupId)
-      ->count()
-      ->execute();
+    return [
+      'total_requests' => $total,
+      'demo_request_count' => $demo,
+      'real_request_count' => max(0, $total - $demo),
+    ];
+  }
 
-    $demo = (int) $storage->getQuery()
+  /**
+   * Counts demo (marker-bearing) service requests in a jurisdiction.
+   *
+   * A demo report is a service_request node whose body contains the literal
+   * marker "[demo-content]". Jurisdiction-scoped, all statuses.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return int
+   *   The number of demo service requests in the jurisdiction.
+   */
+  protected function countDemoRequests(int $groupId): int {
+    return (int) $this->entityTypeManager->getStorage('node')->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'service_request')
       ->condition('field_jurisdiction', $groupId)
       ->condition('body.value', '%' . $this->database->escapeLike('[demo-content]') . '%', 'LIKE')
       ->count()
       ->execute();
-
-    return max(0, $total - $demo);
   }
 
   /**

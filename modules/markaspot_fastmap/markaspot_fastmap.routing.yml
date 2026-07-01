@@ -74,6 +74,22 @@ markaspot_fastmap.workspace_usage:
   options:
     _auth: ['cookie']
 
+markaspot_fastmap.report_stats:
+  path: '/api/fastmap/report-stats'
+  defaults:
+    _controller: '\Drupal\markaspot_fastmap\Controller\ReportStatsController::stats'
+    _title: 'Report Stats'
+    _format: 'json'
+  methods: [GET]
+  requirements:
+    # Jurisdiction-scoped access is enforced inside the controller (which
+    # reads the jurisdiction_id query parameter); the route only requires an
+    # authenticated session.
+    _user_is_logged_in: 'TRUE'
+  options:
+    _auth: ['cookie']
+    no_cache: 'TRUE'
+
 markaspot_fastmap.accept_tos:
   path: '/api/accept-tos'
   defaults:
