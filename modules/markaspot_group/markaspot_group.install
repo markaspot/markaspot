@@ -4082,6 +4082,17 @@ function _markaspot_group_resolve_org_backfill_jurisdiction($org_group): ?\Drupa
  */
 function markaspot_group_install(): void {
   _markaspot_group_ensure_service_request_jurisdiction_fields();
+
+  // NOTE: field_organisation ("Department") is surfaced on the service_request
+  // management form_mode by the profile hook_install
+  // (_markaspot_ensure_organisation_in_management_form() in markaspot.install),
+  // NOT here. The management form_display ships only in
+  // markaspot_open311/config/optional, and markaspot_group installs BEFORE
+  // markaspot_open311 (profile install order: service_request -> markaspot_group
+  // -> markaspot_open311). At this point the display does not exist yet, so
+  // touching it here would create a crippled stub that blocks open311's
+  // optional-config import. The helpers below are load-guarded and called from
+  // the profile after every module (including open311) is installed.
 }
 
 /**
@@ -4194,6 +4205,72 @@ function _markaspot_group_ensure_service_request_jurisdiction_fields(): array {
   }
 
   return $created;
+}
+
+/**
+ * Adds field_organisation to the management form display for service_request.
+ *
+ * Called from the profile hook_install AFTER markaspot_open311 is installed, so
+ * the node.service_request.management form_display (which ships only in
+ * markaspot_open311/config/optional) already exists. This LOADS the display and
+ * returns when it is absent; it never uses getFormDisplay(), which would create
+ * a fresh (crippled) display and thereby suppress open311's optional-config
+ * import.
+ *
+ * Only sets the component when the field instance exists (guaranteed by
+ * _markaspot_group_ensure_service_request_jurisdiction_fields() during
+ * markaspot_group_install()) and no component is configured for it yet, so
+ * existing customisations on already installed sites are never overwritten.
+ */
+function _markaspot_group_add_organisation_to_management_display(): void {
+  $field_config_storage = \Drupal::entityTypeManager()->getStorage('field_config');
+  if (!$field_config_storage->load('node.service_request.field_organisation')) {
+    return;
+  }
+
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if ($form_display && !$form_display->getComponent('field_organisation')) {
+    $form_display->setComponent('field_organisation', [
+      'type' => 'entity_reference_autocomplete',
+      'weight' => 9,
+      'region' => 'content',
+      'settings' => [
+        'match_operator' => 'CONTAINS',
+        'match_limit' => 10,
+        'size' => 60,
+        'placeholder' => '',
+      ],
+      'third_party_settings' => [],
+    ])->save();
+    \Drupal::logger('markaspot_group')->notice('Added field_organisation to service_request management form display.');
+  }
+}
+
+/**
+ * Adds field_organisation to the group_administration field_group children.
+ *
+ * Called from the profile hook_install after markaspot_open311 is installed.
+ * Loads the management form_display and no-ops when it is absent (never
+ * creates it). Appends the field as a direct child of the group_administration
+ * tab, only when that field_group exists and does not already list it.
+ */
+function _markaspot_group_add_organisation_to_field_group(): void {
+  $form_display = \Drupal::entityTypeManager()
+    ->getStorage('entity_form_display')
+    ->load('node.service_request.management');
+
+  if ($form_display) {
+    $groups = $form_display->getThirdPartySetting('field_group', 'group_administration');
+    if ($groups && !in_array('field_organisation', $groups['children'])) {
+      $groups['children'][] = 'field_organisation';
+      $form_display->setThirdPartySetting('field_group', 'group_administration', $groups);
+      $form_display->save();
+      \Drupal::logger('markaspot_group')->notice('Added field_organisation to group_administration field group.');
+    }
+  }
 }
 
 /**

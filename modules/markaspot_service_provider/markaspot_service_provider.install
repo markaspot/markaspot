@@ -16,6 +16,7 @@ function markaspot_service_provider_install() {
   _markaspot_service_provider_create_vocabulary();
 
   // Create all required fields.
+  _markaspot_service_provider_create_field_service_provider();
   _markaspot_service_provider_create_service_provider_notes_field();
   _markaspot_service_provider_create_reassign_sp_field();
   _markaspot_service_provider_create_sp_boilerplates_field();
@@ -216,6 +217,119 @@ function _markaspot_service_provider_create_vocabulary() {
   }
   else {
     \Drupal::logger('markaspot_service_provider')->notice('Service provider vocabulary already exists.');
+  }
+}
+
+/**
+ * Helper function to create the field_service_provider field.
+ *
+ * This is the base "who is assigned" taxonomy reference to a service_provider
+ * term. It historically shipped only as optional config in the service_request
+ * module (field.storage.node.field_service_provider.yml and
+ * field.field.node.service_request.field_service_provider.yml), depending on
+ * taxonomy.vocabulary.service_provider. service_request.info.yml does not
+ * declare a dependency on markaspot_service_provider, so on a fresh profile
+ * install there is no guarantee the vocabulary exists yet when that optional
+ * config is evaluated; when it does not, Drupal silently skips the config and
+ * the field is never created. _markaspot_service_provider_ensure_management_form_mode()
+ * then guards on FieldConfig::loadByName() for field_service_provider and
+ * silently skips it too, so the field is invisible on the management form.
+ *
+ * This helper replicates those two shipped config values programmatically and
+ * runs first in hook_install(), directly after the vocabulary is created, so
+ * the field instance is guaranteed to exist before
+ * _markaspot_service_provider_ensure_management_form_mode() wires it into the
+ * form display. Idempotent: every step is guarded by an existence check.
+ */
+function _markaspot_service_provider_create_field_service_provider() {
+  // Field storage requires the target vocabulary to exist; bail cleanly
+  // otherwise (should not happen, _markaspot_service_provider_create_vocabulary()
+  // runs immediately before this in hook_install()).
+  if (!\Drupal::entityTypeManager()->getStorage('taxonomy_vocabulary')->load('service_provider')) {
+    \Drupal::logger('markaspot_service_provider')->warning('service_provider vocabulary missing, skipping field_service_provider creation.');
+    return;
+  }
+
+  // Check if field storage already exists.
+  $field_storage = FieldStorageConfig::loadByName('node', 'field_service_provider');
+  if (!$field_storage) {
+    $field_storage_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'module' => [
+          'field_permissions',
+          'node',
+          'taxonomy',
+        ],
+      ],
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'custom',
+        ],
+      ],
+      'id' => 'node.field_service_provider',
+      'field_name' => 'field_service_provider',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'taxonomy_term',
+      ],
+      'module' => 'core',
+      'locked' => FALSE,
+      'cardinality' => 1,
+      'translatable' => TRUE,
+      'indexes' => [],
+      'persist_with_no_fields' => FALSE,
+      'custom_storage' => FALSE,
+    ];
+
+    FieldStorageConfig::create($field_storage_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_service_provider field storage on node entity type.');
+  }
+
+  // Check if field instance already exists.
+  $field_instance = FieldConfig::loadByName('node', 'service_request', 'field_service_provider');
+  if (!$field_instance) {
+    $field_values = [
+      'langcode' => 'en',
+      'status' => TRUE,
+      'dependencies' => [
+        'config' => [
+          'field.storage.node.field_service_provider',
+          'node.type.service_request',
+          'taxonomy.vocabulary.service_provider',
+        ],
+      ],
+      'id' => 'node.service_request.field_service_provider',
+      'field_name' => 'field_service_provider',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Service Provider',
+      'description' => '',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [
+        'handler' => 'default:taxonomy_term',
+        'handler_settings' => [
+          'target_bundles' => [
+            'service_provider' => 'service_provider',
+          ],
+          'sort' => [
+            'field' => 'name',
+            'direction' => 'asc',
+          ],
+          'auto_create' => FALSE,
+          'auto_create_bundle' => '',
+        ],
+      ],
+      'field_type' => 'entity_reference',
+    ];
+
+    FieldConfig::create($field_values)->save();
+    \Drupal::logger('markaspot_service_provider')->notice('Created field_service_provider field instance on service_request content type.');
   }
 }
 

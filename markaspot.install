@@ -12,6 +12,7 @@ use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Entity\Entity\EntityFormDisplay;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\locale\Gettext;
 use Drupal\markaspot\EventSubscriber\ProfileConfigGuardSubscriber;
 use Drupal\node\Entity\Node;
 use Drupal\taxonomy\Entity\Term;
@@ -1300,6 +1301,43 @@ function markaspot_install() {
   _markaspot_ensure_api_user_link();
   _markaspot_ensure_category_jurisdiction();
   _markaspot_ensure_text_formats();
+  _markaspot_ensure_organisation_in_management_form();
+  _markaspot_import_shipped_module_translations();
+}
+
+/**
+ * Surfaces field_organisation on the service_request management form.
+ *
+ * field_organisation ("Department") is owned by markaspot_group, but the
+ * node.service_request.management form_mode it must appear in ships ONLY in
+ * markaspot_open311/config/optional. markaspot_group installs before
+ * markaspot_open311 (profile install order: service_request -> markaspot_group
+ * -> markaspot_open311), so markaspot_group_install() cannot wire the field
+ * into that display: it does not exist yet, and creating it there would leave a
+ * crippled stub that makes open311's optional-config import skip the real
+ * definition ("already exists"), losing the entire base form_mode.
+ *
+ * This profile hook_install() runs after every module (including
+ * markaspot_open311) is installed, so the display is guaranteed present. It
+ * delegates to the markaspot_group helpers, which LOAD the display and no-op
+ * when it is absent (they never create it). Mirrors the
+ * _markaspot_ensure_category_jurisdiction() pattern for install-ordering
+ * repairs. Idempotent and existing-site safe.
+ */
+function _markaspot_ensure_organisation_in_management_form(): void {
+  $module_handler = \Drupal::moduleHandler();
+  if (!$module_handler->moduleExists('markaspot_group')) {
+    return;
+  }
+
+  $module_handler->loadInclude('markaspot_group', 'install');
+
+  if (function_exists('_markaspot_group_add_organisation_to_management_display')) {
+    _markaspot_group_add_organisation_to_management_display();
+  }
+  if (function_exists('_markaspot_group_add_organisation_to_field_group')) {
+    _markaspot_group_add_organisation_to_field_group();
+  }
 }
 
 /**
@@ -1458,6 +1496,120 @@ function _markaspot_ensure_category_jurisdiction(): void {
       'Backfilled field_jurisdiction on @count service_category term(s) to jurisdiction @gid during install.',
       ['@count' => $count, '@gid' => $root->id()]
     );
+  }
+}
+
+/**
+ * Imports shipped translations/<langcode>.po files for all profile modules.
+ *
+ * Drupal only auto-imports a module's translations/*.po file on the exact
+ * request that both enables the module AND already has the matching
+ * language installed. A fresh `drush site:install` enables every profile
+ * module and every configured language in the same install batch, so that
+ * ordering is not guaranteed; several custom modules (service_request,
+ * markaspot_mail, markaspot_emergency, ...) ship a translations/de.po but
+ * end up with their $this->t() strings falling back to English until an
+ * operator manually runs `locale:check` + `locale:update`.
+ *
+ * This walks every module physically shipped from inside this profile
+ * (not just ones prefixed "markaspot_" -- service_request is not, but lives
+ * here too) and imports its translations/<langcode>.po for every language
+ * actually installed on the site, via the same Locale API drush's
+ * `locale:import` uses. Existing per-module update hooks
+ * (e.g. service_request_update_11019(), markaspot_mail_update_10003())
+ * remain in place for already-installed sites; this only covers the fresh
+ * install path, where they never ran.
+ *
+ * Idempotent: Gettext::fileToDatabase() upserts by source string, so
+ * re-running (e.g. on every markaspot_install() invocation, or if called
+ * again by an operator) is safe. Imports as "not customized" and only
+ * overwrites other not-customized strings, so it never clobbers a
+ * translation an administrator has manually edited in the UI. No-ops
+ * cleanly when the locale module is absent or no non-English language is
+ * installed.
+ */
+function _markaspot_import_shipped_module_translations(): void {
+  $module_handler = \Drupal::moduleHandler();
+  if (!$module_handler->moduleExists('locale')) {
+    return;
+  }
+
+  $langcodes = array_keys(\Drupal::languageManager()->getLanguages());
+  $langcodes = array_filter($langcodes, static fn (string $langcode): bool => $langcode !== 'en');
+  if (!$langcodes) {
+    // No non-English language installed (e.g. 'de' not present); nothing to
+    // import.
+    return;
+  }
+
+  $module_handler->loadInclude('locale', 'inc', 'locale.bulk');
+
+  $profile_path = \Drupal::service('extension.list.profile')->getPath('markaspot');
+  $profile_modules_dir = \Drupal::root() . '/' . $profile_path . '/modules/';
+  $extension_list = \Drupal::service('extension.list.module');
+
+  $not_customized = defined('LOCALE_NOT_CUSTOMIZED')
+    ? (int) constant('LOCALE_NOT_CUSTOMIZED')
+    : 0;
+  $options = [
+    'overwrite_options' => [
+      'not_customized' => TRUE,
+      'customized' => FALSE,
+    ],
+    'customized' => $not_customized,
+    'finish_feedback' => FALSE,
+  ];
+
+  $imported = [];
+  $updated_lids = [];
+  foreach (array_keys($module_handler->getModuleList()) as $module_name) {
+    $module_path = \Drupal::root() . '/' . $extension_list->getPath($module_name);
+    if (strpos($module_path . '/', $profile_modules_dir) !== 0) {
+      // Not a module shipped from inside this profile.
+      continue;
+    }
+
+    foreach ($langcodes as $langcode) {
+      $po_file = $module_path . '/translations/' . $langcode . '.po';
+      if (!is_readable($po_file)) {
+        continue;
+      }
+
+      try {
+        $report = Gettext::fileToDatabase((object) [
+          'uri' => $po_file,
+          'filename' => basename($po_file),
+          'langcode' => $langcode,
+          'project' => $module_name,
+        ], $options);
+      }
+      catch (\Throwable $e) {
+        \Drupal::logger('markaspot')->warning('Failed to import @module translations for @langcode: @message', [
+          '@module' => $module_name,
+          '@langcode' => $langcode,
+          '@message' => $e->getMessage(),
+        ]);
+        continue;
+      }
+
+      $changed = (int) ($report['additions'] ?? 0) + (int) ($report['updates'] ?? 0);
+      if ($changed > 0) {
+        $imported[] = "$module_name:$langcode:$changed";
+        if (isset($report['strings']) && is_array($report['strings'])) {
+          $updated_lids = array_merge($updated_lids, $report['strings']);
+        }
+      }
+    }
+  }
+
+  if ($updated_lids && function_exists('_locale_refresh_translations')) {
+    _locale_refresh_translations($langcodes, array_unique($updated_lids));
+  }
+
+  if ($imported) {
+    \Drupal::logger('markaspot')->notice('Imported shipped module translations during install: @modules', [
+      '@modules' => implode(', ', $imported),
+    ]);
   }
 }
 

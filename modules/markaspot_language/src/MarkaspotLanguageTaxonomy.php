@@ -44,6 +44,17 @@ class MarkaspotLanguageTaxonomy {
     $vocabularies = Vocabulary::loadMultiple();
     foreach ($vocabularies as $vocabulary) {
       $vocabulary_id = $vocabulary->id();
+      if (empty($vocabulary_id)) {
+        // Guards against a fresh-install race where Vocabulary::loadMultiple()
+        // returns an entity whose config entity ID has not settled yet (e.g.
+        // config still mid-import). Creating
+        // language.content_settings.taxonomy_term.<empty> fatals with
+        // "Attempt to create content language settings without a
+        // target_entity_type_id." Skip it; a later, fully-loaded pass over
+        // the same vocabulary (module install order, update hook, or a
+        // manual re-run) will pick it up correctly.
+        continue;
+      }
       $config = $this->configFactory->getEditable('language.content_settings.taxonomy_term.' . $vocabulary_id);
       $config
         ->set('third_party_settings.content_translation.enabled', TRUE)
@@ -96,6 +107,11 @@ class MarkaspotLanguageTaxonomy {
     $vocabularies = Vocabulary::loadMultiple();
     foreach ($vocabularies as $vocabulary) {
       $vocabulary_id = $vocabulary->id();
+      if (empty($vocabulary_id)) {
+        // See enableTranslationForAllVocabularies() for why this guard
+        // exists.
+        continue;
+      }
       $config = $this->configFactory->getEditable('language.content_settings.taxonomy_term.' . $vocabulary_id);
       $config
         ->set('third_party_settings.content_translation.enabled', FALSE)
