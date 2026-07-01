@@ -20,6 +20,7 @@ use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
+use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
@@ -323,16 +324,26 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         return $group;
       });
 
-    // Term storage: create terms that return incremental IDs.
+    // Term storage: create terms that return incremental IDs, tracked by ID
+    // (with their create() 'name') so loadMultiple() can resolve category
+    // names for demo request seeding (createDemoRequests()).
     $termIdCounter = 0;
+    $termsById = [];
     $this->termStorage->method('create')
-      ->willReturnCallback(function () use (&$termIdCounter) {
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$termsById) {
         $termIdCounter++;
+        $currentId = $termIdCounter;
         $term = $this->createMock(TermInterface::class);
-        $term->method('id')->willReturn($termIdCounter);
+        $term->method('id')->willReturn($currentId);
         $term->method('save')->willReturn(1);
         $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('label')->willReturn($values['name'] ?? '');
+        $termsById[$currentId] = $term;
         return $term;
+      });
+    $this->termStorage->method('loadMultiple')
+      ->willReturnCallback(function (array $ids) use (&$termsById) {
+        return array_intersect_key($termsById, array_flip($ids));
       });
 
     // User storage: no existing user, create new.
@@ -359,6 +370,115 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $statusQuery->method('condition')->willReturnSelf();
     $statusQuery->method('execute')->willReturn([]);
     $this->termStorage->method('getQuery')->willReturn($statusQuery);
+  }
+
+  /**
+   * Configures term storage to resolve category name mocks for demo content.
+   *
+   * Sets up loadMultiple() to return term mocks (with label()) keyed by
+   * term ID, and getQuery() to resolve to an empty status term set (no
+   * field_status assigned to created demo requests).
+   *
+   * @param array<int, string> $namesByTid
+   *   Category names keyed by term ID.
+   */
+  protected function mockCategoryTermsForDemoContent(array $namesByTid): void {
+    $terms = [];
+    foreach ($namesByTid as $tid => $name) {
+      $term = $this->createMock(TermInterface::class);
+      $term->method('id')->willReturn($tid);
+      $term->method('label')->willReturn($name);
+      $terms[$tid] = $term;
+    }
+    $this->termStorage->method('loadMultiple')
+      ->willReturnCallback(fn(array $ids) => array_intersect_key($terms, array_flip($ids)));
+
+    $statusQuery = $this->createMock(QueryInterface::class);
+    $statusQuery->method('accessCheck')->willReturnSelf();
+    $statusQuery->method('condition')->willReturnSelf();
+    $statusQuery->method('execute')->willReturn([]);
+    $this->termStorage->method('getQuery')->willReturn($statusQuery);
+  }
+
+  /**
+   * Builds a group mock with no map/boundary fields set.
+   *
+   * Used by createDemoRequests() reflection tests that don't exercise
+   * coordinate generation, so extractMapCenter()/extractBoundaryGeometry()
+   * take their safe fallback paths.
+   */
+  protected function mockGroupWithNoMapFields(int $groupId): GroupInterface {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($groupId);
+    $group->method('hasField')->willReturn(FALSE);
+    return $group;
+  }
+
+  /**
+   * Clears AI provider ENV vars for hermetic AI-guard tests.
+   *
+   * The DDEV container may have real AI credentials in its environment
+   * (e.g. MARKASPOT_AI_API_KEY); AI-guard tests must not depend on that
+   * ambient state, so this clears the known ENV vars and returns their
+   * original values for restoreAiEnvVars().
+   *
+   * @return array<string, string|false>
+   *   Original values keyed by ENV var name.
+   */
+  protected function clearAiEnvVars(): array {
+    $vars = [
+      'MARKASPOT_AI_API_KEY', 'OPENAI_API_KEY', 'MARKASPOT_AI_OPENAI_KEY',
+      'AZURE_OPENAI_API_KEY', 'MARKASPOT_AI_AZURE_KEY',
+      'ANTHROPIC_API_KEY', 'MARKASPOT_AI_ANTHROPIC_KEY',
+      'IONOS_AI_API_KEY', 'MARKASPOT_AI_IONOS_KEY',
+    ];
+    $backup = [];
+    foreach ($vars as $var) {
+      $backup[$var] = getenv($var);
+      putenv($var);
+    }
+    return $backup;
+  }
+
+  /**
+   * Restores ENV vars cleared by clearAiEnvVars().
+   *
+   * @param array<string, string|false> $backup
+   *   Original values as returned by clearAiEnvVars().
+   */
+  protected function restoreAiEnvVars(array $backup): void {
+    foreach ($backup as $var => $value) {
+      putenv($value === FALSE ? $var : "$var=$value");
+    }
+  }
+
+  /**
+   * Builds a config factory where an AI provider is fully configured.
+   */
+  protected function buildConfigFactoryWithAiConfigured(string $provider = 'openai', string $apiKey = 'test-key-123'): ConfigFactoryInterface {
+    $aiSettings = $this->createMock(ImmutableConfig::class);
+    $aiSettings->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'default_provider' => $provider,
+        "providers.{$provider}.api_key" => $apiKey,
+        default => NULL,
+      });
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')
+      ->willReturnCallback(fn(string $name) => match ($name) {
+        'markaspot_ai.settings' => $aiSettings,
+        default => $this->createMock(ImmutableConfig::class),
+      });
+    return $configFactory;
+  }
+
+  /**
+   * Builds a config factory where no AI provider is configured.
+   */
+  protected function buildConfigFactoryWithAiNotConfigured(): ConfigFactoryInterface {
+    $configFactory = $this->createMock(ConfigFactoryInterface::class);
+    $configFactory->method('get')->willReturn($this->createMock(ImmutableConfig::class));
+    return $configFactory;
   }
 
   /**
@@ -1051,7 +1171,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests that provisioning creates 5 demo service request nodes.
+   * Tests that provisioning creates one demo request per category.
    *
    * @covers ::provisionWorkspace
    */
@@ -1072,15 +1192,21 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $this->groupStorage->method('create')->willReturn($group);
 
-    // Term storage: create terms that return incremental IDs.
+    // Term storage: create terms that return incremental IDs, tracked by ID
+    // (with label()) so loadMultiple() can resolve both the fixed status
+    // term mocks below and the real category terms created for this test.
     $termIdCounter = 0;
+    $termsById = [];
     $this->termStorage->method('create')
-      ->willReturnCallback(function () use (&$termIdCounter) {
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$termsById) {
         $termIdCounter++;
+        $currentId = $termIdCounter;
         $term = $this->createMock(TermInterface::class);
-        $term->method('id')->willReturn($termIdCounter);
+        $term->method('id')->willReturn($currentId);
         $term->method('save')->willReturn(1);
         $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('label')->willReturn($values['name'] ?? '');
+        $termsById[$currentId] = $term;
         return $term;
       });
 
@@ -1110,9 +1236,12 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $closedField->method('__get')->with('value')->willReturn('closed');
     $closedTerm->method('get')->willReturn($closedField);
 
+    $termsById[100] = $initialTerm;
+    $termsById[101] = $closedTerm;
     $this->termStorage->method('loadMultiple')
-      ->with([100, 101])
-      ->willReturn([100 => $initialTerm, 101 => $closedTerm]);
+      ->willReturnCallback(function (array $ids) use (&$termsById) {
+        return array_intersect_key($termsById, array_flip($ids));
+      });
 
     // User storage.
     $this->userStorage->method('loadByProperties')->willReturn([]);
@@ -1123,7 +1252,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
 
     $this->relationshipStorage->method('loadByProperties')->willReturn([]);
 
-    // Node storage: expect 5 demo nodes + 1 start page to be created.
+    // Node storage: expect 2 demo nodes (one per category) + 1 start page.
     $demoCount = 0;
     $pageCount = 0;
     $this->nodeStorage->method('create')
@@ -1132,7 +1261,14 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
           $demoCount++;
           $this->assertArrayHasKey('field_category', $values);
           $this->assertArrayHasKey('field_geolocation', $values);
+          $this->assertEquals('plain_text', $values['body']['format']);
           $this->assertStringContainsString('[demo-content]', $values['body']['value']);
+          // No AI client is configured in $this->service (setUp() defaults
+          // it to NULL), so the fallback path must be used: the title is
+          // the category name, and the body must reference that same name
+          // -- proving title/body always match field_category.
+          $this->assertContains($values['title'], ['Road Damage', 'Flood']);
+          $this->assertStringContainsString($values['title'], $values['body']['value']);
         }
         elseif ($values['type'] === 'page') {
           $pageCount++;
@@ -1151,7 +1287,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       'lng' => 6.9,
     ]));
 
-    $this->assertEquals(5, $demoCount, 'Expected 5 demo requests to be created.');
+    $this->assertEquals(2, $demoCount, 'Expected 1 demo request per category (2 categories) to be created.');
     $this->assertEquals(1, $pageCount, 'Expected 1 start page to be created.');
   }
 
@@ -1257,7 +1393,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       'boundary' => $boundaryGeometry,
     ]));
 
-    $this->assertCount(5, $coords);
+    // Default validData() has 2 categories -> 1 demo request each.
+    $this->assertCount(2, $coords);
     foreach ($coords as $coord) {
       $this->assertGreaterThanOrEqual(10.0, $coord['lat'], 'Lat should be >= 10');
       $this->assertLessThanOrEqual(11.0, $coord['lat'], 'Lat should be <= 11');
@@ -1267,7 +1404,13 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests demo requests use German templates when language is 'de'.
+   * Tests demo requests use the category's own name/language as title.
+   *
+   * With no AI client configured, createDemoRequests() falls back to
+   * deterministic per-category content: the title is the category's own
+   * label in the workspace language (here 'de', matching the category
+   * term's primary langcode), never a canned phrase decoupled from
+   * field_category.
    *
    * @covers ::provisionWorkspace
    */
@@ -1284,16 +1427,25 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $group->method('addRelationship')->willReturn($membership);
     $this->groupStorage->method('create')->willReturn($group);
 
-    // Terms.
+    // Terms: track created terms by ID (with label()) so loadMultiple() can
+    // resolve category names for demo request seeding.
     $termIdCounter = 0;
+    $termsById = [];
     $this->termStorage->method('create')
-      ->willReturnCallback(function () use (&$termIdCounter) {
+      ->willReturnCallback(function (array $values) use (&$termIdCounter, &$termsById) {
         $termIdCounter++;
+        $currentId = $termIdCounter;
         $term = $this->createMock(TermInterface::class);
-        $term->method('id')->willReturn($termIdCounter);
+        $term->method('id')->willReturn($currentId);
         $term->method('save')->willReturn(1);
         $term->method('isTranslatable')->willReturn(FALSE);
+        $term->method('label')->willReturn($values['name'] ?? '');
+        $termsById[$currentId] = $term;
         return $term;
+      });
+    $this->termStorage->method('loadMultiple')
+      ->willReturnCallback(function (array $ids) use (&$termsById) {
+        return array_intersect_key($termsById, array_flip($ids));
       });
     $statusQuery = $this->createMock(QueryInterface::class);
     $statusQuery->method('accessCheck')->willReturnSelf();
@@ -1330,9 +1482,287 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       'language' => 'de',
     ]));
 
-    $this->assertCount(5, $titles);
-    // First title should be German.
-    $this->assertEquals('Defekte Straßenlaterne', $titles[0]);
+    $this->assertCount(2, $titles);
+    // Category terms are created in the 'de' primary langcode here, so the
+    // demo title (= category label) is the German name, in creation order.
+    $this->assertEquals('Strassenschaden', $titles[0]);
+    $this->assertEquals('Hochwasser', $titles[1]);
+  }
+
+  /**
+   * Tests demo content falls back to per-category boilerplate with no AI.
+   *
+   * $this->service (built in setUp()) always has a NULL AI client, so this
+   * exercises the deterministic fallback path directly: the title equals
+   * the category name and the body contains both the localized boilerplate
+   * and that same category name, proving demo content always matches
+   * field_category even without an AI provider configured.
+   *
+   * @covers ::createDemoRequests
+   * @covers ::buildFallbackDemoBody
+   */
+  public function testDemoRequestsFallbackContentMatchesCategoryWhenAiClientNull(): void {
+    $group = $this->mockGroupWithNoMapFields(42);
+    $categoryNames = [10 => 'Road Damage', 20 => 'Flood', 30 => 'Graffiti'];
+    $this->mockCategoryTermsForDemoContent($categoryNames);
+
+    $created = [];
+    $this->nodeStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$created) {
+        $created[] = $values;
+        $node = $this->createMock(NodeInterface::class);
+        $node->method('save')->willReturn(1);
+        return $node;
+      });
+
+    $method = new \ReflectionMethod($this->service, 'createDemoRequests');
+    $method->invoke($this->service, ['name' => 'Test Workspace'], $group, array_keys($categoryNames), 42, 'en');
+
+    $this->assertCount(3, $created);
+    $tids = array_keys($categoryNames);
+    foreach ($created as $i => $values) {
+      $tid = $tids[$i];
+      $expectedName = $categoryNames[$tid];
+      $this->assertEquals($expectedName, $values['title']);
+      $this->assertStringContainsString($expectedName, $values['body']['value']);
+      $this->assertStringContainsString('[demo-content]', $values['body']['value']);
+      $this->assertEquals('plain_text', $values['body']['format']);
+      $this->assertEquals(['target_id' => $tid], $values['field_category']);
+    }
+  }
+
+  /**
+   * Tests createDemoRequests() never calls chat() without AI credentials.
+   *
+   * AiClientService retries failed requests up to 3x with exponential
+   * backoff, so calling chat() with no resolvable provider credentials
+   * would fail slowly and block workspace provisioning. This guards that
+   * the AI path is skipped entirely (falling back to boilerplate) when no
+   * credentials are resolvable via ENV or config.
+   *
+   * @covers ::createDemoRequests
+   * @covers ::isAiConfigured
+   */
+  public function testDemoRequestsSkipsAiWhenNotConfigured(): void {
+    $envBackup = $this->clearAiEnvVars();
+    try {
+      $configFactory = $this->buildConfigFactoryWithAiNotConfigured();
+
+      $aiClient = $this->createMock(AiClientService::class);
+      $aiClient->expects($this->never())->method('chat');
+
+      $service = new WorkspaceProvisioningService(
+        $this->entityTypeManager,
+        $this->database,
+        $this->logger,
+        $this->languageManager,
+        $configFactory,
+        $this->createMock(TimeInterface::class),
+        $this->lock,
+        $aiClient,
+      );
+
+      $group = $this->mockGroupWithNoMapFields(42);
+      $categoryNames = [10 => 'Road Damage', 20 => 'Flood'];
+      $this->mockCategoryTermsForDemoContent($categoryNames);
+
+      $created = [];
+      $this->nodeStorage->method('create')
+        ->willReturnCallback(function (array $values) use (&$created) {
+          $created[] = $values;
+          $node = $this->createMock(NodeInterface::class);
+          $node->method('save')->willReturn(1);
+          return $node;
+        });
+
+      $method = new \ReflectionMethod($service, 'createDemoRequests');
+      $method->invoke($service, ['name' => 'Test Workspace'], $group, array_keys($categoryNames), 42, 'en');
+
+      $this->assertCount(2, $created);
+      $this->assertEquals('Road Damage', $created[0]['title']);
+      $this->assertStringContainsString('Road Damage', $created[0]['body']['value']);
+    }
+    finally {
+      $this->restoreAiEnvVars($envBackup);
+    }
+  }
+
+  /**
+   * Tests demo requests use valid AI-generated content when configured.
+   *
+   * Covers the AI client being configured and returning a valid,
+   * correctly-shaped JSON array.
+   *
+   * @covers ::createDemoRequests
+   * @covers ::generateDemoContentWithAi
+   */
+  public function testDemoRequestsUseAiGeneratedContentWhenConfigured(): void {
+    $envBackup = $this->clearAiEnvVars();
+    try {
+      $configFactory = $this->buildConfigFactoryWithAiConfigured();
+
+      $aiClient = $this->createMock(AiClientService::class);
+      $aiClient->expects($this->once())
+        ->method('chat')
+        ->willReturn([
+          'choices' => [
+            [
+              'message' => [
+                'content' => json_encode([
+                  ['title' => 'Broken traffic light', 'body' => 'The traffic light has been dark since Monday.'],
+                  ['title' => 'Flooded underpass', 'body' => 'Heavy rain has flooded the pedestrian underpass.'],
+                ]),
+              ],
+            ],
+          ],
+        ]);
+
+      $service = new WorkspaceProvisioningService(
+        $this->entityTypeManager,
+        $this->database,
+        $this->logger,
+        $this->languageManager,
+        $configFactory,
+        $this->createMock(TimeInterface::class),
+        $this->lock,
+        $aiClient,
+      );
+
+      $group = $this->mockGroupWithNoMapFields(42);
+      $categoryNames = [10 => 'Road Damage', 20 => 'Flood'];
+      $this->mockCategoryTermsForDemoContent($categoryNames);
+
+      $created = [];
+      $this->nodeStorage->method('create')
+        ->willReturnCallback(function (array $values) use (&$created) {
+          $created[] = $values;
+          $node = $this->createMock(NodeInterface::class);
+          $node->method('save')->willReturn(1);
+          return $node;
+        });
+
+      $method = new \ReflectionMethod($service, 'createDemoRequests');
+      $method->invoke($service, ['name' => 'Test Workspace'], $group, array_keys($categoryNames), 42, 'en');
+
+      $this->assertCount(2, $created);
+      $this->assertEquals('Broken traffic light', $created[0]['title']);
+      $this->assertStringContainsString('traffic light has been dark', $created[0]['body']['value']);
+      $this->assertStringContainsString('[demo-content]', $created[0]['body']['value']);
+      $this->assertEquals('Flooded underpass', $created[1]['title']);
+      $this->assertStringContainsString('pedestrian underpass', $created[1]['body']['value']);
+    }
+    finally {
+      $this->restoreAiEnvVars($envBackup);
+    }
+  }
+
+  /**
+   * Tests demo requests fall back to boilerplate on unparseable AI JSON.
+   *
+   * Proves provisioning never breaks on a malformed or unexpected AI reply.
+   *
+   * @covers ::createDemoRequests
+   * @covers ::generateDemoContentWithAi
+   */
+  public function testDemoRequestsFallbackWhenAiResponseMalformed(): void {
+    $envBackup = $this->clearAiEnvVars();
+    try {
+      $configFactory = $this->buildConfigFactoryWithAiConfigured();
+
+      $aiClient = $this->createMock(AiClientService::class);
+      $aiClient->method('chat')->willReturn([
+        'choices' => [
+          ['message' => ['content' => 'not valid json{']],
+        ],
+      ]);
+
+      $service = new WorkspaceProvisioningService(
+        $this->entityTypeManager,
+        $this->database,
+        $this->logger,
+        $this->languageManager,
+        $configFactory,
+        $this->createMock(TimeInterface::class),
+        $this->lock,
+        $aiClient,
+      );
+
+      $group = $this->mockGroupWithNoMapFields(42);
+      $categoryNames = [10 => 'Road Damage', 20 => 'Flood'];
+      $this->mockCategoryTermsForDemoContent($categoryNames);
+
+      $created = [];
+      $this->nodeStorage->method('create')
+        ->willReturnCallback(function (array $values) use (&$created) {
+          $created[] = $values;
+          $node = $this->createMock(NodeInterface::class);
+          $node->method('save')->willReturn(1);
+          return $node;
+        });
+
+      $method = new \ReflectionMethod($service, 'createDemoRequests');
+      $method->invoke($service, ['name' => 'Test Workspace'], $group, array_keys($categoryNames), 42, 'en');
+
+      $this->assertCount(2, $created);
+      $this->assertEquals('Road Damage', $created[0]['title']);
+      $this->assertStringContainsString('Road Damage', $created[0]['body']['value']);
+      $this->assertEquals('Flood', $created[1]['title']);
+      $this->assertStringContainsString('Flood', $created[1]['body']['value']);
+    }
+    finally {
+      $this->restoreAiEnvVars($envBackup);
+    }
+  }
+
+  /**
+   * Tests demo requests fall back to boilerplate when the AI client throws.
+   *
+   * Covers a network failure or rate limit exhausted after retries.
+   *
+   * @covers ::createDemoRequests
+   * @covers ::generateDemoContentWithAi
+   */
+  public function testDemoRequestsFallbackWhenAiClientThrows(): void {
+    $envBackup = $this->clearAiEnvVars();
+    try {
+      $configFactory = $this->buildConfigFactoryWithAiConfigured();
+
+      $aiClient = $this->createMock(AiClientService::class);
+      $aiClient->method('chat')->willThrowException(new \Exception('Rate limit exceeded'));
+
+      $service = new WorkspaceProvisioningService(
+        $this->entityTypeManager,
+        $this->database,
+        $this->logger,
+        $this->languageManager,
+        $configFactory,
+        $this->createMock(TimeInterface::class),
+        $this->lock,
+        $aiClient,
+      );
+
+      $group = $this->mockGroupWithNoMapFields(42);
+      $categoryNames = [10 => 'Road Damage'];
+      $this->mockCategoryTermsForDemoContent($categoryNames);
+
+      $created = [];
+      $this->nodeStorage->method('create')
+        ->willReturnCallback(function (array $values) use (&$created) {
+          $created[] = $values;
+          $node = $this->createMock(NodeInterface::class);
+          $node->method('save')->willReturn(1);
+          return $node;
+        });
+
+      $method = new \ReflectionMethod($service, 'createDemoRequests');
+      $method->invoke($service, ['name' => 'Test'], $group, array_keys($categoryNames), 42, 'en');
+
+      $this->assertCount(1, $created);
+      $this->assertEquals('Road Damage', $created[0]['title']);
+    }
+    finally {
+      $this->restoreAiEnvVars($envBackup);
+    }
   }
 
   /**

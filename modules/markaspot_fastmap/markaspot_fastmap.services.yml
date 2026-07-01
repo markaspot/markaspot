@@ -22,6 +22,7 @@ services:
       - '@config.factory'
       - '@datetime.time'
       - '@lock'
+      - '@?markaspot_ai.client'
 
   markaspot_fastmap.workspace_visibility:
     class: Drupal\markaspot_fastmap\Service\WorkspaceVisibilityService

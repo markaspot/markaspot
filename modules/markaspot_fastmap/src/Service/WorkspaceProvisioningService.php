@@ -12,6 +12,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\language\Entity\ConfigurableLanguage;
 use Drupal\user\UserInterface;
@@ -137,7 +138,14 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
   private const MAX_CATEGORIES = 30;
 
-  private const DEMO_REQUEST_COUNT = 5;
+  /**
+   * Maximum number of demo service requests seeded per workspace.
+   *
+   * One demo request is created per category, capped at this value so
+   * workspaces with large category sets don't get flooded with demo
+   * content.
+   */
+  private const DEMO_REQUEST_MAX_COUNT = 8;
 
   /**
    * Lock lifetime while provisioning a workspace slug.
@@ -145,110 +153,60 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   private const WORKSPACE_SLUG_LOCK_TTL = 300.0;
 
   /**
-   * Demo request templates per language.
+   * Fallback demo report boilerplate per language.
    *
-   * Each entry provides a title and description. The templates are cycled
-   * through and paired with workspace categories. Languages without explicit
-   * templates fall back to English.
+   * Used only when AI-generated demo content is unavailable (no AI client
+   * configured, or the AI call/response failed validation). The `%s`
+   * placeholder is replaced with the category name, so the fallback always
+   * stays coherent with field_category, even for fully custom category
+   * sets. Languages without an explicit entry fall back to English.
    */
-  private const DEMO_TEMPLATES = [
-    'en' => [
-      [
-        'title' => 'Broken street light',
-        'description' => 'The street light at this location has been out for several days.',
-      ],
-      [
-        'title' => 'Pothole on main road',
-        'description' => 'A large pothole has formed on the road surface, causing problems for traffic.',
-      ],
-      [
-        'title' => 'Damaged sidewalk',
-        'description' => 'The sidewalk tiles are cracked and uneven, creating a tripping hazard.',
-      ],
-      [
-        'title' => 'Overflowing waste bin',
-        'description' => 'The public waste bin at this location is overflowing and needs to be emptied.',
-      ],
-      [
-        'title' => 'Graffiti on building',
-        'description' => 'There is graffiti on the facade of the building at this location.',
-      ],
-    ],
-    'de' => [
-      [
-        'title' => 'Defekte Straßenlaterne',
-        'description' => 'Die Straßenlaterne an diesem Standort ist seit mehreren Tagen ausgefallen.',
-      ],
-      [
-        'title' => 'Schlagloch auf der Hauptstraße',
-        'description' => 'Auf der Fahrbahn hat sich ein großes Schlagloch gebildet.',
-      ],
-      [
-        'title' => 'Beschädigter Gehweg',
-        'description' => 'Die Gehwegplatten sind gerissen und uneben, es besteht Stolpergefahr.',
-      ],
-      [
-        'title' => 'Überfüllter Mülleimer',
-        'description' => 'Der öffentliche Mülleimer an diesem Standort ist überfüllt und muss geleert werden.',
-      ],
-      ['title' => 'Graffiti an Gebäude', 'description' => 'An der Fassade des Gebäudes befindet sich Graffiti.'],
-    ],
-    'cs' => [
-      [
-        'title' => 'Rozbitá pouliční lampa',
-        'description' => 'Pouliční lampa na tomto místě již několik dní nesvítí.',
-      ],
-      [
-        'title' => 'Výtluk na hlavní silnici',
-        'description' => 'Na vozovce se vytvořil velký výtluk, který komplikuje dopravu.',
-      ],
-      ['title' => 'Poškozený chodník', 'description' => 'Dlaždice chodníku jsou popraskané a nerovné, hrozí zakopnutí.'],
-      [
-        'title' => 'Přeplněný odpadkový koš',
-        'description' => 'Veřejný odpadkový koš na tomto místě je přeplněný a je třeba jej vyprázdnit.',
-      ],
-      ['title' => 'Graffiti na budově', 'description' => 'Na fasádě budovy na tomto místě je graffiti.'],
-    ],
-    'nl' => [
-      [
-        'title' => 'Kapotte straatlantaarn',
-        'description' => 'De straatlantaarn op deze locatie is al meerdere dagen kapot.',
-      ],
-      ['title' => 'Gat in de weg', 'description' => 'Er is een groot gat in het wegdek ontstaan.'],
-      [
-        'title' => 'Beschadigd trottoir',
-        'description' => 'De stoeptegels zijn gebarsten en ongelijk, er is struikelgevaar.',
-      ],
-      ['title' => 'Overvolle prullenbak', 'description' => 'De openbare prullenbak op deze locatie is overvol.'],
-      ['title' => 'Graffiti op gebouw', 'description' => 'Er is graffiti aangebracht op de gevel van het gebouw.'],
-    ],
-    'fr' => [
-      [
-        'title' => 'Lampadaire en panne',
-        'description' => "Le lampadaire a cet endroit est en panne depuis plusieurs jours.",
-      ],
-      ['title' => 'Nid-de-poule sur la route', 'description' => 'Un grand nid-de-poule est apparu sur la chaussee.'],
-      ['title' => 'Trottoir endommage', 'description' => 'Les dalles du trottoir sont fissurees et inegales.'],
-      ['title' => 'Poubelle debordante', 'description' => 'La poubelle publique a cet endroit deborde.'],
-      ['title' => 'Graffiti sur batiment', 'description' => 'Il y a des graffitis sur la facade du batiment.'],
-    ],
-    'es' => [
-      ['title' => 'Farola rota', 'description' => 'La farola en esta ubicacion lleva varios dias sin funcionar.'],
-      ['title' => 'Bache en la calle', 'description' => 'Se ha formado un gran bache en la calzada.'],
-      ['title' => 'Acera danada', 'description' => 'Las baldosas de la acera estan agrietadas y desniveladas.'],
-      ['title' => 'Papelera desbordada', 'description' => 'La papelera publica en esta ubicacion esta desbordada.'],
-      ['title' => 'Grafiti en edificio', 'description' => 'Hay grafitis en la fachada del edificio.'],
-    ],
+  private const DEMO_FALLBACK_BOILERPLATE = [
+    'en' => "Example report for the '%s' category. This is auto-generated demo content, edit or delete it anytime.",
+    'de' => "Beispielmeldung für die Kategorie '%s'. Dies ist automatisch erzeugter Demo-Inhalt, du kannst ihn jederzeit bearbeiten oder löschen.",
+    'cs' => "Ukázkové hlášení pro kategorii '%s'. Toto je automaticky vygenerovaný ukázkový obsah, můžete jej kdykoli upravit nebo smazat.",
+    'nl' => "Voorbeeldmelding voor de categorie '%s'. Dit is automatisch gegenereerde demo-inhoud, u kunt deze op elk moment bewerken of verwijderen.",
+    'fr' => "Signalement d'exemple pour la catégorie '%s'. Ceci est un contenu de démonstration généré automatiquement, vous pouvez le modifier ou le supprimer à tout moment.",
+    'es' => "Reporte de ejemplo para la categoría '%s'. Este es contenido de demostración generado automáticamente, puede editarlo o eliminarlo en cualquier momento.",
+  ];
+
+  /**
+   * English names for workspace languages, used only in the AI prompt.
+   *
+   * The AI provider is instructed in English; this maps the workspace's
+   * default langcode to its English name so the prompt reads naturally
+   * (e.g. "written in German") instead of a bare ISO code.
+   */
+  private const AI_LANGUAGE_NAMES = [
+    'en' => 'English',
+    'de' => 'German',
+    'cs' => 'Czech',
+    'nl' => 'Dutch',
+    'fr' => 'French',
+    'es' => 'Spanish',
+    'ar' => 'Arabic',
+    'da' => 'Danish',
+    'fi' => 'Finnish',
+    'hu' => 'Hungarian',
+    'it' => 'Italian',
+    'nb' => 'Norwegian',
+    'pl' => 'Polish',
+    'pt' => 'Portuguese',
+    'sv' => 'Swedish',
+    'tr' => 'Turkish',
+    'uk' => 'Ukrainian',
   ];
 
   /**
    * Status mapping distribution for demo requests.
    *
-   * Defines the Open311 status mapping for each of the 5 demo requests.
-   * If a mapping is not available (e.g. no "open" status term), falls back
-   * to "initial".
+   * Defines the Open311 status mapping for each demo request, up to
+   * DEMO_REQUEST_MAX_COUNT. If a mapping is not available (e.g. no "open"
+   * status term), falls back to "initial".
    */
-  private const DEMO_STATUS_MAPPINGS = ['initial', 'initial', 'initial', 'open', 'closed'];
+  private const DEMO_STATUS_MAPPINGS = [
+    'initial', 'initial', 'initial', 'open', 'open', 'closed', 'closed', 'initial',
+  ];
 
   private const ALLOWED_LANGS = [
     'en', 'de', 'cs', 'nl', 'fr', 'es', 'ar', 'da', 'fi',
@@ -278,6 +236,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     protected readonly ConfigFactoryInterface $configFactory,
     protected readonly TimeInterface $time,
     protected readonly LockBackendInterface $lock,
+    protected readonly ?AiClientService $aiClient = NULL,
   ) {}
 
   /**
@@ -1178,9 +1137,12 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Creates demo service request nodes for a newly provisioned workspace.
    *
-   * Generates DEMO_REQUEST_COUNT nodes distributed across the workspace's
-   * categories, with coordinates randomly placed within the boundary bounding
-   * box (or a 2km radius of center if no boundary is available).
+   * Seeds one demo report per category (capped at DEMO_REQUEST_MAX_COUNT),
+   * with coordinates randomly placed within the boundary bounding box (or
+   * a ~500m radius of center if no boundary is available). Each demo's
+   * title/body is generated to match its own category: primarily via a
+   * single AI call, falling back to deterministic per-category boilerplate
+   * when no AI client is configured or the AI response is unusable.
    *
    * @param array $data
    *   The original workspace provisioning data.
@@ -1212,12 +1174,38 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $boundary = $this->extractBoundaryGeometry($group);
     $bbox = $this->extractBbox($boundary, $centerLat, $centerLng);
 
-    // Get localized templates (fall back to English).
-    $templates = self::DEMO_TEMPLATES[$lang] ?? self::DEMO_TEMPLATES['en'];
+    // One demo per category, capped so large category sets don't flood the
+    // workspace with demo content.
+    $demoCount = min(count($categoryTermIds), self::DEMO_REQUEST_MAX_COUNT);
+    $selectedTids = array_slice(array_values($categoryTermIds), 0, $demoCount);
 
-    for ($i = 0; $i < self::DEMO_REQUEST_COUNT; $i++) {
-      $categoryTid = $categoryTermIds[$i % count($categoryTermIds)];
-      $template = $templates[$i % count($templates)];
+    // Resolve category names (ordered) for the AI prompt and the fallback.
+    // $lang always matches the primary langcode the category terms were
+    // created with (see createCategoryTerms()), so the term's own label is
+    // already in the right language.
+    $categoryTerms = $termStorage->loadMultiple($selectedTids);
+    $categoryNames = [];
+    foreach ($selectedTids as $tid) {
+      $term = $categoryTerms[$tid] ?? NULL;
+      $categoryNames[$tid] = $term ? (string) $term->label() : (string) $tid;
+    }
+
+    // Primary: one AI call for all demo reports at once. Falls back to
+    // deterministic per-category boilerplate on any failure so provisioning
+    // never blocks or breaks on AI unavailability.
+    $aiContent = $this->generateDemoContentWithAi(array_values($categoryNames), $lang);
+
+    foreach (array_values($selectedTids) as $i => $categoryTid) {
+      $categoryName = $categoryNames[$categoryTid];
+
+      if (isset($aiContent[$i]['title'], $aiContent[$i]['body'])) {
+        $title = mb_substr($aiContent[$i]['title'], 0, 255);
+        $bodyText = $aiContent[$i]['body'];
+      }
+      else {
+        $title = mb_substr($categoryName, 0, 255);
+        $bodyText = $this->buildFallbackDemoBody($categoryName, $lang);
+      }
 
       // Determine status for this demo request.
       $mapping = self::DEMO_STATUS_MAPPINGS[$i] ?? 'initial';
@@ -1229,9 +1217,9 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
       $values = [
         'type' => 'service_request',
         'langcode' => $lang,
-        'title' => $template['title'],
+        'title' => $title,
         'body' => [
-          'value' => $template['description'] . "\n\n[demo-content]",
+          'value' => $bodyText . "\n\n[demo-content]",
           'format' => 'plain_text',
         ],
         'field_category' => ['target_id' => $categoryTid],
@@ -1253,10 +1241,144 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     }
 
     $this->logger->info('Created @count demo requests for workspace @name (group @id).', [
-      '@count' => self::DEMO_REQUEST_COUNT,
+      '@count' => $demoCount,
       '@name' => $data['name'] ?? '',
       '@id' => $groupId,
     ]);
+  }
+
+  /**
+   * Generates demo report title/body per category via a single AI call.
+   *
+   * Only attempted when an AI client is injected and configured (provider
+   * credentials resolvable). Never throws: any failure (missing client,
+   * unconfigured provider, API error, unparseable or malformed response)
+   * results in NULL so the caller falls back to deterministic boilerplate.
+   *
+   * @param string[] $categoryNames
+   *   Ordered category names to generate content for.
+   * @param string $lang
+   *   The workspace default language code.
+   *
+   * @return array<int, array{title: string, body: string}>|null
+   *   Ordered list of ['title' => ..., 'body' => ...] matching
+   *   $categoryNames 1:1, or NULL if AI content could not be generated.
+   */
+  private function generateDemoContentWithAi(array $categoryNames, string $lang): ?array {
+    if (empty($categoryNames) || $this->aiClient === NULL || !$this->isAiConfigured()) {
+      return NULL;
+    }
+
+    $languageName = self::AI_LANGUAGE_NAMES[$lang] ?? 'English';
+    $categoryList = '';
+    foreach (array_values($categoryNames) as $index => $name) {
+      $categoryList .= ($index + 1) . '. ' . $name . "\n";
+    }
+
+    $systemPrompt = 'You generate short, realistic citizen infrastructure reports for a '
+      . 'municipal reporting platform. Return ONLY valid JSON, no prose.';
+    $userPrompt = "Workspace language: {$languageName}.\n"
+      . 'Generate one realistic demo citizen report per category below, in the same order. '
+      . 'Return a JSON array with exactly ' . count($categoryNames) . ' objects, each with a '
+      . '"title" and "body" key (1-3 sentences, specific to that category, written in '
+      . "{$languageName}).\n\nCategories:\n{$categoryList}";
+
+    $messages = [
+      ['role' => 'system', 'content' => $systemPrompt],
+      ['role' => 'user', 'content' => $userPrompt],
+    ];
+
+    try {
+      $response = $this->aiClient->chat($messages, [
+        'temperature' => 0.8,
+        'max_tokens' => 200 * count($categoryNames),
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logger->warning('AI demo content generation failed, using fallback: @msg', [
+        '@msg' => $e->getMessage(),
+      ]);
+      return NULL;
+    }
+
+    $content = $response['choices'][0]['message']['content'] ?? '';
+    if (!is_string($content) || trim($content) === '') {
+      return NULL;
+    }
+
+    // Strip Markdown code fences some models add despite instructions.
+    $content = (string) preg_replace('/^```(?:json)?\s*|\s*```$/m', '', trim($content));
+
+    $decoded = json_decode(trim($content), TRUE);
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded) || count($decoded) !== count($categoryNames)) {
+      return NULL;
+    }
+
+    $result = [];
+    foreach (array_values($decoded) as $index => $item) {
+      if (!is_array($item)
+        || !isset($item['title'], $item['body'])
+        || !is_string($item['title'])
+        || !is_string($item['body'])
+        || trim($item['title']) === ''
+        || trim($item['body']) === ''
+      ) {
+        return NULL;
+      }
+      $result[$index] = ['title' => trim($item['title']), 'body' => trim($item['body'])];
+    }
+
+    return $result;
+  }
+
+  /**
+   * Determines whether the injected AI client has resolvable credentials.
+   *
+   * Mirrors AiClientService::resolveApiKey()'s fallback chain (canonical
+   * ENV, legacy per-provider ENV, config) without exposing key material,
+   * so provisioning can skip the AI path entirely (and its network I/O and
+   * retry/backoff delays) instead of failing slowly when unconfigured.
+   */
+  private function isAiConfigured(): bool {
+    if ($this->aiClient === NULL) {
+      return FALSE;
+    }
+
+    if (getenv('MARKASPOT_AI_API_KEY')) {
+      return TRUE;
+    }
+
+    $config = $this->configFactory->get('markaspot_ai.settings');
+    $provider = $config->get('default_provider') ?: 'openai';
+
+    $legacyEnvVars = match ($provider) {
+      'openai' => ['OPENAI_API_KEY', 'MARKASPOT_AI_OPENAI_KEY'],
+      'azure' => ['AZURE_OPENAI_API_KEY', 'MARKASPOT_AI_AZURE_KEY'],
+      'anthropic' => ['ANTHROPIC_API_KEY', 'MARKASPOT_AI_ANTHROPIC_KEY'],
+      'ionos' => ['IONOS_AI_API_KEY', 'MARKASPOT_AI_IONOS_KEY'],
+      default => ['MARKASPOT_AI_' . strtoupper((string) $provider) . '_KEY'],
+    };
+    foreach ($legacyEnvVars as $envVar) {
+      if (getenv($envVar)) {
+        return TRUE;
+      }
+    }
+
+    $apiKey = $config->get("providers.{$provider}.api_key");
+    return is_string($apiKey) && $apiKey !== '';
+  }
+
+  /**
+   * Builds the deterministic fallback demo report body for a category.
+   *
+   * @param string $categoryName
+   *   The category name to reference in the boilerplate text.
+   * @param string $lang
+   *   The workspace default language code.
+   */
+  private function buildFallbackDemoBody(string $categoryName, string $lang): string {
+    $template = self::DEMO_FALLBACK_BOILERPLATE[$lang] ?? self::DEMO_FALLBACK_BOILERPLATE['en'];
+    return sprintf($template, $categoryName);
   }
 
   /**
