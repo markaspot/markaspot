@@ -181,6 +181,44 @@ class TierConfigService {
   }
 
   /**
+   * Counts real (non-demo) service requests in a jurisdiction.
+   *
+   * Contract: a "demo report" is a service_request node whose body contains
+   * the literal marker "[demo-content]" (seeded by workspace provisioning).
+   * This returns every OTHER service_request in the jurisdiction, across all
+   * statuses. It is computed as total minus demo so that requests with an
+   * empty body (which cannot carry the marker) are correctly counted as real.
+   * Jurisdiction-scoped via field_jurisdiction, so no cross-tenant counts
+   * leak.
+   *
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   *
+   * @return int
+   *   The number of non-demo service requests in the jurisdiction.
+   */
+  public function countRealRequests(int $groupId): int {
+    $storage = $this->entityTypeManager->getStorage('node');
+
+    $total = (int) $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('field_jurisdiction', $groupId)
+      ->count()
+      ->execute();
+
+    $demo = (int) $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->condition('field_jurisdiction', $groupId)
+      ->condition('body.value', '%' . $this->database->escapeLike('[demo-content]') . '%', 'LIKE')
+      ->count()
+      ->execute();
+
+    return max(0, $total - $demo);
+  }
+
+  /**
    * Gets the member limit for a tier.
    *
    * @param string $tier

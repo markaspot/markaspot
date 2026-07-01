@@ -464,6 +464,93 @@ class TierConfigServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests countRealRequests() excludes demo-content service requests.
+   *
+   * Contract: real = total minus nodes whose body carries the
+   * "[demo-content]" marker. Here total = 3 (2 demo + 1 real) and demo = 2,
+   * so the method must return 1. Also asserts the demo query filters on
+   * body.value with a LIKE against the marker, jurisdiction-scoped.
+   *
+   * @covers ::countRealRequests
+   */
+  public function testCountRealRequestsExcludesDemoContent(): void {
+    $totalQuery = $this->createMock(QueryInterface::class);
+    $totalQuery->method('accessCheck')->willReturnSelf();
+    $totalQuery->method('condition')->willReturnSelf();
+    $totalQuery->method('count')->willReturnSelf();
+    $totalQuery->method('execute')->willReturn(3);
+
+    $demoConditions = [];
+    $demoQuery = $this->createMock(QueryInterface::class);
+    $demoQuery->method('accessCheck')->willReturnSelf();
+    $demoQuery->method('condition')
+      ->willReturnCallback(function (...$args) use (&$demoConditions, $demoQuery) {
+        $demoConditions[] = $args;
+        return $demoQuery;
+      });
+    $demoQuery->method('count')->willReturnSelf();
+    $demoQuery->method('execute')->willReturn(2);
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')
+      ->willReturnOnConsecutiveCalls($totalQuery, $demoQuery);
+
+    $this->entityTypeManager->method('getStorage')
+      ->with('node')
+      ->willReturn($storage);
+
+    // escapeLike is a no-op passthrough for the marker (no LIKE wildcards).
+    $this->database->method('escapeLike')->willReturnArgument(0);
+
+    $this->assertSame(1, $this->service->countRealRequests(14));
+
+    // The demo query must filter body.value with a LIKE on the marker.
+    $likeConditions = array_filter(
+      $demoConditions,
+      static fn(array $c) => ($c[0] ?? NULL) === 'body.value' && ($c[2] ?? NULL) === 'LIKE'
+    );
+    $this->assertCount(1, $likeConditions, 'Demo query must LIKE-match body.value.');
+    $likeCondition = reset($likeConditions);
+    $this->assertStringContainsString('[demo-content]', $likeCondition[1]);
+    // Jurisdiction scoping must be present on the demo query.
+    $jurConditions = array_filter(
+      $demoConditions,
+      static fn(array $c) => ($c[0] ?? NULL) === 'field_jurisdiction'
+    );
+    $this->assertCount(1, $jurConditions, 'Demo query must be jurisdiction-scoped.');
+  }
+
+  /**
+   * Tests countRealRequests() returns the full total when no demo nodes exist.
+   *
+   * @covers ::countRealRequests
+   */
+  public function testCountRealRequestsNoDemoNodes(): void {
+    $totalQuery = $this->createMock(QueryInterface::class);
+    $totalQuery->method('accessCheck')->willReturnSelf();
+    $totalQuery->method('condition')->willReturnSelf();
+    $totalQuery->method('count')->willReturnSelf();
+    $totalQuery->method('execute')->willReturn(5);
+
+    $demoQuery = $this->createMock(QueryInterface::class);
+    $demoQuery->method('accessCheck')->willReturnSelf();
+    $demoQuery->method('condition')->willReturnSelf();
+    $demoQuery->method('count')->willReturnSelf();
+    $demoQuery->method('execute')->willReturn(0);
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')
+      ->willReturnOnConsecutiveCalls($totalQuery, $demoQuery);
+
+    $this->entityTypeManager->method('getStorage')
+      ->with('node')
+      ->willReturn($storage);
+    $this->database->method('escapeLike')->willReturnArgument(0);
+
+    $this->assertSame(5, $this->service->countRealRequests(14));
+  }
+
+  /**
    * Tests getMemberLimit() returns configured values.
    *
    * @covers ::getMemberLimit
