@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.132](https://github.com/markaspot/markaspot/compare/11.9.131...11.9.132) (2026-07-01)
+
+### Bug Fixes
+
+* make management form-mode, staff fields and translations fresh-install-safe ([0be7afc](https://github.com/markaspot/markaspot/commit/0be7afc7cee94aded6a7aa9423232180379ee6f7))
+
 ## [11.9.131](https://github.com/markaspot/markaspot/compare/11.9.130...11.9.131) (2026-06-28)
 
 ### Bug Fixes
