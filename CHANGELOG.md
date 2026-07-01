@@ -1,5 +1,19 @@
 # Changelog
 
+## [11.9.133](https://github.com/markaspot/markaspot/compare/11.9.132...11.9.133) (2026-07-01)
+
+### Features
+
+* expose real_request_count and harden demo content AI prompt ([a1d9172](https://github.com/markaspot/markaspot/commit/a1d91729b9d697be27a41c2e2784556184333936))
+
+### Bug Fixes
+
+* match FastMap demo request content to its category ([4ab07c5](https://github.com/markaspot/markaspot/commit/4ab07c54e2fe0eadd589cfdea38080255861b9bd))
+
+### Refactoring
+
+* serve real_request_count from dedicated fastmap report-stats route ([2524227](https://github.com/markaspot/markaspot/commit/252422755d52e34795263840670a91b87da7b74a))
+
 ## [11.9.132](https://github.com/markaspot/markaspot/compare/11.9.131...11.9.132) (2026-07-01)
 
 ### Bug Fixes
