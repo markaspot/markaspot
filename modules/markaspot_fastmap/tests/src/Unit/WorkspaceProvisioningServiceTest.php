@@ -2644,4 +2644,103 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     return $record;
   }
 
+  /**
+   * Tests that an explicit valid category_icons entry beats the heuristic.
+   *
+   * @covers ::createCategoryTerms
+   */
+  public function testCreateCategoryTermsExplicitIconWins(): void {
+    $captured = [];
+    $this->termStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$captured) {
+        $captured[] = $values;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(count($captured));
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    $method = new \ReflectionMethod($this->service, 'createCategoryTerms');
+    $method->invoke(
+      $this->service,
+      $this->termStorage,
+      42,
+      ['en' => ['Flood Damage']],
+      'en',
+      ['i-lucide-car']
+    );
+
+    // Without the explicit override, "Flood Damage" would match the "flood"
+    // keyword heuristic (i-lucide-droplets). The explicit icon must win.
+    $this->assertSame('i-lucide-car', $captured[0]['field_category_icon']);
+  }
+
+  /**
+   * Tests that an invalid category_icons entry falls back to the heuristic.
+   *
+   * @covers ::createCategoryTerms
+   */
+  public function testCreateCategoryTermsInvalidIconFallsBackToHeuristic(): void {
+    $captured = [];
+    $this->termStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$captured) {
+        $captured[] = $values;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(count($captured));
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    $method = new \ReflectionMethod($this->service, 'createCategoryTerms');
+    $method->invoke(
+      $this->service,
+      $this->termStorage,
+      42,
+      ['en' => ['Flood Damage']],
+      'en',
+      // Fails the i-lucide-* pattern: no explicit icon should be applied.
+      ['not-a-valid-icon']
+    );
+
+    $this->assertSame('i-lucide-droplets', $captured[0]['field_category_icon']);
+  }
+
+  /**
+   * Tests that the heuristic checks labels in all available languages.
+   *
+   * @covers ::createCategoryTerms
+   * @covers ::guessIcon
+   */
+  public function testCreateCategoryTermsHeuristicMatchesGermanLabel(): void {
+    $captured = [];
+    $this->termStorage->method('create')
+      ->willReturnCallback(function (array $values) use (&$captured) {
+        $captured[] = $values;
+        $term = $this->createMock(TermInterface::class);
+        $term->method('id')->willReturn(count($captured));
+        $term->method('save')->willReturn(1);
+        $term->method('isTranslatable')->willReturn(FALSE);
+        return $term;
+      });
+
+    $method = new \ReflectionMethod($this->service, 'createCategoryTerms');
+    $method->invoke(
+      $this->service,
+      $this->termStorage,
+      42,
+      [
+        // English label matches no keyword...
+        'en' => ['Community Issue'],
+        // ...but the German label does ("Schlagloch" = pothole).
+        'de' => ['Schlagloch'],
+      ],
+      'en',
+      NULL
+    );
+
+    $this->assertSame('i-lucide-construction', $captured[0]['field_category_icon']);
+  }
+
 }

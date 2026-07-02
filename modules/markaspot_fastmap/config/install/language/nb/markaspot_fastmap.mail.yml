@@ -1,0 +1,25 @@
+langcode: nb
+workspace_verification:
+  subject: '@site_name: Bekreft arbeidsområdet ditt "@workspace_name"'
+  body: |
+    Du har bedt om et nytt arbeidsområde: @workspace_name
+
+    Klikk på lenken nedenfor for å bekrefte og aktivere arbeidsområdet ditt:
+    @verify_url
+
+    Denne lenken utløper om @cleanup_days dager.
+
+    Hvis du ikke ba om dette, kan du se bort fra denne e-posten.
+workspace_welcome:
+  subject: '@site_name: arbeidsområdet ditt "@workspace_name" er klart'
+  body: |
+    Arbeidsområdet ditt "@workspace_name" er nå aktivt:
+    @workspace_url
+
+    Prøv det ut: opprett din første testmelding direkte på kartet.
+    Noen demomeldinger er allerede lagt inn. Du kan redigere eller slette dem når som helst.
+
+    Administrer innkommende meldinger i dashbordet ditt:
+    @workspace_url/dashboard
+
+    Logg inn når som helst: @workspace_url/auth/login

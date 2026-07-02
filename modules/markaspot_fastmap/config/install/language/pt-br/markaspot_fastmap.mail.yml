@@ -10,3 +10,16 @@ workspace_verification:
     Este link expirará em @cleanup_days dias.
 
     Se você não solicitou isso, ignore este e-mail.
+workspace_welcome:
+  subject: '@site_name: seu espaço de trabalho "@workspace_name" está pronto'
+  body: |
+    Seu espaço de trabalho "@workspace_name" já está ativo:
+    @workspace_url
+
+    Experimente agora: crie seu primeiro relato de teste diretamente no mapa.
+    Alguns relatos de demonstração já estão disponíveis. Você pode editá-los ou excluí-los quando quiser.
+
+    Gerencie os relatos recebidos no seu painel:
+    @workspace_url/dashboard
+
+    Faça login quando quiser: @workspace_url/auth/login

@@ -10,3 +10,16 @@ workspace_verification:
     Dette link udløber om @cleanup_days dage.
 
     Hvis du ikke har anmodet om dette, kan du ignorere denne e-mail.
+workspace_welcome:
+  subject: '@site_name: dit arbejdsområde "@workspace_name" er klar'
+  body: |
+    Dit arbejdsområde "@workspace_name" er nu aktivt:
+    @workspace_url
+
+    Prøv det: opret din første testhenvendelse direkte på kortet.
+    Der er allerede nogle demo-henvendelser klar. Du kan redigere eller slette dem, når du vil.
+
+    Administrer indkomne henvendelser i dit dashboard:
+    @workspace_url/dashboard
+
+    Log ind, når du vil: @workspace_url/auth/login

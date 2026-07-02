@@ -10,3 +10,16 @@ workspace_verification:
     Ten link wygaśnie za @cleanup_days dni.
 
     Jeśli nie składałeś tej prośby, zignoruj tego e-maila.
+workspace_welcome:
+  subject: '@site_name: Twoja przestrzeń robocza "@workspace_name" jest gotowa'
+  body: |
+    Twoja przestrzeń robocza "@workspace_name" jest teraz aktywna:
+    @workspace_url
+
+    Wypróbuj ją: utwórz swoje pierwsze testowe zgłoszenie bezpośrednio na mapie.
+    Kilka przykładowych zgłoszeń jest już dostępnych. Możesz je edytować lub usunąć w dowolnym momencie.
+
+    Zarządzaj przychodzącymi zgłoszeniami w swoim panelu:
+    @workspace_url/dashboard
+
+    Zaloguj się w dowolnym momencie: @workspace_url/auth/login

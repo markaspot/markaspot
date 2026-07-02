@@ -10,3 +10,16 @@ workspace_verification:
     Questo link scadrà tra @cleanup_days giorni.
 
     Se non hai effettuato questa richiesta, ignora questa e-mail.
+workspace_welcome:
+  subject: '@site_name: il tuo spazio di lavoro "@workspace_name" è pronto'
+  body: |
+    Il tuo spazio di lavoro "@workspace_name" è ora attivo:
+    @workspace_url
+
+    Provalo subito: crea la tua prima segnalazione di prova direttamente sulla mappa.
+    Alcune segnalazioni dimostrative sono già presenti. Puoi modificarle o eliminarle in qualsiasi momento.
+
+    Gestisci le segnalazioni in arrivo dalla tua dashboard:
+    @workspace_url/dashboard
+
+    Accedi quando vuoi: @workspace_url/auth/login

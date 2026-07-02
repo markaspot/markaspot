@@ -125,6 +125,36 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     'species' => 'i-lucide-leaf',
     'amphibian' => 'i-lucide-bug',
     'roadkill' => 'i-lucide-circle-alert',
+    // Keywords below are kept after the block above so existing, more
+    // specific matches (e.g. "wildlife", "pollution") keep priority over
+    // the shorter/more generic stems added here.
+    'graffiti' => 'i-lucide-spray-can',
+    'pothole' => 'i-lucide-construction',
+    'schlagloch' => 'i-lucide-construction',
+    'baustelle' => 'i-lucide-construction',
+    'parking' => 'i-lucide-square-parking',
+    'parken' => 'i-lucide-square-parking',
+    'waste' => 'i-lucide-trash-2',
+    'müll' => 'i-lucide-trash-2',
+    'abfall' => 'i-lucide-trash-2',
+    'leucht' => 'i-lucide-lightbulb',
+    'lampe' => 'i-lucide-lightbulb',
+    'ampel' => 'i-lucide-traffic-cone',
+    'hund' => 'i-lucide-dog',
+    'dog' => 'i-lucide-dog',
+    'bench' => 'i-lucide-armchair',
+    'radweg' => 'i-lucide-bike',
+    'gehweg' => 'i-lucide-footprints',
+    'spielplatz' => 'i-lucide-baby',
+    'lärm' => 'i-lucide-volume-2',
+    'glas' => 'i-lucide-triangle-alert',
+    'container' => 'i-lucide-box',
+    'schrott' => 'i-lucide-trash',
+    'water' => 'i-lucide-droplets',
+    'wasser' => 'i-lucide-droplets',
+    // "wild" (wilder Müll = illegal dumping) must stay last: it is a
+    // substring of the existing, more specific "wildlife" keyword above.
+    'wild' => 'i-lucide-trash',
   ];
 
   /**
@@ -255,6 +285,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $boundary = $data['boundary'] ?? NULL;
     $customStatuses = $data['statuses'] ?? NULL;
     $statusTranslations = $data['status_translations'] ?? [];
+    $categoryIcons = is_array($data['category_icons'] ?? NULL) ? $data['category_icons'] : NULL;
     $aiSystemPrompt = isset($data['ai_system_prompt']) ? mb_substr(trim($data['ai_system_prompt']), 0, 2000) : '';
     $startPageContent = $data['start_page'] ?? NULL;
     $startPageTranslations = $data['start_page_translations'] ?? [];
@@ -372,7 +403,7 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
         }
 
         // 3. Create category terms.
-        $categoryTermIds = $this->createCategoryTerms($termStorage, $groupId, $multilingualCategories, $defaultLang);
+        $categoryTermIds = $this->createCategoryTerms($termStorage, $groupId, $multilingualCategories, $defaultLang, $categoryIcons);
 
         // 4. Assign categories to group.
         $group->set('field_service_categories', array_map(fn($tid) => ['target_id' => $tid], $categoryTermIds));
@@ -753,17 +784,57 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   /**
    * Creates category terms for a workspace.
    *
+   * @param \Drupal\Core\Entity\EntityStorageInterface $termStorage
+   *   The taxonomy term storage.
+   * @param int $groupId
+   *   The jurisdiction group ID.
+   * @param array $multilingualCategories
+   *   Category names keyed by language code, index-aligned across languages.
+   * @param string $defaultLang
+   *   The workspace's default language code.
+   * @param array|null $categoryIcons
+   *   Optional explicit icons, index-aligned with $multilingualCategories.
+   *   Each entry must match `i-lucide-[a-z0-9-]{1,64}` or is treated as
+   *   absent for that index and falls back to the keyword heuristic.
+   *
    * @return int[]
    *   Created term IDs.
    */
-  private function createCategoryTerms(EntityStorageInterface $termStorage, int $groupId, array $multilingualCategories, string $defaultLang): array {
+  private function createCategoryTerms(EntityStorageInterface $termStorage, int $groupId, array $multilingualCategories, string $defaultLang, ?array $categoryIcons = NULL): array {
     $termIds = [];
     $weight = 0;
     $defaultCategories = $this->getDefaultCategories($multilingualCategories, $defaultLang);
 
+    // Icons are matched to categories purely by index. The frontend caps the
+    // icon array to the max category count across locales, while the terms
+    // below iterate the default language's (normalized) array — nothing
+    // enforces that these lengths agree, so surface a drift instead of
+    // silently mis-assigning icons.
+    if ($categoryIcons !== NULL && count($categoryIcons) !== count($defaultCategories)) {
+      $this->logger->warning('category_icons count (@icons) does not match category count (@categories) for group @group; icon indexes may be misaligned.', [
+        '@icons' => count($categoryIcons),
+        '@categories' => count($defaultCategories),
+        '@group' => $groupId,
+      ]);
+    }
+
     foreach ($defaultCategories as $index => $categoryName) {
-      $enName = $multilingualCategories['en'][$index] ?? $categoryName;
-      $icon = $this->guessIcon($enName);
+      // Defense-in-depth: re-validate the explicit icon here even though the
+      // controller already sanitized it, since createCategoryTerms() is not
+      // exclusively reached through the HTTP entry point.
+      $explicitIcon = $categoryIcons[$index] ?? NULL;
+      if (is_string($explicitIcon) && preg_match('/^i-lucide-[a-z0-9-]{1,64}$/', $explicitIcon)) {
+        $icon = $explicitIcon;
+      }
+      else {
+        $labels = [];
+        foreach ($multilingualCategories as $langCategories) {
+          if (isset($langCategories[$index]) && $langCategories[$index] !== '') {
+            $labels[] = $langCategories[$index];
+          }
+        }
+        $icon = $this->guessIcon($labels ?: [$categoryName]);
+      }
       $color = self::CATEGORY_COLORS[$index % count(self::CATEGORY_COLORS)];
       $code = (string) ($index + 1);
 
@@ -851,14 +922,32 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
   /**
    * Guesses an icon for a category based on keyword matching.
+   *
+   * Checks all available per-language labels for a category, not just
+   * English, so a category with no English translation (or an English
+   * label that happens not to match any keyword) can still resolve via a
+   * German or other-language label. Keywords are checked in
+   * self::CATEGORY_ICONS order (specific before generic) across all
+   * labels, so the keyword priority - not the label/language order -
+   * decides the match.
+   *
+   * @param string[] $labels
+   *   Category labels to match against, one per available language.
    */
-  private function guessIcon(string $categoryName): string {
-    $lower = strtolower($categoryName);
+  private function guessIcon(array $labels): string {
+    $lowerLabels = array_map(
+      static fn(string $label): string => mb_strtolower($label, 'UTF-8'),
+      array_filter($labels, 'is_string')
+    );
+
     foreach (self::CATEGORY_ICONS as $keyword => $icon) {
-      if (str_contains($lower, $keyword)) {
-        return $icon;
+      foreach ($lowerLabels as $lowerLabel) {
+        if (str_contains($lowerLabel, $keyword)) {
+          return $icon;
+        }
       }
     }
+
     return 'i-lucide-circle-dot';
   }
 

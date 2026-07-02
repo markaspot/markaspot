@@ -10,3 +10,16 @@ workspace_verification:
     Bu bağlantının süresi @cleanup_days gün içinde dolacaktır.
 
     Bu talebi siz yapmadıysanız, lütfen bu e-postayı dikkate almayın.
+workspace_welcome:
+  subject: '@site_name: "@workspace_name" çalışma alanınız hazır'
+  body: |
+    "@workspace_name" çalışma alanınız artık etkin:
+    @workspace_url
+
+    Hemen deneyin: haritada doğrudan ilk test bildirimini oluşturun.
+    Birkaç örnek bildirim zaten hazır. Bunları istediğiniz zaman düzenleyebilir veya silebilirsiniz.
+
+    Gelen bildirimleri panonuzdan yönetin:
+    @workspace_url/dashboard
+
+    İstediğiniz zaman giriş yapın: @workspace_url/auth/login

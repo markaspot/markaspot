@@ -76,3 +76,13 @@ markaspot_fastmap.mail:
         body:
           type: text
           label: 'Email body'
+    workspace_welcome:
+      type: mapping
+      label: 'Workspace welcome email'
+      mapping:
+        subject:
+          type: text
+          label: 'Email subject'
+        body:
+          type: text
+          label: 'Email body'

@@ -1,0 +1,25 @@
+langcode: hu
+workspace_verification:
+  subject: '@site_name: Erősítsd meg a(z) "@workspace_name" munkaterületet'
+  body: |
+    Új munkaterületet igényeltél: @workspace_name
+
+    Kattints az alábbi linkre a munkaterület megerősítéséhez és aktiválásához:
+    @verify_url
+
+    Ez a link @cleanup_days nap múlva lejár.
+
+    Ha nem te igényelted ezt, kérjük, hagyd figyelmen kívül ezt az e-mailt.
+workspace_welcome:
+  subject: '@site_name: a(z) "@workspace_name" munkaterületed készen áll'
+  body: |
+    A(z) "@workspace_name" munkaterületed mostantól aktív:
+    @workspace_url
+
+    Próbáld ki: hozd létre első teszt-bejelentésedet közvetlenül a térképen.
+    Néhány minta bejelentés már elérhető. Ezeket bármikor szerkesztheted vagy törölheted.
+
+    Kezeld a beérkező bejelentéseket az irányítópultodon:
+    @workspace_url/dashboard
+
+    Jelentkezz be bármikor: @workspace_url/auth/login

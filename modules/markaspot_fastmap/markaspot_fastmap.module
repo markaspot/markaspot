@@ -308,6 +308,28 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
     $message['subject'] = strtr($mail_config['subject'], $replacements);
     $message['body'][] = strtr($mail_config['body'], $replacements);
   }
+  elseif ($key === 'workspace_welcome') {
+    $langcode = $message['langcode'] ?? 'en';
+
+    // Load mail config in the message's language.
+    $mail_config = \Drupal::languageManager()
+      ->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail')
+      ->get($key);
+
+    // Fallback to default language if translation doesn't exist.
+    if (empty($mail_config)) {
+      $mail_config = \Drupal::config('markaspot_fastmap.mail')->get($key);
+    }
+
+    $replacements = [
+      '@site_name' => $params['site_name'] ?? 'FastMap',
+      '@workspace_name' => $params['workspace_name'] ?? '',
+      '@workspace_url' => $params['workspace_url'] ?? '',
+    ];
+
+    $message['subject'] = strtr($mail_config['subject'], $replacements);
+    $message['body'][] = strtr($mail_config['body'], $replacements);
+  }
   elseif ($key === 'demo_expiry_reminder') {
     // Bcc the technical admin (uid 1) when the cron passes one. Set on the
     // header array so it survives the markaspot_mail builder alter — which
@@ -329,22 +351,34 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
     // Build workspace URL and login link from slug + config.
     $slug = $params['workspace_slug'] ?? '';
     $base_url = \Drupal::config('markaspot_fastmap.settings')->get('workspace_base_url') ?: '';
-    if ($slug && $base_url) {
-      // Support both template URLs (https://example.com/{slug}) and plain
-      // base URLs (https://example.com) by appending the slug when no
-      // placeholder is present.
-      if (str_contains($base_url, '{slug}')) {
-        $workspace_url = str_replace(['{slug}', '{id}'], [$slug, ''], $base_url);
-      }
-      else {
-        $workspace_url = rtrim($base_url, '/') . '/' . $slug;
-      }
+    $workspace_url = _markaspot_fastmap_build_workspace_url($slug, $base_url);
+    if ($workspace_url) {
       $message['body'][] = t('Your workspace: @url', ['@url' => $workspace_url]);
       $message['body'][] = t('Log in: @url', ['@url' => $workspace_url . '/auth/login']);
     }
 
     $message['body'][] = t('Create a permanent workspace anytime at https://civicspot.io');
   }
+}
+
+/**
+ * Builds a workspace URL from a slug and the configured base URL template.
+ *
+ * Supports both template URLs (https://example.com/{slug}) and plain base
+ * URLs (https://example.com), appending the slug when no placeholder is
+ * present. Shared by the demo-expiry reminder and the post-verification
+ * welcome mail so both compute the same canonical workspace URL.
+ */
+function _markaspot_fastmap_build_workspace_url(string $slug, string $baseUrl): ?string {
+  if ($slug === '' || $baseUrl === '') {
+    return NULL;
+  }
+
+  if (str_contains($baseUrl, '{slug}')) {
+    return str_replace(['{slug}', '{id}'], [$slug, ''], $baseUrl);
+  }
+
+  return rtrim($baseUrl, '/') . '/' . $slug;
 }
 
 /**

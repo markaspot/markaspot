@@ -1,0 +1,25 @@
+langcode: sv
+workspace_verification:
+  subject: '@site_name: bekräfta ditt arbetsområde "@workspace_name"'
+  body: |
+    Du har begärt ett nytt arbetsområde: @workspace_name
+
+    Klicka på länken nedan för att bekräfta och aktivera ditt arbetsområde:
+    @verify_url
+
+    Länken slutar gälla om @cleanup_days dagar.
+
+    Om du inte har begärt detta kan du bortse från det här e-postmeddelandet.
+workspace_welcome:
+  subject: '@site_name: ditt arbetsområde "@workspace_name" är klart'
+  body: |
+    Ditt arbetsområde "@workspace_name" är nu aktivt:
+    @workspace_url
+
+    Prova det: skapa din första testanmälan direkt på kartan.
+    Några exempelanmälningar finns redan på plats. Du kan redigera eller ta bort dem när du vill.
+
+    Hantera inkommande anmälningar i din instrumentpanel:
+    @workspace_url/dashboard
+
+    Logga in när du vill: @workspace_url/auth/login

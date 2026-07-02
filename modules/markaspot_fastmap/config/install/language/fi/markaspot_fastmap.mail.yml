@@ -1,0 +1,25 @@
+langcode: fi
+workspace_verification:
+  subject: '@site_name: Vahvista työtilasi "@workspace_name"'
+  body: |
+    Pyysit uutta työtilaa: @workspace_name
+
+    Vahvista ja aktivoi työtilasi klikkaamalla alla olevaa linkkiä:
+    @verify_url
+
+    Tämä linkki vanhenee @cleanup_days päivän kuluttua.
+
+    Jos et pyytänyt tätä, voit jättää tämän sähköpostin huomiotta.
+workspace_welcome:
+  subject: '@site_name: työtilasi "@workspace_name" on valmis'
+  body: |
+    Työtilasi "@workspace_name" on nyt aktiivinen:
+    @workspace_url
+
+    Kokeile heti: luo ensimmäinen testi-ilmoituksesi suoraan kartalla.
+    Muutama esimerkki-ilmoitus on jo valmiina. Voit muokata tai poistaa niitä milloin tahansa.
+
+    Hallitse saapuvia ilmoituksia hallintapaneelissasi:
+    @workspace_url/dashboard
+
+    Kirjaudu sisään milloin tahansa: @workspace_url/auth/login

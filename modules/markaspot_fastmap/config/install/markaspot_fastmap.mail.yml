@@ -10,3 +10,16 @@ workspace_verification:
     This link will expire in @cleanup_days days.
 
     If you did not request this, please ignore this email.
+workspace_welcome:
+  subject: '@site_name: Your workspace "@workspace_name" is ready'
+  body: |
+    Your workspace "@workspace_name" is now active:
+    @workspace_url
+
+    Try it out: create your first test report directly on the map.
+    A few demo reports are already in place. Edit or delete them anytime.
+
+    Manage incoming reports in your dashboard:
+    @workspace_url/dashboard
+
+    Log in anytime: @workspace_url/auth/login

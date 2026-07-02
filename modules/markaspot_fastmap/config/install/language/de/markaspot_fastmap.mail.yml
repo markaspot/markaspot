@@ -10,3 +10,16 @@ workspace_verification:
     Dieser Link ist @cleanup_days Tage gültig.
 
     Falls Sie dies nicht angefordert haben, ignorieren Sie bitte diese E-Mail.
+workspace_welcome:
+  subject: '@site_name: Ihr Workspace "@workspace_name" ist bereit'
+  body: |
+    Ihr Workspace "@workspace_name" ist jetzt aktiv:
+    @workspace_url
+
+    Probieren Sie ihn gleich aus: Erstellen Sie direkt auf der Karte Ihre erste Testmeldung.
+    Ein paar Demo-Meldungen sind bereits angelegt. Sie können sie jederzeit bearbeiten oder löschen.
+
+    Eingehende Meldungen verwalten Sie in Ihrem Dashboard:
+    @workspace_url/dashboard
+
+    Jederzeit anmelden: @workspace_url/auth/login

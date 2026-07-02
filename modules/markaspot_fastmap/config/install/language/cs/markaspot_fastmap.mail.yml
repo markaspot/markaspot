@@ -10,3 +10,16 @@ workspace_verification:
     Tento odkaz vyprší za @cleanup_days dní.
 
     Pokud jste o to nežádali, tento e-mail ignorujte.
+workspace_welcome:
+  subject: '@site_name: váš pracovní prostor "@workspace_name" je připraven'
+  body: |
+    Váš pracovní prostor "@workspace_name" je nyní aktivní:
+    @workspace_url
+
+    Vyzkoušejte ho: vytvořte si první testovací hlášení přímo na mapě.
+    Několik ukázkových hlášení je již připraveno. Můžete je kdykoli upravit nebo smazat.
+
+    Příchozí hlášení spravujte ve svém dashboardu:
+    @workspace_url/dashboard
+
+    Přihlaste se, kdykoli budete chtít: @workspace_url/auth/login

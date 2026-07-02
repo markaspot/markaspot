@@ -224,6 +224,18 @@ class FastMapWorkspaceController extends ControllerBase {
       return new JsonResponse(['error' => 'categories must be provided'], 400);
     }
 
+    // Validate optional explicit category icons: index-aligned with the
+    // per-locale categories arrays. Invalid or out-of-range entries fall
+    // back to WorkspaceProvisioningService's keyword heuristic per index.
+    $categoryIcons = NULL;
+    if (isset($data['category_icons']) && is_array($data['category_icons'])) {
+      $sanitizedIcons = array_map(
+        static fn($icon) => (is_string($icon) && preg_match('/^i-lucide-[a-z0-9-]{1,64}$/', $icon)) ? $icon : NULL,
+        array_values($data['category_icons'])
+      );
+      $categoryIcons = array_slice($sanitizedIcons, 0, $this->countSubmittedCategories($categories));
+    }
+
     $slugLockName = $this->buildWorkspaceSlugLockName($slug);
     if (!$this->lock->acquire($slugLockName, self::WORKSPACE_SLUG_LOCK_TTL)) {
       return new JsonResponse(['error' => 'A pending request for this slug is already being created'], 409);
@@ -344,6 +356,7 @@ class FastMapWorkspaceController extends ControllerBase {
         'boundary' => $this->validateBoundarySize($data['boundary'] ?? NULL),
         'statuses' => $statuses,
         'status_translations' => $statusTranslations ?: NULL,
+        'category_icons' => $categoryIcons,
         'start_page' => isset($data['start_page']) && is_array($data['start_page'])
           ? [
             'title' => mb_substr((string) ($data['start_page']['title'] ?? ''), 0, 255),
@@ -582,6 +595,13 @@ class FastMapWorkspaceController extends ControllerBase {
         '@id' => $result['group_id'],
       ]);
 
+      $this->sendWelcomeEmail(
+        (string) ($workspaceData['email'] ?? ''),
+        (string) (($workspaceData['language'] ?? '') ?: 'en'),
+        $result['name'],
+        $result['slug']
+      );
+
       // Generate a short-lived one-time login token so the user is
       // automatically logged in after email verification.
       // Uses the same keyvalue.expirable store as the dev switch-token flow,
@@ -635,6 +655,19 @@ class FastMapWorkspaceController extends ControllerBase {
     finally {
       $this->lock->release($tokenLockName);
     }
+  }
+
+  /**
+   * Counts categories submitted in the raw create-workspace payload.
+   *
+   * Mirrors the two accepted category shapes: a flat array of names
+   * (legacy, single language) or Record<lang, string[]> (multilingual).
+   * Used only to bound the optional category_icons array to the same
+   * length.
+   */
+  private function countSubmittedCategories(array $categories): int {
+    $first = reset($categories);
+    return is_array($first) ? count($first) : count($categories);
   }
 
   /**
@@ -1060,6 +1093,47 @@ class FastMapWorkspaceController extends ControllerBase {
     catch (\Exception $e) {
       $this->fastmapLogger->error('Failed to send verification email: @msg', ['@msg' => $e->getMessage()]);
       return FALSE;
+    }
+  }
+
+  /**
+   * Sends the post-verification welcome email for a newly provisioned workspace.
+   *
+   * Failures are logged only and never rethrown: by the time this runs, the
+   * workspace has already been provisioned and the caller must not fail
+   * verification just because the welcome mail could not be sent. Catches
+   * \Throwable (not just \Exception) so a fatal error from a misconfigured
+   * mail plugin cannot escape into the outer catch block, which would
+   * otherwise tear down the workspace that was just successfully created.
+   */
+  private function sendWelcomeEmail(string $email, string $langcode, string $name, string $slug): void {
+    try {
+      $baseUrl = (string) $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
+      $workspaceUrl = _markaspot_fastmap_build_workspace_url($slug, $baseUrl);
+      if (!$workspaceUrl) {
+        return;
+      }
+
+      $siteName = $this->config('system.site')->get('name') ?: 'FastMap';
+
+      $params = [
+        'workspace_name' => $name,
+        'workspace_url' => $workspaceUrl,
+        'site_name' => $siteName,
+      ];
+
+      $result = $this->mailManager->mail('markaspot_fastmap', 'workspace_welcome', $email, $langcode, $params);
+      if (empty($result['result'])) {
+        $this->fastmapLogger->warning('Workspace welcome email not sent for @slug (mail plugin reported failure).', [
+          '@slug' => $slug,
+        ]);
+      }
+    }
+    catch (\Throwable $e) {
+      $this->fastmapLogger->warning('Failed to send workspace welcome email for @slug: @msg', [
+        '@slug' => $slug,
+        '@msg' => $e->getMessage(),
+      ]);
     }
   }
 

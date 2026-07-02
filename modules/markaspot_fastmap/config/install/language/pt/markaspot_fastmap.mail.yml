@@ -1,0 +1,25 @@
+langcode: pt
+workspace_verification:
+  subject: '@site_name: Confirme o seu espaço de trabalho "@workspace_name"'
+  body: |
+    Solicitou um novo espaço de trabalho: @workspace_name
+
+    Clique na ligação abaixo para confirmar e ativar o seu espaço de trabalho:
+    @verify_url
+
+    Esta ligação expira em @cleanup_days dias.
+
+    Se não fez este pedido, ignore este e-mail.
+workspace_welcome:
+  subject: '@site_name: o seu espaço de trabalho "@workspace_name" está pronto'
+  body: |
+    O seu espaço de trabalho "@workspace_name" já está ativo:
+    @workspace_url
+
+    Experimente já: crie o seu primeiro relato de teste diretamente no mapa.
+    Alguns relatos de demonstração já estão disponíveis. Pode editá-los ou eliminá-los a qualquer momento.
+
+    Faça a gestão dos relatos recebidos no seu painel:
+    @workspace_url/dashboard
+
+    Inicie sessão a qualquer momento: @workspace_url/auth/login

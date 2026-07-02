@@ -10,3 +10,16 @@ workspace_verification:
     Deze link verloopt over @cleanup_days dagen.
 
     Als je dit niet hebt aangevraagd, kun je deze e-mail negeren.
+workspace_welcome:
+  subject: '@site_name: je werkruimte "@workspace_name" is klaar'
+  body: |
+    Je werkruimte "@workspace_name" is nu actief:
+    @workspace_url
+
+    Probeer het meteen uit: maak je eerste testmelding direct op de kaart.
+    Er staan al een paar voorbeeldmeldingen klaar. Je kunt ze op elk moment bewerken of verwijderen.
+
+    Beheer binnenkomende meldingen in je dashboard:
+    @workspace_url/dashboard
+
+    Log op elk moment in: @workspace_url/auth/login

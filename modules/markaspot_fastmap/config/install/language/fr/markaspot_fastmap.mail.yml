@@ -10,3 +10,16 @@ workspace_verification:
     Ce lien expirera dans @cleanup_days jours.
 
     Si vous n'avez pas fait cette demande, veuillez ignorer cet e-mail.
+workspace_welcome:
+  subject: '@site_name : votre espace de travail "@workspace_name" est prêt'
+  body: |
+    Votre espace de travail "@workspace_name" est maintenant actif :
+    @workspace_url
+
+    Essayez-le dès maintenant : créez votre premier signalement de test directement sur la carte.
+    Quelques signalements de démonstration sont déjà en place. Vous pouvez les modifier ou les supprimer à tout moment.
+
+    Gérez les signalements entrants depuis votre tableau de bord :
+    @workspace_url/dashboard
+
+    Connectez-vous à tout moment : @workspace_url/auth/login
