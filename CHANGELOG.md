@@ -1,5 +1,16 @@
 # Changelog
 
+## [11.9.135](https://github.com/markaspot/markaspot/compare/11.9.134...11.9.135) (2026-07-02)
+
+### Features
+
+* split service request into linked sibling request ([7f69deb](https://github.com/markaspot/markaspot/commit/7f69deb08ec3fc6c98a6da96f50986c0c7df2f67))
+
+### Bug Fixes
+
+* cascade gdpr erasure to split siblings and harden split transaction ([cd9189c](https://github.com/markaspot/markaspot/commit/cd9189c54c8103a737c1f683722add4548a944ef))
+* resolve jurisdiction hierarchy in split access and category checks ([aaa7fff](https://github.com/markaspot/markaspot/commit/aaa7fffd4934159d0c95992d203ddcabb7e523ab))
+
 ## [11.9.134](https://github.com/markaspot/markaspot/compare/11.9.133...11.9.134) (2026-07-02)
 
 ### Features
