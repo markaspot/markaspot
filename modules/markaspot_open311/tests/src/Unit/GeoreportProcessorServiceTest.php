@@ -246,10 +246,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     );
   }
 
-  // =========================================================================
-  // validateJurisdictionAccess() tests
-  // =========================================================================
-
   /**
    * @covers ::validateJurisdictionAccess
    */
@@ -413,10 +409,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->processor->validateJurisdictionAccess(42, $user);
   }
 
-  // =========================================================================
-  // getCategoryTidsForJurisdiction() tests
-  // =========================================================================
-
   /**
    * @covers ::getCategoryTidsForJurisdiction
    */
@@ -482,10 +474,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertEquals([], $result);
   }
 
-  // =========================================================================
-  // determineExtendedRole() tests (via reflection since private)
-  // =========================================================================
-
   /**
    * Tests that anonymous users get the 'anonymous' role regardless of permissions.
    */
@@ -539,10 +527,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $result = $this->invokeMethod($this->processor, 'determineExtendedRole', [$user]);
     $this->assertEquals('anonymous', $result);
   }
-
-  // =========================================================================
-  // isJurisdictionMember() tests (markaspot-ui#427)
-  // =========================================================================
 
   /**
    * @covers ::isJurisdictionMember
@@ -662,10 +646,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertFalse($this->processor->isJurisdictionMember(42, $user));
   }
 
-  // =========================================================================
-  // scopeExtendedRoleToReadScope() tests (markaspot-ui#427, via reflection)
-  // =========================================================================
-
   /**
    * Foreign tenant manager is downgraded to the anonymous/public shape.
    *
@@ -772,10 +752,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     );
     $this->assertEquals('user', $result);
   }
-
-  // =========================================================================
-  // scopeManagerRoleToNode() tests (markaspot-ui#427 F1, via reflection)
-  // =========================================================================
 
   /**
    * Builds a node stub whose field_jurisdiction resolves to a group ID.
@@ -984,10 +960,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     );
     $this->assertEquals('manager', $result);
   }
-
-  // =========================================================================
-  // Memoization tests (markaspot-ui#427 F1)
-  // =========================================================================
 
   /**
    * Repeated membership checks load the group exactly once.
@@ -1483,10 +1455,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertArrayNotHasKey('field_status_internal_term', $values);
   }
 
-  // =========================================================================
-  // createNodeQuery() tests
-  // =========================================================================
-
   /**
    * @covers ::createNodeQuery
    */
@@ -1602,10 +1570,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     );
   }
 
-  // =========================================================================
-  // getJurisdictionIdFromNode() tests
-  // =========================================================================
-
   /**
    * @covers ::getJurisdictionIdFromNode
    */
@@ -1719,10 +1683,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertNull($result);
   }
 
-  // =========================================================================
-  // resolveJurisdictionId() tests (API parameter cleanup)
-  // =========================================================================
-
   /**
    * Tests that jurisdiction_id parameter is resolved as canonical name.
    */
@@ -1780,10 +1740,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [[]]);
     $this->assertNull($result);
   }
-
-  // =========================================================================
-  // resolveOrganisationGroupId() tests (API parameter cleanup)
-  // =========================================================================
 
   /**
    * Tests that org_id parameter is resolved as canonical name.
@@ -1845,10 +1801,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertNull($result);
   }
 
-  // =========================================================================
-  // resolveJurisdictionId() slug resolution tests
-  // =========================================================================
-
   /**
    * Tests that a non-numeric slug triggers entity lookup by field_slug.
    */
@@ -1886,10 +1838,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertNull($result);
   }
 
-  // =========================================================================
-  // resolveOrganisationGroupId() sentinel value tests
-  // =========================================================================
-
   /**
    * Tests that a non-existent group returns -1 sentinel.
    */
@@ -1915,10 +1863,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     ]);
     $this->assertEquals(-1, $result);
   }
-
-  // =========================================================================
-  // prepareNodeProperties() location validation tests
-  // =========================================================================
 
   /**
    * Tests that creating a request without location data throws an exception.
@@ -2013,10 +1957,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     // No location exception thrown, address was accepted.
     $this->assertIsArray($values);
   }
-
-  // =========================================================================
-  // prepareNodeProperties() status mapping tests (GeoReport update path)
-  // =========================================================================
 
   /**
    * Tests that a "closed" status string maps to field_status on update.
@@ -2141,10 +2081,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertArrayNotHasKey('field_status_notes', $values, 'An empty status_notes must not set field_status_notes');
   }
 
-  // =========================================================================
-  // mapNodeToServiceRequest() "last edited by" tests
-  // =========================================================================
-
   /**
    * Managers see the latest revision author as last_editor / last_edited.
    *
@@ -2222,10 +2158,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->assertArrayNotHasKey('last_editor', $request['extended_attributes']['markaspot'], 'last_editor must be omitted when the revision user is null/deleted');
     $this->assertSame(date('c', 1717500000), $request['extended_attributes']['markaspot']['last_edited']);
   }
-
-  // =========================================================================
-  // validateImagelistAttributes() tests
-  // =========================================================================
 
   /**
    * Tests that a valid UUID for an imagelist attribute is accepted.
@@ -2600,10 +2532,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
 
     $this->assertEquals('no-group-uuid', $result['bautyp']);
   }
-
-  // =========================================================================
-  // Request list pagination tests.
-  // =========================================================================
 
   /**
    * @covers ::normalizeRequestListSort
@@ -3234,10 +3162,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     return $node;
   }
 
-  // =========================================================================
-  // Helper: invoke private/protected methods via reflection.
-  // =========================================================================
-
   /**
    * Invokes a non-public method on an object.
    *
@@ -3489,10 +3413,6 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     return $media;
   }
 
-  // =========================================================================
-  // prepareNodeProperties() tests
-  // =========================================================================
-
   /**
    * An update must not force the 'changed' timestamp.
    *
@@ -3510,6 +3430,186 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     // Sanity: the update payload is otherwise populated (so the assertion above
     // is meaningful and not passing on an empty result).
     $this->assertArrayHasKey('field_first_name', $update);
+  }
+
+  /**
+   * A bare "PLZ Ort" string maps the city to locality, not address_line1.
+   *
+   * @covers ::addressParser
+   */
+  public function testAddressParserGermanPostalCityWithoutComma(): void {
+    $result = $this->invokeMethod($this->processor, 'addressParser', ['47051 Duisburg', 'DE']);
+
+    $this->assertSame('47051', $result['postal_code']);
+    $this->assertSame('Duisburg', $result['locality']);
+    $this->assertSame('', $result['address_line1']);
+  }
+
+  /**
+   * Street with house number plus a trailing PLZ Ort keeps street and city.
+   *
+   * @covers ::addressParser
+   */
+  public function testAddressParserGermanStreetWithPostalCity(): void {
+    $result = $this->invokeMethod($this->processor, 'addressParser', ['Sonnenwall 100, 47051 Duisburg', 'DE']);
+
+    $this->assertSame('Sonnenwall 100', $result['address_line1']);
+    $this->assertSame('47051', $result['postal_code']);
+    $this->assertSame('Duisburg', $result['locality']);
+  }
+
+  /**
+   * A street name without house number still resolves the trailing PLZ Ort.
+   *
+   * @covers ::addressParser
+   */
+  public function testAddressParserGermanStreetNameWithPostalCity(): void {
+    $result = $this->invokeMethod($this->processor, 'addressParser', ['Königstraße, 47051 Duisburg', 'DE']);
+
+    $this->assertSame('Königstraße', $result['address_line1']);
+    $this->assertSame('47051', $result['postal_code']);
+    $this->assertSame('Duisburg', $result['locality']);
+  }
+
+  /**
+   * House-number-first countries keep a leading number as part of the street.
+   *
+   * US, CA, AU etc. write the house number before the street name, so the
+   * "PLZ Ort" rule must not fire there: the street stays in address_line1
+   * and locality is never populated from a street segment.
+   *
+   * @covers ::addressParser
+   */
+  public function testAddressParserHouseNumberFirstCountryKeepsStreet(): void {
+    $result = $this->invokeMethod($this->processor, 'addressParser', [
+      '10250 Santa Monica Blvd, Los Angeles, CA 90064',
+      'US',
+    ]);
+
+    $this->assertSame('Santa Monica Blvd', $result['address_line1']);
+    $this->assertSame('Los Angeles', $result['address_line2']);
+    $this->assertSame('90064', $result['postal_code']);
+    $this->assertSame('', $result['locality']);
+  }
+
+  /**
+   * Without a country code the parser falls back to positional behavior.
+   *
+   * The "PLZ Ort" rule needs a postal-code-first country; an empty country
+   * disables it, so a bare "47051 Duisburg" degrades to the conservative
+   * positional result (city in address_line1) instead of guessing.
+   *
+   * @covers ::addressParser
+   */
+  public function testAddressParserWithoutCountryFallsBackToPositional(): void {
+    $result = $this->invokeMethod($this->processor, 'addressParser', ['47051 Duisburg']);
+
+    $this->assertSame('47051', $result['postal_code']);
+    $this->assertSame('Duisburg', $result['address_line1']);
+    $this->assertSame('', $result['locality']);
+  }
+
+  /**
+   * HTML markup in an untrusted address_string is stripped, not persisted.
+   *
+   * The parser must not carry tags into address components, otherwise a
+   * downstream HTML consumer (Nuxt v-html, HTML mail, SAP) would render an
+   * anonymous reporter's payload. Covers both raw and entity-encoded markup.
+   *
+   * @covers ::addressParser
+   */
+  public function testAddressParserStripsMarkupFromComponents(): void {
+    $result = $this->invokeMethod($this->processor, 'addressParser', [
+      '<img src=x onerror=alert(1)> Sonnenwall 100, 47051 Duisburg',
+      'DE',
+    ]);
+
+    $this->assertStringNotContainsString('<', $result['address_line1']);
+    $this->assertStringNotContainsString('onerror', $result['address_line1']);
+    $this->assertSame('47051', $result['postal_code']);
+    $this->assertSame('Duisburg', $result['locality']);
+  }
+
+  /**
+   * Populated components are joined into "street, PLZ locality".
+   *
+   * @covers ::formatAddress
+   */
+  public function testFormatAddressJoinsPopulatedComponents(): void {
+    $field = $this->buildAddressField([
+      'address_line1' => 'Königstraße',
+      'address_line2' => '',
+      'postal_code' => '47051',
+      'locality' => 'Duisburg',
+    ]);
+
+    $this->assertSame('Königstraße, 47051 Duisburg', $this->processor->formatAddress($field));
+  }
+
+  /**
+   * An empty street line must not leave a leading comma.
+   *
+   * @covers ::formatAddress
+   */
+  public function testFormatAddressSkipsEmptyStreetLine(): void {
+    $field = $this->buildAddressField([
+      'address_line1' => '',
+      'address_line2' => '',
+      'postal_code' => '47051',
+      'locality' => 'Duisburg',
+    ]);
+
+    $this->assertSame('47051 Duisburg', $this->processor->formatAddress($field));
+  }
+
+  /**
+   * Whitespace-only and NULL components are skipped, not emitted as blanks.
+   *
+   * @covers ::formatAddress
+   */
+  public function testFormatAddressSkipsWhitespaceAndNullComponents(): void {
+    $field = $this->buildAddressField([
+      'address_line1' => '  ',
+      'address_line2' => NULL,
+      'postal_code' => '',
+      'locality' => 'Duisburg',
+    ]);
+
+    $this->assertSame('Duisburg', $this->processor->formatAddress($field));
+  }
+
+  /**
+   * An entirely empty address yields an empty string, no stray commas.
+   *
+   * @covers ::formatAddress
+   */
+  public function testFormatAddressAllEmptyReturnsEmptyString(): void {
+    $field = $this->buildAddressField([
+      'address_line1' => '',
+      'address_line2' => '',
+      'postal_code' => '',
+      'locality' => '',
+    ]);
+
+    $this->assertSame('', $this->processor->formatAddress($field));
+  }
+
+  /**
+   * Builds an address field stub exposing components via magic property access.
+   *
+   * @param array $components
+   *   Address component values keyed by property name (address_line1,
+   *   address_line2, postal_code, locality).
+   *
+   * @return \Drupal\Core\Field\FieldItemListInterface
+   *   The mocked address field item list.
+   */
+  protected function buildAddressField(array $components): FieldItemListInterface {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('__get')
+      ->willReturnCallback(fn(string $property) => $components[$property] ?? NULL);
+
+    return $field;
   }
 
 }

@@ -67,6 +67,20 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected const REQUEST_LIST_CURSOR_VERSION = 1;
 
   /**
+   * Countries writing the postal code before the locality ("PLZ Ort").
+   *
+   * Only for these does addressParser() treat a segment-leading postal code
+   * as introducing the locality. House-number-first countries (US, CA, AU,
+   * NZ, GH, ...) must stay off this list: there a leading 4-7 digit number
+   * is a house number, and the rule would move the street into locality.
+   */
+  protected const POSTAL_CODE_FIRST_COUNTRIES = [
+    'AT', 'BE', 'BG', 'CH', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR',
+    'HR', 'HU', 'IS', 'IT', 'LI', 'LT', 'LU', 'LV', 'NL', 'NO', 'PL', 'PT',
+    'RO', 'SE', 'SI', 'SK',
+  ];
+
+  /**
    * The config factory service.
    *
    * @var \Drupal\Core\Config\ConfigFactoryInterface
@@ -203,7 +217,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * Per-request memo of jurisdiction membership checks, keyed "gid:uid".
    *
    * Avoids repeated group loads / membership queries when serializing
-   * large request lists (markaspot-ui#427).
+   * large request lists.
    *
    * @var array<string, bool>
    */
@@ -421,17 +435,22 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
     // $values['created'] = isset($request_data['requested_datetime']) && $operation == 'update' ? strtotime($request_data['requested_datetime']) : '';
     if ($addressString) {
-      $address = $this->addressParser(Html::escape(stripslashes($addressString)));
+      // Resolve country_code: explicit param > jurisdiction config > site
+      // default. Resolved before parsing because the parser interprets
+      // locale-dependent formats ("PLZ Ort") based on the country. Guarded
+      // with is_string(): the value comes straight from the request body, so
+      // a non-string (array/object) would fatal in the parser's strtoupper().
+      $requestedCountry = $requestData['country_code'] ?? '';
+      $countryCode = is_string($requestedCountry) ? $requestedCountry : '';
+      if (empty($countryCode)) {
+        $countryCode = $this->resolveJurisdictionCountry($requestData['jurisdiction_id'] ?? NULL);
+      }
+      $address = $this->addressParser(Html::escape(stripslashes($addressString)), $countryCode);
       if (!empty($address)) {
         $values['field_address']['address_line1'] = $address['address_line1'];
         $values['field_address']['address_line2'] = $address['address_line2'];
         $values['field_address']['postal_code'] = $address['postal_code'];
         $values['field_address']['locality'] = $address['locality'];
-        // Resolve country_code: explicit param > jurisdiction config > site default.
-        $countryCode = $requestData['country_code'] ?? '';
-        if (empty($countryCode)) {
-          $countryCode = $this->resolveJurisdictionCountry($requestData['jurisdiction_id'] ?? NULL);
-        }
         $values['field_address']['country_code'] = $countryCode;
       }
     }
@@ -1094,7 +1113,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $nodes = $this->orderLoadedNodes($nodes, $nids);
 
     // Use the proper role determination method, scoped to the response's
-    // jurisdiction read scope (markaspot-ui#427).
+    // jurisdiction read scope.
     $extendedRole = $this->scopeExtendedRoleToReadScope(
       $this->determineExtendedRole($user),
       $readScope,
@@ -1557,7 +1576,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   /**
    * Scopes the extended role to the response's jurisdiction read scope.
    *
-   * Tenant isolation of the serialization shape (markaspot-ui#427): the
+   * Tenant isolation of the serialization shape: the
    * extended "manager" shape is member-only per jurisdiction. Read
    * resources resolve the effective jurisdiction scope of the response
    * (explicit jurisdiction_id claim, or the single request's own
@@ -1599,8 +1618,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   /**
    * Scopes the manager role to a single node's own jurisdiction.
    *
-   * Used for reads WITHOUT an explicit jurisdiction claim
-   * (markaspot-ui#427): in multi-tenant installs the unclaimed request
+   * Used for reads WITHOUT an explicit jurisdiction claim: in
+   * multi-tenant installs the unclaimed request
    * list spans every tenant's published nodes via the jur-outsider query
    * grants, so a manager-shaped serialization must be decided per node.
    * Nodes of jurisdictions the caller belongs to keep the manager shape;
@@ -2386,22 +2405,26 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   public function formatAddress(FieldItemListInterface $address): string {
     $parts = [];
 
-    // Street address (address_line1 + address_line2).
-    $streetParts = array_filter([
-      $address->address_line1,
-      $address->address_line2,
-    ]);
-    if (!empty($streetParts)) {
-      $parts[] = implode(' ', $streetParts);
-    }
-
-    // City with postal code.
-    $cityParts = array_filter([
-      $address->postal_code,
-      $address->locality,
-    ]);
-    if (!empty($cityParts)) {
-      $parts[] = implode(' ', $cityParts);
+    // Assemble the street line (address_line1 + address_line2) and the city
+    // line (postal_code + locality) from their non-empty, trimmed components.
+    // Empty or whitespace-only values are skipped so the result never carries
+    // dangling commas or blank segments. Consumers such as WBD's SAP backend
+    // read this string verbatim.
+    $lines = [
+      [$address->address_line1, $address->address_line2],
+      [$address->postal_code, $address->locality],
+    ];
+    foreach ($lines as $components) {
+      $segment = [];
+      foreach ($components as $component) {
+        $component = trim((string) ($component ?? ''));
+        if ($component !== '') {
+          $segment[] = $component;
+        }
+      }
+      if ($segment !== []) {
+        $parts[] = implode(' ', $segment);
+      }
     }
 
     return implode(', ', $parts);
@@ -2711,7 +2734,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
     // Check if user is a member of this jurisdiction group. Delegated to
     // the memoized boolean counterpart so both gates share exactly one
-    // membership semantic (markaspot-ui#427).
+    // membership semantic.
     if (!$this->isJurisdictionMember($jurisdictionId, $account)) {
       throw new AccessDeniedHttpException(
         'Access denied: user is not a member of this jurisdiction.'
@@ -2725,7 +2748,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * Mirrors the membership semantics of validateJurisdictionAccess() but
    * returns a boolean instead of throwing, so read paths can degrade the
    * response shape to the public/anonymous serialization for non-members
-   * instead of denying access outright (markaspot-ui#427).
+   * instead of denying access outright.
    *
    * Semantics to be aware of:
    * - Any group membership counts, including pending or self-joined
@@ -4037,6 +4060,10 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @param string $addressString
    *   The input address string to be parsed.
+   * @param string $countryCode
+   *   ISO 3166-1 alpha-2 country code of the jurisdiction the address
+   *   belongs to. Enables locale-dependent parsing rules such as "PLZ Ort"
+   *   for postal-code-first countries. Empty string disables those rules.
    *
    * @return array
    *   An associative array of parsed address components:
@@ -4049,9 +4076,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   - state: State, province, or administrative area.
    *   - country: Country name.
    */
-  private function addressParser(string $addressString): array {
+  private function addressParser(string $addressString, string $countryCode = ''): array {
     $addressString = html_entity_decode($addressString, ENT_QUOTES, 'UTF-8');
+    // Address components are plain text. Strip any markup after decoding
+    // entities so an untrusted Open311 address_string cannot persist tags
+    // (e.g. "<img onerror=...>") that a downstream HTML consumer would then
+    // execute. Runs after html_entity_decode() so entity-encoded markup
+    // ("&lt;img&gt;") is caught too, not only raw tags.
+    $addressString = strip_tags($addressString);
     $addressString = trim($addressString);
+    $postalCityFirst = in_array(strtoupper($countryCode), self::POSTAL_CODE_FIRST_COUNTRIES, TRUE);
 
     // Initialize the result array.
     $result = [
@@ -4078,6 +4112,11 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       if (preg_match('/\b([A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2})\b/i', $str, $matches)) {
         return $matches[1];
       }
+      // German: exactly 5 digits (e.g. 47051 Duisburg, 50667 Köln). Austrian
+      // and Swiss 4-digit codes fall through to the generic rule below.
+      if (preg_match('/\b(\d{5})\b/', $str, $matches)) {
+        return $matches[1];
+      }
       // Generic numeric: 4-7 digits, optionally followed by letters.
       if (preg_match('/\b(\d{4,7})\b/', $str, $matches)) {
         return $matches[1];
@@ -4089,14 +4128,34 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     for ($i = 0; $i < $numParts; $i++) {
       $part = trim($parts[$i]);
 
-      // Add a Check for postal code.
+      // Detect and strip a postal code, remembering whether it led the
+      // segment. German and other continental European formats write
+      // "PLZ Ort" (postal code first, then city), so a leading postal code
+      // marks the remaining text as the locality, not a street line.
       $postalCode = $extractPostalCode($part);
+      $postalLeads = FALSE;
       if ($postalCode) {
         $result['postal_code'] = $postalCode;
+        $postalLeads = (bool) preg_match(
+          '/^' . preg_quote($postalCode, '/') . '\b/',
+          $part
+        );
         $part = trim(str_replace($postalCode, '', $part));
-        if (empty($part)) {
+        if ($part === '') {
           continue;
         }
+      }
+
+      // Locale-aware "PLZ Ort": in postal-code-first countries a leading
+      // postal code yields the locality, regardless of the segment's position
+      // in the comma split. Handles the whole string ("47051 Duisburg") and
+      // the trailing segment ("Sonnenwall 100, 47051 Duisburg") without a
+      // purely positional split. Gated by country because in house-number-
+      // first countries ("10250 Santa Monica Blvd") the leading number is a
+      // house number and the remainder is the street, not the locality.
+      if ($postalCityFirst && $postalCode && $postalLeads && $result['locality'] === '') {
+        $result['locality'] = $part;
+        continue;
       }
 
       // Assign parts based on position and content.
