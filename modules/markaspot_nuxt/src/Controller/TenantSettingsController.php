@@ -130,6 +130,13 @@ final class TenantSettingsController extends ControllerBase {
   ];
 
   /**
+   * Curated wording preset IDs.
+   *
+   * Must match WORDING_PRESET_IDS in the frontend (app/utils/i18nOverrides.ts).
+   */
+  const WORDING_PRESETS = ['report', 'suggestion', 'entry', 'contribution'];
+
+  /**
    * Supported locales with display names.
    *
    * Must match the frontend config/locales.ts definitions.
@@ -438,7 +445,7 @@ final class TenantSettingsController extends ControllerBase {
   /**
    * Reads generic form feature flags from canonical and legacy config paths.
    *
-   * features.forms is the canonical path written by the dashboard. Top-level
+   * Features.forms is the canonical path written by the dashboard. Top-level
    * forms is kept as a read-only fallback for older JSON UI tenant configs.
    * Explicit features.forms values win.
    *
@@ -1277,6 +1284,15 @@ final class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'default locale must be present in available list.'], 422);
     }
 
+    // Optional curated wording preset (frontend merges the matching
+    // i18n bundle at runtime; the backend only stores the choice).
+    $wording = $data['wording'] ?? NULL;
+    if ($wording !== NULL && (!is_string($wording) || !in_array($wording, self::WORDING_PRESETS, TRUE))) {
+      return new JsonResponse([
+        'error' => 'wording must be one of: ' . implode(', ', self::WORDING_PRESETS) . '.',
+      ], 422);
+    }
+
     // Read-modify-write: load existing config, update only the languages key.
     $config = [];
     if ($group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
@@ -1302,6 +1318,10 @@ final class TenantSettingsController extends ControllerBase {
       'available' => array_values($data['available']),
       'locales' => $locales,
     ];
+
+    if ($wording !== NULL) {
+      $config['i18n']['wording'] = $wording;
+    }
 
     // Write back the full config JSON.
     $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));

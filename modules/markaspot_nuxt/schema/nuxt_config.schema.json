@@ -1310,6 +1310,13 @@
       "title": "Translation Overrides",
       "description": "Override specific translation keys per locale",
       "properties": {
+        "wording": {
+          "type": "string",
+          "title": "Wording Preset",
+          "description": "Curated citizen-facing term for reports. The frontend merges the matching wording-preset bundle at runtime.",
+          "enum": ["report", "suggestion", "entry", "contribution"],
+          "default": "report"
+        },
         "overrides": {
           "type": "object",
           "title": "Overrides by Locale",
