@@ -7,7 +7,12 @@
  * This is a content type to run an georeport v2 server.
  */
 
+use Drupal\Core\Entity\EntityFormInterface;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\FieldableEntityInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\node\NodeInterface;
+use Drupal\paragraphs\ParagraphInterface;
 
 /**
  * Implements hook_node_presave().
@@ -17,6 +22,7 @@ function service_request_node_presave(EntityInterface $node) {
     return;
   }
 
+  _service_request_sanitize_address($node);
   _service_request_normalize_intake_metadata($node);
 
   // Enforce the configured default language for new service requests.
@@ -52,6 +58,45 @@ function service_request_node_presave(EntityInterface $node) {
   // Service Request Update.
   else {
     _service_request_handle_update($node, $config, $auto_create);
+  }
+}
+
+/**
+ * Strips markup from citizen-supplied address components before persistence.
+ *
+ * Anonymous users can write field_address through both the Open311 API and
+ * JSON:API. The Open311 parser sanitizes its own path, but a direct JSON:API
+ * write reaches field_address unfiltered. Running on every save
+ * closes every entry point at once, including future ones. Address
+ * components are plain text, so any tag is dropped rather than escaped.
+ *
+ * Hook order relative to markaspot_geocoder_node_presave() is irrelevant:
+ * the geocoder only ever writes clean provider data, so the stored value is
+ * markup-free whether this runs before or after it. country_code is left to
+ * the address module's country constraint.
+ */
+function _service_request_sanitize_address(EntityInterface $node): void {
+  if (!$node instanceof FieldableEntityInterface
+    || !$node->hasField('field_address')
+    || $node->get('field_address')->isEmpty()) {
+    return;
+  }
+
+  $item = $node->get('field_address')->first();
+  // Sanitize every free-text address component that was set. country_code is
+  // an enum guarded by the address module's country constraint and left
+  // untouched. Iterating the value array covers every property a client can
+  // submit (including name fields via JSON:API) without a hardcoded list.
+  // Entities are decoded before stripping so encoded markup ("&lt;img&gt;")
+  // is caught too, matching the Open311 addressParser() sanitizer.
+  foreach ($item->getValue() as $property => $value) {
+    if ($property === 'country_code' || !is_string($value) || $value === '') {
+      continue;
+    }
+    $clean = trim(strip_tags(html_entity_decode($value, ENT_QUOTES, 'UTF-8')));
+    if ($clean !== $value) {
+      $item->{$property} = $clean;
+    }
   }
 }
 
@@ -287,18 +332,86 @@ function _service_request_resolve_status_note_text(int $termId, string $langcode
 }
 
 /**
- * Implements hook_form_alter().
+ * Implements hook_form_BASE_FORM_ID_alter() for node_form.
+ *
+ * Registers an entity builder that derives every newly added status-note
+ * paragraph's field_status_term from the node's field_status. This replaces
+ * the former client-side JS that synced the node status radios with the
+ * paragraph subform select; the JS was needed only until Paragraphs 8.x-1.3
+ * exposed #paragraph_type on widget elements
+ * (https://www.drupal.org/project/paragraphs/issues/2868155). Scoped to the
+ * service_request node add/edit forms instead of altering every form.
  */
-function service_request_form_alter(&$form, &$form_state, $form_id) {
-  // The attached JS syncs the node's field_status radios with the
-  // field_status_term select inside the status-note paragraph subform.
-  // The Paragraphs blocker that forced this client-side workaround was
-  // fixed in 8.x-1.3 (#paragraph_type on widget elements, see
-  // https://www.drupal.org/project/paragraphs/issues/2868155). Replacing
-  // the JS with a widget alter hook is tracked in
-  // https://github.com/markaspot/markaspot-ui/issues/481.
-  $form['#attached']['library'][] = 'service_request/paragraphs';
-  $form['#attached']['drupalSettings']['service_request']['paragraphs']['variable'] = 'value';
+function service_request_form_node_form_alter(array &$form, FormStateInterface $form_state, $form_id) {
+  $form_object = $form_state->getFormObject();
+  if (!$form_object instanceof EntityFormInterface) {
+    return;
+  }
 
-  return $form;
+  $node = $form_object->getEntity();
+  if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+    return;
+  }
+
+  $form['#entity_builders'][] = '_service_request_derive_status_paragraph_terms';
+}
+
+/**
+ * Implements hook_field_widget_single_element_form_alter().
+ *
+ * Hides the field_status_term select inside status-note paragraph subforms.
+ * The term is a derived value set server-side from the node's field_status by
+ * the entity builder registered in service_request_form_node_form_alter(), so
+ * it must not be edited by hand. Paragraphs >= 8.x-1.3 exposes the paragraph
+ * bundle on the widget element as #paragraph_type. Existing notes keep their
+ * stored term because a hidden (#access FALSE) widget retains its default.
+ */
+function service_request_field_widget_single_element_form_alter(array &$element, FormStateInterface $form_state, array $context) {
+  if (($element['#paragraph_type'] ?? NULL) !== 'status') {
+    return;
+  }
+
+  if (isset($element['subform']['field_status_term'])) {
+    $element['subform']['field_status_term']['#access'] = FALSE;
+  }
+}
+
+/**
+ * Entity builder: derives status-note paragraph terms from the node status.
+ *
+ * Runs after the node form (including its ParagraphsWidget-built status-note
+ * paragraphs) is assembled but before save. Only paragraphs added on this
+ * submission (isNew()) are touched, so historical notes keep the status they
+ * recorded at the time.
+ *
+ * @param string $entity_type_id
+ *   The node entity type ID.
+ * @param \Drupal\Core\Entity\EntityInterface $node
+ *   The service_request node being built from the form.
+ * @param array $form
+ *   The node form structure.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The current form state.
+ */
+function _service_request_derive_status_paragraph_terms(string $entity_type_id, EntityInterface $node, array &$form, FormStateInterface $form_state): void {
+  if (!$node instanceof FieldableEntityInterface) {
+    return;
+  }
+  if (!$node->hasField('field_status') || $node->get('field_status')->isEmpty()) {
+    return;
+  }
+  if (!$node->hasField('field_status_notes')) {
+    return;
+  }
+
+  $status_tid = (int) $node->get('field_status')->target_id;
+  foreach ($node->get('field_status_notes') as $item) {
+    $paragraph = $item->entity;
+    if ($paragraph instanceof ParagraphInterface
+      && $paragraph->isNew()
+      && $paragraph->bundle() === 'status'
+      && $paragraph->hasField('field_status_term')) {
+      $paragraph->set('field_status_term', $status_tid);
+    }
+  }
 }
