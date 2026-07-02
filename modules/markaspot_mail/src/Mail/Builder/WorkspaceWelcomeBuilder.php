@@ -107,11 +107,15 @@ final class WorkspaceWelcomeBuilder implements MailBuilderInterface {
         'body_blocks' => [
           (string) $this->t('Try it out: create your first test report directly on the map.', [], ['langcode' => $langcode]),
           (string) $this->t('A few demo reports are already in place. Edit or delete them anytime.', [], ['langcode' => $langcode]),
-          (string) $this->t('Manage incoming reports in your dashboard: @url', [
-            '@url' => $dashboardUrl,
+          // Anchor text deliberately repeats the URL: body_blocks render
+          // |raw in the HTML card (clickable link), while the derived
+          // text/plain part strip_tags()es the markup and must keep the
+          // URL visible.
+          (string) $this->t('Manage incoming reports in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
+            ':url' => $dashboardUrl,
           ], ['langcode' => $langcode]),
-          (string) $this->t('Log in anytime: @url', [
-            '@url' => $loginUrl,
+          (string) $this->t('Log in anytime: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
+            ':url' => $loginUrl,
           ], ['langcode' => $langcode]),
         ],
         'cta_label' => (string) $this->t('Open your workspace', [], ['langcode' => $langcode]),
