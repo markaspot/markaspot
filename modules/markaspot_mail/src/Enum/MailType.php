@@ -34,6 +34,7 @@ enum MailType: string {
 
   // CivicSpot / FastMap workspace mails (Stage 3).
   case FASTMAP_WORKSPACE_VERIFICATION = 'fastmap_workspace_verification';
+  case FASTMAP_WORKSPACE_WELCOME = 'fastmap_workspace_welcome';
   case FASTMAP_DEMO_EXPIRY = 'fastmap_demo_expiry';
 
   // Passwordless login / verification OTP (Stage 4).

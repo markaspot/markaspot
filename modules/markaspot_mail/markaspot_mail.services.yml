@@ -102,6 +102,15 @@ services:
     tags:
       - { name: markaspot_mail.builder }
 
+  markaspot_mail.builder.workspace_welcome:
+    class: Drupal\markaspot_mail\Mail\Builder\WorkspaceWelcomeBuilder
+    arguments:
+      - '@config.factory'
+      - '@language_manager'
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }
+
   markaspot_mail.builder.demo_expiry_reminder:
     class: Drupal\markaspot_mail\Mail\Builder\DemoExpiryReminderBuilder
     arguments:
