@@ -5,3 +5,16 @@ services:
   plugin.manager.markaspot_smoke_check:
     class: Drupal\markaspot_health\SmokeCheckPluginManager
     parent: default_plugin_manager
+
+  # Read-only introspection mirror of markaspot_mail's private
+  # markaspot_mail.builder_registry, sourced from the same tagged_iterator.
+  # markaspot_mail.builder_registry stays private/hot-path-only by design
+  # (see its own services.yml comment); MailCoverageCheck::create() cannot
+  # reach a private service via container->get() at runtime, so this plugin
+  # builds a second registry instance for diagnostics instead of exposing
+  # the mail-alter one publicly. Safe when markaspot_mail is not installed:
+  # an empty tagged_iterator yields an empty registry, never an error.
+  markaspot_health.mail_builder_registry:
+    class: Drupal\markaspot_mail\Mail\MailBuilderRegistry
+    arguments:
+      - !tagged_iterator markaspot_mail.builder
