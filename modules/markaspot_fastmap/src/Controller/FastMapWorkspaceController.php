@@ -54,7 +54,8 @@ class FastMapWorkspaceController extends ControllerBase {
   /**
    * Curated wording preset IDs accepted for optional workspace provisioning.
    *
-   * Duplicated from \Drupal\markaspot_nuxt\Controller\TenantSettingsController::WORDING_PRESETS
+   * Duplicated from
+   * \Drupal\markaspot_nuxt\Controller\TenantSettingsController::WORDING_PRESETS
    * because markaspot_fastmap does not declare a dependency on
    * markaspot_nuxt. Must be kept in sync with that constant and with
    * WORDING_PRESET_IDS in the frontend (app/utils/i18nOverrides.ts).
