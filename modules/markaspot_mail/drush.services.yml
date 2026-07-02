@@ -1,0 +1,12 @@
+services:
+  markaspot_mail.mail_render_test_commands:
+    class: Drupal\markaspot_mail\Commands\MailRenderTestCommands
+    arguments:
+      - '@markaspot_mail.builder_registry_public'
+      - '@markaspot_mail.sample_context_provider'
+      - '@markaspot_mail.branding'
+      - '@markaspot_mail.renderer'
+      - '@language_manager'
+      - '@module_handler'
+    tags:
+      - { name: drush.command }

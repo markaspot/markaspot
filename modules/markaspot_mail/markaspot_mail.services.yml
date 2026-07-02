@@ -22,6 +22,15 @@ services:
       - '@markaspot_mail.branding'
       - '@logger.channel.markaspot_mail'
 
+  # Single source of truth for "what does a realistic mail for this builder
+  # look like". Shared by scripts/render-preview-samples.php and the
+  # `markaspot:mail-render-test` drush command so both consume identical
+  # sample data instead of two copies drifting apart.
+  markaspot_mail.sample_context_provider:
+    class: Drupal\markaspot_mail\Mail\MailSampleContextProvider
+    arguments:
+      - '@entity_type.manager'
+
   # Gates file-/image-reference fields into MailAttachment DTOs. Builders
   # that opt into shipping report files (escalation, moderation, ECA
   # opt-in) inject this service. MIME whitelist + size caps live in
@@ -44,6 +53,18 @@ services:
   markaspot_mail.builder_registry:
     class: Drupal\markaspot_mail\Mail\MailBuilderRegistry
     public: false
+    arguments:
+      - !tagged_iterator markaspot_mail.builder
+
+  # Public sibling of markaspot_mail.builder_registry, sourced from the same
+  # tagged_iterator. Drush commands wired via drush.services.yml go through
+  # Drush's own LegacyServiceInstantiator, which cannot resolve a '@'
+  # reference to a service marked public: false (unlike same-container YAML
+  # wiring such as markaspot_mail.mail_alter_hook above). Kept as a second,
+  # explicit instance rather than flipping builder_registry itself public,
+  # so the hot mail-alter path keeps its narrow, documented consumer set.
+  markaspot_mail.builder_registry_public:
+    class: Drupal\markaspot_mail\Mail\MailBuilderRegistry
     arguments:
       - !tagged_iterator markaspot_mail.builder
 
