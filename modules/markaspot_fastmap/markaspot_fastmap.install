@@ -1380,3 +1380,50 @@ function markaspot_fastmap_update_11923(): void {
     $lock->release($lockName);
   }
 }
+
+/**
+ * Backfills missing top-level keys in markaspot_fastmap.mail.
+ *
+ * workspace_welcome was added to config/install/markaspot_fastmap.mail.yml
+ * after workspace_verification shipped. Fresh installs pick up both keys,
+ * but config/install is only applied on hook_install(), so existing
+ * tenants whose module was installed before workspace_welcome was added
+ * never received it in their active config. markaspot_fastmap_mail() then
+ * crashed with "strtr(): Argument #1 must be of type string, null given"
+ * building the welcome mail, silently swallowed by
+ * FastMapWorkspaceController's fail-safe catch.
+ *
+ * Idempotent and additive only: an existing top-level key (including one
+ * an admin hand-edited) is never touched, only missing keys are added from
+ * the shipped YAML. Safe to run on tenants where the backfill was already
+ * applied manually (cp1 fastmap, demo) — finds nothing missing and no-ops.
+ */
+function markaspot_fastmap_update_11924(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_fastmap.mail');
+  $path = \Drupal::service('extension.list.module')->getPath('markaspot_fastmap')
+    . '/config/install/markaspot_fastmap.mail.yml';
+
+  $shipped = is_file($path) ? \Drupal\Component\Serialization\Yaml::decode(file_get_contents($path)) : NULL;
+  if (!is_array($shipped)) {
+    return 'Could not read shipped markaspot_fastmap.mail.yml, nothing backfilled.';
+  }
+
+  $backfilled = [];
+  foreach ($shipped as $key => $value) {
+    if ($key === 'langcode') {
+      continue;
+    }
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+      $backfilled[] = $key;
+    }
+  }
+
+  if (empty($backfilled)) {
+    return 'markaspot_fastmap.mail already has all shipped top-level keys, nothing to backfill.';
+  }
+
+  $config->save();
+
+  return 'Backfilled markaspot_fastmap.mail key(s): ' . implode(', ', $backfilled) . '.';
+}

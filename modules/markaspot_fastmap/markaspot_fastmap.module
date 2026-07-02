@@ -285,50 +285,39 @@ function _markaspot_fastmap_account_can_bypass_workspace_block(AccountInterface 
  * Implements hook_mail().
  */
 function markaspot_fastmap_mail(string $key, array &$message, array $params): void {
-  if ($key === 'workspace_verification') {
+  if ($key === 'workspace_verification' || $key === 'workspace_welcome') {
     $langcode = $message['langcode'] ?? 'en';
+    $template = _markaspot_fastmap_mail_template($key, $langcode);
 
-    // Load mail config in the message's language.
-    $mail_config = \Drupal::languageManager()
-      ->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail')
-      ->get($key);
-
-    // Fallback to default language if translation doesn't exist.
-    if (empty($mail_config)) {
-      $mail_config = \Drupal::config('markaspot_fastmap.mail')->get($key);
+    // Both fields still missing after config + shipped-YAML fallback means
+    // there is nothing sensible to send. Suppress delivery instead of
+    // reaching strtr(NULL); MailManager checks $message['send'] and reports
+    // result NULL, which callers (FastMapWorkspaceController) already treat
+    // as a failure worth a warning log.
+    if ($template['subject'] === '' || $template['body'] === '') {
+      \Drupal::logger('markaspot_fastmap')->error(
+        'Mail template @key has no usable subject/body after config and shipped-YAML fallback; suppressing send.',
+        ['@key' => $key]
+      );
+      $message['send'] = FALSE;
+      return;
     }
 
-    $replacements = [
-      '@site_name' => $params['site_name'] ?? 'FastMap',
-      '@workspace_name' => $params['workspace_name'] ?? '',
-      '@verify_url' => $params['verify_url'] ?? '',
-      '@cleanup_days' => $params['cleanup_days'] ?? '7',
-    ];
+    $replacements = $key === 'workspace_verification'
+      ? [
+        '@site_name' => $params['site_name'] ?? 'FastMap',
+        '@workspace_name' => $params['workspace_name'] ?? '',
+        '@verify_url' => $params['verify_url'] ?? '',
+        '@cleanup_days' => $params['cleanup_days'] ?? '7',
+      ]
+      : [
+        '@site_name' => $params['site_name'] ?? 'FastMap',
+        '@workspace_name' => $params['workspace_name'] ?? '',
+        '@workspace_url' => $params['workspace_url'] ?? '',
+      ];
 
-    $message['subject'] = strtr($mail_config['subject'], $replacements);
-    $message['body'][] = strtr($mail_config['body'], $replacements);
-  }
-  elseif ($key === 'workspace_welcome') {
-    $langcode = $message['langcode'] ?? 'en';
-
-    // Load mail config in the message's language.
-    $mail_config = \Drupal::languageManager()
-      ->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail')
-      ->get($key);
-
-    // Fallback to default language if translation doesn't exist.
-    if (empty($mail_config)) {
-      $mail_config = \Drupal::config('markaspot_fastmap.mail')->get($key);
-    }
-
-    $replacements = [
-      '@site_name' => $params['site_name'] ?? 'FastMap',
-      '@workspace_name' => $params['workspace_name'] ?? '',
-      '@workspace_url' => $params['workspace_url'] ?? '',
-    ];
-
-    $message['subject'] = strtr($mail_config['subject'], $replacements);
-    $message['body'][] = strtr($mail_config['body'], $replacements);
+    $message['subject'] = strtr($template['subject'], $replacements);
+    $message['body'][] = strtr($template['body'], $replacements);
   }
   elseif ($key === 'demo_expiry_reminder') {
     // Bcc the technical admin (uid 1) when the cron passes one. Set on the
@@ -379,6 +368,67 @@ function _markaspot_fastmap_build_workspace_url(string $slug, string $baseUrl): 
   }
 
   return rtrim($baseUrl, '/') . '/' . $slug;
+}
+
+/**
+ * Resolves the subject/body template pair for a markaspot_fastmap mail key.
+ *
+ * Per-field fallback chain, so a partially-configured tenant (missing one
+ * field, or missing the entire top-level key because it predates
+ * markaspot_fastmap_update_11924()) never reaches strtr(NULL):
+ *   1. Language-config override for $langcode (per-locale admin edit).
+ *   2. Active markaspot_fastmap.mail config (admin default-language edit).
+ *   3. Shipped config/install/markaspot_fastmap.mail.yml (module default).
+ *
+ * Steps 1+2 are merged with '+' (override wins per top-level key present),
+ * then subject/body are individually backfilled from the shipped YAML if
+ * still empty after that merge.
+ *
+ * @return array{subject: string, body: string}
+ *   Both keys always present; empty string when even the shipped YAML has
+ *   no usable value for that field.
+ */
+function _markaspot_fastmap_mail_template(string $key, string $langcode): array {
+  $override = \Drupal::languageManager()
+    ->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail')
+    ->get($key);
+  $default = \Drupal::config('markaspot_fastmap.mail')->get($key);
+
+  $template = (is_array($override) ? $override : []) + (is_array($default) ? $default : []);
+
+  if (empty($template['subject']) || empty($template['body'])) {
+    $shipped = _markaspot_fastmap_shipped_mail_template($key);
+    foreach (['subject', 'body'] as $field) {
+      if (empty($template[$field]) && !empty($shipped[$field])) {
+        $template[$field] = $shipped[$field];
+      }
+    }
+  }
+
+  return [
+    'subject' => (string) ($template['subject'] ?? ''),
+    'body' => (string) ($template['body'] ?? ''),
+  ];
+}
+
+/**
+ * Reads a single mail template key from the shipped config/install YAML.
+ *
+ * Static-cached per request: config/install/markaspot_fastmap.mail.yml is
+ * a static file shipped with the module, safe to parse once and reuse for
+ * every locale miss within the same request.
+ */
+function _markaspot_fastmap_shipped_mail_template(string $key): array {
+  $shipped = &drupal_static(__FUNCTION__);
+  if ($shipped === NULL) {
+    $path = \Drupal::service('extension.list.module')->getPath('markaspot_fastmap')
+      . '/config/install/markaspot_fastmap.mail.yml';
+    $decoded = is_file($path) ? \Drupal\Component\Serialization\Yaml::decode(file_get_contents($path)) : NULL;
+    $shipped = is_array($decoded) ? $decoded : [];
+  }
+
+  $template = $shipped[$key] ?? [];
+  return is_array($template) ? $template : [];
 }
 
 /**
