@@ -104,10 +104,6 @@ class SplitController extends ControllerBase {
       return $this->errorResponse(sprintf('description exceeds the maximum length of %d characters.', self::DESCRIPTION_MAX_LENGTH), 400);
     }
 
-    $title = trim((string) ($payload['title'] ?? ''));
-    $title = $title === '' ? (string) $node->getTitle() : $title;
-    $title = mb_substr($title, 0, 255);
-
     $mediaIds = [];
     if (array_key_exists('media_ids', $payload)) {
       if (!is_array($payload['media_ids'])) {
@@ -129,7 +125,6 @@ class SplitController extends ControllerBase {
     try {
       $result = $this->splitRequestService->split($node, [
         'category_tid' => $categoryTid,
-        'title' => $title,
         'description' => $description,
         'media_ids' => $mediaIds,
         'copy_reporter' => $copyReporter,
@@ -274,12 +269,18 @@ class SplitController extends ControllerBase {
 
   /**
    * The node's citizen-facing request_id (markaspot_request_id base field).
+   *
+   * Non-nullable: after a successful save request_id is guaranteed
+   * (markaspot_request_id_node_presave() either sets it or aborts the save
+   * with an EntityStorageException). The nid-string fallback mirrors
+   * SplitRequestService::requestId() for nodes loaded outside that
+   * guarantee (e.g. legacy data).
    */
-  protected function nodeRequestId(NodeInterface $node): ?string {
+  protected function nodeRequestId(NodeInterface $node): string {
     if ($node->hasField('request_id') && !$node->get('request_id')->isEmpty()) {
       return (string) $node->get('request_id')->value;
     }
-    return NULL;
+    return (string) $node->id();
   }
 
   /**

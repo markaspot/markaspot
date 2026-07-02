@@ -52,9 +52,12 @@ interface SplitRequestServiceInterface {
    * @param \Drupal\node\NodeInterface $source
    *   The original service request node.
    * @param array $payload
-   *   Normalized split payload with keys: category_tid (int), title
-   *   (string), description (string), media_ids (int[]), copy_reporter
-   *   (bool), notify_citizen (bool).
+   *   Normalized split payload with keys: category_tid (int), description
+   *   (string), media_ids (int[]), copy_reporter (bool), notify_citizen
+   *   (bool). No 'title' key: markaspot_request_id_node_presave()
+   *   unconditionally derives the title from the generated request_id on
+   *   every service_request save, so a payload title would be silently
+   *   discarded.
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The user performing the split.
    *

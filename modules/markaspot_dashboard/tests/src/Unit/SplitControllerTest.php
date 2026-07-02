@@ -501,7 +501,7 @@ class SplitControllerTest extends UnitTestCase {
       ->with($node, $this->callback(function (array $payload) {
         return $payload['category_tid'] === 5
           && $payload['description'] === 'valid text'
-          && $payload['title'] === 'Broken bench'
+          && !array_key_exists('title', $payload)
           && $payload['copy_reporter'] === TRUE
           && $payload['notify_citizen'] === TRUE
           && $payload['media_ids'] === [];
@@ -520,6 +520,38 @@ class SplitControllerTest extends UnitTestCase {
     $this->assertSame('89-2026', $data['child']['request_id']);
     $this->assertSame(88, $data['original']['nid']);
     $this->assertSame('Request split successfully.', $data['message']);
+  }
+
+  /**
+   * Request_id falls back to the nid as a string, never NULL.
+   *
+   * After a successful save request_id is guaranteed by
+   * markaspot_request_id_node_presave(); the fallback only covers nodes
+   * loaded outside that guarantee. The wire contract has no NULL branch.
+   *
+   * @covers ::split
+   * @covers ::nodeRequestId
+   */
+  public function testSplitFallsBackRequestIdToNidStringWhenFieldMissing(): void {
+    $node = $this->createServiceRequestNode();
+    $this->nodeStorage->method('load')->with(88)->willReturn($node);
+    $this->splitRequestService->method('resolveJurisdictionForNode')->willReturn(10);
+    $this->splitRequestService->method('isCategoryInJurisdiction')->willReturn(TRUE);
+
+    // createServiceRequestNode() stubs hasField() to FALSE for everything,
+    // including 'request_id'.
+    $child = $this->createServiceRequestNode(456);
+
+    $this->splitRequestService->method('split')->willReturn(['child' => $child, 'original' => $node]);
+
+    $response = $this->buildController()->split(88, new Request([], [], [], [], [], [], json_encode([
+      'category_tid' => 5,
+      'description' => 'valid text',
+    ])));
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame('456', $data['child']['request_id']);
+    $this->assertSame('88', $data['original']['request_id']);
   }
 
   /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\markaspot_dashboard\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -28,7 +29,6 @@ final class SplitRequestService implements SplitRequestServiceInterface {
     'field_jurisdiction',
     'field_geolocation',
     'field_address',
-    'field_approved',
   ];
 
   /**
@@ -36,6 +36,8 @@ final class SplitRequestService implements SplitRequestServiceInterface {
    *
    * Field_gdpr travels with the reporter's PII so the consent state the
    * citizen gave stays attached to the contact data on the child.
+   * Field_approved (the double-opt-in flag) gates that same contact data,
+   * so it only travels WITH it rather than unconditionally.
    */
   private const REPORTER_FIELDS = [
     'field_e_mail',
@@ -43,6 +45,7 @@ final class SplitRequestService implements SplitRequestServiceInterface {
     'field_last_name',
     'field_phone',
     'field_gdpr',
+    'field_approved',
   ];
 
   /**
@@ -54,6 +57,7 @@ final class SplitRequestService implements SplitRequestServiceInterface {
     private readonly RequestLinkServiceInterface $requestLinkService,
     private readonly LoggerInterface $logger,
     protected readonly ConfigFactoryInterface $configFactory,
+    private readonly Connection $database,
     private readonly ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {}
 
@@ -110,104 +114,127 @@ final class SplitRequestService implements SplitRequestServiceInterface {
     $childLangcode = $source->language()->getId();
     $originalRequestId = $this->requestId($source);
 
-    $nodeStorage = $this->entityTypeManager->getStorage('node');
-    /** @var \Drupal\node\NodeInterface $child */
-    $child = $nodeStorage->create([
-      'type' => 'service_request',
-      'langcode' => $childLangcode,
-      'title' => $payload['title'],
-      'uid' => $account->id(),
-    ]);
+    // Child save -> original save -> link-row insert happen inside ONE
+    // transaction: a failure partway through (e.g. storeLink()) must not
+    // leave an orphaned, PII-bearing child node behind with no link row
+    // (and no way for staff to find it again).
+    //
+    // NOTE: the citizen create-mail is dispatched by ECA on
+    // content_entity:insert, which is NOT transactional — a rollback here
+    // cannot unsend it. That residual (a mail sent for a report that then
+    // gets rolled back) is small and accepted. Do NOT "fix" it by creating
+    // the child with notifications disabled and flipping field_notification
+    // after storeLink() succeeds: ECA only fires on INSERT, so the citizen
+    // would then never receive the create mail at all, which is worse.
+    $transaction = $this->database->startTransaction();
+    try {
+      $nodeStorage = $this->entityTypeManager->getStorage('node');
+      /** @var \Drupal\node\NodeInterface $child */
+      $child = $nodeStorage->create([
+        'type' => 'service_request',
+        'langcode' => $childLangcode,
+        // Placeholder only: markaspot_request_id_node_presave() derives the
+        // real title from the generated request_id on every save, so this
+        // value never reaches storage. Using the source's title keeps the
+        // in-memory entity sane between create() and the presave hook.
+        'title' => $source->getTitle(),
+        'uid' => $account->id(),
+      ]);
 
-    foreach (self::COPIED_FIELDS as $field) {
-      if ($source->hasField($field) && $child->hasField($field)) {
-        $child->set($field, $source->get($field)->getValue());
-      }
-    }
-
-    if (!empty($payload['copy_reporter'])) {
-      foreach (self::REPORTER_FIELDS as $field) {
+      foreach (self::COPIED_FIELDS as $field) {
         if ($source->hasField($field) && $child->hasField($field)) {
           $child->set($field, $source->get($field)->getValue());
         }
       }
-    }
 
-    if ($child->hasField('field_request_media')) {
-      $mediaValues = array_map(
-        static fn(int $mid): array => ['target_id' => $mid],
-        $payload['media_ids']
-      );
-      $child->set('field_request_media', $mediaValues);
-    }
+      if (!empty($payload['copy_reporter'])) {
+        foreach (self::REPORTER_FIELDS as $field) {
+          if ($source->hasField($field) && $child->hasField($field)) {
+            $child->set($field, $source->get($field)->getValue());
+          }
+        }
+      }
 
-    if ($child->hasField('body')) {
-      $child->set('body', [
-        'value' => $payload['description'],
-        'format' => 'plain_text',
-      ]);
-    }
-    if ($child->hasField('field_category')) {
-      $child->set('field_category', ['target_id' => $payload['category_tid']]);
-    }
-    if ($child->hasField('field_notification')) {
-      $child->set('field_notification', (bool) $payload['notify_citizen']);
-    }
+      if ($child->hasField('field_request_media')) {
+        $mediaValues = array_map(
+          static fn(int $mid): array => ['target_id' => $mid],
+          $payload['media_ids']
+        );
+        $child->set('field_request_media', $mediaValues);
+      }
 
-    // Pre-populate the provenance note BEFORE the first save: field_status is
-    // deliberately left empty here (markaspot_group's presave assigns the
-    // jurisdiction-initial status), and a non-empty field_status_notes
-    // suppresses service_request_node_presave's generic auto-note. The
-    // provenance text then renders via [node:initial_status_note] in the
-    // tenant's create-confirmation mail.
-    if ($child->hasField('field_status_notes')) {
-      $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
-        'note' => self::childProvenanceNote($childLangcode, $originalRequestId),
-        'author_id' => $account->id(),
-      ], $childLangcode);
-      $child->set('field_status_notes', [
-        [
+      if ($child->hasField('body')) {
+        $child->set('body', [
+          'value' => $payload['description'],
+          'format' => 'plain_text',
+        ]);
+      }
+      if ($child->hasField('field_category')) {
+        $child->set('field_category', ['target_id' => $payload['category_tid']]);
+      }
+      if ($child->hasField('field_notification')) {
+        $child->set('field_notification', (bool) $payload['notify_citizen']);
+      }
+
+      // Pre-populate the provenance note BEFORE the first save:
+      // field_status is deliberately left empty here (markaspot_group's
+      // presave assigns the jurisdiction-initial status), and a non-empty
+      // field_status_notes suppresses service_request_node_presave's
+      // generic auto-note. The provenance text then renders via
+      // [node:initial_status_note] in the tenant's create-confirmation mail.
+      if ($child->hasField('field_status_notes')) {
+        $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
+          'note' => self::childProvenanceNote($childLangcode, $originalRequestId),
+          'author_id' => $account->id(),
+        ], $childLangcode);
+        $child->set('field_status_notes', [
+          [
+            'target_id' => $paragraph->id(),
+            'target_revision_id' => $paragraph->getRevisionId(),
+          ],
+        ]);
+      }
+
+      $child->save();
+
+      // Append a provenance note to the original. The term is the CURRENT
+      // status (no status change), so this does not trigger a citizen mail
+      // on the original — the child's own create-mail is the
+      // citizen-facing signal for the split.
+      $originalLangcode = $source->language()->getId();
+      $childRequestId = $this->requestId($child);
+      if ($source->hasField('field_status_notes')) {
+        $currentStatusTid = $source->hasField('field_status') && !$source->get('field_status')->isEmpty()
+          ? (int) $source->get('field_status')->target_id
+          : NULL;
+        $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
+          'status_term_id' => $currentStatusTid,
+          'note' => self::originalProvenanceNote($originalLangcode, $childRequestId),
+          'author_id' => $account->id(),
+        ], $originalLangcode);
+        $notes = $source->get('field_status_notes')->getValue();
+        $notes[] = [
           'target_id' => $paragraph->id(),
           'target_revision_id' => $paragraph->getRevisionId(),
-        ],
+        ];
+        $source->set('field_status_notes', $notes);
+      }
+      $source->save();
+
+      $this->requestLinkService->storeLink((int) $source->id(), (int) $child->id(), (int) $account->id());
+
+      $this->logger->notice('User @uid split service request @source into @child.', [
+        '@uid' => $account->id(),
+        '@source' => $source->id(),
+        '@child' => $child->id(),
       ]);
+
+      return ['child' => $child, 'original' => $source];
     }
-
-    $child->save();
-
-    // Append a provenance note to the original. The term is the CURRENT
-    // status (no status change), so this does not trigger a citizen mail on
-    // the original — the child's own create-mail is the citizen-facing
-    // signal for the split.
-    $originalLangcode = $source->language()->getId();
-    $childRequestId = $this->requestId($child);
-    if ($source->hasField('field_status_notes')) {
-      $currentStatusTid = $source->hasField('field_status') && !$source->get('field_status')->isEmpty()
-        ? (int) $source->get('field_status')->target_id
-        : NULL;
-      $paragraph = $this->georeportProcessor->createStatusNoteParagraph([
-        'status_term_id' => $currentStatusTid,
-        'note' => self::originalProvenanceNote($originalLangcode, $childRequestId),
-        'author_id' => $account->id(),
-      ], $originalLangcode);
-      $notes = $source->get('field_status_notes')->getValue();
-      $notes[] = [
-        'target_id' => $paragraph->id(),
-        'target_revision_id' => $paragraph->getRevisionId(),
-      ];
-      $source->set('field_status_notes', $notes);
+    catch (\Throwable $e) {
+      $transaction->rollBack();
+      throw $e;
     }
-    $source->save();
-
-    $this->requestLinkService->storeLink((int) $source->id(), (int) $child->id(), (int) $account->id());
-
-    $this->logger->notice('User @uid split service request @source into @child.', [
-      '@uid' => $account->id(),
-      '@source' => $source->id(),
-      '@child' => $child->id(),
-    ]);
-
-    return ['child' => $child, 'original' => $source];
   }
 
   /**

@@ -6,8 +6,13 @@ namespace Drupal\Tests\markaspot_dashboard\Unit;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Transaction;
+use Drupal\Core\Database\Transaction\TransactionManagerInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_dashboard\Service\RequestLinkServiceInterface;
@@ -73,6 +78,13 @@ class SplitRequestServiceTest extends UnitTestCase {
   protected $hierarchyResolver;
 
   /**
+   * Mocked database connection (transaction wrapping).
+   *
+   * @var \Drupal\Core\Database\Connection|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $database;
+
+  /**
    * The service under test.
    *
    * @var \Drupal\markaspot_dashboard\Service\SplitRequestService
@@ -90,6 +102,7 @@ class SplitRequestServiceTest extends UnitTestCase {
     $this->requestLinkService = $this->createMock(RequestLinkServiceInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $this->database = $this->createMock(Connection::class);
 
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->with('jurisdiction_group_type')->willReturn('jur');
@@ -102,6 +115,7 @@ class SplitRequestServiceTest extends UnitTestCase {
       $this->requestLinkService,
       $this->logger,
       $this->configFactory,
+      $this->database,
       $this->hierarchyResolver,
     );
   }
@@ -404,6 +418,77 @@ class SplitRequestServiceTest extends UnitTestCase {
     $node->method('hasField')->with('field_jurisdiction')->willReturn(FALSE);
 
     $this->assertNull($this->service->resolveJurisdictionForNode($node));
+  }
+
+  // ===========================================================================
+  // split() — transaction wrapping (Fix 2).
+  // ===========================================================================
+
+  /**
+   * A failure partway through split() must roll back the transaction.
+   *
+   * StoreLink() throwing must not leave an orphaned, PII-bearing child
+   * node behind with no link row: both writes already happened
+   * (child->save() and source->save() are asserted to have run) before
+   * the mocked transaction's rollBack() is invoked and the exception
+   * rethrown.
+   *
+   * @covers ::split
+   */
+  public function testSplitRollsBackTransactionWhenStoreLinkThrows(): void {
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn('en');
+
+    $source = $this->createMock(NodeInterface::class);
+    $source->method('id')->willReturn(88);
+    $source->method('getTitle')->willReturn('Broken bench');
+    $source->method('language')->willReturn($language);
+    $source->method('hasField')->willReturn(FALSE);
+    $source->expects($this->once())->method('save');
+
+    $child = $this->createMock(NodeInterface::class);
+    $child->method('id')->willReturn(456);
+    $child->method('hasField')->willReturn(FALSE);
+    $child->expects($this->once())->method('save');
+
+    $nodeStorage = $this->createMock(EntityStorageInterface::class);
+    $nodeStorage->method('create')->willReturn($child);
+    $this->entityTypeManager->method('getStorage')->with('node')->willReturn($nodeStorage);
+
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(12);
+
+    $this->requestLinkService->method('storeLink')->willThrowException(new \RuntimeException('db down'));
+
+    // Transaction's readonly $connection property is never initialized on
+    // a constructor-disabled mock, and __destruct() reads it unconditionally
+    // when the object is garbage-collected at test teardown. Mirrors core's
+    // own TransactionTest::testMockTransaction(): construct with a real
+    // (mocked) Connection via setConstructorArgs() instead of disabling the
+    // constructor, so __destruct() has something valid to call.
+    $transactionManager = $this->createMock(TransactionManagerInterface::class);
+    $transactionConnection = $this->getMockBuilder(Connection::class)
+      ->disableOriginalConstructor()
+      ->getMock();
+    $transactionConnection->method('transactionManager')->willReturn($transactionManager);
+
+    $transaction = $this->getMockBuilder(Transaction::class)
+      ->setConstructorArgs([$transactionConnection, '', ''])
+      ->onlyMethods(['rollBack'])
+      ->getMock();
+    $transaction->expects($this->once())->method('rollBack');
+    $this->database->method('startTransaction')->willReturn($transaction);
+
+    $this->expectException(\RuntimeException::class);
+    $this->expectExceptionMessage('db down');
+
+    $this->service->split($source, [
+      'category_tid' => 5,
+      'description' => 'valid text',
+      'media_ids' => [],
+      'copy_reporter' => FALSE,
+      'notify_citizen' => TRUE,
+    ], $account);
   }
 
   /**
