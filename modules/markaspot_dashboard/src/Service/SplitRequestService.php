@@ -7,6 +7,7 @@ namespace Drupal\markaspot_dashboard\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
@@ -32,12 +33,16 @@ final class SplitRequestService implements SplitRequestServiceInterface {
 
   /**
    * Reporter contact fields copied only when copy_reporter is TRUE.
+   *
+   * Field_gdpr travels with the reporter's PII so the consent state the
+   * citizen gave stays attached to the contact data on the child.
    */
   private const REPORTER_FIELDS = [
     'field_e_mail',
     'field_first_name',
     'field_last_name',
     'field_phone',
+    'field_gdpr',
   ];
 
   /**
@@ -49,6 +54,7 @@ final class SplitRequestService implements SplitRequestServiceInterface {
     private readonly RequestLinkServiceInterface $requestLinkService,
     private readonly LoggerInterface $logger,
     protected readonly ConfigFactoryInterface $configFactory,
+    private readonly ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {}
 
   /**
@@ -86,7 +92,15 @@ final class SplitRequestService implements SplitRequestServiceInterface {
       return FALSE;
     }
 
-    return (int) $term->get('field_jurisdiction')->target_id === $jurisdictionId;
+    // Category terms are always stored on the ROOT jurisdiction (invariant
+    // enforced by presave; GeoreportProcessorService's status-notes
+    // serializer relies on the same assumption), while $jurisdictionId is
+    // the source node's own jurisdiction, which may be a more specific
+    // CHILD jurisdiction (boundary-matched on insert). Resolve up to the
+    // root before comparing so child-jurisdiction tenants are not rejected.
+    $rootJurisdictionId = $this->hierarchyResolver?->getRootJurisdictionId($jurisdictionId) ?? $jurisdictionId;
+
+    return (int) $term->get('field_jurisdiction')->target_id === $rootJurisdictionId;
   }
 
   /**

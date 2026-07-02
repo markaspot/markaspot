@@ -11,6 +11,7 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\markaspot_dashboard\Controller\SplitController;
 use Drupal\markaspot_dashboard\Service\RequestLinkServiceInterface;
 use Drupal\markaspot_dashboard\Service\SplitRequestServiceInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -74,6 +75,17 @@ class SplitControllerTest extends UnitTestCase {
   protected $scopeValidator;
 
   /**
+   * Mocked jurisdiction hierarchy resolver.
+   *
+   * NULL by default (matches the controller's own default), so existing
+   * direct-membership tests are unaffected. Tests covering the ancestor
+   * expansion set this to a mock before calling buildController().
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject|null
+   */
+  protected $hierarchyResolver;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -122,6 +134,7 @@ class SplitControllerTest extends UnitTestCase {
       $this->requestLinkService,
       $this->logger,
       $this->scopeValidator,
+      $this->hierarchyResolver,
     );
   }
 
@@ -236,6 +249,57 @@ class SplitControllerTest extends UnitTestCase {
     $this->splitRequestService->method('resolveJurisdictionForNode')->willReturn(99);
     // scopeValidator only allows jurisdiction 10 (see setUp()).
     $this->currentUser->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
+
+    $response = $this->buildController()->split(88, new Request([], [], [], [], [], [], '{"category_tid":1,"description":"x"}'));
+
+    $this->assertSame(403, $response->getStatusCode());
+    $this->splitRequestService->expects($this->never())->method('split');
+  }
+
+  /**
+   * A root member is allowed to act on a node in a child jurisdiction.
+   *
+   * Boundary-matched on insert, mirroring DuplicateController's hierarchy
+   * walk: a direct member of a ROOT jurisdiction is not a direct member of
+   * every CHILD jurisdiction under it.
+   *
+   * @covers ::split
+   */
+  public function testSplitAllowsRootMemberActingOnChildJurisdictionNode(): void {
+    $node = $this->createServiceRequestNode();
+    $this->nodeStorage->method('load')->with(88)->willReturn($node);
+    // The node lives in child jurisdiction 20; the user is only a direct
+    // member of root jurisdiction 10 (see setUp()'s scopeValidator).
+    $this->splitRequestService->method('resolveJurisdictionForNode')->willReturn(20);
+    $this->splitRequestService->method('isCategoryInJurisdiction')->willReturn(TRUE);
+
+    $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $this->hierarchyResolver->method('getDescendantIds')->with(10)->willReturn([10, 20]);
+
+    $child = $this->createServiceRequestNode(456);
+    $this->splitRequestService->method('split')->willReturn(['child' => $child, 'original' => $node]);
+
+    $response = $this->buildController()->split(88, new Request([], [], [], [], [], [], '{"category_tid":1,"description":"x"}'));
+
+    $this->assertSame(200, $response->getStatusCode());
+  }
+
+  /**
+   * An unrelated jurisdiction stays refused even with a hierarchy resolver.
+   *
+   * The user's only membership is an unrelated jurisdiction: the target
+   * jurisdiction is not among its descendants either.
+   *
+   * @covers ::split
+   */
+  public function testSplitRefusesUnrelatedJurisdictionEvenWithHierarchyResolver(): void {
+    $node = $this->createServiceRequestNode();
+    $this->nodeStorage->method('load')->with(88)->willReturn($node);
+    $this->splitRequestService->method('resolveJurisdictionForNode')->willReturn(99);
+
+    $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    // Root jurisdiction 10's subtree does not contain 99.
+    $this->hierarchyResolver->method('getDescendantIds')->with(10)->willReturn([10, 20]);
 
     $response = $this->buildController()->split(88, new Request([], [], [], [], [], [], '{"category_tid":1,"description":"x"}'));
 

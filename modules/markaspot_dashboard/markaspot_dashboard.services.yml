@@ -23,6 +23,7 @@ services:
       - '@markaspot_dashboard.request_link'
       - '@logger.channel.markaspot_dashboard'
       - '@config.factory'
+      - '@?markaspot_group.hierarchy_resolver'
 
   logger.channel.markaspot_dashboard:
     parent: logger.channel_base

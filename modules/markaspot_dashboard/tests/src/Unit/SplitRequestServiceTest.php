@@ -12,6 +12,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_dashboard\Service\RequestLinkServiceInterface;
 use Drupal\markaspot_dashboard\Service\SplitRequestService;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
@@ -62,6 +63,16 @@ class SplitRequestServiceTest extends UnitTestCase {
   protected $configFactory;
 
   /**
+   * Mocked jurisdiction hierarchy resolver.
+   *
+   * Unstubbed methods return NULL by default, which exercises the same
+   * null-coalescing fallback as a completely absent (NULL) resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $hierarchyResolver;
+
+  /**
    * The service under test.
    *
    * @var \Drupal\markaspot_dashboard\Service\SplitRequestService
@@ -78,6 +89,7 @@ class SplitRequestServiceTest extends UnitTestCase {
     $this->processor = $this->createMock(GeoreportProcessorServiceInterface::class);
     $this->requestLinkService = $this->createMock(RequestLinkServiceInterface::class);
     $this->logger = $this->createMock(LoggerInterface::class);
+    $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
 
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')->with('jurisdiction_group_type')->willReturn('jur');
@@ -90,6 +102,7 @@ class SplitRequestServiceTest extends UnitTestCase {
       $this->requestLinkService,
       $this->logger,
       $this->configFactory,
+      $this->hierarchyResolver,
     );
   }
 
@@ -241,6 +254,69 @@ class SplitRequestServiceTest extends UnitTestCase {
     $this->entityTypeManager->method('getStorage')->with('taxonomy_term')->willReturn($termStorage);
 
     $this->assertFalse($this->service->isCategoryInJurisdiction(999, 10));
+  }
+
+  /**
+   * A category on the child jurisdiction's own root is valid.
+   *
+   * Category terms are always stored on the ROOT jurisdiction (Open311
+   * invariant), while the source node may live in a more specific CHILD
+   * jurisdiction.
+   *
+   * @covers ::isCategoryInJurisdiction
+   */
+  public function testIsCategoryInJurisdictionValidForChildJurisdictionOfMatchingRoot(): void {
+    // Category term belongs to root jurisdiction 10.
+    $term = $this->createMockCategoryTerm('service_category', 10);
+    $termStorage = $this->createMock(EntityStorageInterface::class);
+    $termStorage->method('load')->with(123)->willReturn($term);
+    $this->entityTypeManager->method('getStorage')->with('taxonomy_term')->willReturn($termStorage);
+
+    // The source node lives in child jurisdiction 20, whose root is 10.
+    $this->hierarchyResolver->method('getRootJurisdictionId')->with(20)->willReturn(10);
+
+    $this->assertTrue($this->service->isCategoryInJurisdiction(123, 20));
+  }
+
+  /**
+   * A category on a DIFFERENT root stays rejected.
+   *
+   * The category's root differs from the child jurisdiction's own root.
+   *
+   * @covers ::isCategoryInJurisdiction
+   */
+  public function testIsCategoryInJurisdictionRejectsChildOfDifferentRoot(): void {
+    // Category term belongs to root jurisdiction 10.
+    $term = $this->createMockCategoryTerm('service_category', 10);
+    $termStorage = $this->createMock(EntityStorageInterface::class);
+    $termStorage->method('load')->with(123)->willReturn($term);
+    $this->entityTypeManager->method('getStorage')->with('taxonomy_term')->willReturn($termStorage);
+
+    // The source node lives in child jurisdiction 30, whose root is 99 —
+    // an unrelated tenant tree.
+    $this->hierarchyResolver->method('getRootJurisdictionId')->with(30)->willReturn(99);
+
+    $this->assertFalse($this->service->isCategoryInJurisdiction(123, 30));
+  }
+
+  /**
+   * An unresolvable root falls back to the given jurisdiction ID directly.
+   *
+   * A cycle in the hierarchy (resolver returns NULL) matches the
+   * pre-hierarchy-resolver behavior rather than opening or closing access
+   * unpredictably.
+   *
+   * @covers ::isCategoryInJurisdiction
+   */
+  public function testIsCategoryInJurisdictionFallsBackWhenRootUnresolvable(): void {
+    $term = $this->createMockCategoryTerm('service_category', 20);
+    $termStorage = $this->createMock(EntityStorageInterface::class);
+    $termStorage->method('load')->with(123)->willReturn($term);
+    $this->entityTypeManager->method('getStorage')->with('taxonomy_term')->willReturn($termStorage);
+
+    $this->hierarchyResolver->method('getRootJurisdictionId')->with(20)->willReturn(NULL);
+
+    $this->assertTrue($this->service->isCategoryInJurisdiction(123, 20));
   }
 
   // ===========================================================================

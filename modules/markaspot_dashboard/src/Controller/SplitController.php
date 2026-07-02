@@ -10,6 +10,7 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\markaspot_dashboard\Service\RequestLinkServiceInterface;
 use Drupal\markaspot_dashboard\Service\SplitRequestService;
 use Drupal\markaspot_dashboard\Service\SplitRequestServiceInterface;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -43,6 +44,7 @@ class SplitController extends ControllerBase {
     protected RequestLinkServiceInterface $requestLinkService,
     protected LoggerInterface $logger,
     protected ?object $scopeValidator = NULL,
+    protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->currentUser = $currentUser;
@@ -60,6 +62,9 @@ class SplitController extends ControllerBase {
       $container->get('logger.channel.markaspot_dashboard'),
       $container->has('markaspot_group.jurisdiction_scope_validator')
         ? $container->get('markaspot_group.jurisdiction_scope_validator')
+        : NULL,
+      $container->has('markaspot_group.hierarchy_resolver')
+        ? $container->get('markaspot_group.hierarchy_resolver')
         : NULL,
     );
   }
@@ -239,8 +244,11 @@ class SplitController extends ControllerBase {
    *
    * Global bypass mirrors InboundMailAccessControlHandler::hasGlobalBypass():
    * uid 1 or the site-wide 'administrator' role only. Non-global users must
-   * be a member of the jurisdiction per markaspot_group's scope validator;
-   * a missing validator fails closed.
+   * be a member of the jurisdiction, OR a member of an ANCESTOR jurisdiction
+   * (a root-tenant member is not a direct member of every child jurisdiction
+   * boundary-matched under it, mirroring DuplicateController's hierarchy
+   * walk), per markaspot_group's scope validator and hierarchy resolver. A
+   * missing validator or resolver fails closed to direct membership only.
    */
   protected function userMayAccessJurisdiction(int $jurisdictionId): bool {
     if ((int) $this->currentUser->id() === 1 || in_array('administrator', $this->currentUser->getRoles(), TRUE)) {
@@ -250,7 +258,18 @@ class SplitController extends ControllerBase {
       return FALSE;
     }
     $allowed = array_map('intval', $this->scopeValidator->getAllowedJurisdictionIds($this->currentUser));
-    return in_array($jurisdictionId, $allowed, TRUE);
+    if (in_array($jurisdictionId, $allowed, TRUE)) {
+      return TRUE;
+    }
+    if ($this->hierarchyResolver === NULL) {
+      return FALSE;
+    }
+    foreach ($allowed as $allowedId) {
+      if (in_array($jurisdictionId, $this->hierarchyResolver->getDescendantIds($allowedId), TRUE)) {
+        return TRUE;
+      }
+    }
+    return FALSE;
   }
 
   /**
