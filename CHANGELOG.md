@@ -1,5 +1,23 @@
 # Changelog
 
+## [11.9.134](https://github.com/markaspot/markaspot/compare/11.9.133...11.9.134) (2026-07-02)
+
+### Features
+
+* accept and persist wording preset in tenant language settings ([3f0c975](https://github.com/markaspot/markaspot/commit/3f0c97575107d8af7fc2ecc1e6ac1b8b097cb3c6))
+* accept wording preset at workspace provisioning ([36dee70](https://github.com/markaspot/markaspot/commit/36dee70b0f31ddb4e8ba014c8390db5b58f58aa8))
+* localized welcome mail and curated category icons for workspace onboarding ([0ea7898](https://github.com/markaspot/markaspot/commit/0ea78982c7c2c0f2453075c8557bec95a1dcbfef))
+
+### Bug Fixes
+
+* parse international address formats and sanitize georeport addresses ([2fa6b95](https://github.com/markaspot/markaspot/commit/2fa6b955828fda633661bc9f73548df20215ac1b))
+* scope georeport media publication updates ([4cb1864](https://github.com/markaspot/markaspot/commit/4cb1864d4af547ee114d4e82e3f4063f9afb7347))
+* strip CR LF and NUL from workspace name to prevent mail header injection ([fad97a6](https://github.com/markaspot/markaspot/commit/fad97a622c1faca9b7963287fd26253b28c4e696))
+
+### Refactoring
+
+* derive status term server-side and sanitize field_address input ([e5a5ad0](https://github.com/markaspot/markaspot/commit/e5a5ad0edef74fcd8352bff7306df2f5ff77ad18))
+
 ## [11.9.133](https://github.com/markaspot/markaspot/compare/11.9.132...11.9.133) (2026-07-01)
 
 ### Features
