@@ -202,8 +202,10 @@ class FastMapWorkspaceController extends ControllerBase {
       return new JsonResponse(['error' => 'Invalid API key'], 403);
     }
 
-    // Validate required fields.
-    $name = mb_substr(trim($data['name'] ?? ''), 0, 255);
+    // Validate required fields. Strip CR/LF/NUL from the name as
+    // defense-in-depth against mail header injection (CWE-93): it is
+    // interpolated into mail subjects downstream.
+    $name = str_replace(["\r", "\n", "\0"], '', mb_substr(trim($data['name'] ?? ''), 0, 255));
     $slug = trim($data['slug'] ?? '');
     $email = trim($data['email'] ?? '');
     $categories = $data['categories'] ?? [];
@@ -1097,7 +1099,7 @@ class FastMapWorkspaceController extends ControllerBase {
   }
 
   /**
-   * Sends the post-verification welcome email for a newly provisioned workspace.
+   * Sends the welcome email for a newly provisioned workspace.
    *
    * Failures are logged only and never rethrown: by the time this runs, the
    * workspace has already been provisioned and the caller must not fail
