@@ -102,6 +102,16 @@ final class MailSampleContextProvider {
         ],
         to: 'citizen@example.com',
       ),
+      MailType::INBOUND_TRIAGE_REPLY->value => new MailContext(
+        module: 'markaspot_mail_inbound',
+        key: 'triage_reply',
+        langcode: $langcode,
+        params: [
+          'subject' => 'Re: Broken street light on Elm Street',
+          'body' => "Thank you for your message.\n\nWe could not match your report to an existing case. Please resend it with a street address or map location so we can route it to the right team.",
+        ],
+        to: 'citizen@example.com',
+      ),
     ];
 
     $node = $this->findSampleServiceRequestNode();

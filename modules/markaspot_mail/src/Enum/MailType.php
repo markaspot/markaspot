@@ -40,4 +40,10 @@ enum MailType: string {
   // Passwordless login / verification OTP (Stage 4).
   case PASSWORDLESS_OTP = 'passwordless_otp';
 
+  // Inbound-mail triage replies (markaspot_mail_inbound). One classification
+  // covering both the triage_reply and auto_reply_missing_location keys;
+  // distinct from ECA_ACTION so registry introspection and metrics keying
+  // stay unique per builder.
+  case INBOUND_TRIAGE_REPLY = 'inbound_triage_reply';
+
 }

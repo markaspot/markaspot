@@ -51,7 +51,7 @@ final class TriageReplyBuilder implements MailBuilderInterface {
    * {@inheritdoc}
    */
   public function getType(): MailType {
-    return MailType::ECA_ACTION;
+    return MailType::INBOUND_TRIAGE_REPLY;
   }
 
   /**
