@@ -1,5 +1,19 @@
 # Changelog
 
+## [11.9.136](https://github.com/markaspot/markaspot/compare/11.9.135...11.9.136) (2026-07-02)
+
+### Features
+
+* add branded card_transactional builder for workspace welcome mail ([9ad0131](https://github.com/markaspot/markaspot/commit/9ad0131695e8fc9c6a8ed7ecd1f4603e6775c1fe))
+* add mail coverage health check for fastmap templates and builder registry ([59e023a](https://github.com/markaspot/markaspot/commit/59e023a1a10d7629c1a2388684f00fd6663f396d))
+* add markaspot:mail-render-test drush command as deploy gate ([998c244](https://github.com/markaspot/markaspot/commit/998c244436db2c905506a9780bdb9e7732793b4f))
+
+### Bug Fixes
+
+* backfill workspace_welcome mail config and harden hook_mail against missing templates ([926fe48](https://github.com/markaspot/markaspot/commit/926fe48f201c289d0114ea71c17b3380319a18ec))
+* give inbound triage replies their own mail type to end eca_action collision ([7c489a9](https://github.com/markaspot/markaspot/commit/7c489a905e1f2669c7f82b627f29fddec3a33aa0))
+* keep welcome mail dashboard and login links clickable in html part ([334aa52](https://github.com/markaspot/markaspot/commit/334aa52d8a0d0761f7448015a599a9f6bc83b24c))
+
 ## [11.9.135](https://github.com/markaspot/markaspot/compare/11.9.134...11.9.135) (2026-07-02)
 
 ### Features
