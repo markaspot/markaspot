@@ -17,3 +17,8 @@ access platform admin:
   title: 'Access Platform Admin'
   description: 'View cross-tenant platform aggregates (tenant count, report count, signups). Granted only to the administrator role.'
   restrict access: true
+
+split service requests:
+  title: 'Split Service Requests'
+  description: 'Split a service request into a new linked sibling request, copying citizen contact data to the new report.'
+  restrict access: true

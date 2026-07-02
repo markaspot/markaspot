@@ -6,6 +6,79 @@
  */
 
 /**
+ * Implements hook_schema().
+ */
+function markaspot_dashboard_schema(): array {
+  $schema['markaspot_request_links'] = [
+    'description' => 'Links a service request to a sibling created via staff split (#512). Direction is meaningful: source_nid is always the original request, target_nid the split-off child.',
+    'fields' => [
+      'id' => [
+        'description' => 'Primary key.',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'source_nid' => [
+        'description' => 'Node ID of the original service request.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'target_nid' => [
+        'description' => 'Node ID of the split-off child service request.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ],
+      'link_type' => [
+        'description' => 'The link relationship type, e.g. "split".',
+        'type' => 'varchar',
+        'length' => 32,
+        'not null' => TRUE,
+        'default' => 'split',
+      ],
+      'uid' => [
+        'description' => 'User ID who performed the split.',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+      'created' => [
+        'description' => 'Unix timestamp when the link was created.',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ],
+    ],
+    'primary key' => ['id'],
+    'unique keys' => [
+      'source_target_type' => ['source_nid', 'target_nid', 'link_type'],
+    ],
+    'indexes' => [
+      'source' => ['source_nid'],
+      'target' => ['target_nid'],
+    ],
+    'foreign keys' => [
+      'source_node' => [
+        'table' => 'node',
+        'columns' => ['source_nid' => 'nid'],
+      ],
+      'target_node' => [
+        'table' => 'node',
+        'columns' => ['target_nid' => 'nid'],
+      ],
+      'author' => [
+        'table' => 'users',
+        'columns' => ['uid' => 'uid'],
+      ],
+    ],
+  ];
+
+  return $schema;
+}
+
+/**
  * Implements hook_install().
  *
  * Ensures field_author exists on the status paragraph type on fresh installs.
@@ -28,6 +101,107 @@ function markaspot_dashboard_install(): void {
  */
 function markaspot_dashboard_update_11900(): void {
   _markaspot_dashboard_ensure_field_author('status');
+}
+
+/**
+ * Creates the markaspot_request_links table and grants the split permission.
+ *
+ * Sites that already ran hook_install() before #512 shipped need the table
+ * created here (hook_schema() only creates it on a fresh install). Grants
+ * 'split service requests' to existing tenant_admin/moderator/editorial_board
+ * roles, mirroring markaspot_ai_update_11900()'s AI-permission backfill: the
+ * config/optional grants only apply on install, never to a pre-existing role.
+ */
+function markaspot_dashboard_update_11901(): string {
+  $schema = \Drupal::database()->schema();
+
+  if (!$schema->tableExists('markaspot_request_links')) {
+    // Inlined rather than calling markaspot_dashboard_schema(): an update
+    // hook must stay self-contained even if the current schema function
+    // changes later (matches markaspot_ai_update_10001's convention).
+    $table_schema = [
+      'description' => 'Links a service request to a sibling created via staff split (#512). Direction is meaningful: source_nid is always the original request, target_nid the split-off child.',
+      'fields' => [
+        'id' => [
+          'description' => 'Primary key.',
+          'type' => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'source_nid' => [
+          'description' => 'Node ID of the original service request.',
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'target_nid' => [
+          'description' => 'Node ID of the split-off child service request.',
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'link_type' => [
+          'description' => 'The link relationship type, e.g. "split".',
+          'type' => 'varchar',
+          'length' => 32,
+          'not null' => TRUE,
+          'default' => 'split',
+        ],
+        'uid' => [
+          'description' => 'User ID who performed the split.',
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+          'default' => 0,
+        ],
+        'created' => [
+          'description' => 'Unix timestamp when the link was created.',
+          'type' => 'int',
+          'not null' => TRUE,
+          'default' => 0,
+        ],
+      ],
+      'primary key' => ['id'],
+      'unique keys' => [
+        'source_target_type' => ['source_nid', 'target_nid', 'link_type'],
+      ],
+      'indexes' => [
+        'source' => ['source_nid'],
+        'target' => ['target_nid'],
+      ],
+      'foreign keys' => [
+        'source_node' => [
+          'table' => 'node',
+          'columns' => ['source_nid' => 'nid'],
+        ],
+        'target_node' => [
+          'table' => 'node',
+          'columns' => ['target_nid' => 'nid'],
+        ],
+        'author' => [
+          'table' => 'users',
+          'columns' => ['uid' => 'uid'],
+        ],
+      ],
+    ];
+    $schema->createTable('markaspot_request_links', $table_schema);
+  }
+
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+  $granted = [];
+  foreach (['tenant_admin', 'moderator', 'editorial_board'] as $role_id) {
+    $role = $role_storage->load($role_id);
+    if (!$role || $role->hasPermission('split service requests')) {
+      continue;
+    }
+    $role->grantPermission('split service requests');
+    $role->save();
+    $granted[] = $role_id;
+  }
+
+  return $granted
+    ? 'Created markaspot_request_links table and granted "split service requests" to: ' . implode(', ', $granted) . '.'
+    : 'Created markaspot_request_links table. No target roles needed the permission grant.';
 }
 
 /**

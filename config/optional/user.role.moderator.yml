@@ -129,6 +129,7 @@ permissions:
   - 'edit own service_request content'
   - 'escalate service requests'
   - 'manage dashboard notes'
+  - 'split service requests'
   - 'view field_approved'
   - 'view field_attachment'
   - 'view field_boilerplate'

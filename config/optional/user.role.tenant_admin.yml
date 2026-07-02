@@ -168,6 +168,7 @@ permissions:
   - 'restful post georeport_request_index_resource'
   - 'restful post georeport_request_resource'
   - 'review ai duplicates'
+  - 'split service requests'
   - 'translate service_category taxonomy_term'
   - 'translate internal_status taxonomy_term'
   - 'translate service_status taxonomy_term'

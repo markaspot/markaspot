@@ -50,6 +50,7 @@ class PasswordlessAuthController extends ControllerBase {
     'administer site configuration' => 'administer site configuration',
     'triage inbound mail' => 'triage inbound mail',
     'delete requests' => 'delete any service_request content',
+    'split service requests' => 'split service requests',
   ];
 
   /**

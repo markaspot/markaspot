@@ -32,3 +32,4 @@ permissions:
   - 'view field_sentiment'
   - 'view own field_sentiment'
   - 'access dashboard kpis'
+  - 'split service requests'

@@ -8,6 +8,22 @@ services:
       - '@logger.factory'
       - '@?markaspot_group.hierarchy_resolver'
 
+  markaspot_dashboard.request_link:
+    class: Drupal\markaspot_dashboard\Service\RequestLinkService
+    arguments:
+      - '@database'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_dashboard'
+
+  markaspot_dashboard.split_request:
+    class: Drupal\markaspot_dashboard\Service\SplitRequestService
+    arguments:
+      - '@entity_type.manager'
+      - '@markaspot_open311.processor'
+      - '@markaspot_dashboard.request_link'
+      - '@logger.channel.markaspot_dashboard'
+      - '@config.factory'
+
   logger.channel.markaspot_dashboard:
     parent: logger.channel_base
     arguments: ['markaspot_dashboard']

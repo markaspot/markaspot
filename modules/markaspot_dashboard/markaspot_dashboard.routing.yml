@@ -173,3 +173,35 @@ markaspot_dashboard.admin_signups:
     _permission: 'access platform admin'
   options:
     _format: 'json'
+
+# Split service request into a linked sibling (#512). Mutations follow the
+# markaspot_group CSRF convention (_csrf_request_header_token + cookie auth);
+# jurisdiction membership on the queried node is re-checked in the
+# controller on top of the route permission (InboundMailAccessControlHandler
+# pattern, #482).
+markaspot_dashboard.request_split:
+  path: '/api/dashboard/requests/{nid}/split'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\SplitController::split'
+    _title: 'Split service request'
+  methods: [POST]
+  requirements:
+    _permission: 'split service requests'
+    _csrf_request_header_token: 'TRUE'
+    nid: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+
+markaspot_dashboard.request_links:
+  path: '/api/dashboard/requests/{nid}/links'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\SplitController::links'
+    _title: 'Linked service requests'
+  methods: [GET]
+  requirements:
+    _permission: 'split service requests'
+    nid: \d+
+  options:
+    _format: 'json'
+    _auth: ['cookie']

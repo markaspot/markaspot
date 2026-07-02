@@ -178,6 +178,7 @@ permissions:
   - 'restful get georeport_service_index_resource'
   - 'restful post georeport_request_index_resource'
   - 'restful post georeport_request_resource'
+  - 'split service requests'
   - 'view field_approved'
   - 'view field_attachment'
   - 'view field_boilerplate'

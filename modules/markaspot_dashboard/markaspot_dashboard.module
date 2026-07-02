@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\node\NodeInterface;
 
 /**
  * Implements hook_entity_access().
@@ -98,4 +99,35 @@ function markaspot_dashboard_entity_field_access(string $operation, FieldDefinit
   }
 
   return AccessResult::neutral();
+}
+
+/**
+ * Implements hook_node_delete().
+ *
+ * Purges markaspot_request_links rows referencing the deleted node on
+ * either side (source or target), mirroring markaspot_ai_node_delete's
+ * cleanup of markaspot_ai_duplicate_matches.
+ */
+function markaspot_dashboard_node_delete(NodeInterface $node): void {
+  if ($node->bundle() !== 'service_request') {
+    return;
+  }
+
+  try {
+    /** @var \Drupal\markaspot_dashboard\Service\RequestLinkServiceInterface $request_link_service */
+    $request_link_service = \Drupal::service('markaspot_dashboard.request_link');
+    $deleted = $request_link_service->deleteForNode((int) $node->id());
+    if ($deleted > 0) {
+      \Drupal::logger('markaspot_dashboard')->info('Purged @count split-link rows for deleted node @nid.', [
+        '@count' => $deleted,
+        '@nid' => $node->id(),
+      ]);
+    }
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('markaspot_dashboard')->error('Failed to purge split-link rows for deleted node @nid: @message', [
+      '@nid' => $node->id(),
+      '@message' => $e->getMessage(),
+    ]);
+  }
 }
