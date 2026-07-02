@@ -544,6 +544,56 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that a non-default wording preset is persisted to field_nuxt_config.
+   *
+   * @covers ::provisionWorkspace
+   */
+  public function testProvisionWorkspaceWithWordingPreset(): void {
+    $createdGroupFields = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $createdGroupFields);
+
+    $this->service->provisionWorkspace($this->validData(['wording' => 'suggestion']));
+
+    $nuxtConfig = json_decode($createdGroupFields['field_nuxt_config'], TRUE);
+    $this->assertSame('suggestion', $nuxtConfig['i18n']['wording']);
+  }
+
+  /**
+   * Tests that the 'report' default and invalid presets are not persisted.
+   *
+   * 'report' is the built-in default, so writing it would only bloat
+   * field_nuxt_config without changing behavior. An unrecognized value must
+   * be dropped silently rather than failing provisioning.
+   *
+   * @covers ::provisionWorkspace
+   * @dataProvider wordingPresetsNotPersistedProvider
+   */
+  public function testProvisionWorkspaceWordingNotPersisted(mixed $wording): void {
+    $createdGroupFields = NULL;
+    $this->setupSuccessfulProvisioning(42, 10, $createdGroupFields);
+
+    $this->service->provisionWorkspace($this->validData(['wording' => $wording]));
+
+    $nuxtConfig = json_decode($createdGroupFields['field_nuxt_config'], TRUE);
+    $this->assertArrayNotHasKey('i18n', $nuxtConfig);
+  }
+
+  /**
+   * Data provider for values that must not be written to field_nuxt_config.
+   *
+   * @return array
+   *   Test cases with wording values that should be dropped.
+   */
+  public static function wordingPresetsNotPersistedProvider(): array {
+    return [
+      'default preset' => ['report'],
+      'unrecognized preset' => ['not-a-preset'],
+      'non-string value' => [42],
+      'null' => [NULL],
+    ];
+  }
+
+  /**
    * Tests new workspaces have NULL tier and explicitly clear field_tier.
    *
    * Tier is activated only by the Stripe webhook (checkout.session.completed).

@@ -244,6 +244,16 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
   ];
 
   /**
+   * Curated wording preset IDs accepted for optional workspace provisioning.
+   *
+   * Duplicated from \Drupal\markaspot_nuxt\Controller\TenantSettingsController::WORDING_PRESETS
+   * because markaspot_fastmap does not declare a dependency on
+   * markaspot_nuxt. Must be kept in sync with that constant and with
+   * WORDING_PRESET_IDS in the frontend (app/utils/i18nOverrides.ts).
+   */
+  private const WORDING_PRESETS = ['report', 'suggestion', 'entry', 'contribution'];
+
+  /**
    * Theme presets by template name.
    */
   private const THEME_TEMPLATES = [
@@ -286,6 +296,12 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
     $customStatuses = $data['statuses'] ?? NULL;
     $statusTranslations = $data['status_translations'] ?? [];
     $categoryIcons = is_array($data['category_icons'] ?? NULL) ? $data['category_icons'] : NULL;
+    // Defense-in-depth: re-validate even though FastMapWorkspaceController
+    // already sanitized this, since provisionWorkspace() is not exclusively
+    // reached through the HTTP entry point.
+    $wording = (isset($data['wording']) && is_string($data['wording']) && in_array($data['wording'], self::WORDING_PRESETS, TRUE))
+      ? $data['wording']
+      : NULL;
     $aiSystemPrompt = isset($data['ai_system_prompt']) ? mb_substr(trim($data['ai_system_prompt']), 0, 2000) : '';
     $startPageContent = $data['start_page'] ?? NULL;
     $startPageTranslations = $data['start_page_translations'] ?? [];
@@ -342,6 +358,11 @@ class WorkspaceProvisioningService implements WorkspaceProvisioningServiceInterf
 
         // 1. Create Group entity.
         $nuxtConfig = $this->buildNuxtConfig($name, $slug, $lat, $lng, $zoom, $template, $availableLanguages, $defaultLang);
+        // 'report' is the default wording preset: leave field_nuxt_config
+        // lean and only persist the choice when it deviates from it.
+        if ($wording !== NULL && $wording !== 'report') {
+          $nuxtConfig['i18n']['wording'] = $wording;
+        }
         $boundaryJson = $this->buildBoundaryJson($boundary, $name);
 
         $jurisdictionType = $this->jurisdictionGroupType();

@@ -95,6 +95,103 @@ class FastMapWorkspaceCreateWorkspaceTest extends UnitTestCase {
   }
 
   /**
+   * Tests a valid wording preset is persisted for delayed provisioning.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceStoresValidWording(): void {
+    $insertedFields = $this->createWorkspaceAndCaptureInsertedFields([
+      'wording' => 'suggestion',
+    ]);
+
+    $workspaceData = json_decode($insertedFields['workspace_data'], TRUE);
+    $this->assertSame('suggestion', $workspaceData['wording']);
+  }
+
+  /**
+   * Tests an invalid wording preset is silently dropped, not rejected.
+   *
+   * Onboarding must never fail on this purely cosmetic choice: an
+   * unrecognized value is stored as NULL instead of causing a 4xx response.
+   *
+   * @covers ::createWorkspace
+   */
+  public function testCreateWorkspaceSilentlyDropsInvalidWording(): void {
+    $insertedFields = $this->createWorkspaceAndCaptureInsertedFields([
+      'wording' => 'not-a-preset',
+    ]);
+
+    $workspaceData = json_decode($insertedFields['workspace_data'], TRUE);
+    $this->assertArrayHasKey('wording', $workspaceData);
+    $this->assertNull($workspaceData['wording']);
+  }
+
+  /**
+   * Runs createWorkspace() and captures the pending-record insert fields.
+   *
+   * @param array $extraPayload
+   *   Additional key/value pairs merged into the base request payload.
+   *
+   * @return array
+   *   The fields array passed to Insert::fields().
+   */
+  private function createWorkspaceAndCaptureInsertedFields(array $extraPayload): array {
+    $insertedFields = NULL;
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchField')->willReturn(FALSE);
+
+    $select = $this->createMock(SelectInterface::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('where')->willReturnSelf();
+    $select->method('range')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+
+    $insert = $this->createMock(Insert::class);
+    $insert->method('fields')
+      ->willReturnCallback(function (array $fields) use (&$insertedFields, $insert) {
+        $insertedFields = $fields;
+        return $insert;
+      });
+    $insert->method('execute')->willReturn('1');
+
+    $delete = $this->createMock(Delete::class);
+    $delete->method('condition')->willReturnSelf();
+    $delete->method('execute')->willReturn(0);
+
+    $database = $this->createMock(Connection::class);
+    $database->method('select')->willReturn($select);
+    $database->method('insert')->willReturn($insert);
+    $database->method('delete')->willReturn($delete);
+
+    $controller = $this->buildController($database);
+    $payload = array_merge([
+      'service_key' => 'test-service-key-123',
+      'name' => 'Test Workspace',
+      'slug' => 'test-workspace',
+      'email' => 'user@example.com',
+      'categories' => ['Road Damage'],
+    ], $extraPayload);
+
+    $request = Request::create(
+      '/api/fastmap/create-workspace',
+      'POST',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode($payload)
+    );
+
+    $response = $controller->createWorkspace($request);
+
+    $this->assertSame(202, $response->getStatusCode());
+    $this->assertIsArray($insertedFields);
+
+    return $insertedFields;
+  }
+
+  /**
    * Builds a controller with only createWorkspace dependencies configured.
    */
   private function buildController(Connection $database): FastMapWorkspaceController {

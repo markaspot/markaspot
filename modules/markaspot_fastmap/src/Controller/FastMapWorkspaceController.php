@@ -52,6 +52,16 @@ class FastMapWorkspaceController extends ControllerBase {
   private const BODY_ALLOWED_TAGS = ['p', 'strong', 'em', 'a', 'br', 'ul', 'ol', 'li'];
 
   /**
+   * Curated wording preset IDs accepted for optional workspace provisioning.
+   *
+   * Duplicated from \Drupal\markaspot_nuxt\Controller\TenantSettingsController::WORDING_PRESETS
+   * because markaspot_fastmap does not declare a dependency on
+   * markaspot_nuxt. Must be kept in sync with that constant and with
+   * WORDING_PRESET_IDS in the frontend (app/utils/i18nOverrides.ts).
+   */
+  private const WORDING_PRESETS = ['report', 'suggestion', 'entry', 'contribution'];
+
+  /**
    * Workspace creation endpoint flood event name.
    */
   protected const CREATE_WORKSPACE_FLOOD_EVENT = 'fastmap_create_workspace';
@@ -238,6 +248,14 @@ class FastMapWorkspaceController extends ControllerBase {
       $categoryIcons = array_slice($sanitizedIcons, 0, $this->countSubmittedCategories($categories));
     }
 
+    // Validate optional curated wording preset. Invalid or missing values
+    // are silently dropped rather than rejected with a 4xx: this is a
+    // cosmetic choice and onboarding must never fail because of it.
+    $wording = NULL;
+    if (isset($data['wording']) && is_string($data['wording']) && in_array($data['wording'], self::WORDING_PRESETS, TRUE)) {
+      $wording = $data['wording'];
+    }
+
     $slugLockName = $this->buildWorkspaceSlugLockName($slug);
     if (!$this->lock->acquire($slugLockName, self::WORKSPACE_SLUG_LOCK_TTL)) {
       return new JsonResponse(['error' => 'A pending request for this slug is already being created'], 409);
@@ -359,6 +377,7 @@ class FastMapWorkspaceController extends ControllerBase {
         'statuses' => $statuses,
         'status_translations' => $statusTranslations ?: NULL,
         'category_icons' => $categoryIcons,
+        'wording' => $wording,
         'start_page' => isset($data['start_page']) && is_array($data['start_page'])
           ? [
             'title' => mb_substr((string) ($data['start_page']['title'] ?? ''), 0, 255),
