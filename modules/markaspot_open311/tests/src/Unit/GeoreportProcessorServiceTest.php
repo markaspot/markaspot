@@ -1375,6 +1375,116 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * GeoReport media status updates can publish state on referenced media.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusUpdatesReferencedMedia(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10]);
+    $media = $this->createMock(MediaInterface::class);
+    $this->currentUser->method('hasPermission')
+      ->with('update open311 request media publication')
+      ->willReturn(TRUE);
+    $media->expects($this->never())->method('access');
+    $media->method('isPublished')->willReturn(TRUE);
+    $media->expects($this->once())->method('setUnpublished');
+    $media->expects($this->once())->method('save');
+
+    $this->mediaStorage->expects($this->once())
+      ->method('load')
+      ->with(10)
+      ->willReturn($media);
+
+    $this->processor->updateMediaPublishedStatus([
+      0 => [
+        'target_id' => 10,
+        'status' => '0',
+      ],
+    ], $node);
+  }
+
+  /**
+   * Compact GeoReport media status payloads use explicit IDs, not delta 0.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusAcceptsCompactExplicitMediaId(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10, 11]);
+    $media = $this->createMock(MediaInterface::class);
+    $this->currentUser->method('hasPermission')
+      ->with('update open311 request media publication')
+      ->willReturn(TRUE);
+    $media->expects($this->never())->method('access');
+    $media->method('isPublished')->willReturn(TRUE);
+    $media->expects($this->once())->method('setUnpublished');
+    $media->expects($this->once())->method('save');
+
+    $this->mediaStorage->expects($this->once())
+      ->method('load')
+      ->with(11)
+      ->willReturn($media);
+
+    $this->processor->updateMediaPublishedStatus([
+      '' => [
+        'target_id' => 11,
+        'published' => 'false',
+      ],
+    ], $node);
+  }
+
+  /**
+   * GeoReport media status updates are scoped to media on the request.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusRejectsUnreferencedMedia(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10]);
+
+    $this->mediaStorage->expects($this->never())->method('load');
+    $this->expectException(GeoreportException::class);
+    $this->expectExceptionMessage('Invalid GeoReport media publication update payload.');
+
+    $this->processor->updateMediaPublishedStatus([
+      0 => [
+        'target_id' => 11,
+        'published' => 'false',
+      ],
+    ], $node);
+  }
+
+  /**
+   * GeoReport media status updates still require media entity update access.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusRequiresMediaUpdateAccess(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10]);
+    $media = $this->createMock(MediaInterface::class);
+    $this->currentUser->method('hasPermission')
+      ->with('update open311 request media publication')
+      ->willReturn(FALSE);
+    $media->method('access')
+      ->with('update')
+      ->willReturn(FALSE);
+    $media->expects($this->never())->method('save');
+
+    $this->mediaStorage->expects($this->once())
+      ->method('load')
+      ->with(10)
+      ->willReturn($media);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('GeoReport media publication updates are not permitted for this API account.');
+
+    $this->processor->updateMediaPublishedStatus([
+      0 => [
+        'target_id' => 10,
+        'published' => 'false',
+      ],
+    ], $node);
+  }
+
+  /**
    * Citizen create requests cannot mass-assign Drupal fields.
    *
    * @covers ::prepareNodeProperties
@@ -1396,6 +1506,87 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       'value' => 'Public issue text',
       'format' => 'plain_text',
     ], $values['body']);
+  }
+
+  /**
+   * GeoReport update rejects raw request media reference assignments.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateRejectsRawRequestMediaAssignments(): void {
+    $this->currentUser->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
+
+    $this->expectException(GeoreportException::class);
+    $this->expectExceptionMessage('Invalid GeoReport media publication update payload.');
+
+    $this->processor->prepareNodeProperties([
+      'extended_attributes' => [
+        'drupal' => [
+          'field_request_media' => [
+            0 => [
+              'target_id' => 11,
+            ],
+          ],
+        ],
+      ],
+    ], 'update');
+  }
+
+  /**
+   * GeoReport update rejects the legacy top-level media payload.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateRejectsTopLevelMediaPayload(): void {
+    $this->currentUser->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
+
+    $this->expectException(GeoreportException::class);
+    $this->expectExceptionMessage('Invalid GeoReport media publication update payload.');
+
+    $this->processor->prepareNodeProperties([
+      'extended_attributes' => [
+        'media' => [
+          0 => [
+            'mid' => 11,
+            'published' => 'false',
+          ],
+        ],
+      ],
+    ], 'update');
+  }
+
+  /**
+   * Compact request media payloads stay ID-based during normalization.
+   *
+   * @covers ::prepareNodeProperties
+   */
+  public function testUpdateNormalizesCompactRequestMediaPayloadWithoutDelta(): void {
+    $this->currentUser->method('hasPermission')
+      ->with('access open311 advanced properties')
+      ->willReturn(TRUE);
+
+    $values = $this->processor->prepareNodeProperties([
+      'extended_attributes' => [
+        'drupal' => [
+          'field_request_media' => [
+            'target_id' => 11,
+            'published' => 'false',
+          ],
+        ],
+      ],
+    ], 'update');
+
+    $this->assertSame([
+      '' => [
+        'target_id' => 11,
+        'published' => 'false',
+      ],
+    ], $values['_media_updates']);
+    $this->assertArrayNotHasKey('field_request_media', $values);
   }
 
   /**
@@ -3233,6 +3424,34 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * Builds a service request node exposing field_request_media target IDs.
+   *
+   * @param int[] $mediaIds
+   *   Referenced media entity IDs.
+   */
+  protected function buildNodeWithRequestMediaIds(array $mediaIds): ContentEntityInterface {
+    $items = [];
+    foreach (array_values($mediaIds) as $delta => $mediaId) {
+      $items[$delta] = ['target_id' => $mediaId];
+    }
+
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('isEmpty')->willReturn($items === []);
+    $field->method('getValue')->willReturn($items);
+
+    $node = $this->createMock(ContentEntityInterface::class);
+    $node->method('hasField')
+      ->willReturnCallback(
+        static fn (string $field_name): bool => $field_name === 'field_request_media'
+      );
+    $node->method('get')
+      ->with('field_request_media')
+      ->willReturn($field);
+
+    return $node;
+  }
+
+  /**
    * Builds a service request node for mapNodeToServiceRequest media tests.
    *
    * @param int $nid
@@ -3283,6 +3502,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       /**
        * Empty target ID.
        */
+      // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
       public mixed $target_id = NULL;
 
       /**

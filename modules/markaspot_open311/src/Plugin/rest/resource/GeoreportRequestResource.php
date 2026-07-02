@@ -913,12 +913,19 @@ class GeoreportRequestResource extends ResourceBase {
   protected function processUpdateFields(ContentEntityInterface $node, array $values): void {
     // Handle media updates first.
     if (isset($values['_media_updates'])) {
-      if (
-        $node->hasField('field_request_media') &&
-        $node->get('field_request_media')->access('edit', NULL, TRUE)->isAllowed()
-      ) {
-        $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates'], $node);
+      if (!$node->hasField('field_request_media')) {
+        throw new BadRequestHttpException('Service request media updates are not available for this request.');
       }
+      foreach ([
+        'update open311 plus all properties',
+        'update open311 request media publication',
+      ] as $permission) {
+        if (!$this->currentUser->hasPermission($permission)) {
+          throw new AccessDeniedHttpException('Service request media updates are not permitted for this API account.');
+        }
+      }
+      $this->georeportProcessor->updateMediaPublishedStatus($values['_media_updates'], $node);
+
       // Don't process this as a field.
       unset($values['_media_updates']);
     }

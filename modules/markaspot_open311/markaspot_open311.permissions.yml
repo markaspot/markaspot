@@ -10,6 +10,11 @@
   title: 'Update Open311 and Drupal Properties'
   description: 'Update extended properties of service requests'
 
+'update open311 request media publication':
+  title: 'Update Open311 Request Media Publication'
+  description: 'Publish or unpublish media referenced by a service request via GeoReport extended_attributes.drupal.field_request_media.'
+  restrict access: true
+
 'access open311 full export':
   title: 'Access Open311 Full Entity Export'
   description: 'Retrieve the complete service request entity (all fields, including citizen PII such as phone, name, GDPR and notification data) via the GeoReport API ?full parameter. Intended for editorial and administrative back-office export only.'

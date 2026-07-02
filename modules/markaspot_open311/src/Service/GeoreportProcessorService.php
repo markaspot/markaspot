@@ -505,41 +505,33 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $extendedDrupal = $requestData['extended_attributes']['drupal'] ?? [];
 
       // Check if field_request_media contains status/published updates.
-      if (isset($extendedDrupal['field_request_media']) && is_array($extendedDrupal['field_request_media'])) {
+      if (array_key_exists('field_request_media', $extendedDrupal)) {
+        if (!is_array($extendedDrupal['field_request_media'])) {
+          throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+        }
+
+        $mediaItems = $extendedDrupal['field_request_media'];
+        if (array_key_exists('status', $mediaItems) || array_key_exists('published', $mediaItems)) {
+          $mediaItems = ['' => $mediaItems];
+        }
+
         $mediaUpdates = [];
-        foreach ($extendedDrupal['field_request_media'] as $delta => $mediaData) {
-          // Check if this is a status update (has 'status' or 'published' key)
-          if (is_array($mediaData) && (isset($mediaData['status']) || isset($mediaData['published']))) {
-            // Convert to media update format.
-            $mediaUpdate = [];
-
-            // Get media ID if provided.
-            if (isset($mediaData['target_id'])) {
-              $mediaUpdate['mid'] = $mediaData['target_id'];
-            }
-            elseif (isset($mediaData['mid'])) {
-              $mediaUpdate['mid'] = $mediaData['mid'];
-            }
-            // If no mid provided, store delta for later lookup
-            // The delta from the foreach loop will be used in updateMediaPublishedStatus.
-            // Handle published status (convert TRUE/FALSE strings to boolean)
-            if (isset($mediaData['published'])) {
-              $mediaUpdate['published'] = filter_var($mediaData['published'], FILTER_VALIDATE_BOOLEAN);
-            }
-            elseif (isset($mediaData['status'])) {
-              $mediaUpdate['published'] = filter_var($mediaData['status'], FILTER_VALIDATE_BOOLEAN);
-            }
-
-            // Add media update - delta will be used for lookup if no mid.
-            $mediaUpdates[$delta] = $mediaUpdate;
+        foreach ($mediaItems as $delta => $mediaData) {
+          $hasMediaState = is_array($mediaData) &&
+            (
+              array_key_exists('status', $mediaData) ||
+              array_key_exists('published', $mediaData)
+            );
+          if (!$hasMediaState) {
+            throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
           }
+          // Keep the original item so strict validation sees every key.
+          $mediaUpdates[$delta] = $mediaData;
         }
 
-        // If we found media updates, set them and remove from regular field processing.
-        if (!empty($mediaUpdates)) {
-          $values['_media_updates'] = $mediaUpdates;
-          unset($extendedDrupal['field_request_media']);
-        }
+        // Remove media updates from regular field processing.
+        $values['_media_updates'] = $mediaUpdates;
+        unset($extendedDrupal['field_request_media']);
       }
 
       // Public Open311 clients may submit service definition attributes only
@@ -551,9 +543,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
 
       $values += $this->handleExtendedAttributes($extendedDrupal);
 
-      // Handle media published status updates (original path)
-      if (isset($requestData['extended_attributes']['media'])) {
-        $values['_media_updates'] = $requestData['extended_attributes']['media'];
+      if (array_key_exists('media', $requestData['extended_attributes'])) {
+        throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
       }
     }
 
@@ -3252,6 +3243,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *
    * @param object $node
    *   The node object.
+   * @param bool $allowUnpublished
+   *   Whether viewable unpublished media may be included.
    *
    * @return string
    *   A comma-separated list of media URLs.
@@ -3982,58 +3975,25 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   If there is an error saving the media entity.
    */
   public function updateMediaPublishedStatus(array $mediaUpdates, $node = NULL): void {
+    $mediaIdsByDelta = $this->getRequestMediaIdsByDelta($node);
+
     foreach ($mediaUpdates as $delta => $mediaUpdate) {
-      // Validate array structure.
-      if (!is_array($mediaUpdate)) {
-        continue;
-      }
-
-      // Skip if published status is not provided.
-      if (!isset($mediaUpdate['published'])) {
-        continue;
-      }
-
-      $published = (bool) $mediaUpdate['published'];
-      $mid = NULL;
-
-      // Determine media ID - either explicit mid, or lookup by delta.
-      if (isset($mediaUpdate['mid']) && is_numeric($mediaUpdate['mid'])) {
-        $mid = (int) $mediaUpdate['mid'];
-      }
-      elseif (isset($mediaUpdate['delta']) && is_numeric($mediaUpdate['delta']) && $node) {
-        // Look up media by delta position.
-        $delta = (int) $mediaUpdate['delta'];
-        if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
-          $mediaItems = $node->get('field_request_media')->getValue();
-          if (isset($mediaItems[$delta]['target_id'])) {
-            $mid = (int) $mediaItems[$delta]['target_id'];
-          }
-        }
-      }
-      elseif (is_numeric($delta) && $node && !isset($mediaUpdate['mid'])) {
-        // If no mid specified, use the array key as delta.
-        if ($node->hasField('field_request_media') && !$node->get('field_request_media')->isEmpty()) {
-          $mediaItems = $node->get('field_request_media')->getValue();
-          if (isset($mediaItems[$delta]['target_id'])) {
-            $mid = (int) $mediaItems[$delta]['target_id'];
-          }
-        }
-      }
-
-      // Skip if we couldn't determine a valid media ID.
-      if (!$mid || $mid === 'legacy') {
-        continue;
-      }
+      $update = $this->normalizeMediaPublishedUpdate($mediaUpdate, $delta, $mediaIdsByDelta, $node !== NULL);
+      $mid = $update['mid'];
+      $published = $update['published'];
 
       // Load and update the media entity.
       $media = $this->entityTypeManager->getStorage('media')->load($mid);
-      if (!$media) {
-        continue;
+      if (!$media instanceof MediaInterface) {
+        throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
       }
 
-      // Check if current user has permission to update this media entity.
-      if (!$media->access('update')) {
-        continue;
+      // Check if current user has role-based permission to update this state.
+      if (
+        !$this->currentUser->hasPermission('update open311 request media publication') &&
+        !$media->access('update')
+      ) {
+        throw new AccessDeniedHttpException('GeoReport media publication updates are not permitted for this API account.');
       }
 
       $currentStatus = $media->isPublished();
@@ -4048,6 +4008,127 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         $media->save();
       }
     }
+  }
+
+  /**
+   * Returns request media IDs keyed by field delta.
+   */
+  private function getRequestMediaIdsByDelta($node): array {
+    if (
+      !$node instanceof ContentEntityInterface ||
+      !$node->hasField('field_request_media') ||
+      $node->get('field_request_media')->isEmpty()
+    ) {
+      return [];
+    }
+
+    $mediaIds = [];
+    foreach ($node->get('field_request_media')->getValue() as $delta => $item) {
+      if (isset($item['target_id']) && is_numeric($item['target_id'])) {
+        $mediaIds[(int) $delta] = (int) $item['target_id'];
+      }
+    }
+
+    return $mediaIds;
+  }
+
+  /**
+   * Validates one media publication update and resolves the target media ID.
+   */
+  private function normalizeMediaPublishedUpdate($mediaUpdate, $delta, array $mediaIdsByDelta, bool $requireReferencedMedia): array {
+    if (!is_array($mediaUpdate)) {
+      throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+    }
+
+    $allowedKeys = ['status', 'published', 'target_id', 'mid', 'delta'];
+    if (array_diff(array_keys($mediaUpdate), $allowedKeys) !== []) {
+      throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+    }
+
+    $hasStatus = array_key_exists('status', $mediaUpdate);
+    $hasPublished = array_key_exists('published', $mediaUpdate);
+    if (!$hasStatus && !$hasPublished) {
+      throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+    }
+
+    $statusValue = $hasStatus ? $this->normalizeMediaPublishedValue($mediaUpdate['status']) : NULL;
+    $publishedValue = $hasPublished ? $this->normalizeMediaPublishedValue($mediaUpdate['published']) : NULL;
+    if (($hasStatus && $statusValue === NULL) || ($hasPublished && $publishedValue === NULL)) {
+      throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+    }
+    if ($hasStatus && $hasPublished && $statusValue !== $publishedValue) {
+      throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+    }
+
+    $explicitIds = [];
+    foreach (['target_id', 'mid'] as $key) {
+      if (!array_key_exists($key, $mediaUpdate)) {
+        continue;
+      }
+      if (!is_numeric($mediaUpdate[$key])) {
+        throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+      }
+      $explicitIds[] = (int) $mediaUpdate[$key];
+    }
+    $explicitIds = array_values(array_unique($explicitIds));
+    if (count($explicitIds) > 1) {
+      throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+    }
+
+    $mediaId = $explicitIds[0] ?? NULL;
+    $submittedDelta = array_key_exists('delta', $mediaUpdate) ? $mediaUpdate['delta'] : $delta;
+    $hasDelta = $submittedDelta !== NULL && $submittedDelta !== '';
+    if ($hasDelta) {
+      if (!is_numeric($submittedDelta)) {
+        throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+      }
+      $submittedDelta = (int) $submittedDelta;
+      if ($requireReferencedMedia && !array_key_exists($submittedDelta, $mediaIdsByDelta)) {
+        throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+      }
+      if (array_key_exists($submittedDelta, $mediaIdsByDelta)) {
+        $deltaMediaId = (int) $mediaIdsByDelta[$submittedDelta];
+        if ($mediaId !== NULL && $mediaId !== $deltaMediaId) {
+          throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+        }
+        $mediaId = $deltaMediaId;
+      }
+    }
+
+    if ($mediaId === NULL) {
+      throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+    }
+    if ($requireReferencedMedia && !in_array($mediaId, $mediaIdsByDelta, TRUE)) {
+      throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
+    }
+
+    return [
+      'mid' => $mediaId,
+      'published' => $publishedValue ?? $statusValue,
+    ];
+  }
+
+  /**
+   * Normalizes an Open311 media publication state.
+   */
+  private function normalizeMediaPublishedValue($value): ?bool {
+    if (is_bool($value)) {
+      return $value;
+    }
+
+    if (is_int($value)) {
+      return in_array($value, [0, 1], TRUE) ? (bool) $value : NULL;
+    }
+
+    if (!is_string($value)) {
+      return NULL;
+    }
+
+    return match (strtolower($value)) {
+      '0', 'false' => FALSE,
+      '1', 'true' => TRUE,
+      default => NULL,
+    };
   }
 
   /**
