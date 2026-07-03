@@ -528,7 +528,7 @@ class ImageProcessingService {
       . "list the concerns in privacy_issues. ";
 
     // Per-image attribution so the citizen UI can mark only the offending
-    // thumbnail (WBD #137). Ordering mirrors the alt_text array contract.
+    // thumbnail. Ordering mirrors the alt_text array contract.
     $count_wording = $image_count > 0 ? "exactly {$image_count} booleans" : 'booleans';
     $instruction .= "Also set privacy_image_flags to an array of {$count_wording}, "
       . "one per image in the exact order the images are provided: true only "
@@ -767,7 +767,7 @@ class ImageProcessingService {
               // in input order, TRUE when THAT image shows personal data. The
               // aggregate privacy_flag stays authoritative for moderation;
               // this array only scopes the citizen-facing per-thumbnail
-              // warning so harmless siblings are not tainted (WBD #137).
+              // warning so harmless siblings are not tainted.
               'privacy_image_flags' => [
                 'type' => 'array',
                 'items' => ['type' => 'boolean'],

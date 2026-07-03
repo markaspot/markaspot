@@ -690,7 +690,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     // Aggregate stays authoritative for the banner/block.
     $this->assertTrue($data['privacy_flag']);
-    // Only the offending media is flagged per thumbnail (WBD #137).
+    // Only the offending media is flagged per thumbnail.
     $this->assertSame(['uuid-1' => TRUE, 'uuid-2' => FALSE], $data['privacy_flags']);
   }
 

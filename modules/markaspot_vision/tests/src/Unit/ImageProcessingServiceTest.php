@@ -303,7 +303,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $this->assertContains('hazard_issues', $required);
     $this->assertContains('privacy_flag', $required);
     $this->assertContains('privacy_issues', $required);
-    // Per-image privacy attribution (WBD #137).
+    // Per-image privacy attribution.
     $this->assertContains('privacy_image_flags', $required);
     $this->assertArrayHasKey('privacy_image_flags', $schema['properties']);
     $this->assertSame('boolean', $schema['properties']['privacy_image_flags']['items']['type']);
