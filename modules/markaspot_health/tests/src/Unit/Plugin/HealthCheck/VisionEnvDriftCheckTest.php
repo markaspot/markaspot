@@ -322,7 +322,6 @@ class VisionEnvDriftCheckTest extends UnitTestCase {
     $this->assertStringContainsString('blur preprocessing is disabled', $result->message);
   }
 
-
   /**
    * @covers ::run
    */
@@ -369,7 +368,7 @@ class VisionEnvDriftCheckTest extends UnitTestCase {
     $plugin = $this->createPlugin($factory, $modules, $entityTypeManager);
     $result = $plugin->run();
 
-    $this->assertTrue($result->passed);
+    $this->assertTrue($result->passed, $result->message);
     $this->assertStringContainsString('markaspot_vision ENV override is active', $result->message);
   }
 
@@ -505,6 +504,8 @@ class VisionEnvDriftCheckTest extends UnitTestCase {
    *
    * @param array<int, array<string, mixed>> $configs
    *   Decoded field_nuxt_config values.
+   * @param string $jurisdictionGroupType
+   *   The jurisdiction group type machine name.
    */
   private function createEntityTypeManagerForNuxtConfigs(
     array $configs,
@@ -521,6 +522,8 @@ class VisionEnvDriftCheckTest extends UnitTestCase {
    *
    * @param array<int, string|null> $rawConfigs
    *   Raw field_nuxt_config values.
+   * @param string $jurisdictionGroupType
+   *   The jurisdiction group type machine name.
    */
   private function createEntityTypeManagerForRawNuxtConfigs(
     array $rawConfigs,
@@ -553,13 +556,18 @@ class VisionEnvDriftCheckTest extends UnitTestCase {
   /**
    * Creates a fieldable group mock with field_nuxt_config.
    *
-   * @param array<string, mixed> $config
-   *   Decoded field_nuxt_config value.
+   * @param string $rawConfig
+   *   Raw (JSON-encoded) field_nuxt_config value.
    */
   private function createGroupWithRawNuxtConfig(string $rawConfig): FieldableEntityInterface {
     $field = $this->createMock(FieldItemListInterface::class);
     $field->method('isEmpty')->willReturn(FALSE);
-    $field->value = $rawConfig;
+    // FieldItemListInterface declares __get/__set, so the mock intercepts
+    // property access with (unconfigured) mock methods: a plain
+    // `$field->value = $rawConfig` assignment would be swallowed by the
+    // mocked __set and the plugin's `->value` read would yield NULL.
+    // Configure the magic getter explicitly instead.
+    $field->method('__get')->with('value')->willReturn($rawConfig);
 
     $group = $this->createMock(FieldableEntityInterface::class);
     $group->method('hasField')->with('field_nuxt_config')->willReturn(TRUE);
