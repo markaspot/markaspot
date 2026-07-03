@@ -6,6 +6,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Flood\FloodInterface;
+use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
@@ -82,6 +83,17 @@ class ImageProcessingControllerTest extends UnitTestCase {
   protected $nodeStorage;
 
   /**
+   * Manual publication marks served by the mocked keyvalue store.
+   *
+   * Keyed by media ID. Tests set a truthy value to simulate media whose
+   * publication state is under explicit editorial control via the GeoReport
+   * media publication API (markaspot_open311.media_publication_manual).
+   *
+   * @var array
+   */
+  protected array $manualPublicationMarks = [];
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -132,6 +144,17 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $ref = new \ReflectionProperty($this->controller, 'entityTypeManager');
     $ref->setAccessible(TRUE);
     $ref->setValue($this->controller, $entityTypeManager);
+
+    // Inject the keyvalue store ControllerBase::keyValue() lazily resolves:
+    // the controller reads markaspot_open311.media_publication_manual to let
+    // explicit GeoReport publication decisions win over re-analysis. Default
+    // (no mark) means "not manually controlled" — publish flow unaffected.
+    $manualPublication = $this->createMock(KeyValueStoreInterface::class);
+    $manualPublication->method('get')
+      ->willReturnCallback(fn ($key) => $this->manualPublicationMarks[$key] ?? NULL);
+    $keyValueRef = new \ReflectionProperty($this->controller, 'keyValue');
+    $keyValueRef->setAccessible(TRUE);
+    $keyValueRef->setValue($this->controller, $manualPublication);
 
     // Inject string translation stub so $this->t() works in tests.
     $this->controller->setStringTranslation($this->getStringTranslationStub());
@@ -940,7 +963,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
    *
    * When the blur service blurred nothing (no blur_results), the deterministic
    * signal is FALSE, so the privacy notice is shown — independent of the model.
-   *
    */
   public function testNoBlurKeepsNoticeVisible(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -980,7 +1002,6 @@ class ImageProcessingControllerTest extends UnitTestCase {
    * blurred face. A successful blur overwrite means the exported/public media
    * is already anonymised, so the blur fact alone must not block GeoReport
    * media_url.
-   *
    */
   public function testBlurredMediaPublishesWhenAiClearsPrivacy(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -1045,11 +1066,51 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests re-analysis never republishes media under manual publication control.
+   *
+   * Media whose publication state was explicitly set through the GeoReport
+   * media publication API carries a mark in the
+   * markaspot_open311.media_publication_manual keyvalue collection. That
+   * editorial decision is authoritative: even when the AI verdict clears
+   * privacy, a re-analysis must not flip the state back (WBD #131).
+   */
+  public function testManualPublicationDecisionSurvivesReanalysis(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $media = $this->createMockMedia(1);
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $media]);
+
+    // Publication of media 1 is under explicit editorial control.
+    $this->manualPublicationMarks[1] = TRUE;
+
+    // AI clears privacy — without the manual mark this would publish.
+    $aiResult = [
+      'category' => 42,
+      'description' => 'Privacy-safe description',
+      'alt_text' => ['A damaged bin'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => FALSE,
+      'privacy_issues' => [],
+    ];
+    $this->imageProcessingService->method('processImages')
+      ->willReturn(['ai_result' => json_encode($aiResult)]);
+
+    // The editorial decision wins: no automatic republish on re-analysis.
+    $media->expects($this->never())->method('setPublished');
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+  }
+
+  /**
    * Mixed batch: successfully anonymised and clean media both publish.
    *
    * Locks the grain distinction: the publish guard is per media and follows
    * residual privacy findings, not the batch-level blur signal.
-   *
    */
   public function testMixedBatchPublishesBlurredAndCleanMediaWithoutResidualPrivacy(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
