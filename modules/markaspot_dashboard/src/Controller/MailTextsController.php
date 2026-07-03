@@ -88,6 +88,9 @@ class MailTextsController extends ControllerBase {
     try {
       $deleted = $this->mailTextsService->deleteText($key, $this->currentUser);
     }
+    catch (\InvalidArgumentException $e) {
+      return $this->errorResponse($e->getMessage(), 422);
+    }
     catch (MailTextsNotFoundException $e) {
       return $this->errorResponse($e->getMessage(), 404);
     }

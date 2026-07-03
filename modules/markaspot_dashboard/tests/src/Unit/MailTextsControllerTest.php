@@ -113,6 +113,19 @@ class MailTextsControllerTest extends UnitTestCase {
   /**
    * @covers ::delete
    */
+  public function testDeleteReturns422OnInvalidKeyFormat(): void {
+    $this->mailTextsService->method('deleteText')->willThrowException(
+      new \InvalidArgumentException('Key "report_confirmation.body_blocks" must match ^[a-z0-9_]{3,64}$.'),
+    );
+
+    $response = $this->buildController()->delete('report_confirmation.body_blocks');
+
+    self::assertSame(422, $response->getStatusCode());
+  }
+
+  /**
+   * @covers ::delete
+   */
   public function testDeleteReturns404WhenKeyMissing(): void {
     $this->mailTextsService->method('deleteText')->willThrowException(new MailTextsNotFoundException('Key "x" does not exist.'));
 

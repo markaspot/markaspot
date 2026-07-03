@@ -773,5 +773,80 @@ class MailTextsServiceTest extends UnitTestCase {
     self::assertStringNotContainsString('Real Street 5', $result['body_blocks'][0]);
   }
 
+  /**
+   * @covers ::deleteText
+   */
+  public function testDeleteTextRejectsDottedKeyBypassOfStandardKeyGuard(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('must match ^[a-z0-9_]{3,64}$');
+    $this->buildService()->deleteText('report_confirmation.body_blocks', $this->account);
+  }
+
+  /**
+   * @covers ::saveText
+   */
+  public function testSaveTextRejectsOversizedHeadline(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('headline exceeds the maximum length');
+    $this->buildService()->saveText('custom_key', ['headline' => str_repeat('x', 255)], $this->account);
+  }
+
+  /**
+   * @covers ::saveText
+   */
+  public function testSaveTextRejectsOversizedCtaLabel(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('cta_label exceeds the maximum length');
+    $this->buildService()->saveText('custom_key', ['cta_label' => str_repeat('x', 255)], $this->account);
+  }
+
+  /**
+   * @covers ::saveText
+   */
+  public function testSaveTextRejectsOversizedPreheader(): void {
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('preheader exceeds the maximum length');
+    $this->buildService()->saveText('custom_key', ['preheader' => str_repeat('x', 255)], $this->account);
+  }
+
+  /**
+   * @covers ::saveText
+   */
+  public function testSaveTextRejects51stCustomKey(): void {
+    $existingKeys = [];
+    foreach (range(1, 50) as $i) {
+      $existingKeys['custom_key_' . $i] = ['subject' => 'x'];
+    }
+    // Standard keys are always present in a real install; they must not
+    // count toward the custom-key ceiling.
+    foreach (MailTextsService::STANDARD_KEYS as $standardKey) {
+      $existingKeys[$standardKey] = ['subject' => 'x'];
+    }
+    $config = $this->buildEditableConfig($existingKeys);
+    $config->expects(self::never())->method('set');
+    $this->configFactory->method('getEditable')->with('markaspot_mail.texts')->willReturn($config);
+
+    $this->expectException(\InvalidArgumentException::class);
+    $this->expectExceptionMessage('maximum number of custom mail texts');
+    $this->buildService()->saveText('custom_key_51', [], $this->account);
+  }
+
+  /**
+   * @covers ::saveText
+   */
+  public function testSaveTextAllowsExactly50thCustomKey(): void {
+    $existingKeys = [];
+    foreach (range(1, 49) as $i) {
+      $existingKeys['custom_key_' . $i] = ['subject' => 'x'];
+    }
+    $config = $this->buildEditableConfig($existingKeys);
+    $config->expects(self::once())->method('set');
+    $config->expects(self::once())->method('save');
+    $this->configFactory->method('getEditable')->with('markaspot_mail.texts')->willReturn($config);
+
+    $result = $this->buildService()->saveText('custom_key_50', [], $this->account);
+
+    self::assertTrue($result['created']);
+  }
 
 }

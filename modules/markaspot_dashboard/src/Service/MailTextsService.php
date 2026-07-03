@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_dashboard\Service;
 
+use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
@@ -57,6 +58,25 @@ final class MailTextsService implements MailTextsServiceInterface {
   private const TEXT_MAX_LENGTH = 5000;
 
   private const BODY_BLOCKS_MAX_COUNT = 20;
+
+  /**
+   * Max length for the three short slots not already covered above.
+   *
+   * Mirrors the `#maxlength` already enforced client-side by
+   * MailTextsForm's headline/cta_label/preheader textfields; this is the
+   * server-side backstop for the API path that form does not cover.
+   */
+  private const SHORT_SLOTS_MAX_LENGTH = 254;
+
+  /**
+   * Max number of custom (non-standard) keys the config object may hold.
+   *
+   * A hard ceiling against unbounded growth (CWE-770): every key is a
+   * top-level property of a single markaspot_mail.texts config object,
+   * so there is otherwise no natural limit to how many a tenant_admin
+   * could create through the API.
+   */
+  private const MAX_CUSTOM_KEYS = 50;
 
   /**
    * Field types rendered as a plain `[node:FIELD]` token.
@@ -223,6 +243,13 @@ final class MailTextsService implements MailTextsServiceInterface {
     $existing = $config->get($key);
     $created = !is_array($existing);
 
+    // Standard keys are exempt: they ship in config/install and can only
+    // be "created" here if that shipped config is missing (a broken
+    // install), never through unbounded tenant_admin API usage.
+    if ($created && !in_array($key, self::STANDARD_KEYS, TRUE)) {
+      $this->assertCustomKeyLimitNotReached($config);
+    }
+
     $current = $this->normalizeSlots(is_array($existing) ? $existing : []);
     foreach (self::SLOTS as $slot) {
       if (!array_key_exists($slot, $slots)) {
@@ -253,6 +280,16 @@ final class MailTextsService implements MailTextsServiceInterface {
    * {@inheritdoc}
    */
   public function deleteText(string $key, AccountInterface $account): string {
+    // Identical guard to saveText(): without it, a dotted key such as
+    // "report_confirmation.body_blocks" resolves through Config's
+    // NestedArray get()/clear() support to a *sub-slot* of a standard
+    // key, while failing both the STANDARD_KEYS and ECA-reference string
+    // comparisons below (they compare against the literal dotted string,
+    // which matches nothing) — silently bypassing both delete guards.
+    if (preg_match(self::KEY_PATTERN, $key) !== 1) {
+      throw new \InvalidArgumentException(sprintf('Key "%s" must match ^[a-z0-9_]{3,64}$.', $key));
+    }
+
     $config = $this->configFactory->getEditable(self::CONFIG_NAME);
     if (!is_array($config->get($key))) {
       throw new MailTextsNotFoundException(sprintf('Key "%s" does not exist.', $key));
@@ -329,6 +366,11 @@ final class MailTextsService implements MailTextsServiceInterface {
     if (array_key_exists('intro', $slots) && mb_strlen((string) $slots['intro']) > self::TEXT_MAX_LENGTH) {
       throw new \InvalidArgumentException(sprintf('intro exceeds the maximum length of %d characters.', self::TEXT_MAX_LENGTH));
     }
+    foreach (['headline', 'cta_label', 'preheader'] as $shortSlot) {
+      if (array_key_exists($shortSlot, $slots) && mb_strlen((string) $slots[$shortSlot]) > self::SHORT_SLOTS_MAX_LENGTH) {
+        throw new \InvalidArgumentException(sprintf('%s exceeds the maximum length of %d characters.', $shortSlot, self::SHORT_SLOTS_MAX_LENGTH));
+      }
+    }
 
     if (!array_key_exists('body_blocks', $slots)) {
       return;
@@ -346,6 +388,28 @@ final class MailTextsService implements MailTextsServiceInterface {
       if (mb_strlen((string) $block) > self::TEXT_MAX_LENGTH) {
         throw new \InvalidArgumentException(sprintf('body_blocks entries exceed the maximum length of %d characters.', self::TEXT_MAX_LENGTH));
       }
+    }
+  }
+
+  /**
+   * Guards against unbounded custom-key growth (CWE-770).
+   *
+   * @param \Drupal\Core\Config\Config $config
+   *   The editable markaspot_mail.texts config, read (not yet saved).
+   *
+   * @throws \InvalidArgumentException
+   *   The config already holds MAX_CUSTOM_KEYS non-standard keys.
+   */
+  private function assertCustomKeyLimitNotReached(Config $config): void {
+    $raw = (array) $config->getRawData();
+    unset($raw['langcode']);
+    $customKeyCount = count(array_diff(array_keys($raw), self::STANDARD_KEYS));
+
+    if ($customKeyCount >= self::MAX_CUSTOM_KEYS) {
+      throw new \InvalidArgumentException(sprintf(
+        'The maximum number of custom mail texts (%d) has been reached.',
+        self::MAX_CUSTOM_KEYS,
+      ));
     }
   }
 
