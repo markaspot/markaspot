@@ -1,0 +1,34 @@
+langcode: de
+report_confirmation:
+  subject: 'Ihre Meldung #[node:request_id] ist eingegangen'
+  headline: 'Wir haben Ihre Meldung erhalten'
+  intro: 'Ihre Meldung #[node:request_id] ist bei uns eingegangen.'
+  body_blocks:
+    - 'Kategorie: [node:field_category:entity:name]'
+    - '[node:initial_status_note]'
+  cta_label: 'Meldung ansehen'
+  preheader: 'Wir haben Ihre Meldung erhalten und halten Sie auf dem Laufenden.'
+status_open:
+  subject: 'Update zu Ihrer Meldung #[node:request_id]'
+  headline: 'Ihre Meldung wird bearbeitet'
+  intro: 'Vielen Dank für Ihre Meldung. Sie wurde an die zuständige Stelle weitergeleitet und wird nun bearbeitet.'
+  body_blocks:
+    - 'Sobald Ihre Meldung erledigt ist, erhalten Sie eine weitere Benachrichtigung.'
+  cta_label: 'Meldung ansehen'
+  preheader: 'Ihre Meldung wird jetzt bearbeitet.'
+status_closed:
+  subject: 'Ihre Meldung #[node:request_id] wurde erledigt'
+  headline: 'Ihre Meldung wurde erledigt'
+  intro: 'Gute Nachrichten! Ihre Meldung #[node:request_id] wurde erledigt.'
+  body_blocks:
+    - 'Bei einem dringenden Notfall oder einer unmittelbaren Gefahr wenden Sie sich bitte direkt an die Polizei (110) oder die Feuerwehr (112).'
+  cta_label: 'Meldung ansehen'
+  preheader: 'Ihre Meldung wurde erledigt.'
+status_not_responsible:
+  subject: 'Ihre Meldung #[node:request_id]: nicht in unserer Zuständigkeit'
+  headline: 'Wir sind nicht zuständig'
+  intro: 'Ihre Meldung #[node:request_id] wurde geprüft. Leider sind wir für diese Art von Anliegen nicht zuständig.'
+  body_blocks:
+    - 'Bei einem dringenden Notfall oder einer unmittelbaren Gefahr wenden Sie sich bitte direkt an die Polizei (110) oder die Feuerwehr (112).'
+  cta_label: 'Meldung ansehen'
+  preheader: 'Wir sind für diese Meldung nicht zuständig.'

@@ -68,3 +68,49 @@ markaspot_mail.settings:
           sequence:
             type: string
             label: 'MIME type'
+
+markaspot_mail.texts:
+  type: config_object
+  label: 'Mark-a-Spot notification mail texts'
+  mapping:
+    langcode:
+      type: string
+      label: 'Language code'
+    report_confirmation:
+      type: markaspot_mail.texts.slot_set
+      label: 'Report confirmation'
+    status_open:
+      type: markaspot_mail.texts.slot_set
+      label: 'Status update: open / in progress'
+    status_closed:
+      type: markaspot_mail.texts.slot_set
+      label: 'Status update: closed'
+    status_not_responsible:
+      type: markaspot_mail.texts.slot_set
+      label: 'Status update: not responsible'
+
+markaspot_mail.texts.slot_set:
+  type: mapping
+  label: 'Notification mail text slots'
+  mapping:
+    subject:
+      type: label
+      label: 'Subject'
+    headline:
+      type: label
+      label: 'Headline'
+    intro:
+      type: text
+      label: 'Intro paragraph'
+    body_blocks:
+      type: sequence
+      label: 'Body paragraphs'
+      sequence:
+        type: text
+        label: 'Paragraph'
+    cta_label:
+      type: label
+      label: 'Call-to-action label'
+    preheader:
+      type: label
+      label: 'Preheader (inbox preview text)'

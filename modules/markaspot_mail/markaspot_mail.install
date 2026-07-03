@@ -7,6 +7,12 @@
 
 declare(strict_types=1);
 
+use Drupal\locale\Gettext;
+use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
+use Drupal\Component\Serialization\Yaml;
+use Drupal\language\ConfigurableLanguageManagerInterface;
+
 /**
  * Implements hook_install().
  */
@@ -221,11 +227,65 @@ function markaspot_mail_update_10005(): string {
 }
 
 /**
+ * Installs the new markaspot_mail.texts notification config.
+ *
+ * Config/install only seeds fresh module installs; every tenant that
+ * already had markaspot_mail enabled before this config object was added
+ * needs an update hook to get it, otherwise NotificationTextBuilder and
+ * hook_mail() would resolve every slot to an empty string until an
+ * operator manually ran `drush cim`. Idempotent: skipped entirely once
+ * markaspot_mail.texts exists (an admin's later edits are never
+ * overwritten by a re-run), and the German language override is imported
+ * separately so English-only tenants that never enable the language
+ * module still get the default-language texts.
+ */
+function markaspot_mail_update_10006(): string {
+  $config_factory = \Drupal::configFactory();
+  $config = $config_factory->getEditable('markaspot_mail.texts');
+  if (!$config->isNew()) {
+    return 'markaspot_mail.texts already exists; no action.';
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_mail');
+  $shipped_path = $module_path . '/config/install/markaspot_mail.texts.yml';
+  $shipped = is_file($shipped_path)
+    ? Yaml::decode(file_get_contents($shipped_path))
+    : NULL;
+  if (!is_array($shipped)) {
+    return 'Could not read shipped markaspot_mail.texts.yml; nothing installed.';
+  }
+
+  $config->setData($shipped)->save();
+  $changed = ['markaspot_mail.texts'];
+
+  if (\Drupal::moduleHandler()->moduleExists('language')) {
+    $override_path = $module_path . '/config/install/language/de/markaspot_mail.texts.yml';
+    $override_data = is_file($override_path)
+      ? Yaml::decode(file_get_contents($override_path))
+      : NULL;
+    if (is_array($override_data)) {
+      unset($override_data['langcode']);
+      /** @var \Drupal\language\ConfigurableLanguageManagerInterface $language_manager */
+      $language_manager = \Drupal::languageManager();
+      if ($language_manager instanceof ConfigurableLanguageManagerInterface
+        && in_array('de', array_keys($language_manager->getLanguages()), TRUE)) {
+        $language_manager->getLanguageConfigOverride('de', 'markaspot_mail.texts')
+          ->setData($override_data)
+          ->save();
+        $changed[] = 'language/de/markaspot_mail.texts';
+      }
+    }
+  }
+
+  return 'Installed: ' . implode(', ', $changed) . '.';
+}
+
+/**
  * Resolves the backend that should own the runtime mail stack.
  */
 function _markaspot_mail_resolve_backend(
-  \Drupal\Core\Extension\ModuleHandlerInterface $module_handler,
-  \Drupal\Core\Config\ConfigFactoryInterface $config_factory,
+  ModuleHandlerInterface $module_handler,
+  ConfigFactoryInterface $config_factory,
 ): string {
   $system_mail = $config_factory->get('system.mail');
   $mailsystem = $config_factory->get('mailsystem.settings');
@@ -321,7 +381,7 @@ function _markaspot_mail_import_shipped_translations(): string {
     }
 
     try {
-      $report = \Drupal\locale\Gettext::fileToDatabase((object) [
+      $report = Gettext::fileToDatabase((object) [
         'langcode' => $langcode,
         'uri' => $uri,
       ], $options);
