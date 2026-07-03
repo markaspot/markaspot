@@ -254,6 +254,11 @@ class ImageProcessingController extends ControllerBase {
       if (json_last_error() !== JSON_ERROR_NONE) {
         throw new \Exception('Failed to decode AI service response: ' . json_last_error_msg());
       }
+      // Strip any echo of our own response-only keys before ANY use — a
+      // non-compliant provider must not be able to smuggle them into the
+      // persisted field_ai_metadata audit blob or the response; the
+      // authoritative values are computed below.
+      unset($decoded_result['privacy_handled_by_blur'], $decoded_result['blurred_previews'], $decoded_result['privacy_flags']);
       $privacy_flag = !empty($decoded_result['privacy_flag']);
       $privacy_issues = $decoded_result['privacy_issues'] ?? [];
       if (!is_array($privacy_issues)) {
@@ -479,7 +484,7 @@ class ImageProcessingController extends ControllerBase {
 
       // Response-only per-media privacy attribution, keyed by media UUID, so
       // the citizen upload preview marks only the offending thumbnail instead
-      // of tainting every sibling (WBD #137). Sources, strongest first:
+      // of tainting every sibling. Sources, strongest first:
       // skipped media fail closed (no complete analysis happened); otherwise
       // the model's per-image flags apply (the model judges the post-blur
       // bytes, so blur-handled faces/plates are already excluded); when the
