@@ -7,20 +7,23 @@ namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Config\ImmutableConfig;
-use Drupal\language\Config\LanguageConfigOverride;
-use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\WorkspaceVerificationBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
+/**
+ *
+ */
 #[CoversClass(\Drupal\markaspot_mail\Mail\Builder\WorkspaceVerificationBuilder::class)]
 #[Group('markaspot_mail')]
 final class WorkspaceVerificationBuilderTest extends UnitTestCase {
 
+  /**
+   *
+   */
   public function testGetTypeReturnsFastmapWorkspaceVerification(): void {
     $this->assertSame(
       MailType::FASTMAP_WORKSPACE_VERIFICATION,
@@ -28,6 +31,9 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     );
   }
 
+  /**
+   *
+   */
   public function testSupportsOnlyWorkspaceVerificationKey(): void {
     $builder = $this->buildBuilder();
     $this->assertTrue($builder->supports('markaspot_fastmap', 'workspace_verification'));
@@ -36,6 +42,9 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertFalse($builder->supports('other', 'workspace_verification'));
   }
 
+  /**
+   *
+   */
   public function testBuildReturnsNullWhenWorkspaceNameMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -47,6 +56,9 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
+  /**
+   *
+   */
   public function testBuildReturnsNullWhenVerifyUrlMissing(): void {
     $logger = $this->createMock(LoggerInterface::class);
     $logger->expects($this->once())->method('warning');
@@ -58,6 +70,9 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertNull($builder->build($ctx));
   }
 
+  /**
+   *
+   */
   public function testBuildProducesPlatformMailWithCtaAndCleanupReference(): void {
     $builder = $this->buildBuilder();
 
@@ -84,6 +99,9 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertTrue(array_any($msg->content['body_blocks'], fn($b) => str_contains($b, '14')));
   }
 
+  /**
+   *
+   */
   public function testBuildUsesDefaultSiteNameWhenMissing(): void {
     $builder = $this->buildBuilder();
     $ctx = $this->buildContext([
@@ -95,25 +113,18 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
     $this->assertStringContainsString('CivicSpot', $msg->subject);
   }
 
+  /**
+   *
+   */
   public function testBuildAppliesConfigSubjectTemplateViaPlaceholders(): void {
-    $config = $this->createMock(ImmutableConfig::class);
-    $config->method('get')->willReturnCallback(
-      fn (string $key): ?array => $key === 'workspace_verification'
-        ? ['subject' => 'CUSTOM @site: activate @workspace_name now']
-        : NULL,
+    $textResolver = $this->createMock(MailTextResolver::class);
+    $textResolver->method('resolveField')->willReturnCallback(
+      fn (string $configName, string $key, string $field, string $langcode): string => $field === 'subject'
+        ? 'CUSTOM @site: activate @workspace_name now'
+        : '',
     );
-    $configFactory = $this->createMock(ConfigFactoryInterface::class);
-    $configFactory->method('get')->willReturn($config);
 
-    $override = $this->createMock(LanguageConfigOverride::class);
-    $override->method('get')->willReturn(NULL);
-    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
-    $languageManager->method('getLanguageConfigOverride')->willReturn($override);
-
-    $builder = $this->buildBuilder(
-      configFactory: $configFactory,
-      languageManager: $languageManager,
-    );
+    $builder = $this->buildBuilder(textResolver: $textResolver);
     $ctx = $this->buildContext([
       'workspace_name' => 'MyDemo',
       'site_name' => 'FastMap',
@@ -142,25 +153,15 @@ final class WorkspaceVerificationBuilderTest extends UnitTestCase {
    * Builds the subject with default or injected mocks.
    */
   private function buildBuilder(
-    ?ConfigFactoryInterface $configFactory = NULL,
-    ?ConfigurableLanguageManagerInterface $languageManager = NULL,
+    ?MailTextResolver $textResolver = NULL,
     ?LoggerInterface $logger = NULL,
   ): WorkspaceVerificationBuilder {
-    if ($configFactory === NULL) {
-      $config = $this->createMock(ImmutableConfig::class);
-      $config->method('get')->willReturn(NULL);
-      $configFactory = $this->createMock(ConfigFactoryInterface::class);
-      $configFactory->method('get')->willReturn($config);
-    }
-    if ($languageManager === NULL) {
-      $override = $this->createMock(LanguageConfigOverride::class);
-      $override->method('get')->willReturn(NULL);
-      $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
-      $languageManager->method('getLanguageConfigOverride')->willReturn($override);
+    if ($textResolver === NULL) {
+      $textResolver = $this->createMock(MailTextResolver::class);
+      $textResolver->method('resolveField')->willReturn('');
     }
     $builder = new WorkspaceVerificationBuilder(
-      $configFactory,
-      $languageManager,
+      $textResolver,
       $logger ?? $this->createMock(LoggerInterface::class),
     );
     $builder->setStringTranslation($this->getStringTranslationStub());

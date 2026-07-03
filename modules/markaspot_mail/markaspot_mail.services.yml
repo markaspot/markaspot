@@ -22,6 +22,18 @@ services:
       - '@markaspot_mail.branding'
       - '@logger.channel.markaspot_mail'
 
+  # Single source of truth for the override-then-default-then-empty merge
+  # used by every admin-editable mail text template (markaspot_mail.texts
+  # notification slots, plus the legacy resubmission/fastmap subject+body
+  # pairs, which delegate their private resolveFromConfig() to this
+  # service instead of duplicating the merge).
+  markaspot_mail.text_resolver:
+    class: Drupal\markaspot_mail\Service\MailTextResolver
+    arguments:
+      - '@config.factory'
+      - '@language_manager'
+      - '@token'
+
   # Single source of truth for "what does a realistic mail for this builder
   # look like". Shared by scripts/render-preview-samples.php and the
   # `markaspot:mail-render-test` drush command so both consume identical
@@ -117,8 +129,7 @@ services:
   markaspot_mail.builder.workspace_verification:
     class: Drupal\markaspot_mail\Mail\Builder\WorkspaceVerificationBuilder
     arguments:
-      - '@config.factory'
-      - '@language_manager'
+      - '@markaspot_mail.text_resolver'
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
@@ -126,8 +137,7 @@ services:
   markaspot_mail.builder.workspace_welcome:
     class: Drupal\markaspot_mail\Mail\Builder\WorkspaceWelcomeBuilder
     arguments:
-      - '@config.factory'
-      - '@language_manager'
+      - '@markaspot_mail.text_resolver'
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
@@ -160,8 +170,7 @@ services:
   markaspot_mail.builder.resubmission_request:
     class: Drupal\markaspot_mail\Mail\Builder\ResubmissionRequestBuilder
     arguments:
-      - '@config.factory'
-      - '@language_manager'
+      - '@markaspot_mail.text_resolver'
       - '@token'
       - '@logger.channel.markaspot_mail'
     tags:

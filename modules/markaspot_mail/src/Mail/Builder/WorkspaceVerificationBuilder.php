@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail\Builder;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
-use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -45,8 +44,7 @@ final class WorkspaceVerificationBuilder implements MailBuilderInterface {
   use StringTranslationTrait;
 
   public function __construct(
-    private readonly ConfigFactoryInterface $configFactory,
-    private readonly ConfigurableLanguageManagerInterface $languageManager,
+    private readonly MailTextResolver $textResolver,
     private readonly LoggerInterface $logger,
   ) {}
 
@@ -128,18 +126,11 @@ final class WorkspaceVerificationBuilder implements MailBuilderInterface {
    * its t()-based fallback.
    */
   private function resolveFromConfig(string $key, array $replacements, string $langcode): string {
-    $config = $this->languageManager
-      ->getLanguageConfigOverride($langcode, 'markaspot_fastmap.mail')
-      ->get('workspace_verification');
-    if (!is_array($config) || empty($config[$key])) {
-      $config = $this->configFactory
-        ->get('markaspot_fastmap.mail')
-        ->get('workspace_verification');
-    }
-    if (!is_array($config) || empty($config[$key])) {
+    $template = $this->textResolver->resolveField('markaspot_fastmap.mail', 'workspace_verification', $key, $langcode);
+    if ($template === '') {
       return '';
     }
-    return (string) strtr((string) $config[$key], $replacements);
+    return (string) strtr($template, $replacements);
   }
 
 }

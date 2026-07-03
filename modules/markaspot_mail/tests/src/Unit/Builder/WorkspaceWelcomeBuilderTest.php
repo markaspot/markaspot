@@ -7,13 +7,10 @@ namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Config\ImmutableConfig;
-use Drupal\language\Config\LanguageConfigOverride;
-use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\WorkspaceWelcomeBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
@@ -125,20 +122,10 @@ final class WorkspaceWelcomeBuilderTest extends UnitTestCase {
    * Tests that a missing config falls back to the hardcoded t() subject.
    */
   public function testBuildFallsBackToTranslationWhenConfigMissing(): void {
-    $config = $this->createMock(ImmutableConfig::class);
-    $config->method('get')->willReturn(NULL);
-    $configFactory = $this->createMock(ConfigFactoryInterface::class);
-    $configFactory->method('get')->willReturn($config);
+    $textResolver = $this->createMock(MailTextResolver::class);
+    $textResolver->method('resolveField')->willReturn('');
 
-    $override = $this->createMock(LanguageConfigOverride::class);
-    $override->method('get')->willReturn(NULL);
-    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
-    $languageManager->method('getLanguageConfigOverride')->willReturn($override);
-
-    $builder = $this->buildBuilder(
-      configFactory: $configFactory,
-      languageManager: $languageManager,
-    );
+    $builder = $this->buildBuilder(textResolver: $textResolver);
     $ctx = $this->buildContext([
       'workspace_name' => 'MyDemo',
       'site_name' => 'FastMap',
@@ -154,24 +141,14 @@ final class WorkspaceWelcomeBuilderTest extends UnitTestCase {
    * Tests that a configured subject template resolves @placeholders.
    */
   public function testBuildAppliesConfigSubjectTemplateViaPlaceholders(): void {
-    $config = $this->createMock(ImmutableConfig::class);
-    $config->method('get')->willReturnCallback(
-      fn (string $key): ?array => $key === 'workspace_welcome'
-        ? ['subject' => 'CUSTOM @site: @workspace_name is live']
-        : NULL,
+    $textResolver = $this->createMock(MailTextResolver::class);
+    $textResolver->method('resolveField')->willReturnCallback(
+      fn (string $configName, string $key, string $field, string $langcode): string => $field === 'subject'
+        ? 'CUSTOM @site: @workspace_name is live'
+        : '',
     );
-    $configFactory = $this->createMock(ConfigFactoryInterface::class);
-    $configFactory->method('get')->willReturn($config);
 
-    $override = $this->createMock(LanguageConfigOverride::class);
-    $override->method('get')->willReturn(NULL);
-    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
-    $languageManager->method('getLanguageConfigOverride')->willReturn($override);
-
-    $builder = $this->buildBuilder(
-      configFactory: $configFactory,
-      languageManager: $languageManager,
-    );
+    $builder = $this->buildBuilder(textResolver: $textResolver);
     $ctx = $this->buildContext([
       'workspace_name' => 'MyDemo',
       'site_name' => 'FastMap',
@@ -200,25 +177,15 @@ final class WorkspaceWelcomeBuilderTest extends UnitTestCase {
    * Builds the subject with default or injected mocks.
    */
   private function buildBuilder(
-    ?ConfigFactoryInterface $configFactory = NULL,
-    ?ConfigurableLanguageManagerInterface $languageManager = NULL,
+    ?MailTextResolver $textResolver = NULL,
     ?LoggerInterface $logger = NULL,
   ): WorkspaceWelcomeBuilder {
-    if ($configFactory === NULL) {
-      $config = $this->createMock(ImmutableConfig::class);
-      $config->method('get')->willReturn(NULL);
-      $configFactory = $this->createMock(ConfigFactoryInterface::class);
-      $configFactory->method('get')->willReturn($config);
-    }
-    if ($languageManager === NULL) {
-      $override = $this->createMock(LanguageConfigOverride::class);
-      $override->method('get')->willReturn(NULL);
-      $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
-      $languageManager->method('getLanguageConfigOverride')->willReturn($override);
+    if ($textResolver === NULL) {
+      $textResolver = $this->createMock(MailTextResolver::class);
+      $textResolver->method('resolveField')->willReturn('');
     }
     $builder = new WorkspaceWelcomeBuilder(
-      $configFactory,
-      $languageManager,
+      $textResolver,
       $logger ?? $this->createMock(LoggerInterface::class),
     );
     $builder->setStringTranslation($this->getStringTranslationStub());

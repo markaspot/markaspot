@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail\Builder;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
-use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -40,8 +39,7 @@ final class ResubmissionRequestBuilder implements MailBuilderInterface {
   use StringTranslationTrait;
 
   public function __construct(
-    private readonly ConfigFactoryInterface $configFactory,
-    private readonly ConfigurableLanguageManagerInterface $languageManager,
+    private readonly MailTextResolver $textResolver,
     private readonly Token $token,
     private readonly LoggerInterface $logger,
   ) {}
@@ -97,18 +95,11 @@ final class ResubmissionRequestBuilder implements MailBuilderInterface {
    * Reads a config template and runs Drupal token replacement.
    */
   private function resolveFromConfig(string $key, NodeInterface $node, string $langcode): string {
-    $config = $this->languageManager
-      ->getLanguageConfigOverride($langcode, 'markaspot_resubmission.mail')
-      ->get('resubmit_request');
-    if (!is_array($config) || empty($config[$key])) {
-      $config = $this->configFactory
-        ->get('markaspot_resubmission.mail')
-        ->get('resubmit_request');
-    }
-    if (!is_array($config) || empty($config[$key])) {
+    $template = $this->textResolver->resolveField('markaspot_resubmission.mail', 'resubmit_request', $key, $langcode);
+    if ($template === '') {
       return '';
     }
-    return (string) $this->token->replace((string) $config[$key], ['node' => $node], [
+    return (string) $this->token->replace($template, ['node' => $node], [
       'langcode' => $langcode,
       'clear' => TRUE,
     ]);

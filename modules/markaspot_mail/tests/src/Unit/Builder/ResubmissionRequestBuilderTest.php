@@ -7,14 +7,11 @@ namespace Drupal\Tests\markaspot_mail\Unit\Builder;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Utility\Token;
-use Drupal\language\Config\LanguageConfigOverride;
-use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\ResubmissionRequestBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -92,22 +89,14 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
     $node = $this->createMock(NodeInterface::class);
     $node->method('hasField')->willReturn(FALSE);
 
-    $config = $this->createMock(ImmutableConfig::class);
-    $config->method('get')->willReturnCallback(
-      fn (string $key): ?array => $key === 'resubmit_request'
-        ? [
-          'subject' => 'Please clarify [node:title]',
-          'body' => "Hello,\n\nPlease clarify the report [node:request_id].",
-        ]
-        : NULL,
+    $textResolver = $this->createMock(MailTextResolver::class);
+    $textResolver->method('resolveField')->willReturnCallback(
+      fn (string $configName, string $key, string $field, string $langcode): string => match ($field) {
+        'subject' => 'Please clarify [node:title]',
+        'body' => "Hello,\n\nPlease clarify the report [node:request_id].",
+        default => '',
+      },
     );
-    $configFactory = $this->createMock(ConfigFactoryInterface::class);
-    $configFactory->method('get')->willReturn($config);
-
-    $override = $this->createMock(LanguageConfigOverride::class);
-    $override->method('get')->willReturn(NULL);
-    $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
-    $languageManager->method('getLanguageConfigOverride')->willReturn($override);
 
     $token = $this->createMock(Token::class);
     $token->method('replace')->willReturnCallback(
@@ -119,8 +108,7 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
     );
 
     $builder = $this->buildBuilder(
-      configFactory: $configFactory,
-      languageManager: $languageManager,
+      textResolver: $textResolver,
       token: $token,
     );
     $ctx = new MailContext(
@@ -142,30 +130,20 @@ final class ResubmissionRequestBuilderTest extends UnitTestCase {
    * Builds the subject with optional dep injection.
    */
   private function buildBuilder(
-    ?ConfigFactoryInterface $configFactory = NULL,
-    ?ConfigurableLanguageManagerInterface $languageManager = NULL,
+    ?MailTextResolver $textResolver = NULL,
     ?Token $token = NULL,
     ?LoggerInterface $logger = NULL,
   ): ResubmissionRequestBuilder {
-    if ($configFactory === NULL) {
-      $config = $this->createMock(ImmutableConfig::class);
-      $config->method('get')->willReturn(NULL);
-      $configFactory = $this->createMock(ConfigFactoryInterface::class);
-      $configFactory->method('get')->willReturn($config);
-    }
-    if ($languageManager === NULL) {
-      $override = $this->createMock(LanguageConfigOverride::class);
-      $override->method('get')->willReturn(NULL);
-      $languageManager = $this->createMock(ConfigurableLanguageManagerInterface::class);
-      $languageManager->method('getLanguageConfigOverride')->willReturn($override);
+    if ($textResolver === NULL) {
+      $textResolver = $this->createMock(MailTextResolver::class);
+      $textResolver->method('resolveField')->willReturn('');
     }
     if ($token === NULL) {
       $token = $this->createMock(Token::class);
       $token->method('replace')->willReturnCallback(fn (string $t): string => $t);
     }
     $builder = new ResubmissionRequestBuilder(
-      $configFactory,
-      $languageManager,
+      $textResolver,
       $token,
       $logger ?? $this->createMock(LoggerInterface::class),
     );
