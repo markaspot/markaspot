@@ -51,6 +51,7 @@ class PasswordlessAuthController extends ControllerBase {
     'triage inbound mail' => 'triage inbound mail',
     'delete requests' => 'delete any service_request content',
     'split service requests' => 'split service requests',
+    'administer markaspot mail texts' => 'administer markaspot mail texts',
   ];
 
   /**

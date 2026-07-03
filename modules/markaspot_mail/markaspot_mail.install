@@ -12,6 +12,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\language\ConfigurableLanguageManagerInterface;
+use Drupal\user\Entity\Role;
 
 /**
  * Implements hook_install().
@@ -278,6 +279,37 @@ function markaspot_mail_update_10006(): string {
   }
 
   return 'Installed: ' . implode(', ', $changed) . '.';
+}
+
+/**
+ * Grants 'administer markaspot mail texts' to the tenant_admin role.
+ *
+ * The permission itself has existed since Phase 1
+ * (markaspot_mail.permissions.yml); only the mail-text dashboard editor
+ * (markaspot_dashboard's `/api/dashboard/mail-texts*` routes) makes it
+ * something a tenant_admin is expected to hold day-to-day. Fresh installs
+ * get the grant via config/optional/user.role.tenant_admin.yml and
+ * markaspot_tenant_admin's own config/install/user.role.tenant_admin.yml;
+ * this hook backfills existing tenants. Idempotent: grantPermission() is a
+ * no-op if the role already has the permission, and a missing tenant_admin
+ * role (self-hosted sites that never installed markaspot_tenant_admin) is
+ * skipped rather than fabricated. Deliberately NOT granted to moderator or
+ * editorial_board (unlike 'split service requests'), and NEVER granted by
+ * markaspot_fastmap's workspace provisioning: mail-text wording is a
+ * tenant-admin-level capability, not a general staff or FastMap workspace
+ * one.
+ */
+function markaspot_mail_update_10007(): string {
+  $role = Role::load('tenant_admin');
+  if ($role === NULL) {
+    return 'tenant_admin role does not exist; no action.';
+  }
+  if ($role->hasPermission('administer markaspot mail texts')) {
+    return 'tenant_admin already has administer markaspot mail texts; no action.';
+  }
+  $role->grantPermission('administer markaspot mail texts');
+  $role->save();
+  return 'Granted administer markaspot mail texts to tenant_admin.';
 }
 
 /**

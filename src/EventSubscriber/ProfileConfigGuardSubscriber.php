@@ -174,6 +174,11 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
   private const API_KEY_CONFIG_PREFIX = 'services_api_key_auth.api_key.';
 
   /**
+   * The markaspot_mail.texts config name.
+   */
+  private const MAIL_TEXTS_CONFIG = 'markaspot_mail.texts';
+
+  /**
    * Runtime opt-in for API-key entity preservation.
    */
   private const PRESERVE_RUNTIME_API_KEYS_SETTING = 'markaspot_preserve_runtime_api_keys';
@@ -255,6 +260,7 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
 
       $this->protectRequiredModules($importStorage);
       $this->protectShippedConfig($importStorage);
+      $this->protectMailTexts($importStorage);
       $this->protectRuntimeApiKeys($importStorage);
       // Run AFTER protectShippedConfig so any view re-injected from active is
       // also screened for anonymous access.
@@ -340,6 +346,52 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
       }
       $importStorage->write($name, $data);
     }
+  }
+
+  /**
+   * Preserves dashboard-edited markaspot_mail.texts state during import.
+   *
+   * WHY: markaspot_mail.texts (report_confirmation, status_open, ...) is
+   * shipped config, but its ACTIVE value is also dashboard-editable at
+   * runtime (markaspot_dashboard's `/api/dashboard/mail-texts` endpoints,
+   * and Drupal's own /admin/config/markaspot/mail-texts form). Unlike the
+   * DELETE case protectShippedConfig() already covers (import lacks the
+   * config entirely), a tenant that has ever run `drush cex` normally DOES
+   * have markaspot_mail.texts.yml in its config/sync — just with whatever
+   * wording was active at export time. A later full `drush cim` would
+   * silently overwrite live, staff-edited wording (or a dashboard-created
+   * custom key) back to that stale snapshot, defeating the whole point of
+   * the editor. Dashboard edits and the markaspot:mail-texts-migrate
+   * command never write to config/sync (see markaspot_mail.texts's own
+   * schema doc), so config/sync can only ever be a stale seed for this
+   * object, never authoritative.
+   *
+   * HOW: unconditionally overwrites the import copy of markaspot_mail.texts
+   * with the raw ACTIVE data whenever active has the config at all. Unlike
+   * protectRuntimeApiKeys()'s per-field "fill only if import is empty"
+   * merge (right for redacted secrets), this config object has no
+   * redaction concern and every field (including custom-key entries with
+   * no counterpart in config/sync) is runtime-managed content, so active
+   * wins wholesale — the config_ignore pattern applied to a single,
+   * specifically-named config object.
+   *
+   * SCOPE & LIMITATIONS: exactly one config name. A tenant that genuinely
+   * wants to reset markaspot_mail.texts from config/sync must do so
+   * out-of-band (e.g. `drush config:import --partial`, which bypasses this
+   * transformer entirely) rather than through a full cim/deploy.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable import storage (transformed copy of config/sync).
+   */
+  private function protectMailTexts(StorageInterface $importStorage): void {
+    if (!$this->activeStorage->exists(self::MAIL_TEXTS_CONFIG)) {
+      return;
+    }
+    $activeData = $this->activeStorage->read(self::MAIL_TEXTS_CONFIG);
+    if (!is_array($activeData)) {
+      return;
+    }
+    $importStorage->write(self::MAIL_TEXTS_CONFIG, $activeData);
   }
 
   /**

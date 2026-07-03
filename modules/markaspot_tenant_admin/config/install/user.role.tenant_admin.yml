@@ -33,3 +33,4 @@ permissions:
   - 'view own field_sentiment'
   - 'access dashboard kpis'
   - 'split service requests'
+  - 'administer markaspot mail texts'

@@ -205,3 +205,61 @@ markaspot_dashboard.request_links:
   options:
     _format: 'json'
     _auth: ['cookie']
+
+# Mail-text editor API (Nuxt dashboard). Manages markaspot_mail.texts
+# notification templates: read the catalog (texts + standard-key flags +
+# generated token catalog), create/update a key, delete a custom key, and
+# resolve tokens for the editor's live-preview panel. Mutations follow the
+# SplitController CSRF convention (_csrf_request_header_token + cookie
+# auth). The preview route is declared before the {key} routes so its
+# literal path segment is never shadowed by the variable one.
+markaspot_dashboard.mail_texts_catalog:
+  path: '/api/dashboard/mail-texts'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\MailTextsController::catalog'
+    _title: 'Mail text catalog'
+  methods: [GET]
+  requirements:
+    _permission: 'administer markaspot mail texts'
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+
+markaspot_dashboard.mail_texts_preview:
+  path: '/api/dashboard/mail-texts/preview'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\MailTextsController::preview'
+    _title: 'Preview mail text tokens'
+  methods: [POST]
+  requirements:
+    _permission: 'administer markaspot mail texts'
+    _csrf_request_header_token: 'TRUE'
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+
+markaspot_dashboard.mail_texts_save:
+  path: '/api/dashboard/mail-texts/{key}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\MailTextsController::save'
+    _title: 'Save mail text'
+  methods: [PUT]
+  requirements:
+    _permission: 'administer markaspot mail texts'
+    _csrf_request_header_token: 'TRUE'
+  options:
+    _format: 'json'
+    _auth: ['cookie']
+
+markaspot_dashboard.mail_texts_delete:
+  path: '/api/dashboard/mail-texts/{key}'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\MailTextsController::delete'
+    _title: 'Delete mail text'
+  methods: [DELETE]
+  requirements:
+    _permission: 'administer markaspot mail texts'
+    _csrf_request_header_token: 'TRUE'
+  options:
+    _format: 'json'
+    _auth: ['cookie']

@@ -26,6 +26,16 @@ services:
       - '@database'
       - '@?markaspot_group.hierarchy_resolver'
 
+  markaspot_dashboard.mail_texts:
+    class: Drupal\markaspot_dashboard\Service\MailTextsService
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@entity_field.manager'
+      - '@token'
+      - '@logger.channel.markaspot_dashboard'
+      - '@string_translation'
+
   logger.channel.markaspot_dashboard:
     parent: logger.channel_base
     arguments: ['markaspot_dashboard']

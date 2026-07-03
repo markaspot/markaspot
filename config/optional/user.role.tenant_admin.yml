@@ -48,6 +48,7 @@ permissions:
   - 'access taxonomy overview'
   - 'access toolbar'
   - 'access workspace usage'
+  - 'administer markaspot mail texts'
   - 'bypass mas validation'
   - 'create boilerplate content'
   - 'create content translations'
