@@ -20,6 +20,7 @@ use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
+use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -179,6 +180,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->streamWrapperManager,
       $this->hierarchyResolver,
+      new EnterpriseFeatureGate(),
     );
   }
 
@@ -303,6 +305,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $configFactory,
       $this->streamWrapperManager,
       $this->hierarchyResolver,
+      new EnterpriseFeatureGate(),
     );
 
     $request = Request::create('/api/mark-a-spot-settings', 'GET');
@@ -362,6 +365,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->streamWrapperManager,
       $hierarchyResolver,
+      new EnterpriseFeatureGate(),
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
@@ -711,6 +715,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
         'dashboard' => TRUE,
         'dashboardRequestCreate' => TRUE,
         'operationsDashboard' => TRUE,
+        'mailTextEditor' => TRUE,
       ],
     ]);
 
@@ -731,6 +736,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['dashboard']);
     $this->assertFalse($data['features']['dashboardRequestCreate']);
     $this->assertFalse($data['features']['operationsDashboard']);
+    $this->assertFalse($data['features']['mailTextEditor']);
   }
 
   /**
@@ -834,6 +840,224 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertSame(TRUE, $data['features']['dashboard']);
     $this->assertSame(FALSE, $data['features']['operationsDashboard']);
+  }
+
+  /**
+   * Tests the mail text editor is allowed for self-hosted jurisdictions.
+   *
+   * No field_tier field at all (module not attached to the bundle) means
+   * on-premise/self-hosted: allowed by default.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testMailTextEditorAllowedForSelfHosted(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $group = $this->createMockGroup([]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(TRUE, $data['features']['mailTextEditor']);
+  }
+
+  /**
+   * Tests the mail text editor is allowed on the top ('heart') SaaS tier.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testMailTextEditorAllowedForHeartTier(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $group = $this->createMockGroup([
+      'field_tier' => 'heart',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(TRUE, $data['features']['mailTextEditor']);
+  }
+
+  /**
+   * Tests a child jurisdiction inherits the root's tier for the editor flag.
+   *
+   * Field_tier is a bundle field set only on the workspace ROOT: a child
+   * (department) jurisdiction carries it attached-but-empty, which the gate
+   * reads fail-closed. The controller must therefore evaluate the gate
+   * against the resolved root, mirroring EnterpriseFeatureAccessCheck.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testMailTextEditorInheritsRootTierForChildJurisdiction(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    // Child jurisdiction 14: field_tier attached but empty (NULL value).
+    $child = $this->createMockGroup([
+      'field_tier' => NULL,
+    ]);
+    // Root jurisdiction 7 on the top tier.
+    $root = $this->createMockGroup([
+      'field_tier' => 'heart',
+    ], 7);
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn($id) => match ((int) $id) {
+        14 => $child,
+        7 => $root,
+        default => NULL,
+      });
+
+    // Resolver walks the child up to its root.
+    $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchyResolver->method('getRootJurisdictionId')
+      ->willReturnCallback(static fn(int $id): int => $id === 14 ? 7 : $id);
+    $controller = new MarkASpotSettingsController(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->streamWrapperManager,
+      $hierarchyResolver,
+      new EnterpriseFeatureGate(),
+    );
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(TRUE, $data['features']['mailTextEditor']);
+  }
+
+  /**
+   * Tests the mail text editor is denied below the top SaaS tier.
+   *
+   * Unlike Operations Dashboard, 'pro' does NOT unlock the mail text editor
+   * — only 'heart' does. This is the key behavioral difference from
+   * canUseOperationsDashboard().
+   *
+   * @covers ::getMarkASpotSettings
+   *
+   * @dataProvider mailTextEditorNonEnterpriseTierProvider
+   */
+  public function testMailTextEditorForcedFalseBelowTopTier(string $tier): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $nuxtJson = json_encode([
+      'features' => [
+        // A tenant below the required tier cannot self-declare the flag.
+        'mailTextEditor' => TRUE,
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+      'field_tier' => $tier,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(FALSE, $data['features']['mailTextEditor']);
+  }
+
+  /**
+   * Data provider for tiers below the mail text editor's required tier.
+   *
+   * @return array<string, array{string}>
+   *   Test cases.
+   */
+  public static function mailTextEditorNonEnterpriseTierProvider(): array {
+    return [
+      'free' => ['free'],
+      'starter' => ['starter'],
+      'pro' => ['pro'],
+    ];
+  }
+
+  /**
+   * Tests the mail text editor is denied for pending FastMap checkouts.
+   *
+   * An attached-but-empty field_tier (Stripe checkout not yet completed)
+   * must not be treated as self-hosted. Matches
+   * canUseOperationsDashboard()'s fail-closed behavior — note this
+   * deliberately differs from TierLimitConstraintValidator's demo-state
+   * bypass, since granting a paid-only editor during a free trial is not
+   * the same risk as temporarily lifting a report quota.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testMailTextEditorForcedFalseForEmptyFastMapTier(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $group = $this->createMockGroup([
+      'field_tier' => NULL,
+      'field_expiry_date' => '2026-06-20',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(FALSE, $data['features']['mailTextEditor']);
+  }
+
+  /**
+   * Tests an enterprise-tier tenant can still opt out via field_nuxt_config.
+   *
+   * Mirrors the aiDuplicates opt-out pattern: the tier gate only ever
+   * raises the ceiling, never overrides an explicit tenant "off".
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testMailTextEditorCanBeOptedOutViaNuxtConfig(): void {
+    $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+    $moduleHandler->method('moduleExists')
+      ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
+    $moduleHandler->method('alter');
+    \Drupal::getContainer()->set('module_handler', $moduleHandler);
+
+    $nuxtJson = json_encode([
+      'features' => [
+        'mailTextEditor' => FALSE,
+      ],
+    ]);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtJson,
+      'field_tier' => 'heart',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(FALSE, $data['features']['mailTextEditor']);
   }
 
   /**

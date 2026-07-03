@@ -10,6 +10,7 @@ use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -41,6 +42,13 @@ class MarkASpotSettingsController extends ControllerBase {
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * The enterprise feature gate.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate
+   */
+  protected EnterpriseFeatureGate $enterpriseFeatureGate;
+
+  /**
    * Constructs a MarkASpotSettingsController object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -51,17 +59,21 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The stream wrapper manager.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy_resolver
    *   The jurisdiction hierarchy resolver.
+   * @param \Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate $enterprise_feature_gate
+   *   The enterprise feature gate.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
     ConfigFactoryInterface $config_factory,
     StreamWrapperManagerInterface $stream_wrapper_manager,
     JurisdictionHierarchyResolverInterface $hierarchy_resolver,
+    EnterpriseFeatureGate $enterprise_feature_gate,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
     $this->streamWrapperManager = $stream_wrapper_manager;
     $this->hierarchyResolver = $hierarchy_resolver;
+    $this->enterpriseFeatureGate = $enterprise_feature_gate;
   }
 
   /**
@@ -72,7 +84,8 @@ class MarkASpotSettingsController extends ControllerBase {
       $container->get('entity_type.manager'),
       $container->get('config.factory'),
       $container->get('stream_wrapper_manager'),
-      $container->get('markaspot_group.hierarchy_resolver')
+      $container->get('markaspot_group.hierarchy_resolver'),
+      $container->get('markaspot_nuxt.enterprise_feature_gate')
     );
   }
 
@@ -341,7 +354,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $module_feature_map = [
       'markaspot_ai' => ['aiProcessing', 'piiRedaction'],
       'markaspot_stats' => ['statistics'],
-      'markaspot_dashboard' => ['dashboard', 'dashboardRequestCreate', 'operationsDashboard'],
+      'markaspot_dashboard' => ['dashboard', 'dashboardRequestCreate', 'operationsDashboard', 'mailTextEditor'],
       'markaspot_vision' => ['photoReporting', 'aiAnalysis'],
       'markaspot_feedback' => ['feedback'],
       'markaspot_passwordless' => ['passwordless'],
@@ -374,6 +387,42 @@ class MarkASpotSettingsController extends ControllerBase {
 
     if ($group instanceof GroupInterface && !$this->canUseOperationsDashboard($group)) {
       $settings['features']['operationsDashboard'] = FALSE;
+    }
+
+    // Enterprise-gate: mail text editor. Self-hosted jurisdictions (no
+    // field_tier) and top-tier SaaS jurisdictions (field_tier=heart, see
+    // EnterpriseFeatureGate) may edit notification wording via the
+    // dashboard; everyone else keeps receiving the default notification
+    // texts, unedited. This gates only the *editor* UI/API — mail sending
+    // itself (NotificationTextBuilder, MailTextResolver, the
+    // markaspot_mail_send_notification ECA action) is never tier-gated.
+    //
+    // Sits AFTER the field_nuxt_config merge above, mirroring
+    // operationsDashboard/customWmsLayers, so a tenant below the required
+    // tier cannot self-declare the flag true. A tenant at or above the
+    // required tier may still opt out explicitly via field_nuxt_config
+    // (mirrors the aiDuplicates opt-out pattern below).
+    //
+    // field_tier lives on the workspace ROOT: a child jurisdiction
+    // (department) carries the bundle field attached-but-empty, which the
+    // gate reads fail-closed. Evaluate the gate against the root instead,
+    // matching EnterpriseFeatureAccessCheck's resolution — children inherit
+    // the tier the same way they inherit the service catalog.
+    $tierGroup = $group;
+    if ($group instanceof GroupInterface && $taxonomyJurisdictionId !== (int) $group->id()) {
+      $rootGroup = $this->entityTypeManager->getStorage('group')->load($taxonomyJurisdictionId);
+      if ($rootGroup instanceof GroupInterface) {
+        $tierGroup = $rootGroup;
+        $cache_metadata->addCacheableDependency($rootGroup);
+      }
+    }
+    if ($this->enterpriseFeatureGate->isEnterpriseFeatureAllowed($tierGroup, 'mail_text_editor')) {
+      $settings['features']['mailTextEditor'] = $this->readBooleanFeatureFlag(
+        $settings['features']['mailTextEditor'] ?? TRUE
+      );
+    }
+    else {
+      $settings['features']['mailTextEditor'] = FALSE;
     }
 
     // aiDuplicates capability flag. Requires the module, tenant AI processing,

@@ -152,6 +152,12 @@
           "description": "Use the Pro operations overview as the dashboard home.",
           "default": false
         },
+        "mailTextEditor": {
+          "type": "boolean",
+          "title": "Mail Text Editor",
+          "description": "Enterprise-only. Enables the dashboard editor for notification mail wording (self-hosted: on by default; SaaS: requires the top tier). The backend recomputes the effective value tier-aware on every request regardless of this stored flag; set to false here to let an eligible tenant opt out.",
+          "default": true
+        },
         "passwordless": {
           "type": "boolean",
           "title": "Passwordless Auth",

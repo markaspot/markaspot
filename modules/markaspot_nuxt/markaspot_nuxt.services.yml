@@ -10,6 +10,11 @@ services:
   markaspot_nuxt.feature_flag_access_check:
     class: Drupal\markaspot_nuxt\Access\FeatureFlagAccessCheck
     arguments: ['@markaspot_nuxt.feature_flag_checker', '@request_stack', '@entity_type.manager', '@config.factory']
+  markaspot_nuxt.enterprise_feature_gate:
+    class: Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate
+  markaspot_nuxt.enterprise_feature_access_check:
+    class: Drupal\markaspot_nuxt\Access\EnterpriseFeatureAccessCheck
+    arguments: ['@markaspot_nuxt.enterprise_feature_gate', '@entity_type.manager', '@config.factory', '@?markaspot_group.hierarchy_resolver']
   markaspot_nuxt.user_jsonapi_access_check:
     class: Drupal\markaspot_nuxt\Access\UserJsonApiAccessCheck
   markaspot_nuxt.user_jsonapi_route_subscriber:

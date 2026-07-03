@@ -21,6 +21,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
+use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -192,6 +193,7 @@ class OrganisationsControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->streamWrapperManager,
       $this->hierarchyResolver,
+      new EnterpriseFeatureGate(),
     );
   }
 

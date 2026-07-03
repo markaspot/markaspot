@@ -213,6 +213,11 @@ markaspot_dashboard.request_links:
 # SplitController CSRF convention (_csrf_request_header_token + cookie
 # auth). The preview route is declared before the {key} routes so its
 # literal path segment is never shadowed by the variable one.
+#
+# _permission and _custom_access are combined with AND by Drupal's access
+# manager: staff still needs the role permission, and the jurisdiction still
+# needs an enterprise tier (see EnterpriseFeatureAccessCheck). Only the
+# editor is gated here — mail sending itself is never tier-gated.
 markaspot_dashboard.mail_texts_catalog:
   path: '/api/dashboard/mail-texts'
   defaults:
@@ -221,9 +226,11 @@ markaspot_dashboard.mail_texts_catalog:
   methods: [GET]
   requirements:
     _permission: 'administer markaspot mail texts'
+    _custom_access: 'markaspot_nuxt.enterprise_feature_access_check:check'
   options:
     _format: 'json'
     _auth: ['cookie']
+    _enterprise_feature: 'mail_text_editor'
 
 markaspot_dashboard.mail_texts_preview:
   path: '/api/dashboard/mail-texts/preview'
@@ -233,10 +240,12 @@ markaspot_dashboard.mail_texts_preview:
   methods: [POST]
   requirements:
     _permission: 'administer markaspot mail texts'
+    _custom_access: 'markaspot_nuxt.enterprise_feature_access_check:check'
     _csrf_request_header_token: 'TRUE'
   options:
     _format: 'json'
     _auth: ['cookie']
+    _enterprise_feature: 'mail_text_editor'
 
 markaspot_dashboard.mail_texts_save:
   path: '/api/dashboard/mail-texts/{key}'
@@ -246,10 +255,12 @@ markaspot_dashboard.mail_texts_save:
   methods: [PUT]
   requirements:
     _permission: 'administer markaspot mail texts'
+    _custom_access: 'markaspot_nuxt.enterprise_feature_access_check:check'
     _csrf_request_header_token: 'TRUE'
   options:
     _format: 'json'
     _auth: ['cookie']
+    _enterprise_feature: 'mail_text_editor'
 
 markaspot_dashboard.mail_texts_delete:
   path: '/api/dashboard/mail-texts/{key}'
@@ -259,7 +270,9 @@ markaspot_dashboard.mail_texts_delete:
   methods: [DELETE]
   requirements:
     _permission: 'administer markaspot mail texts'
+    _custom_access: 'markaspot_nuxt.enterprise_feature_access_check:check'
     _csrf_request_header_token: 'TRUE'
   options:
     _format: 'json'
     _auth: ['cookie']
+    _enterprise_feature: 'mail_text_editor'
