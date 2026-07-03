@@ -1,5 +1,33 @@
 # Changelog
 
+## [11.9.137](https://github.com/markaspot/markaspot/compare/11.9.136...11.9.137) (2026-07-03)
+
+### Features
+
+* add admin form for markaspot_mail notification texts ([6834c61](https://github.com/markaspot/markaspot/commit/6834c61875f93216e2927434ec2cdc61ec87fbd2))
+* add mail text editor API for the Nuxt dashboard ([a2128a9](https://github.com/markaspot/markaspot/commit/a2128a96fadad050a1da293fa9666d90e121812a))
+* add markaspot_mail_send_notification ECA action and NotificationTextBuilder ([858bc94](https://github.com/markaspot/markaspot/commit/858bc941b93d1c380b9d9911b4b044f6ac8ae3fa))
+* add markaspot_mail.texts notification config with EN/DE defaults ([5287486](https://github.com/markaspot/markaspot/commit/5287486a87bd865922c867359b926a90fb4fd82a))
+* add markaspot:mail-texts-migrate drush command for ECA to notification text migration ([ed7edc5](https://github.com/markaspot/markaspot/commit/ed7edc5d34acacb339c1269058cb9de5b487821e))
+* attribute vision privacy findings per image in the analysis response ([e0fe08e](https://github.com/markaspot/markaspot/commit/e0fe08ed72e0fd6ffdaf09f548f65bde828e8c76))
+* gate mail text editor behind enterprise SaaS tier ([9324cff](https://github.com/markaspot/markaspot/commit/9324cff3691d1fc0c10e94a70aca0d68c45f3b36))
+
+### Bug Fixes
+
+* build notification cta from branding frontend base instead of node canonical url ([62f011e](https://github.com/markaspot/markaspot/commit/62f011ee57bd0106f05d038bcdcba0799e14478e))
+* configure mocked magic field getter in vision env drift health test ([0e80027](https://github.com/markaspot/markaspot/commit/0e800274da291cc17ca361d36b9819beb137f4d3))
+* correct inverted status mail conditions in notify status eca model ([0b78a69](https://github.com/markaspot/markaspot/commit/0b78a69bcd1503675bd5d118de492246602aef8f))
+* guard markaspot_mail.texts overwrite against admin-edited wording in migrate apply ([fd03666](https://github.com/markaspot/markaspot/commit/fd03666f8a625ef0a2baa34ed101a7ca8dd9b1e1))
+* let explicit georeport media publication hand off from AI pipeline ([ca0bcfd](https://github.com/markaspot/markaspot/commit/ca0bcfdf541448dfb872644f69d1919541289e25))
+* mock manual publication keyvalue in image processing controller tests ([669e16f](https://github.com/markaspot/markaspot/commit/669e16fe12860a53fe1baf5b0af785f702e4922d))
+* reject dotted mail-text keys, cap slot length and custom key count ([622690f](https://github.com/markaspot/markaspot/commit/622690f5c4b52c9f86594c5f5f1724df2855b1a6))
+* scope mail-text samples to jurisdiction, mask PII, and sanitize admin HTML ([2e87c63](https://github.com/markaspot/markaspot/commit/2e87c63ace1da772762fdb090141fb317f277ef2))
+* strip response-only vision keys from provider echoes before persisting audit metadata ([0ad79f1](https://github.com/markaspot/markaspot/commit/0ad79f1e4978b4a6ca1f3708c4f97ff09bc5f038))
+
+### Refactoring
+
+* extract MailTextResolver service for shared config text merge ([6d61882](https://github.com/markaspot/markaspot/commit/6d61882a143936bff92e9824efde160ccb85ade3))
+
 ## [11.9.136](https://github.com/markaspot/markaspot/compare/11.9.135...11.9.136) (2026-07-02)
 
 ### Features
