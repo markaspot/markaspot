@@ -15,6 +15,7 @@ use Drupal\field\FieldConfigInterface;
 use Drupal\markaspot_dashboard\Service\Exception\MailTextsConflictException;
 use Drupal\markaspot_dashboard\Service\Exception\MailTextsForbiddenException;
 use Drupal\markaspot_dashboard\Service\Exception\MailTextsNotFoundException;
+use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -135,6 +136,45 @@ final class MailTextsService implements MailTextsServiceInterface {
     'field_request_media',
   ];
 
+  /**
+   * Scalar PII fields masked with a fixed placeholder in sample/preview.
+   *
+   * FindNewestServiceRequestNode() already scopes the sample node to the
+   * caller's own jurisdiction(s), but a real citizen's contact data is
+   * still not this staff member's business while they are only editing
+   * mail wording, not handling that citizen's report. Applied in
+   * maskPiiFields(), which clones the node before overwriting these
+   * fields, so it never touches the entity storage's static cache or
+   * the real record.
+   *
+   * NEVER applied on the send-time path (MailTextResolver /
+   * NotificationTextBuilder use the real recipient node directly): the
+   * whole point of personalization tokens is to resolve the actual
+   * recipient's data at send time. This map exists only for this
+   * service's sample-catalog and live-preview endpoints.
+   */
+  private const PII_FIELD_PLACEHOLDERS = [
+    'field_e_mail' => 'erika.musterfrau@example.org',
+    'field_first_name' => 'Erika',
+    'field_last_name' => 'Musterfrau',
+    'field_phone' => '+49 30 000000',
+  ];
+
+  /**
+   * The composite address field, masked separately (not a scalar overwrite).
+   */
+  private const PII_ADDRESS_FIELD = 'field_address';
+
+  /**
+   * Placeholder address sub-property values for PII_ADDRESS_FIELD.
+   */
+  private const PII_ADDRESS_PLACEHOLDER = [
+    'address_line1' => 'Musterstraße 1',
+    'postal_code' => '12345',
+    'locality' => 'Musterstadt',
+    'country_code' => 'DE',
+  ];
+
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     private readonly EntityTypeManagerInterface $entityTypeManager,
@@ -142,6 +182,8 @@ final class MailTextsService implements MailTextsServiceInterface {
     private readonly Token $token,
     private readonly LoggerInterface $logger,
     TranslationInterface $string_translation,
+    private readonly AccountInterface $currentUser,
+    private readonly ?JurisdictionScopeValidator $jurisdictionScopeValidator = NULL,
   ) {
     $this->stringTranslation = $string_translation;
   }
@@ -424,22 +466,82 @@ final class MailTextsService implements MailTextsServiceInterface {
    * AccessCheck(FALSE): this is a staff-only preview/sample data source
    * gated by the 'administer markaspot mail texts' permission, exactly
    * like \Drupal\markaspot_mail\Mail\MailSampleContextProvider's own
-   * sample lookups — not a citizen-facing read path.
+   * sample lookups — not a citizen-facing read path. accessCheck(FALSE) is
+   * deliberate rather than a shortcut: gnode grants for service_request do
+   * not reliably scope by jurisdiction (see the lesson recorded as
+   * lesson-jsonapi-jur-outsider-pii-cross-jurisdiction in project memory),
+   * so this method filters explicitly by field_jurisdiction below instead
+   * of trusting node grants to do it.
+   *
+   * 'administer markaspot mail texts' is a global Drupal permission (see
+   * user.role.tenant_admin.yml), not scoped per Group: any tenant_admin,
+   * regardless of which jurisdiction they administer, can reach this
+   * method. Non-platform-admin callers are therefore restricted to nodes
+   * in a jurisdiction they are a direct member of; the returned node also
+   * has its PII fields masked (see maskPiiFields()) since even an
+   * in-scope citizen's contact data is not this endpoint's business.
    */
   private function findNewestServiceRequestNode(): ?NodeInterface {
     $storage = $this->entityTypeManager->getStorage('node');
-    $ids = $storage->getQuery()
+    $query = $storage->getQuery()
       ->accessCheck(FALSE)
       ->condition('type', 'service_request')
+      ->condition('status', 1)
       ->sort('created', 'DESC')
       ->sort('nid', 'DESC')
-      ->range(0, 1)
-      ->execute();
+      ->range(0, 1);
+
+    if (!$this->currentUserCanSeeAllJurisdictions()) {
+      $allowedJurisdictionIds = $this->jurisdictionScopeValidator
+        ?->getAllowedJurisdictionIds($this->currentUser) ?? [];
+      if ($allowedJurisdictionIds === []) {
+        return NULL;
+      }
+      $query->condition('field_jurisdiction', $allowedJurisdictionIds, 'IN');
+    }
+
+    $ids = $query->execute();
     if ($ids === []) {
       return NULL;
     }
     $node = $storage->load(reset($ids));
-    return $node instanceof NodeInterface ? $node : NULL;
+    return $node instanceof NodeInterface ? $this->maskPiiFields($node) : NULL;
+  }
+
+  /**
+   * Checks whether the current user may see samples from any jurisdiction.
+   *
+   * Mirrors \Drupal\markaspot_dashboard\Controller\DashboardController::
+   * currentUserCanSeeAllJurisdictions(); duplicated rather than shared
+   * because the two classes have no common base and the check is three
+   * lines, exactly like nodeRequestId() below.
+   */
+  private function currentUserCanSeeAllJurisdictions(): bool {
+    return (int) $this->currentUser->id() === 1
+      || $this->currentUser->hasPermission('administer nodes')
+      || $this->currentUser->hasPermission('administer site configuration');
+  }
+
+  /**
+   * Clones $node and overwrites its PII fields with fixed placeholders.
+   *
+   * Defense in depth alongside the jurisdiction scope in
+   * findNewestServiceRequestNode(): the sample/preview node is real
+   * citizen data otherwise, regardless of how tightly it is scoped.
+   * Clones first so the mutation never touches the entity storage's
+   * static cache or the original loaded node.
+   */
+  private function maskPiiFields(NodeInterface $node): NodeInterface {
+    $masked = clone $node;
+    foreach (self::PII_FIELD_PLACEHOLDERS as $fieldName => $placeholder) {
+      if ($masked->hasField($fieldName)) {
+        $masked->set($fieldName, $placeholder);
+      }
+    }
+    if ($masked->hasField(self::PII_ADDRESS_FIELD)) {
+      $masked->set(self::PII_ADDRESS_FIELD, self::PII_ADDRESS_PLACEHOLDER);
+    }
+    return $masked;
   }
 
   /**

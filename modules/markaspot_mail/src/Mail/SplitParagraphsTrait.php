@@ -6,6 +6,7 @@ namespace Drupal\markaspot_mail\Mail;
 
 use Drupal\Core\Render\Markup;
 use Drupal\Component\Utility\Xss;
+use Drupal\markaspot_mail\Service\MailTextResolver;
 
 /**
  * Splits a pre-rendered mail body into paragraph-delimited blocks.
@@ -19,22 +20,13 @@ use Drupal\Component\Utility\Xss;
 trait SplitParagraphsTrait {
 
   /**
-   * Mail-safe HTML tags for body paragraphs.
-   *
-   * Covers operator formatting intent (headings, lists, inline emphasis,
-   * links) without exposing the filterAdmin surface (<style>, <iframe>,
-   * <object>, etc. which filterAdmin permits but mail bodies never need).
-   */
-  private const MAIL_ALLOWED_TAGS = [
-    'p', 'br', 'strong', 'em', 'b', 'i', 'a', 'ul', 'ol', 'li', 'h2', 'h3', 'span',
-  ];
-
-  /**
    * Splits a body string into sanitized, paragraph-delimited blocks.
    *
-   * Each paragraph is filtered with an explicit mail-safe tag whitelist and
-   * wrapped in a Markup object so Twig renders the HTML without double-
-   * escaping. The tag list covers operator formatting intent while blocking
+   * Each paragraph is filtered against
+   * \Drupal\markaspot_mail\Service\MailTextResolver::MAIL_ALLOWED_TAGS
+   * (the single shared mail-safe tag allowlist) and wrapped in a Markup
+   * object so Twig renders the HTML without double-escaping. The tag
+   * list covers operator formatting intent while blocking
    * citizen-submitted token content (e.g. [node:body]) from injecting
    * script, style, or object elements into mail output.
    *
@@ -50,7 +42,7 @@ trait SplitParagraphsTrait {
     foreach ($raw as $paragraph) {
       $paragraph = trim($paragraph);
       if ($paragraph !== '') {
-        $filtered = Xss::filter($paragraph, self::MAIL_ALLOWED_TAGS);
+        $filtered = Xss::filter($paragraph, MailTextResolver::MAIL_ALLOWED_TAGS);
         if ($this->shouldPreserveSingleLineBreaks($filtered)) {
           $filtered = str_replace(["\r\n", "\r"], "\n", $filtered);
           $filtered = str_replace("\n", '<br>', $filtered);

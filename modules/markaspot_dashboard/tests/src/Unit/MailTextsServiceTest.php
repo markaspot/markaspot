@@ -20,6 +20,7 @@ use Drupal\markaspot_dashboard\Service\Exception\MailTextsConflictException;
 use Drupal\markaspot_dashboard\Service\Exception\MailTextsForbiddenException;
 use Drupal\markaspot_dashboard\Service\Exception\MailTextsNotFoundException;
 use Drupal\markaspot_dashboard\Service\MailTextsService;
+use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
@@ -75,6 +76,25 @@ class MailTextsServiceTest extends UnitTestCase {
   protected $account;
 
   /**
+   * Mocked current user: the service's own jurisdiction-scoping dependency.
+   *
+   * Distinct from $account: getCatalog()/preview() take no $account
+   * parameter, so the service needs its own notion of "who is asking" for
+   * findNewestServiceRequestNode()'s scope check.
+   *
+   * @var \Drupal\Core\Session\AccountInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $currentUser;
+
+  /**
+   * Mocked jurisdiction scope validator.
+   *
+   * NULL is the service's own default, used by tests that never exercise
+   * the tenant_admin scoping path.
+   */
+  protected ?JurisdictionScopeValidator $jurisdictionScopeValidator = NULL;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -89,6 +109,15 @@ class MailTextsServiceTest extends UnitTestCase {
 
     $this->account = $this->createMock(AccountInterface::class);
     $this->account->method('id')->willReturn(7);
+
+    // Defaults to a platform-admin-equivalent caller (uid 1): every
+    // pre-existing test in this suite predates jurisdiction scoping and
+    // expects the newest node to be visible unconditionally. Tests that
+    // exercise the tenant_admin scoping path override $this->currentUser
+    // and $this->jurisdictionScopeValidator before calling buildService().
+    $this->currentUser = $this->createMock(AccountInterface::class);
+    $this->currentUser->method('id')->willReturn(1);
+    $this->jurisdictionScopeValidator = NULL;
 
     // No service_request nodes by default: an empty entity query. Tests that
     // need a sample node call configureNodeStorage() again — a mock's
@@ -127,6 +156,8 @@ class MailTextsServiceTest extends UnitTestCase {
       $this->token,
       $this->logger,
       $this->stubTranslation(),
+      $this->currentUser,
+      $this->jurisdictionScopeValidator,
     );
   }
 
@@ -181,7 +212,12 @@ class MailTextsServiceTest extends UnitTestCase {
   protected function buildNodeStorage(array $ids, ?NodeInterface $loadResult = NULL): EntityStorageInterface {
     $query = $this->createMock(QueryInterface::class);
     $query->method('accessCheck')->with(FALSE)->willReturnSelf();
-    $query->method('condition')->with('type', 'service_request')->willReturnSelf();
+    // No `with()` constraint: findNewestServiceRequestNode() now also
+    // conditions on 'status' and (for non-superadmin callers) on
+    // 'field_jurisdiction'. Tests that assert the exact condition() calls
+    // build their own query mock with a spy instead (see
+    // testFindNewestNodeAppliesJurisdictionScopeForNonSuperAdmin()).
+    $query->method('condition')->willReturnSelf();
     $query->method('sort')->willReturnSelf();
     $query->method('range')->with(0, 1)->willReturnSelf();
     $query->method('execute')->willReturn($ids === [] ? [] : [$ids[0] => $ids[0]]);
@@ -196,15 +232,24 @@ class MailTextsServiceTest extends UnitTestCase {
 
   /**
    * Builds a mocked service_request node with a given request_id.
+   *
+   * HasField() answers TRUE only for 'request_id' (never a `with()`
+   * constraint on a single fixed argument): maskPiiFields() now probes
+   * hasField() for every PII field name on any node
+   * findNewestServiceRequestNode() returns, so a stricter stub would fail
+   * that unrelated probe instead of just skipping it, which is what a real
+   * node without those fields configured would do too.
    */
   protected function buildNode(int $nid, ?string $requestId): NodeInterface {
     $node = $this->createMock(NodeInterface::class);
     $node->method('id')->willReturn($nid);
     if ($requestId === NULL) {
-      $node->method('hasField')->with('request_id')->willReturn(FALSE);
+      $node->method('hasField')->willReturn(FALSE);
       return $node;
     }
-    $node->method('hasField')->with('request_id')->willReturn(TRUE);
+    $node->method('hasField')->willReturnCallback(
+      fn(string $name): bool => $name === 'request_id',
+    );
     $field = new class($requestId) {
 
       public function __construct(public readonly string $value) {}
@@ -218,6 +263,59 @@ class MailTextsServiceTest extends UnitTestCase {
 
     };
     $node->method('get')->with('request_id')->willReturn($field);
+    return $node;
+  }
+
+  /**
+   * Builds a stateful mocked node backed by a real array.
+   *
+   * Get()/set()/hasField() are wired to $fieldValues, so a
+   * maskPiiFields() clone-then-set() mutation is observable through a
+   * later get() call the way it would be on a real content entity.
+   * buildNode() above is a read-only fixture and cannot express that;
+   * this exists specifically for the PII-masking tests.
+   *
+   * @param int $nid
+   *   The node ID returned by id().
+   * @param array<string, mixed> $fieldValues
+   *   Field name => value (a plain scalar, or an array for a composite
+   *   field like field_address). Only field names present here answer
+   *   TRUE to hasField().
+   */
+  protected function buildStatefulNode(int $nid, array $fieldValues): NodeInterface {
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn($nid);
+    $node->method('hasField')->willReturnCallback(
+      fn(string $name): bool => array_key_exists($name, $fieldValues),
+    );
+    $node->method('get')->willReturnCallback(function (string $name) use (&$fieldValues) {
+      return new class($fieldValues[$name] ?? NULL) {
+
+        public function __construct(private readonly mixed $rawValue) {}
+
+        /**
+         * Sub-property access, e.g. ->address_line1 for a composite field.
+         */
+        public function __get(string $prop): mixed {
+          if ($prop === 'value') {
+            return is_array($this->rawValue) ? ($this->rawValue['value'] ?? NULL) : $this->rawValue;
+          }
+          return is_array($this->rawValue) ? ($this->rawValue[$prop] ?? NULL) : NULL;
+        }
+
+        /**
+         * Whether the field item is empty.
+         */
+        public function isEmpty(): bool {
+          return $this->rawValue === NULL || $this->rawValue === '';
+        }
+
+      };
+    });
+    $node->method('set')->willReturnCallback(function (string $name, mixed $value) use (&$fieldValues, $node) {
+      $fieldValues[$name] = $value;
+      return $node;
+    });
     return $node;
   }
 
@@ -549,5 +647,131 @@ class MailTextsServiceTest extends UnitTestCase {
     // explicitly because it is service-provider-internal wording.
     self::assertNotContains('[node:field_service_provider:entity:name]', $tokens);
   }
+
+  /**
+   * @covers ::preview
+   */
+  public function testFindNewestNodeAppliesJurisdictionScopeForNonSuperAdmin(): void {
+    $node = $this->buildStatefulNode(42, ['request_id' => '486-2026']);
+
+    $conditionCalls = [];
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnCallback(function (...$args) use ($query, &$conditionCalls) {
+      $conditionCalls[] = $args;
+      return $query;
+    });
+    $query->method('sort')->willReturnSelf();
+    $query->method('range')->willReturnSelf();
+    $query->method('execute')->willReturn([42 => 42]);
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')->willReturn($query);
+    $storage->method('load')->willReturn($node);
+
+    $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $this->entityTypeManager->method('getStorage')->with('node')->willReturn($storage);
+
+    $this->currentUser = $this->createMock(AccountInterface::class);
+    $this->currentUser->method('id')->willReturn(7);
+    $this->currentUser->method('hasPermission')->willReturn(FALSE);
+
+    $this->jurisdictionScopeValidator = $this->createMock(JurisdictionScopeValidator::class);
+    $this->jurisdictionScopeValidator->method('getAllowedJurisdictionIds')->with($this->currentUser)->willReturn([5, 9]);
+
+    $result = $this->buildService()->preview(['subject' => 'Hi [node:request_id]']);
+
+    self::assertSame('486-2026', $result['sample_request_id']);
+    $jurisdictionCalls = array_values(array_filter(
+      $conditionCalls,
+      fn(array $call): bool => ($call[0] ?? NULL) === 'field_jurisdiction',
+    ));
+    self::assertCount(1, $jurisdictionCalls);
+    self::assertSame([5, 9], $jurisdictionCalls[0][1]);
+    self::assertSame('IN', $jurisdictionCalls[0][2]);
+  }
+
+  /**
+   * @covers ::preview
+   */
+  public function testPreviewReturnsNullSampleWhenNonSuperAdminHasNoJurisdictions(): void {
+    $this->currentUser = $this->createMock(AccountInterface::class);
+    $this->currentUser->method('id')->willReturn(7);
+    $this->currentUser->method('hasPermission')->willReturn(FALSE);
+
+    $this->jurisdictionScopeValidator = $this->createMock(JurisdictionScopeValidator::class);
+    $this->jurisdictionScopeValidator->method('getAllowedJurisdictionIds')->willReturn([]);
+
+    $result = $this->buildService()->preview(['subject' => 'Hi [node:request_id]']);
+
+    self::assertNull($result['sample_request_id']);
+  }
+
+  /**
+   * @covers ::preview
+   */
+  public function testFindNewestNodeSkipsJurisdictionScopeForPlatformAdminPermission(): void {
+    $node = $this->buildStatefulNode(42, ['request_id' => '486-2026']);
+    $this->configureNodeStorage([42], $node);
+
+    $this->currentUser = $this->createMock(AccountInterface::class);
+    $this->currentUser->method('id')->willReturn(99);
+    $this->currentUser->method('hasPermission')->willReturnMap([
+      ['administer nodes', TRUE],
+      ['administer site configuration', FALSE],
+    ]);
+    // jurisdictionScopeValidator stays NULL: a platform admin must never
+    // need it consulted.
+    $result = $this->buildService()->preview(['subject' => 'Hi [node:request_id]']);
+
+    self::assertSame('486-2026', $result['sample_request_id']);
+  }
+
+  /**
+   * @covers ::preview
+   */
+  public function testPreviewMasksPiiFieldsInTokenData(): void {
+    $node = $this->buildStatefulNode(42, [
+      'request_id' => '486-2026',
+      'field_e_mail' => 'real.citizen@example.com',
+      'field_first_name' => 'RealFirstName',
+      'field_last_name' => 'RealLastName',
+      'field_phone' => '+49 999 12345',
+      'field_address' => ['address_line1' => 'Real Street 5', 'locality' => 'RealCity'],
+    ]);
+    $this->configureNodeStorage([42], $node);
+
+    $this->token->method('replace')->willReturnCallback(
+      function ($template, array $data): string {
+        $sampleNode = $data['node'];
+        $map = [
+          '[node:field_e_mail]' => (string) $sampleNode->get('field_e_mail')->value,
+          '[node:field_first_name]' => (string) $sampleNode->get('field_first_name')->value,
+          '[node:field_last_name]' => (string) $sampleNode->get('field_last_name')->value,
+          '[node:field_phone]' => (string) $sampleNode->get('field_phone')->value,
+          '[node:field_address:address_line1]' => (string) $sampleNode->get('field_address')->address_line1,
+        ];
+        return strtr((string) $template, $map);
+      },
+    );
+
+    $result = $this->buildService()->preview([
+      'intro' => 'Hallo [node:field_first_name] [node:field_last_name], [node:field_e_mail], [node:field_phone]',
+      'body_blocks' => ['[node:field_address:address_line1]'],
+    ]);
+
+    self::assertSame(
+      'Hallo Erika Musterfrau, erika.musterfrau@example.org, +49 30 000000',
+      $result['intro'],
+    );
+    self::assertSame(['Musterstraße 1'], $result['body_blocks']);
+    // Real citizen values must never reach the resolved output.
+    self::assertStringNotContainsString('RealFirstName', $result['intro']);
+    self::assertStringNotContainsString('RealLastName', $result['intro']);
+    self::assertStringNotContainsString('real.citizen@example.com', $result['intro']);
+    self::assertStringNotContainsString('+49 999 12345', $result['intro']);
+    self::assertStringNotContainsString('Real Street 5', $result['body_blocks'][0]);
+  }
+
 
 }

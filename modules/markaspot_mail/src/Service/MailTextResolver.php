@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Service;
 
+use Drupal\Component\Utility\Xss;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Utility\Token;
 use Drupal\language\ConfigurableLanguageManagerInterface;
@@ -37,6 +38,30 @@ class MailTextResolver {
    * Slot keys read by resolve() / replaceTokens() for notification mails.
    */
   private const NOTIFICATION_SLOTS = ['subject', 'headline', 'intro', 'body_blocks', 'cta_label', 'preheader'];
+
+  /**
+   * Mail-safe HTML tags allowed in the `intro` and `body_blocks` slots.
+   *
+   * Single source of truth for markaspot_mail's Xss::filter allowlist:
+   * \Drupal\markaspot_mail\Mail\SplitParagraphsTrait::splitParagraphs()
+   * references this constant instead of keeping its own copy. Covers
+   * operator formatting intent (headings, lists, inline emphasis, links)
+   * without exposing the filterAdmin surface (<style>, <iframe>,
+   * <object>, etc., which filterAdmin permits but mail bodies never need).
+   */
+  public const MAIL_ALLOWED_TAGS = [
+    'p', 'br', 'strong', 'em', 'b', 'i', 'a', 'ul', 'ol', 'li', 'h2', 'h3', 'span',
+  ];
+
+  /**
+   * Scalar slots rendered `|raw` by mail-card-transactional.html.twig.
+   *
+   * Subject/headline/cta_label/preheader render as plain/escaped text in
+   * that template, so only these need HTML sanitizing before token
+   * replacement. body_blocks is handled separately in replaceTokens()
+   * because it is a list, not a scalar slot.
+   */
+  private const HTML_SLOTS = ['intro'];
 
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
@@ -104,6 +129,17 @@ class MailTextResolver {
    * paragraphs. Slots that are already empty are left untouched instead of
    * paying for a no-op token_replace() call.
    *
+   * intro and each body_blocks entry are run through Xss::filter(
+   * MAIL_ALLOWED_TAGS) BEFORE token replacement: these two slots are the
+   * only ones rendered `|raw` by mail-card-transactional.html.twig, so an
+   * admin-authored <script>/<img onerror>/<iframe> in the static template
+   * text would otherwise reach citizen inboxes unfiltered. Filtering
+   * before, not after, token replacement matters because [node:...]
+   * bracket syntax is untouched by Xss::filter (it only strips/allows
+   * HTML tags) but a token value inserted first could itself contain
+   * literal `<` characters that then get walked by the filter as if the
+   * admin had typed them.
+   *
    * @param array{subject: string, headline: string, intro: string, body_blocks: list<string>, cta_label: string, preheader: string} $slots
    *   The slot array as produced by resolve().
    * @param array<string, mixed> $tokenData
@@ -122,15 +158,23 @@ class MailTextResolver {
         continue;
       }
       $value = $slots[$slot] ?? '';
-      if ($value !== '') {
-        $slots[$slot] = (string) $this->token->replace((string) $value, $tokenData, $options);
+      if ($value === '') {
+        continue;
       }
+      if (in_array($slot, self::HTML_SLOTS, TRUE)) {
+        $value = Xss::filter($value, self::MAIL_ALLOWED_TAGS);
+      }
+      $slots[$slot] = (string) $this->token->replace($value, $tokenData, $options);
     }
 
     $blocks = $slots['body_blocks'] ?? [];
     if (is_array($blocks) && $blocks !== []) {
       $slots['body_blocks'] = array_map(
-        fn(string $block): string => (string) $this->token->replace($block, $tokenData, $options),
+        fn(string $block): string => (string) $this->token->replace(
+          Xss::filter($block, self::MAIL_ALLOWED_TAGS),
+          $tokenData,
+          $options
+        ),
         $blocks
       );
     }

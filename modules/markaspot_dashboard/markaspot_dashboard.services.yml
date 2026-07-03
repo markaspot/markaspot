@@ -35,6 +35,8 @@ services:
       - '@token'
       - '@logger.channel.markaspot_dashboard'
       - '@string_translation'
+      - '@current_user'
+      - '@?markaspot_group.jurisdiction_scope_validator'
 
   logger.channel.markaspot_dashboard:
     parent: logger.channel_base

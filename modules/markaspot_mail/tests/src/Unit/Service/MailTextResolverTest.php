@@ -132,6 +132,92 @@ final class MailTextResolverTest extends UnitTestCase {
   }
 
   /**
+   * Admin-authored HTML in `intro` is sanitized against the mail allowlist.
+   */
+  public function testReplaceTokensStripsScriptFromIntroButKeepsAllowedTags(): void {
+    $resolver = $this->buildResolverWithToken($this->buildPassthroughToken());
+
+    $slots = $this->emptySlots();
+    $slots['intro'] = 'Hello <script>alert(1)</script> <strong>bold</strong> <a href="https://example.org">link</a>';
+    $replaced = $resolver->replaceTokens($slots, [], 'en');
+
+    self::assertStringNotContainsString('<script>', $replaced['intro']);
+    self::assertStringNotContainsString('</script>', $replaced['intro']);
+    self::assertStringContainsString('<strong>bold</strong>', $replaced['intro']);
+    self::assertStringContainsString('<a href="https://example.org">link</a>', $replaced['intro']);
+  }
+
+  /**
+   * Admin-authored HTML in each body_blocks entry is sanitized the same way.
+   */
+  public function testReplaceTokensStripsScriptFromEachBodyBlockButKeepsAllowedTags(): void {
+    $resolver = $this->buildResolverWithToken($this->buildPassthroughToken());
+
+    $slots = $this->emptySlots();
+    $slots['body_blocks'] = [
+      '<img src=x onerror="alert(1)">Block one',
+      '<p>Block two</p> <a href="https://example.org">link</a>',
+    ];
+    $replaced = $resolver->replaceTokens($slots, [], 'en');
+
+    self::assertStringNotContainsString('<img', $replaced['body_blocks'][0]);
+    self::assertStringNotContainsString('onerror', $replaced['body_blocks'][0]);
+    self::assertStringContainsString('Block one', $replaced['body_blocks'][0]);
+    self::assertStringContainsString('<p>Block two</p>', $replaced['body_blocks'][1]);
+    self::assertStringContainsString('<a href="https://example.org">link</a>', $replaced['body_blocks'][1]);
+  }
+
+  /**
+   * Xss::filter must only touch the two `|raw` slots, intro and body_blocks.
+   *
+   * Subject/headline/cta_label/preheader render escaped/plain, not
+   * `|raw`, in mail-card-transactional.html.twig.
+   */
+  public function testReplaceTokensDoesNotXssFilterPlainRenderedSlots(): void {
+    $resolver = $this->buildResolverWithToken($this->buildPassthroughToken());
+
+    $slots = $this->emptySlots();
+    $slots['subject'] = 'Report <status> update';
+    $slots['headline'] = 'Report <status>';
+    $slots['cta_label'] = 'View <report>';
+    $slots['preheader'] = 'Preview <text>';
+    $replaced = $resolver->replaceTokens($slots, [], 'en');
+
+    self::assertSame('Report <status> update', $replaced['subject']);
+    self::assertSame('Report <status>', $replaced['headline']);
+    self::assertSame('View <report>', $replaced['cta_label']);
+    self::assertSame('Preview <text>', $replaced['preheader']);
+  }
+
+  /**
+   * Builds a six-slot array of empty scalars and an empty body_blocks list.
+   *
+   * Each XSS test only needs to fill in the one slot it exercises.
+   */
+  private function emptySlots(): array {
+    return [
+      'subject' => '',
+      'headline' => '',
+      'intro' => '',
+      'body_blocks' => [],
+      'cta_label' => '',
+      'preheader' => '',
+    ];
+  }
+
+  /**
+   * Builds a Token mock whose replace() returns its argument unchanged.
+   *
+   * For tests that only care about the Xss::filter step, not token
+   * substitution.
+   */
+  private function buildPassthroughToken(): Token {
+    $token = $this->createMock(Token::class);
+    $token->method('replace')->willReturnCallback(fn (string $tmpl): string => $tmpl);
+    return $token;
+  }
+
+  /**
    * Builds a resolver with a fixed override + default template pair.
    */
   private function buildResolver(array $override, array $default): MailTextResolver {
