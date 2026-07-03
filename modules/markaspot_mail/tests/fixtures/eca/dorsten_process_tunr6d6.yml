@@ -1,0 +1,200 @@
+uuid: 7882d102-5e1e-4883-9013-8e090869bd96
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.node.service_request.field_e_mail
+    - field.storage.node.field_e_mail
+    - node.type.service_request
+  module:
+    - eca_content
+    - modeler_api
+third_party_settings:
+  modeler_api:
+    modeler_id: fallback
+    label: process_tunr6d6
+id: process_tunr6d6
+weight: -10
+template: null
+events:
+  Event_04bz8yl:
+    plugin: 'content_entity:update'
+    label: 'Update Service Request'
+    configuration:
+      type: 'node service_request'
+    successors:
+      -
+        id: Gateway_02ldgot
+        condition: Flow_1bodg9x
+conditions:
+  Flow_1bodg9x:
+    plugin: eca_entity_field_value_changed
+    configuration:
+      negate: false
+      field_name: field_status.target_id
+      entity: ''
+  Flow_0kbs1sz:
+    plugin: eca_entity_field_value
+    configuration:
+      negate: false
+      expected_value: '15'
+      field_name: field_status.target_id
+      operator: equal
+      type: value
+      case: true
+      entity: ''
+  Flow_0ktblta:
+    plugin: eca_entity_field_value
+    configuration:
+      negate: false
+      expected_value: '1'
+      field_name: field_notification.value
+      operator: equal
+      type: value
+      case: true
+      entity: ''
+  Flow_0bs2byv:
+    plugin: eca_entity_field_value
+    configuration:
+      negate: false
+      expected_value: '30'
+      field_name: field_status.target_id
+      operator: equal
+      type: value
+      case: true
+      entity: ''
+  Flow_1joltme:
+    plugin: eca_entity_field_value
+    configuration:
+      negate: false
+      expected_value: '37'
+      field_name: field_status.target_id
+      operator: equal
+      type: value
+      case: true
+      entity: ''
+  Flow_status14:
+    plugin: eca_entity_field_value
+    configuration:
+      negate: false
+      expected_value: '14'
+      field_name: field_status.target_id
+      operator: equal
+      type: value
+      case: true
+      entity: ''
+gateways:
+  Gateway_02ldgot:
+    type: 0
+    successors:
+      -
+        id: Gateway_0nyfe5b
+        condition: Flow_0ktblta
+  Gateway_0nyfe5b:
+    type: 0
+    successors:
+      -
+        id: Activity_1u8e4au
+        condition: Flow_0kbs1sz
+      -
+        id: Activity_1rxwbas
+        condition: Flow_0bs2byv
+      -
+        id: Activity_1w5ikso
+        condition: Flow_1joltme
+      -
+        id: Activity_inbearbeitung
+        condition: Flow_status14
+actions:
+  Activity_1u8e4au:
+    label: 'E-Mail Erledigt'
+    plugin: action_send_email_action
+    configuration:
+      recipient: '[node:field_e_mail:value]'
+      subject: 'Erledigt! Ihre Meldung #[node:request_id] im Raupenmelder Dorsten'
+      message: |
+        Guten Tag!
+
+        Ihre Meldung mit der Nummer #[node:request_id] wurde bearbeitet und ist nun abgeschlossen.
+
+        Den aktuellen Stand Ihrer Meldung können Sie jederzeit hier einsehen:
+
+        [node:markaspot_frontend_url]
+
+        Vielen Dank für Ihre Unterstützung beim Schutz unserer Bäume!
+
+        --
+        Dies ist eine automatisch generierte E-Mail. Bitte antworten Sie nicht auf diese Nachricht.
+      replace_tokens: true
+      object: entity
+    successors: {  }
+  Activity_1rxwbas:
+    label: 'E-Mail Keine Zuständigkeit'
+    plugin: action_send_email_action
+    configuration:
+      recipient: '[node:field_e_mail:value]'
+      subject: 'Ihre Meldung #[node:request_id] im Raupenmelder Dorsten'
+      message: |
+        Guten Tag!
+
+        Vielen Dank für Ihre Meldung mit der Nummer #[node:request_id].
+
+        Nach Prüfung Ihrer Meldung müssen wir Ihnen leider mitteilen, dass die Stadt Dorsten für diesen Bereich oder diese Art von Anfrage nicht zuständig ist. Bitte wenden Sie sich an die zuständige Behörde.
+
+        Den aktuellen Stand Ihrer Meldung können Sie jederzeit hier einsehen:
+
+        [node:markaspot_frontend_url]
+
+        --
+        Dies ist eine automatisch generierte E-Mail. Bitte antworten Sie nicht auf diese Nachricht.
+      replace_tokens: true
+      object: entity
+    successors: {  }
+  Activity_1w5ikso:
+    label: 'E-Mail Kein Befall'
+    plugin: action_send_email_action
+    configuration:
+      recipient: '[node:field_e_mail:value]'
+      subject: 'Ihre Meldung #[node:request_id] im Raupenmelder Dorsten - Prüfung abgeschlossen'
+      message: |
+        Guten Tag!
+
+        Vielen Dank für Ihre Meldung mit der Nummer #[node:request_id].
+
+        Wir haben den gemeldeten Bereich geprüft und dabei keinen Befall durch Eichenprozessionsspinner festgestellt.
+
+        Den aktuellen Stand Ihrer Meldung können Sie jederzeit hier einsehen:
+
+        [node:markaspot_frontend_url]
+
+        Vielen Dank für Ihre Aufmerksamkeit und Ihre Unterstützung beim Schutz unserer Bäume!
+
+        --
+        Dies ist eine automatisch generierte E-Mail. Bitte antworten Sie nicht auf diese Nachricht.
+      replace_tokens: true
+      object: entity
+    successors: {  }
+  Activity_inbearbeitung:
+    label: 'E-Mail In Bearbeitung'
+    plugin: action_send_email_action
+    configuration:
+      recipient: '[node:field_e_mail:value]'
+      subject: 'Aktualisierung! Ihr Anliegen #[node:request_id] im "Raupenmelder"'
+      message: |
+        Guten Tag!
+
+        Ihre Meldung mit der Nummer #[node:request_id] wurde aktualisiert und wird nun bearbeitet.
+
+        Den aktuellen Stand Ihrer Meldung können Sie jederzeit hier einsehen:
+
+        [node:markaspot_frontend_url]
+
+        Mit freundlichen Grüßen
+
+        Stadt Dorsten
+
+        --
+        Dies ist eine automatisch generierte E-Mail. Bitte antworten Sie nicht auf diese Nachricht.
+      replace_tokens: true
+      object: entity
+    successors: {  }

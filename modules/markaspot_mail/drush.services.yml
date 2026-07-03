@@ -10,3 +10,11 @@ services:
       - '@module_handler'
     tags:
       - { name: drush.command }
+
+  markaspot_mail.mail_texts_migrate_commands:
+    class: Drupal\markaspot_mail\Commands\MailTextsMigrateCommands
+    arguments:
+      - '@markaspot_mail.eca_migrator'
+      - '@module_handler'
+    tags:
+      - { name: drush.command }

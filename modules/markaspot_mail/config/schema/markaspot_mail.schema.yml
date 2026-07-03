@@ -89,6 +89,23 @@ markaspot_mail.texts:
       type: markaspot_mail.texts.slot_set
       label: 'Status update: not responsible'
 
+# Schema for the markaspot_mail_send_notification ECA action plugin's
+# configuration, keyed by Drupal core's action.configuration.[%parent.plugin]
+# dynamic type (see core.entity.schema.yml's action_send_email_action entry
+# for the pattern this mirrors). Without this entry, config saved through
+# the ECA editor or the markaspot:mail-texts-migrate drush command has no
+# typed schema to validate against.
+action.configuration.markaspot_mail_send_notification:
+  type: mapping
+  label: 'Send notification email (Mark-a-Spot) configuration'
+  mapping:
+    notification_key:
+      type: string
+      label: 'Notification key'
+    recipient:
+      type: string
+      label: 'Recipient email address'
+
 markaspot_mail.texts.slot_set:
   type: mapping
   label: 'Notification mail text slots'

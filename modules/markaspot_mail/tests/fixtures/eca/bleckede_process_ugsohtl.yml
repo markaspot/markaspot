@@ -1,0 +1,51 @@
+uuid: 62b6c2b6-68c1-4957-8df0-4431e2818ac5
+langcode: de
+status: true
+dependencies:
+  config:
+    - field.field.node.boilerplate.field_jurisdiction
+    - field.field.node.page.field_jurisdiction
+    - field.field.node.service_request.field_e_mail
+    - field.field.node.service_request.field_jurisdiction
+    - field.storage.node.field_e_mail
+    - field.storage.node.field_jurisdiction
+    - node.type.service_request
+  module:
+    - eca_content
+id: process_ugsohtl
+weight: -10
+template: null
+events:
+  Event_1083g6k:
+    plugin: 'content_entity:insert'
+    label: 'Meldung erstellt'
+    configuration:
+      type: 'node service_request'
+    successors:
+      -
+        id: Activity_send_mail
+        condition: ''
+conditions: {  }
+gateways: {  }
+actions:
+  Activity_send_mail:
+    label: 'Eingangsbestätigung senden'
+    plugin: action_send_email_action
+    configuration:
+      recipient: '[node:field_e_mail:value]'
+      subject: '[node:field_jurisdiction:entity:field_platform_name]: Ihre Meldung [node:request_id]'
+      message: |-
+        Guten Tag,
+
+        vielen Dank für Ihre Meldung.
+
+        Ihre Meldung wurde unter der Nummer [node:request_id] erfasst und wird schnellstmöglich bearbeitet.
+
+        Sie können den aktuellen Stand Ihrer Meldung jederzeit unter folgendem Link einsehen:
+        [site:url][node:url:path]
+
+        Bei Rückfragen wenden Sie sich bitte an die zuständige Stelle.
+
+        [node:field_jurisdiction:entity:field_email_footer]
+      replace_tokens: false
+    successors: {  }

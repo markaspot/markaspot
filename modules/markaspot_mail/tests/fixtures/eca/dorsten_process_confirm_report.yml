@@ -1,0 +1,81 @@
+uuid: a81efd8e-8549-471a-a91b-a62941a85ab6
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.field.node.article.body
+    - field.field.node.boilerplate.body
+    - field.field.node.boilerplate.field_jurisdiction
+    - field.field.node.page.body
+    - field.field.node.page.field_jurisdiction
+    - field.field.node.service_request.body
+    - field.field.node.service_request.field_category
+    - field.field.node.service_request.field_e_mail
+    - field.field.node.service_request.field_jurisdiction
+    - field.storage.node.body
+    - field.storage.node.field_category
+    - field.storage.node.field_e_mail
+    - field.storage.node.field_jurisdiction
+    - node.type.service_request
+  module:
+    - eca_content
+    - modeler_api
+third_party_settings:
+  modeler_api:
+    modeler_id: fallback
+    label: 'Confirm Report'
+_core:
+  default_config_hash: QZs_0Fmo1CpzRc-8Jt7bjap6cxSNkOEb8-Qgfu27GP4
+id: process_confirm_report
+weight: 10
+template: null
+events:
+  Event_confirm_insert:
+    plugin: 'content_entity:insert'
+    label: 'Service Request Created'
+    configuration:
+      type: 'node service_request'
+    successors:
+      -
+        id: Activity_send_confirmation
+        condition: Condition_notification_enabled
+conditions:
+  Condition_notification_enabled:
+    plugin: eca_entity_field_value
+    configuration:
+      negate: false
+      expected_value: '1'
+      field_name: field_notification.value
+      operator: equal
+      type: value
+      case: true
+      entity: ''
+gateways: {  }
+actions:
+  Activity_send_confirmation:
+    label: 'Send Confirmation Email'
+    plugin: action_send_email_action
+    configuration:
+      recipient: '[node:field_e_mail:value]'
+      subject: 'Danke für Ihr Anliegen [node:request_id] im "Raupenmelder"'
+      message: |-
+        Guten Tag!
+
+        Vielen Dank für Ihre Meldung. Ihr Anliegen #[node:request_id] im "Raupenmelder" ist bei uns eingegangen und wird jetzt bearbeitet.
+
+        Kategorie: [node:field_category:entity:name]
+
+        Den aktuellen Stand Ihrer Meldung können Sie jederzeit hier einsehen:
+        [node:markaspot_frontend_url]
+
+        Aus personellen Gründen werden die Meldungen von Eichenprozessionsspinnern auf städtischen Flächen priorisiert bearbeitet. Nester auf privaten Grundstücken müssen durch die jeweiligen Eigentümerinnen und Eigentümer selbst beseitigt werden.
+
+        Weitere Informationen zum Umgang mit dem Eichenprozessionsspinner finden Sie unter:
+        https://www.dorsten.de/de/rathaus/stadtverwaltung/aemter/umwelt-und-gruen/eichenprozessionsspinner/
+
+        Mit freundlichen Grüßen
+
+        [node:field_jurisdiction:entity:field_email_footer:value]
+      replace_tokens: true
+      object: entity
+    successors: {  }

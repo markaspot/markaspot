@@ -202,3 +202,20 @@ services:
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
+
+  # Stage 5b: per-tenant migration of legacy ECA action_send_email_action
+  # actions (process_confirm_report / process_tunr6d6 / process_ugsohtl and
+  # tenant renames of the same template) onto markaspot_mail.texts +
+  # markaspot_mail_send_notification. Read (analyze) and write (apply)
+  # logic for the `markaspot:mail-texts-migrate` drush command; public
+  # because Drush's LegacyServiceInstantiator resolves the drush.services.yml
+  # arguments the same way markaspot_mail.builder_registry_public is public
+  # for the same reason.
+  markaspot_mail.eca_migrator:
+    class: Drupal\markaspot_mail\Service\EcaMailMigrator
+    arguments:
+      - '@config.factory'
+      - '@entity_type.manager'
+      - '@file_system'
+      - '@datetime.time'
+      - '@logger.channel.markaspot_mail'
