@@ -165,7 +165,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests bearer auth config.
-   *
    */
   public function testGetApiConfigBearer(): void {
     $service = $this->createService([
@@ -197,7 +196,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests API key header auth config.
-   *
    */
   public function testGetApiConfigApiKeyHeader(): void {
     $service = $this->createService();
@@ -222,7 +220,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests no auth config.
-   *
    */
   public function testGetApiConfigNoAuth(): void {
     $service = $this->createService();
@@ -248,7 +245,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests request payload structure.
-   *
    */
   public function testPrepareRequestPayloadStructure(): void {
     $service = $this->createService([
@@ -274,7 +270,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests payload omits max_tokens for vision models.
-   *
    */
   public function testPrepareRequestPayloadVisionModelNoMaxTokens(): void {
     $service = $this->createService([
@@ -291,7 +286,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests JSON schema includes all required fields.
-   *
    */
   public function testPrepareRequestPayloadJsonSchemaFields(): void {
     $service = $this->createService();
@@ -309,10 +303,28 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $this->assertContains('hazard_issues', $required);
     $this->assertContains('privacy_flag', $required);
     $this->assertContains('privacy_issues', $required);
+    // Per-image privacy attribution (WBD #137).
+    $this->assertContains('privacy_image_flags', $required);
+    $this->assertArrayHasKey('privacy_image_flags', $schema['properties']);
+    $this->assertSame('boolean', $schema['properties']['privacy_image_flags']['items']['type']);
 
     // Verify hazard_level and hazard_category are in properties.
     $this->assertArrayHasKey('hazard_level', $schema['properties']);
     $this->assertArrayHasKey('hazard_category', $schema['properties']);
+  }
+
+  /**
+   * The privacy instruction demands an exact-length per-image flag array.
+   */
+  public function testPrivacyInstructionRequestsPerImageAttribution(): void {
+    $service = $this->createService();
+    $instruction = $this->invokeMethod($service, 'buildPrivacyInstruction', [FALSE, 3]);
+    $this->assertStringContainsString('privacy_image_flags', $instruction);
+    $this->assertStringContainsString('exactly 3 booleans', $instruction);
+    // Without a count the wording stays generic but still demands the array.
+    $generic = $this->invokeMethod($service, 'buildPrivacyInstruction', [FALSE]);
+    $this->assertStringContainsString('privacy_image_flags', $generic);
+    $this->assertStringNotContainsString('exactly', $generic);
   }
 
   /**
@@ -356,7 +368,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * Internal moderation (depublishing) keys off privacy_flag, so the prompt
    * must instruct the AI to set it without depending on a tenant-configured
    * privacy policy that may be empty.
-   *
    */
   public function testBuildPrivacyInstructionAlwaysCarriesBaselinePolicy(): void {
     $service = $this->createService();
@@ -381,7 +392,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
    * controller from the blur result, NOT by the model. Successful blur alone is
    * safe to publish, but visible or insufficiently anonymised PII must still be
    * held for review.
-   *
    */
   public function testBuildPrivacyInstructionOnlyFlagsResidualIssuesWhenBlurred(): void {
     $service = $this->createService();
@@ -398,7 +408,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Without blur, the prompt carries no blur-specific language.
-   *
    */
   public function testBuildPrivacyInstructionHasNoBlurLanguageWithoutBlur(): void {
     $service = $this->createService();
@@ -412,7 +421,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * The reportability instruction defines both true and false cases.
-   *
    */
   public function testBuildReportabilityInstructionCoversBothCases(): void {
     $service = $this->createService();
@@ -430,7 +438,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Disabled blur preprocessing returns the original image.
-   *
    */
   public function testBlurSensitiveAreasReturnsOriginalWhenDisabled(): void {
     $service = $this->createService([
@@ -445,7 +452,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Enabled blur preprocessing is fail-closed when no URL is configured.
-   *
    */
   public function testBlurSensitiveAreasThrowsWhenEnabledWithoutUrl(): void {
     $this->logger->expects($this->once())->method('error');
@@ -487,7 +493,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests resolveBlurBearer: canonical MARKASPOT_BLUR_API_KEY wins.
-   *
    */
   public function testResolveBlurBearerCanonicalEnvTakesPrecedence(): void {
     putenv('MARKASPOT_BLUR_API_KEY=canonical-bearer');
@@ -503,7 +508,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests resolveBlurBearer: legacy AI_API_KEY fires deprecation warning.
-   *
    */
   public function testResolveBlurBearerLegacyEnvTriggersWarning(): void {
     putenv('AI_API_KEY=legacy-bearer');
@@ -520,7 +524,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests resolveBlurBearer: returns empty when no ENV is set.
-   *
    */
   public function testResolveBlurBearerEmptyWhenNoEnv(): void {
     // setUp has cleared both MARKASPOT_BLUR_API_KEY and AI_API_KEY.
@@ -534,7 +537,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests resolveBlurUrl: config value wins over both ENV names.
-   *
    */
   public function testResolveBlurUrlConfigTakesPrecedence(): void {
     putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
@@ -550,7 +552,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests resolveBlurUrl: canonical MARKASPOT_BLUR_URL wins over legacy.
-   *
    */
   public function testResolveBlurUrlCanonicalEnvTakesPrecedenceOverLegacy(): void {
     putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');
@@ -566,7 +567,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests resolveBlurUrl: legacy VISION_BLUR_URL fires deprecation warning.
-   *
    */
   public function testResolveBlurUrlLegacyEnvTriggersWarning(): void {
     putenv('VISION_BLUR_URL=https://legacy.example/blur');
@@ -583,7 +583,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests resolveBlurUrl: returns empty when nothing is configured.
-   *
    */
   public function testResolveBlurUrlReturnsEmptyWhenNothingConfigured(): void {
     $this->logger->expects($this->never())->method('warning');
@@ -596,7 +595,6 @@ class ImageProcessingServiceTest extends UnitTestCase {
 
   /**
    * Tests resolveBlurUrl: empty config string is treated as not-set.
-   *
    */
   public function testResolveBlurUrlEmptyConfigFallsThroughToEnv(): void {
     putenv('MARKASPOT_BLUR_URL=https://canonical.example/blur');

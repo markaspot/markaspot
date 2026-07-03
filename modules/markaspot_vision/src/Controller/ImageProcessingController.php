@@ -450,7 +450,7 @@ class ImageProcessingController extends ControllerBase {
       $response_result = $decoded_result;
       // Strip any echo of our own response-only keys in case a non-compliant
       // provider returns them; the authoritative values are computed here.
-      unset($response_result['privacy_handled_by_blur'], $response_result['blurred_previews']);
+      unset($response_result['privacy_handled_by_blur'], $response_result['blurred_previews'], $response_result['privacy_flags']);
       $all_analyzed_media_blurred = $blur_applied && !$batch_has_skipped_media;
       foreach ($media_entities as $media) {
         $media_uri = $media_uri_map[$media->id()] ?? NULL;
@@ -476,6 +476,45 @@ class ImageProcessingController extends ControllerBase {
       $response_result['privacy_flag'] = !empty($response_privacy_issues) || $batch_has_skipped_media;
       $response_result['privacy_issues'] = $response_privacy_issues;
       $response_result['privacy_handled_by_blur'] = $blur_applied;
+
+      // Response-only per-media privacy attribution, keyed by media UUID, so
+      // the citizen upload preview marks only the offending thumbnail instead
+      // of tainting every sibling (WBD #137). Sources, strongest first:
+      // skipped media fail closed (no complete analysis happened); otherwise
+      // the model's per-image flags apply (the model judges the post-blur
+      // bytes, so blur-handled faces/plates are already excluded); when the
+      // model returned no usable attribution array, every analysed media
+      // falls back to the aggregate response verdict — exactly the previous
+      // global behavior. The persisted per-media moderation verdict above is
+      // deliberately untouched: attribution here only scopes UI hints.
+      $model_image_flags = $decoded_result['privacy_image_flags'] ?? NULL;
+      $analyzed_image_count = count($file_uris) - count($skipped_uris);
+      $attribution_valid = is_array($model_image_flags)
+        && count($model_image_flags) === $analyzed_image_count;
+      $response_privacy_flags = [];
+      $model_image_index = 0;
+      foreach ($media_entities as $media) {
+        $media_uri = $media_uri_map[$media->id()] ?? NULL;
+        if (!$media_uri || isset($skipped_uris[$media_uri])) {
+          // Never analysed (no file URI or skipped): fail closed.
+          $response_privacy_flags[$media->uuid()] = TRUE;
+          continue;
+        }
+        $response_privacy_flags[$media->uuid()] = $attribution_valid
+          ? !empty($model_image_flags[$model_image_index])
+          : (bool) $response_result['privacy_flag'];
+        $model_image_index++;
+      }
+      // Contradiction guard: the model asserted an aggregate privacy problem
+      // but attributed it to no image (and nothing was skipped) — distrust
+      // the attribution and fail closed on every media.
+      if ($attribution_valid
+        && $response_result['privacy_flag']
+        && !empty($response_privacy_flags)
+        && !in_array(TRUE, $response_privacy_flags, TRUE)) {
+        $response_privacy_flags = array_fill_keys(array_keys($response_privacy_flags), TRUE);
+      }
+      $response_result['privacy_flags'] = $response_privacy_flags;
       // Blurred thumbnails (data URLs) so the citizen preview shows the
       // privacy-protected version. Only present when something was blurred.
       if (!empty($blurred_previews)) {

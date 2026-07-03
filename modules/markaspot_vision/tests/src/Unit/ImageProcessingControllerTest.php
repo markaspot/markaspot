@@ -660,6 +660,140 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Valid per-image attribution scopes the response flag to the right media.
+   */
+  public function testPerImageAttributionScopesResponsePrivacyFlags(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $mediaA = $this->createMockMedia(1, fileUri: 'public://a.jpg');
+    $mediaB = $this->createMockMedia(2, fileUri: 'public://b.jpg');
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $mediaA, 2 => $mediaB]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'desc',
+      'alt_text' => ['a', 'b'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => ['face visible'],
+      'privacy_image_flags' => [TRUE, FALSE],
+    ];
+    $this->imageProcessingService->method('processImages')
+      ->willReturn(['ai_result' => json_encode($aiResult)]);
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]);
+    $response = $this->controller->getAIResults($request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    // Aggregate stays authoritative for the banner/block.
+    $this->assertTrue($data['privacy_flag']);
+    // Only the offending media is flagged per thumbnail (WBD #137).
+    $this->assertSame(['uuid-1' => TRUE, 'uuid-2' => FALSE], $data['privacy_flags']);
+  }
+
+  /**
+   * Missing attribution falls back to the aggregate verdict on every media.
+   */
+  public function testMissingAttributionFlagsAllMediaFromAggregate(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $mediaA = $this->createMockMedia(1, fileUri: 'public://a.jpg');
+    $mediaB = $this->createMockMedia(2, fileUri: 'public://b.jpg');
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $mediaA, 2 => $mediaB]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'desc',
+      'alt_text' => ['a', 'b'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => ['face visible'],
+    ];
+    $this->imageProcessingService->method('processImages')
+      ->willReturn(['ai_result' => json_encode($aiResult)]);
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]);
+    $response = $this->controller->getAIResults($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(['uuid-1' => TRUE, 'uuid-2' => TRUE], $data['privacy_flags']);
+  }
+
+  /**
+   * Aggregate-positive but attribution-empty output fails closed on all media.
+   */
+  public function testContradictoryAttributionFailsClosedOnAllMedia(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $mediaA = $this->createMockMedia(1, fileUri: 'public://a.jpg');
+    $mediaB = $this->createMockMedia(2, fileUri: 'public://b.jpg');
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $mediaA, 2 => $mediaB]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'desc',
+      'alt_text' => ['a', 'b'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => TRUE,
+      'privacy_issues' => ['readable document'],
+      'privacy_image_flags' => [FALSE, FALSE],
+    ];
+    $this->imageProcessingService->method('processImages')
+      ->willReturn(['ai_result' => json_encode($aiResult)]);
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]);
+    $response = $this->controller->getAIResults($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(['uuid-1' => TRUE, 'uuid-2' => TRUE], $data['privacy_flags']);
+  }
+
+  /**
+   * Skipped media fails closed while analysed siblings keep their attribution.
+   */
+  public function testSkippedMediaFailsClosedInResponsePrivacyFlags(): void {
+    $this->flood->method('isAllowed')->willReturn(TRUE);
+
+    $mediaA = $this->createMockMedia(1, fileUri: 'public://a.jpg');
+    $mediaB = $this->createMockMedia(2, fileUri: 'public://b.jpg');
+    $this->mediaStorage->method('loadByProperties')->willReturn([1 => $mediaA, 2 => $mediaB]);
+
+    $aiResult = [
+      'category' => 42,
+      'description' => 'desc',
+      'alt_text' => ['a'],
+      'hazard_flag' => FALSE,
+      'hazard_level' => 0,
+      'hazard_issues' => [],
+      'privacy_flag' => FALSE,
+      'privacy_issues' => [],
+      // One analysed image (media B was skipped), attributed clean.
+      'privacy_image_flags' => [FALSE],
+    ];
+    $this->imageProcessingService->method('processImages')
+      ->willReturn([
+        'ai_result' => json_encode($aiResult),
+        'skipped_uris' => ['public://b.jpg' => 'unreadable'],
+      ]);
+
+    $request = $this->createJsonRequest(['media_ids' => ['uuid-1', 'uuid-2']]);
+    $response = $this->controller->getAIResults($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    // The skip taints the batch banner, but attribution keeps the analysed
+    // clean sibling unflagged per thumbnail.
+    $this->assertTrue($data['privacy_flag']);
+    $this->assertSame(['uuid-1' => FALSE, 'uuid-2' => TRUE], $data['privacy_flags']);
+  }
+
+  /**
    * Privacy issues hold media even when the model omits privacy_flag.
    */
   public function testPrivacyIssuesHoldMediaWhenFlagIsFalse(): void {

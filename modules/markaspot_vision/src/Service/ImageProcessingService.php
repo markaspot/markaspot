@@ -410,7 +410,7 @@ class ImageProcessingService {
 
       // Instruct AI to generate privacy-safe descriptions while leaving the
       // review policy to the configured tenant prompt.
-      $prompt .= $this->buildPrivacyInstruction($blur_applied);
+      $prompt .= $this->buildPrivacyInstruction($blur_applied, $image_count);
 
       // Off-domain detection: ask the model whether the image is actually a
       // reportable municipal issue, so the UI can ask the citizen to pick a
@@ -509,11 +509,14 @@ class ImageProcessingService {
    *
    * @param bool $blur_applied
    *   TRUE when image preprocessing already blurred sensitive regions.
+   * @param int $image_count
+   *   Number of images sent to the model; used to demand an exact-length
+   *   per-image attribution array. 0 omits the length wording.
    *
    * @return string
    *   Prompt suffix for privacy-safe AI output.
    */
-  protected function buildPrivacyInstruction(bool $blur_applied): string {
+  protected function buildPrivacyInstruction(bool $blur_applied, int $image_count = 0): string {
     // Deterministic baseline policy. This MUST stay self-contained so that
     // privacy_flag (which drives internal moderation and depublishing) is set
     // reliably for every tenant, regardless of whether the tenant configured a
@@ -523,6 +526,13 @@ class ImageProcessingService {
       . "If you detect personal data (faces, license plates, readable personal "
       . "names, documents, IDs, or house numbers), set privacy_flag to true and "
       . "list the concerns in privacy_issues. ";
+
+    // Per-image attribution so the citizen UI can mark only the offending
+    // thumbnail (WBD #137). Ordering mirrors the alt_text array contract.
+    $count_wording = $image_count > 0 ? "exactly {$image_count} booleans" : 'booleans';
+    $instruction .= "Also set privacy_image_flags to an array of {$count_wording}, "
+      . "one per image in the exact order the images are provided: true only "
+      . "if THAT specific image contains such personal data, false otherwise. ";
 
     if ($blur_applied) {
       // Faces/plates were already blurred by preprocessing. The AI must still
@@ -753,6 +763,15 @@ class ImageProcessingService {
                 'type' => 'array',
                 'items' => ['type' => 'string'],
               ],
+              // Per-image privacy attribution: one boolean per supplied image
+              // in input order, TRUE when THAT image shows personal data. The
+              // aggregate privacy_flag stays authoritative for moderation;
+              // this array only scopes the citizen-facing per-thumbnail
+              // warning so harmless siblings are not tainted (WBD #137).
+              'privacy_image_flags' => [
+                'type' => 'array',
+                'items' => ['type' => 'boolean'],
+              ],
               'hazard_level' => [
                 'type' => 'integer',
                 'minimum' => 0,
@@ -784,6 +803,7 @@ class ImageProcessingService {
               'hazard_issues',
               'privacy_flag',
               'privacy_issues',
+              'privacy_image_flags',
               'attributes',
             ],
             'additionalProperties' => FALSE,
