@@ -1,0 +1,5 @@
+markaspot_mail_texts:
+  title: 'Notification mail texts'
+  base_route_name: markaspot_mail.texts_form
+  names:
+    - markaspot_mail.texts

@@ -1,0 +1,4 @@
+'administer markaspot mail texts':
+  title: 'Administer Mark-a-Spot notification mail texts'
+  description: 'Edit the subject, headline, body and call-to-action wording of report-confirmation and status-update notification mails.'
+  restrict access: true

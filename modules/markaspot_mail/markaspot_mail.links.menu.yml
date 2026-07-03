@@ -1,0 +1,5 @@
+markaspot_mail.texts_form:
+  title: 'Mark-a-Spot notification mail texts'
+  description: 'Edit report-confirmation and status-update notification mail wording.'
+  route_name: markaspot_mail.texts_form
+  parent: system.admin_config_services

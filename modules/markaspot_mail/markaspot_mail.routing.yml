@@ -1,0 +1,9 @@
+markaspot_mail.texts_form:
+  path: '/admin/config/markaspot/mail-texts'
+  defaults:
+    _form: '\Drupal\markaspot_mail\Form\MailTextsForm'
+    _title: 'Mark-a-Spot notification mail texts'
+  options:
+    _admin_route: TRUE
+  requirements:
+    _permission: 'administer markaspot mail texts'
