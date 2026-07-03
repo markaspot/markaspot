@@ -11,6 +11,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\markaspot_mail\Service\EcaMailMigrator;
 use Drupal\taxonomy\TermInterface;
@@ -338,7 +339,12 @@ final class EcaMailMigratorTest extends UnitTestCase {
   }
 
   /**
+   * Tests tier 1 of the text-overwrite guard: shipped default in place.
    *
+   * BuildMigrator()'s default "current live config" is the real shipped
+   * install default (fresh tenant, admin form never touched), so this
+   * exercises the tier-1 branch of reconcileTextsForKey(): the write is
+   * allowed because nobody has customized the key yet.
    */
   public function testApplyRewritesActionAndWritesTextsAndBackup(): void {
     $raw = $this->loadFixture('shipped_process_confirm_report');
@@ -360,6 +366,9 @@ final class EcaMailMigratorTest extends UnitTestCase {
     $result = $migrator->apply($findings, []);
 
     $this->assertSame('migrated', $result[0]['status']);
+    $this->assertTrue($result[0]['text_applied']);
+    $this->assertFalse($result[0]['texts_preserved']);
+    $this->assertNull($result[0]['texts_preserved_reason']);
     $this->assertNotNull($result[0]['backup_path']);
 
     $this->assertSame('markaspot_mail_send_notification', $capturedEca['actions']['Activity_send_confirmation']['plugin']);
@@ -375,6 +384,96 @@ final class EcaMailMigratorTest extends UnitTestCase {
     $this->assertSame('View your report', $capturedTexts['report_confirmation']['cta_label']);
     $this->assertSame('', $capturedTexts['report_confirmation']['headline']);
     $this->assertSame('', $capturedTexts['report_confirmation']['preheader']);
+  }
+
+  /**
+   * Tests tier 2 of the text-overwrite guard: a prior run already applied.
+   *
+   * The live config for report_confirmation is seeded with EXACTLY the
+   * payload this run would produce (i.e. a second --apply of the same
+   * source config). No Config::set() call must happen — reconcileTexts
+   * ForKey() must recognize the content as already-correct and treat it
+   * as an idempotent no-op, while still reporting text_applied=true (the
+   * wording IS correctly live, this run just didn't have to do anything).
+   */
+  public function testApplyIsIdempotentWhenLiveTextsAlreadyMatchThisRun(): void {
+    $raw = $this->loadFixture('shipped_process_confirm_report');
+    $capturedEca = NULL;
+    $migrator = $this->buildMigrator(
+      ['eca.eca.process_confirm_report' => $raw],
+      editableCapture: [
+        'eca.eca.process_confirm_report' => static function (array $data) use (&$capturedEca): void {
+          $capturedEca = $data;
+        },
+      ],
+      textsCapture: function (): never {
+        $this->fail("Config::set() must not be called when the live texts already match this run's payload (tier 2).");
+      },
+      currentTextsByKey: [
+        'report_confirmation' => [
+          'subject' => 'Your Report #[node:request_id] has been received',
+          'headline' => '',
+          'intro' => 'Your report #[node:request_id] has been received.',
+          'body_blocks' => ['Category: [node:field_category:entity:name]', '[node:initial_status_note]'],
+          'cta_label' => 'View your report',
+          'preheader' => '',
+        ],
+      ],
+    );
+
+    $findings = $migrator->analyze();
+    $result = $migrator->apply($findings, []);
+
+    $this->assertSame('migrated', $result[0]['status']);
+    $this->assertTrue($result[0]['text_applied']);
+    $this->assertFalse($result[0]['texts_preserved']);
+    // The ECA action is still rewired even though the text write was a no-op.
+    $this->assertSame('markaspot_mail_send_notification', $capturedEca['actions']['Activity_send_confirmation']['plugin']);
+  }
+
+  /**
+   * Tests tier 3 of the text-overwrite guard: an admin edit is preserved.
+   *
+   * The live config for report_confirmation differs from BOTH the shipped
+   * default AND what this run would write (a hand-edited subject through
+   * the notification texts admin form). reconcileTextsForKey() must skip
+   * the write entirely, report texts_preserved=TRUE with a reason, and
+   * still migrate the ECA action itself.
+   */
+  public function testApplyPreservesAdminEditedTextsInsteadOfOverwriting(): void {
+    $raw = $this->loadFixture('shipped_process_confirm_report');
+    $capturedEca = NULL;
+    $migrator = $this->buildMigrator(
+      ['eca.eca.process_confirm_report' => $raw],
+      editableCapture: [
+        'eca.eca.process_confirm_report' => static function (array $data) use (&$capturedEca): void {
+          $capturedEca = $data;
+        },
+      ],
+      textsCapture: function (): never {
+        $this->fail("Config::set() must not be called when the live texts diverge from both the shipped default and this run's payload (tier 3).");
+      },
+      currentTextsByKey: [
+        'report_confirmation' => [
+          'subject' => 'Custom admin-edited subject, not the shipped default',
+          'headline' => 'Custom headline an admin wrote',
+          'intro' => 'Hand-authored intro text.',
+          'body_blocks' => ['A hand-authored paragraph.'],
+          'cta_label' => 'View your report',
+          'preheader' => '',
+        ],
+      ],
+    );
+
+    $findings = $migrator->analyze();
+    $result = $migrator->apply($findings, []);
+
+    $this->assertSame('migrated', $result[0]['status']);
+    $this->assertFalse($result[0]['text_applied']);
+    $this->assertTrue($result[0]['texts_preserved']);
+    $this->assertSame('existing wording differs from shipped default, keeping it', $result[0]['texts_preserved_reason']);
+    // The ECA action is migrated regardless of the guarded text write.
+    $this->assertSame('markaspot_mail_send_notification', $capturedEca['actions']['Activity_send_confirmation']['plugin']);
   }
 
   /**
@@ -431,7 +530,8 @@ final class EcaMailMigratorTest extends UnitTestCase {
    */
   public function testApplyKeepsFirstVariantTextWhenTwoActionsShareOneKey(): void {
     // See testAnalyzeFlagsSharedKeyConflictBetweenDifferentlyWordedInsertBranches()
-    // for why status is force-enabled on this shipped-but-disabled fixture.
+    // for why status is force-enabled on this shipped-but-disabled
+    // fixture.
     $raw = $this->loadFixture('shipped_process_ugsohtl');
     $raw['status'] = TRUE;
     $capturedTexts = [];
@@ -551,12 +651,18 @@ final class EcaMailMigratorTest extends UnitTestCase {
    * @param null|callable(string, array<string, mixed>): void $textsCapture
    *   Invoked once per Config::set() call on the markaspot_mail.texts
    *   editable config, for apply() assertions.
+   * @param array<string, array<string, mixed>> $currentTextsByKey
+   *   Notification key => six-slot array simulating the live
+   *   markaspot_mail.texts config BEFORE this apply() run, for
+   *   reconcileTextsForKey() tier assertions. A key absent from this map
+   *   defaults to the real shipped install default for that key.
    */
   private function buildMigrator(
     array $rawByName = [],
     array $termNamesByTid = [],
     array $editableCapture = [],
     ?callable $textsCapture = NULL,
+    array $currentTextsByKey = [],
   ): EcaMailMigrator {
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('listAll')->willReturnCallback(
@@ -567,7 +673,7 @@ final class EcaMailMigratorTest extends UnitTestCase {
       $config->method('getRawData')->willReturn($rawByName[$name] ?? []);
       return $config;
     });
-    $configFactory->method('getEditable')->willReturnCallback(function (string $name) use ($rawByName, $editableCapture, $textsCapture): Config {
+    $configFactory->method('getEditable')->willReturnCallback(function (string $name) use ($rawByName, $editableCapture, $textsCapture, $currentTextsByKey): Config {
       $config = $this->createMock(Config::class);
       $config->method('getRawData')->willReturn($rawByName[$name] ?? []);
       $config->method('setData')->willReturnCallback(function (array $data) use ($config, $name, $editableCapture): Config {
@@ -576,6 +682,17 @@ final class EcaMailMigratorTest extends UnitTestCase {
         }
         return $config;
       });
+      if ($name === 'markaspot_mail.texts') {
+        // Simulates the live config's pre-run state for reconcileTextsForKey().
+        // Unless a test explicitly overrides a key via $currentTextsByKey,
+        // it defaults to the REAL shipped install default for that key —
+        // i.e. "fresh tenant, admin form never touched" — which is exactly
+        // the scenario every existing (pre-guard) test already assumed, so
+        // none of them need to change.
+        $config->method('get')->willReturnCallback(
+          fn (string $key) => $currentTextsByKey[$key] ?? $this->loadShippedDefaultSlots($key),
+        );
+      }
       if ($textsCapture !== NULL) {
         $config->method('set')->willReturnCallback(function (string $key, $value) use ($config, $textsCapture): Config {
           $textsCapture($key, $value);
@@ -610,9 +727,36 @@ final class EcaMailMigratorTest extends UnitTestCase {
     $time = $this->createMock(TimeInterface::class);
     $time->method('getCurrentTime')->willReturn(1700000000);
 
+    $moduleExtensionList = $this->createMock(ModuleExtensionList::class);
+    $moduleExtensionList->method('getPath')->with('markaspot_mail')->willReturn($this->markaspotMailModulePath());
+
     $logger = $this->createMock(LoggerInterface::class);
 
-    return new EcaMailMigrator($configFactory, $entityTypeManager, $fileSystem, $time, $logger);
+    return new EcaMailMigrator($configFactory, $entityTypeManager, $fileSystem, $time, $moduleExtensionList, $logger);
+  }
+
+  /**
+   * Reads one notification_key's slots from the REAL shipped install file.
+   *
+   * Backs buildMigrator()'s default "current live config" simulation, and
+   * is used directly by tier-1/tier-2 tests to build expected payloads
+   * without duplicating the file's content in the test.
+   *
+   * @return array<string, mixed>
+   *   The shipped slots for $key, or an empty array if missing.
+   */
+  private function loadShippedDefaultSlots(string $key): array {
+    $path = $this->markaspotMailModulePath() . '/config/install/markaspot_mail.texts.yml';
+    $decoded = Yaml::decode((string) file_get_contents($path));
+    $slots = is_array($decoded) ? ($decoded[$key] ?? []) : [];
+    return is_array($slots) ? $slots : [];
+  }
+
+  /**
+   * Resolves the markaspot_mail module's root directory.
+   */
+  private function markaspotMailModulePath(): string {
+    return dirname(__DIR__, 4);
   }
 
 }

@@ -218,4 +218,5 @@ services:
       - '@entity_type.manager'
       - '@file_system'
       - '@datetime.time'
+      - '@extension.list.module'
       - '@logger.channel.markaspot_mail'

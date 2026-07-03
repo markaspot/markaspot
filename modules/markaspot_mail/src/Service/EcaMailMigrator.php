@@ -9,6 +9,7 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleExtensionList;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\markaspot_mail\Mail\SplitParagraphsTrait;
@@ -31,7 +32,12 @@ use Psr\Log\LoggerInterface;
  * `markaspot:mail-texts-migrate` drush command: analyze() is a pure
  * read-only scan that never touches config, apply() performs the actual
  * config rewrite (with a pre-write YAML backup) and is idempotent against
- * actions already migrated.
+ * actions already migrated. The ECA action itself is always rewired onto
+ * markaspot_mail_send_notification, but the markaspot_mail.texts write
+ * for its key is three-way guarded (see reconcileTextsForKey()) so a
+ * re-run — or a later --map override landing on an already-migrated key
+ * — never clobbers wording an admin has since edited through the notification
+ * texts form.
  *
  * The heuristic mapping from an ECA branch to a markaspot_mail.texts key
  * is deliberately conservative: insert-triggered models always suggest
@@ -61,6 +67,8 @@ final class EcaMailMigrator {
 
   private const BACKUP_DIRECTORY = 'public://markaspot_mail_migrate_backup';
 
+  private const SHIPPED_TEXTS_FILE = 'config/install/markaspot_mail.texts.yml';
+
   /**
    * The four notification keys markaspot_mail.texts ships today.
    *
@@ -89,11 +97,19 @@ final class EcaMailMigrator {
 
   private const OPEN_KEYWORDS = ['offen', 'open', 'bearbeitung', 'progress', 'update'];
 
+  /**
+   * Lazily-loaded, cached decode of config/install/markaspot_mail.texts.yml.
+   *
+   * @var array<string, array<string, mixed>>|null
+   */
+  private ?array $shippedDefaultsCache = NULL;
+
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly FileSystemInterface $fileSystem,
     private readonly TimeInterface $time,
+    private readonly ModuleExtensionList $moduleExtensionList,
     private readonly LoggerInterface $logger,
   ) {}
 
@@ -130,6 +146,18 @@ final class EcaMailMigrator {
   /**
    * Applies the migration for a set of findings.
    *
+   * Text writes are guarded three ways per notification_key, so a re-run
+   * (or a --map override landing on an already-migrated key) never
+   * clobbers an admin's post-migration edit: (1) the live config for the
+   * key still matches the shipped install default — a first migration
+   * replacing neutral boilerplate with tenant wording, write it; (2) the
+   * live config already matches what this run would write — idempotent,
+   * no-op; (3) the live config differs from both — an admin (or an
+   * earlier migration run) has customized it, so the write is skipped
+   * entirely and the row is flagged texts_preserved with a reason. In all
+   * three cases the ECA action itself is still rewired onto
+   * markaspot_mail_send_notification; only the text write is guarded.
+   *
    * @param list<array<string, mixed>> $findings
    *   Findings as returned by analyze() (or a filtered subset of it).
    * @param array<string, string> $mapOverrides
@@ -141,7 +169,8 @@ final class EcaMailMigrator {
    * @return list<array<string, mixed>>
    *   One result row per finding: config_name, activity_id,
    *   notification_key, status (migrated|skipped_unresolved|
-   *   already_migrated), text_applied (bool), discarded_variant_of
+   *   already_migrated), text_applied (bool), texts_preserved (bool),
+   *   texts_preserved_reason (string or NULL), discarded_variant_of
    *   (activity ID or NULL), backup_path (or NULL for
    *   skipped/already_migrated rows).
    */
@@ -167,13 +196,13 @@ final class EcaMailMigrator {
         $activityId = (string) $finding['activity_id'];
 
         if ($finding['_plugin'] === self::NOTIFICATION_PLUGIN) {
-          $report[] = $this->applyResultRow($configName, $activityId, (string) $finding['suggested_key'], 'already_migrated', FALSE, NULL, NULL);
+          $report[] = $this->applyResultRow($configName, $activityId, (string) $finding['suggested_key'], 'already_migrated', FALSE, NULL, NULL, FALSE, NULL);
           continue;
         }
 
         $key = $mapOverrides[$activityId] ?? $finding['suggested_key'];
         if ($key === NULL || $key === '') {
-          $report[] = $this->applyResultRow($configName, $activityId, '', 'skipped_unresolved', FALSE, NULL, NULL);
+          $report[] = $this->applyResultRow($configName, $activityId, '', 'skipped_unresolved', FALSE, NULL, NULL, FALSE, NULL);
           continue;
         }
 
@@ -181,11 +210,17 @@ final class EcaMailMigrator {
           $backupPath = $this->writeBackup($configName, $raw, $timestamp);
         }
 
-        $textWinner = !isset($usedKeysThisRun[$key]);
-        if ($textWinner) {
-          $this->applyTextsForKey($textsConfig, $key, $finding);
+        $isFirstForKey = !isset($usedKeysThisRun[$key]);
+        $textApplied = FALSE;
+        $textsPreserved = FALSE;
+        $textsPreservedReason = NULL;
+
+        if ($isFirstForKey) {
           $usedKeysThisRun[$key] = $activityId;
-          $textsChanged = TRUE;
+          [$textApplied, $textsPreserved, $textsPreservedReason, $written] = $this->reconcileTextsForKey($textsConfig, $key, $finding);
+          if ($written) {
+            $textsChanged = TRUE;
+          }
         }
 
         $raw['actions'][$activityId] = [
@@ -204,9 +239,11 @@ final class EcaMailMigrator {
           $activityId,
           $key,
           'migrated',
-          $textWinner,
-          $textWinner ? NULL : $usedKeysThisRun[$key],
+          $textApplied,
+          $isFirstForKey ? NULL : $usedKeysThisRun[$key],
           $backupPath,
+          $textsPreserved,
+          $textsPreservedReason,
         );
       }
 
@@ -223,6 +260,43 @@ final class EcaMailMigrator {
   }
 
   /**
+   * Applies the three-tier text-overwrite guard for one notification_key.
+   *
+   * Only called once per key per apply() run (the first action claiming
+   * that key); every later action targeting the same key is reported as
+   * a discarded_variant_of duplicate by the caller and never reaches
+   * here, regardless of which tier this call resolved to.
+   *
+   * @return array{0: bool, 1: bool, 2: string|null, 3: bool}
+   *   [textApplied, textsPreserved, textsPreservedReason, wroteConfig].
+   */
+  private function reconcileTextsForKey(Config $textsConfig, string $key, array $finding): array {
+    $wouldWrite = $this->buildTextsPayload($finding);
+    $current = $this->normalizeSlots((array) $textsConfig->get($key));
+    $shippedDefault = $this->normalizeSlots($this->getShippedDefaultSlots($key));
+
+    if ($current === $shippedDefault) {
+      // Tier 1: still the neutral shipped boilerplate, safe to replace
+      // with the tenant's own wording.
+      $textsConfig->set($key, $wouldWrite);
+      return [TRUE, FALSE, NULL, TRUE];
+    }
+
+    if ($current === $wouldWrite) {
+      // Tier 2: already exactly what this run would write (a previous
+      // apply() run, most likely) — idempotent no-op.
+      return [TRUE, FALSE, NULL, FALSE];
+    }
+
+    // Tier 3: live config has been customized (an admin edit, or a prior
+    // migration run with different source wording) and matches neither
+    // the shipped default nor this action's own text. The ECA action is
+    // still rewired by the caller; only the text write is skipped so the
+    // customization survives.
+    return [FALSE, TRUE, 'existing wording differs from shipped default, keeping it', FALSE];
+  }
+
+  /**
    * Builds one apply() result row.
    *
    * @return array<string, mixed>
@@ -236,6 +310,8 @@ final class EcaMailMigrator {
     bool $textApplied,
     ?string $discardedVariantOf,
     ?string $backupPath,
+    bool $textsPreserved,
+    ?string $textsPreservedReason,
   ): array {
     return [
       'config_name' => $configName,
@@ -245,28 +321,84 @@ final class EcaMailMigrator {
       'text_applied' => $textApplied,
       'discarded_variant_of' => $discardedVariantOf,
       'backup_path' => $backupPath,
+      'texts_preserved' => $textsPreserved,
+      'texts_preserved_reason' => $textsPreservedReason,
     ];
   }
 
   /**
-   * Writes subject/intro/body_blocks/cta_label for one notification key.
+   * Builds the subject/intro/body_blocks/cta_label payload for one action.
    *
-   * Headline and preheader are deliberately left empty: NotificationText
-   * Builder renders correctly without them, and there is no legacy source
-   * field to invent them from.
+   * Pure: does not touch config. Headline and preheader are deliberately
+   * left empty: NotificationTextBuilder renders correctly without them,
+   * and there is no legacy source field to invent them from.
+   *
+   * @return array{subject: string, headline: string, intro: string, body_blocks: list<string>, cta_label: string, preheader: string}
+   *   The six-slot payload this action's wording would write.
    */
-  private function applyTextsForKey(Config $textsConfig, string $key, array $finding): void {
+  private function buildTextsPayload(array $finding): array {
     $subject = trim((string) $finding['_subject_raw']);
     $transformed = $this->transformMessage((string) $finding['_message_raw']);
 
-    $textsConfig->set($key, [
+    return [
       'subject' => $subject,
       'headline' => '',
       'intro' => $transformed['intro'],
       'body_blocks' => $transformed['body_blocks'],
       'cta_label' => $transformed['cta_label'],
       'preheader' => '',
-    ]);
+    ];
+  }
+
+  /**
+   * Normalizes a six-slot texts array for exact-equality comparison.
+   *
+   * Coerces missing keys to their empty value so a live config entry, a
+   * shipped-default entry and a freshly-built payload compare equal
+   * whenever their actual content matches, regardless of which keys each
+   * source happened to have present.
+   *
+   * @param array<string, mixed> $slots
+   *   A slot_set-shaped array (subject/headline/intro/body_blocks/
+   *   cta_label/preheader), possibly with missing keys.
+   *
+   * @return array{subject: string, headline: string, intro: string, body_blocks: list<string>, cta_label: string, preheader: string}
+   *   The same slots with every key present and type-coerced.
+   */
+  private function normalizeSlots(array $slots): array {
+    return [
+      'subject' => (string) ($slots['subject'] ?? ''),
+      'headline' => (string) ($slots['headline'] ?? ''),
+      'intro' => (string) ($slots['intro'] ?? ''),
+      'body_blocks' => array_values(array_map('strval', (array) ($slots['body_blocks'] ?? []))),
+      'cta_label' => (string) ($slots['cta_label'] ?? ''),
+      'preheader' => (string) ($slots['preheader'] ?? ''),
+    ];
+  }
+
+  /**
+   * Reads one notification_key's slots from the shipped install default.
+   *
+   * Reads config/install/markaspot_mail.texts.yml directly off disk
+   * (never the active config store — that is what apply() is about to
+   * overwrite) so a freshly-installed tenant that never touched the
+   * admin form is recognized as "still neutral, safe to replace", while
+   * a tenant that edited even one slot after installing is not.
+   *
+   * @return array<string, mixed>
+   *   The shipped slots for $key, or an empty array if the key or file is
+   *   missing (fails safe towards tier 3 "preserve", never towards
+   *   tier 1 "overwrite").
+   */
+  private function getShippedDefaultSlots(string $key): array {
+    if ($this->shippedDefaultsCache === NULL) {
+      $path = $this->moduleExtensionList->getPath('markaspot_mail') . '/' . self::SHIPPED_TEXTS_FILE;
+      $contents = @file_get_contents($path);
+      $decoded = $contents !== FALSE ? Yaml::decode($contents) : NULL;
+      $this->shippedDefaultsCache = is_array($decoded) ? $decoded : [];
+    }
+    $slots = $this->shippedDefaultsCache[$key] ?? [];
+    return is_array($slots) ? $slots : [];
   }
 
   /**
