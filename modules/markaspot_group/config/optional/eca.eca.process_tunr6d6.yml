@@ -27,7 +27,7 @@ conditions:
     plugin: eca_entity_field_value_changed
     configuration:
       field_name: field_status.target_id
-      negate: true
+      negate: false
       entity: ''
   Flow_0kbs1sz:
     plugin: eca_entity_field_value
@@ -37,7 +37,7 @@ conditions:
       operator: equal
       type: value
       case: true
-      negate: true
+      negate: false
       entity: ''
   Flow_0ktblta:
     plugin: eca_entity_field_value
@@ -47,7 +47,7 @@ conditions:
       operator: equal
       type: value
       case: true
-      negate: true
+      negate: false
       entity: ''
   Flow_0bs2byv:
     plugin: eca_entity_field_value
@@ -57,7 +57,7 @@ conditions:
       operator: equal
       type: value
       case: true
-      negate: true
+      negate: false
       entity: ''
   Flow_1joltme:
     plugin: eca_entity_field_value
@@ -67,7 +67,7 @@ conditions:
       operator: equal
       type: value
       case: true
-      negate: true
+      negate: false
       entity: ''
 gateways:
   Gateway_02ldgot:
