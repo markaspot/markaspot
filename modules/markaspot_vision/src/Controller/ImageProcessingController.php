@@ -373,7 +373,14 @@ class ImageProcessingController extends ControllerBase {
           // $privacy_held is the same predicate markaspot_vision's node hook
           // applies on later saves. Successful blur clears the persisted hold
           // above, so anonymised media can stay published.
-          if (!$privacy_held) {
+          //
+          // Skip when the publication is under explicit editorial control via
+          // the GeoReport media publication API: a trusted consumer's decision
+          // wins over (re-)screening, so a re-analysis must not flip the state
+          // back. Fresh uploads have no such mark, so first-screen publishing
+          // is unaffected.
+          $manual_publication = $this->keyValue('markaspot_open311.media_publication_manual');
+          if (!$manual_publication->get($media->id()) && !$privacy_held) {
             $media->setPublished();
           }
 

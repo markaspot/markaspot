@@ -30,6 +30,8 @@ use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
+use Drupal\Core\KeyValueStore\KeyValueFactoryInterface;
+use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
@@ -179,6 +181,13 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
   protected $logger;
 
   /**
+   * The keyvalue store factory, if injected.
+   *
+   * @var \Drupal\Core\KeyValueStore\KeyValueFactoryInterface|null
+   */
+  protected ?KeyValueFactoryInterface $keyValueFactory;
+
+  /**
    * The database connection.
    *
    * @var \Drupal\Core\Database\Connection
@@ -281,6 +290,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The jurisdiction hierarchy resolver.
    * @param \Psr\Log\LoggerInterface|null $logger
    *   The logger channel.
+   * @param \Drupal\Core\KeyValueStore\KeyValueFactoryInterface|null $keyValueFactory
+   *   The keyvalue store factory.
    */
   public function __construct(
     ConfigFactoryInterface $configFactory,
@@ -301,6 +312,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     AccountSwitcherInterface $accountSwitcher,
     ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
     ?LoggerInterface $logger = NULL,
+    ?KeyValueFactoryInterface $keyValueFactory = NULL,
   ) {
     $this->configFactory = $configFactory;
     $this->currentUser = $currentUser;
@@ -320,6 +332,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     $this->accountSwitcher = $accountSwitcher;
     $this->hierarchyResolver = $hierarchyResolver;
     $this->logger = $logger;
+    $this->keyValueFactory = $keyValueFactory;
   }
 
   /**
@@ -3969,12 +3982,29 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   Array of media items with mid and published status.
    *   Can also use 'delta' instead of 'mid' to reference media by position.
    * @param \Drupal\Core\Entity\ContentEntityInterface|null $node
-   *   Optional node entity to look up media by delta position.
+   *   The scope-validated service request node the media must belong to. Kept
+   *   nullable for GeoreportProcessorServiceInterface compatibility but
+   *   effectively required and asserted below: normalizeMediaPublishedUpdate()
+   *   only enforces that each target media is referenced by this node when a
+   *   node is present, and that scoping is the guard preventing a caller from
+   *   flipping publication (and disabling the AI/PII safety net) on arbitrary
+   *   media IDs. The sole caller (GeoreportRequestResource::processUpdateFields)
+   *   passes the node loaded via loadScopedRequestNode() after the dual
+   *   permission gate.
    *
+   * @throws \InvalidArgumentException
+   *   If called without the scope-validated node.
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If there is an error saving the media entity.
    */
   public function updateMediaPublishedStatus(array $mediaUpdates, $node = NULL): void {
+    // Hard precondition: the node scoping is the guard that keeps this method
+    // from mutating publication on media outside the caller's jurisdiction.
+    // Never let a future caller reach the write path without it.
+    if (!$node instanceof ContentEntityInterface) {
+      throw new \InvalidArgumentException('updateMediaPublishedStatus() requires the scope-validated request node.');
+    }
+
     $mediaIdsByDelta = $this->getRequestMediaIdsByDelta($node);
 
     foreach ($mediaUpdates as $delta => $mediaUpdate) {
@@ -4007,7 +4037,36 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         }
         $media->save();
       }
+
+      // Record that this media's publication is now under explicit editorial
+      // control, regardless of publish direction or whether a save was needed
+      // (the mark must also stick when the requested state already matched).
+      // The 'update open311 request media publication' permission is
+      // restrict-access (trusted roles / human-in-the-loop only), so once such
+      // a consumer sets the state, the AI publication pipeline must hand off
+      // entirely: markaspot_vision's node-save hook and the AI screening
+      // controller both consult this mark and skip manually controlled media
+      // (privacy safety net included). The last explicit decision wins; there
+      // is deliberately no path back to automatic management short of
+      // deleting and re-uploading the media. Cleaned up in
+      // markaspot_open311_media_delete().
+      $this->manualMediaPublication()->set($mid, TRUE);
     }
+  }
+
+  /**
+   * Returns the keyvalue store flagging manually controlled media publication.
+   *
+   * Written here on GeoReport media publication updates, read by
+   * _markaspot_vision_publish_safe_media() and the markaspot_vision AI
+   * screening controller so their automatic publish/unpublish decisions do
+   * not override a deliberate editorial call, and cleaned up in
+   * markaspot_open311_media_delete(). The static fallback only covers direct
+   * instantiation without the optional keyvalue factory.
+   */
+  protected function manualMediaPublication(): KeyValueStoreInterface {
+    $factory = $this->keyValueFactory ?? \Drupal::service('keyvalue');
+    return $factory->get('markaspot_open311.media_publication_manual');
   }
 
   /**

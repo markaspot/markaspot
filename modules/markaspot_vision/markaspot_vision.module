@@ -79,7 +79,29 @@ function _markaspot_vision_publish_safe_media(NodeInterface $node): void {
 
   $require_screening = \Drupal::config('markaspot_vision.settings')->get('require_ai_screening') ?? TRUE;
 
+  $manual_publication = \Drupal::keyValue('markaspot_open311.media_publication_manual');
+
   foreach ($media_field->referencedEntities() as $media) {
+    // Media whose publication was explicitly set through the GeoReport media
+    // publication API is under editorial (human-in-the-loop / trusted
+    // consumer) control. That decision is authoritative and wins over the
+    // whole AI publication pipeline — including the PII safety net below.
+    // The gating permission is restrict-access, so we assume the consumer
+    // knows what it is doing; automatic (un)publishing must not override it.
+    //
+    // Default to "not manually controlled" if the keyvalue lookup fails: a
+    // backend hiccup must not abort the whole node save. The AI branches
+    // below fail closed on PII on their own, so degrading to them is safe.
+    try {
+      $is_manual = (bool) $manual_publication->get($media->id());
+    }
+    catch (\Exception $e) {
+      $is_manual = FALSE;
+    }
+    if ($is_manual) {
+      continue;
+    }
+
     $ai_completed = !empty($media->get('field_ai_metadata')->value);
     $has_privacy_flag = !empty($media->get('field_ai_privacy_flag')->value);
     $privacy_issues = $media->hasField('field_ai_privacy_issues')

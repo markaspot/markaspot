@@ -238,3 +238,14 @@ function _markaspot_open311_term_jurisdiction(TermInterface $term): ?GroupInterf
   $entity = $term->get('field_jurisdiction')->entity;
   return $entity instanceof GroupInterface ? $entity : NULL;
 }
+
+/**
+ * Implements hook_ENTITY_TYPE_delete() for media entities.
+ *
+ * Drops the manual publication mark that updateMediaPublishedStatus() records
+ * for explicit GeoReport publish/unpublish decisions, so the keyvalue
+ * collection does not accumulate entries for deleted media.
+ */
+function markaspot_open311_media_delete(EntityInterface $media): void {
+  \Drupal::keyValue('markaspot_open311.media_publication_manual')->delete($media->id());
+}

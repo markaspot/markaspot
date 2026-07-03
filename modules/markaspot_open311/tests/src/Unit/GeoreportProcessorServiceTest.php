@@ -21,6 +21,7 @@ use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\media\MediaInterface;
+use Drupal\Core\KeyValueStore\KeyValueMemoryFactory;
 use Drupal\Core\Messenger\MessengerInterface;
 use Drupal\Core\Session\AccountSwitcherInterface;
 use Drupal\Core\Session\AccountProxyInterface;
@@ -134,6 +135,13 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   protected $mediaStorage;
 
   /**
+   * In-memory keyvalue factory backing the manual media publication store.
+   *
+   * @var \Drupal\Core\KeyValueStore\KeyValueMemoryFactory
+   */
+  protected KeyValueMemoryFactory $keyValueFactory;
+
+  /**
    * Mocked group relationship storage.
    *
    * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -243,6 +251,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       $accountSwitcher,
       $this->hierarchyResolver,
       $this->logger,
+      $this->keyValueFactory = new KeyValueMemoryFactory(),
     );
   }
 
@@ -1401,6 +1410,11 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         'status' => '0',
       ],
     ], $node);
+
+    // The explicit unpublish must mark the media as manually controlled so the
+    // markaspot_vision AI pipeline hands off and does not revert it on the
+    // next node save.
+    $this->assertTrue((bool) $this->keyValueFactory->get('markaspot_open311.media_publication_manual')->get(10));
   }
 
   /**
@@ -1430,6 +1444,42 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         'published' => 'false',
       ],
     ], $node);
+
+    $this->assertTrue((bool) $this->keyValueFactory->get('markaspot_open311.media_publication_manual')->get(11));
+  }
+
+  /**
+   * An explicit publish also marks the media as manually controlled.
+   *
+   * The mark is symmetric: any deliberate GeoReport decision (publish or
+   * unpublish) hands control to the editorial consumer, so a subsequent AI
+   * screening pass cannot flip an explicitly published media back.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusPublishMarksManualControl(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10]);
+    $media = $this->createMock(MediaInterface::class);
+    $this->currentUser->method('hasPermission')
+      ->with('update open311 request media publication')
+      ->willReturn(TRUE);
+    $media->method('isPublished')->willReturn(FALSE);
+    $media->expects($this->once())->method('setPublished');
+    $media->expects($this->once())->method('save');
+
+    $this->mediaStorage->expects($this->once())
+      ->method('load')
+      ->with(10)
+      ->willReturn($media);
+
+    $this->processor->updateMediaPublishedStatus([
+      0 => [
+        'target_id' => 10,
+        'status' => '1',
+      ],
+    ], $node);
+
+    $this->assertTrue((bool) $this->keyValueFactory->get('markaspot_open311.media_publication_manual')->get(10));
   }
 
   /**

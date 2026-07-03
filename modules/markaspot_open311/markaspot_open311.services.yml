@@ -15,7 +15,7 @@ services:
 
   markaspot_open311.processor:
     class: Drupal\markaspot_open311\Service\GeoreportProcessorService
-    arguments: ['@config.factory', '@current_user', '@datetime.time', '@request_stack', '@entity_type.manager', '@file_url_generator', '@module_handler', '@entity_field.manager', '@stream_wrapper_manager', '@token', '@language_manager', '@database', '@file_system', '@http_client', '@messenger', '@account_switcher', '@markaspot_group.hierarchy_resolver', '@logger.channel.markaspot_open311']
+    arguments: ['@config.factory', '@current_user', '@datetime.time', '@request_stack', '@entity_type.manager', '@file_url_generator', '@module_handler', '@entity_field.manager', '@stream_wrapper_manager', '@token', '@language_manager', '@database', '@file_system', '@http_client', '@messenger', '@account_switcher', '@markaspot_group.hierarchy_resolver', '@logger.channel.markaspot_open311', '@keyvalue']
 
   markaspot_open311.georeport_processor:
     alias: markaspot_open311.processor
