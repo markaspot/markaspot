@@ -9,6 +9,7 @@ use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
+use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
@@ -28,10 +29,13 @@ use Psr\Log\LoggerInterface;
  *   - node: NodeInterface (service_request)
  *   - notification_key: string, a top-level key in markaspot_mail.texts
  *
- * The CTA always points at the node's own canonical URL — the same
- * "[site:url][node:url:path]" self-link the legacy ECA texts hardcoded —
- * computed here rather than sourced from config, since it never varies
- * per notification key. The jurisdiction footer (field_email_footer) and
+ * The CTA points at the CITIZEN frontend (branding frontend_base_url +
+ * jurisdiction slug + /requests/<request_id>), never at the node's
+ * canonical Drupal URL: the legacy "[site:url][node:url:path]" self-link
+ * resolved to the backend host and to "http://default" in CLI/cron
+ * contexts. When the branding package has no frontend base or the node
+ * has no request_id, the CTA is omitted entirely rather than emitting a
+ * broken link. The jurisdiction footer (field_email_footer) and
  * Reply-To (field_jurisdiction_e_mail) are NOT duplicated into body_blocks:
  * MailBrandingService already renders both automatically for jurisdiction-
  * mode mails (Zone-1 footer + Reply-To header), so the config-driven body
@@ -50,6 +54,7 @@ final class NotificationTextBuilder implements MailBuilderInterface {
 
   public function __construct(
     private readonly MailTextResolver $textResolver,
+    private readonly MailBrandingService $branding,
     private readonly LoggerInterface $logger,
   ) {}
 
@@ -100,8 +105,11 @@ final class NotificationTextBuilder implements MailBuilderInterface {
       'body_blocks' => $slots['body_blocks'],
     ];
     if ($slots['cta_label'] !== '') {
-      $content['cta_label'] = $slots['cta_label'];
-      $content['cta_url'] = $node->toUrl('canonical', ['absolute' => TRUE])->toString();
+      $ctaUrl = $this->buildCitizenRequestUrl($node, $mode, $jurisdictionId, $ctx->langcode);
+      if ($ctaUrl !== '') {
+        $content['cta_label'] = $slots['cta_label'];
+        $content['cta_url'] = $ctaUrl;
+      }
     }
 
     return new MailMessage(
@@ -111,6 +119,33 @@ final class NotificationTextBuilder implements MailBuilderInterface {
       mode: $mode,
       jurisdictionId: $jurisdictionId,
     );
+  }
+
+  /**
+   * Builds the citizen-frontend URL for the request, or '' when unbuildable.
+   *
+   * Mirrors FeedbackRequestBuilder: branding frontend_base_url + optional
+   * jurisdiction slug prefix + /requests/<request_id>. Returns '' (CTA
+   * omitted) when the tenant has no frontend base configured or the node
+   * carries no request_id — a missing button beats a dead link.
+   */
+  private function buildCitizenRequestUrl(NodeInterface $node, string $mode, ?int $jurisdictionId, string $langcode): string {
+    if (!$node->hasField('request_id') || $node->get('request_id')->isEmpty()) {
+      return '';
+    }
+    $requestId = trim($node->get('request_id')->getString());
+    if ($requestId === '') {
+      return '';
+    }
+
+    $brandingPackage = $this->branding->getBranding($jurisdictionId, $mode, $langcode);
+    $frontendBase = rtrim((string) ($brandingPackage['frontend_base_url'] ?? ''), '/');
+    if ($frontendBase === '') {
+      return '';
+    }
+    $slug = (string) ($brandingPackage['jurisdiction_slug'] ?? '');
+
+    return $frontendBase . ($slug !== '' ? '/' . $slug : '') . '/requests/' . rawurlencode($requestId);
   }
 
   /**

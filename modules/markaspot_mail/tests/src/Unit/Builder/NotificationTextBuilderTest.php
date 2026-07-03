@@ -11,11 +11,11 @@ use PHPUnit\Framework\Attributes\Group;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Language\LanguageInterface;
-use Drupal\Core\Url;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\Builder\NotificationTextBuilder;
 use Drupal\markaspot_mail\Mail\MailContext;
+use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\markaspot_mail\Service\MailTextResolver;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
@@ -131,7 +131,7 @@ final class NotificationTextBuilderTest extends UnitTestCase {
     $this->assertSame('We received your report', $msg->content['headline']);
     $this->assertSame(['Category: Pothole'], $msg->content['body_blocks']);
     $this->assertSame('View your report', $msg->content['cta_label']);
-    $this->assertSame('https://example.com/en/requests/42', $msg->content['cta_url']);
+    $this->assertSame('https://tenant.example.org/amsterdam/requests/42', $msg->content['cta_url']);
   }
 
   /**
@@ -154,10 +154,6 @@ final class NotificationTextBuilderTest extends UnitTestCase {
     $node->method('get')->willReturnMap([
       ['field_jurisdiction', $jurisdictionField],
     ]);
-
-    $url = $this->createMock(Url::class);
-    $url->method('toString')->willReturn('https://example.com/en/requests/42');
-    $node->method('toUrl')->willReturn($url);
 
     $language = $this->createMock(LanguageInterface::class);
     $language->method('getId')->willReturn('en');
@@ -193,18 +189,24 @@ final class NotificationTextBuilderTest extends UnitTestCase {
   }
 
   /**
-   * Builds a mock node with hasField() = FALSE and a fixed canonical URL.
+   * Builds a mock node without jurisdiction but with a request_id of 42.
+   *
+   * No toUrl() stub on purpose: the builder must derive the CTA from the
+   * branding package, never from the node's canonical (backend) URL.
    */
   private function buildPlainNode(): NodeInterface&MockObject {
-    $emptyField = $this->createMock(FieldItemListInterface::class);
-    $emptyField->method('isEmpty')->willReturn(TRUE);
+    $requestIdField = $this->createMock(FieldItemListInterface::class);
+    $requestIdField->method('isEmpty')->willReturn(FALSE);
+    $requestIdField->method('getString')->willReturn('42');
 
     $node = $this->createMock(NodeInterface::class);
-    $node->method('hasField')->willReturn(FALSE);
-
-    $url = $this->createMock(Url::class);
-    $url->method('toString')->willReturn('https://example.com/en/requests/42');
-    $node->method('toUrl')->willReturn($url);
+    $node->method('hasField')->willReturnMap([
+      ['field_jurisdiction', FALSE],
+      ['request_id', TRUE],
+    ]);
+    $node->method('get')->willReturnMap([
+      ['request_id', $requestIdField],
+    ]);
 
     $language = $this->createMock(LanguageInterface::class);
     $language->method('getId')->willReturn('en');
@@ -219,6 +221,7 @@ final class NotificationTextBuilderTest extends UnitTestCase {
   private function buildBuilder(
     ?MailTextResolver $textResolver = NULL,
     ?LoggerInterface $logger = NULL,
+    ?MailBrandingService $branding = NULL,
   ): NotificationTextBuilder {
     if ($textResolver === NULL) {
       $textResolver = $this->createMock(MailTextResolver::class);
@@ -232,8 +235,16 @@ final class NotificationTextBuilderTest extends UnitTestCase {
       ]);
       $textResolver->method('replaceTokens')->willReturnArgument(0);
     }
+    if ($branding === NULL) {
+      $branding = $this->createMock(MailBrandingService::class);
+      $branding->method('getBranding')->willReturn([
+        'frontend_base_url' => 'https://tenant.example.org',
+        'jurisdiction_slug' => 'amsterdam',
+      ]);
+    }
     return new NotificationTextBuilder(
       $textResolver,
+      $branding,
       $logger ?? $this->createMock(LoggerInterface::class),
     );
   }

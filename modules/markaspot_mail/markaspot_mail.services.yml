@@ -198,6 +198,7 @@ services:
     class: Drupal\markaspot_mail\Mail\Builder\NotificationTextBuilder
     arguments:
       - '@markaspot_mail.text_resolver'
+      - '@markaspot_mail.branding'
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
