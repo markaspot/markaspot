@@ -54,6 +54,49 @@ function markaspot_mail_theme($existing, $type, $theme, $path) {
 }
 
 /**
+ * Implements hook_mail().
+ *
+ * Populates subject + body for markaspot_mail:notification_* mails from the
+ * same MailTextResolver chain NotificationTextBuilder uses, so the
+ * unbranded plaintext path (hook_mail_alter render failures fail closed to
+ * whatever hook_mail() wrote here, see MailAlterHook) is never empty. Every
+ * other ($module, $key) pair is left untouched.
+ */
+function markaspot_mail_mail(string $key, array &$message, array $params): void {
+  if (!str_starts_with($key, 'notification_')) {
+    return;
+  }
+
+  $node = $params['node'] ?? NULL;
+  if (!$node instanceof \Drupal\node\NodeInterface) {
+    return;
+  }
+  $notificationKey = trim((string) ($params['notification_key'] ?? substr($key, strlen('notification_'))));
+  if ($notificationKey === '') {
+    return;
+  }
+
+  $langcode = (string) ($message['langcode'] ?? 'en');
+
+  /** @var \Drupal\markaspot_mail\Service\MailTextResolver $resolver */
+  $resolver = \Drupal::service('markaspot_mail.text_resolver');
+  $slots = $resolver->resolve('markaspot_mail.texts', $notificationKey, $langcode);
+  $slots = $resolver->replaceTokens($slots, ['node' => $node], $langcode);
+
+  $message['subject'] = $slots['subject'] !== ''
+    ? $slots['subject']
+    : (string) t('Update on your report', [], ['langcode' => $langcode]);
+
+  $bodyParts = array_values(array_filter(
+    [$slots['intro'], ...$slots['body_blocks']],
+    static fn(string $part): bool => $part !== '',
+  ));
+  $message['body'] = $bodyParts !== []
+    ? $bodyParts
+    : [(string) t('There is an update on your report. Please check the platform for details.', [], ['langcode' => $langcode])];
+}
+
+/**
  * Implements hook_mail_alter().
  */
 function markaspot_mail_mail_alter(&$message) {

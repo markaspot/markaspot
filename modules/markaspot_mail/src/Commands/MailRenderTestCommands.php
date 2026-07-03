@@ -8,6 +8,7 @@ use Consolidation\OutputFormatters\StructuredData\RowsOfFields;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Url;
+use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailBuilderRegistry;
 use Drupal\markaspot_mail\Mail\MailContext;
@@ -29,6 +30,20 @@ class MailRenderTestCommands extends DrushCommands {
    * shipped-YAML fallback).
    */
   private const FASTMAP_LANGUAGE_GATED_KEYS = ['workspace_verification', 'workspace_welcome'];
+
+  /**
+   * Markaspot_mail.texts keys checked per activated language.
+   *
+   * All routed through the single NOTIFICATION_CONFIG builder, so unlike
+   * testBuilders() (one sample per MailType) each key needs its own pass
+   * to actually exercise MailTextResolver's per-key override chain.
+   */
+  private const NOTIFICATION_TEXT_KEYS = [
+    'report_confirmation',
+    'status_open',
+    'status_closed',
+    'status_not_responsible',
+  ];
 
   public function __construct(
     protected MailBuilderRegistry $mailBuilderRegistry,
@@ -91,6 +106,7 @@ class MailRenderTestCommands extends DrushCommands {
     $rows = array_merge(
       $this->testBuilders(),
       $this->testFastmapHookTemplates(),
+      $this->testNotificationTexts(),
     );
 
     $failures = count(array_filter($rows, static fn(array $r): bool => $r['status'] === 'FAIL'));
@@ -122,7 +138,46 @@ class MailRenderTestCommands extends DrushCommands {
         $rows[] = $this->row('builder', $type, $builder::class, 'SKIP', 'No sample MailContext available (e.g. no service_request node or org group in this database).');
         continue;
       }
-      $rows[] = $this->renderAndCheckBuilder($type, $builder, $ctx);
+      $rows[] = $this->renderAndCheckBuilder('builder', $type, $builder, $ctx);
+    }
+    return $rows;
+  }
+
+  /**
+   * Checks markaspot_mail.texts notification key resolution per language.
+   *
+   * Unlike testBuilders() (one sample per MailType), the NOTIFICATION_CONFIG
+   * builder handles four distinct notification_key values behind a single
+   * MailType, so each key x activated-language combination needs its own
+   * render pass to actually exercise MailTextResolver's per-key override
+   * chain and catch a locale-specific empty subject/body.
+   *
+   * @return array<int, array<string, string>>
+   *   Result rows. Empty when no sample service_request node is available.
+   */
+  protected function testNotificationTexts(): array {
+    $builder = $this->mailBuilderRegistry->findByType(MailType::NOTIFICATION_CONFIG);
+    if ($builder === NULL) {
+      return [];
+    }
+    $node = $this->sampleContextProvider->findSampleServiceRequestNode();
+    if ($node === NULL) {
+      return [$this->row('notification_texts', 'all', $builder::class, 'SKIP', 'No sample service_request node available in this database.')];
+    }
+
+    $rows = [];
+    foreach ($this->languageManager->getLanguages() as $language) {
+      $langcode = $language->getId();
+      foreach (self::NOTIFICATION_TEXT_KEYS as $key) {
+        $ctx = new MailContext(
+          module: 'markaspot_mail',
+          key: 'notification_' . $key,
+          langcode: $langcode,
+          params: ['node' => $node, 'notification_key' => $key],
+          to: 'citizen@example.com',
+        );
+        $rows[] = $this->renderAndCheckBuilder('notification_texts', $key . ':' . $langcode, $builder, $ctx);
+      }
     }
     return $rows;
   }
@@ -133,16 +188,16 @@ class MailRenderTestCommands extends DrushCommands {
    * @return array<string, string>
    *   Result row.
    */
-  protected function renderAndCheckBuilder(string $type, MailBuilderInterface $builder, MailContext $ctx): array {
+  protected function renderAndCheckBuilder(string $check, string $type, MailBuilderInterface $builder, MailContext $ctx): array {
     $class = $builder::class;
     try {
       $message = $builder->build($ctx);
     }
     catch (\Throwable $e) {
-      return $this->row('builder', $type, $class, 'FAIL', 'build() threw: ' . $e->getMessage());
+      return $this->row($check, $type, $class, 'FAIL', 'build() threw: ' . $e->getMessage());
     }
     if ($message === NULL) {
-      return $this->row('builder', $type, $class, 'FAIL', 'build() returned NULL for a sample context that should have been sufficient.');
+      return $this->row($check, $type, $class, 'FAIL', 'build() returned NULL for a sample context that should have been sufficient.');
     }
 
     $problems = [];
@@ -159,7 +214,7 @@ class MailRenderTestCommands extends DrushCommands {
       $rendered = $this->renderer->render($message->variant, $branding, $message->content, $ctx->langcode, $message->plainText);
     }
     catch (\Throwable $e) {
-      return $this->row('builder', $type, $class, 'FAIL', 'render() threw: ' . $e->getMessage());
+      return $this->row($check, $type, $class, 'FAIL', 'render() threw: ' . $e->getMessage());
     }
 
     if (trim($rendered['html']) === '') {
@@ -170,8 +225,8 @@ class MailRenderTestCommands extends DrushCommands {
     }
 
     return $problems === []
-      ? $this->row('builder', $type, $class, 'PASS', sprintf('subject="%s"', $message->subject))
-      : $this->row('builder', $type, $class, 'FAIL', implode('; ', $problems));
+      ? $this->row($check, $type, $class, 'PASS', sprintf('subject="%s"', $message->subject))
+      : $this->row($check, $type, $class, 'FAIL', implode('; ', $problems));
   }
 
   /**

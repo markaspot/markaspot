@@ -41,12 +41,19 @@ class MailCoverageCheckTest extends UnitTestCase {
   protected string $fastmapModulePath;
 
   /**
+   * Temp directory standing in for the markaspot_mail module path.
+   */
+  protected string $mailModulePath;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
     parent::setUp();
     $this->fastmapModulePath = sys_get_temp_dir() . '/markaspot_health_mail_coverage_test_' . uniqid();
     mkdir($this->fastmapModulePath . '/config/install', 0777, TRUE);
+    $this->mailModulePath = sys_get_temp_dir() . '/markaspot_health_mail_texts_test_' . uniqid();
+    mkdir($this->mailModulePath . '/config/install', 0777, TRUE);
   }
 
   /**
@@ -59,6 +66,13 @@ class MailCoverageCheckTest extends UnitTestCase {
     }
     @rmdir($this->fastmapModulePath . '/config/install');
     @rmdir($this->fastmapModulePath);
+
+    $textsFile = $this->mailModulePath . '/config/install/markaspot_mail.texts.yml';
+    if (is_file($textsFile)) {
+      unlink($textsFile);
+    }
+    @rmdir($this->mailModulePath . '/config/install');
+    @rmdir($this->mailModulePath);
     parent::tearDown();
   }
 
@@ -76,6 +90,24 @@ class MailCoverageCheckTest extends UnitTestCase {
       workspace_welcome:
         subject: 'Welcome @workspace_name'
         body: 'Go to @workspace_url'
+      YAML,
+    );
+  }
+
+  /**
+   * Writes the shipped markaspot_mail.texts.yml fixture used by tests.
+   */
+  protected function writeShippedMailTextsYaml(): void {
+    file_put_contents(
+      $this->mailModulePath . '/config/install/markaspot_mail.texts.yml',
+      <<<YAML
+      langcode: en
+      report_confirmation:
+        subject: 'Your report has been received'
+        intro: 'Thanks.'
+      status_open:
+        subject: 'Update on your report'
+        intro: 'In progress.'
       YAML,
     );
   }
@@ -228,6 +260,11 @@ class MailCoverageCheckTest extends UnitTestCase {
       static fn(string $module): bool => $module === 'markaspot_mail',
     );
     $extensionList = $this->createMock(ModuleExtensionList::class);
+    // markaspot_mail is "installed" here, so checkMarkaspotMailTextsCoverage()
+    // also runs; a non-existent path makes shippedMarkaspotMailTextsKeys()
+    // return [] and skip that sub-check cleanly (this test is only about
+    // the builder-registry sub-check).
+    $extensionList->method('getPath')->willReturn(sys_get_temp_dir() . '/markaspot_health_mail_coverage_test_nonexistent');
 
     $registry = new MailBuilderRegistry([
       new SupportingStubBuilder(MailType::PASSWORDLESS_OTP, 'markaspot_passwordless', 'verification_code'),
@@ -252,6 +289,7 @@ class MailCoverageCheckTest extends UnitTestCase {
       static fn(string $module): bool => $module === 'markaspot_mail',
     );
     $extensionList = $this->createMock(ModuleExtensionList::class);
+    $extensionList->method('getPath')->willReturn(sys_get_temp_dir() . '/markaspot_health_mail_coverage_test_nonexistent');
 
     $registry = new MailBuilderRegistry([
       new SupportingStubBuilder(MailType::PASSWORDLESS_OTP, 'markaspot_passwordless', 'verification_code'),
@@ -267,6 +305,108 @@ class MailCoverageCheckTest extends UnitTestCase {
   /**
    * @covers ::run
    */
+  public function testRunFailsWhenMarkaspotMailTextsMissesShippedKey(): void {
+    $this->writeShippedMailTextsYaml();
+
+    // Active config only carries report_confirmation -- status_open exists
+    // in the shipped install YAML but is absent from active config, the
+    // exact gap this sub-check exists to catch (e.g. update hook never ran).
+    $textsConfig = $this->createMock(ImmutableConfig::class);
+    $textsConfig->method('get')->willReturnMap([
+      ['report_confirmation', ['subject' => 'Received', 'intro' => 'Thanks.', 'body_blocks' => []]],
+      ['status_open', NULL],
+    ]);
+
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->method('get')->willReturnMap([
+      ['markaspot_mail.texts', $textsConfig],
+    ]);
+
+    $modules = $this->createMock(ModuleHandlerInterface::class);
+    $modules->method('moduleExists')->willReturnCallback(
+      static fn(string $module): bool => $module === 'markaspot_mail',
+    );
+
+    $extensionList = $this->createMock(ModuleExtensionList::class);
+    $extensionList->method('getPath')->with('markaspot_mail')->willReturn($this->mailModulePath);
+
+    $plugin = new MailCoverageCheck([], 'mail_coverage', $this->definition, $factory, $modules, $extensionList);
+    $result = $plugin->run();
+
+    $this->assertFalse($result->passed);
+    $this->assertSame('error', $result->severity);
+    $this->assertStringContainsString('status_open', json_encode($result->details));
+  }
+
+  /**
+   * @covers ::run
+   */
+  public function testRunFailsWhenMarkaspotMailTextsKeyHasEmptyBody(): void {
+    $this->writeShippedMailTextsYaml();
+
+    // Subject present, but neither intro nor body_blocks carries text --
+    // the "empty body" half of the gate, distinct from an empty subject.
+    $textsConfig = $this->createMock(ImmutableConfig::class);
+    $textsConfig->method('get')->willReturnMap([
+      ['report_confirmation', ['subject' => 'Received', 'intro' => '', 'body_blocks' => ['', '  ']]],
+      ['status_open', ['subject' => 'Update', 'intro' => 'In progress.', 'body_blocks' => []]],
+    ]);
+
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->method('get')->willReturnMap([
+      ['markaspot_mail.texts', $textsConfig],
+    ]);
+
+    $modules = $this->createMock(ModuleHandlerInterface::class);
+    $modules->method('moduleExists')->willReturnCallback(
+      static fn(string $module): bool => $module === 'markaspot_mail',
+    );
+
+    $extensionList = $this->createMock(ModuleExtensionList::class);
+    $extensionList->method('getPath')->with('markaspot_mail')->willReturn($this->mailModulePath);
+
+    $plugin = new MailCoverageCheck([], 'mail_coverage', $this->definition, $factory, $modules, $extensionList);
+    $result = $plugin->run();
+
+    $this->assertFalse($result->passed);
+    $this->assertStringContainsString('report_confirmation', json_encode($result->details));
+    $this->assertStringContainsString('body', json_encode($result->details));
+  }
+
+  /**
+   * @covers ::run
+   */
+  public function testRunPassesWhenMarkaspotMailTextsCoversAllShippedKeys(): void {
+    $this->writeShippedMailTextsYaml();
+
+    $textsConfig = $this->createMock(ImmutableConfig::class);
+    $textsConfig->method('get')->willReturnMap([
+      ['report_confirmation', ['subject' => 'Received', 'intro' => 'Thanks.', 'body_blocks' => []]],
+      ['status_open', ['subject' => 'Update', 'intro' => '', 'body_blocks' => ['In progress.']]],
+    ]);
+
+    $factory = $this->createMock(ConfigFactoryInterface::class);
+    $factory->method('get')->willReturnMap([
+      ['markaspot_mail.texts', $textsConfig],
+    ]);
+
+    $modules = $this->createMock(ModuleHandlerInterface::class);
+    $modules->method('moduleExists')->willReturnCallback(
+      static fn(string $module): bool => $module === 'markaspot_mail',
+    );
+
+    $extensionList = $this->createMock(ModuleExtensionList::class);
+    $extensionList->method('getPath')->with('markaspot_mail')->willReturn($this->mailModulePath);
+
+    $plugin = new MailCoverageCheck([], 'mail_coverage', $this->definition, $factory, $modules, $extensionList);
+    $result = $plugin->run();
+
+    $this->assertTrue($result->passed);
+  }
+
+  /**
+   * @covers ::run
+   */
   public function testRunFailsWhenMailBuilderRegistryFailedToInstantiate(): void {
     $factory = $this->createMock(ConfigFactoryInterface::class);
     $modules = $this->createMock(ModuleHandlerInterface::class);
@@ -274,6 +414,7 @@ class MailCoverageCheckTest extends UnitTestCase {
       static fn(string $module): bool => $module === 'markaspot_mail',
     );
     $extensionList = $this->createMock(ModuleExtensionList::class);
+    $extensionList->method('getPath')->willReturn(sys_get_temp_dir() . '/markaspot_health_mail_coverage_test_nonexistent');
 
     $plugin = new MailCoverageCheck(
       [],

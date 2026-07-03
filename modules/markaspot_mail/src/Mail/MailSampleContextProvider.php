@@ -149,6 +149,18 @@ final class MailSampleContextProvider {
         to: 'citizen@example.com',
       );
 
+      // One representative notification_key is enough to cover the
+      // NOTIFICATION_CONFIG builder itself; MailRenderTestCommands
+      // additionally iterates every markaspot_mail.texts key x language,
+      // since a single builder instance handles all of them.
+      $samples[MailType::NOTIFICATION_CONFIG->value] = new MailContext(
+        module: 'markaspot_mail',
+        key: 'notification_report_confirmation',
+        langcode: $langcode,
+        params: ['node' => $node, 'notification_key' => 'report_confirmation'],
+        to: 'citizen@example.com',
+      );
+
       $samples[MailType::ECA_MODERATION->value] = new MailContext(
         module: 'markaspot_moderation',
         key: 'flag_threshold',

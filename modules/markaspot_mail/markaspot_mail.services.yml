@@ -191,3 +191,13 @@ services:
       - '@markaspot_mail.branding'
     tags:
       - { name: markaspot_mail.builder }
+
+  # Stage 5: admin-editable notification mails (markaspot_mail.texts),
+  # fired by the markaspot_mail_send_notification ECA action plugin.
+  markaspot_mail.builder.notification_text:
+    class: Drupal\markaspot_mail\Mail\Builder\NotificationTextBuilder
+    arguments:
+      - '@markaspot_mail.text_resolver'
+      - '@logger.channel.markaspot_mail'
+    tags:
+      - { name: markaspot_mail.builder }

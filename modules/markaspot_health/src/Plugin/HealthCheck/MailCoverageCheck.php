@@ -36,13 +36,22 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
  *      Two builders claiming the same MailType is a registration bug that
  *      would otherwise only surface as "the wrong template rendered" at
  *      the point some future findByType() caller picks the first match.
+ *   d) markaspot_mail: every top-level key shipped in config/install/
+ *      markaspot_mail.texts.yml must exist in the ACTIVE
+ *      markaspot_mail.texts config with a non-empty subject and at least
+ *      one non-empty body field (intro or a body_blocks entry). Same
+ *      "check active config directly" rationale as (a): the
+ *      markaspot_mail_send_notification ECA action's hook_mail()
+ *      fallback self-heals to a generic t() string, which would hide a
+ *      missing notification_key from an operator until they read the
+ *      actual delivered mail.
  *
  * @HealthCheck(
  *   id = "mail_coverage",
  *   label = @Translation("Mail template and builder coverage gaps"),
  *   severity = "error",
  *   description = @Translation("Checks that shipped markaspot_fastmap mail templates are present in active config, that phpmailer_smtp has a non-empty EHLO host when it is the configured sender, and that every tagged markaspot_mail.builder service instantiates with a unique MailType."),
- *   fix_hint = @Translation("For missing fastmap templates: re-run markaspot_fastmap_update_11924() or edit the mail templates at /admin/config/markaspot/fastmap/mail. For an empty EHLO host: set phpmailer_smtp.settings:smtp_ehlo_host to the sending domain. For builder collisions: give the colliding builder its own Drupal\markaspot_mail\Enum\MailType case."),
+ *   fix_hint = @Translation("For missing fastmap templates: re-run markaspot_fastmap_update_11924() or edit the mail templates at /admin/config/markaspot/fastmap/mail. For an empty EHLO host: set phpmailer_smtp.settings:smtp_ehlo_host to the sending domain. For builder collisions: give the colliding builder its own Drupal\markaspot_mail\Enum\MailType case. For missing notification texts: re-run markaspot_mail_update_10006() or edit the mail texts at /admin/config/markaspot/mail-texts."),
  *   fix_url = "/admin/config/markaspot/fastmap/mail",
  * )
  */
@@ -113,6 +122,7 @@ class MailCoverageCheck extends HealthCheckPluginBase {
 
     if ($this->moduleHandler->moduleExists('markaspot_mail')) {
       $this->checkMailBuilderRegistry($errors);
+      $this->checkMarkaspotMailTextsCoverage($errors);
     }
 
     if ($errors === [] && $warnings === []) {
@@ -194,6 +204,68 @@ class MailCoverageCheck extends HealthCheckPluginBase {
    */
   protected function shippedFastmapMailKeys(): array {
     $path = $this->moduleExtensionList->getPath('markaspot_fastmap') . '/config/install/markaspot_fastmap.mail.yml';
+    if (!is_file($path)) {
+      return [];
+    }
+    $decoded = Yaml::decode((string) file_get_contents($path));
+    if (!is_array($decoded)) {
+      return [];
+    }
+    unset($decoded['langcode']);
+    return array_values(array_filter(array_keys($decoded), 'is_string'));
+  }
+
+  /**
+   * Sub-check (d): active markaspot_mail.texts config vs. shipped YAML.
+   *
+   * @param array<int, array<string, mixed>> $errors
+   *   Error bucket, appended to by reference.
+   */
+  protected function checkMarkaspotMailTextsCoverage(array &$errors): void {
+    $keys = $this->shippedMarkaspotMailTextsKeys();
+    if ($keys === []) {
+      return;
+    }
+
+    $activeConfig = $this->configFactory->get('markaspot_mail.texts');
+    foreach ($keys as $key) {
+      $template = $activeConfig->get($key);
+      $subject = is_array($template) ? trim((string) ($template['subject'] ?? '')) : '';
+      $hasBody = FALSE;
+      if (is_array($template)) {
+        $hasBody = trim((string) ($template['intro'] ?? '')) !== '';
+        if (!$hasBody && is_array($template['body_blocks'] ?? NULL)) {
+          foreach ($template['body_blocks'] as $block) {
+            if (trim((string) $block) !== '') {
+              $hasBody = TRUE;
+              break;
+            }
+          }
+        }
+      }
+      if ($subject !== '' && $hasBody) {
+        continue;
+      }
+      $missing = array_values(array_filter([
+        $subject === '' ? 'subject' : NULL,
+        !$hasBody ? 'body (intro/body_blocks)' : NULL,
+      ]));
+      $errors[] = [
+        'check' => 'markaspot_mail.texts',
+        'key' => $key,
+        'missing_field' => implode('+', $missing),
+      ];
+    }
+  }
+
+  /**
+   * Reads the top-level notification keys from the shipped install YAML.
+   *
+   * @return list<string>
+   *   Top-level keys, excluding the "langcode" sibling key.
+   */
+  protected function shippedMarkaspotMailTextsKeys(): array {
+    $path = $this->moduleExtensionList->getPath('markaspot_mail') . '/config/install/markaspot_mail.texts.yml';
     if (!is_file($path)) {
       return [];
     }

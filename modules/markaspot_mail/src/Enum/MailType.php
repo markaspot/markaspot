@@ -46,4 +46,12 @@ enum MailType: string {
   // stay unique per builder.
   case INBOUND_TRIAGE_REPLY = 'inbound_triage_reply';
 
+  // Admin-editable notification mails (markaspot_mail.texts). Covers
+  // report_confirmation and the status_* keys, sent by the
+  // markaspot_mail_send_notification ECA action plugin instead of the
+  // hardcoded eca_content:action_send_email_action wording. One
+  // classification for every notification_* mail key: the config key is
+  // carried in $params['notification_key'], not encoded per-builder.
+  case NOTIFICATION_CONFIG = 'notification_config';
+
 }
