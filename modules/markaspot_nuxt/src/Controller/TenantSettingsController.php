@@ -11,6 +11,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManager;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
@@ -70,6 +71,7 @@ final class TenantSettingsController extends ControllerBase {
     'operationsDashboard',
     'contactForm',
     'privacyBlockOnFlag',
+    'onboardingTour',
   ];
 
   /**
@@ -1661,6 +1663,11 @@ final class TenantSettingsController extends ControllerBase {
         'operationsDashboard' => $operations_dashboard,
         'contactForm' => $features['contactForm'] ?? FALSE,
         'privacyBlockOnFlag' => $this->getBooleanFeatureValue($features, 'privacyBlockOnFlag', FALSE),
+        // Guided onboarding tour (citizen report + dashboard walkthrough).
+        // Default follows the operating mode: on for SaaS workspaces, off
+        // for self-hosted/enterprise installs where it is opt-in via this
+        // flag (see MailBrandingService for the operating-mode pattern).
+        'onboardingTour' => $this->getBooleanFeatureValue($features, 'onboardingTour', Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas'),
         'emergency' => ['enabled' => $features['emergency']['enabled'] ?? FALSE],
         'funFacts' => ['enabled' => $features['funFacts']['enabled'] ?? FALSE],
         'search' => ['enabled' => $features['search']['enabled'] ?? TRUE],
