@@ -20,6 +20,7 @@ use Drupal\group\Entity\GroupMembership;
 use Drupal\Component\Utility\EmailValidator;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_nuxt\Service\BoundaryGeoJsonValidator;
 use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
 use enshrined\svgSanitize\Sanitizer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -31,10 +32,11 @@ use Symfony\Component\HttpFoundation\Request;
  * Controller for tenant settings API endpoints.
  *
  * Provides endpoints to manage logos, general settings, language settings,
- * branding, features, map configuration, and navigation for jurisdiction
- * groups. General settings cover the platform name, contact email, email
- * footer text, and postal address. Language, feature, map, and navigation
- * settings are stored in the field_nuxt_config JSON blob.
+ * branding, features, map configuration, boundary, and navigation for
+ * jurisdiction groups. General settings cover the platform name, contact
+ * email, email footer text, and postal address. Language, feature, map, and
+ * navigation settings are stored in the field_nuxt_config JSON blob; the
+ * boundary lives directly on field_boundary as a raw GeoJSON string.
  *
  * All endpoints accept both numeric group IDs and URL slugs as the
  * jurisdiction_id parameter via JurisdictionIdResolverTrait.
@@ -2004,6 +2006,148 @@ final class TenantSettingsController extends ControllerBase {
 
     // Return the current state (same shape as GET).
     return $this->getMapSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns the boundary GeoJSON for a jurisdiction group.
+   *
+   * Reads field_boundary directly on the group entity (a raw GeoJSON
+   * string, not part of the field_nuxt_config JSON blob) and normalizes it
+   * into a FeatureCollection.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with the current boundary, or an error response.
+   */
+  public function getBoundarySettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    return new JsonResponse([
+      'jurisdiction_id' => (int) $group->id(),
+      'boundary' => $this->readBoundary($group),
+    ]);
+  }
+
+  /**
+   * Updates the boundary GeoJSON for a jurisdiction group.
+   *
+   * Accepts a JSON body with a 'boundary' key holding a FeatureCollection,
+   * Feature, Polygon, MultiPolygon, or NULL to clear the stored boundary.
+   * The value is validated and normalized by BoundaryGeoJsonValidator before
+   * being written to field_boundary as a raw GeoJSON string.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request carrying a JSON body.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with the updated boundary, or an error response.
+   */
+  public function updateBoundarySettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $body = $request->getContent();
+    if (strlen($body) > BoundaryGeoJsonValidator::MAX_PAYLOAD_BYTES) {
+      return new JsonResponse([
+        'error' => sprintf(
+          'Request payload exceeds the %d MB limit.',
+          BoundaryGeoJsonValidator::MAX_PAYLOAD_BYTES / 1024 / 1024
+        ),
+      ], 422);
+    }
+
+    $data = json_decode($body, TRUE);
+    if (!is_array($data) || !array_key_exists('boundary', $data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body: missing boundary key.'], 400);
+    }
+
+    $result = BoundaryGeoJsonValidator::validate($data['boundary']);
+    if (!$result['valid']) {
+      return new JsonResponse(['error' => $result['error']], 422);
+    }
+
+    $group->set(
+      'field_boundary',
+      $result['normalized'] === NULL ? NULL : json_encode($result['normalized'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+    );
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save boundary settings for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save boundary settings.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user updated boundary settings for jurisdiction @id',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+      ]
+    );
+
+    // Return the current state (same shape as GET).
+    return $this->getBoundarySettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Reads and normalizes the boundary GeoJSON from field_boundary.
+   *
+   * Field_boundary is non-translatable and only saved on the entity's
+   * original language, so this always reads from the default translation
+   * (mirrors getNuxtConfig()).
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The group entity (any translation).
+   *
+   * @return array|null
+   *   The boundary as a FeatureCollection, or NULL if not set or unreadable.
+   */
+  private function readBoundary(GroupInterface $group): ?array {
+    $source = $group->isDefaultTranslation() ? $group : $group->getUntranslated();
+    if (!$source->hasField('field_boundary') || $source->get('field_boundary')->isEmpty()) {
+      return NULL;
+    }
+
+    $boundary_json = strip_tags($source->get('field_boundary')->value);
+    $boundary_data = json_decode($boundary_json, TRUE);
+    if (!is_array($boundary_data) || !isset($boundary_data['type'])) {
+      return NULL;
+    }
+
+    return match ($boundary_data['type']) {
+      'FeatureCollection' => $boundary_data,
+      'Feature' => [
+        'type' => 'FeatureCollection',
+        'features' => [$boundary_data],
+      ],
+      'Polygon', 'MultiPolygon' => [
+        'type' => 'FeatureCollection',
+        'features' => [
+          [
+            'type' => 'Feature',
+            'properties' => [],
+            'geometry' => $boundary_data,
+          ],
+        ],
+      ],
+      default => NULL,
+    };
   }
 
   /**

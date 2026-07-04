@@ -264,6 +264,31 @@ markaspot_nuxt.tenant_settings_map_patch:
   options:
     _format: 'json'
 
+markaspot_nuxt.tenant_settings_boundary_get:
+  path: '/api/tenant-settings/{jurisdiction_id}/boundary'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::getBoundarySettings'
+    _title: 'Get Tenant Boundary Settings'
+  methods: [GET]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
+markaspot_nuxt.tenant_settings_boundary_patch:
+  path: '/api/tenant-settings/{jurisdiction_id}/boundary'
+  defaults:
+    _controller: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::updateBoundarySettings'
+    _title: 'Update Tenant Boundary Settings'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_nuxt\Controller\TenantSettingsController::accessCheck'
+    _csrf_request_header_token: 'TRUE'
+    jurisdiction_id: '[a-z0-9_-]+'
+  options:
+    _format: 'json'
+
 markaspot_nuxt.tenant_settings_navigation_get:
   path: '/api/tenant-settings/{jurisdiction_id}/navigation'
   defaults:
