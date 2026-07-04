@@ -2077,6 +2077,14 @@ final class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => $result['error']], 422);
     }
 
+    if (!$group->hasField('field_boundary')) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Cannot save boundary settings for jurisdiction @id: field_boundary does not exist on the group entity.',
+        ['@id' => $group->id()]
+      );
+      return new JsonResponse(['error' => 'Field field_boundary does not exist on the jurisdiction group.'], 500);
+    }
+
     $group->set(
       'field_boundary',
       $result['normalized'] === NULL ? NULL : json_encode($result['normalized'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)

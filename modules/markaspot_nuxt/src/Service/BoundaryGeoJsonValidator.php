@@ -36,6 +36,11 @@ final class BoundaryGeoJsonValidator {
   const MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
 
   /**
+   * Maximum serialized size of a single feature's properties, in bytes.
+   */
+  const MAX_PROPERTIES_BYTES = 4096;
+
+  /**
    * Validates and normalizes a decoded boundary value.
    *
    * @param mixed $data
@@ -46,8 +51,10 @@ final class BoundaryGeoJsonValidator {
    * @return array{valid: bool, error: string|null, normalized: array|null}
    *   'valid' is TRUE when the input is acceptable. 'error' holds a concrete,
    *   English validation message when invalid. 'normalized' holds the
-   *   resulting FeatureCollection (or NULL when clearing), only meaningful
-   *   when 'valid' is TRUE.
+   *   resulting FeatureCollection, only meaningful when 'valid' is TRUE.
+   *   'normalized' is NULL both when clearing (input was NULL) and when the
+   *   input normalizes to zero features, so an empty boundary never turns
+   *   into a boundary that rejects every point.
    */
   public static function validate(mixed $data): array {
     if ($data === NULL) {
@@ -126,14 +133,35 @@ final class BoundaryGeoJsonValidator {
         return self::invalid(sprintf('boundary may contain at most %d vertices in total.', self::MAX_VERTICES));
       }
 
+      $properties = is_array($feature['properties'] ?? NULL) ? $feature['properties'] : [];
+      $propertiesSize = strlen(json_encode($properties) ?: '');
+      if ($propertiesSize > self::MAX_PROPERTIES_BYTES) {
+        return self::invalid(sprintf(
+          'Feature at index %d has properties larger than %d bytes (found %d).',
+          $index,
+          self::MAX_PROPERTIES_BYTES,
+          $propertiesSize
+        ));
+      }
+
       $normalizedFeatures[] = [
         'type' => 'Feature',
-        'properties' => is_array($feature['properties'] ?? NULL) ? $feature['properties'] : [],
+        'properties' => $properties,
         'geometry' => [
           'type' => $geomType,
           'coordinates' => $geometryResult['coordinates'],
         ],
       ];
+    }
+
+    // An empty FeatureCollection (e.g. all features were removed on the
+    // frontend canvas) is treated the same as clearing the boundary: a
+    // GeoJsonBoundary built from zero features would make ::contains()
+    // always return FALSE, which would reject every citizen report in the
+    // jurisdiction. "boundary never blocks" wins over persisting the empty
+    // shape.
+    if (empty($normalizedFeatures)) {
+      return ['valid' => TRUE, 'error' => NULL, 'normalized' => NULL];
     }
 
     return [

@@ -332,4 +332,78 @@ final class BoundaryGeoJsonValidatorTest extends UnitTestCase {
     $this->assertSame(['name' => 'Downtown', 'zone_id' => 42], $result['normalized']['features'][0]['properties']);
   }
 
+  /**
+   * Tests an empty FeatureCollection is treated as clearing the boundary.
+   *
+   * A stored FeatureCollection with zero features would make a downstream
+   * GeoJsonBoundary::contains() always return FALSE, rejecting every
+   * citizen report in the jurisdiction. Normalizing it to NULL instead
+   * matches "delete all shapes and save" on the frontend canvas.
+   *
+   * @covers ::validate
+   */
+  public function testEmptyFeatureCollectionClearsBoundary(): void {
+    $result = BoundaryGeoJsonValidator::validate([
+      'type' => 'FeatureCollection',
+      'features' => [],
+    ]);
+
+    $this->assertTrue($result['valid']);
+    $this->assertNull($result['error']);
+    $this->assertNull($result['normalized']);
+  }
+
+  /**
+   * Tests properties exactly at the size cap are accepted.
+   *
+   * @covers ::validate
+   */
+  public function testPropertiesAtCapIsAccepted(): void {
+    $overhead = strlen(json_encode(['note' => '']));
+    $properties = ['note' => str_repeat('a', BoundaryGeoJsonValidator::MAX_PROPERTIES_BYTES - $overhead)];
+    // Sanity-check the fixture actually sits exactly on the cap.
+    $this->assertSame(BoundaryGeoJsonValidator::MAX_PROPERTIES_BYTES, strlen(json_encode($properties)));
+
+    $collection = [
+      'type' => 'FeatureCollection',
+      'features' => [
+        [
+          'type' => 'Feature',
+          'properties' => $properties,
+          'geometry' => ['type' => 'Polygon', 'coordinates' => [$this->squareRing]],
+        ],
+      ],
+    ];
+    $result = BoundaryGeoJsonValidator::validate($collection);
+
+    $this->assertTrue($result['valid']);
+  }
+
+  /**
+   * Tests properties one byte over the size cap are rejected.
+   *
+   * @covers ::validate
+   */
+  public function testPropertiesOverCapIsRejected(): void {
+    $overhead = strlen(json_encode(['note' => '']));
+    $properties = ['note' => str_repeat('a', BoundaryGeoJsonValidator::MAX_PROPERTIES_BYTES - $overhead + 1)];
+    // Sanity-check the fixture actually sits one byte over the cap.
+    $this->assertSame(BoundaryGeoJsonValidator::MAX_PROPERTIES_BYTES + 1, strlen(json_encode($properties)));
+
+    $collection = [
+      'type' => 'FeatureCollection',
+      'features' => [
+        [
+          'type' => 'Feature',
+          'properties' => $properties,
+          'geometry' => ['type' => 'Polygon', 'coordinates' => [$this->squareRing]],
+        ],
+      ],
+    ];
+    $result = BoundaryGeoJsonValidator::validate($collection);
+
+    $this->assertFalse($result['valid']);
+    $this->assertStringContainsString('properties', $result['error']);
+  }
+
 }
