@@ -1668,6 +1668,7 @@ final class TenantSettingsController extends ControllerBase {
         'operationsDashboard' => $operations_dashboard,
         'contactForm' => $features['contactForm'] ?? FALSE,
         'privacyBlockOnFlag' => $this->getBooleanFeatureValue($features, 'privacyBlockOnFlag', FALSE),
+        'delegationNoteRequired' => $this->getBooleanFeatureValue($features, 'delegationNoteRequired', FALSE),
         // Guided onboarding tour (citizen report + dashboard walkthrough).
         // Default follows the operating mode: on for SaaS workspaces, off
         // for self-hosted/enterprise installs where it is opt-in via this
