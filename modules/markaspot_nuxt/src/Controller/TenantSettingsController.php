@@ -73,6 +73,7 @@ final class TenantSettingsController extends ControllerBase {
     'privacyBlockOnFlag',
     'onboardingTour',
     'loginLink',
+    'delegationNoteRequired',
   ];
 
   /**
