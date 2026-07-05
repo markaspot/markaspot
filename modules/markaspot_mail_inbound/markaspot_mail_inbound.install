@@ -440,16 +440,11 @@ function markaspot_mail_inbound_update_11907(): string {
 
   $allowed_values = $storage->getSetting('allowed_values') ?? [];
   $allowed_values = is_array($allowed_values) ? $allowed_values : [];
-  foreach ($allowed_values as $value) {
-    if (($value['value'] ?? NULL) === 'staff') {
-      return (string) t('The staff dashboard source channel already exists.');
-    }
+  if (array_key_exists('staff', $allowed_values)) {
+    return (string) t('The staff dashboard source channel already exists.');
   }
 
-  $allowed_values[] = [
-    'value' => 'staff',
-    'label' => 'Staff dashboard',
-  ];
+  $allowed_values['staff'] = 'Staff dashboard';
   $storage->setSetting('allowed_values', $allowed_values);
   $storage->save();
 
