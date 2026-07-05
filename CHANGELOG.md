@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.138](https://github.com/markaspot/markaspot/compare/11.9.137...11.9.138) (2026-07-05)
+
+### Features
+
+* add onboardingTour feature flag with operating-mode default ([b552fb4](https://github.com/markaspot/markaspot/commit/b552fb4fa34a28c49b62c296d2be2d6ebbf1a57f))
+* add tenant boundary settings endpoint with GeoJSON validation ([11de4c0](https://github.com/markaspot/markaspot/commit/11de4c0209ad128ef8cbc45dad2aac173955f800))
+
+### Bug Fixes
+
+* apply onboardingTour operating-mode default in the config endpoint the frontend reads ([2f1932d](https://github.com/markaspot/markaspot/commit/2f1932d1cb3c5f530c981a91b6e691c9f3621e3b))
+* treat empty boundary FeatureCollection as clear, cap properties size, guard missing field_boundary ([481c1b9](https://github.com/markaspot/markaspot/commit/481c1b97be713b5db1a4bdb33355d851d71e2228))
+
 ## [11.9.137](https://github.com/markaspot/markaspot/compare/11.9.136...11.9.137) (2026-07-03)
 
 ### Features
