@@ -113,17 +113,122 @@ class JurisdictionIdResolverTraitTest extends UnitTestCase {
   }
 
   /**
-   * Tests numeric IDs are returned without entity storage lookup.
+   * Tests numeric IDs resolve when the group exists with configured type.
    */
-  public function testNumericIdsBypassStorageLookup(): void {
+  public function testNumericIdOfExistingJurisdictionGroupResolves(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('42');
+    $group->method('bundle')->willReturn('jurisdiction');
+    $group->method('isPublished')->willReturn(TRUE);
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->expects($this->once())
+      ->method('load')
+      ->with(42)
+      ->willReturn($group);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($storage);
+
+    $resolver = $this->createResolver($entityTypeManager);
+
+    $this->assertSame(42, $resolver->resolve('42'));
+  }
+
+  /**
+   * Tests numeric IDs return NULL when the group does not exist.
+   */
+  public function testNumericIdOfMissingGroupReturnsNull(): void {
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->expects($this->once())
+      ->method('load')
+      ->with(99)
+      ->willReturn(NULL);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($storage);
+
+    $resolver = $this->createResolver($entityTypeManager);
+
+    $this->assertNull($resolver->resolve(99));
+  }
+
+  /**
+   * Tests numeric zero returns NULL without a storage lookup.
+   */
+  public function testNumericZeroReturnsNull(): void {
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->expects($this->never())
       ->method('getStorage');
 
     $resolver = $this->createResolver($entityTypeManager);
 
-    $this->assertSame(42, $resolver->resolve('42'));
-    $this->assertSame(13, $resolver->resolve(13));
+    $this->assertNull($resolver->resolve(0));
+    $this->assertNull($resolver->resolve('0'));
+  }
+
+  /**
+   * Tests decimal numeric strings are not cast to IDs.
+   */
+  public function testDecimalNumericStringReturnsNull(): void {
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->expects($this->never())
+      ->method('getStorage');
+
+    $resolver = $this->createResolver($entityTypeManager);
+
+    $this->assertNull($resolver->resolve('42.9'));
+  }
+
+  /**
+   * Tests numeric IDs return NULL when the group has a different type.
+   */
+  public function testNumericIdOfDifferentGroupTypeReturnsNull(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('org');
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->expects($this->once())
+      ->method('load')
+      ->with(7)
+      ->willReturn($group);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($storage);
+
+    $resolver = $this->createResolver($entityTypeManager);
+
+    $this->assertNull($resolver->resolve(7));
+  }
+
+  /**
+   * Tests numeric IDs return NULL when the jurisdiction group is inactive.
+   */
+  public function testNumericIdOfInactiveJurisdictionGroupReturnsNull(): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jurisdiction');
+    $group->method('isPublished')->willReturn(FALSE);
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->expects($this->once())
+      ->method('load')
+      ->with(8)
+      ->willReturn($group);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($storage);
+
+    $resolver = $this->createResolver($entityTypeManager);
+
+    $this->assertNull($resolver->resolve(8));
   }
 
   /**

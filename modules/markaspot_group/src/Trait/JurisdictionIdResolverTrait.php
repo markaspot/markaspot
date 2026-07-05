@@ -35,9 +35,24 @@ trait JurisdictionIdResolverTrait {
       return NULL;
     }
 
-    // Numeric = direct group ID.
-    if (is_numeric($value)) {
-      return (int) $value;
+    // Numeric = direct positive group ID.
+    if (is_int($value) || ctype_digit($value)) {
+      $id = (int) $value;
+      if ($id <= 0) {
+        return NULL;
+      }
+
+      $group_type ??= $this->getJurisdictionGroupType();
+      $storage = method_exists($this, 'entityTypeManager')
+        ? $this->entityTypeManager()->getStorage('group')
+        : $this->entityTypeManager->getStorage('group');
+
+      $group = $storage->load($id);
+      return $group instanceof GroupInterface
+        && $group->bundle() === $group_type
+        && $group->isPublished()
+        ? (int) $group->id()
+        : NULL;
     }
 
     // Validate slug format: alphanumeric, hyphens, underscores, max 64 chars.
