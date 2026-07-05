@@ -131,6 +131,7 @@ class WorkspaceUsageControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn((string) $id);
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('getCacheTags')->willReturn(['group:' . $id]);
     $group->method('getCacheMaxAge')->willReturn(-1);
     $group->method('getCacheContexts')->willReturn([]);

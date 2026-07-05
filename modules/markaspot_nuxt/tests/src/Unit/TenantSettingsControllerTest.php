@@ -198,6 +198,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn((string) $id);
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
 
     $group->method('isDefaultTranslation')->willReturn(TRUE);
 
@@ -267,6 +268,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * @covers ::accessCheck
    */
   public function testAccessCheckAllowsSuperAdmin(): void {
+    $group = $this->createMockGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn('1');
     $account->method('getRoles')->willReturn(['authenticated']);
@@ -282,6 +286,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * @covers ::accessCheck
    */
   public function testAccessCheckAllowsAdministratorRole(): void {
+    $group = $this->createMockGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn('2');
     $account->method('getRoles')->willReturn(['authenticated', 'administrator']);
@@ -297,6 +304,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * @covers ::accessCheck
    */
   public function testAccessCheckDeniesRegularUser(): void {
+    $group = $this->createMockGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn('5');
     $account->method('getRoles')->willReturn(['authenticated']);
@@ -312,6 +322,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * @covers ::accessCheck
    */
   public function testAccessCheckAllowsTenantAdminForOwnJurisdiction(): void {
+    $group = $this->createMockGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn('3');
     $account->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
@@ -342,6 +355,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * @covers ::accessCheck
    */
   public function testAccessCheckAllowsTenantAdminForDescendant(): void {
+    $group = $this->createMockGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn('3');
     $account->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
@@ -372,6 +388,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * @covers ::accessCheck
    */
   public function testAccessCheckDeniesTenantAdminForUnrelatedJurisdiction(): void {
+    $group = $this->createMockGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn('3');
     $account->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
@@ -402,6 +421,9 @@ class TenantSettingsControllerTest extends UnitTestCase {
    * @covers ::accessCheck
    */
   public function testAccessCheckSkipsStaleTenantAdminMembershipWrongBundle(): void {
+    $group = $this->createMockGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn('3');
     $account->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);
@@ -1008,6 +1030,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')
       ->willReturnCallback(static fn(string $name) => in_array($name, [
@@ -1110,6 +1133,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')->willReturn(TRUE);
 
@@ -1162,6 +1186,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')->willReturn(TRUE);
 
@@ -1365,6 +1390,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')
       ->willReturnCallback(static fn(string $name) => $name === 'field_nuxt_config');
@@ -1724,6 +1750,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')
       ->willReturnCallback(static fn(string $name) => in_array($name, [
@@ -1811,6 +1838,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('hasField')
       ->willReturnCallback(static fn(string $name) => $name === 'field_nuxt_config');

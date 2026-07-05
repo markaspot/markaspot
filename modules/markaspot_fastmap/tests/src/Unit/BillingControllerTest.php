@@ -206,6 +206,7 @@ class BillingControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('getCacheContexts')->willReturn([]);
     $group->method('getCacheTags')->willReturn(['group:14']);
     $group->method('getCacheMaxAge')->willReturn(-1);
@@ -262,6 +263,7 @@ class BillingControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('hasField')->willReturn(TRUE);
     $group->method('get')
       ->willReturnCallback(fn(string $name) => $name === 'field_stripe_customer_id'

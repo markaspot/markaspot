@@ -170,6 +170,7 @@ class DashboardAlertsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn((string) $id);
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('getCacheTags')->willReturn(['group:' . $id]);
     $group->method('getCacheContexts')->willReturn([]);
@@ -404,6 +405,9 @@ class DashboardAlertsControllerTest extends UnitTestCase {
    * @covers ::accessCheck
    */
   public function testAccessCheckDeniesCrossTenant(): void {
+    $group = $this->createMockGroup();
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
     $account = $this->createMock(AccountInterface::class);
     $account->method('id')->willReturn('5');
     $account->method('getRoles')->willReturn(['authenticated', 'tenant_admin']);

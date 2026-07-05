@@ -96,6 +96,7 @@ class FacilitySettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
     $this->facilityManager->method('getDashboardSettings')->with($group)->willReturn([
       'enabled' => TRUE,
@@ -118,6 +119,7 @@ class FacilitySettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
 
     $response = $this->controller->updateFacilitiesSettings(
@@ -135,6 +137,7 @@ class FacilitySettingsControllerTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn('14');
     $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
     $this->groupStorage->method('load')->with(14)->willReturn($group);
     $this->facilityManager->method('saveDashboardSettings')
       ->willThrowException(new \InvalidArgumentException('enabled is required and must be a boolean.'));
