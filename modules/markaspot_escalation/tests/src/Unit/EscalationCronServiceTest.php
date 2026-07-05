@@ -218,6 +218,33 @@ class EscalationCronServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that cron executes one resolved parent-org step for an overdue node.
+   *
+   * @covers ::processEscalations
+   */
+  public function testProcessEscalationsUsesResolvedParentOrgTargetOnce(): void {
+    $this->query->method('execute')->willReturn([1 => 1]);
+
+    $categoryTerm = $this->createMockCategoryTerm(3, 20);
+    $node = $this->createMockCronNode(1, $categoryTerm, 10, NULL, 568000);
+
+    $this->nodeStorage->method('load')
+      ->willReturn($node);
+
+    $this->escalationService->expects($this->once())
+      ->method('resolveEscalationTarget')
+      ->with($node)
+      ->willReturn(30);
+
+    $this->escalationService->expects($this->once())
+      ->method('escalateRequest')
+      ->with($node, 30, $this->anything());
+
+    $result = $this->service->processEscalations();
+    $this->assertEquals(1, $result);
+  }
+
+  /**
    * Tests that multiple overdue nodes are all escalated.
    *
    * @covers ::processEscalations
@@ -351,10 +378,6 @@ class EscalationCronServiceTest extends UnitTestCase {
     $result = $this->service->processEscalations();
     $this->assertEquals(0, $result);
   }
-
-  // ===========================================================================
-  // Helper methods.
-  // ===========================================================================
 
   /**
    * Creates a mock category term with escalation configuration.

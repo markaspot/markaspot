@@ -8,14 +8,17 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_escalation\Service\EscalationService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
+use Drupal\paragraphs\Entity\Paragraph;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
@@ -51,6 +54,20 @@ class EscalationServiceTest extends UnitTestCase {
    * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected $hierarchyResolver;
+
+  /**
+   * Mocked organisation hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\OrgHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $orgHierarchyResolver;
+
+  /**
+   * Ancestor IDs returned by the organisation hierarchy resolver mock.
+   *
+   * @var array<int, int[]>
+   */
+  protected array $orgAncestorMap = [];
 
   /**
    * Mocked GeoReport processor.
@@ -130,6 +147,7 @@ class EscalationServiceTest extends UnitTestCase {
 
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $this->orgHierarchyResolver = $this->createMock(OrgHierarchyResolverInterface::class);
     $this->processor = $this->createMock(GeoreportProcessorServiceInterface::class);
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->configFactory = $this->createMock(ConfigFactoryInterface::class);
@@ -146,6 +164,9 @@ class EscalationServiceTest extends UnitTestCase {
         ['group', $this->groupStorage],
         ['group_relationship', $this->relationshipStorage],
       ]);
+
+    $this->orgHierarchyResolver->method('getAncestorIds')
+      ->willReturnCallback(fn(int $groupId): array => $this->orgAncestorMap[$groupId] ?? []);
 
     // Default escalation config.
     $this->escalationConfig = $this->createMock(ImmutableConfig::class);
@@ -177,12 +198,9 @@ class EscalationServiceTest extends UnitTestCase {
       $this->time,
       $this->logger,
       $this->mailManager,
+      $this->orgHierarchyResolver,
     );
   }
-
-  // ===========================================================================
-  // Helper methods for building mock objects.
-  // ===========================================================================
 
   /**
    * Creates a mock jurisdiction group.
@@ -750,10 +768,6 @@ class EscalationServiceTest extends UnitTestCase {
     return $account;
   }
 
-  // ===========================================================================
-  // canEscalate() tests.
-  // ===========================================================================
-
   /**
    * @covers ::canEscalate
    */
@@ -781,6 +795,7 @@ class EscalationServiceTest extends UnitTestCase {
       $this->time,
       $this->logger,
       $this->mailManager,
+      $this->orgHierarchyResolver,
     );
 
     $node = $this->createMockNode();
@@ -933,9 +948,250 @@ class EscalationServiceTest extends UnitTestCase {
     $this->assertFalse($this->service->canEscalate($node, $account));
   }
 
-  // ===========================================================================
-  // resolveEscalationTarget() tests.
-  // ===========================================================================
+  /**
+   * @covers ::resolveEscalationTarget
+   */
+  public function testResolveTargetPrefersParentOrganisation(): void {
+    $category = $this->createMockCategoryTerm(50, NULL, 99);
+    $orgGroup = $this->createMockOrgGroup(10, 4);
+    $parentOrg = $this->createMockOrgGroup(20, 4);
+    $categoryTarget = $this->createMockGroup(99, 'jur', NULL, 'Category Jur');
+
+    $node = $this->createMockNode([
+      'field_organisation' => $orgGroup,
+      'field_category' => $category,
+    ]);
+
+    $this->orgAncestorMap = [10 => [20, 30]];
+
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static function (int $id) use ($parentOrg, $categoryTarget) {
+        return match ($id) {
+          20 => $parentOrg,
+          99 => $categoryTarget,
+          default => NULL,
+        };
+      });
+
+    $result = $this->service->resolveEscalationTarget($node);
+    $this->assertEquals(20, $result);
+  }
+
+  /**
+   * @covers ::resolveEscalationTarget
+   */
+  public function testResolveTargetFallsThroughToJurisdictionWhenOrgHasNoParent(): void {
+    $orgGroup = $this->createMockOrgGroup(10, 4);
+    $node = $this->createMockNode([
+      'field_organisation' => $orgGroup,
+    ]);
+
+    $this->relationshipStorage->method('loadByProperties')
+      ->willReturn([]);
+
+    $childJur = $this->createMockGroup(4, 'jur', 1, 'Noord');
+    $parentJur = $this->createMockGroup(1, 'jur', NULL, 'Amsterdam');
+
+    $this->groupStorage->method('load')
+      ->willReturnMap([
+        [4, $childJur],
+        [1, $parentJur],
+      ]);
+
+    $result = $this->service->resolveEscalationTarget($node);
+    $this->assertEquals(1, $result);
+  }
+
+  /**
+   * @covers ::escalateRequest
+   */
+  public function testEscalateRequestToParentOrgDelegatesWithoutJurisdictionFlag(): void {
+    $childOrg = $this->createMockOrgGroup(10, 4);
+    $parentOrg = $this->createMockOrgGroup(20, 4);
+    $paragraph = $this->createMock(Paragraph::class);
+
+    $service = new class(
+      $this->entityTypeManager,
+      $this->hierarchyResolver,
+      $this->processor,
+      $this->currentUser,
+      $this->configFactory,
+      $this->time,
+      $this->logger,
+      $this->mailManager,
+      $this->orgHierarchyResolver,
+      $paragraph,
+    ) extends EscalationService {
+
+      /**
+       * Paragraph stub.
+       *
+       * @var \Drupal\paragraphs\Entity\Paragraph
+       */
+      protected Paragraph $paragraph;
+
+      /**
+       * Captured internal remark text.
+       *
+       * @var string|null
+       */
+      public ?string $createdRemarkText = NULL;
+
+      /**
+       * Captured delegation notification note.
+       *
+       * @var string|null
+       */
+      public ?string $delegationNotificationNote = NULL;
+
+      /**
+       * Constructs the testable service.
+       */
+      public function __construct(
+        EntityTypeManagerInterface $entityTypeManager,
+        JurisdictionHierarchyResolverInterface $hierarchyResolver,
+        GeoreportProcessorServiceInterface $processor,
+        AccountInterface $currentUser,
+        ConfigFactoryInterface $configFactory,
+        TimeInterface $time,
+        LoggerInterface $logger,
+        MailManagerInterface $mailManager,
+        OrgHierarchyResolverInterface $orgHierarchyResolver,
+        Paragraph $paragraph,
+      ) {
+        parent::__construct(
+          $entityTypeManager,
+          $hierarchyResolver,
+          $processor,
+          $currentUser,
+          $configFactory,
+          $time,
+          $logger,
+          $mailManager,
+          $orgHierarchyResolver,
+        );
+        $this->paragraph = $paragraph;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function createInternalRemarkParagraph(string $text, string $langcode = ''): Paragraph {
+        $this->createdRemarkText = $text;
+        return $this->paragraph;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function appendInternalRemark(NodeInterface $node, Paragraph $paragraph): void {
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function sendDelegationNotification($orgGroup, NodeInterface $node, string $note): void {
+        $this->delegationNotificationNote = $note;
+      }
+
+    };
+    $service->setStringTranslation($this->getStringTranslationStub());
+
+    $this->orgAncestorMap = [10 => [20, 30]];
+
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static function (int $id) use ($parentOrg) {
+        return $id === 20 ? $parentOrg : NULL;
+      });
+
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn('de');
+
+    $fields = [
+      'field_category' => new class() {
+
+        /**
+         * Checks whether the field item is empty.
+         */
+        public function isEmpty(): bool {
+          return TRUE;
+        }
+
+      },
+      'field_escalation' => new class() {
+
+        /**
+         * Checks whether the field item is empty.
+         */
+        public function isEmpty(): bool {
+          return TRUE;
+        }
+
+      },
+      'field_organisation' => new class($childOrg) {
+
+        /**
+         * The child organisation group.
+         *
+         * @var \Drupal\group\Entity\GroupInterface
+         */
+        private GroupInterface $childOrg;
+
+        /**
+         * Constructs the field item stub.
+         */
+        public function __construct(GroupInterface $childOrg) {
+          $this->childOrg = $childOrg;
+        }
+
+        /**
+         * Checks whether the field item is empty.
+         */
+        public function isEmpty(): bool {
+          return FALSE;
+        }
+
+        /**
+         * Returns all referenced entities.
+         */
+        public function referencedEntities(): array {
+          return [$this->childOrg];
+        }
+
+      },
+    ];
+
+    $sets = [];
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn(100);
+    $node->method('language')->willReturn($language);
+    $node->method('hasField')
+      ->willReturnCallback(static fn(string $name): bool => isset($fields[$name]));
+    $node->method('get')
+      ->willReturnCallback(static fn(string $name): object => $fields[$name]);
+    $node->method('set')
+      ->willReturnCallback(static function (string $field, mixed $value) use (&$sets, $node): NodeInterface {
+        $sets[$field] = $value;
+        return $node;
+      });
+    $node->expects($this->once())
+      ->method('save')
+      ->willReturn(2);
+
+    $this->time->method('getRequestTime')->willReturn(1000);
+    $this->currentUser->method('id')->willReturn(5);
+
+    $service->escalateRequest($node, 20, 'Bitte prüfen');
+
+    $this->assertEquals(['target_id' => 20], $sets['field_organisation']);
+    $this->assertArrayNotHasKey('field_escalation', $sets);
+    $this->assertArrayNotHasKey('field_jurisdiction', $sets);
+    $this->assertSame(
+      'Eskaliert an übergeordnete Organisationseinheit Org 20: Bitte prüfen',
+      $service->createdRemarkText,
+    );
+    $this->assertSame($service->createdRemarkText, $service->delegationNotificationNote);
+  }
 
   /**
    * @covers ::resolveEscalationTarget
@@ -1052,10 +1308,6 @@ class EscalationServiceTest extends UnitTestCase {
     $this->assertNull($result);
   }
 
-  // ===========================================================================
-  // canDelegate() tests.
-  // ===========================================================================
-
   /**
    * @covers ::canDelegate
    */
@@ -1082,6 +1334,7 @@ class EscalationServiceTest extends UnitTestCase {
       $this->time,
       $this->logger,
       $this->mailManager,
+      $this->orgHierarchyResolver,
     );
 
     $node = $this->createMockNode();
@@ -1162,11 +1415,6 @@ class EscalationServiceTest extends UnitTestCase {
 
     $this->assertTrue($this->service->canDelegate($node, $account));
   }
-
-  // ===========================================================================
-  // resolveSourceJurisdiction() priority order tests.
-  // Tested indirectly through canEscalate() and resolveEscalationTarget().
-  // ===========================================================================
 
   /**
    * Tests that child jur from group_relationships takes priority over root.
@@ -1387,13 +1635,13 @@ class EscalationServiceTest extends UnitTestCase {
 
     $result = $this->service->resolveEscalationTarget($node);
     // Source from org is jur 4. Parent is 1.
-    // If category were used instead, source would be 1 (root, no parent) = NULL.
-    $this->assertEquals(1, $result, 'field_organisation jur (4) must take priority over field_category jur (1).');
+    // If category were used instead, source would be 1 with no parent.
+    $this->assertEquals(
+      1,
+      $result,
+      'field_organisation jur (4) must take priority over field_category jur (1).',
+    );
   }
-
-  // ===========================================================================
-  // isRequestClosed() (tested indirectly via canEscalate/canDelegate).
-  // ===========================================================================
 
   /**
    * Tests that a non-closed status allows escalation to proceed.
@@ -1436,10 +1684,6 @@ class EscalationServiceTest extends UnitTestCase {
 
     $this->service->canEscalate($node, $account);
   }
-
-  // ===========================================================================
-  // Re-escalation membership check.
-  // ===========================================================================
 
   /**
    * Tests re-escalation checks membership of the current escalation jur.
@@ -1516,10 +1760,6 @@ class EscalationServiceTest extends UnitTestCase {
 
     $this->assertFalse($this->service->canEscalate($node, $account));
   }
-
-  // ===========================================================================
-  // Edge cases.
-  // ===========================================================================
 
   /**
    * Tests that category escalation target with invalid group is skipped.

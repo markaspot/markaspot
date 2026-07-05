@@ -14,38 +14,41 @@ use Drupal\node\NodeInterface;
 interface EscalationServiceInterface {
 
   /**
-   * Escalates a service request to a target jurisdiction.
+   * Escalates a service request to a target group.
    *
-   * Moves the request from its current organisation/jurisdiction to a higher
-   * jurisdiction, clears the organisation assignment, adds an internal remark,
-   * creates a new group relationship, and sends email notification.
+   * Organisation targets move the request to the parent org using delegation
+   * mechanics. Jurisdiction targets move the request to a higher jurisdiction,
+   * clear the organisation assignment, add a jurisdiction group relationship,
+   * and set the escalation fields.
    *
    * @param \Drupal\node\NodeInterface $node
    *   The service request node to escalate.
-   * @param int $targetJurId
-   *   The target jurisdiction group ID.
+   * @param int $targetGroupId
+   *   The target organisation or jurisdiction group ID.
    * @param string $note
    *   The escalation note text for the internal remark.
    *
    * @throws \InvalidArgumentException
-   *   If the target group does not exist or is not a jurisdiction.
+   *   If the target group does not exist or is not a valid escalation target.
    */
-  public function escalateRequest(NodeInterface $node, int $targetJurId, string $note): void;
+  public function escalateRequest(NodeInterface $node, int $targetGroupId, string $note): void;
 
   /**
-   * Resolves the escalation target jurisdiction for a service request.
+   * Resolves the escalation target group for a service request.
    *
    * Resolution order:
-   * 1. Category-level override: field_escalation_target on the category term.
-   * 2. Fallback hierarchy traversal:
-   *    - Re-escalation (field_escalation set): parent of current escalation jur.
+   * 1. Current organisation's nearest parent organisation.
+   * 2. Category-level jurisdiction override on the category term.
+   * 3. Fallback jurisdiction hierarchy traversal:
+   *    - Re-escalation (field_escalation set): parent of current escalation
+   *      jurisdiction.
    *    - First escalation (field_escalation empty): parent of the org's jur.
    *
    * @param \Drupal\node\NodeInterface $node
    *   The service request node.
    *
    * @return int|null
-   *   The target jurisdiction group ID, or NULL if no target can be determined.
+   *   The target group ID, or NULL if no target can be determined.
    */
   public function resolveEscalationTarget(NodeInterface $node): ?int;
 

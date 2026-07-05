@@ -78,7 +78,7 @@ class EscalationController extends ControllerBase {
   }
 
   /**
-   * Escalates a service request to the parent jurisdiction.
+   * Escalates a service request to its next routing target.
    *
    * @param string $service_request_id
    *   The service request ID from the URL.
@@ -103,29 +103,37 @@ class EscalationController extends ControllerBase {
     $notes = $this->validateNotes($data, TRUE);
 
     // Resolve escalation target.
-    $targetJurId = $this->escalationService->resolveEscalationTarget($node);
-    if ($targetJurId === NULL) {
+    $targetGroupId = $this->escalationService->resolveEscalationTarget($node);
+    if ($targetGroupId === NULL) {
       throw new HttpException(422, 'No escalation target could be determined for this request.');
     }
 
+    $targetGroup = $this->entityTypeManager()->getStorage('group')->load($targetGroupId);
+    $isOrganisationTarget = $targetGroup?->bundle() === 'org';
+
     // Perform escalation.
     try {
-      $this->escalationService->escalateRequest($node, $targetJurId, $notes);
+      $this->escalationService->escalateRequest($node, $targetGroupId, $notes);
     }
     catch (\InvalidArgumentException $e) {
       throw new HttpException(422, 'Invalid escalation target.');
     }
 
-    $targetLabel = $this->entityTypeManager()->getStorage('group')
-      ->load($targetJurId)?->label() ?? '';
+    $requestData = [
+      'service_request_id' => $service_request_id,
+      'escalated' => !$isOrganisationTarget,
+    ];
+
+    if ($isOrganisationTarget) {
+      $requestData['delegated'] = TRUE;
+    }
+    else {
+      $requestData['escalation_target'] = $targetGroup?->label() ?? '';
+    }
 
     return new JsonResponse([
       'service_requests' => [
-        'request' => [
-          'service_request_id' => $service_request_id,
-          'escalated' => TRUE,
-          'escalation_target' => $targetLabel,
-        ],
+        'request' => $requestData,
       ],
     ]);
   }

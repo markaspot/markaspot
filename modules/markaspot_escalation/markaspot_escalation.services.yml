@@ -10,6 +10,7 @@ services:
       - '@datetime.time'
       - '@logger.channel.markaspot_escalation'
       - '@plugin.manager.mail'
+      - '@markaspot_group.org_hierarchy_resolver'
 
   markaspot_escalation.cron:
     class: Drupal\markaspot_escalation\Service\EscalationCronService

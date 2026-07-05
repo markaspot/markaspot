@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\markaspot_escalation\Service\EscalationServiceInterface;
+use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -42,6 +43,13 @@ class DelegateForm extends FormBase {
   protected GeoreportProcessorServiceInterface $processor;
 
   /**
+   * The organisation hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\OrgHierarchyResolverInterface
+   */
+  protected OrgHierarchyResolverInterface $orgHierarchyResolver;
+
+  /**
    * The service request node.
    *
    * @var \Drupal\node\NodeInterface
@@ -59,17 +67,21 @@ class DelegateForm extends FormBase {
    *   The GeoReport processor service.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   The config factory.
+   * @param \Drupal\markaspot_group\Service\OrgHierarchyResolverInterface $orgHierarchyResolver
+   *   The organisation hierarchy resolver.
    */
   public function __construct(
     EscalationServiceInterface $escalationService,
     EntityTypeManagerInterface $entityTypeManager,
     GeoreportProcessorServiceInterface $processor,
     ConfigFactoryInterface $configFactory,
+    OrgHierarchyResolverInterface $orgHierarchyResolver,
   ) {
     $this->escalationService = $escalationService;
     $this->entityTypeManager = $entityTypeManager;
     $this->processor = $processor;
     $this->configFactory = $configFactory;
+    $this->orgHierarchyResolver = $orgHierarchyResolver;
   }
 
   /**
@@ -81,6 +93,7 @@ class DelegateForm extends FormBase {
       $container->get('entity_type.manager'),
       $container->get('markaspot_open311.processor'),
       $container->get('config.factory'),
+      $container->get('markaspot_group.org_hierarchy_resolver'),
     );
   }
 
@@ -112,21 +125,16 @@ class DelegateForm extends FormBase {
     // Resolve the node's effective jurisdiction to determine valid orgs.
     $nodeJurId = $this->getEffectiveNodeJurisdictionId($node);
 
+    $currentOrgIds = $this->getCurrentOrganisationIds($node);
+    $currentParentOrgId = $this->getCurrentParentOrganisationId($node);
+
     $options = [];
     if ($nodeJurId !== NULL) {
-      $options = $this->buildOrganisationOptions($nodeJurId);
+      $options = $this->buildOrganisationOptions($nodeJurId, $currentParentOrgId, $currentOrgIds);
     }
 
     if (empty($options)) {
       $this->messenger()->addWarning($this->t('No organisations are available for delegation within this jurisdiction.'));
-    }
-
-    // Exclude all currently assigned organisations from the options.
-    if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
-      $currentOrgIds = array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'));
-      foreach ($currentOrgIds as $id) {
-        unset($options[$id]);
-      }
     }
 
     $form['target_organisation'] = [
@@ -241,11 +249,19 @@ class DelegateForm extends FormBase {
    *
    * @param int $nodeJurId
    *   The node's effective jurisdiction group ID.
+   * @param int|null $currentParentOrgId
+   *   The current organisation's nearest parent org ID.
+   * @param int[] $excludedOrgIds
+   *   Organisation IDs to exclude from the selectable options.
    *
    * @return array
-   *   An associative array of org group ID => label.
+   *   A grouped associative array of org group ID => label options.
    */
-  protected function buildOrganisationOptions(int $nodeJurId): array {
+  protected function buildOrganisationOptions(
+    int $nodeJurId,
+    ?int $currentParentOrgId = NULL,
+    array $excludedOrgIds = [],
+  ): array {
     $groupStorage = $this->entityTypeManager->getStorage('group');
 
     // Collect the jurisdiction and all its child jurisdictions.
@@ -253,7 +269,7 @@ class DelegateForm extends FormBase {
     $this->collectChildJurisdictions($nodeJurId, $jurIds);
 
     // Load all org groups that belong to any of these jurisdictions.
-    $options = [];
+    $orgGroupsById = [];
     $orgGroups = $groupStorage->loadByProperties(['type' => 'org']);
     foreach ($orgGroups as $orgGroup) {
       if (!$orgGroup->hasField('field_jurisdiction') || $orgGroup->get('field_jurisdiction')->isEmpty()) {
@@ -261,12 +277,252 @@ class DelegateForm extends FormBase {
       }
       $orgJurId = (int) $orgGroup->get('field_jurisdiction')->target_id;
       if (in_array($orgJurId, $jurIds, TRUE)) {
-        $options[(int) $orgGroup->id()] = $orgGroup->label();
+        $orgGroupsById[(int) $orgGroup->id()] = $orgGroup;
       }
     }
 
-    asort($options);
+    if (empty($orgGroupsById)) {
+      return [];
+    }
+
+    uasort($orgGroupsById, static function ($a, $b): int {
+      $comparison = strnatcasecmp($a->label(), $b->label());
+      return $comparison !== 0 ? $comparison : ((int) $a->id() <=> (int) $b->id());
+    });
+
+    $rootIds = [];
+    foreach (array_keys($orgGroupsById) as $orgId) {
+      $rootId = $this->orgHierarchyResolver->getRootOrgId($orgId) ?? $orgId;
+      $rootIds[$rootId] = $rootId;
+    }
+
+    uasort($rootIds, function (int $a, int $b) use ($orgGroupsById): int {
+      $labelA = isset($orgGroupsById[$a]) ? $orgGroupsById[$a]->label() : (string) $a;
+      $labelB = isset($orgGroupsById[$b]) ? $orgGroupsById[$b]->label() : (string) $b;
+      $comparison = strnatcasecmp($labelA, $labelB);
+      return $comparison !== 0 ? $comparison : ($a <=> $b);
+    });
+
+    $options = [];
+    $optionGroupLabels = [];
+    $usedOrgIds = [];
+    foreach ($rootIds as $rootId) {
+      $treeOptions = $this->buildOrganisationTreeOptions(
+        $rootId,
+        $orgGroupsById,
+        $currentParentOrgId,
+        $excludedOrgIds,
+        $usedOrgIds,
+      );
+
+      if (!empty($treeOptions)) {
+        $rootLabel = isset($orgGroupsById[$rootId])
+          ? $orgGroupsById[$rootId]->label()
+          : (string) $this->t('Organisation tree @id', ['@id' => $rootId]);
+        $optionGroupLabel = $this->buildUniqueOptionGroupLabel(
+          $rootLabel,
+          $rootId,
+          $optionGroupLabels,
+        );
+        $options[$optionGroupLabel] = $treeOptions;
+      }
+    }
+
+    $remainingOrgIds = array_diff(array_keys($orgGroupsById), $usedOrgIds);
+    if (!empty($remainingOrgIds)) {
+      $remainingOptions = [];
+      foreach ($remainingOrgIds as $orgId) {
+        if (in_array($orgId, $excludedOrgIds, TRUE)) {
+          continue;
+        }
+        $remainingOptions[$orgId] = $this->formatOrganisationOptionLabel(
+          $orgGroupsById[$orgId],
+          $currentParentOrgId,
+          $orgGroupsById,
+        );
+      }
+      if (!empty($remainingOptions)) {
+        $otherLabel = (string) $this->t('Other organisations');
+        $optionGroupLabel = $this->buildUniqueOptionGroupLabel(
+          $otherLabel,
+          'other',
+          $optionGroupLabels,
+        );
+        $options[$optionGroupLabel] = $remainingOptions;
+      }
+    }
+
     return $options;
+  }
+
+  /**
+   * Builds options for one organisation tree.
+   *
+   * @param int $rootId
+   *   The root organisation group ID.
+   * @param array $orgGroupsById
+   *   Eligible organisation groups keyed by group ID.
+   * @param int|null $currentParentOrgId
+   *   The current organisation's nearest parent org ID.
+   * @param int[] $excludedOrgIds
+   *   Organisation IDs to exclude from the selectable options.
+   * @param int[] $usedOrgIds
+   *   Reference collecting organisation IDs covered by a tree.
+   *
+   * @return array
+   *   Select options for the tree.
+   */
+  protected function buildOrganisationTreeOptions(
+    int $rootId,
+    array $orgGroupsById,
+    ?int $currentParentOrgId,
+    array $excludedOrgIds,
+    array &$usedOrgIds,
+  ): array {
+    $descendantIds = $this->orgHierarchyResolver->getDescendantIds($rootId);
+    if (empty($descendantIds)) {
+      $descendantIds = [$rootId];
+    }
+
+    $treeOptions = [];
+    foreach ($descendantIds as $orgId) {
+      $orgId = (int) $orgId;
+      if (!isset($orgGroupsById[$orgId])) {
+        continue;
+      }
+
+      $usedOrgIds[] = $orgId;
+      if (in_array($orgId, $excludedOrgIds, TRUE)) {
+        continue;
+      }
+
+      $treeOptions[$orgId] = $this->formatOrganisationOptionLabel(
+        $orgGroupsById[$orgId],
+        $currentParentOrgId,
+        $orgGroupsById,
+      );
+    }
+
+    return $treeOptions;
+  }
+
+  /**
+   * Builds a unique option group label.
+   *
+   * @param string $label
+   *   The preferred option group label.
+   * @param int|string $identifier
+   *   A stable identifier appended when the label already exists.
+   * @param array $usedLabels
+   *   Option group labels already used, keyed by label.
+   *
+   * @return string
+   *   A unique option group label.
+   */
+  protected function buildUniqueOptionGroupLabel(
+    string $label,
+    int|string $identifier,
+    array &$usedLabels,
+  ): string {
+    $candidate = $label;
+    if (isset($usedLabels[$candidate])) {
+      $candidate = (string) $this->t('@label (#@identifier)', [
+        '@label' => $label,
+        '@identifier' => (string) $identifier,
+      ]);
+    }
+
+    $suffix = 2;
+    while (isset($usedLabels[$candidate])) {
+      $candidate = (string) $this->t('@label (#@identifier, @suffix)', [
+        '@label' => $label,
+        '@identifier' => (string) $identifier,
+        '@suffix' => $suffix++,
+      ]);
+    }
+
+    $usedLabels[$candidate] = TRUE;
+    return $candidate;
+  }
+
+  /**
+   * Formats an organisation option label with hierarchy indentation.
+   *
+   * @param object $orgGroup
+   *   The organisation group entity.
+   * @param int|null $currentParentOrgId
+   *   The current organisation's nearest parent org ID.
+   * @param array $orgGroupsById
+   *   Eligible organisation groups keyed by group ID.
+   *
+   * @return string
+   *   The formatted option label.
+   */
+  protected function formatOrganisationOptionLabel(
+    object $orgGroup,
+    ?int $currentParentOrgId,
+    array $orgGroupsById,
+  ): string {
+    $ancestorIds = $this->orgHierarchyResolver->getAncestorIds((int) $orgGroup->id());
+    $labelParts = [];
+    foreach (array_reverse($ancestorIds) as $ancestorId) {
+      if (isset($orgGroupsById[(int) $ancestorId])) {
+        $labelParts[] = $orgGroupsById[(int) $ancestorId]->label();
+      }
+    }
+    $labelParts[] = $orgGroup->label();
+    $label = str_repeat('  ', count($ancestorIds)) . implode(' > ', $labelParts);
+
+    if ($currentParentOrgId !== NULL && (int) $orgGroup->id() === $currentParentOrgId) {
+      $label .= ' ' . (string) $this->t('(übergeordnet)');
+    }
+
+    return $label;
+  }
+
+  /**
+   * Gets the currently assigned organisation IDs.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   *
+   * @return int[]
+   *   The current organisation IDs.
+   */
+  protected function getCurrentOrganisationIds(NodeInterface $node): array {
+    if (!$node->hasField('field_organisation') || $node->get('field_organisation')->isEmpty()) {
+      return [];
+    }
+
+    return array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'));
+  }
+
+  /**
+   * Gets the nearest parent of the current organisation.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   *
+   * @return int|null
+   *   The nearest parent organisation ID, or NULL.
+   */
+  protected function getCurrentParentOrganisationId(NodeInterface $node): ?int {
+    if (!$node->hasField('field_organisation') || $node->get('field_organisation')->isEmpty()) {
+      return NULL;
+    }
+
+    foreach ($node->get('field_organisation')->referencedEntities() as $orgGroup) {
+      if (!is_object($orgGroup) || !method_exists($orgGroup, 'bundle') || $orgGroup->bundle() !== 'org') {
+        continue;
+      }
+
+      $ancestorIds = $this->orgHierarchyResolver->getAncestorIds((int) $orgGroup->id());
+      if (!empty($ancestorIds)) {
+        return (int) reset($ancestorIds);
+      }
+    }
+
+    return NULL;
   }
 
   /**

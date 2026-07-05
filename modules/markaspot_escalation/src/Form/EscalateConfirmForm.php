@@ -33,18 +33,25 @@ class EscalateConfirmForm extends ConfirmFormBase {
   protected NodeInterface $node;
 
   /**
-   * The resolved target jurisdiction group ID.
+   * The resolved target group ID.
    *
    * @var int|null
    */
-  protected ?int $targetJurId = NULL;
+  protected ?int $targetGroupId = NULL;
 
   /**
-   * The resolved target jurisdiction label.
+   * The resolved target label.
    *
    * @var string|null
    */
   protected ?string $targetLabel = NULL;
+
+  /**
+   * Whether the resolved target is an organisation group.
+   *
+   * @var bool
+   */
+  protected bool $targetIsOrganisation = FALSE;
 
   /**
    * Constructs an EscalateConfirmForm.
@@ -76,6 +83,12 @@ class EscalateConfirmForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getQuestion(): string {
+    if ($this->targetIsOrganisation) {
+      return (string) $this->t('Delegate service request %title to parent organisation?', [
+        '%title' => $this->node->getTitle(),
+      ]);
+    }
+
     return (string) $this->t('Escalate service request %title?', [
       '%title' => $this->node->getTitle(),
     ]);
@@ -86,7 +99,13 @@ class EscalateConfirmForm extends ConfirmFormBase {
    */
   public function getDescription(): string {
     if ($this->targetLabel !== NULL) {
-      return (string) $this->t('This will escalate the request to jurisdiction %target. This action cannot be undone.', [
+      if ($this->targetIsOrganisation) {
+        return (string) $this->t('This will delegate the request to parent organisation %target. This action cannot be undone.', [
+          '%target' => $this->targetLabel,
+        ]);
+      }
+
+      return (string) $this->t('This will escalate the request to %target. This action cannot be undone.', [
         '%target' => $this->targetLabel,
       ]);
     }
@@ -104,6 +123,10 @@ class EscalateConfirmForm extends ConfirmFormBase {
    * {@inheritdoc}
    */
   public function getConfirmText(): string {
+    if ($this->targetIsOrganisation) {
+      return (string) $this->t('Delegate');
+    }
+
     return (string) $this->t('Escalate');
   }
 
@@ -122,17 +145,18 @@ class EscalateConfirmForm extends ConfirmFormBase {
     }
 
     // Resolve the escalation target.
-    $this->targetJurId = $this->escalationService->resolveEscalationTarget($node);
-    if ($this->targetJurId !== NULL) {
+    $this->targetGroupId = $this->escalationService->resolveEscalationTarget($node);
+    if ($this->targetGroupId !== NULL) {
       $groupStorage = $this->entityTypeManager()->getStorage('group');
-      $targetGroup = $groupStorage->load($this->targetJurId);
+      $targetGroup = $groupStorage->load($this->targetGroupId);
       $this->targetLabel = $targetGroup?->label();
+      $this->targetIsOrganisation = $targetGroup?->bundle() === 'org';
     }
 
     $form = parent::buildForm($form, $form_state);
 
     // If no target, disable the submit button and show an error.
-    if ($this->targetJurId === NULL) {
+    if ($this->targetGroupId === NULL) {
       $this->messenger()->addError($this->t('No escalation target could be determined for this request. The request may already be at the top of the jurisdiction hierarchy.'));
       $form['actions']['submit']['#disabled'] = TRUE;
       return $form;
@@ -140,8 +164,12 @@ class EscalateConfirmForm extends ConfirmFormBase {
 
     $form['notes'] = [
       '#type' => 'textarea',
-      '#title' => $this->t('Escalation notes'),
-      '#description' => $this->t('Provide a reason for the escalation. This will be added as an internal remark.'),
+      '#title' => $this->targetIsOrganisation
+        ? $this->t('Delegation notes')
+        : $this->t('Escalation notes'),
+      '#description' => $this->targetIsOrganisation
+        ? $this->t('Provide a reason for the delegation. This will be added as an internal remark.')
+        : $this->t('Provide a reason for the escalation. This will be added as an internal remark.'),
       '#required' => TRUE,
       '#maxlength' => 2000,
       '#attributes' => [
@@ -161,7 +189,10 @@ class EscalateConfirmForm extends ConfirmFormBase {
 
     $notes = trim((string) $form_state->getValue('notes'));
     if (mb_strlen($notes) > 2000) {
-      $form_state->setErrorByName('notes', $this->t('Escalation notes must not exceed 2000 characters.'));
+      $message = $this->targetIsOrganisation
+        ? $this->t('Delegation notes must not exceed 2000 characters.')
+        : $this->t('Escalation notes must not exceed 2000 characters.');
+      $form_state->setErrorByName('notes', $message);
     }
   }
 
@@ -171,12 +202,26 @@ class EscalateConfirmForm extends ConfirmFormBase {
   public function submitForm(array &$form, FormStateInterface $form_state): void {
     $notes = trim(strip_tags((string) $form_state->getValue('notes')));
 
+    if ($this->targetGroupId === NULL) {
+      $this->messenger()->addError($this->t('No escalation target could be determined for this request.'));
+      $form_state->setRedirectUrl($this->node->toUrl());
+      return;
+    }
+
     try {
-      $this->escalationService->escalateRequest($this->node, $this->targetJurId, $notes);
-      $this->messenger()->addStatus($this->t('Service request %title has been escalated to %target.', [
-        '%title' => $this->node->getTitle(),
-        '%target' => $this->targetLabel,
-      ]));
+      $this->escalationService->escalateRequest($this->node, $this->targetGroupId, $notes);
+      if ($this->targetIsOrganisation) {
+        $this->messenger()->addStatus($this->t('Service request %title has been delegated to parent organisation %target.', [
+          '%title' => $this->node->getTitle(),
+          '%target' => $this->targetLabel,
+        ]));
+      }
+      else {
+        $this->messenger()->addStatus($this->t('Service request %title has been escalated to %target.', [
+          '%title' => $this->node->getTitle(),
+          '%target' => $this->targetLabel,
+        ]));
+      }
     }
     catch (\Exception $e) {
       $this->messenger()->addError($this->t('Escalation failed: @message', [

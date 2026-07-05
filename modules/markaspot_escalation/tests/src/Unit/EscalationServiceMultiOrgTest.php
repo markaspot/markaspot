@@ -14,6 +14,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_escalation\Service\EscalationService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
@@ -52,6 +53,13 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
   protected $hierarchyResolver;
 
   /**
+   * Mocked organisation hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\OrgHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $orgHierarchyResolver;
+
+  /**
    * Mocked GeoReport processor.
    *
    * @var \Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -87,6 +95,7 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
 
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $this->orgHierarchyResolver = $this->createMock(OrgHierarchyResolverInterface::class);
     $this->processor = $this->createMock(GeoreportProcessorServiceInterface::class);
     $currentUser = $this->createMock(AccountInterface::class);
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
@@ -103,6 +112,9 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
         ['group', $this->groupStorage],
         ['group_relationship', $this->relationshipStorage],
       ]);
+
+    $this->orgHierarchyResolver->method('getAncestorIds')
+      ->willReturn([]);
 
     // Default escalation config.
     $escalationConfig = $this->createMock(ImmutableConfig::class);
@@ -134,12 +146,9 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
       $time,
       $this->logger,
       $mailManager,
+      $this->orgHierarchyResolver,
     );
   }
-
-  // =========================================================================
-  // Helper methods.
-  // =========================================================================
 
   /**
    * Creates a mock account with configurable permissions.
@@ -548,10 +557,6 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
     return $ref->invokeArgs($object, $args);
   }
 
-  // =========================================================================
-  // canDelegate() multi-org tests.
-  // =========================================================================
-
   /**
    * Tests canDelegate returns TRUE when any org's jurisdiction matches.
    *
@@ -667,11 +672,6 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
     $this->assertFalse($this->service->canDelegate($node, $account));
   }
 
-  // =========================================================================
-  // resolveSourceJurisdiction() multi-org tests.
-  // Tested via reflection since the method is protected.
-  // =========================================================================
-
   /**
    * Tests resolveSourceJurisdiction returns the first valid org jurisdiction.
    *
@@ -744,12 +744,6 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
     $result = $this->invokeMethod($this->service, 'resolveSourceJurisdiction', [$node]);
     $this->assertEquals(4, $result);
   }
-
-  // =========================================================================
-  // DelegateForm exclusion test.
-  // The form logic extracts all current org IDs and excludes them from
-  // the dropdown. This tests the extraction pattern used in DelegateForm.
-  // =========================================================================
 
   /**
    * Tests that the org ID extraction for form exclusion works correctly.

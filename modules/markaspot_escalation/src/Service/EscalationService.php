@@ -5,10 +5,13 @@ namespace Drupal\markaspot_escalation\Service;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
@@ -18,10 +21,10 @@ use Psr\Log\LoggerInterface;
 /**
  * Handles escalation and delegation of service requests.
  *
- * Escalation moves a request upward in the jurisdiction hierarchy (org -> jur
- * -> parent jur). Delegation moves a request downward or laterally to a
- * different organisation. Both operations create an internal remark, update
- * group relationships, create a new node revision, and send email
+ * Escalation first routes to a parent organisation when the current org has
+ * one, then falls back to the jurisdiction hierarchy. Delegation moves a
+ * request downward or laterally to a different organisation. Both operations
+ * create an internal remark, create a new node revision, and send email
  * notifications.
  */
 class EscalationService implements EscalationServiceInterface {
@@ -42,6 +45,13 @@ class EscalationService implements EscalationServiceInterface {
    * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface
    */
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
+   * The organisation hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\OrgHierarchyResolverInterface
+   */
+  protected OrgHierarchyResolverInterface $orgHierarchyResolver;
 
   /**
    * The GeoReport processor service.
@@ -104,6 +114,8 @@ class EscalationService implements EscalationServiceInterface {
    *   The logger channel.
    * @param \Drupal\Core\Mail\MailManagerInterface $mailManager
    *   The mail manager.
+   * @param \Drupal\markaspot_group\Service\OrgHierarchyResolverInterface $orgHierarchyResolver
+   *   The organisation hierarchy resolver.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
@@ -114,9 +126,11 @@ class EscalationService implements EscalationServiceInterface {
     TimeInterface $time,
     LoggerInterface $logger,
     MailManagerInterface $mailManager,
+    OrgHierarchyResolverInterface $orgHierarchyResolver,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->hierarchyResolver = $hierarchyResolver;
+    $this->orgHierarchyResolver = $orgHierarchyResolver;
     $this->processor = $processor;
     $this->currentUser = $currentUser;
     $this->configFactory = $configFactory;
@@ -128,25 +142,40 @@ class EscalationService implements EscalationServiceInterface {
   /**
    * {@inheritdoc}
    */
-  public function escalateRequest(NodeInterface $node, int $targetJurId, string $note): void {
+  public function escalateRequest(NodeInterface $node, int $targetGroupId, string $note): void {
     $groupStorage = $this->entityTypeManager->getStorage('group');
 
-    // Load and validate the target jurisdiction group.
-    $jurGroup = $groupStorage->load($targetJurId);
-    if (!$this->isJurisdictionGroup($jurGroup)) {
+    // Load and validate the target group.
+    $targetGroup = $groupStorage->load($targetGroupId);
+    if (!$this->isJurisdictionGroup($targetGroup) && !$this->isOrganisationGroup($targetGroup)) {
       throw new \InvalidArgumentException(
-        sprintf('Target group %d does not exist or is not a jurisdiction.', $targetJurId)
+        sprintf('Target group %d does not exist or is not a valid escalation target.', $targetGroupId)
       );
     }
 
     // Verify the target is the legitimate escalation target for this node.
-    // This prevents callers from moving requests to arbitrary jurisdictions.
+    // This prevents callers from moving requests to arbitrary groups.
     $legitimateTarget = $this->resolveEscalationTarget($node);
-    if ($legitimateTarget !== $targetJurId) {
+    if ($legitimateTarget !== $targetGroupId) {
       throw new \InvalidArgumentException(
-        sprintf('Target jurisdiction %d is not a valid escalation target for node %d.', $targetJurId, $node->id())
+        sprintf('Target group %d is not a valid escalation target for node %d.', $targetGroupId, $node->id())
       );
     }
+
+    if ($this->isOrganisationGroup($targetGroup)) {
+      $escalationNote = $this->buildParentOrganisationEscalationNote($targetGroup, $note);
+      $this->moveRequestToOrganisation($node, $targetGroup, $escalationNote, FALSE);
+
+      $this->logger->notice('Escalated service request @nid to parent organisation "@org" (id=@oid). Note: @note', [
+        '@nid' => $node->id(),
+        '@org' => $targetGroup->label(),
+        '@oid' => $targetGroupId,
+        '@note' => $escalationNote,
+      ]);
+      return;
+    }
+
+    $jurGroup = $targetGroup;
 
     // Create internal remark paragraph with the escalation note.
     $paragraph = $this->createInternalRemarkParagraph($note, $node->language()->getId());
@@ -158,14 +187,14 @@ class EscalationService implements EscalationServiceInterface {
     $node->set('field_organisation', NULL);
 
     // Set the escalation target to the new jurisdiction.
-    $node->set('field_escalation', ['target_id' => $targetJurId]);
+    $node->set('field_escalation', ['target_id' => $targetGroupId]);
 
     // Update field_jurisdiction so the API response reflects the new
     // jurisdiction. Without this, resolveNodeJurisdiction() returns the
     // original (child) jurisdiction because field_jurisdiction takes priority
     // over group_relationships.
     if ($node->hasField('field_jurisdiction')) {
-      $node->set('field_jurisdiction', ['target_id' => $targetJurId]);
+      $node->set('field_jurisdiction', ['target_id' => $targetGroupId]);
     }
 
     // Create a new revision with a descriptive log message.
@@ -199,7 +228,7 @@ class EscalationService implements EscalationServiceInterface {
       ]);
       foreach ($existing as $relationship) {
         $group = $relationship->getGroup();
-        if ($this->isJurisdictionGroup($group) && (int) $group->id() !== $targetJurId) {
+        if ($this->isJurisdictionGroup($group) && (int) $group->id() !== $targetGroupId) {
           $relationship->delete();
         }
       }
@@ -208,7 +237,7 @@ class EscalationService implements EscalationServiceInterface {
       // exists, e.g. from boundary auto-assignment, to avoid duplicates).
       $existingTarget = $relationshipStorage->loadByProperties([
         'entity_id' => $node->id(),
-        'gid' => $targetJurId,
+        'gid' => $targetGroupId,
         'plugin_id' => $pluginId,
       ]);
       if (empty($existingTarget)) {
@@ -218,7 +247,7 @@ class EscalationService implements EscalationServiceInterface {
     catch (\Exception $e) {
       $this->logger->error('Escalation failed for node @nid to jurisdiction @gid: @error', [
         '@nid' => $node->id(),
-        '@gid' => $targetJurId,
+        '@gid' => $targetGroupId,
         '@error' => $e->getMessage(),
       ]);
       throw new \RuntimeException('Escalation failed: ' . $e->getMessage(), 0, $e);
@@ -233,7 +262,7 @@ class EscalationService implements EscalationServiceInterface {
     $this->logger->notice('Escalated service request @nid to jurisdiction "@jur" (id=@jid). Note: @note', [
       '@nid' => $node->id(),
       '@jur' => $jurGroup->label(),
-      '@jid' => $targetJurId,
+      '@jid' => $targetGroupId,
       '@note' => $note,
     ]);
   }
@@ -244,7 +273,16 @@ class EscalationService implements EscalationServiceInterface {
   public function resolveEscalationTarget(NodeInterface $node): ?int {
     $groupStorage = $this->entityTypeManager->getStorage('group');
 
-    // 1. Check for a category-level escalation target override.
+    // 1. First escalation climbs one level up the organisation axis before
+    // any jurisdiction-axis target is considered.
+    if (!$node->hasField('field_escalation') || $node->get('field_escalation')->isEmpty()) {
+      $parentOrgId = $this->resolveParentOrganisationEscalationTarget($node);
+      if ($parentOrgId !== NULL) {
+        return $parentOrgId;
+      }
+    }
+
+    // 2. Check for a category-level jurisdiction target override.
     if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
       $categoryTerm = $node->get('field_category')->entity;
       if ($categoryTerm
@@ -269,7 +307,7 @@ class EscalationService implements EscalationServiceInterface {
       }
     }
 
-    // 2. Fallback: traverse the jurisdiction hierarchy.
+    // 3. Fallback: traverse the jurisdiction hierarchy.
     if ($node->hasField('field_escalation') && !$node->get('field_escalation')->isEmpty()) {
       // Re-escalation case: the request is already escalated.
       // Target is the parent of the current escalation jurisdiction.
@@ -301,39 +339,7 @@ class EscalationService implements EscalationServiceInterface {
       );
     }
 
-    // Create internal remark paragraph with the delegation note.
-    $paragraph = $this->createInternalRemarkParagraph($note, $node->language()->getId());
-
-    // Append to the node's field_internal_remark.
-    $this->appendInternalRemark($node, $paragraph);
-
-    // Delegation is a deliberate reassignment: replaces ALL current orgs
-    // with the single target org. This is by design, not a multi-value
-    // oversight. The bidirectional sync in markaspot_group_node_presave()
-    // handles group_relationship changes.
-    $node->set('field_organisation', ['target_id' => $targetOrgId]);
-
-    // Clear escalation state if it was set, since the request is now
-    // being handled at the organisation level again.
-    if ($node->hasField('field_escalation') && !$node->get('field_escalation')->isEmpty()) {
-      $node->set('field_escalation', NULL);
-    }
-
-    // Create a new revision.
-    $node->setNewRevision(TRUE);
-    $node->setRevisionLogMessage(
-      (string) $this->t('Delegated to @organisation: @note', [
-        '@organisation' => $orgGroup->label(),
-        '@note' => $note,
-      ])
-    );
-    $node->setRevisionCreationTime($this->time->getRequestTime());
-    $node->setRevisionUserId($this->currentUser->id());
-
-    $node->save();
-
-    // Send email notification to the target organisation.
-    $this->sendDelegationNotification($orgGroup, $node, $note);
+    $this->moveRequestToOrganisation($node, $orgGroup, $note, TRUE);
 
     $this->logger->notice('Delegated service request @nid to organisation "@org" (id=@oid). Note: @note', [
       '@nid' => $node->id(),
@@ -369,8 +375,8 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     // 5. Must have a valid escalation target.
-    $targetJurId = $this->resolveEscalationTarget($node);
-    if ($targetJurId === NULL) {
+    $targetGroupId = $this->resolveEscalationTarget($node);
+    if ($targetGroupId === NULL) {
       return FALSE;
     }
 
@@ -459,7 +465,7 @@ class EscalationService implements EscalationServiceInterface {
   protected function createInternalRemarkParagraph(string $text, string $langcode = ''): Paragraph {
     $paragraph = Paragraph::create([
       'type' => 'internal_remark',
-      'langcode' => $langcode ?: \Drupal::languageManager()->getDefaultLanguage()->getId(),
+      'langcode' => $langcode ?: LanguageInterface::LANGCODE_NOT_SPECIFIED,
       'field_internal_remark_text' => [
         'value' => $text,
         'format' => 'plain_text',
@@ -491,6 +497,130 @@ class EscalationService implements EscalationServiceInterface {
       'target_revision_id' => $paragraph->getRevisionId(),
     ];
     $node->set('field_internal_remark', $current);
+  }
+
+  /**
+   * Moves a request to one organisation using the delegation machinery.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   * @param \Drupal\group\Entity\GroupInterface $orgGroup
+   *   The target organisation group.
+   * @param string $note
+   *   The note text for the internal remark and notification.
+   * @param bool $clearEscalation
+   *   Whether to clear field_escalation during the move.
+   */
+  protected function moveRequestToOrganisation(
+    NodeInterface $node,
+    GroupInterface $orgGroup,
+    string $note,
+    bool $clearEscalation,
+  ): void {
+    $paragraph = $this->createInternalRemarkParagraph($note, $node->language()->getId());
+    $this->appendInternalRemark($node, $paragraph);
+
+    // Delegation is a deliberate reassignment: replaces ALL current orgs
+    // with the single target org. This is by design, not a multi-value
+    // oversight. The bidirectional sync in markaspot_group_node_presave()
+    // handles group_relationship changes.
+    $node->set('field_organisation', ['target_id' => (int) $orgGroup->id()]);
+
+    if ($clearEscalation
+        && $node->hasField('field_escalation')
+        && !$node->get('field_escalation')->isEmpty()) {
+      $node->set('field_escalation', NULL);
+    }
+
+    $node->setNewRevision(TRUE);
+    $node->setRevisionLogMessage(
+      (string) $this->t('Delegated to @organisation: @note', [
+        '@organisation' => $orgGroup->label(),
+        '@note' => $note,
+      ])
+    );
+    $node->setRevisionCreationTime($this->time->getRequestTime());
+    $node->setRevisionUserId($this->currentUser->id());
+
+    $node->save();
+    $this->sendDelegationNotification($orgGroup, $node, $note);
+  }
+
+  /**
+   * Resolves the next parent organisation escalation target.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   *
+   * @return int|null
+   *   The nearest parent organisation ID, or NULL when none is available.
+   */
+  protected function resolveParentOrganisationEscalationTarget(NodeInterface $node): ?int {
+    if (!$node->hasField('field_organisation') || $node->get('field_organisation')->isEmpty()) {
+      return NULL;
+    }
+
+    $groupStorage = $this->entityTypeManager->getStorage('group');
+    foreach ($node->get('field_organisation')->referencedEntities() as $orgGroup) {
+      if (!$this->isOrganisationGroup($orgGroup)) {
+        continue;
+      }
+
+      $ancestorIds = $this->orgHierarchyResolver->getAncestorIds((int) $orgGroup->id());
+      if (empty($ancestorIds)) {
+        continue;
+      }
+
+      $parentOrgId = (int) reset($ancestorIds);
+      $parentOrg = $groupStorage->load($parentOrgId);
+      if ($this->isOrganisationGroup($parentOrg)) {
+        return $parentOrgId;
+      }
+
+      $this->logger->warning('Parent organisation @pid referenced by @oid does not exist or is invalid.', [
+        '@pid' => $parentOrgId,
+        '@oid' => $orgGroup->id(),
+      ]);
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Builds the note used for an escalation step to a parent organisation.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $orgGroup
+   *   The target organisation group.
+   * @param string $note
+   *   The original escalation note.
+   *
+   * @return string
+   *   The internal remark and notification note.
+   */
+  protected function buildParentOrganisationEscalationNote(GroupInterface $orgGroup, string $note): string {
+    $prefix = (string) $this->t('Eskaliert an übergeordnete Organisationseinheit @organisation', [
+      '@organisation' => $orgGroup->label(),
+    ]);
+
+    $note = trim($note);
+    if ($note === '') {
+      return $prefix . '.';
+    }
+
+    return $prefix . ': ' . $note;
+  }
+
+  /**
+   * Checks whether a group is an organisation group.
+   *
+   * @param mixed $group
+   *   The candidate group entity.
+   *
+   * @return bool
+   *   TRUE when the group is an organisation group.
+   */
+  protected function isOrganisationGroup(mixed $group): bool {
+    return $group instanceof GroupInterface && $group->bundle() === 'org';
   }
 
   /**
@@ -546,7 +676,7 @@ class EscalationService implements EscalationServiceInterface {
    */
   protected function resolveSourceJurisdiction(NodeInterface $node): ?int {
     // 1. Primary: find the most specific jur from group_relationships.
-    // These reflect the actual creation context (e.g. citizen created in Noord).
+    // These reflect the actual creation context, e.g. citizen-created in Noord.
     // Prefer a child jur where the current user is a member (deterministic
     // tiebreaker when multiple child jurs exist).
     $relationshipStorage = $this->entityTypeManager->getStorage('group_relationship');

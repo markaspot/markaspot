@@ -124,10 +124,6 @@ class EscalationControllerTest extends UnitTestCase {
     );
   }
 
-  // ===========================================================================
-  // Tests for decodeJsonBody (tested via escalate/delegate).
-  // ===========================================================================
-
   /**
    * Tests that an empty request body throws BadRequestHttpException.
    *
@@ -156,12 +152,8 @@ class EscalationControllerTest extends UnitTestCase {
     $this->controller->escalate('123-2026', $request);
   }
 
-  // ===========================================================================
-  // Tests for loadServiceRequest (tested via escalate).
-  // ===========================================================================
-
   /**
-   * Tests that an invalid service request ID format throws BadRequestHttpException.
+   * Tests invalid service request ID format throws BadRequestHttpException.
    *
    * @covers ::escalate
    */
@@ -188,10 +180,6 @@ class EscalationControllerTest extends UnitTestCase {
 
     $this->controller->escalate('999-2026', $request);
   }
-
-  // ===========================================================================
-  // Tests for escalate().
-  // ===========================================================================
 
   /**
    * Tests that escalation is denied when user lacks permission.
@@ -260,6 +248,7 @@ class EscalationControllerTest extends UnitTestCase {
     $this->escalationService->method('resolveEscalationTarget')->willReturn(10);
 
     $targetGroup = $this->createMock(GroupInterface::class);
+    $targetGroup->method('bundle')->willReturn('jur');
     $targetGroup->method('label')->willReturn('Parent Jurisdiction');
     $this->groupStorage->method('load')->with(10)->willReturn($targetGroup);
 
@@ -272,6 +261,38 @@ class EscalationControllerTest extends UnitTestCase {
     $this->assertTrue($data['service_requests']['request']['escalated']);
     $this->assertEquals('123-2026', $data['service_requests']['request']['service_request_id']);
     $this->assertEquals('Parent Jurisdiction', $data['service_requests']['request']['escalation_target']);
+  }
+
+  /**
+   * Tests successful org escalation returns a delegation response shape.
+   *
+   * @covers ::escalate
+   */
+  public function testEscalateParentOrgResponseDoesNotExposeEscalationTarget(): void {
+    $node = $this->createMock(NodeInterface::class);
+    $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
+    $this->escalationService->method('canEscalate')->willReturn(TRUE);
+    $this->escalationService->method('resolveEscalationTarget')->willReturn(20);
+
+    $targetGroup = $this->createMock(GroupInterface::class);
+    $targetGroup->method('bundle')->willReturn('org');
+    $targetGroup->method('label')->willReturn('Parent Org');
+    $this->groupStorage->method('load')->with(20)->willReturn($targetGroup);
+
+    $this->escalationService->expects($this->once())
+      ->method('escalateRequest')
+      ->with($node, 20, 'escalation reason');
+
+    $request = new Request([], [], [], [], [], [], '{"notes":"escalation reason"}');
+
+    $response = $this->controller->escalate('123-2026', $request);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['service_requests']['request']['escalated']);
+    $this->assertTrue($data['service_requests']['request']['delegated']);
+    $this->assertArrayNotHasKey('escalation_target', $data['service_requests']['request']);
+    $this->assertArrayNotHasKey('target_organisation', $data['service_requests']['request']);
   }
 
   /**
@@ -294,10 +315,6 @@ class EscalationControllerTest extends UnitTestCase {
 
     $this->controller->escalate('123-2026', $request);
   }
-
-  // ===========================================================================
-  // Tests for delegate().
-  // ===========================================================================
 
   /**
    * Tests that delegation is denied when user lacks permission.
@@ -375,10 +392,6 @@ class EscalationControllerTest extends UnitTestCase {
 
     $this->controller->delegate('123-2026', $request);
   }
-
-  // ===========================================================================
-  // Tests for validateNotes().
-  // ===========================================================================
 
   /**
    * Tests that notes are stripped of HTML tags.
@@ -462,10 +475,6 @@ class EscalationControllerTest extends UnitTestCase {
     // Should not throw even without notes.
     $this->controller->delegate('123-2026', $request);
   }
-
-  // ===========================================================================
-  // Helper methods.
-  // ===========================================================================
 
   /**
    * Creates a mock node with configurable field values.

@@ -153,8 +153,8 @@ class EscalationCronService implements EscalationCronServiceInterface {
       }
 
       // Resolve escalation target.
-      $targetJurId = $this->escalationService->resolveEscalationTarget($node);
-      if ($targetJurId === NULL) {
+      $targetGroupId = $this->escalationService->resolveEscalationTarget($node);
+      if ($targetGroupId === NULL) {
         continue;
       }
 
@@ -164,7 +164,7 @@ class EscalationCronService implements EscalationCronServiceInterface {
           'Automatically escalated: no status update within @days days.',
           ['@days' => $escalationDays]
         );
-        $this->escalationService->escalateRequest($node, $targetJurId, $note);
+        $this->escalationService->escalateRequest($node, $targetGroupId, $note);
         $count++;
 
         $this->logger->notice('Auto-escalated service request @nid (unchanged for @days days).', [
