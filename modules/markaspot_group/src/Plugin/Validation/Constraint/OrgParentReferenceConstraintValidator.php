@@ -6,6 +6,7 @@ namespace Drupal\markaspot_group\Plugin\Validation\Constraint;
 
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\ParentTreeResolver;
 use Symfony\Component\Validator\Constraint;
 use Symfony\Component\Validator\ConstraintValidator;
 
@@ -81,7 +82,7 @@ class OrgParentReferenceConstraintValidator extends ConstraintValidator {
 
     $visited = [];
     $current = $parent;
-    for ($depth = 0; $depth < 64; $depth++) {
+    for ($depth = 0; $depth < ParentTreeResolver::MAX_HIERARCHY_DEPTH; $depth++) {
       $current_id = (int) $current->id();
       if ($current_id <= 0) {
         return FALSE;
