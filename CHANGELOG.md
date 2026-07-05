@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.139](https://github.com/markaspot/markaspot/compare/11.9.138...11.9.139) (2026-07-05)
+
+### Features
+
+* add loginLink feature flag for footer sign-in visibility ([db9a692](https://github.com/markaspot/markaspot/commit/db9a69251b7c59dc6836e110b6632e4a675392e9))
+
 ## [11.9.138](https://github.com/markaspot/markaspot/compare/11.9.137...11.9.138) (2026-07-05)
 
 ### Features
