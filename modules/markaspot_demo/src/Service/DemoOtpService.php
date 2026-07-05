@@ -36,6 +36,13 @@ class DemoOtpService extends OtpService {
   protected $inner;
 
   /**
+   * Cached active jurisdiction count.
+   *
+   * @var int|null
+   */
+  protected ?int $activeJurisdictionCount = NULL;
+
+  /**
    * Constructs a DemoOtpService object.
    *
    * @param \Drupal\markaspot_passwordless\Service\OtpService $inner
@@ -102,6 +109,8 @@ class DemoOtpService extends OtpService {
   public function requestCode(string $email, int $jurisdiction_id, string $langcode = ''): array {
     // Check if this is a demo user.
     if ($this->isDemoUser($email)) {
+      $this->assertDemoSingleTenant();
+
       $this->logger->info('Demo mode: Code request for demo user @email. Use code: @code', [
         '@email' => $email,
         '@code' => self::DEMO_CODE,
@@ -142,6 +151,8 @@ class DemoOtpService extends OtpService {
   public function verifyCode(string $email, string $code, int $jurisdiction_id): array {
     // Check if this is a demo user with the demo code.
     if ($this->isDemoUser($email) && $code === self::DEMO_CODE) {
+      $this->assertDemoSingleTenant();
+
       $this->logger->info('Demo mode: Authenticating demo user @email with demo code', [
         '@email' => $email,
       ]);
@@ -193,6 +204,46 @@ class DemoOtpService extends OtpService {
     }
 
     return in_array(strtolower($email), array_map('strtolower', $demo_emails));
+  }
+
+  /**
+   * Ensures the demo OTP bypass only runs on single-tenant demo sites.
+   *
+   * @throws \RuntimeException
+   *   Thrown when the installation has multiple active jurisdiction groups.
+   */
+  protected function assertDemoSingleTenant(): void {
+    if ($this->getActiveJurisdictionCount() > 1) {
+      throw new \RuntimeException('markaspot_demo must not run on multi-tenant installations.');
+    }
+  }
+
+  /**
+   * Counts active jurisdiction groups.
+   *
+   * @return int
+   *   The number of active groups of type jur.
+   */
+  protected function getActiveJurisdictionCount(): int {
+    if ($this->activeJurisdictionCount !== NULL) {
+      return $this->activeJurisdictionCount;
+    }
+
+    if (!$this->moduleHandler->moduleExists('group')) {
+      $this->activeJurisdictionCount = 0;
+      return $this->activeJurisdictionCount;
+    }
+
+    $this->activeJurisdictionCount = (int) $this->entityTypeManager
+      ->getStorage('group')
+      ->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', $this->getJurisdictionGroupType())
+      ->condition('status', 1)
+      ->count()
+      ->execute();
+
+    return $this->activeJurisdictionCount;
   }
 
   /**
