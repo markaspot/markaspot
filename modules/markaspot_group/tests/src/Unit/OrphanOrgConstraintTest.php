@@ -6,12 +6,12 @@ namespace Drupal\Tests\markaspot_group\Unit;
 
 use Drupal\Component\Serialization\Yaml;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\Group;
 
 /**
  * Tests org jurisdiction field constraints.
- *
- * @group markaspot_group
  */
+#[Group('markaspot_group')]
 class OrphanOrgConstraintTest extends UnitTestCase {
 
   /**
@@ -65,6 +65,7 @@ class OrphanOrgConstraintTest extends UnitTestCase {
 
     $this->assertStringContainsString('JurisdictionParentReferenceConstraint', $source);
     $this->assertStringContainsString('OrgRootJurisdictionReferenceConstraint', $source);
+    $this->assertStringContainsString('OrgParentReferenceConstraint', $source);
     $this->assertStringContainsString('validateProtectedTranslations', $source);
     $this->assertStringContainsString('self::isProtectedBundle($this->bundle())', $source);
     $this->assertStringContainsString("get('jurisdiction_group_type') ?: 'jur'", $source);

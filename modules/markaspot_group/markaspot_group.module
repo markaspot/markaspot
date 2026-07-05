@@ -479,6 +479,7 @@ function markaspot_group_entity_type_alter(array &$entity_types): void {
 
   $entity_types['group']->addConstraint('OrgRootJurisdictionReference');
   $entity_types['group']->addConstraint('JurisdictionParentReference');
+  $entity_types['group']->addConstraint('OrgParentReference');
 }
 
 /**

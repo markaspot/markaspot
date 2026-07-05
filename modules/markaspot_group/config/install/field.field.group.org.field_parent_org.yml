@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_parent_org
+    - group.type.org
+id: group.org.field_parent_org
+field_name: field_parent_org
+entity_type: group
+bundle: org
+label: Parent organisation
+description: 'Optional parent organisation unit for department or team hierarchies within the same jurisdiction.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings:
+  handler: 'default:group'
+  handler_settings:
+    target_bundles:
+      org: org
+    sort:
+      field: label
+      direction: ASC
+    auto_create: false
+field_type: entity_reference

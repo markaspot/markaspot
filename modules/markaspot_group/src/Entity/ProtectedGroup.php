@@ -9,6 +9,7 @@ use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\JurisdictionParentReferenceConstraint;
+use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgParentReferenceConstraint;
 use Drupal\markaspot_group\Plugin\Validation\Constraint\OrgRootJurisdictionReferenceConstraint;
 
 /**
@@ -44,7 +45,8 @@ class ProtectedGroup extends Group {
       $translation = $this->getTranslation($langcode);
       foreach ($translation->validate() as $violation) {
         if ($violation->getConstraint() instanceof OrgRootJurisdictionReferenceConstraint
-          || $violation->getConstraint() instanceof JurisdictionParentReferenceConstraint) {
+          || $violation->getConstraint() instanceof JurisdictionParentReferenceConstraint
+          || $violation->getConstraint() instanceof OrgParentReferenceConstraint) {
           $all_violations[] = $violation;
         }
       }

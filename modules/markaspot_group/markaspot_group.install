@@ -4487,6 +4487,67 @@ function markaspot_group_update_11933(): string {
 }
 
 /**
+ * Adds the organisation parent field for internal organisation hierarchies.
+ */
+function markaspot_group_update_11934(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $field_storage_config = $entity_type_manager->getStorage('field_storage_config');
+  $field_config = $entity_type_manager->getStorage('field_config');
+  $created = [];
+
+  if (!$field_storage_config->load('group.field_parent_org')) {
+    $field_storage_config->create([
+      'field_name' => 'field_parent_org',
+      'entity_type' => 'group',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'group',
+      ],
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ])->save();
+    $created[] = 'group.field_parent_org storage';
+  }
+
+  if (!$field_config->load('group.org.field_parent_org')) {
+    $field_config->create([
+      'field_name' => 'field_parent_org',
+      'entity_type' => 'group',
+      'bundle' => 'org',
+      'label' => 'Parent organisation',
+      'description' => 'Optional parent organisation unit for department or team hierarchies within the same jurisdiction.',
+      'required' => FALSE,
+      'translatable' => TRUE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => [
+            'org' => 'org',
+          ],
+          'sort' => [
+            'field' => 'label',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+    $created[] = 'group.org.field_parent_org field';
+  }
+
+  if ($created) {
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+    \Drupal::service('cache_tags.invalidator')->invalidateTags(['entity_field_info']);
+
+    return 'Created ' . implode(', ', $created) . '.';
+  }
+
+  return 'Organisation parent field already present.';
+}
+
+/**
  * Adds uid 1 to every jur/org group where membership is missing.
  *
  * @return array<string, mixed>
