@@ -761,6 +761,105 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests requestCode scopes the email flood key by jurisdiction.
+   *
+   * @covers ::requestCode
+   */
+  public function testRequestCodeScopesEmailFloodByJurisdiction(): void {
+    $this->setResolvableJurisdiction(5);
+
+    $this->otpService->expects($this->once())
+      ->method('requestCode')
+      ->with('user@example.com', 5, '')
+      ->willReturn([
+        'success' => TRUE,
+        'message' => 'Verification code sent to your email',
+        'expiresIn' => 600,
+      ]);
+
+    $this->flood = $this->createMock(FloodInterface::class);
+    $allowedCalls = [
+      ['passwordless.request_code', 3, 3600, 'user@example.com:5'],
+      ['passwordless.request_code.ip', 10, 3600, '203.0.113.10'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('isAllowed')
+      ->willReturnCallback(static function (string $event, int $threshold, int $window, string $identifier) use (&$allowedCalls): bool {
+        self::assertSame(array_shift($allowedCalls), [$event, $threshold, $window, $identifier]);
+        return TRUE;
+      });
+    $registerCalls = [
+      ['passwordless.request_code', 3600, 'user@example.com:5'],
+      ['passwordless.request_code.ip', 3600, '203.0.113.10'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('register')
+      ->willReturnCallback(static function (string $event, int $window, string $identifier) use (&$registerCalls): void {
+        self::assertSame(array_shift($registerCalls), [$event, $window, $identifier]);
+      });
+    $this->recreateController();
+
+    $request = Request::create(
+      '/api/auth/request-code',
+      'POST',
+      [],
+      [],
+      [],
+      ['REMOTE_ADDR' => '203.0.113.10'],
+      '{"email":"user@example.com","jurisdiction_id":5}'
+    );
+    $response = $this->controller->requestCode($request);
+
+    $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
+  }
+
+  /**
+   * Tests requestCode accepts explicit zero as unscoped jurisdiction.
+   *
+   * @covers ::requestCode
+   */
+  public function testRequestCodeAcceptsExplicitZeroJurisdiction(): void {
+    $this->otpService->expects($this->once())
+      ->method('requestCode')
+      ->with('user@example.com', 0, '')
+      ->willReturn([
+        'success' => TRUE,
+        'message' => 'Verification code sent to your email',
+        'expiresIn' => 600,
+      ]);
+
+    $request = new Request([], [], [], [], [], [], '{"email":"user@example.com","jurisdiction_id":0}');
+    $response = $this->controller->requestCode($request);
+
+    $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
+  }
+
+  /**
+   * Tests malformed scalar jurisdiction payloads are rejected.
+   *
+   * @param mixed $jurisdictionId
+   *   The malformed jurisdiction ID payload.
+   *
+   * @covers ::requestCode
+   *
+   * @dataProvider malformedJurisdictionPayloadProvider
+   */
+  public function testRequestCodeRejectsMalformedJurisdictionPayload(mixed $jurisdictionId): void {
+    $this->flood = $this->createMock(FloodInterface::class);
+    $this->flood->expects($this->never())
+      ->method('isAllowed');
+    $this->recreateController();
+
+    $request = new Request([], [], [], [], [], [], json_encode([
+      'email' => 'user@example.com',
+      'jurisdiction_id' => $jurisdictionId,
+    ]));
+    $response = $this->controller->requestCode($request);
+
+    $this->assertSame(Response::HTTP_BAD_REQUEST, $response->getStatusCode());
+  }
+
+  /**
    * Tests requestCode when OTP service fails.
    *
    * @covers ::requestCode
@@ -895,6 +994,58 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests failed verifyCode registers scoped jurisdiction flood keys.
+   *
+   * @covers ::verifyCode
+   */
+  public function testVerifyCodeFailureScopesFloodByJurisdiction(): void {
+    $this->setResolvableJurisdiction(5);
+
+    $this->otpService->expects($this->once())
+      ->method('verifyCode')
+      ->with('user@example.com', '123456', 5)
+      ->willReturn([
+        'success' => FALSE,
+        'error' => 'Invalid verification code',
+      ]);
+
+    $this->flood = $this->createMock(FloodInterface::class);
+    $allowedCalls = [
+      ['passwordless.verify.lockout', 5, 900, 'user@example.com:203.0.113.10:5'],
+      ['passwordless.verify.backoff', 3, 60, 'user@example.com:203.0.113.10:5'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('isAllowed')
+      ->willReturnCallback(static function (string $event, int $threshold, int $window, string $identifier) use (&$allowedCalls): bool {
+        self::assertSame(array_shift($allowedCalls), [$event, $threshold, $window, $identifier]);
+        return TRUE;
+      });
+    $registerCalls = [
+      ['passwordless.verify.lockout', 900, 'user@example.com:203.0.113.10:5'],
+      ['passwordless.verify.backoff', 60, 'user@example.com:203.0.113.10:5'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('register')
+      ->willReturnCallback(static function (string $event, int $window, string $identifier) use (&$registerCalls): void {
+        self::assertSame(array_shift($registerCalls), [$event, $window, $identifier]);
+      });
+    $this->recreateController();
+
+    $request = Request::create(
+      '/api/auth/verify-code',
+      'POST',
+      [],
+      [],
+      [],
+      ['REMOTE_ADDR' => '203.0.113.10'],
+      '{"email":"user@example.com","code":"123456","jurisdiction_id":5}'
+    );
+    $response = $this->controller->verifyCode($request);
+
+    $this->assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
+  }
+
+  /**
    * Tests successful verifyCode flow.
    *
    * @covers ::verifyCode
@@ -929,6 +1080,66 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertSame('user-uuid-5', $data['user']['uuid']);
     $this->assertTrue($data['user']['tos_accepted']);
     $this->assertSame(1714567890, $data['user']['tos_accepted_at']);
+  }
+
+  /**
+   * Tests successful verifyCode clears scoped jurisdiction flood keys.
+   *
+   * @covers ::verifyCode
+   */
+  public function testVerifyCodeSuccessScopesFloodByJurisdiction(): void {
+    $this->setResolvableJurisdiction(5);
+
+    $this->otpService->expects($this->once())
+      ->method('verifyCode')
+      ->with('user@example.com', '123456', 5)
+      ->willReturn([
+        'success' => TRUE,
+        'message' => 'Authentication successful',
+        'user' => [
+          'uid' => 5,
+          'uuid' => 'user-uuid-5',
+          'name' => 'testuser',
+          'email' => 'user@example.com',
+          'roles' => ['authenticated'],
+          'groups' => [],
+        ],
+      ]);
+
+    $this->flood = $this->createMock(FloodInterface::class);
+    $allowedCalls = [
+      ['passwordless.verify.lockout', 5, 900, 'user@example.com:203.0.113.10:5'],
+      ['passwordless.verify.backoff', 3, 60, 'user@example.com:203.0.113.10:5'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('isAllowed')
+      ->willReturnCallback(static function (string $event, int $threshold, int $window, string $identifier) use (&$allowedCalls): bool {
+        self::assertSame(array_shift($allowedCalls), [$event, $threshold, $window, $identifier]);
+        return TRUE;
+      });
+    $clearCalls = [
+      ['passwordless.verify.lockout', 'user@example.com:203.0.113.10:5'],
+      ['passwordless.verify.backoff', 'user@example.com:203.0.113.10:5'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('clear')
+      ->willReturnCallback(static function (string $event, string $identifier) use (&$clearCalls): void {
+        self::assertSame(array_shift($clearCalls), [$event, $identifier]);
+      });
+    $this->recreateController();
+
+    $request = Request::create(
+      '/api/auth/verify-code',
+      'POST',
+      [],
+      [],
+      [],
+      ['REMOTE_ADDR' => '203.0.113.10'],
+      '{"email":"user@example.com","code":"123456","jurisdiction_id":5}'
+    );
+    $response = $this->controller->verifyCode($request);
+
+    $this->assertSame(Response::HTTP_OK, $response->getStatusCode());
   }
 
   /**
@@ -1386,6 +1597,45 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->keyValueExpirable,
       $this->featureFlagChecker,
     );
+  }
+
+  /**
+   * Registers a resolvable jurisdiction group in the test container.
+   *
+   * @param int $id
+   *   The jurisdiction group ID.
+   * @param string $bundle
+   *   The jurisdiction group bundle.
+   */
+  protected function setResolvableJurisdiction(int $id, string $bundle = 'jur'): void {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($id);
+    $group->method('bundle')->willReturn($bundle);
+    $group->method('isPublished')->willReturn(TRUE);
+
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')
+      ->with($id)
+      ->willReturn($group);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($groupStorage);
+
+    \Drupal::getContainer()->set('entity_type.manager', $entityTypeManager);
+  }
+
+  /**
+   * Provides malformed scalar jurisdiction payload values.
+   */
+  public static function malformedJurisdictionPayloadProvider(): array {
+    return [
+      'boolean' => [TRUE],
+      'float' => [1.9],
+      'decimal-string' => ['42.9'],
+      'scientific-string' => ['1e2'],
+    ];
   }
 
   /**
