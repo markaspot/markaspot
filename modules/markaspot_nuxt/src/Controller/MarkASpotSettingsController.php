@@ -3,6 +3,7 @@
 namespace Drupal\markaspot_nuxt\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Site\Settings;
 use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\Core\Cache\CacheableJsonResponse;
@@ -364,13 +365,22 @@ class MarkASpotSettingsController extends ControllerBase {
     if (!isset($settings['features'])) {
       $settings['features'] = [];
     }
+    // Onboarding tour defaults on for SaaS (CivicSpot) workspaces and off for
+    // self-hosted / enterprise installs, where it is opt-in via the dashboard
+    // features toggle. This is the runtime gate the frontend actually reads
+    // (useFeatureFlags -> clientConfig.features), so the operating-mode default
+    // must live here — not only in TenantSettingsController's dashboard GET.
+    // A value explicitly stored in field_nuxt_config still wins (the `+=`
+    // only fills the key when absent).
+    $onboarding_tour_default = Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas';
     $settings['features'] += [
       'aiProcessing' => FALSE,
       'piiRedaction' => FALSE,
       'dashboardRequestCreate' => TRUE,
       'operationsDashboard' => FALSE,
+      'onboardingTour' => $onboarding_tour_default,
     ];
-    foreach (['aiProcessing', 'piiRedaction', 'dashboardRequestCreate', 'operationsDashboard'] as $feature) {
+    foreach (['aiProcessing', 'piiRedaction', 'dashboardRequestCreate', 'operationsDashboard', 'onboardingTour'] as $feature) {
       $settings['features'][$feature] = $this->readBooleanFeatureFlag(
         $settings['features'][$feature] ?? NULL
       );

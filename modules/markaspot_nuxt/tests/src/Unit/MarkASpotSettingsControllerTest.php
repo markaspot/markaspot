@@ -20,6 +20,7 @@ use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
+use Drupal\Core\Site\Settings;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
@@ -1472,6 +1473,88 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $data['features']['aiDuplicates'] ?? TRUE,
       'aiDuplicates must honour explicit false in field_nuxt_config'
     );
+  }
+
+  /**
+   * Onboarding tour defaults ON for SaaS (CivicSpot) workspaces.
+   *
+   * The operating-mode default must be applied by this config endpoint (the
+   * runtime gate the frontend reads), not only by the dashboard settings GET.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testOnboardingTourDefaultsOnForSaas(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
+    // Jurisdiction config that never mentions onboardingTour.
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => ['voting' => TRUE]]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertTrue(
+      $data['features']['onboardingTour'] ?? FALSE,
+      'onboardingTour must default TRUE in SaaS operating mode'
+    );
+  }
+
+  /**
+   * Onboarding tour defaults OFF for self-hosted / enterprise installs.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testOnboardingTourDefaultsOffForSelfHosted(): void {
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => ['voting' => TRUE]]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertFalse(
+      $data['features']['onboardingTour'] ?? TRUE,
+      'onboardingTour must default FALSE outside SaaS mode'
+    );
+  }
+
+  /**
+   * An explicit field_nuxt_config value wins over the operating-mode default.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testOnboardingTourExplicitConfigWinsOverModeDefault(): void {
+    new Settings(['markaspot_operating_mode' => 'saas']);
+
+    // SaaS mode would default TRUE, but the tenant explicitly disabled it.
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => ['onboardingTour' => FALSE]]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertFalse(
+      $data['features']['onboardingTour'] ?? TRUE,
+      'explicit onboardingTour=false must override the SaaS default'
+    );
+  }
+
+  /**
+   * Resets the Settings singleton so operating-mode overrides do not leak.
+   */
+  protected function tearDown(): void {
+    new Settings([]);
+    parent::tearDown();
   }
 
 }
