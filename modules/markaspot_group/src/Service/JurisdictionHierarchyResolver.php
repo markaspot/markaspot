@@ -21,11 +21,6 @@ use Psr\Log\LoggerInterface;
 class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInterface {
 
   /**
-   * Maximum accepted jurisdiction hierarchy depth.
-   */
-  protected const MAX_HIERARCHY_DEPTH = 50;
-
-  /**
    * The entity type manager.
    *
    * @var \Drupal\Core\Entity\EntityTypeManagerInterface
@@ -52,6 +47,13 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
    * @var \Drupal\Core\Config\ConfigFactoryInterface
    */
   protected ConfigFactoryInterface $configFactory;
+
+  /**
+   * The generic parent-tree resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\ParentTreeResolver|null
+   */
+  protected ?ParentTreeResolver $treeResolver = NULL;
 
   /**
    * Constructs a JurisdictionHierarchyResolver.
@@ -81,213 +83,40 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
    * {@inheritdoc}
    */
   public function getRootJurisdictionId(int $groupId): ?int {
-    $group = $this->entityTypeManager->getStorage('group')->load($groupId);
-    if (!$group) {
-      return $groupId;
-    }
-    if (!$this->isJurisdictionGroup($group)) {
-      $this->logWrongBundle('resolve root jurisdiction', $groupId, (string) $group->bundle());
-      return $groupId;
-    }
-
-    $visited = [];
-    while ($group->hasField('field_parent_jurisdiction')
-           && !$group->get('field_parent_jurisdiction')->isEmpty()) {
-      $currentId = (int) $group->id();
-
-      if (in_array($currentId, $visited, TRUE)) {
-        $this->logger->error(
-          'Circular parent reference detected at jurisdiction @id.',
-          ['@id' => $currentId]
-        );
-        return NULL;
-      }
-      $visited[] = $currentId;
-
-      if (count($visited) > self::MAX_HIERARCHY_DEPTH) {
-        $this->logger->error(
-          'Maximum parent hierarchy depth exceeded at jurisdiction @id.',
-          ['@id' => $currentId]
-        );
-        return NULL;
-      }
-
-      $parentId = (int) $group->get('field_parent_jurisdiction')->target_id;
-      $parent = $this->entityTypeManager->getStorage('group')->load($parentId);
-
-      if (!$parent) {
-        return $currentId;
-      }
-      if (!$this->isJurisdictionGroup($parent)) {
-        $this->logWrongBundle('resolve parent jurisdiction', $parentId, (string) $parent->bundle());
-        return $currentId;
-      }
-
-      $group = $parent;
-    }
-
-    return (int) $group->id();
+    return $this->getTreeResolver()->getRootId(
+      $groupId,
+      'resolve root jurisdiction',
+      'resolve parent jurisdiction',
+    );
   }
 
   /**
    * {@inheritdoc}
    */
   public function isChildJurisdiction(int $groupId): bool {
-    $group = $this->entityTypeManager->getStorage('group')->load($groupId);
-    if (!$group) {
-      return FALSE;
-    }
-    if (!$this->isJurisdictionGroup($group)) {
-      $this->logWrongBundle('check child jurisdiction', $groupId, (string) $group->bundle());
-      return FALSE;
-    }
-    return $group->hasField('field_parent_jurisdiction')
-      && !$group->get('field_parent_jurisdiction')->isEmpty();
+    return $this->getTreeResolver()->hasParent(
+      $groupId,
+      'check child jurisdiction',
+    );
   }
 
   /**
    * {@inheritdoc}
    */
   public function getAllRootJurisdictionIds(): array {
-    $ids = $this->database->select('groups_field_data', 'g')
-      ->distinct()
-      ->fields('g', ['id'])
-      ->condition('g.type', $this->getJurisdictionGroupType())
-      ->notExists(
-        $this->database->select('group__field_parent_jurisdiction', 'p')
-          ->fields('p', ['entity_id'])
-          ->where('p.entity_id = g.id')
-          ->condition('p.deleted', 0)
-      )
-      ->orderBy('g.id', 'ASC')
-      ->execute()
-      ->fetchCol();
-
-    return array_map('intval', $ids);
+    return $this->getTreeResolver()
+      ->getAllRootIds($this->getJurisdictionGroupType());
   }
 
   /**
    * {@inheritdoc}
    */
   public function getDescendantIds(int $groupId): array {
-    $group = $this->entityTypeManager->getStorage('group')->load($groupId);
-    if (!$group) {
-      return [];
-    }
-    if (!$this->isJurisdictionGroup($group)) {
-      $this->logWrongBundle('load descendant jurisdictions', $groupId, (string) $group->bundle());
-      return [];
-    }
-
-    $ids = [$groupId];
-    $visited = [$groupId];
-
-    $children = $this->database->select('group__field_parent_jurisdiction', 'p')
-      ->fields('p', ['entity_id'])
-      ->condition('field_parent_jurisdiction_target_id', $groupId)
-      ->execute()
-      ->fetchCol();
-
-    $children = $this->filterJurisdictionChildIds($children);
-    foreach ($children as $childId) {
-      $childId = (int) $childId;
-      if (in_array($childId, $visited, TRUE)) {
-        $this->logger->error(
-          'Circular child reference detected at jurisdiction @id.',
-          ['@id' => $childId]
-        );
-        continue;
-      }
-      $visited[] = $childId;
-      $ids = array_merge($ids, $this->getDescendantIdsRecursive($childId, $visited, 1));
-    }
-
-    return $ids;
-  }
-
-  /**
-   * Recursively collects descendant IDs with cycle guard.
-   *
-   * @param int $groupId
-   *   The parent group ID.
-   * @param array &$visited
-   *   Reference to visited IDs for cycle detection.
-   * @param int $depth
-   *   The current traversal depth below the original parent.
-   *
-   * @return array
-   *   Array of descendant jurisdiction IDs.
-   */
-  protected function getDescendantIdsRecursive(int $groupId, array &$visited, int $depth): array {
-    if ($depth > self::MAX_HIERARCHY_DEPTH) {
-      $this->logger->error(
-        'Maximum child hierarchy depth exceeded at jurisdiction @id.',
-        ['@id' => $groupId]
-      );
-      return [];
-    }
-
-    $ids = [$groupId];
-
-    $children = $this->database->select('group__field_parent_jurisdiction', 'p')
-      ->fields('p', ['entity_id'])
-      ->condition('field_parent_jurisdiction_target_id', $groupId)
-      ->execute()
-      ->fetchCol();
-
-    $children = $this->filterJurisdictionChildIds($children);
-    foreach ($children as $childId) {
-      $childId = (int) $childId;
-      if (in_array($childId, $visited, TRUE)) {
-        $this->logger->error(
-          'Circular child reference detected at jurisdiction @id.',
-          ['@id' => $childId]
-        );
-        continue;
-      }
-      $visited[] = $childId;
-      $ids = array_merge($ids, $this->getDescendantIdsRecursive($childId, $visited, $depth + 1));
-    }
-
-    return $ids;
-  }
-
-  /**
-   * Removes child IDs that do not resolve to jurisdiction groups.
-   *
-   * @param array $childIds
-   *   Raw child group IDs from group__field_parent_jurisdiction.
-   *
-   * @return int[]
-   *   Child jurisdiction IDs only.
-   */
-  protected function filterJurisdictionChildIds(array $childIds): array {
-    $childIds = array_values(array_unique(array_map('intval', $childIds)));
-    if ($childIds === []) {
-      return [];
-    }
-
-    $children = $this->entityTypeManager->getStorage('group')->loadMultiple($childIds);
-    $jurisdictionIds = [];
-    foreach ($childIds as $childId) {
-      $child = $children[$childId] ?? NULL;
-      if (!$child) {
-        $this->logger->warning(
-          'Jurisdiction hierarchy references missing child group @id.',
-          ['@id' => $childId]
-        );
-        continue;
-      }
-
-      if (!$this->isJurisdictionGroup($child)) {
-        $this->logWrongBundle('load child jurisdiction', $childId, (string) $child->bundle());
-        continue;
-      }
-
-      $jurisdictionIds[] = $childId;
-    }
-
-    return $jurisdictionIds;
+    return $this->getTreeResolver()->getDescendantIds(
+      $groupId,
+      'load descendant jurisdictions',
+      'load child jurisdiction',
+    );
   }
 
   /**
@@ -358,6 +187,29 @@ class JurisdictionHierarchyResolver implements JurisdictionHierarchyResolverInte
     }
 
     return $ids;
+  }
+
+  /**
+   * Gets the generic parent-tree resolver for the jurisdiction axis.
+   *
+   * @return \Drupal\markaspot_group\Service\ParentTreeResolver
+   *   The configured parent-tree resolver.
+   */
+  protected function getTreeResolver(): ParentTreeResolver {
+    if ($this->treeResolver === NULL) {
+      $this->treeResolver = new ParentTreeResolver(
+        $this->entityTypeManager,
+        $this->database,
+        $this->logger,
+        'field_parent_jurisdiction',
+        fn(mixed $group): bool => $this->isJurisdictionGroup($group),
+        'jurisdiction',
+        ParentTreeResolver::ROOT_FAIL_LEGACY_SELF,
+        FALSE,
+      );
+    }
+
+    return $this->treeResolver;
   }
 
   /**

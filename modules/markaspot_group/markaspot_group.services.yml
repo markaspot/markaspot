@@ -5,6 +5,9 @@ services:
   markaspot_group.hierarchy_resolver:
     class: Drupal\markaspot_group\Service\JurisdictionHierarchyResolver
     arguments: ['@entity_type.manager', '@database', '@logger.factory', '@config.factory']
+  markaspot_group.org_hierarchy_resolver:
+    class: Drupal\markaspot_group\Service\OrgHierarchyResolver
+    arguments: ['@entity_type.manager', '@database', '@logger.factory']
   markaspot_group.integrity_checker:
     class: Drupal\markaspot_group\Service\GroupIntegrityChecker
     arguments: ['@database', '@entity_type.manager', '@config.factory']
