@@ -1201,6 +1201,9 @@ class EscalationServiceTest extends UnitTestCase {
     $category = $this->createMockCategoryTerm(50, NULL, 10);
     $node = $this->createMockNode(['field_category' => $category]);
 
+    $this->relationshipStorage->method('loadByProperties')
+      ->willReturn([]);
+
     $targetGroup = $this->createMockGroup(10, 'jur', NULL, 'Special Jur');
 
     $this->groupStorage->method('load')
@@ -1210,6 +1213,56 @@ class EscalationServiceTest extends UnitTestCase {
 
     $result = $this->service->resolveEscalationTarget($node);
     $this->assertEquals(10, $result);
+  }
+
+  /**
+   * @covers ::resolveEscalationTarget
+   */
+  public function testResolveTargetSkipsCategoryOverrideMatchingOwnJurisdiction(): void {
+    $category = $this->createMockCategoryTerm(50, NULL, 1);
+    $orgGroup = $this->createMockOrgGroup(10, 1);
+    $node = $this->createMockNode([
+      'field_organisation' => $orgGroup,
+      'field_category' => $category,
+    ]);
+
+    $this->relationshipStorage->method('loadByProperties')
+      ->willReturn([]);
+
+    $rootJur = $this->createMockGroup(1, 'jur', NULL, 'Amsterdam');
+
+    $this->groupStorage->method('load')
+      ->willReturnMap([
+        [1, $rootJur],
+      ]);
+
+    $result = $this->service->resolveEscalationTarget($node);
+    $this->assertNull($result);
+  }
+
+  /**
+   * @covers ::resolveEscalationTarget
+   */
+  public function testResolveTargetReturnsCategoryOverrideForParentJurisdiction(): void {
+    $category = $this->createMockCategoryTerm(50, NULL, 1);
+    $orgGroup = $this->createMockOrgGroup(10, 4);
+    $node = $this->createMockNode([
+      'field_organisation' => $orgGroup,
+      'field_category' => $category,
+    ]);
+
+    $this->relationshipStorage->method('loadByProperties')
+      ->willReturn([]);
+
+    $parentJur = $this->createMockGroup(1, 'jur', NULL, 'Amsterdam');
+
+    $this->groupStorage->method('load')
+      ->willReturnMap([
+        [1, $parentJur],
+      ]);
+
+    $result = $this->service->resolveEscalationTarget($node);
+    $this->assertEquals(1, $result);
   }
 
   /**

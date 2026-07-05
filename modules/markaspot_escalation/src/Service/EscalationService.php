@@ -282,6 +282,15 @@ class EscalationService implements EscalationServiceInterface {
       }
     }
 
+    $requestJurisdictionId = NULL;
+    if ($node->hasField('field_escalation')
+        && !$node->get('field_escalation')->isEmpty()) {
+      $requestJurisdictionId = (int) $node->get('field_escalation')->target_id;
+    }
+    else {
+      $requestJurisdictionId = $this->resolveSourceJurisdiction($node);
+    }
+
     // 2. Check for a category-level jurisdiction target override.
     if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
       $categoryTerm = $node->get('field_category')->entity;
@@ -297,12 +306,16 @@ class EscalationService implements EscalationServiceInterface {
           // Verify the target group still exists and is a jurisdiction.
           $targetGroup = $groupStorage->load($targetGroupId);
           if ($this->isJurisdictionGroup($targetGroup)) {
-            return $targetGroupId;
+            if ($targetGroupId !== $requestJurisdictionId) {
+              return $targetGroupId;
+            }
           }
-          $this->logger->warning('Category escalation target @gid is invalid for node @nid.', [
-            '@gid' => $targetGroupId,
-            '@nid' => $node->id(),
-          ]);
+          else {
+            $this->logger->warning('Category escalation target @gid is invalid for node @nid.', [
+              '@gid' => $targetGroupId,
+              '@nid' => $node->id(),
+            ]);
+          }
         }
       }
     }
@@ -312,14 +325,15 @@ class EscalationService implements EscalationServiceInterface {
       // Re-escalation case: the request is already escalated.
       // Target is the parent of the current escalation jurisdiction.
       $currentJurId = (int) $node->get('field_escalation')->target_id;
-      return $this->getParentJurisdictionId($currentJurId);
+      $targetJurId = $this->getParentJurisdictionId($currentJurId);
+      return $targetJurId !== $requestJurisdictionId ? $targetJurId : NULL;
     }
 
-    // First escalation: resolve the source jurisdiction from group memberships
-    // or field_organisation.
-    $sourceJurId = $this->resolveSourceJurisdiction($node);
-    if ($sourceJurId !== NULL) {
-      return $this->getParentJurisdictionId($sourceJurId);
+    // First escalation: use the source jurisdiction resolved above from group
+    // memberships or field_organisation.
+    if ($requestJurisdictionId !== NULL) {
+      $targetJurId = $this->getParentJurisdictionId($requestJurisdictionId);
+      return $targetJurId !== $requestJurisdictionId ? $targetJurId : NULL;
     }
 
     return NULL;
