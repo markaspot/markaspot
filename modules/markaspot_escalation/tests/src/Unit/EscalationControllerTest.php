@@ -585,7 +585,7 @@ class EscalationControllerTest extends UnitTestCase {
   /**
    * Tests that delegation to an org outside the node's jur hierarchy is 422.
    *
-   * validateDelegationScope() is the sole target-side cross-tenant boundary
+   * ValidateDelegationScope() is the sole target-side cross-tenant boundary
    * for lateral delegation: the target org's jurisdiction must be the node's
    * jurisdiction or reach it via the field_parent_jurisdiction walk-up.
    *
