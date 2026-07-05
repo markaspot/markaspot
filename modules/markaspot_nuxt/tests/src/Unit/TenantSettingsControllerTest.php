@@ -1518,6 +1518,40 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests getFeatureSettings() defaults loginLink to visible (fail-open).
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsLoginLinkDefaultsVisible(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['loginLink']);
+  }
+
+  /**
+   * Tests getFeatureSettings() returns an explicit loginLink FALSE.
+   *
+   * Hides the footer sign-in link while /auth/login stays reachable.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsLoginLinkExplicitFalse(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => ['loginLink' => FALSE]]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['loginLink']);
+  }
+
+  /**
    * Tests getFeatureSettings() defaults form behaviour flags safely.
    *
    * @covers ::getFeatureSettings

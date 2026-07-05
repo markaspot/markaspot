@@ -72,6 +72,7 @@ final class TenantSettingsController extends ControllerBase {
     'contactForm',
     'privacyBlockOnFlag',
     'onboardingTour',
+    'loginLink',
   ];
 
   /**
@@ -1650,6 +1651,9 @@ final class TenantSettingsController extends ControllerBase {
         'statistics' => $features['statistics'] ?? FALSE,
         'following' => $features['following'] ?? FALSE,
         'passwordless' => $features['passwordless'] ?? FALSE,
+        // Visibility of the citizen footer sign-in link; /auth/login itself
+        // stays reachable regardless of this flag.
+        'loginLink' => $this->getBooleanFeatureValue($features, 'loginLink', TRUE),
         'aiAnalysis' => $features['aiAnalysis'] ?? FALSE,
         'aiProcessing' => $this->getBooleanFeatureValue($features, 'aiProcessing', FALSE),
         'piiRedaction' => $this->getBooleanFeatureValue($features, 'piiRedaction', FALSE),
