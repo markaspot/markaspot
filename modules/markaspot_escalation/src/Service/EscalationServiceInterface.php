@@ -53,6 +53,20 @@ interface EscalationServiceInterface {
   public function resolveEscalationTarget(NodeInterface $node): ?int;
 
   /**
+   * Resolves the current jurisdiction group for a service request.
+   *
+   * Escalated requests use field_escalation. Non-escalated requests use the
+   * same source-jurisdiction lookup as escalation target resolution.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   *
+   * @return int|null
+   *   The jurisdiction group ID, or NULL if none can be determined.
+   */
+  public function resolveRequestJurisdictionId(NodeInterface $node): ?int;
+
+  /**
    * Delegates a service request to a target organisation.
    *
    * Reassigns the request to a different organisation within or below the

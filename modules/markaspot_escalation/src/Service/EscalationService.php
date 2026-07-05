@@ -282,14 +282,7 @@ class EscalationService implements EscalationServiceInterface {
       }
     }
 
-    $requestJurisdictionId = NULL;
-    if ($node->hasField('field_escalation')
-        && !$node->get('field_escalation')->isEmpty()) {
-      $requestJurisdictionId = (int) $node->get('field_escalation')->target_id;
-    }
-    else {
-      $requestJurisdictionId = $this->resolveSourceJurisdiction($node);
-    }
+    $requestJurisdictionId = $this->resolveRequestJurisdictionId($node);
 
     // 2. Check for a category-level jurisdiction target override.
     if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
@@ -337,6 +330,18 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     return NULL;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function resolveRequestJurisdictionId(NodeInterface $node): ?int {
+    if ($node->hasField('field_escalation')
+        && !$node->get('field_escalation')->isEmpty()) {
+      return (int) $node->get('field_escalation')->target_id;
+    }
+
+    return $this->resolveSourceJurisdiction($node);
   }
 
   /**

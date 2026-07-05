@@ -100,7 +100,7 @@ class EscalationController extends ControllerBase {
     }
 
     // Validate and sanitise notes.
-    $notes = $this->validateNotes($data, TRUE);
+    $notes = $this->validateNotes($data, $this->isDelegationNoteRequired($node));
 
     // Resolve escalation target.
     $targetGroupId = $this->escalationService->resolveEscalationTarget($node);
@@ -177,7 +177,7 @@ class EscalationController extends ControllerBase {
     $this->validateDelegationScope($node, $targetOrg);
 
     // Validate and sanitise notes.
-    $notes = $this->validateNotes($data, FALSE);
+    $notes = $this->validateNotes($data, $this->isDelegationNoteRequired($node));
 
     // Perform delegation.
     try {
@@ -271,6 +271,36 @@ class EscalationController extends ControllerBase {
     }
 
     return $notes;
+  }
+
+  /**
+   * Checks whether escalation and delegation notes are required for a node.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   *
+   * @return bool
+   *   TRUE if the jurisdiction config requires notes.
+   */
+  private function isDelegationNoteRequired(NodeInterface $node): bool {
+    $jurisdictionId = $this->escalationService->resolveRequestJurisdictionId($node);
+    if ($jurisdictionId === NULL) {
+      return FALSE;
+    }
+
+    $jurisdiction = $this->entityTypeManager()->getStorage('group')->load($jurisdictionId);
+    if (!$this->isJurisdictionGroup($jurisdiction)
+        || !$jurisdiction->hasField('field_nuxt_config')
+        || $jurisdiction->get('field_nuxt_config')->isEmpty()) {
+      return FALSE;
+    }
+
+    $decoded = json_decode((string) $jurisdiction->get('field_nuxt_config')->value, TRUE);
+    if (!is_array($decoded)) {
+      return FALSE;
+    }
+
+    return ($decoded['features']['delegationNoteRequired'] ?? FALSE) === TRUE;
   }
 
   /**
