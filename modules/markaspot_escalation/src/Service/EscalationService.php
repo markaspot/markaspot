@@ -433,13 +433,18 @@ class EscalationService implements EscalationServiceInterface {
       return $this->isGroupMember($jurGroupId, $account);
     }
 
-    // Not escalated: user must be a member of a parent jur of ANY org's
-    // jurisdiction (multi-org support).
+    // Not escalated: user must be a member of the org's OWN jurisdiction
+    // (lateral delegation inside the tenant, the responsibility picker's
+    // primary flow) or of a parent jur of ANY org's jurisdiction (legacy
+    // redistribution path; multi-org support).
     if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
       foreach ($node->get('field_organisation')->referencedEntities() as $orgGroup) {
         if ($orgGroup->hasField('field_jurisdiction')
             && !$orgGroup->get('field_jurisdiction')->isEmpty()) {
           $orgJurId = (int) $orgGroup->get('field_jurisdiction')->target_id;
+          if ($this->isGroupMember($orgJurId, $account)) {
+            return TRUE;
+          }
           $parentJurId = $this->getParentJurisdictionId($orgJurId);
           if ($parentJurId !== NULL && $this->isGroupMember($parentJurId, $account)) {
             return TRUE;

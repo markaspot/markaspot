@@ -292,7 +292,10 @@ class EscalationControllerTest extends UnitTestCase {
     $this->assertFalse($data['service_requests']['request']['escalated']);
     $this->assertTrue($data['service_requests']['request']['delegated']);
     $this->assertArrayNotHasKey('escalation_target', $data['service_requests']['request']);
-    $this->assertArrayNotHasKey('target_organisation', $data['service_requests']['request']);
+    // The delegated branch echoes the moved-to org label (same exposure as
+    // the delegate endpoint's own response) so clients can confirm the
+    // target even when the server-resolved step changed since page load.
+    $this->assertSame('Parent Org', $data['service_requests']['request']['target_organisation']);
   }
 
   /**
@@ -448,6 +451,52 @@ class EscalationControllerTest extends UnitTestCase {
     $longNotes = str_repeat('a', 3000);
     $request = new Request([], [], [], [], [], [], json_encode(['notes' => $longNotes]));
     $this->controller->escalate('123-2026', $request);
+  }
+
+  /**
+   * Tests that delegation to an org outside the node's jur hierarchy is 422.
+   *
+   * validateDelegationScope() is the sole target-side cross-tenant boundary
+   * for lateral delegation: the target org's jurisdiction must be the node's
+   * jurisdiction or reach it via the field_parent_jurisdiction walk-up.
+   *
+   * @covers ::delegate
+   */
+  public function testDelegateRejectsOrgOutsideJurisdictionHierarchy(): void {
+    $node = $this->createMockNodeWithFields([]);
+    $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
+    $this->escalationService->method('canDelegate')->willReturn(TRUE);
+
+    // Target org 5 belongs to foreign jurisdiction 99; the node's effective
+    // jurisdiction is 10. Jur 99 has no parent, so the walk-up never
+    // reaches 10.
+    $orgGroup = $this->createMockOrgInJurisdiction(5, 99);
+    $foreignJur = $this->createMock(GroupInterface::class);
+    $foreignJur->method('id')->willReturn(99);
+    $foreignJur->method('bundle')->willReturn('jur');
+    $foreignJur->method('hasField')->with('field_parent_jurisdiction')->willReturn(FALSE);
+    $nodeJur = $this->createMock(GroupInterface::class);
+    $nodeJur->method('id')->willReturn(10);
+    $nodeJur->method('bundle')->willReturn('jur');
+
+    $this->groupStorage->method('load')->willReturnMap([
+      [5, $orgGroup],
+      [99, $foreignJur],
+      [10, $nodeJur],
+    ]);
+    $this->processor->method('getJurisdictionIdFromNode')->willReturn(10);
+
+    $this->escalationService->expects($this->never())->method('delegateRequest');
+
+    $request = new Request([], [], [], [], [], [], json_encode(['target_organisation' => 5]));
+
+    try {
+      $this->controller->delegate('123-2026', $request);
+      $this->fail('Expected 422 for a cross-jurisdiction delegation target.');
+    }
+    catch (HttpException $e) {
+      $this->assertSame(422, $e->getStatusCode());
+    }
   }
 
   /**

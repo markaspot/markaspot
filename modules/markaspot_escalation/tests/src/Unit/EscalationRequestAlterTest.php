@@ -37,6 +37,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $this->assertFalse($markaspot['escalated']);
     $this->assertSame(200, $markaspot['escalation_target_id']);
     $this->assertSame('org', $markaspot['escalation_target_kind']);
+    $this->assertSame('Org 200', $markaspot['escalation_target_label']);
     $this->assertArrayHasKey('delegate', $markaspot['permissions']);
   }
 
@@ -53,6 +54,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $markaspot = $request['extended_attributes']['markaspot'];
     $this->assertSame(14, $markaspot['escalation_target_id']);
     $this->assertSame('jur', $markaspot['escalation_target_kind']);
+    $this->assertSame('Jur 14', $markaspot['escalation_target_label']);
   }
 
   /**
@@ -68,6 +70,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $markaspot = $request['extended_attributes']['markaspot'];
     $this->assertNull($markaspot['escalation_target_id']);
     $this->assertNull($markaspot['escalation_target_kind']);
+    $this->assertNull($markaspot['escalation_target_label']);
   }
 
   /**
@@ -83,6 +86,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $markaspot = $request['extended_attributes']['markaspot'];
     $this->assertArrayNotHasKey('escalation_target_id', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_kind', $markaspot);
+    $this->assertArrayNotHasKey('escalation_target_label', $markaspot);
     $this->assertArrayNotHasKey('permissions', $markaspot);
   }
 
@@ -109,6 +113,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $markaspot = $request['extended_attributes']['markaspot'];
     $this->assertArrayNotHasKey('escalation_target_id', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_kind', $markaspot);
+    $this->assertArrayNotHasKey('escalation_target_label', $markaspot);
     $this->assertArrayNotHasKey('permissions', $markaspot);
   }
 
@@ -133,6 +138,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $markaspot = $request['extended_attributes']['markaspot'];
     $this->assertArrayNotHasKey('escalation_target_id', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_kind', $markaspot);
+    $this->assertArrayNotHasKey('escalation_target_label', $markaspot);
     $this->assertArrayNotHasKey('permissions', $markaspot);
   }
 

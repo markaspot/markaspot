@@ -1396,6 +1396,11 @@ class EscalationServiceTest extends UnitTestCase {
     $account = $this->createMockAccount(5, ['delegate service requests']);
 
     $childJur = $this->createMockGroup(4, 'jur', 1, 'Noord');
+    // Explicit non-membership: getMember() has no return type, so an
+    // unstubbed mock returns NULL, which isGroupMember's !== FALSE check
+    // would read as membership — the test would then pass via the NEW
+    // own-jur path instead of exercising the legacy parent path.
+    $childJur->method('getMember')->with($account)->willReturn(FALSE);
     $parentJur = $this->createMockGroup(1, 'jur', NULL, 'Amsterdam');
     $membership = $this->createMock(GroupMembership::class);
     $parentJur->method('getMember')

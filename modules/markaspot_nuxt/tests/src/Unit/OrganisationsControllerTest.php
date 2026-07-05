@@ -710,6 +710,54 @@ class OrganisationsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests that a member of the requested jurisdiction gets its full catalog.
+   *
+   * Non-privileged staff (e.g. tenant_admin) who are MEMBERS of the requested
+   * jurisdiction group receive that jurisdiction's complete org catalog — the
+   * responsibility picker needs the full delegation target list. Cross-tenant
+   * requests stay membership-filtered (markaspot-ui#279).
+   *
+   * @covers ::getOrganisations
+   */
+  public function testJurisdictionMemberReceivesFullCatalog(): void {
+    $account = $this->createMockUser(['authenticated', 'tenant_admin'], 11);
+    $controller = $this->createController($account);
+
+    $jurGroup = $this->createMock(GroupInterface::class);
+    $jurGroup->method('id')->willReturn('14');
+    $jurGroup->method('bundle')->willReturn('jur');
+    $jurGroup->method('isPublished')->willReturn(TRUE);
+    $jurGroup->method('getCacheTags')->willReturn(['group:14']);
+    $jurGroup->method('getCacheMaxAge')->willReturn(-1);
+    $jurGroup->method('getCacheContexts')->willReturn([]);
+    $this->groupStorage->method('load')
+      ->with(14)
+      ->willReturn($jurGroup);
+
+    // The jur-membership probe finds a membership relationship: the user is
+    // a member of jurisdiction 14 (without holding ANY org membership).
+    $jurMembershipQuery = $this->createMockQuery([77]);
+    $this->relationshipStorage->method('getQuery')->willReturn($jurMembershipQuery);
+
+    // Full catalog of jurisdiction 14 — no org-membership filtering.
+    $org1 = $this->createMockOrgGroup(100, 'Org Alpha', 'uuid-alpha');
+    $org2 = $this->createMockOrgGroup(101, 'Org Beta', 'uuid-beta');
+    $groupQuery = $this->createMockQuery([100, 101]);
+    $this->groupStorage->method('getQuery')->willReturn($groupQuery);
+    $this->groupStorage->method('loadMultiple')
+      ->with([100, 101])
+      ->willReturn([100 => $org1, 101 => $org2]);
+
+    $request = Request::create('/api/organisations?jurisdiction=14', 'GET');
+    $response = $controller->getOrganisations($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertCount(2, $data['organisations']);
+    $this->assertEquals('uuid-alpha', $data['organisations'][0]['id']);
+    $this->assertEquals('uuid-beta', $data['organisations'][1]['id']);
+  }
+
+  /**
    * Tests invalid jurisdiction returns empty response.
    *
    * @covers ::getOrganisations

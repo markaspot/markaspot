@@ -99,12 +99,17 @@ function markaspot_escalation_markaspot_open311_request_alter(array &$request, $
     $escalationService = \Drupal::service('markaspot_escalation.service');
     $targetGroupId = $escalationService->resolveEscalationTarget($node);
     $targetKind = NULL;
+    $targetLabel = NULL;
     if ($targetGroupId !== NULL) {
       $targetGroup = \Drupal::entityTypeManager()
         ->getStorage('group')
         ->load($targetGroupId);
       if ($targetGroup && in_array($targetGroup->bundle(), ['org', 'jur'], TRUE)) {
         $targetKind = $targetGroup->bundle();
+        // Label ships alongside id/kind so the client never needs to resolve
+        // it against its own (published-only) jurisdiction list — an
+        // unpublished parent jurisdiction would otherwise be unresolvable.
+        $targetLabel = $targetGroup->label();
       }
     }
 
@@ -118,6 +123,7 @@ function markaspot_escalation_markaspot_open311_request_alter(array &$request, $
 
     $request['extended_attributes']['markaspot']['escalation_target_id'] = $targetGroupId;
     $request['extended_attributes']['markaspot']['escalation_target_kind'] = $targetKind;
+    $request['extended_attributes']['markaspot']['escalation_target_label'] = $targetLabel;
 
     if (!isset($request['extended_attributes']['markaspot']['permissions'])) {
       $request['extended_attributes']['markaspot']['permissions'] = [];

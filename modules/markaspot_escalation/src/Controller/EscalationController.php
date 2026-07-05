@@ -126,6 +126,10 @@ class EscalationController extends ControllerBase {
 
     if ($isOrganisationTarget) {
       $requestData['delegated'] = TRUE;
+      // Echo the actually-moved-to org so the client can confirm the target
+      // even when the server-resolved step changed between page load and
+      // submit (mirrors delegate()'s target_organisation).
+      $requestData['target_organisation'] = $targetGroup?->label() ?? '';
     }
     else {
       $requestData['escalation_target'] = $targetGroup?->label() ?? '';

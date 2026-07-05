@@ -585,8 +585,11 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
 
     // Jur 4 has parent 2, jur 5 has parent 1, jur 6 has parent 3.
     $jurGroup4 = $this->createMockJurGroup(4, 2, 'District A');
+    $jurGroup4->method('getMember')->with($account)->willReturn(FALSE);
     $jurGroup5 = $this->createMockJurGroup(5, 1, 'District B');
+    $jurGroup5->method('getMember')->with($account)->willReturn(FALSE);
     $jurGroup6 = $this->createMockJurGroup(6, 3, 'District C');
+    $jurGroup6->method('getMember')->with($account)->willReturn(FALSE);
 
     // Parent jur 2 -> user is NOT member.
     $parentJur2 = $this->createMockJurGroup(2, NULL, 'City X');
@@ -646,8 +649,11 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
     // Note: GroupInterface::getMember() returns FALSE (not NULL) for
     // non-members, and EscalationService checks !== FALSE.
     $jurGroup4 = $this->createMockJurGroup(4, 2, 'District A');
+    $jurGroup4->method('getMember')->with($account)->willReturn(FALSE);
     $jurGroup5 = $this->createMockJurGroup(5, 1, 'District B');
+    $jurGroup5->method('getMember')->with($account)->willReturn(FALSE);
     $jurGroup6 = $this->createMockJurGroup(6, 3, 'District C');
+    $jurGroup6->method('getMember')->with($account)->willReturn(FALSE);
 
     $parentJur1 = $this->createMockJurGroup(1, NULL, 'City A');
     $parentJur1->method('getMember')->with($account)->willReturn(FALSE);
@@ -670,6 +676,36 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
       });
 
     $this->assertFalse($this->service->canDelegate($node, $account));
+  }
+
+  /**
+   * Tests canDelegate() allows members of the org's OWN jurisdiction.
+   *
+   * Lateral delegation inside the tenant is the responsibility picker's
+   * primary flow: a staffer who is a member of the request org's own
+   * jurisdiction (not only of a parent jurisdiction) may delegate.
+   */
+  public function testCanDelegateAllowsOwnJurisdictionMember(): void {
+    $org = $this->createMockOrgGroup(10, 4);
+
+    $node = $this->createMockNode([
+      'field_status' => 1,
+      'field_organisation_entities' => [$org],
+      'field_organisation_values' => [
+        ['target_id' => 10],
+      ],
+    ]);
+
+    $account = $this->createMockAccount(5, ['delegate service requests']);
+
+    $ownJur = $this->createMockJurGroup(4, NULL, 'Own City');
+    $member = $this->createMock(GroupMembership::class);
+    $ownJur->method('getMember')->with($account)->willReturn($member);
+
+    $this->groupStorage->method('load')
+      ->willReturnCallback(fn ($id) => $id === 4 ? $ownJur : NULL);
+
+    $this->assertTrue($this->service->canDelegate($node, $account));
   }
 
   /**

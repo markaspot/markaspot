@@ -1340,6 +1340,24 @@ class MarkASpotSettingsController extends ControllerBase {
     $privileged_roles = ['moderator', 'administrator', 'editorial_board'];
     $is_privileged = !empty(array_intersect($privileged_roles, $account->getRoles()));
 
+    // Members of the REQUESTED jurisdiction group (e.g. tenant_admin) see
+    // that jurisdiction's full org catalog: same-tenant structure is not the
+    // cross-tenant enumeration #279 guards against, and the responsibility
+    // picker needs the full list to offer delegation targets. Membership is
+    // checked against the already-validated jurisdiction group above.
+    if (!$is_privileged && $jurisdiction_id !== NULL) {
+      $jur_membership = $this->entityTypeManager
+        ->getStorage('group_relationship')
+        ->getQuery()
+        ->accessCheck(FALSE)
+        ->condition('entity_id', $account->id())
+        ->condition('gid', $jurisdiction_id)
+        ->condition('type', $jur_type . '-group_membership')
+        ->range(0, 1)
+        ->execute();
+      $is_privileged = !empty($jur_membership);
+    }
+
     // Non-privileged users: restrict to their own org memberships.
     if (!$is_privileged) {
       $membership_storage = $this->entityTypeManager->getStorage('group_relationship');
