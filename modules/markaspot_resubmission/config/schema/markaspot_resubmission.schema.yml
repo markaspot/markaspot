@@ -28,6 +28,9 @@ markaspot_resubmission.settings:
     max_reminders:
       type: integer
       label: 'Maximum number of reminders (0 for unlimited)'
+    default_reminder_scope:
+      type: string
+      label: 'Default reminder recipient scope'
 
 markaspot_resubmission.mail:
   type: config_object

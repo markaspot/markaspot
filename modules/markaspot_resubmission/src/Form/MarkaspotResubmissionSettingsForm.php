@@ -4,6 +4,7 @@ namespace Drupal\markaspot_resubmission\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -23,13 +24,23 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
   protected $entityTypeManager;
 
   /**
+   * The logger channel.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelInterface
+   */
+  protected $logger;
+
+  /**
    * Class constructor.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity
    *   The Entity type manager service.
+   * @param \Drupal\Core\Logger\LoggerChannelInterface $logger
+   *   The logger channel.
    */
-  public function __construct(EntityTypeManagerInterface $entity) {
+  public function __construct(EntityTypeManagerInterface $entity, LoggerChannelInterface $logger) {
     $this->entityTypeManager = $entity;
+    $this->logger = $logger;
   }
 
   /**
@@ -37,7 +48,8 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('entity_type.manager')
+      $container->get('entity_type.manager'),
+      $container->get('logger.factory')->get('markaspot_resubmission')
     );
   }
 
@@ -145,6 +157,17 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
       '#step' => 1,
     ];
 
+    $form['markaspot_resubmission']['reminder_settings']['default_reminder_scope'] = [
+      '#type' => 'select',
+      '#title' => $this->t('Default reminder scope'),
+      '#description' => $this->t('Determines which recipient scope resubmission reminders use.'),
+      '#default_value' => $config->get('default_reminder_scope') ?: 'org',
+      '#options' => [
+        'org' => $this->t('Organisation'),
+        'user' => $this->t('User (not yet operational, falls back to org)'),
+      ],
+    ];
+
     return parent::buildForm($form, $form_state);
   }
 
@@ -161,6 +184,7 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
       ->set('interval', $values['interval'])
       ->set('reminder_interval', $values['reminder_interval'])
       ->set('max_reminders', $values['max_reminders'])
+      ->set('default_reminder_scope', $values['default_reminder_scope'])
       ->save();
 
     parent::submitForm($form, $form_state);
@@ -202,7 +226,7 @@ class MarkaspotResubmissionSettingsForm extends ConfigFormBase {
       }
     }
     catch (\Exception $e) {
-      \Drupal::logger('markaspot_resubmission')->error('Failed to load taxonomy terms for @vid: @error', [
+      $this->logger->error('Failed to load taxonomy terms for @vid: @error', [
         '@vid' => $machine_name,
         '@error' => $e->getMessage(),
       ]);

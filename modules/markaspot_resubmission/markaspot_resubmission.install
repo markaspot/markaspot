@@ -6,8 +6,10 @@
  */
 
 use Drupal\Core\Config\FileStorage;
+use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\markaspot_resubmission\Entity\ResubmissionReminder;
 
 /**
  * Implements hook_install().
@@ -286,6 +288,41 @@ function markaspot_resubmission_update_9005() {
   }
 
   return !empty($messages) ? implode(' ', $messages) : t('Mail template configuration already up to date.');
+}
+
+/**
+ * Add reminder scope to reminder audit records and seed scope settings.
+ */
+function markaspot_resubmission_update_9006(): string {
+  $parts = [];
+  $update_manager = \Drupal::entityDefinitionUpdateManager();
+
+  if ($update_manager->getFieldStorageDefinition('reminder_scope', 'resubmission_reminder') === NULL) {
+    $definition = BaseFieldDefinition::create('list_string')
+      ->setLabel(t('Reminder Scope'))
+      ->setDescription(t('The recipient scope resolved for this reminder.'))
+      ->setSetting('allowed_values', [
+        ResubmissionReminder::REMINDER_SCOPE_ORG => t('Organisation'),
+        ResubmissionReminder::REMINDER_SCOPE_USER => t('User'),
+      ])
+      ->setDefaultValue(ResubmissionReminder::REMINDER_SCOPE_ORG)
+      ->setInitialValue(ResubmissionReminder::REMINDER_SCOPE_ORG)
+      ->setRequired(TRUE);
+
+    $update_manager->installFieldStorageDefinition('reminder_scope', 'resubmission_reminder', 'markaspot_resubmission', $definition);
+    $parts[] = 'Installed reminder_scope field storage.';
+  }
+
+  $config = \Drupal::configFactory()->getEditable('markaspot_resubmission.settings');
+  if ($config->get('default_reminder_scope') === NULL) {
+    $config->set('default_reminder_scope', ResubmissionReminder::REMINDER_SCOPE_ORG);
+    $config->save(TRUE);
+    $parts[] = 'Seeded default_reminder_scope=org.';
+  }
+
+  return $parts !== []
+    ? implode(' ', $parts)
+    : (string) t('Reminder scope field and settings already present.');
 }
 
 /**

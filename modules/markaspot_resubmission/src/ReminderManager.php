@@ -6,6 +6,7 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Component\Datetime\TimeInterface;
+use Drupal\markaspot_resubmission\Entity\ResubmissionReminder;
 use Drupal\node\NodeInterface;
 
 /**
@@ -122,14 +123,17 @@ class ReminderManager {
    *   The status (sent, failed, etc).
    * @param string|null $error_message
    *   Optional error message if failed.
+   * @param string $reminder_scope
+   *   The resolved reminder recipient scope.
    *
    * @return \Drupal\markaspot_resubmission\Entity\ResubmissionReminder|null
    *   The created reminder entity or NULL on failure.
    */
-  public function createReminder(NodeInterface $node, $recipient_email, $status = 'sent', $error_message = NULL) {
+  public function createReminder(NodeInterface $node, $recipient_email, $status = 'sent', $error_message = NULL, $reminder_scope = ResubmissionReminder::REMINDER_SCOPE_ORG) {
     try {
       $storage = $this->entityTypeManager->getStorage('resubmission_reminder');
       $reminder_count = $this->getReminderCount($node->id()) + 1;
+      $reminder_scope = $this->normalizeReminderScope($reminder_scope);
 
       // Get node status.
       $node_status = '';
@@ -146,6 +150,7 @@ class ReminderManager {
         'recipient_email' => $recipient_email,
         'status' => $status,
         'reminder_count' => $reminder_count,
+        'reminder_scope' => $reminder_scope,
         'node_status' => $node_status,
         'error_message' => $error_message,
       ]);
@@ -167,6 +172,22 @@ class ReminderManager {
       ]);
       return NULL;
     }
+  }
+
+  /**
+   * Normalizes reminder scope values.
+   *
+   * @param string|null $reminder_scope
+   *   The reminder scope.
+   *
+   * @return string
+   *   A supported reminder scope.
+   */
+  protected function normalizeReminderScope($reminder_scope) {
+    return in_array($reminder_scope, [
+      ResubmissionReminder::REMINDER_SCOPE_ORG,
+      ResubmissionReminder::REMINDER_SCOPE_USER,
+    ], TRUE) ? $reminder_scope : ResubmissionReminder::REMINDER_SCOPE_ORG;
   }
 
   /**

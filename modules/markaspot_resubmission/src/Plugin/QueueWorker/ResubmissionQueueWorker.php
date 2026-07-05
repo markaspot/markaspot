@@ -2,8 +2,6 @@
 
 namespace Drupal\markaspot_resubmission\Plugin\QueueWorker;
 
-use Drupal\taxonomy\Entity\Term;
-use Drupal\group\Entity\Group;
 use Drupal\group\Entity\GroupRelationship;
 use Drupal\Core\Queue\QueueWorkerBase;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
@@ -15,6 +13,7 @@ use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Utility\Token;
+use Drupal\markaspot_resubmission\Entity\ResubmissionReminder;
 use Drupal\markaspot_resubmission\ReminderManager;
 use Drupal\markaspot_resubmission\Event\ResubmissionReminderEvent;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -192,12 +191,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
       $mailText = $config->get('mailtext');
 
       // Determine the recipient email.
-      if ($this->moduleHandler->moduleExists('markaspot_groups')) {
-        $to = $this->getGroupField($node);
-      }
-      else {
-        $to = $this->getOrganisationTermField($node);
-      }
+      [$to, $resolved_scope] = $this->resolveRecipient($node);
 
       if (empty($to)) {
         $this->logger->warning('No recipient email found for node @nid.', ['@nid' => $nid]);
@@ -219,7 +213,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
 
       // Create reminder record.
       // Note: EventSubscriber handles email sending.
-      $this->reminderManager->createReminder($node, $to, 'sent');
+      $this->reminderManager->createReminder($node, $to, 'sent', NULL, $resolved_scope);
     }
     catch (\Exception $e) {
       $this->logger->critical('Error processing resubmission notification for node @nid: @error', [
@@ -248,6 +242,53 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
   }
 
   /**
+   * Resolves the reminder recipient and operational scope.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The node.
+   *
+   * @return array
+   *   The recipient email and resolved scope.
+   */
+  protected function resolveRecipient($node) {
+    $scope = $this->getEffectiveReminderScope();
+    if ($scope === ResubmissionReminder::REMINDER_SCOPE_USER) {
+      $this->logger->warning('user scope requested but Mark-a-Spot has no assignee field yet; falling back to org', [
+        '@nid' => $node->id(),
+      ]);
+      $scope = ResubmissionReminder::REMINDER_SCOPE_ORG;
+    }
+
+    $recipient = NULL;
+    if ($this->moduleHandler->moduleExists('markaspot_group')) {
+      $recipient = $this->getGroupField($node);
+    }
+
+    if (empty($recipient)) {
+      $recipient = $this->getOrganisationTermField($node);
+    }
+
+    return [$recipient, $scope];
+  }
+
+  /**
+   * Gets the configured reminder scope for this queue item.
+   *
+   * @return string
+   *   The configured reminder scope.
+   */
+  protected function getEffectiveReminderScope() {
+    $scope = $this->configFactory
+      ->get('markaspot_resubmission.settings')
+      ->get('default_reminder_scope');
+
+    return in_array($scope, [
+      ResubmissionReminder::REMINDER_SCOPE_ORG,
+      ResubmissionReminder::REMINDER_SCOPE_USER,
+    ], TRUE) ? $scope : ResubmissionReminder::REMINDER_SCOPE_ORG;
+  }
+
+  /**
    * Gets the email from group field.
    *
    * @param \Drupal\node\NodeInterface $node
@@ -257,26 +298,79 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
    *   The email address or null if not found.
    */
   protected function getGroupField($node) {
-    $group_ids = [];
-    $headOrganisationEmails = NULL;
+    $group_ids = $this->getOrganisationGroupIds($node);
 
-    $group_contents = GroupRelationship::loadByEntity($node);
-    foreach ($group_contents as $group_content) {
-      $group_ids[] = $group_content->getGroup()->id();
+    if ($group_ids === []) {
+      $group_ids = $this->getRelationshipGroupIds($node);
     }
 
-    foreach ($group_ids as $group) {
-      $affectedGroup = Group::load($group);
-      if ($affectedGroup && $affectedGroup->hasField('field_head_organisation_e_mail')) {
-        $headOrganisationEmails = $affectedGroup->get('field_head_organisation_e_mail')->getString();
-        if (!empty($headOrganisationEmails)) {
+    return $this->getFirstGroupEmail($group_ids);
+  }
+
+  /**
+   * Gets organisation group IDs from the service request field.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The node.
+   *
+   * @return int[]
+   *   The organisation group IDs.
+   */
+  protected function getOrganisationGroupIds($node) {
+    if (!$node->hasField('field_organisation') || $node->get('field_organisation')->isEmpty()) {
+      return [];
+    }
+
+    return array_map('intval', array_column($node->get('field_organisation')->getValue(), 'target_id'));
+  }
+
+  /**
+   * Gets group IDs from legacy group relationships.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The node.
+   *
+   * @return int[]
+   *   The group IDs.
+   */
+  protected function getRelationshipGroupIds($node) {
+    $group_ids = [];
+    $group_contents = GroupRelationship::loadByEntity($node);
+    foreach ($group_contents as $group_content) {
+      $group = $group_content->getGroup();
+      if ($group && $group->bundle() === 'org') {
+        $group_ids[] = (int) $group->id();
+      }
+    }
+
+    return $group_ids;
+  }
+
+  /**
+   * Gets the first configured group email.
+   *
+   * @param int[] $group_ids
+   *   The group IDs to inspect.
+   *
+   * @return string|null
+   *   The email address or null if not found.
+   */
+  protected function getFirstGroupEmail(array $group_ids) {
+    $head_organisation_emails = NULL;
+    $group_storage = $this->entityTypeManager->getStorage('group');
+
+    foreach (array_unique($group_ids) as $group_id) {
+      $affected_group = $group_storage->load($group_id);
+      if ($affected_group && $affected_group->hasField('field_head_organisation_e_mail')) {
+        $head_organisation_emails = $affected_group->get('field_head_organisation_e_mail')->getString();
+        if (!empty($head_organisation_emails)) {
           // Get first non-empty email.
           break;
         }
       }
     }
 
-    return $headOrganisationEmails;
+    return $head_organisation_emails;
   }
 
   /**
@@ -300,7 +394,7 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     // Get the service provider ID.
     $tid = $node->get('field_service_provider')->target_id;
     if ($tid !== NULL) {
-      $term = Term::load($tid);
+      $term = $this->entityTypeManager->getStorage('taxonomy_term')->load($tid);
       if ($term && $term->hasField('field_sp_email')) {
         return $term->get('field_sp_email')->getString();
       }

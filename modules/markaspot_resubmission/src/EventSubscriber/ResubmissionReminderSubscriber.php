@@ -71,7 +71,7 @@ class ResubmissionReminderSubscriber implements EventSubscriberInterface {
   /**
    * {@inheritdoc}
    */
-  public static function getSubscribedEvents() {
+  public static function getSubscribedEvents(): array {
     return [
       ResubmissionReminderEvent::EVENT_NAME => ['onReminderSend', 100],
     ];

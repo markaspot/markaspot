@@ -27,6 +27,16 @@ use Drupal\Core\Field\BaseFieldDefinition;
 class ResubmissionReminder extends ContentEntityBase {
 
   /**
+   * Reminder scope for organisation-level recipient resolution.
+   */
+  public const REMINDER_SCOPE_ORG = 'org';
+
+  /**
+   * Reminder scope for user-level recipient resolution.
+   */
+  public const REMINDER_SCOPE_USER = 'user';
+
+  /**
    * {@inheritdoc}
    */
   public static function baseFieldDefinitions(EntityTypeInterface $entity_type) {
@@ -62,6 +72,16 @@ class ResubmissionReminder extends ContentEntityBase {
       ->setLabel(t('Reminder Count'))
       ->setDescription(t('The sequence number of this reminder (1st, 2nd, etc).'))
       ->setDefaultValue(1)
+      ->setRequired(TRUE);
+
+    $fields['reminder_scope'] = BaseFieldDefinition::create('list_string')
+      ->setLabel(t('Reminder Scope'))
+      ->setDescription(t('The recipient scope resolved for this reminder.'))
+      ->setSetting('allowed_values', [
+        self::REMINDER_SCOPE_ORG => t('Organisation'),
+        self::REMINDER_SCOPE_USER => t('User'),
+      ])
+      ->setDefaultValue(self::REMINDER_SCOPE_ORG)
       ->setRequired(TRUE);
 
     $fields['node_status'] = BaseFieldDefinition::create('string')
@@ -116,6 +136,16 @@ class ResubmissionReminder extends ContentEntityBase {
    */
   public function getReminderCount() {
     return $this->get('reminder_count')->value;
+  }
+
+  /**
+   * Get the reminder scope.
+   *
+   * @return string
+   *   The reminder scope.
+   */
+  public function getReminderScope() {
+    return $this->get('reminder_scope')->value;
   }
 
   /**

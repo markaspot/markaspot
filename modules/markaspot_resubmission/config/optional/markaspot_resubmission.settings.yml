@@ -6,3 +6,4 @@ mailtext: 'Hello [current-user:name]!'
 interval: '172800'
 reminder_interval: 604800
 max_reminders: 0
+default_reminder_scope: org
