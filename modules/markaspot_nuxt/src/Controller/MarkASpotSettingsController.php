@@ -1416,6 +1416,8 @@ class MarkASpotSettingsController extends ControllerBase {
         'id' => $group->uuid(),
         'numericId' => (int) $group->id(),
         'label' => $group->label(),
+        'parentOrgId' => $this->getOrganisationParentOrgId($group),
+        'orgCode' => $this->getOrganisationCode($group),
       ];
 
       if ($jurisdiction_id !== NULL) {
@@ -1437,6 +1439,44 @@ class MarkASpotSettingsController extends ControllerBase {
     $response->addCacheableDependency($cache_metadata);
 
     return $response;
+  }
+
+  /**
+   * Gets the directly referenced parent organisation ID.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The organisation group.
+   *
+   * @return int|null
+   *   The parent organisation group ID, or NULL when missing.
+   */
+  protected function getOrganisationParentOrgId(GroupInterface $group): ?int {
+    if (!$group->hasField('field_parent_org')
+      || $group->get('field_parent_org')->isEmpty()) {
+      return NULL;
+    }
+
+    return (int) $group->get('field_parent_org')->target_id;
+  }
+
+  /**
+   * Gets the trimmed administrative organisation code.
+   *
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The organisation group.
+   *
+   * @return string|null
+   *   The organisation code, or NULL when missing or empty.
+   */
+  protected function getOrganisationCode(GroupInterface $group): ?string {
+    if (!$group->hasField('field_org_code')
+      || $group->get('field_org_code')->isEmpty()) {
+      return NULL;
+    }
+
+    $code = trim((string) $group->get('field_org_code')->value);
+
+    return $code !== '' ? $code : NULL;
   }
 
   /**

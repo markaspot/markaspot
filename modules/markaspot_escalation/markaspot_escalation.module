@@ -97,6 +97,16 @@ function markaspot_escalation_markaspot_open311_request_alter(array &$request, $
 
     /** @var \Drupal\markaspot_escalation\Service\EscalationServiceInterface $escalationService */
     $escalationService = \Drupal::service('markaspot_escalation.service');
+    $targetGroupId = $escalationService->resolveEscalationTarget($node);
+    $targetKind = NULL;
+    if ($targetGroupId !== NULL) {
+      $targetGroup = \Drupal::entityTypeManager()
+        ->getStorage('group')
+        ->load($targetGroupId);
+      if ($targetGroup && in_array($targetGroup->bundle(), ['org', 'jur'], TRUE)) {
+        $targetKind = $targetGroup->bundle();
+      }
+    }
 
     // Expose target label only to users with escalation permissions.
     if ($escalated) {
@@ -105,6 +115,9 @@ function markaspot_escalation_markaspot_open311_request_alter(array &$request, $
         $request['extended_attributes']['markaspot']['escalation_target'] = $jurEntity->label();
       }
     }
+
+    $request['extended_attributes']['markaspot']['escalation_target_id'] = $targetGroupId;
+    $request['extended_attributes']['markaspot']['escalation_target_kind'] = $targetKind;
 
     if (!isset($request['extended_attributes']['markaspot']['permissions'])) {
       $request['extended_attributes']['markaspot']['permissions'] = [];

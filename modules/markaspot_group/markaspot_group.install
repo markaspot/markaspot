@@ -4548,6 +4548,57 @@ function markaspot_group_update_11934(): string {
 }
 
 /**
+ * Adds the organisation code field for administrative organisation codes.
+ */
+function markaspot_group_update_11935(): string {
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $field_storage_config = $entity_type_manager->getStorage('field_storage_config');
+  $field_config = $entity_type_manager->getStorage('field_config');
+  $created = [];
+
+  if (!$field_storage_config->load('group.field_org_code')) {
+    $field_storage_config->create([
+      'field_name' => 'field_org_code',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'settings' => [
+        'max_length' => 16,
+        'is_ascii' => FALSE,
+        'case_sensitive' => FALSE,
+      ],
+      'cardinality' => 1,
+      'translatable' => TRUE,
+    ])->save();
+    $created[] = 'group.field_org_code storage';
+  }
+
+  if (!$field_config->load('group.org.field_org_code')) {
+    $field_config->create([
+      'field_name' => 'field_org_code',
+      'entity_type' => 'group',
+      'bundle' => 'org',
+      'label' => 'Organisation code',
+      'description' => 'Optional administrative organisation code.',
+      'required' => FALSE,
+      'translatable' => TRUE,
+      'default_value' => [],
+      'default_value_callback' => '',
+      'settings' => [],
+    ])->save();
+    $created[] = 'group.org.field_org_code field';
+  }
+
+  if ($created) {
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+    \Drupal::service('cache_tags.invalidator')->invalidateTags(['entity_field_info']);
+
+    return 'Created ' . implode(', ', $created) . '.';
+  }
+
+  return 'Organisation code field already present.';
+}
+
+/**
  * Adds uid 1 to every jur/org group where membership is missing.
  *
  * @return array<string, mixed>

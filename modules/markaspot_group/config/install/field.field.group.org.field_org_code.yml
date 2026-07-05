@@ -1,0 +1,18 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.group.field_org_code
+    - group.type.org
+id: group.org.field_org_code
+field_name: field_org_code
+entity_type: group
+bundle: org
+label: 'Organisation code'
+description: 'Optional administrative organisation code.'
+required: false
+translatable: true
+default_value: {  }
+default_value_callback: ''
+settings: {  }
+field_type: string

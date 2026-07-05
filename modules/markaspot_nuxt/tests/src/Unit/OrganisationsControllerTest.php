@@ -99,7 +99,7 @@ class OrganisationsControllerTest extends UnitTestCase {
   protected function setUp(): void {
     parent::setUp();
 
-    // Build nuxt config (required by constructor, not used by getOrganisations).
+    // Build nuxt config. Required by constructor, not used here.
     $nuxtConfig = $this->createMock(ImmutableConfig::class);
     $nuxtConfig->method('isNew')->willReturn(FALSE);
     $nuxtConfig->method('get')->willReturn(NULL);
@@ -208,11 +208,28 @@ class OrganisationsControllerTest extends UnitTestCase {
    *   The group UUID.
    * @param int|null $jurisdictionId
    *   The optional jurisdiction group ID.
+   * @param int|null $parentOrgId
+   *   The optional parent organisation group ID.
+   * @param string|null $orgCode
+   *   The optional organisation code.
+   * @param bool $hasParentOrgField
+   *   Whether the parent organisation field exists.
+   * @param bool $hasOrgCodeField
+   *   Whether the organisation code field exists.
    *
    * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked group entity.
    */
-  protected function createMockOrgGroup(int $id, string $label, string $uuid, ?int $jurisdictionId = NULL): GroupInterface {
+  protected function createMockOrgGroup(
+    int $id,
+    string $label,
+    string $uuid,
+    ?int $jurisdictionId = NULL,
+    ?int $parentOrgId = NULL,
+    ?string $orgCode = NULL,
+    bool $hasParentOrgField = TRUE,
+    bool $hasOrgCodeField = TRUE,
+  ): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn((string) $id);
     $group->method('bundle')->willReturn('org');
@@ -228,32 +245,81 @@ class OrganisationsControllerTest extends UnitTestCase {
       $jurisdiction->method('id')->willReturn((string) $jurisdictionId);
       $jurisdiction->method('bundle')->willReturn('jur');
     }
-    $group->method('hasField')
-      ->willReturnCallback(fn(string $field): bool => $field === 'field_jurisdiction');
-    $group->method('get')
-      ->willReturnCallback(static function (string $field) use ($jurisdictionId, $jurisdiction) {
-        if ($field !== 'field_jurisdiction') {
-          return NULL;
+    $fields = [
+      'field_jurisdiction' => new class($jurisdictionId, $jurisdiction) {
+
+        /**
+         * Constructs a jurisdiction reference field stub.
+         */
+        public function __construct(
+          public ?int $targetId,
+          public ?object $entity,
+        ) {}
+
+        /**
+         * Checks whether the field is empty.
+         */
+        public function isEmpty(): bool {
+          return $this->targetId === NULL;
         }
-        return new class($jurisdictionId, $jurisdiction) {
 
-          /**
-           * Constructs a jurisdiction reference field stub.
-           */
-          public function __construct(
-            public ?int $targetId,
-            public ?object $entity,
-          ) {}
+      },
+    ];
 
-          /**
-           * Checks whether the field is empty.
-           */
-          public function isEmpty(): bool {
-            return $this->targetId === NULL;
-          }
+    if ($hasParentOrgField) {
+      $fields['field_parent_org'] = new class($parentOrgId) {
 
-        };
-      });
+        /**
+         * Constructs a parent organisation reference field stub.
+         */
+        public function __construct(private ?int $targetId) {}
+
+        /**
+         * Checks whether the field is empty.
+         */
+        public function isEmpty(): bool {
+          return $this->targetId === NULL;
+        }
+
+        /**
+         * Returns field item properties.
+         */
+        public function __get(string $name): mixed {
+          return $name === 'target_id' ? $this->targetId : NULL;
+        }
+
+      };
+    }
+
+    if ($hasOrgCodeField) {
+      $fields['field_org_code'] = new class($orgCode) {
+
+        /**
+         * Constructs an organisation code field stub.
+         */
+        public function __construct(private ?string $value) {}
+
+        /**
+         * Checks whether the field is empty.
+         */
+        public function isEmpty(): bool {
+          return $this->value === NULL || $this->value === '';
+        }
+
+        /**
+         * Returns field item properties.
+         */
+        public function __get(string $name): mixed {
+          return $name === 'value' ? $this->value : NULL;
+        }
+
+      };
+    }
+
+    $group->method('hasField')
+      ->willReturnCallback(fn(string $field): bool => isset($fields[$field]));
+    $group->method('get')
+      ->willReturnCallback(static fn(string $field): ?object => $fields[$field] ?? NULL);
     return $group;
   }
 
@@ -437,6 +503,37 @@ class OrganisationsControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertArrayNotHasKey('jurisdictionId', $data['organisations'][0]);
     $this->assertArrayNotHasKey('orphan', $data['organisations'][0]);
+  }
+
+  /**
+   * Tests organisation responses expose parent organisation and org code.
+   *
+   * @covers ::getOrganisations
+   */
+  public function testOrganisationResponseIncludesParentOrgAndCode(): void {
+    $account = $this->createMockUser(['authenticated', 'administrator'], 1);
+    $controller = $this->createController($account);
+
+    $org1 = $this->createMockOrgGroup(100, 'Org Alpha', 'uuid-alpha', NULL, 90, ' VI ');
+    $org2 = $this->createMockOrgGroup(101, 'Org Beta', 'uuid-beta', NULL, NULL, '');
+    $org3 = $this->createMockOrgGroup(102, 'Org Gamma', 'uuid-gamma', NULL, NULL, NULL, FALSE, FALSE);
+
+    $groupQuery = $this->createMockQuery([100, 101, 102]);
+    $this->groupStorage->method('getQuery')->willReturn($groupQuery);
+    $this->groupStorage->method('loadMultiple')
+      ->with([100, 101, 102])
+      ->willReturn([100 => $org1, 101 => $org2, 102 => $org3]);
+
+    $request = Request::create('/api/organisations', 'GET');
+    $response = $controller->getOrganisations($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame(90, $data['organisations'][0]['parentOrgId']);
+    $this->assertSame('VI', $data['organisations'][0]['orgCode']);
+    $this->assertNull($data['organisations'][1]['parentOrgId']);
+    $this->assertNull($data['organisations'][1]['orgCode']);
+    $this->assertNull($data['organisations'][2]['parentOrgId']);
+    $this->assertNull($data['organisations'][2]['orgCode']);
   }
 
   /**
