@@ -177,8 +177,13 @@ class EscalationService implements EscalationServiceInterface {
 
     $jurGroup = $targetGroup;
 
-    // Create internal remark paragraph with the escalation note.
-    $paragraph = $this->createInternalRemarkParagraph($note, $node->language()->getId());
+    // Create internal remark paragraph with the escalation note. Notes are
+    // optional (tenant-configurable), but the audit trail must still record
+    // WHAT happened, so an empty note falls back to a descriptive text.
+    $remarkText = trim($note) === ''
+      ? (string) $this->t('Eskaliert an @jurisdiction.', ['@jurisdiction' => $jurGroup->label()])
+      : $note;
+    $paragraph = $this->createInternalRemarkParagraph($remarkText, $node->language()->getId());
 
     // Append to the node's field_internal_remark (unlimited cardinality).
     $this->appendInternalRemark($node, $paragraph);
@@ -200,10 +205,12 @@ class EscalationService implements EscalationServiceInterface {
     // Create a new revision with a descriptive log message.
     $node->setNewRevision(TRUE);
     $node->setRevisionLogMessage(
-      (string) $this->t('Escalated to @jurisdiction: @note', [
-        '@jurisdiction' => $jurGroup->label(),
-        '@note' => $note,
-      ])
+      trim($note) === ''
+        ? (string) $this->t('Escalated to @jurisdiction', ['@jurisdiction' => $jurGroup->label()])
+        : (string) $this->t('Escalated to @jurisdiction: @note', [
+          '@jurisdiction' => $jurGroup->label(),
+          '@note' => $note,
+        ])
     );
     $node->setRevisionCreationTime($this->time->getRequestTime());
     $node->setRevisionUserId($this->currentUser->id());
@@ -541,7 +548,13 @@ class EscalationService implements EscalationServiceInterface {
     string $note,
     bool $clearEscalation,
   ): void {
-    $paragraph = $this->createInternalRemarkParagraph($note, $node->language()->getId());
+    // Notes are optional (tenant-configurable); an empty note still leaves a
+    // descriptive audit remark. Callers with a prefixed note (parent-org
+    // escalation) pass a non-empty string, so no double prefix can occur.
+    $remarkText = trim($note) === ''
+      ? (string) $this->t('Delegiert an @organisation.', ['@organisation' => $orgGroup->label()])
+      : $note;
+    $paragraph = $this->createInternalRemarkParagraph($remarkText, $node->language()->getId());
     $this->appendInternalRemark($node, $paragraph);
 
     // Delegation is a deliberate reassignment: replaces ALL current orgs
@@ -558,10 +571,12 @@ class EscalationService implements EscalationServiceInterface {
 
     $node->setNewRevision(TRUE);
     $node->setRevisionLogMessage(
-      (string) $this->t('Delegated to @organisation: @note', [
-        '@organisation' => $orgGroup->label(),
-        '@note' => $note,
-      ])
+      trim($note) === ''
+        ? (string) $this->t('Delegated to @organisation', ['@organisation' => $orgGroup->label()])
+        : (string) $this->t('Delegated to @organisation: @note', [
+          '@organisation' => $orgGroup->label(),
+          '@note' => $note,
+        ])
     );
     $node->setRevisionCreationTime($this->time->getRequestTime());
     $node->setRevisionUserId($this->currentUser->id());
