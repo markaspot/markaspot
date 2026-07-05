@@ -848,6 +848,32 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * Builds a jurisdiction group mock for resolver tests.
+   */
+  protected function createJurisdictionGroup(
+    int $id,
+    string $bundle = 'jur',
+    bool $published = TRUE,
+  ): GroupInterface {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn((string) $id);
+    $group->method('bundle')->willReturn($bundle);
+    $group->method('isPublished')->willReturn($published);
+
+    return $group;
+  }
+
+  /**
+   * Expects a numeric jurisdiction group lookup.
+   */
+  protected function mockJurisdictionGroupLoad(int $id, ?GroupInterface $group): void {
+    $this->groupStorage->expects($this->once())
+      ->method('load')
+      ->with($id)
+      ->willReturn($group);
+  }
+
+  /**
    * Unclaimed read: a foreign node degrades the manager to anonymous.
    */
   public function testUnclaimedScopeForeignNodeDegradesToAnonymous(): void {
@@ -1812,6 +1838,100 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::createNodeQuery
+   */
+  public function testCreateNodeQueryInvalidJurisdictionClaimReturnsEmptyResult(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $this->nodeStorage->method('getQuery')->willReturn($query);
+
+    $conditions = [];
+    $query->method('condition')
+      ->willReturnCallback(
+        function (
+          $field,
+          $value = NULL,
+          $operator = NULL,
+        ) use ($query, &$conditions) {
+          $conditions[] = [
+            'field' => $field,
+            'value' => $value,
+            'operator' => $operator,
+          ];
+          return $query;
+        }
+      );
+    $query->method('accessCheck')->willReturnSelf();
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('hasPermission')->willReturn(FALSE);
+    $user->method('id')->willReturn(5);
+    $user->method('isAnonymous')->willReturn(FALSE);
+
+    $this->mockJurisdictionGroupLoad(999, NULL);
+
+    $this->processor->createNodeQuery(['jurisdiction_id' => '999'], $user);
+
+    $this->assertContains(
+      [
+        'field' => 'nid',
+        'value' => [0],
+        'operator' => 'IN',
+      ],
+      $conditions,
+      'Invalid explicit jurisdiction claims must not fall back to unscoped reads.'
+    );
+  }
+
+  /**
+   * @covers ::createNodeQuery
+   */
+  public function testCreateNodeQueryCanonicalZeroDoesNotFallBackToGid(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $this->nodeStorage->method('getQuery')->willReturn($query);
+
+    $conditions = [];
+    $query->method('condition')
+      ->willReturnCallback(
+        function (
+          $field,
+          $value = NULL,
+          $operator = NULL,
+        ) use ($query, &$conditions) {
+          $conditions[] = [
+            'field' => $field,
+            'value' => $value,
+            'operator' => $operator,
+          ];
+          return $query;
+        }
+      );
+    $query->method('accessCheck')->willReturnSelf();
+
+    $user = $this->createMock(AccountProxyInterface::class);
+    $user->method('hasPermission')->willReturn(FALSE);
+    $user->method('id')->willReturn(5);
+    $user->method('isAnonymous')->willReturn(FALSE);
+
+    $this->logger->expects($this->never())->method('notice');
+    $this->groupStorage->expects($this->never())->method('load');
+
+    $this->processor->createNodeQuery([
+      'jurisdiction_id' => '0',
+      'gid' => '42',
+    ], $user);
+
+    $this->assertContains(
+      [
+        'field' => 'nid',
+        'value' => [0],
+        'operator' => 'IN',
+      ],
+      $conditions,
+      'Canonical jurisdiction_id=0 must not fall back to deprecated gid.'
+    );
+  }
+
+  /**
    * @covers ::getJurisdictionIdFromNode
    */
   public function testGetJurisdictionIdFromNodeWithCategory(): void {
@@ -1925,13 +2045,18 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests that jurisdiction_id parameter is resolved as canonical name.
+   * Tests that a published jurisdiction group resolves by canonical ID.
    */
   public function testResolveJurisdictionIdCanonical(): void {
+    $this->mockJurisdictionGroupLoad(
+      42,
+      $this->createJurisdictionGroup(42)
+    );
+
     $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
       ['jurisdiction_id' => '42'],
     ]);
-    $this->assertEquals(42, $result);
+    $this->assertSame(42, $result);
   }
 
   /**
@@ -1942,10 +2067,15 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->method('notice')
       ->with($this->stringContains('Deprecated API parameter "jurisdiction"'));
 
+    $this->mockJurisdictionGroupLoad(
+      42,
+      $this->createJurisdictionGroup(42)
+    );
+
     $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
       ['jurisdiction' => '42'],
     ]);
-    $this->assertEquals(42, $result);
+    $this->assertSame(42, $result);
   }
 
   /**
@@ -1956,10 +2086,15 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->method('notice')
       ->with($this->stringContains('Deprecated API parameter "gid"'));
 
+    $this->mockJurisdictionGroupLoad(
+      42,
+      $this->createJurisdictionGroup(42)
+    );
+
     $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
       ['gid' => '42'],
     ]);
-    $this->assertEquals(42, $result);
+    $this->assertSame(42, $result);
   }
 
   /**
@@ -1967,11 +2102,28 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
    */
   public function testResolveJurisdictionIdCanonicalTakesPriority(): void {
     $this->logger->expects($this->never())->method('notice');
+    $this->mockJurisdictionGroupLoad(
+      10,
+      $this->createJurisdictionGroup(10)
+    );
 
     $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
       ['jurisdiction_id' => '10', 'jurisdiction' => '20', 'gid' => '30'],
     ]);
-    $this->assertEquals(10, $result);
+    $this->assertSame(10, $result);
+  }
+
+  /**
+   * Tests that canonical zero does not fall back to deprecated aliases.
+   */
+  public function testResolveJurisdictionIdCanonicalZeroDoesNotFallBackToGid(): void {
+    $this->logger->expects($this->never())->method('notice');
+    $this->groupStorage->expects($this->never())->method('load');
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => '0', 'gid' => '42'],
+    ]);
+    $this->assertNull($result);
   }
 
   /**
@@ -1979,6 +2131,48 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
    */
   public function testResolveJurisdictionIdEmpty(): void {
     $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [[]]);
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests that a missing numeric jurisdiction group returns NULL.
+   */
+  public function testResolveJurisdictionIdMissingNumericGroupReturnsNull(): void {
+    $this->mockJurisdictionGroupLoad(99, NULL);
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => '99'],
+    ]);
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests that a numeric non-jurisdiction group returns NULL.
+   */
+  public function testResolveJurisdictionIdWrongBundleReturnsNull(): void {
+    $this->mockJurisdictionGroupLoad(
+      7,
+      $this->createJurisdictionGroup(7, 'org')
+    );
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => '7'],
+    ]);
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests that a numeric unpublished jurisdiction group returns NULL.
+   */
+  public function testResolveJurisdictionIdUnpublishedNumericGroupReturnsNull(): void {
+    $this->mockJurisdictionGroupLoad(
+      8,
+      $this->createJurisdictionGroup(8, 'jur', FALSE)
+    );
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => '8'],
+    ]);
     $this->assertNull($result);
   }
 
@@ -2053,13 +2247,14 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->with([
         'type' => 'jur',
         'field_slug' => 'bonn',
+        'status' => 1,
       ])
       ->willReturn([42 => $group]);
 
     $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
       ['jurisdiction_id' => 'bonn'],
     ]);
-    $this->assertEquals(42, $result);
+    $this->assertSame(42, $result);
   }
 
   /**
@@ -2070,11 +2265,31 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       ->with([
         'type' => 'jur',
         'field_slug' => 'nonexistent',
+        'status' => 1,
       ])
       ->willReturn([]);
 
     $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
       ['jurisdiction_id' => 'nonexistent'],
+    ]);
+    $this->assertNull($result);
+  }
+
+  /**
+   * Tests that unpublished slug matches are filtered out.
+   */
+  public function testResolveJurisdictionIdUnpublishedSlugReturnsNull(): void {
+    $this->groupStorage->expects($this->once())
+      ->method('loadByProperties')
+      ->with([
+        'type' => 'jur',
+        'field_slug' => 'draft-city',
+        'status' => 1,
+      ])
+      ->willReturn([]);
+
+    $result = $this->invokeMethod($this->processor, 'resolveJurisdictionId', [
+      ['jurisdiction_id' => 'draft-city'],
     ]);
     $this->assertNull($result);
   }

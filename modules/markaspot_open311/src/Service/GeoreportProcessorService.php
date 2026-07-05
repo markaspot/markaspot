@@ -36,6 +36,7 @@ use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Component\Utility\Html;
 use Drupal\Component\Datetime\Time;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\paragraphs\Entity\Paragraph;
 use Psr\Log\LoggerInterface;
@@ -49,6 +50,9 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * between Drupal entities and the Open311 data format.
  */
 class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
+  use JurisdictionIdResolverTrait {
+    resolveJurisdictionId as protected resolveJurisdictionValue;
+  }
   use StringTranslationTrait;
 
   /**
@@ -1721,6 +1725,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     // Apply jurisdiction filter (gid or jurisdiction slug).
     // This filters by a specific group (jurisdiction type) for multi-tenant setups.
     // Uses hierarchy resolver to include child jurisdiction nodes (Phase 2).
+    $has_jurisdiction_filter = $this->hasJurisdictionFilterParameter($parameters);
     $jurisdiction_gid = $this->resolveJurisdictionId($parameters);
     if ($jurisdiction_gid) {
       $node_ids = $this->hierarchyResolver
@@ -1733,6 +1738,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
         // No nodes in this jurisdiction - return empty results.
         $query->condition('nid', [0], 'IN');
       }
+    }
+    elseif ($has_jurisdiction_filter) {
+      $query->condition('nid', [0], 'IN');
     }
 
     // Apply organisation group filter (group_id parameter).
@@ -1769,44 +1777,73 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    */
   public function resolveJurisdictionId(array $parameters): ?int {
     // New canonical parameter.
-    $value = $parameters['jurisdiction_id'] ?? NULL;
+    $value = NULL;
+    if (
+      array_key_exists('jurisdiction_id', $parameters)
+      && $this->jurisdictionFilterValueIsPresent($parameters['jurisdiction_id'])
+    ) {
+      $value = $parameters['jurisdiction_id'];
+    }
 
     // Deprecated aliases (backward compat, one release cycle).
-    if (empty($value) && !empty($parameters['jurisdiction'])) {
+    if (
+      $value === NULL
+      && array_key_exists('jurisdiction', $parameters)
+      && $this->jurisdictionFilterValueIsPresent($parameters['jurisdiction'])
+    ) {
       $value = $parameters['jurisdiction'];
       $this->logger?->notice('Deprecated API parameter "jurisdiction". Use "jurisdiction_id" instead.');
     }
-    if (empty($value) && !empty($parameters['gid'])) {
+    if (
+      $value === NULL
+      && array_key_exists('gid', $parameters)
+      && $this->jurisdictionFilterValueIsPresent($parameters['gid'])
+    ) {
       $value = $parameters['gid'];
       $this->logger?->notice('Deprecated API parameter "gid". Use "jurisdiction_id" instead.');
     }
 
-    if (empty($value)) {
+    if ($value === NULL) {
       return NULL;
     }
 
-    // Numeric = direct group ID.
-    if (is_numeric($value)) {
-      return (int) $value;
-    }
-
-    // Validate slug format (alphanumeric, hyphens, underscores, max 64 chars).
-    if (!preg_match('/^[a-z0-9_-]{1,64}$/i', $value)) {
+    if (!is_int($value) && !is_string($value)) {
       return NULL;
     }
 
-    // Load jurisdiction group type from config (supports legacy 'jurisdiction' naming).
-    // Lookup by slug.
-    $groups = $this->entityTypeManager->getStorage('group')->loadByProperties([
-      'type' => $this->jurisdictionGroupType(),
-      'field_slug' => $value,
-    ]);
-    $group = reset($groups);
-    if ($group) {
-      return (int) $group->id();
+    return $this->resolveJurisdictionValue($value, $this->jurisdictionGroupType());
+  }
+
+  /**
+   * Checks whether an Open311 jurisdiction filter was explicitly supplied.
+   */
+  protected function hasJurisdictionFilterParameter(array $parameters): bool {
+    foreach (['jurisdiction_id', 'jurisdiction', 'gid'] as $key) {
+      if (!array_key_exists($key, $parameters)) {
+        continue;
+      }
+
+      if ($this->jurisdictionFilterValueIsPresent($parameters[$key])) {
+        return TRUE;
+      }
     }
 
-    return NULL;
+    return FALSE;
+  }
+
+  /**
+   * Checks whether a single jurisdiction filter value is present.
+   */
+  protected function jurisdictionFilterValueIsPresent(mixed $value): bool {
+    if (is_array($value)) {
+      return !empty($value);
+    }
+
+    if (!is_scalar($value) && $value !== NULL) {
+      return TRUE;
+    }
+
+    return trim((string) $value) !== '';
   }
 
   /**
