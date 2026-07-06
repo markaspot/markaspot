@@ -96,6 +96,13 @@ class EscalationService implements EscalationServiceInterface {
   protected MailManagerInterface $mailManager;
 
   /**
+   * Cached delegation note requirements keyed by jurisdiction group ID.
+   *
+   * @var array<int, bool>
+   */
+  protected array $delegationNoteRequiredByJurisdiction = [];
+
+  /**
    * Constructs an EscalationService.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -349,6 +356,58 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     return $this->resolveSourceJurisdiction($node);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function isDelegationNoteRequired(NodeInterface $node): bool {
+    $jurisdictionId = $this->resolveRequestJurisdictionId($node);
+    if ($jurisdictionId === NULL) {
+      return FALSE;
+    }
+
+    return $this->delegationNoteRequiredForJurisdiction($jurisdictionId);
+  }
+
+  /**
+   * Checks whether a jurisdiction requires escalation and delegation notes.
+   *
+   * @param int $jurisdictionId
+   *   The jurisdiction group ID.
+   *
+   * @return bool
+   *   TRUE if the jurisdiction config requires notes.
+   */
+  protected function delegationNoteRequiredForJurisdiction(
+    int $jurisdictionId,
+  ): bool {
+    $cache = &$this->delegationNoteRequiredByJurisdiction;
+    if (array_key_exists($jurisdictionId, $cache)) {
+      return $cache[$jurisdictionId];
+    }
+
+    $jurisdiction = $this->entityTypeManager->getStorage('group')
+      ->load($jurisdictionId);
+    if (!$this->isJurisdictionGroup($jurisdiction)
+        || !$jurisdiction->hasField('field_nuxt_config')
+        || $jurisdiction->get('field_nuxt_config')->isEmpty()) {
+      $cache[$jurisdictionId] = FALSE;
+      return FALSE;
+    }
+
+    $decoded = json_decode(
+      (string) $jurisdiction->get('field_nuxt_config')->value,
+      TRUE
+    );
+    if (!is_array($decoded)) {
+      $cache[$jurisdictionId] = FALSE;
+      return FALSE;
+    }
+
+    $cache[$jurisdictionId] =
+      ($decoded['features']['delegationNoteRequired'] ?? FALSE) === TRUE;
+    return $cache[$jurisdictionId];
   }
 
   /**

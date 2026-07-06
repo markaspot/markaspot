@@ -28,7 +28,13 @@ class EscalationRequestAlterTest extends UnitTestCase {
    */
   public function testRequestAlterAddsOrganisationEscalationTarget(): void {
     $node = $this->createNode(FALSE);
-    $this->setServices($node, ['escalate service requests'], 200, 'org');
+    $this->setServices(
+      $node,
+      ['escalate service requests'],
+      200,
+      'org',
+      delegationNoteRequired: TRUE,
+    );
 
     $request = [];
     markaspot_escalation_markaspot_open311_request_alter($request, $node);
@@ -38,6 +44,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $this->assertSame(200, $markaspot['escalation_target_id']);
     $this->assertSame('org', $markaspot['escalation_target_kind']);
     $this->assertSame('Org 200', $markaspot['escalation_target_label']);
+    $this->assertTrue($markaspot['note_required']);
     $this->assertArrayHasKey('delegate', $markaspot['permissions']);
   }
 
@@ -55,6 +62,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $this->assertSame(14, $markaspot['escalation_target_id']);
     $this->assertSame('jur', $markaspot['escalation_target_kind']);
     $this->assertSame('Jur 14', $markaspot['escalation_target_label']);
+    $this->assertFalse($markaspot['note_required']);
   }
 
   /**
@@ -87,6 +95,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $this->assertArrayNotHasKey('escalation_target_id', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_kind', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_label', $markaspot);
+    $this->assertArrayNotHasKey('note_required', $markaspot);
     $this->assertArrayNotHasKey('permissions', $markaspot);
   }
 
@@ -114,6 +123,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $this->assertArrayNotHasKey('escalation_target_id', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_kind', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_label', $markaspot);
+    $this->assertArrayNotHasKey('note_required', $markaspot);
     $this->assertArrayNotHasKey('permissions', $markaspot);
   }
 
@@ -139,6 +149,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     $this->assertArrayNotHasKey('escalation_target_id', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_kind', $markaspot);
     $this->assertArrayNotHasKey('escalation_target_label', $markaspot);
+    $this->assertArrayNotHasKey('note_required', $markaspot);
     $this->assertArrayNotHasKey('permissions', $markaspot);
   }
 
@@ -197,6 +208,7 @@ class EscalationRequestAlterTest extends UnitTestCase {
     ?int $jurisdictionId = 14,
     bool $hasJurisdictionGroups = TRUE,
     bool $isJurisdictionMember = TRUE,
+    bool $delegationNoteRequired = FALSE,
   ): void {
     $account = $this->createMock(AccountInterface::class);
     $account->method('hasPermission')
@@ -217,6 +229,10 @@ class EscalationRequestAlterTest extends UnitTestCase {
       ->method('resolveEscalationTarget')
       ->with($node)
       ->willReturn($targetGroupId);
+    $escalationService->expects($expectEscalationService ? $this->once() : $this->never())
+      ->method('isDelegationNoteRequired')
+      ->with($node)
+      ->willReturn($delegationNoteRequired);
     $escalationService->method('canEscalate')->willReturn($targetGroupId !== NULL);
     $escalationService->method('canDelegate')->willReturn(FALSE);
 

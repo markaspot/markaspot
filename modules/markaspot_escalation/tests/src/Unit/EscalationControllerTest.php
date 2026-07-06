@@ -208,15 +208,15 @@ class EscalationControllerTest extends UnitTestCase {
    */
   public function testEscalateAllowsEmptyNotesWhenNoteFlagMissingOrFalse(?string $nuxtConfig): void {
     $node = $this->createMock(NodeInterface::class);
+    $noteRequired = $nuxtConfig === '{"features":{"delegationNoteRequired":true}}';
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
-    $this->escalationService->method('resolveRequestJurisdictionId')->willReturn(9);
+    $this->escalationService->method('isDelegationNoteRequired')
+      ->willReturn($noteRequired);
     $this->escalationService->method('resolveEscalationTarget')->willReturn(10);
 
-    $jurGroup = $this->createMockJurisdictionWithNuxtConfig($nuxtConfig, 9, 'Current Jurisdiction');
     $targetGroup = $this->createMockJurisdictionWithNuxtConfig(NULL, 10, 'Parent Jurisdiction');
     $this->groupStorage->method('load')->willReturnMap([
-      [9, $jurGroup],
       [10, $targetGroup],
     ]);
 
@@ -240,13 +240,11 @@ class EscalationControllerTest extends UnitTestCase {
     $node = $this->createMockNodeWithFields([]);
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canDelegate')->willReturn(TRUE);
-    $this->escalationService->method('resolveRequestJurisdictionId')->willReturn(10);
+    $this->escalationService->method('isDelegationNoteRequired')->willReturn(TRUE);
 
     $orgGroup = $this->createMockOrgInJurisdiction(5, 10);
-    $jurGroup = $this->createMockJurisdictionWithNuxtConfig('{"features":{"delegationNoteRequired":true}}', 10);
     $this->groupStorage->method('load')->willReturnMap([
       [5, $orgGroup],
-      [10, $jurGroup],
     ]);
     $this->processor->method('getJurisdictionIdFromNode')->willReturn(10);
 
@@ -269,12 +267,7 @@ class EscalationControllerTest extends UnitTestCase {
     $node = $this->createMock(NodeInterface::class);
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
-    $this->escalationService->method('resolveRequestJurisdictionId')->willReturn(9);
-
-    $jurGroup = $this->createMockJurisdictionWithNuxtConfig('{"features":{"delegationNoteRequired":true}}', 9, 'Current Jurisdiction');
-    $this->groupStorage->method('load')->willReturnMap([
-      [9, $jurGroup],
-    ]);
+    $this->escalationService->method('isDelegationNoteRequired')->willReturn(TRUE);
 
     $this->escalationService->expects($this->never())->method('escalateRequest');
 
@@ -295,13 +288,11 @@ class EscalationControllerTest extends UnitTestCase {
     $node = $this->createMock(NodeInterface::class);
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
-    $this->escalationService->method('resolveRequestJurisdictionId')->willReturn(9);
+    $this->escalationService->method('isDelegationNoteRequired')->willReturn(TRUE);
     $this->escalationService->method('resolveEscalationTarget')->willReturn(10);
 
-    $jurGroup = $this->createMockJurisdictionWithNuxtConfig('{"features":{"delegationNoteRequired":true}}', 9, 'Current Jurisdiction');
     $targetGroup = $this->createMockJurisdictionWithNuxtConfig(NULL, 10, 'Parent Jurisdiction');
     $this->groupStorage->method('load')->willReturnMap([
-      [9, $jurGroup],
       [10, $targetGroup],
     ]);
 
@@ -325,13 +316,11 @@ class EscalationControllerTest extends UnitTestCase {
     $node = $this->createMockNodeWithFields([]);
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canDelegate')->willReturn(TRUE);
-    $this->escalationService->method('resolveRequestJurisdictionId')->willReturn(10);
+    $this->escalationService->method('isDelegationNoteRequired')->willReturn(FALSE);
 
     $orgGroup = $this->createMockOrgInJurisdiction(5, 10);
-    $jurGroup = $this->createMockJurisdictionWithNuxtConfig('{invalid json', 10);
     $this->groupStorage->method('load')->willReturnMap([
       [5, $orgGroup],
-      [10, $jurGroup],
     ]);
     $this->processor->method('getJurisdictionIdFromNode')->willReturn(10);
 

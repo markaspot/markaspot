@@ -67,6 +67,22 @@ interface EscalationServiceInterface {
   public function resolveRequestJurisdictionId(NodeInterface $node): ?int;
 
   /**
+   * Checks whether escalation and delegation notes are required for a request.
+   *
+   * The policy is read from the effective request jurisdiction, not from the
+   * currently displayed route jurisdiction. Missing jurisdiction context,
+   * missing configuration, invalid JSON, or a non-TRUE feature flag all keep
+   * notes optional.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   *
+   * @return bool
+   *   TRUE if the request jurisdiction requires notes.
+   */
+  public function isDelegationNoteRequired(NodeInterface $node): bool;
+
+  /**
    * Delegates a service request to a target organisation.
    *
    * Reassigns the request to a different organisation within or below the

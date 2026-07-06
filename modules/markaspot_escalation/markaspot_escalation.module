@@ -132,6 +132,8 @@ function markaspot_escalation_markaspot_open311_request_alter(array &$request, $
       $escalationService->canEscalate($node, $currentUser);
     $request['extended_attributes']['markaspot']['permissions']['delegate'] =
       $escalationService->canDelegate($node, $currentUser);
+    $request['extended_attributes']['markaspot']['note_required'] =
+      $escalationService->isDelegationNoteRequired($node);
   }
 }
 

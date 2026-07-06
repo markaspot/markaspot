@@ -769,6 +769,161 @@ class EscalationServiceTest extends UnitTestCase {
   }
 
   /**
+   * Creates a mock jurisdiction group with optional field_nuxt_config JSON.
+   *
+   * @param int $id
+   *   The jurisdiction group ID.
+   * @param string|null $nuxtConfig
+   *   The raw field_nuxt_config value, or NULL when the field is absent.
+   *
+   * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked jurisdiction group.
+   */
+  protected function createMockJurisdictionWithNuxtConfig(
+    int $id,
+    ?string $nuxtConfig,
+  ): GroupInterface {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($id);
+    $group->method('bundle')->willReturn('jur');
+
+    $configField = NULL;
+    if ($nuxtConfig !== NULL) {
+      $configField = new class($nuxtConfig) {
+
+        /**
+         * The raw Nuxt config JSON value.
+         *
+         * @var string
+         */
+        public string $value;
+
+        /**
+         * Constructs a field item stub.
+         */
+        public function __construct(string $value) {
+          $this->value = $value;
+        }
+
+        /**
+         * Checks whether the field item is empty.
+         */
+        public function isEmpty(): bool {
+          return trim($this->value) === '';
+        }
+
+      };
+    }
+
+    $group->method('hasField')
+      ->willReturnCallback(static function ($name) use ($nuxtConfig): bool {
+        return $name === 'field_nuxt_config' && $nuxtConfig !== NULL;
+      });
+    $group->method('get')
+      ->willReturnCallback(function ($name) use ($configField) {
+        if ($name === 'field_nuxt_config' && $configField !== NULL) {
+          return $configField;
+        }
+        $empty = $this->createMock(FieldItemListInterface::class);
+        $empty->method('isEmpty')->willReturn(TRUE);
+        return $empty;
+      });
+
+    return $group;
+  }
+
+  /**
+   * Tests that delegation note policy is cached per jurisdiction.
+   *
+   * @covers ::isDelegationNoteRequired
+   */
+  public function testIsDelegationNoteRequiredCachesJurisdictionConfig(): void {
+    $node = $this->createMockNode(['field_escalation' => 10]);
+    $jurGroup = $this->createMockJurisdictionWithNuxtConfig(
+      10,
+      '{"features":{"delegationNoteRequired":true}}'
+    );
+
+    $this->groupStorage->expects($this->once())
+      ->method('load')
+      ->with(10)
+      ->willReturn($jurGroup);
+
+    $this->assertTrue($this->service->isDelegationNoteRequired($node));
+    $this->assertTrue($this->service->isDelegationNoteRequired($node));
+  }
+
+  /**
+   * Tests that unresolved jurisdictions leave delegation notes optional.
+   *
+   * @covers ::isDelegationNoteRequired
+   */
+  public function testIsDelegationNoteRequiredReturnsFalseWithoutJurisdiction(): void {
+    $node = $this->createMockNode();
+
+    $this->relationshipStorage->expects($this->once())
+      ->method('loadByProperties')
+      ->with([
+        'entity_id' => 100,
+        'plugin_id' => 'group_node:service_request',
+      ])
+      ->willReturn([]);
+    $this->groupStorage->expects($this->never())
+      ->method('load');
+
+    $this->assertFalse($this->service->isDelegationNoteRequired($node));
+  }
+
+  /**
+   * Tests fail-closed note policy paths and cached FALSE values.
+   *
+   * @param string|null $nuxtConfig
+   *   The raw field_nuxt_config value, or NULL when the field is absent.
+   * @param string $bundle
+   *   The group bundle returned for the request jurisdiction.
+   *
+   * @dataProvider optionalDelegationNotePolicyProvider
+   *
+   * @covers ::isDelegationNoteRequired
+   */
+  public function testIsDelegationNoteRequiredReturnsFalseForOptionalPolicies(
+    ?string $nuxtConfig,
+    string $bundle,
+  ): void {
+    $node = $this->createMockNode(['field_escalation' => 10]);
+    $group = $bundle === 'jur'
+      ? $this->createMockJurisdictionWithNuxtConfig(10, $nuxtConfig)
+      : $this->createMockGroup(10, $bundle);
+
+    $this->groupStorage->expects($this->once())
+      ->method('load')
+      ->with(10)
+      ->willReturn($group);
+
+    $this->assertFalse($this->service->isDelegationNoteRequired($node));
+    $this->assertFalse($this->service->isDelegationNoteRequired($node));
+  }
+
+  /**
+   * Provides optional delegation note policy cases.
+   *
+   * @return array
+   *   Nuxt config payloads without a TRUE delegationNoteRequired flag.
+   */
+  public static function optionalDelegationNotePolicyProvider(): array {
+    return [
+      'non-jurisdiction group' => ['{"features":{"delegationNoteRequired":true}}', 'org'],
+      'absent field' => [NULL, 'jur'],
+      'empty field' => ['', 'jur'],
+      'missing flag' => ['{"features":{}}', 'jur'],
+      'false flag' => ['{"features":{"delegationNoteRequired":false}}', 'jur'],
+      'invalid JSON' => ['{invalid json', 'jur'],
+      'scalar JSON' => ['true', 'jur'],
+      'null JSON' => ['null', 'jur'],
+    ];
+  }
+
+  /**
    * @covers ::canEscalate
    */
   public function testCanEscalateReturnsFalseWhenDisabled(): void {
