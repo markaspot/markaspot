@@ -143,6 +143,42 @@ final class TenantSettingsController extends ControllerBase {
   const WORDING_PRESETS = ['report', 'suggestion', 'entry', 'contribution'];
 
   /**
+   * Maximum raw JSON body size for text override updates.
+   */
+  const TEXT_OVERRIDES_MAX_PAYLOAD_BYTES = 65536;
+
+  /**
+   * Maximum number of text override keys per locale.
+   */
+  const TEXT_OVERRIDES_MAX_KEYS_PER_LOCALE = 300;
+
+  /**
+   * Flat dotted-key pattern accepted by the Nuxt i18n override consumer.
+   */
+  const TEXT_OVERRIDE_KEY_PATTERN = '/^[a-z0-9_]+(\.[a-z0-9_]+)+$/i';
+
+  /**
+   * Complete vue-i18n placeholder token accepted inside override values.
+   */
+  const TEXT_OVERRIDE_PLACEHOLDER_PATTERN = '/\{[a-zA-Z_][a-zA-Z0-9_]*\}/';
+
+  /**
+   * Dotted path segments that are unsafe for object unflattening.
+   */
+  const TEXT_OVERRIDE_BLOCKED_PATH_SEGMENTS = [
+    '__proto__',
+    'prototype',
+    'constructor',
+  ];
+
+  /**
+   * Full i18n override keys that the Nuxt consumer intentionally ignores.
+   */
+  const TEXT_OVERRIDE_BLOCKED_KEYS = [
+    'fields.field_terms_of_use',
+  ];
+
+  /**
    * Supported locales with display names.
    *
    * Must match the frontend config/locales.ts definitions.
@@ -417,6 +453,94 @@ final class TenantSettingsController extends ControllerBase {
       }
     }
     return [];
+  }
+
+  /**
+   * Returns stored text overrides in the tenant-settings API shape.
+   *
+   * @param array $config
+   *   Decoded field_nuxt_config.
+   *
+   * @return array|\stdClass
+   *   Stored flat override maps, or an empty object when none exist.
+   */
+  private function getStoredTextOverrides(array $config): array|\stdClass {
+    $overrides = $config['i18n']['overrides'] ?? [];
+    if (!is_array($overrides) || $overrides === []) {
+      return new \stdClass();
+    }
+
+    return $overrides;
+  }
+
+  /**
+   * Checks vue-i18n brace usage in an override value.
+   *
+   * Values may include complete placeholder tokens such as {count}. Any other
+   * brace would be handed to vue-i18n's message compiler and is rejected here.
+   *
+   * @param string $value
+   *   Override value to check.
+   *
+   * @return bool
+   *   TRUE when every brace belongs to a complete placeholder token.
+   */
+  private function textOverrideBracesAreSafe(string $value): bool {
+    $withoutPlaceholders = preg_replace(self::TEXT_OVERRIDE_PLACEHOLDER_PATTERN, '', $value);
+    if ($withoutPlaceholders === NULL) {
+      return FALSE;
+    }
+
+    return !str_contains($withoutPlaceholders, '{') && !str_contains($withoutPlaceholders, '}');
+  }
+
+  /**
+   * Checks dotted override keys for path segments unsafe for unflattening.
+   *
+   * @param string $key
+   *   Flat dotted override key.
+   *
+   * @return bool
+   *   TRUE when the key can be safely unflattened by the frontend consumer.
+   */
+  private function textOverrideKeySegmentsAreSafe(string $key): bool {
+    $segments = explode('.', $key);
+    foreach ($segments as $segment) {
+      if (in_array($segment, self::TEXT_OVERRIDE_BLOCKED_PATH_SEGMENTS, TRUE)) {
+        return FALSE;
+      }
+    }
+
+    return TRUE;
+  }
+
+  /**
+   * Checks whether a full dotted key is allowed by the frontend consumer.
+   *
+   * @param string $key
+   *   Flat dotted override key.
+   *
+   * @return bool
+   *   TRUE when the key is supported by the runtime override consumer.
+   */
+  private function textOverrideKeyIsAllowed(string $key): bool {
+    return !in_array($key, self::TEXT_OVERRIDE_BLOCKED_KEYS, TRUE);
+  }
+
+  /**
+   * Checks whether a text override value contains HTML markup delimiters.
+   *
+   * Some existing i18n messages are rendered through v-html in the Nuxt app.
+   * Tenant overrides are therefore kept to plain text for v1.
+   *
+   * @param string $value
+   *   Override value to check.
+   *
+   * @return bool
+   *   TRUE when the value does not contain HTML angle brackets.
+   */
+  private function textOverrideHtmlIsSafe(string $value): bool {
+    return !str_contains($value, '<') && !str_contains($value, '>');
   }
 
   /**
@@ -1372,6 +1496,176 @@ final class TenantSettingsController extends ControllerBase {
 
     // Return the current state (same shape as GET).
     return $this->getLanguageSettings($request, $jurisdiction_id);
+  }
+
+  /**
+   * Returns text override settings for a jurisdiction group.
+   *
+   * Reads i18n.overrides from the field_nuxt_config JSON blob. The stored
+   * shape is a map of locale codes to flat dotted-key string maps, matching
+   * the Nuxt i18n override consumer.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with the current text overrides, or an error response.
+   */
+  public function getTextOverrideSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $config = $this->getNuxtConfig($group);
+
+    return new JsonResponse([
+      'overrides' => $this->getStoredTextOverrides($config),
+    ]);
+  }
+
+  /**
+   * Updates text override settings for a jurisdiction group.
+   *
+   * Accepts a JSON body with i18n overrides in the runtime shape:
+   * locale code to flat dotted-key string map. Replaces i18n.overrides
+   * wholesale while preserving i18n.wording and all sibling config keys.
+   *
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The HTTP request carrying a JSON body.
+   * @param string $jurisdiction_id
+   *   The jurisdiction identifier (numeric ID or slug).
+   *
+   * @return \Symfony\Component\HttpFoundation\JsonResponse
+   *   JSON with updated text overrides, or an error response.
+   */
+  public function updateTextOverrideSettings(Request $request, string $jurisdiction_id): JsonResponse {
+    $group = $this->loadJurisdictionGroup($jurisdiction_id);
+    if (!$group) {
+      return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
+    }
+
+    $body = $request->getContent();
+    if (strlen($body) > self::TEXT_OVERRIDES_MAX_PAYLOAD_BYTES) {
+      return new JsonResponse([
+        'error' => sprintf(
+          'Request payload exceeds the %d byte limit.',
+          self::TEXT_OVERRIDES_MAX_PAYLOAD_BYTES
+        ),
+      ], 422);
+    }
+
+    $document = json_decode($body);
+    $data = json_decode($body, TRUE);
+    if (!$document instanceof \stdClass
+      || !is_array($data)
+      || !property_exists($document, 'overrides')
+      || !array_key_exists('overrides', $data)) {
+      return new JsonResponse(['error' => 'Invalid JSON body: missing overrides key.'], 400);
+    }
+
+    if (!$document->overrides instanceof \stdClass || !is_array($data['overrides'])) {
+      return new JsonResponse(['error' => 'overrides must be an object.'], 422);
+    }
+
+    $validLocales = array_keys(self::SUPPORTED_LOCALES);
+    $sanitized = [];
+
+    foreach (get_object_vars($document->overrides) as $locale => $localeOverridesDocument) {
+      if (!in_array($locale, $validLocales, TRUE)) {
+        return new JsonResponse([
+          'error' => "Unsupported locale code: $locale. Supported: " . implode(', ', $validLocales) . '.',
+        ], 422);
+      }
+
+      if (!$localeOverridesDocument instanceof \stdClass || !is_array($data['overrides'][$locale] ?? NULL)) {
+        return new JsonResponse(['error' => "overrides.$locale must be an object."], 422);
+      }
+
+      $localeOverrides = $data['overrides'][$locale];
+      if (count($localeOverrides) > self::TEXT_OVERRIDES_MAX_KEYS_PER_LOCALE) {
+        return new JsonResponse([
+          'error' => sprintf(
+            'overrides.%s must not exceed %d keys.',
+            $locale,
+            self::TEXT_OVERRIDES_MAX_KEYS_PER_LOCALE
+          ),
+        ], 422);
+      }
+
+      foreach ($localeOverrides as $key => $value) {
+        if (!is_string($key) || !preg_match(self::TEXT_OVERRIDE_KEY_PATTERN, $key)) {
+          return new JsonResponse(['error' => "overrides.$locale contains an invalid dotted key: $key."], 422);
+        }
+
+        if (!$this->textOverrideKeySegmentsAreSafe($key)) {
+          return new JsonResponse([
+            'error' => "overrides.$locale contains an unsafe dotted key segment: $key.",
+          ], 422);
+        }
+
+        if (!$this->textOverrideKeyIsAllowed($key)) {
+          return new JsonResponse([
+            'error' => "overrides.$locale contains an unsupported dotted key: $key.",
+          ], 422);
+        }
+
+        if (!is_string($value)) {
+          return new JsonResponse(['error' => "overrides.$locale.$key must be a string."], 422);
+        }
+
+        if ($value === '') {
+          continue;
+        }
+
+        if (!$this->textOverrideHtmlIsSafe($value)) {
+          return new JsonResponse([
+            'error' => "overrides.$locale.$key must be plain text and must not contain HTML angle brackets.",
+          ], 422);
+        }
+
+        if (!$this->textOverrideBracesAreSafe($value)) {
+          return new JsonResponse([
+            'error' => "overrides.$locale.$key contains unsupported brace syntax. "
+              . 'Use complete placeholders such as {count}.',
+          ], 422);
+        }
+
+        $sanitized[$locale][$key] = $value;
+      }
+    }
+
+    $config = $this->getNuxtConfig($group);
+    if (!isset($config['i18n']) || !is_array($config['i18n'])) {
+      $config['i18n'] = [];
+    }
+    $config['i18n']['overrides'] = $sanitized === [] ? new \stdClass() : $sanitized;
+
+    $group->set('field_nuxt_config', json_encode($config, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+    try {
+      $group->save();
+    }
+    catch (\Exception $e) {
+      $this->getLogger('markaspot_nuxt')->error(
+        'Failed to save text override settings for jurisdiction @id: @message',
+        ['@id' => $group->id(), '@message' => $e->getMessage()]
+      );
+      return new JsonResponse(['error' => 'Failed to save text override settings.'], 500);
+    }
+
+    $this->getLogger('markaspot_nuxt')->notice(
+      'User @user updated text override settings for jurisdiction @id (locales: @locales)',
+      [
+        '@user' => $this->currentUser->getDisplayName(),
+        '@id' => $group->id(),
+        '@locales' => implode(', ', array_keys($sanitized)),
+      ]
+    );
+
+    return $this->getTextOverrideSettings($request, $jurisdiction_id);
   }
 
   /**

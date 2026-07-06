@@ -248,6 +248,77 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Creates a group whose field_nuxt_config updates are reflected on reads.
+   *
+   * @param string $storedNuxtConfig
+   *   JSON config string, updated by reference when the controller writes.
+   * @param bool $expectSave
+   *   Whether the group save method should be called exactly once.
+   * @param int $id
+   *   The group ID.
+   *
+   * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked group entity.
+   */
+  protected function createMutableNuxtConfigGroup(
+    string &$storedNuxtConfig,
+    bool $expectSave = FALSE,
+    int $id = 14,
+  ): GroupInterface {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn((string) $id);
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name) => $name === 'field_nuxt_config');
+    $group->method('get')
+      ->willReturnCallback(static function (string $name) use (&$storedNuxtConfig) {
+        $value = $name === 'field_nuxt_config' ? $storedNuxtConfig : '';
+        return new class ($value) {
+
+          /**
+           * The field value.
+           *
+           * @var string
+           */
+          public string $value;
+
+          /**
+           * Constructs a field item stub.
+           */
+          public function __construct(string $value) {
+            $this->value = $value;
+          }
+
+          /**
+           * Returns whether the field is empty.
+           */
+          public function isEmpty(): bool {
+            return $this->value === '';
+          }
+
+        };
+      });
+    $group->method('set')
+      ->willReturnCallback(function (string $field, string $value) use (&$storedNuxtConfig, $group) {
+        if ($field === 'field_nuxt_config') {
+          $storedNuxtConfig = $value;
+        }
+        return $group;
+      });
+
+    if ($expectSave) {
+      $group->expects($this->once())->method('save');
+    }
+    else {
+      $group->method('save');
+    }
+
+    return $group;
+  }
+
+  /**
    * Tests accessCheck() returns forbidden for nonexistent jurisdiction.
    *
    * @covers ::accessCheck
@@ -604,6 +675,446 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(422, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertStringContainsString('default locale must be present', $data['error']);
+  }
+
+  /**
+   * Tests getTextOverrideSettings() returns an empty object by default.
+   *
+   * @covers ::getTextOverrideSettings
+   */
+  public function testGetTextOverrideSettingsReturnsEmptyObject(): void {
+    $group = $this->createMockGroup([]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/text-overrides', 'GET');
+    $response = $this->controller->getTextOverrideSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame('{"overrides":{}}', $response->getContent());
+  }
+
+  /**
+   * Tests getTextOverrideSettings() returns stored flat dotted-key overrides.
+   *
+   * @covers ::getTextOverrideSettings
+   */
+  public function testGetTextOverrideSettingsReturnsStoredOverrides(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'i18n' => [
+          'overrides' => [
+            'de' => [
+              'header.app_name' => 'Meldeportal',
+              'report.buttons.submit' => 'Absenden',
+            ],
+          ],
+        ],
+      ]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/text-overrides', 'GET');
+    $response = $this->controller->getTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame('Meldeportal', $data['overrides']['de']['header.app_name']);
+    $this->assertSame('Absenden', $data['overrides']['de']['report.buttons.submit']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() replaces overrides and preserves config.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsReplacesOverridesAndPreservesConfig(): void {
+    $storedNuxtConfig = json_encode([
+      'i18n' => [
+        'wording' => 'suggestion',
+        'overrides' => [
+          'de' => [
+            'old.key' => 'Old value',
+          ],
+        ],
+      ],
+      'features' => [
+        'dashboard' => TRUE,
+      ],
+    ]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            'header.app_name' => 'Rathausportal',
+          ],
+          'en' => [
+            'header.app_name' => 'City portal',
+            'report.buttons.submit' => 'Send {count}',
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertSame('Rathausportal', $data['overrides']['de']['header.app_name']);
+    $this->assertSame('City portal', $data['overrides']['en']['header.app_name']);
+    $this->assertSame('suggestion', $updatedConfig['i18n']['wording']);
+    $this->assertTrue($updatedConfig['features']['dashboard']);
+    $this->assertArrayNotHasKey('old.key', $updatedConfig['i18n']['overrides']['de']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects unsupported locales.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsInvalidLocale(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'xx' => [
+            'header.app_name' => 'Portal',
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertStringContainsString('Unsupported locale code', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects non-string values.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsNonStringValue(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            'header.app_name' => 123,
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertSame('overrides.de.header.app_name must be a string.', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects unsafe dotted key segments.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsUnsafeKeySegment(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            '__proto__.polluted' => 'yes',
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertStringContainsString('unsafe dotted key segment', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects blocked full keys.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsBlockedKey(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            'fields.field_terms_of_use' => 'Plain text terms copy',
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertStringContainsString('unsupported dotted key', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects HTML-capable override values.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsHtmlValue(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            'header.app_name' => '<img src=x onerror=alert(1)>',
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertStringContainsString('must be plain text', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects stray braces.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsStrayBrace(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            'report.buttons.submit' => 'Senden {count',
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertStringContainsString('unsupported brace syntax', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects numeric placeholder names.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsNumericPlaceholder(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            'report.buttons.submit' => 'Senden {1}',
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertStringContainsString('unsupported brace syntax', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects more than 300 keys per locale.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsTooManyKeys(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $overrides = [];
+    for ($i = 0; $i <= TenantSettingsController::TEXT_OVERRIDES_MAX_KEYS_PER_LOCALE; $i++) {
+      $overrides["header.key_$i"] = 'Value';
+    }
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => $overrides,
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertStringContainsString('must not exceed 300 keys', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() rejects oversized raw request bodies.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsRejectsOversizedBody(): void {
+    $storedNuxtConfig = '{}';
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            'header.app_name' => str_repeat('a', TenantSettingsController::TEXT_OVERRIDES_MAX_PAYLOAD_BYTES + 1),
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertEquals(422, $response->getStatusCode());
+    $this->assertStringContainsString('byte limit', $data['error']);
+  }
+
+  /**
+   * Tests updateTextOverrideSettings() drops empty-string values.
+   *
+   * @covers ::updateTextOverrideSettings
+   */
+  public function testUpdateTextOverrideSettingsDropsEmptyStringValues(): void {
+    $storedNuxtConfig = json_encode([
+      'i18n' => [
+        'wording' => 'report',
+      ],
+    ]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create(
+      '/api/tenant/14/text-overrides',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'overrides' => [
+          'de' => [
+            'header.app_name' => '',
+            'report.buttons.submit' => 'Senden',
+          ],
+        ],
+      ])
+    );
+
+    $response = $this->controller->updateTextOverrideSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $this->assertArrayNotHasKey('header.app_name', $data['overrides']['de']);
+    $this->assertSame('Senden', $data['overrides']['de']['report.buttons.submit']);
+    $this->assertArrayNotHasKey('header.app_name', $updatedConfig['i18n']['overrides']['de']);
   }
 
   /**
