@@ -4025,14 +4025,16 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   only enforces that each target media is referenced by this node when a
    *   node is present, and that scoping is the guard preventing a caller from
    *   flipping publication (and disabling the AI/PII safety net) on arbitrary
-   *   media IDs. The sole caller (GeoreportRequestResource::processUpdateFields)
-   *   passes the node loaded via loadScopedRequestNode() after the dual
-   *   permission gate.
+   *   media IDs. The sole caller
+   *   (GeoreportRequestResource::processUpdateFields) passes the node loaded
+   *   via loadScopedRequestNode() after the dual permission gate.
    *
    * @throws \InvalidArgumentException
    *   If called without the scope-validated node.
    * @throws \Drupal\Core\Entity\EntityStorageException
-   *   If there is an error saving the media entity.
+   *   If there is an error saving the media entity. Validation and access
+   *   errors are all-or-nothing; storage exceptions during apply may still
+   *   partially apply previously saved media in the same batch.
    */
   public function updateMediaPublishedStatus(array $mediaUpdates, $node = NULL): void {
     // Hard precondition: the node scoping is the guard that keeps this method
@@ -4043,25 +4045,36 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
     }
 
     $mediaIdsByDelta = $this->getRequestMediaIdsByDelta($node);
+    /** @var array<int, array{media: \Drupal\media\MediaInterface, mid: int, published: bool}> $validatedUpdates */
+    $validatedUpdates = [];
 
     foreach ($mediaUpdates as $delta => $mediaUpdate) {
       $update = $this->normalizeMediaPublishedUpdate($mediaUpdate, $delta, $mediaIdsByDelta, $node !== NULL);
       $mid = $update['mid'];
       $published = $update['published'];
 
-      // Load and update the media entity.
+      // Load the media entity during validation, before any writes happen.
       $media = $this->entityTypeManager->getStorage('media')->load($mid);
       if (!$media instanceof MediaInterface) {
         throw new GeoreportException('Invalid GeoReport media publication update payload.', 400);
       }
 
       // Check if current user has role-based permission to update this state.
-      if (
-        !$this->currentUser->hasPermission('update open311 request media publication') &&
-        !$media->access('update')
-      ) {
+      if (!$this->currentUser->hasPermission('update open311 request media publication')) {
         throw new AccessDeniedHttpException('GeoReport media publication updates are not permitted for this API account.');
       }
+
+      $validatedUpdates[] = [
+        'media' => $media,
+        'mid' => $mid,
+        'published' => $published,
+      ];
+    }
+
+    foreach ($validatedUpdates as $validatedUpdate) {
+      $media = $validatedUpdate['media'];
+      $mid = $validatedUpdate['mid'];
+      $published = $validatedUpdate['published'];
 
       $currentStatus = $media->isPublished();
       // Only update if status is changing.

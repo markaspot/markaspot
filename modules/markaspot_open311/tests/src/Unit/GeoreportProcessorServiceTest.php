@@ -1509,6 +1509,50 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * GeoReport media status updates mark already-matched states too.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusMarksAlreadyMatchedMedia(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10, 11]);
+    $changedMedia = $this->createMock(MediaInterface::class);
+    $matchedMedia = $this->createMock(MediaInterface::class);
+    $this->currentUser->expects($this->exactly(2))
+      ->method('hasPermission')
+      ->with('update open311 request media publication')
+      ->willReturn(TRUE);
+    $changedMedia->method('isPublished')->willReturn(TRUE);
+    $changedMedia->expects($this->once())->method('setUnpublished');
+    $changedMedia->expects($this->once())->method('save');
+    $matchedMedia->method('isPublished')->willReturn(FALSE);
+    $matchedMedia->expects($this->never())->method('setPublished');
+    $matchedMedia->expects($this->never())->method('setUnpublished');
+    $matchedMedia->expects($this->never())->method('save');
+
+    $this->mediaStorage->expects($this->exactly(2))
+      ->method('load')
+      ->willReturnMap([
+        [10, $changedMedia],
+        [11, $matchedMedia],
+      ]);
+
+    $this->processor->updateMediaPublishedStatus([
+      0 => [
+        'target_id' => 10,
+        'status' => '0',
+      ],
+      1 => [
+        'target_id' => 11,
+        'published' => 'false',
+      ],
+    ], $node);
+
+    $store = $this->keyValueFactory->get('markaspot_open311.media_publication_manual');
+    $this->assertTrue((bool) $store->get(10));
+    $this->assertTrue((bool) $store->get(11));
+  }
+
+  /**
    * GeoReport media status updates are scoped to media on the request.
    *
    * @covers ::updateMediaPublishedStatus
@@ -1529,19 +1573,17 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
-   * GeoReport media status updates still require media entity update access.
+   * GeoReport media status updates require the named publication permission.
    *
    * @covers ::updateMediaPublishedStatus
    */
-  public function testUpdateMediaPublishedStatusRequiresMediaUpdateAccess(): void {
+  public function testUpdateMediaPublishedStatusRequiresPublicationPermission(): void {
     $node = $this->buildNodeWithRequestMediaIds([10]);
     $media = $this->createMock(MediaInterface::class);
     $this->currentUser->method('hasPermission')
       ->with('update open311 request media publication')
       ->willReturn(FALSE);
-    $media->method('access')
-      ->with('update')
-      ->willReturn(FALSE);
+    $media->expects($this->never())->method('access');
     $media->expects($this->never())->method('save');
 
     $this->mediaStorage->expects($this->once())
@@ -1558,6 +1600,144 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         'published' => 'false',
       ],
     ], $node);
+  }
+
+  /**
+   * Batch validation failures do not save or mark earlier media.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusValidationFailureIsAtomic(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10, 11]);
+    $media = $this->createMock(MediaInterface::class);
+    $this->currentUser->expects($this->once())
+      ->method('hasPermission')
+      ->with('update open311 request media publication')
+      ->willReturn(TRUE);
+    $media->expects($this->never())->method('isPublished');
+    $media->expects($this->never())->method('setUnpublished');
+    $media->expects($this->never())->method('save');
+
+    $this->mediaStorage->expects($this->once())
+      ->method('load')
+      ->with(10)
+      ->willReturn($media);
+
+    $this->expectException(GeoreportException::class);
+    $this->expectExceptionMessage('Invalid GeoReport media publication update payload.');
+
+    try {
+      $this->processor->updateMediaPublishedStatus([
+        0 => [
+          'target_id' => 10,
+          'published' => 'false',
+        ],
+        1 => [
+          'target_id' => 99,
+          'published' => 'true',
+        ],
+      ], $node);
+    }
+    finally {
+      $store = $this->keyValueFactory->get('markaspot_open311.media_publication_manual');
+      $this->assertNull($store->get(10));
+    }
+  }
+
+  /**
+   * Batch media load failures do not save or mark earlier media.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusInvalidMediaFailureIsAtomic(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10, 11]);
+    $media = $this->createMock(MediaInterface::class);
+    $this->currentUser->expects($this->once())
+      ->method('hasPermission')
+      ->with('update open311 request media publication')
+      ->willReturn(TRUE);
+    $media->expects($this->never())->method('isPublished');
+    $media->expects($this->never())->method('setUnpublished');
+    $media->expects($this->never())->method('save');
+
+    $this->mediaStorage->expects($this->exactly(2))
+      ->method('load')
+      ->willReturnMap([
+        [10, $media],
+        [11, NULL],
+      ]);
+
+    $this->expectException(GeoreportException::class);
+    $this->expectExceptionMessage('Invalid GeoReport media publication update payload.');
+
+    try {
+      $this->processor->updateMediaPublishedStatus([
+        0 => [
+          'target_id' => 10,
+          'published' => 'false',
+        ],
+        1 => [
+          'target_id' => 11,
+          'published' => 'true',
+        ],
+      ], $node);
+    }
+    finally {
+      $store = $this->keyValueFactory->get('markaspot_open311.media_publication_manual');
+      $this->assertNull($store->get(10));
+      $this->assertNull($store->get(11));
+    }
+  }
+
+  /**
+   * Batch permission failures do not save or mark earlier media.
+   *
+   * @covers ::updateMediaPublishedStatus
+   */
+  public function testUpdateMediaPublishedStatusPermissionFailureIsAtomic(): void {
+    $node = $this->buildNodeWithRequestMediaIds([10, 11]);
+    $firstMedia = $this->createMock(MediaInterface::class);
+    $secondMedia = $this->createMock(MediaInterface::class);
+    $this->currentUser->expects($this->exactly(2))
+      ->method('hasPermission')
+      ->with('update open311 request media publication')
+      ->willReturnOnConsecutiveCalls(TRUE, FALSE);
+    $firstMedia->expects($this->never())->method('access');
+    $firstMedia->expects($this->never())->method('isPublished');
+    $firstMedia->expects($this->never())->method('setUnpublished');
+    $firstMedia->expects($this->never())->method('save');
+    $secondMedia->expects($this->never())->method('access');
+    $secondMedia->expects($this->never())->method('isPublished');
+    $secondMedia->expects($this->never())->method('setPublished');
+    $secondMedia->expects($this->never())->method('save');
+
+    $this->mediaStorage->expects($this->exactly(2))
+      ->method('load')
+      ->willReturnMap([
+        [10, $firstMedia],
+        [11, $secondMedia],
+      ]);
+
+    $this->expectException(AccessDeniedHttpException::class);
+    $this->expectExceptionMessage('GeoReport media publication updates are not permitted for this API account.');
+
+    try {
+      $this->processor->updateMediaPublishedStatus([
+        0 => [
+          'target_id' => 10,
+          'published' => 'false',
+        ],
+        1 => [
+          'target_id' => 11,
+          'published' => 'true',
+        ],
+      ], $node);
+    }
+    finally {
+      $store = $this->keyValueFactory->get('markaspot_open311.media_publication_manual');
+      $this->assertNull($store->get(10));
+      $this->assertNull($store->get(11));
+    }
   }
 
   /**
