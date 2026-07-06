@@ -1,5 +1,42 @@
 # Changelog
 
+## [11.9.140](https://github.com/markaspot/markaspot/compare/11.9.139...11.9.140) (2026-07-06)
+
+### Features
+
+* accept responsible organisation membership for escalation and delegation ([ce62ce1](https://github.com/markaspot/markaspot/commit/ce62ce1fda0491f52e1c0f962243b0140d1d3464))
+* add parent organisation field with cycle-safe validation for org hierarchies ([0605d45](https://github.com/markaspot/markaspot/commit/0605d459cd34e43a02dba04d75ab748a5170cae4))
+* add reminder scope and fix org group recipient resolution for resubmission ([699292a](https://github.com/markaspot/markaspot/commit/699292a1b8f9b1c3121f6e3cfa95757176f556c7))
+* allowlist delegationNoteRequired in tenant settings features ([2d398b8](https://github.com/markaspot/markaspot/commit/2d398b83c5140995c77eec9e2e61926cbf3167ad))
+* expose org hierarchy and legitimate escalation target for the responsibility picker ([b771ac8](https://github.com/markaspot/markaspot/commit/b771ac8ad474ea478f339d503e59afa698531350))
+* expose per-request note requirement in extended attributes ([d73a23e](https://github.com/markaspot/markaspot/commit/d73a23eff4457bfea54a639e75736af370f3c1ec))
+* make escalation and delegation org-hierarchy aware ([9bd757b](https://github.com/markaspot/markaspot/commit/9bd757b3d13a6ceda1029f90f9ef12d954db8e39))
+* make escalation note requirement configurable per jurisdiction ([5ddbabc](https://github.com/markaspot/markaspot/commit/5ddbabc8c9c1cdffe7f08873686c3ed7ad62d75e))
+
+### Bug Fixes
+
+* accept the literal note zero when notes are required ([d01b3fb](https://github.com/markaspot/markaspot/commit/d01b3fbc5518447d1e4ba850f40560deb86faccb))
+* align org parent validator depth cap with hierarchy engine ([8af30c8](https://github.com/markaspot/markaspot/commit/8af30c8e60c205ae1234cd5d04d3ba101a5df9f8))
+* allow escalation endpoints to load unpublished service requests ([d8f0eb6](https://github.com/markaspot/markaspot/commit/d8f0eb65f3ee08dd2c8337b0941c510bfd52430e))
+* allow lateral delegation for jurisdiction staff and expose escalation target label ([23ead86](https://github.com/markaspot/markaspot/commit/23ead86daf0c0dd041ca6c2030c66df8c874517d))
+* descriptive audit remark when responsibility changes without a note ([ab42aa9](https://github.com/markaspot/markaspot/commit/ab42aa99115cc0a9178a3db36c6eb85f3efa0c78))
+* guard demo otp on multi-tenant installs ([5985f64](https://github.com/markaspot/markaspot/commit/5985f647e188f4514950741204b6e7405f369637))
+* never resolve a request's own jurisdiction as its escalation target ([b3263e8](https://github.com/markaspot/markaspot/commit/b3263e847863995a2f4b7f9d9a7fb50e8b0269c9))
+* return delegationNoteRequired in tenant feature settings response ([1606735](https://github.com/markaspot/markaspot/commit/16067357d55049cb5f0bf32703540fc875267570))
+* scope internal status term access by jurisdiction membership ([424d455](https://github.com/markaspot/markaspot/commit/424d455bf28c2154cb5aa8a25f6c709e3e824189))
+* scope passwordless flood keys by jurisdiction ([303a6af](https://github.com/markaspot/markaspot/commit/303a6afd7446ce3348634f6f9446c4a0b51aebee))
+* use runtime allowed_values format when adding staff source channel ([9da9382](https://github.com/markaspot/markaspot/commit/9da9382b5484f2753ad9a0640df78f5853c74cb8))
+* validate jurisdiction scope in open311 processor via shared resolver ([bf98096](https://github.com/markaspot/markaspot/commit/bf980969e73e75f06e3c2abb2797e98ceb083619))
+* validate numeric jurisdiction ids ([2658d45](https://github.com/markaspot/markaspot/commit/2658d45f68f6295cfca6c6f92f2b222376d5c048))
+
+### Refactoring
+
+* extract generic parent tree engine with jurisdiction and org facades ([0dcb9a0](https://github.com/markaspot/markaspot/commit/0dcb9a0474d3bf39a9f3df47555b566f3e5eca2c))
+
+### Documentation
+
+* record bulk triage exception from the note requirement ([9f0b8fe](https://github.com/markaspot/markaspot/commit/9f0b8fee3290bdf6affbd0788dfab91ca10633b4))
+
 ## [11.9.139](https://github.com/markaspot/markaspot/compare/11.9.138...11.9.139) (2026-07-05)
 
 ### Features
