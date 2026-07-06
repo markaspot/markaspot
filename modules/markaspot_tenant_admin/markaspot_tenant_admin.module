@@ -22,6 +22,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\Group;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_tenant_admin\TenantAdminHelper;
 use Drupal\user\Entity\User;
@@ -127,8 +128,8 @@ function _markaspot_tenant_admin_sync_role(GroupRelationshipInterface $relations
 /**
  * Implements hook_query_TAG_alter() for taxonomy_term_access.
  *
- * Filters taxonomy term queries to show only terms belonging to the current
- * user's jurisdictions. Full Drupal admins are unaffected.
+ * Filters taxonomy term queries to show only terms belonging to staff
+ * jurisdiction memberships. Full Drupal admins are unaffected.
  *
  * Child jurisdictions inherit taxonomy terms from their root parent, so the
  * filter resolves each direct jurisdiction to its full ancestor tree via
@@ -142,28 +143,25 @@ function markaspot_tenant_admin_query_taxonomy_term_access_alter(AlterableInterf
     return;
   }
 
-  // Only filter for tenant_admin users.
-  if (!in_array('tenant_admin', $current_user->getRoles(), TRUE)) {
+  $roles = $current_user->getRoles();
+  $is_tenant_admin = in_array('tenant_admin', $roles, TRUE);
+  $member_jur_ids = TenantAdminHelper::getUserMemberJurisdictionIds($current_user);
+  if (empty($member_jur_ids)) {
+    if ($is_tenant_admin) {
+      // Keep the historical fail-closed behavior for tenant admins whose
+      // global role has drifted away from jurisdiction group memberships.
+      $query->where('1 = 0');
+      _markaspot_tenant_admin_bubble_taxonomy_query_cacheability($current_user, []);
+    }
     return;
   }
 
-  $jur_ids = TenantAdminHelper::getUserJurisdictionIds($current_user);
+  $jur_ids = _markaspot_tenant_admin_expand_term_jurisdiction_ids($member_jur_ids);
   if (empty($jur_ids)) {
-    // No jurisdictions: add an impossible condition to show nothing.
     $query->where('1 = 0');
+    _markaspot_tenant_admin_bubble_taxonomy_query_cacheability($current_user, $member_jur_ids);
     return;
   }
-
-  // Resolve each direct jurisdiction to include the full tree (root + all
-  // descendants). Child jurisdictions inherit their root parent's taxonomy
-  // terms, so a Queens Park Ward admin (id=10) also needs to see BCP
-  // Council's terms (id=8).
-  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
-  $all_jur_ids = [];
-  foreach ($jur_ids as $jur_id) {
-    $all_jur_ids = array_merge($all_jur_ids, $resolver->getTermJurisdictionIds($jur_id));
-  }
-  $jur_ids = array_unique($all_jur_ids);
 
   // Find the base table alias dynamically. TermStorage::loadTree() uses 't',
   // but getNodeTerms() uses 'td' and Views may use other aliases.
@@ -192,6 +190,7 @@ function markaspot_tenant_admin_query_taxonomy_term_access_alter(AlterableInterf
     ->condition('fj.field_jurisdiction_target_id', $jur_ids, 'IN')
     ->isNull('fj.field_jurisdiction_target_id');
   $query->condition($or);
+  _markaspot_tenant_admin_bubble_taxonomy_query_cacheability($current_user, $member_jur_ids);
 }
 
 /**
@@ -617,31 +616,220 @@ function markaspot_tenant_admin_taxonomy_term_access(EntityInterface $entity, st
     return AccessResult::neutral();
   }
 
-  // Only apply to tenant_admin users.
-  if (!in_array('tenant_admin', $account->getRoles(), TRUE)) {
-    return AccessResult::neutral();
-  }
-
   // Grant view access to unpublished terms so the taxonomy overview and
   // translation operations work correctly. Only grant access if the term
   // belongs to the user's jurisdiction or is unassigned (shared).
   if (!$entity->isPublished()) {
-    $jur_ids = TenantAdminHelper::getUserJurisdictionIds($account);
-    $term_jur = $entity->hasField('field_jurisdiction') && !$entity->get('field_jurisdiction')->isEmpty()
-      ? (int) $entity->get('field_jurisdiction')->target_id
-      : NULL;
+    [$term_jur, $term_jurisdiction] = _markaspot_tenant_admin_get_term_jurisdiction($entity);
+    $member_jur_ids = TenantAdminHelper::getUserMemberJurisdictionIds($account);
+    $grant = FALSE;
 
-    // Allow if term is unassigned (shared across jurisdictions) or belongs
-    // to one of the user's jurisdictions.
-    if ($term_jur === NULL || in_array($term_jur, $jur_ids, TRUE)) {
-      return AccessResult::allowed()
-        ->addCacheableDependency($entity)
-        ->cachePerPermissions()
-        ->addCacheContexts(['user.roles', 'user.group_permissions']);
+    if ($term_jur === NULL) {
+      $grant = $member_jur_ids !== [];
     }
+    elseif ($member_jur_ids !== []) {
+      $expanded_jur_ids = _markaspot_tenant_admin_expand_term_jurisdiction_ids($member_jur_ids);
+      $grant = in_array($term_jur, $expanded_jur_ids, TRUE);
+    }
+
+    $result = $grant ? AccessResult::allowed() : AccessResult::neutral();
+    $result
+      ->addCacheableDependency($entity)
+      ->cachePerPermissions()
+      ->addCacheContexts(_markaspot_tenant_admin_taxonomy_membership_cache_contexts($term_jur, $member_jur_ids))
+      ->addCacheTags(array_merge(
+        _markaspot_tenant_admin_taxonomy_membership_cache_tags($account, $term_jur, $member_jur_ids),
+        _markaspot_tenant_admin_taxonomy_jurisdiction_cache_tags($member_jur_ids, $term_jur),
+      ));
+
+    if ($term_jurisdiction instanceof GroupInterface) {
+      $result->addCacheableDependency($term_jurisdiction);
+    }
+
+    return $result;
   }
 
   return AccessResult::neutral();
+}
+
+/**
+ * Bubbles cacheability for membership-scoped taxonomy collection queries.
+ *
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The account whose memberships scoped the query.
+ * @param int[] $member_jur_ids
+ *   Direct jurisdiction group memberships for the account.
+ */
+function _markaspot_tenant_admin_bubble_taxonomy_query_cacheability(
+  AccountInterface $account,
+  array $member_jur_ids,
+): void {
+  if (!\Drupal::hasService('renderer')) {
+    return;
+  }
+
+  /** @var \Drupal\Core\Render\RendererInterface $renderer */
+  $renderer = \Drupal::service('renderer');
+  if (!$renderer->hasRenderContext()) {
+    return;
+  }
+
+  $build = [
+    '#cache' => [
+      'contexts' => _markaspot_tenant_admin_taxonomy_membership_cache_contexts(NULL, $member_jur_ids),
+      'tags' => array_merge(
+        _markaspot_tenant_admin_taxonomy_membership_cache_tags($account, NULL, $member_jur_ids),
+        _markaspot_tenant_admin_taxonomy_jurisdiction_cache_tags($member_jur_ids),
+      ),
+    ],
+  ];
+  $renderer->render($build);
+}
+
+/**
+ * Expands direct jurisdiction IDs to the taxonomy term visibility tree.
+ *
+ * @param int[] $jur_ids
+ *   Direct jurisdiction group IDs.
+ *
+ * @return int[]
+ *   Unique jurisdiction IDs including root and descendant term scopes.
+ */
+function _markaspot_tenant_admin_expand_term_jurisdiction_ids(array $jur_ids): array {
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $all_jur_ids = [];
+  foreach ($jur_ids as $jur_id) {
+    $all_jur_ids = array_merge($all_jur_ids, $resolver->getTermJurisdictionIds((int) $jur_id));
+  }
+
+  return array_values(array_unique(array_map('intval', $all_jur_ids)));
+}
+
+/**
+ * Gets a managed taxonomy term's optional jurisdiction reference.
+ *
+ * @return array{0:int|null,1:\Drupal\group\Entity\GroupInterface|null}
+ *   The jurisdiction group ID and loaded group entity when available.
+ */
+function _markaspot_tenant_admin_get_term_jurisdiction(EntityInterface $entity): array {
+  if (!$entity->hasField('field_jurisdiction')) {
+    return [NULL, NULL];
+  }
+
+  $field = $entity->get('field_jurisdiction');
+  if ($field->isEmpty()) {
+    return [NULL, NULL];
+  }
+
+  $jurisdiction_id = (int) $field->target_id;
+  $jurisdiction = $field->entity;
+
+  return [
+    $jurisdiction_id,
+    $jurisdiction instanceof GroupInterface ? $jurisdiction : NULL,
+  ];
+}
+
+/**
+ * Builds cache contexts for membership-scoped taxonomy access results.
+ *
+ * @param int|null $term_jur
+ *   The term jurisdiction ID, or NULL for global/shared terms.
+ * @param int[] $member_jur_ids
+ *   Direct jurisdiction group memberships for the account.
+ *
+ * @return string[]
+ *   Cache context tokens.
+ */
+function _markaspot_tenant_admin_taxonomy_membership_cache_contexts(
+  ?int $term_jur,
+  array $member_jur_ids,
+): array {
+  $contexts = [
+    'user',
+    'user.roles',
+    'user.group_permissions',
+  ];
+
+  $jur_ids = $member_jur_ids;
+  if ($term_jur !== NULL) {
+    $jur_ids[] = $term_jur;
+  }
+
+  foreach (array_unique(array_map('intval', $jur_ids)) as $jur_id) {
+    $contexts[] = 'user.is_group_member:' . $jur_id;
+  }
+
+  return array_values(array_unique($contexts));
+}
+
+/**
+ * Builds cache tags for membership-scoped taxonomy access results.
+ *
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The account being checked.
+ * @param int|null $term_jur
+ *   The term jurisdiction ID, or NULL for global/shared terms.
+ * @param int[] $member_jur_ids
+ *   Direct jurisdiction group memberships for the account.
+ *
+ * @return string[]
+ *   Cache tags.
+ */
+function _markaspot_tenant_admin_taxonomy_membership_cache_tags(
+  AccountInterface $account,
+  ?int $term_jur,
+  array $member_jur_ids,
+): array {
+  $tags = [
+    'group_relationship_list:plugin:group_membership:entity:' . $account->id(),
+  ];
+
+  $jur_ids = $member_jur_ids;
+  if ($term_jur !== NULL) {
+    $jur_ids[] = $term_jur;
+  }
+
+  foreach (array_unique(array_map('intval', $jur_ids)) as $jur_id) {
+    $tags[] = 'group_relationship_list:plugin:group_membership:group:' . $jur_id;
+  }
+
+  return array_values(array_unique($tags));
+}
+
+/**
+ * Builds cache tags for jurisdiction entities that affect term visibility.
+ *
+ * @param int[] $member_jur_ids
+ *   Direct jurisdiction group memberships for the account.
+ * @param int|null $term_jur
+ *   The term jurisdiction ID, or NULL for collection/global checks.
+ *
+ * @return string[]
+ *   Cache tags.
+ */
+function _markaspot_tenant_admin_taxonomy_jurisdiction_cache_tags(
+  array $member_jur_ids,
+  ?int $term_jur = NULL,
+): array {
+  $tags = [];
+  $jur_ids = $member_jur_ids;
+  if ($term_jur !== NULL) {
+    $jur_ids[] = $term_jur;
+  }
+
+  if ($jur_ids !== []) {
+    $tags[] = 'group_list';
+  }
+
+  foreach (array_unique(array_map('intval', $jur_ids)) as $jur_id) {
+    if ($jur_id > 0) {
+      $tags[] = 'group:' . $jur_id;
+    }
+  }
+
+  return array_values(array_unique($tags));
 }
 
 /**

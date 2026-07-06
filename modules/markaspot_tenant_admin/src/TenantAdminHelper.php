@@ -55,6 +55,48 @@ class TenantAdminHelper {
   }
 
   /**
+   * Gets jurisdiction group IDs where the user has any group membership.
+   *
+   * This intentionally does not filter by group role. It is used for read
+   * visibility where all jurisdiction staff should share the same taxonomy
+   * term scope, while write access keeps using tenant-admin semantics.
+   *
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The user account.
+   *
+   * @return int[]
+   *   Array of jurisdiction group entity IDs.
+   */
+  public static function getUserMemberJurisdictionIds(AccountInterface $account): array {
+    $cache = &drupal_static(__METHOD__, []);
+    $uid = (int) $account->id();
+    if (isset($cache[$uid])) {
+      return $cache[$uid];
+    }
+
+    if ($uid <= 0) {
+      return $cache[$uid] = [];
+    }
+
+    $user = User::load($uid);
+    if (!$user) {
+      return $cache[$uid] = [];
+    }
+
+    $memberships = GroupMembership::loadByUser($user);
+
+    $jur_ids = [];
+    foreach ($memberships as $membership) {
+      assert($membership instanceof GroupRelationshipInterface);
+      if (self::isJurisdictionGroup($membership->getGroup())) {
+        $jur_ids[] = (int) $membership->getGroupId();
+      }
+    }
+
+    return $cache[$uid] = array_values(array_unique($jur_ids));
+  }
+
+  /**
    * Checks if a user has the tenant admin group role in any jur group.
    *
    * @param \Drupal\Core\Session\AccountInterface $account
