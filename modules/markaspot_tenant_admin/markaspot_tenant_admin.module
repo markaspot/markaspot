@@ -153,6 +153,13 @@ function markaspot_tenant_admin_query_taxonomy_term_access_alter(AlterableInterf
       $query->where('1 = 0');
       _markaspot_tenant_admin_bubble_taxonomy_query_cacheability($current_user, []);
     }
+    elseif ((int) $current_user->id() > 0) {
+      // Authenticated non-members can gain jurisdiction memberships during a
+      // session, so their unfiltered variant must vary by user. Anonymous
+      // users cannot gain memberships without logging in, and adding the user
+      // context there would destroy shared public term-listing cacheability.
+      _markaspot_tenant_admin_bubble_taxonomy_query_cacheability($current_user, []);
+    }
     return;
   }
 
@@ -636,7 +643,10 @@ function markaspot_tenant_admin_taxonomy_term_access(EntityInterface $entity, st
     $result
       ->addCacheableDependency($entity)
       ->cachePerPermissions()
-      ->addCacheContexts(_markaspot_tenant_admin_taxonomy_membership_cache_contexts($term_jur, $member_jur_ids))
+      ->addCacheContexts(_markaspot_tenant_admin_taxonomy_membership_cache_contexts(
+        $term_jurisdiction instanceof GroupInterface ? $term_jur : NULL,
+        $member_jur_ids
+      ))
       ->addCacheTags(array_merge(
         _markaspot_tenant_admin_taxonomy_membership_cache_tags($account, $term_jur, $member_jur_ids),
         _markaspot_tenant_admin_taxonomy_jurisdiction_cache_tags($member_jur_ids, $term_jur),
@@ -758,7 +768,9 @@ function _markaspot_tenant_admin_taxonomy_membership_cache_contexts(
   }
 
   foreach (array_unique(array_map('intval', $jur_ids)) as $jur_id) {
-    $contexts[] = 'user.is_group_member:' . $jur_id;
+    if ($jur_id > 0) {
+      $contexts[] = 'user.is_group_member:' . $jur_id;
+    }
   }
 
   return array_values(array_unique($contexts));

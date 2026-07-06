@@ -334,6 +334,8 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
 
     $container = $this->setUpContainer($currentUser);
     $this->setUpMembershipMocks($container, 5, []);
+    $capturedBuild = NULL;
+    $this->setUpRenderContextCapture($container, $capturedBuild);
     \Drupal::setContainer($container);
 
     $query = $this->createMock(SelectInterface::class);
@@ -341,6 +343,26 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
     $query->expects($this->never())->method('where');
 
     markaspot_tenant_admin_query_taxonomy_term_access_alter($query);
+
+    $this->assertIsArray(
+      $capturedBuild,
+      'Authenticated non-member bypass cacheability must bubble.'
+    );
+    $this->assertContains('user', $capturedBuild['#cache']['contexts']);
+    $this->assertContains('user.roles', $capturedBuild['#cache']['contexts']);
+    $this->assertContains('user.group_permissions', $capturedBuild['#cache']['contexts']);
+    $this->assertContains(
+      'group_relationship_list:plugin:group_membership:entity:5',
+      $capturedBuild['#cache']['tags']
+    );
+    $this->assertSame(
+      [],
+      array_values(array_filter(
+        $capturedBuild['#cache']['contexts'],
+        static fn(string $context): bool => str_starts_with($context, 'user.is_group_member:')
+      )),
+      'Authenticated non-member bypass must not add specific group membership contexts.'
+    );
   }
 
   /**
@@ -352,13 +374,20 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
     $currentUser->method('getRoles')->willReturn(['anonymous']);
     $currentUser->method('id')->willReturn(0);
 
-    $this->setUpContainer($currentUser);
+    $container = $this->setUpContainer($currentUser);
+    $capturedBuild = NULL;
+    $this->setUpRenderContextCapture($container, $capturedBuild);
 
     $query = $this->createMock(SelectInterface::class);
     $query->expects($this->never())->method('leftJoin');
     $query->expects($this->never())->method('where');
 
     markaspot_tenant_admin_query_taxonomy_term_access_alter($query);
+
+    $this->assertNull(
+      $capturedBuild,
+      'Anonymous bypass must not add user cache context to public term listings.'
+    );
   }
 
   /**
@@ -554,6 +583,34 @@ class TenantAdminTaxonomyAccessTest extends UnitTestCase {
     $this->assertContains('group_relationship_list:plugin:group_membership:group:42', $result->getCacheTags());
     $this->assertContains('group_relationship_list:plugin:group_membership:group:99', $result->getCacheTags());
     $this->assertContains('group_relationship_list:plugin:group_membership:entity:5', $result->getCacheTags());
+  }
+
+  /**
+   * Unloadable term jurisdictions do not emit group-member cache contexts.
+   */
+  public function testUnloadableTermJurisdictionOmitsSpecificMembershipContext(): void {
+    $account = $this->createMock(AccountInterface::class);
+    $account->method('id')->willReturn(5);
+    $account->method('getRoles')->willReturn(['authenticated', 'moderator']);
+
+    $container = $this->setUpContainer($account);
+    $this->setUpMembershipMocks($container, 5, [99]);
+    $this->setUpHierarchyResolver($container, [99 => [99]]);
+    \Drupal::setContainer($container);
+
+    $result = markaspot_tenant_admin_taxonomy_term_access(
+      $this->createManagedTerm(FALSE, 42, NULL),
+      'view',
+      $account
+    );
+
+    $this->assertTrue(
+      $result->isNeutral(),
+      'Terms pointing at missing jurisdictions are not directly granted.'
+    );
+    $this->assertContains('user', $result->getCacheContexts());
+    $this->assertContains('user.is_group_member:99', $result->getCacheContexts());
+    $this->assertNotContains('user.is_group_member:42', $result->getCacheContexts());
   }
 
   /**
