@@ -709,6 +709,77 @@ class EscalationServiceMultiOrgTest extends UnitTestCase {
   }
 
   /**
+   * Tests canEscalate() allows members of the responsible organisation.
+   *
+   * The user is not a source jurisdiction member, but belongs directly to the
+   * current organisation referenced by field_organisation.
+   *
+   * @covers ::canEscalate
+   */
+  public function testCanEscalateAllowsResponsibleOrgMemberWithoutJurMembership(): void {
+    $org = $this->createMockOrgGroup(10, 4);
+
+    $node = $this->createMockNode([
+      'field_status' => 1,
+      'field_organisation_entities' => [$org],
+      'field_organisation_values' => [
+        ['target_id' => 10],
+      ],
+    ]);
+
+    $account = $this->createMockAccount(5, ['escalate service requests']);
+
+    $childJur = $this->createMockJurGroup(4, 1, 'District');
+    $childJur->method('getMember')->with($account)->willReturn(FALSE);
+    $parentJur = $this->createMockJurGroup(1, NULL, 'City');
+    $membership = $this->createMock(GroupMembership::class);
+    $org->method('getMember')->with($account)->willReturn($membership);
+
+    $this->relationshipStorage->method('loadByProperties')
+      ->willReturn([]);
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static function ($id) use ($childJur, $parentJur, $org) {
+        return match ($id) {
+          1 => $parentJur,
+          4 => $childJur,
+          10 => $org,
+          default => NULL,
+        };
+      });
+
+    $this->assertTrue($this->service->canEscalate($node, $account));
+  }
+
+  /**
+   * Tests canDelegate() allows members of the responsible organisation.
+   *
+   * The user is not checked through a jurisdiction in this case because direct
+   * organisation membership is sufficient for non-escalated requests.
+   *
+   * @covers ::canDelegate
+   */
+  public function testCanDelegateAllowsResponsibleOrgMemberWithoutJurMembership(): void {
+    $org = $this->createMockOrgGroup(10, 4);
+
+    $node = $this->createMockNode([
+      'field_status' => 1,
+      'field_organisation_entities' => [$org],
+      'field_organisation_values' => [
+        ['target_id' => 10],
+      ],
+    ]);
+
+    $account = $this->createMockAccount(5, ['delegate service requests']);
+    $membership = $this->createMock(GroupMembership::class);
+    $org->method('getMember')->with($account)->willReturn($membership);
+
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn($id) => $id === 10 ? $org : NULL);
+
+    $this->assertTrue($this->service->canDelegate($node, $account));
+  }
+
+  /**
    * Tests resolveSourceJurisdiction returns the first valid org jurisdiction.
    *
    * Scenario: Node has 3 orgs with different jurisdictions (4, 5, 6).

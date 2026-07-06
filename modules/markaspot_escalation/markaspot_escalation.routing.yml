@@ -35,6 +35,7 @@ markaspot_escalation.admin_escalate:
     _title: 'Escalate Request'
   requirements:
     _permission: 'escalate service requests'
+    _entity_access: 'node.view'
   options:
     _admin_route: TRUE
     parameters:
@@ -48,6 +49,7 @@ markaspot_escalation.admin_delegate:
     _title: 'Delegate Request'
   requirements:
     _permission: 'delegate service requests'
+    _entity_access: 'node.view'
   options:
     _admin_route: TRUE
     parameters:

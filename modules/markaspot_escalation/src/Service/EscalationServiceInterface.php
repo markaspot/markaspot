@@ -109,7 +109,9 @@ interface EscalationServiceInterface {
    * Checks whether a user can escalate a given service request.
    *
    * Validates configuration, node state, escalation target availability,
-   * group membership, and permission.
+   * group membership, and permission. First escalation also allows membership
+   * in a currently responsible organisation; re-escalation remains
+   * jurisdiction-only.
    *
    * @param \Drupal\node\NodeInterface $node
    *   The service request node.
@@ -125,6 +127,8 @@ interface EscalationServiceInterface {
    * Checks whether a user can delegate a given service request.
    *
    * Validates configuration, node state, group membership, and permission.
+   * Non-escalated requests also allow membership in a currently responsible
+   * organisation; escalated requests remain jurisdiction-only.
    *
    * @param \Drupal\node\NodeInterface $node
    *   The service request node.

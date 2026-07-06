@@ -467,14 +467,22 @@ class EscalationService implements EscalationServiceInterface {
 
     // 6. Group membership check based on current state.
     if ($node->get('field_escalation')->isEmpty()) {
-      // First escalation: user must be a member of the source jurisdiction.
+      // First escalation: user must be a member of the source jurisdiction
+      // or one of the currently responsible organisations.
       // resolveEscalationTarget already called resolveSourceJurisdiction
       // internally, so we derive the source jur from the target's child.
       $sourceJurId = $this->resolveSourceJurisdiction($node);
-      if ($sourceJurId === NULL) {
-        return FALSE;
+      if ($sourceJurId !== NULL && $this->isGroupMember($sourceJurId, $account)) {
+        return TRUE;
       }
-      return $this->isGroupMember($sourceJurId, $account);
+      if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
+        foreach ($node->get('field_organisation')->referencedEntities() as $orgGroup) {
+          if ($this->isMemberOfResponsibleOrg($orgGroup, $account)) {
+            return TRUE;
+          }
+        }
+      }
+      return FALSE;
     }
 
     // Re-escalation: user must be a member of the current escalation target.
@@ -524,6 +532,10 @@ class EscalationService implements EscalationServiceInterface {
     // redistribution path; multi-org support).
     if ($node->hasField('field_organisation') && !$node->get('field_organisation')->isEmpty()) {
       foreach ($node->get('field_organisation')->referencedEntities() as $orgGroup) {
+        if ($this->isMemberOfResponsibleOrg($orgGroup, $account)) {
+          return TRUE;
+        }
+
         if ($orgGroup->hasField('field_jurisdiction')
             && !$orgGroup->get('field_jurisdiction')->isEmpty()) {
           $orgJurId = (int) $orgGroup->get('field_jurisdiction')->target_id;
@@ -539,6 +551,22 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     return FALSE;
+  }
+
+  /**
+   * Checks whether a user belongs to a currently responsible organisation.
+   *
+   * @param mixed $orgGroup
+   *   The candidate organisation group.
+   * @param \Drupal\Core\Session\AccountInterface $account
+   *   The user account.
+   *
+   * @return bool
+   *   TRUE if the user is a member of the organisation group.
+   */
+  private function isMemberOfResponsibleOrg(mixed $orgGroup, AccountInterface $account): bool {
+    return $this->isOrganisationGroup($orgGroup)
+      && $this->isGroupMember((int) $orgGroup->id(), $account);
   }
 
   /**

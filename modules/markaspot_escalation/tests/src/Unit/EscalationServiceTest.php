@@ -1577,6 +1577,44 @@ class EscalationServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests escalated delegation ignores responsible organisation membership.
+   *
+   * @covers ::canDelegate
+   */
+  public function testCanDelegateEscalatedDeniedForResponsibleOrgMemberOnly(): void {
+    $orgGroup = $this->createMockOrgGroup(10, 4);
+    $node = $this->createMockNode([
+      'field_status' => 1,
+      'field_escalation' => 1,
+      'field_organisation' => $orgGroup,
+    ]);
+    $account = $this->createMockAccount(5, ['delegate service requests']);
+
+    $jurGroup = $this->createMockGroup(1, 'jur', NULL, 'Amsterdam');
+    $jurGroup->method('getMember')
+      ->with($account)
+      ->willReturn(FALSE);
+
+    $membership = $this->createMock(GroupMembership::class);
+    $orgGroup->method('getMember')
+      ->with($account)
+      ->willReturn($membership);
+
+    $this->groupStorage->method('load')
+      ->willReturnCallback(function ($id) use ($jurGroup, $orgGroup) {
+        if ($id === 1) {
+          return $jurGroup;
+        }
+        if ($id === 10) {
+          return $orgGroup;
+        }
+        return NULL;
+      });
+
+    $this->assertFalse($this->service->canDelegate($node, $account));
+  }
+
+  /**
    * @covers ::canDelegate
    */
   public function testCanDelegateReturnsFalseWhenClosedStatus(): void {
@@ -1967,6 +2005,49 @@ class EscalationServiceTest extends UnitTestCase {
         }
         if ($id === 99) {
           return $parentJur;
+        }
+        return NULL;
+      });
+
+    $this->assertFalse($this->service->canEscalate($node, $account));
+  }
+
+  /**
+   * Tests re-escalation ignores responsible organisation membership.
+   *
+   * @covers ::canEscalate
+   */
+  public function testReEscalationDeniedForResponsibleOrgMemberOnly(): void {
+    $orgGroup = $this->createMockOrgGroup(10, 4);
+    $node = $this->createMockNode([
+      'field_status' => 1,
+      'field_escalation' => 1,
+      'field_organisation' => $orgGroup,
+    ]);
+    $account = $this->createMockAccount(5, ['escalate service requests']);
+
+    $parentJur = $this->createMockGroup(99, 'jur', NULL, 'Netherlands');
+
+    $jurForMembership = $this->createMockGroup(1, 'jur', 99, 'Amsterdam');
+    $jurForMembership->method('getMember')
+      ->with($account)
+      ->willReturn(FALSE);
+
+    $membership = $this->createMock(GroupMembership::class);
+    $orgGroup->method('getMember')
+      ->with($account)
+      ->willReturn($membership);
+
+    $this->groupStorage->method('load')
+      ->willReturnCallback(function ($id) use ($jurForMembership, $parentJur, $orgGroup) {
+        if ($id === 1) {
+          return $jurForMembership;
+        }
+        if ($id === 99) {
+          return $parentJur;
+        }
+        if ($id === 10) {
+          return $orgGroup;
         }
         return NULL;
       });
