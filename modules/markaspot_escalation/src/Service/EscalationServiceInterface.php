@@ -74,6 +74,10 @@ interface EscalationServiceInterface {
    * missing configuration, invalid JSON, or a non-TRUE feature flag all keep
    * notes optional.
    *
+   * Scope: the policy is enforced on the escalation and delegation endpoints
+   * only. Direct field_organisation writes (bulk triage / first assignment)
+   * deliberately bypass it (owner decision 2026-07-06).
+   *
    * @param \Drupal\node\NodeInterface $node
    *   The service request node.
    *
