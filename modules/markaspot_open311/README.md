@@ -19,6 +19,7 @@ Retrieve service requests with optional filtering.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
+| `id` | string | Filter by `service_request_id`; accepts one ID or a comma-separated list of up to 100 IDs |
 | `limit` | int | Maximum results to return |
 | `offset` | int | Pagination offset |
 | `cursor` | string | Optional keyset cursor from `meta.next_cursor` |

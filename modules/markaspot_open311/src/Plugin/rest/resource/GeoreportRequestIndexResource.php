@@ -155,6 +155,11 @@ final class GeoreportRequestIndexResource extends ResourceBase {
   protected const SEARCH_API_CANDIDATE_LIMIT = 10000;
 
   /**
+   * Hard cap for comma-separated service request ID lookups.
+   */
+  private const MAX_REQUEST_IDS = 100;
+
+  /**
    * Constructs a Drupal\rest\Plugin\ResourceBase object.
    *
    * @param array $configuration
@@ -444,7 +449,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
 
     // Optimize query for common cases - direct ID lookup is fastest.
     if (isset($parameters['id'])) {
-      $query->condition('request_id', $parameters['id']);
+      self::applyRequestIdFilter($query, $parameters['id']);
       return $this->georeportProcessor->getResults($query, $this->currentUser, $parameters, $readScope);
     }
 
@@ -1232,6 +1237,63 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     'field_hazard_level',
     'field_facility',
   ];
+
+  /**
+   * Applies the direct service request ID filter.
+   *
+   * @param \Drupal\Core\Entity\Query\QueryInterface $query
+   *   The entity query being filtered.
+   * @param mixed $requestId
+   *   Raw id query parameter value.
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Throws 400 when the comma-separated list exceeds the hard cap.
+   */
+  public static function applyRequestIdFilter(QueryInterface $query, mixed $requestId): void {
+    if (!is_string($requestId)) {
+      $query->condition('request_id', $requestId);
+      return;
+    }
+
+    $requestIds = self::normaliseRequestIdFilter($requestId);
+    if (is_array($requestIds)) {
+      $query->condition('request_id', $requestIds, 'IN');
+      return;
+    }
+
+    $query->condition('request_id', $requestIds);
+  }
+
+  /**
+   * Normalises the id query parameter into single-value or IN-list shape.
+   *
+   * @return string|string[]
+   *   Empty string for empty/all-empty input, a string for one ID, or a string
+   *   list for multiple IDs.
+   *
+   * @throws \Drupal\markaspot_open311\Exception\GeoreportException
+   *   Throws 400 when more than MAX_REQUEST_IDS non-empty IDs are provided.
+   */
+  private static function normaliseRequestIdFilter(string $requestId): string|array {
+    $requestIds = array_values(array_filter(
+      array_map('trim', explode(',', $requestId)),
+      fn($id) => $id !== ''
+    ));
+
+    if ($requestIds === []) {
+      return '';
+    }
+
+    if (count($requestIds) > self::MAX_REQUEST_IDS) {
+      throw new GeoreportException('Too many ids in request (max 100).', 400);
+    }
+
+    if (count($requestIds) === 1) {
+      return $requestIds[0];
+    }
+
+    return $requestIds;
+  }
 
   /**
    * Hard cap on the number of comma-separated values for a single field.
