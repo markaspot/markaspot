@@ -245,7 +245,6 @@ class EscalationController extends ControllerBase {
     $nodes = $this->entityTypeManager()->getStorage('node')
       ->loadByProperties([
         'type' => 'service_request',
-        'status' => 1,
         'request_id' => $service_request_id,
       ]);
 
@@ -253,7 +252,12 @@ class EscalationController extends ControllerBase {
       throw new NotFoundHttpException('Service request not found.');
     }
 
-    return reset($nodes);
+    $node = reset($nodes);
+    if (!$node instanceof NodeInterface || !$node->access('view')) {
+      throw new NotFoundHttpException('Service request not found.');
+    }
+
+    return $node;
   }
 
   /**

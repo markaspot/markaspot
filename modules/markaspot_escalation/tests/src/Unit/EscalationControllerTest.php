@@ -182,12 +182,62 @@ class EscalationControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests that an inaccessible loaded service request still returns 404.
+   *
+   * @covers ::escalate
+   */
+  public function testEscalateWithInaccessibleRequestThrowsNotFound(): void {
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('access')->with('view')->willReturn(FALSE);
+    $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
+
+    $this->escalationService->expects($this->never())
+      ->method('canEscalate');
+
+    $request = new Request([], [], [], [], [], [], '{"notes":"test"}');
+
+    $this->expectException(NotFoundHttpException::class);
+    $this->expectExceptionMessage('Service request not found.');
+
+    $this->controller->escalate('123-2026', $request);
+  }
+
+  /**
+   * Tests that a viewable unpublished service request can be loaded.
+   *
+   * @covers ::escalate
+   */
+  public function testEscalateLoadsUnpublishedRequestWhenViewAccessAllowed(): void {
+    $node = $this->createAccessibleNode();
+    $this->nodeStorage->expects($this->once())
+      ->method('loadByProperties')
+      ->with([
+        'type' => 'service_request',
+        'request_id' => '123-2026',
+      ])
+      ->willReturn([$node]);
+    $this->escalationService->method('canEscalate')->willReturn(TRUE);
+    $this->escalationService->method('resolveEscalationTarget')->willReturn(10);
+
+    $targetGroup = $this->createMock(GroupInterface::class);
+    $targetGroup->method('bundle')->willReturn('jur');
+    $targetGroup->method('label')->willReturn('Parent Jurisdiction');
+    $this->groupStorage->method('load')->with(10)->willReturn($targetGroup);
+
+    $request = new Request([], [], [], [], [], [], '{"notes":"test"}');
+
+    $response = $this->controller->escalate('123-2026', $request);
+
+    $this->assertSame(200, $response->getStatusCode());
+  }
+
+  /**
    * Tests that escalation is denied when user lacks permission.
    *
    * @covers ::escalate
    */
   public function testEscalateAccessDenied(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(FALSE);
 
@@ -207,7 +257,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testEscalateAllowsEmptyNotesWhenNoteFlagMissingOrFalse(?string $nuxtConfig): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $noteRequired = $nuxtConfig === '{"features":{"delegationNoteRequired":true}}';
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
@@ -264,7 +314,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testEscalateRequiresNotesWhenJurisdictionFlagTrue(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
     $this->escalationService->method('isDelegationNoteRequired')->willReturn(TRUE);
@@ -285,7 +335,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testEscalateAllowsFilledNotesWhenJurisdictionFlagTrue(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
     $this->escalationService->method('isDelegationNoteRequired')->willReturn(TRUE);
@@ -341,7 +391,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testEscalateNoTargetThrows422(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
     $this->escalationService->method('resolveEscalationTarget')->willReturn(NULL);
@@ -360,7 +410,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testEscalateSuccess(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
     $this->escalationService->method('resolveEscalationTarget')->willReturn(10);
@@ -387,7 +437,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testEscalateParentOrgResponseDoesNotExposeEscalationTarget(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
     $this->escalationService->method('resolveEscalationTarget')->willReturn(20);
@@ -422,7 +472,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testEscalateInvalidArgumentReturns422(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
     $this->escalationService->method('resolveEscalationTarget')->willReturn(10);
@@ -443,7 +493,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::delegate
    */
   public function testDelegateAccessDenied(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canDelegate')->willReturn(FALSE);
 
@@ -460,7 +510,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::delegate
    */
   public function testDelegateMissingTargetOrgThrowsBadRequest(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canDelegate')->willReturn(TRUE);
 
@@ -478,7 +528,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::delegate
    */
   public function testDelegateInvalidOrgBundleThrows422(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canDelegate')->willReturn(TRUE);
 
@@ -500,7 +550,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::delegate
    */
   public function testDelegateNonExistentOrgThrows422(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canDelegate')->willReturn(TRUE);
 
@@ -520,7 +570,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testNotesStripsHtmlTags(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
     $this->escalationService->method('resolveEscalationTarget')->willReturn(10);
@@ -548,7 +598,7 @@ class EscalationControllerTest extends UnitTestCase {
    * @covers ::escalate
    */
   public function testNotesTruncatedToMaxLength(): void {
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createAccessibleNode();
     $this->nodeStorage->method('loadByProperties')->willReturn([$node]);
     $this->escalationService->method('canEscalate')->willReturn(TRUE);
     $this->escalationService->method('resolveEscalationTarget')->willReturn(10);
@@ -661,6 +711,18 @@ class EscalationControllerTest extends UnitTestCase {
   }
 
   /**
+   * Creates a mock node that passes the loader's view access check.
+   *
+   * @return \Drupal\node\NodeInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked node.
+   */
+  protected function createAccessibleNode(): NodeInterface {
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('access')->with('view')->willReturn(TRUE);
+    return $node;
+  }
+
+  /**
    * Creates a mock node with configurable field values.
    *
    * @param array $fields
@@ -674,6 +736,7 @@ class EscalationControllerTest extends UnitTestCase {
   protected function createMockNodeWithFields(array $fields): NodeInterface {
     $node = $this->createMock(NodeInterface::class);
     $node->method('id')->willReturn(100);
+    $node->method('access')->with('view')->willReturn(TRUE);
 
     $fieldMap = [];
     foreach ($fields as $fieldName => $value) {
