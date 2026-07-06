@@ -197,6 +197,8 @@ class EscalationRequestAlterTest extends UnitTestCase {
    *   Whether jurisdiction groups exist.
    * @param bool $isJurisdictionMember
    *   Whether the current user is a member of the node jurisdiction.
+   * @param bool $delegationNoteRequired
+   *   Note requirement returned by the escalation service.
    */
   private function setServices(
     NodeInterface $node,
