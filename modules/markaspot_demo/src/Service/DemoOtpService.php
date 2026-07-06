@@ -9,6 +9,7 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\Session\AccountProxyInterface;
+use Drupal\Core\Site\Settings;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Drupal\user\Entity\User;
 use Psr\Log\LoggerInterface;
@@ -41,6 +42,13 @@ class DemoOtpService extends OtpService {
    * @var int|null
    */
   protected ?int $activeJurisdictionCount = NULL;
+
+  /**
+   * Whether the multi-tenant override was already logged.
+   *
+   * @var bool
+   */
+  protected bool $multiTenantOverrideLogged = FALSE;
 
   /**
    * Constructs a DemoOtpService object.
@@ -214,8 +222,40 @@ class DemoOtpService extends OtpService {
    */
   protected function assertDemoSingleTenant(): void {
     if ($this->getActiveJurisdictionCount() > 1) {
+      if ($this->isMultiTenantOverrideAllowed()) {
+        $this->logMultiTenantOverride();
+        return;
+      }
+
       throw new \RuntimeException('markaspot_demo must not run on multi-tenant installations.');
     }
+  }
+
+  /**
+   * Checks whether operators explicitly allow demo OTP on multi-tenant sites.
+   *
+   * @return bool
+   *   TRUE when the override is active.
+   */
+  protected function isMultiTenantOverrideAllowed(): bool {
+    $envOverride = getenv('MARKASPOT_DEMO_ALLOW_MULTI_TENANT');
+    if (is_string($envOverride) && in_array(strtolower(trim($envOverride)), ['1', 'true'], TRUE)) {
+      return TRUE;
+    }
+
+    return Settings::get('markaspot_demo_allow_multi_tenant', FALSE) === TRUE;
+  }
+
+  /**
+   * Logs the explicit multi-tenant override once per service instance.
+   */
+  protected function logMultiTenantOverride(): void {
+    if ($this->multiTenantOverrideLogged) {
+      return;
+    }
+
+    $this->logger->notice('Demo mode: Multi-tenant demo OTP guard bypassed by explicit operator override.');
+    $this->multiTenantOverrideLogged = TRUE;
   }
 
   /**
