@@ -12,6 +12,7 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupMembership;
 use Drupal\taxonomy\TermInterface;
 
 /**
@@ -58,7 +59,43 @@ function markaspot_open311_entity_access(EntityInterface $entity, string $operat
       ->addCacheContexts(['user.permissions']);
   }
 
-  return AccessResult::neutral()->cachePerPermissions();
+  /** @var \Drupal\taxonomy\TermInterface $term */
+  $term = $entity;
+  $jurisdiction = _markaspot_open311_term_jurisdiction($term);
+  if ($jurisdiction === NULL) {
+    return AccessResult::neutral()
+      ->cachePerPermissions()
+      ->addCacheableDependency($term);
+  }
+
+  $is_member = FALSE;
+  foreach (GroupMembership::loadByUser($account) as $membership) {
+    if ((int) $membership->getGroupId() === (int) $jurisdiction->id()) {
+      $is_member = TRUE;
+      break;
+    }
+  }
+
+  $membership_cache_tags = [
+    'group_relationship_list:plugin:group_membership:group:' . $jurisdiction->id(),
+    'group_relationship_list:plugin:group_membership:entity:' . $account->id(),
+  ];
+  $membership_cache_context = 'user.is_group_member:' . $jurisdiction->id();
+  if (!$is_member) {
+    return AccessResult::forbidden('Internal status terms are scoped to the jurisdiction.')
+      ->cachePerPermissions()
+      ->addCacheContexts(['user', $membership_cache_context])
+      ->addCacheableDependency($term)
+      ->addCacheableDependency($jurisdiction)
+      ->addCacheTags($membership_cache_tags);
+  }
+
+  return AccessResult::neutral()
+    ->cachePerPermissions()
+    ->addCacheContexts(['user', $membership_cache_context])
+    ->addCacheableDependency($term)
+    ->addCacheableDependency($jurisdiction)
+    ->addCacheTags($membership_cache_tags);
 }
 
 /**

@@ -5,11 +5,17 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_open311\Unit;
 
 use Drupal\Core\Access\AccessResultForbidden;
+use Drupal\Core\Cache\CacheBackendInterface;
 use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\EntityStorageInterface;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
 use Drupal\taxonomy\TermInterface;
@@ -86,14 +92,17 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
    *
    * @param string[] $permissions
    *   Permission strings the account holds.
+   * @param int $uid
+   *   The account id.
    *
    * @return \Drupal\Core\Session\AccountInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The mocked account.
    */
-  private function account(array $permissions): AccountInterface {
+  private function account(array $permissions, int $uid = 2): AccountInterface {
     $account = $this->createMock(AccountInterface::class);
     $account->method('hasPermission')
       ->willReturnCallback(fn(string $permission): bool => in_array($permission, $permissions, TRUE));
+    $account->method('id')->willReturn($uid);
     return $account;
   }
 
@@ -168,6 +177,107 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
     $entity->method('getCacheTags')->willReturn([]);
     $entity->method('getCacheMaxAge')->willReturn(-1);
     return $entity;
+  }
+
+  /**
+   * Builds an internal_status term double.
+   *
+   * @param \Drupal\group\Entity\GroupInterface|null $jurisdiction
+   *   Optional jurisdiction referenced by field_jurisdiction.
+   *
+   * @return \Drupal\taxonomy\TermInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked term.
+   */
+  private function internalStatusTerm(?GroupInterface $jurisdiction = NULL): TermInterface {
+    $term = $this->createMock(TermInterface::class);
+    $term->method('getEntityTypeId')->willReturn('taxonomy_term');
+    $term->method('bundle')->willReturn('internal_status');
+    $term->method('hasField')->with('field_jurisdiction')->willReturn(TRUE);
+    $term->method('get')->with('field_jurisdiction')->willReturn($this->jurisdictionField($jurisdiction));
+    $term->method('getCacheContexts')->willReturn([]);
+    $term->method('getCacheTags')->willReturn(['taxonomy_term:7']);
+    $term->method('getCacheMaxAge')->willReturn(-1);
+    return $term;
+  }
+
+  /**
+   * Builds a field_jurisdiction item list double.
+   *
+   * @param \Drupal\group\Entity\GroupInterface|null $jurisdiction
+   *   Optional referenced jurisdiction.
+   *
+   * @return \Drupal\Core\Field\FieldItemListInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked item list.
+   */
+  private function jurisdictionField(?GroupInterface $jurisdiction): FieldItemListInterface {
+    $field = $this->createMock(FieldItemListInterface::class);
+    $field->method('isEmpty')->willReturn($jurisdiction === NULL);
+    $field->method('__get')->with('entity')->willReturn($jurisdiction);
+    return $field;
+  }
+
+  /**
+   * Builds a jurisdiction group double.
+   *
+   * @param int $id
+   *   The group id.
+   *
+   * @return \Drupal\group\Entity\GroupInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked group.
+   */
+  private function jurisdictionGroup(int $id): GroupInterface {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($id);
+    $group->method('getCacheContexts')->willReturn([]);
+    $group->method('getCacheTags')->willReturn(['group:' . $id]);
+    $group->method('getCacheMaxAge')->willReturn(-1);
+    return $group;
+  }
+
+  /**
+   * Builds a group membership relationship double.
+   *
+   * @param int $groupId
+   *   The related group id.
+   * @param int $relationshipId
+   *   The membership relationship id.
+   *
+   * @return \Drupal\group\Entity\GroupRelationshipInterface|\PHPUnit\Framework\MockObject\MockObject
+   *   The mocked group relationship.
+   */
+  private function groupMembership(int $groupId, int $relationshipId): GroupRelationshipInterface {
+    $membership = $this->createMock(GroupRelationshipInterface::class);
+    $membership->method('id')->willReturn($relationshipId);
+    $membership->method('getGroupId')->willReturn($groupId);
+    return $membership;
+  }
+
+  /**
+   * Registers storage doubles for GroupMembership::loadByUser().
+   *
+   * @param \Drupal\group\Entity\GroupRelationshipInterface[] $memberships
+   *   Memberships returned by the group relationship storage.
+   */
+  private function setGroupMemberships(array $memberships): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->with(FALSE)->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('execute')->willReturn(array_keys($memberships));
+
+    $storage = $this->createMock(EntityStorageInterface::class);
+    $storage->method('getQuery')->willReturn($query);
+    $storage->method('loadMultiple')->willReturn($memberships);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group_relationship')
+      ->willReturn($storage);
+
+    $cache = $this->createMock(CacheBackendInterface::class);
+    $cache->method('get')->willReturn(FALSE);
+
+    \Drupal::getContainer()->set('entity_type.manager', $entityTypeManager);
+    \Drupal::getContainer()->set('cache.group_memberships_chained', $cache);
   }
 
   /**
@@ -285,26 +395,97 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
 
   /**
    * Internal status term labels are hidden from citizens.
+   *
+   * @dataProvider entityAccessOperationProvider
    */
-  public function testInternalStatusTermViewForbiddenForCitizen(): void {
+  public function testInternalStatusTermAccessForbiddenForCitizen(string $operation): void {
     $result = markaspot_open311_entity_access(
       $this->entity('taxonomy_term', 'internal_status'),
-      'view',
+      $operation,
       $this->account(['access content']),
     );
     $this->assertInstanceOf(AccessResultForbidden::class, $result);
   }
 
   /**
-   * Staff term access remains neutral so normal taxonomy access can apply.
+   * Staff can access global terms so normal taxonomy access can apply.
+   *
+   * @dataProvider entityAccessOperationProvider
    */
-  public function testInternalStatusTermViewNeutralForStaff(): void {
+  public function testInternalStatusTermAccessNeutralForGlobalTerm(string $operation): void {
     $result = markaspot_open311_entity_access(
-      $this->entity('taxonomy_term', 'internal_status'),
-      'view',
+      $this->internalStatusTerm(),
+      $operation,
       $this->account(['manage dashboard notes']),
     );
-    $this->assertTrue($result->isNeutral(), 'Staff internal-status term access is delegated to normal taxonomy access.');
+    $this->assertTrue($result->isNeutral(), 'Global internal-status term access is delegated to normal taxonomy access.');
+    $this->assertContains('user.permissions', $result->getCacheContexts());
+  }
+
+  /**
+   * Staff can access internal status terms in their jurisdiction.
+   *
+   * @dataProvider entityAccessOperationProvider
+   */
+  public function testInternalStatusTermAccessNeutralForJurisdictionMember(string $operation): void {
+    $jurisdiction = $this->jurisdictionGroup(42);
+    $this->setGroupMemberships([
+      100 => $this->groupMembership(42, 100),
+    ]);
+
+    $result = markaspot_open311_entity_access(
+      $this->internalStatusTerm($jurisdiction),
+      $operation,
+      $this->account(['manage dashboard notes'], 5),
+    );
+    $this->assertTrue($result->isNeutral(), 'Jurisdiction members keep normal taxonomy access.');
+    $this->assertContains('user.permissions', $result->getCacheContexts());
+    $this->assertContains('user', $result->getCacheContexts());
+    $this->assertContains('user.is_group_member:42', $result->getCacheContexts());
+    $this->assertContains('taxonomy_term:7', $result->getCacheTags());
+    $this->assertContains('group:42', $result->getCacheTags());
+    $this->assertContains('group_relationship_list:plugin:group_membership:group:42', $result->getCacheTags());
+    $this->assertContains('group_relationship_list:plugin:group_membership:entity:5', $result->getCacheTags());
+  }
+
+  /**
+   * Staff cannot access internal status terms from other jurisdictions.
+   *
+   * @dataProvider entityAccessOperationProvider
+   */
+  public function testInternalStatusTermAccessForbiddenForForeignStaff(string $operation): void {
+    $jurisdiction = $this->jurisdictionGroup(42);
+    $this->setGroupMemberships([
+      101 => $this->groupMembership(99, 101),
+    ]);
+
+    $result = markaspot_open311_entity_access(
+      $this->internalStatusTerm($jurisdiction),
+      $operation,
+      $this->account(['manage dashboard notes'], 5),
+    );
+    $this->assertInstanceOf(AccessResultForbidden::class, $result);
+    $this->assertContains('user.permissions', $result->getCacheContexts());
+    $this->assertContains('user', $result->getCacheContexts());
+    $this->assertContains('user.is_group_member:42', $result->getCacheContexts());
+    $this->assertContains('taxonomy_term:7', $result->getCacheTags());
+    $this->assertContains('group:42', $result->getCacheTags());
+    $this->assertContains('group_relationship_list:plugin:group_membership:group:42', $result->getCacheTags());
+    $this->assertContains('group_relationship_list:plugin:group_membership:entity:5', $result->getCacheTags());
+  }
+
+  /**
+   * Platform operators keep access without membership checks.
+   *
+   * @dataProvider entityAccessOperationProvider
+   */
+  public function testInternalStatusTermAccessNeutralForTaxonomyAdministrator(string $operation): void {
+    $result = markaspot_open311_entity_access(
+      $this->internalStatusTerm($this->jurisdictionGroup(42)),
+      $operation,
+      $this->account(['administer taxonomy']),
+    );
+    $this->assertTrue($result->isNeutral(), 'Operators keep taxonomy access without jurisdiction membership.');
   }
 
   /**
@@ -518,6 +699,20 @@ class Open311EntityFieldAccessTest extends UnitTestCase {
     return [
       'view' => ['view'],
       'edit' => ['edit'],
+    ];
+  }
+
+  /**
+   * Entity access operations under test.
+   *
+   * @return array<string, array{string}>
+   *   The view, update, and delete operations.
+   */
+  public static function entityAccessOperationProvider(): array {
+    return [
+      'view' => ['view'],
+      'update' => ['update'],
+      'delete' => ['delete'],
     ];
   }
 
