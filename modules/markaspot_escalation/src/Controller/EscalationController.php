@@ -272,7 +272,9 @@ class EscalationController extends ControllerBase {
     // which also strips on render, but we enforce at the input boundary.
     $notes = mb_substr(trim(strip_tags($data['notes'] ?? '')), 0, self::NOTES_MAX_LENGTH);
 
-    if ($required && empty($notes)) {
+    // Strict comparison: empty() would treat the legitimate note "0" as
+    // missing while the frontend validator accepts it.
+    if ($required && $notes === '') {
       throw new BadRequestHttpException('The "notes" field is required.');
     }
 
