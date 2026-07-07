@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.142](https://github.com/markaspot/markaspot/compare/11.9.141...11.9.142) (2026-07-07)
+
+### Features
+
+* harden archive anonymization, skip taken request ids and keep address subfields optional ([a5ebf81](https://github.com/markaspot/markaspot/commit/a5ebf818c1d47617ce49ec6f3392a6ac75c62157))
+
 ## [11.9.141](https://github.com/markaspot/markaspot/compare/11.9.140...11.9.141) (2026-07-07)
 
 ### Features
