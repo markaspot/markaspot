@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.143](https://github.com/markaspot/markaspot/compare/11.9.142...11.9.143) (2026-07-07)
+
+### Features
+
+* assign service requests to individual users ([bc3d295](https://github.com/markaspot/markaspot/commit/bc3d295b227881799ee69a391eae0b29bbf83b8a))
+
 ## [11.9.142](https://github.com/markaspot/markaspot/compare/11.9.141...11.9.142) (2026-07-07)
 
 ### Features
