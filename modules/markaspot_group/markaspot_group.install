@@ -4599,6 +4599,70 @@ function markaspot_group_update_11935(): string {
 }
 
 /**
+ * Keeps country-dependent jurisdiction address subfields optional.
+ */
+function markaspot_group_update_11936(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('field.field.group.jur.field_jurisdiction_address');
+
+  if ($config->isNew()) {
+    return 'field_jurisdiction_address config not found.';
+  }
+
+  $overrides = $config->get('settings.field_overrides') ?: [];
+  if (!is_array($overrides)) {
+    $overrides = [];
+  }
+
+  $required_overrides = [
+    'sortingCode' => ['override' => 'optional'],
+    'dependentLocality' => ['override' => 'optional'],
+    'administrativeArea' => ['override' => 'optional'],
+  ];
+
+  $changed = FALSE;
+  foreach ($required_overrides as $key => $override) {
+    if (($overrides[$key]['override'] ?? NULL) !== 'optional') {
+      $overrides[$key] = $override;
+      $changed = TRUE;
+    }
+  }
+
+  if (!$changed) {
+    return 'Country-dependent field_jurisdiction_address subfields already optional.';
+  }
+
+  $field_order = [
+    'givenName',
+    'additionalName',
+    'familyName',
+    'organization',
+    'addressLine1',
+    'addressLine2',
+    'postalCode',
+    'sortingCode',
+    'dependentLocality',
+    'locality',
+    'administrativeArea',
+  ];
+  $ordered_overrides = [];
+  foreach ($field_order as $key) {
+    if (array_key_exists($key, $overrides)) {
+      $ordered_overrides[$key] = $overrides[$key];
+    }
+  }
+  foreach ($overrides as $key => $override) {
+    if (!array_key_exists($key, $ordered_overrides)) {
+      $ordered_overrides[$key] = $override;
+    }
+  }
+
+  $config->set('settings.field_overrides', $ordered_overrides)->save(TRUE);
+
+  return 'Set field_jurisdiction_address administrativeArea, dependentLocality, and sortingCode overrides to optional.';
+}
+
+/**
  * Adds uid 1 to every jur/org group where membership is missing.
  *
  * @return array<string, mixed>

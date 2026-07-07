@@ -25,6 +25,11 @@ use Psr\Log\LoggerInterface;
 class RequestIdGenerator implements RequestIdGeneratorInterface {
 
   /**
+   * Maximum candidate checks after a sequence-table collision.
+   */
+  protected const MAX_COLLISION_RETRIES = 10;
+
+  /**
    * The database connection.
    */
   protected Connection $database;
@@ -89,6 +94,7 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
     $delimiter = $config->get('delimiter') ?? '-';
     $format = $config->get('format') ?? 'Y';
     $timestamp = $this->time->getRequestTime();
+    $bundle = $this->getServiceRequestBundle();
 
     // Acquire an application-level lock per jurisdiction to serialize
     // concurrent requests. This is essential because FOR UPDATE cannot
@@ -117,12 +123,13 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
         }
 
         $date = date($format, $timestamp);
-        $requestId = $this->buildRequestId(
+        [$nextSeq, $requestId] = $this->buildAvailableRequestId(
           $nextSeq,
           $date,
           $delimiter,
           $jid,
-          $sourceJurisdictionId
+          $sourceJurisdictionId,
+          $bundle
         );
 
         $this->database->insert('markaspot_request_id')
@@ -160,6 +167,83 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
   }
 
   /**
+   * Builds a request ID that does not collide with existing nodes.
+   *
+   * The sequence table is still authoritative for the common path. When older
+   * imports already used a candidate request_id without recording it in the
+   * sequence table, this method jumps to the highest matching node sequence and
+   * returns that final value so the inserted sequence-table row self-heals.
+   *
+   * @param int $nextSeq
+   *   The candidate sequence number.
+   * @param string $date
+   *   The already formatted date suffix.
+   * @param string $delimiter
+   *   The configured delimiter.
+   * @param int $jurisdictionId
+   *   The root jurisdiction ID used by the sequence.
+   * @param int|null $sourceJurisdictionId
+   *   The source jurisdiction ID used for the visible prefix.
+   * @param string $bundle
+   *   The node bundle that receives generated request IDs.
+   *
+   * @return array{0: int, 1: string}
+   *   The final sequence and request ID.
+   */
+  protected function buildAvailableRequestId(
+    int $nextSeq,
+    string $date,
+    string $delimiter,
+    int $jurisdictionId,
+    ?int $sourceJurisdictionId,
+    string $bundle,
+  ): array {
+    $requestId = $this->buildRequestId(
+      $nextSeq,
+      $date,
+      $delimiter,
+      $jurisdictionId,
+      $sourceJurisdictionId
+    );
+
+    if (!$this->requestIdExistsForJurisdiction($requestId, $jurisdictionId, $bundle)) {
+      return [$nextSeq, $requestId];
+    }
+
+    $prefix = $this->resolveRequestIdPrefix($jurisdictionId, $sourceJurisdictionId);
+    $maxExistingSeq = $this->findMaxExistingNodeSequence(
+      $jurisdictionId,
+      $bundle,
+      $date,
+      $delimiter,
+      $prefix
+    );
+    $nextSeq = max($nextSeq + 1, $maxExistingSeq + 1);
+
+    for ($attempt = 0; $attempt < static::MAX_COLLISION_RETRIES; $attempt++) {
+      $requestId = $this->buildRequestId(
+        $nextSeq,
+        $date,
+        $delimiter,
+        $jurisdictionId,
+        $sourceJurisdictionId
+      );
+
+      if (!$this->requestIdExistsForJurisdiction($requestId, $jurisdictionId, $bundle)) {
+        return [$nextSeq, $requestId];
+      }
+
+      $nextSeq++;
+    }
+
+    throw new \RuntimeException(sprintf(
+      'Could not find a free request ID for jurisdiction %d after %d collision retries.',
+      $jurisdictionId,
+      static::MAX_COLLISION_RETRIES
+    ));
+  }
+
+  /**
    * Builds the stored request ID.
    *
    * Prefixes are purely presentational. They help multi-jurisdiction staff
@@ -188,13 +272,183 @@ class RequestIdGenerator implements RequestIdGeneratorInterface {
     ?int $sourceJurisdictionId = NULL,
   ): string {
     $baseId = $sequence . $delimiter . $date;
+    $prefix = $this->resolveRequestIdPrefix($jurisdictionId, $sourceJurisdictionId);
+
+    return $prefix === '' ? $baseId : $prefix . $delimiter . $baseId;
+  }
+
+  /**
+   * Resolves the visible request-ID prefix for a root/source jurisdiction pair.
+   */
+  protected function resolveRequestIdPrefix(
+    ?int $jurisdictionId,
+    ?int $sourceJurisdictionId,
+  ): string {
     $prefix = $this->loadRequestIdPrefix($sourceJurisdictionId ?? $jurisdictionId);
 
     if ($prefix === '' && $sourceJurisdictionId !== NULL && $sourceJurisdictionId !== $jurisdictionId) {
       $prefix = $this->loadRequestIdPrefix($jurisdictionId);
     }
 
-    return $prefix === '' ? $baseId : $prefix . $delimiter . $baseId;
+    return $prefix;
+  }
+
+  /**
+   * Returns the configured service_request bundle ID.
+   */
+  protected function getServiceRequestBundle(): string {
+    $bundle = $this->configFactory->get('node.type.service_request')->get('type');
+
+    return is_string($bundle) && $bundle !== '' ? $bundle : 'service_request';
+  }
+
+  /**
+   * Checks whether an existing node already owns a scoped request ID.
+   */
+  protected function requestIdExistsForJurisdiction(
+    string $requestId,
+    int $jurisdictionId,
+    string $bundle,
+  ): bool {
+    $args = [
+      ':bundle' => $bundle,
+      ':request_id' => $requestId,
+    ];
+
+    $sql = $this->existingNodeRequestIdBaseSql('SELECT 1', 'nfd.request_id = :request_id', $jurisdictionId, $args);
+    $sql .= ' LIMIT 1';
+
+    return (bool) $this->database->query($sql, $args)->fetchField();
+  }
+
+  /**
+   * Finds the highest existing node sequence for the current prefix/date shape.
+   */
+  protected function findMaxExistingNodeSequence(
+    int $jurisdictionId,
+    string $bundle,
+    string $date,
+    string $delimiter,
+    string $prefix,
+  ): int {
+    $args = [
+      ':bundle' => $bundle,
+      ':request_id_pattern' => $this->requestIdLikePattern($date, $delimiter, $prefix),
+    ];
+
+    $sql = $this->existingNodeRequestIdBaseSql('SELECT DISTINCT nfd.request_id', 'nfd.request_id LIKE :request_id_pattern', $jurisdictionId, $args);
+    $rows = $this->database->query($sql, $args)->fetchCol();
+
+    $maxSeq = 0;
+    foreach ($rows as $requestId) {
+      $seq = $this->extractSequenceFromRequestId((string) $requestId, $date, $delimiter, $prefix);
+      if ($seq !== NULL) {
+        $maxSeq = max($maxSeq, $seq);
+      }
+    }
+
+    return $maxSeq;
+  }
+
+  /**
+   * Builds the node request_id scope query shared by existence and max lookup.
+   *
+   * Jurisdiction ID 0 is the legacy/global scope and only matches nodes without
+   * field_jurisdiction. Jurisdiction-scoped nodes are compared by their root
+   * jurisdiction, so a child field_jurisdiction still shares its root sequence.
+   *
+   * @param string $select
+   *   The SELECT clause.
+   * @param string $requestIdCondition
+   *   The request_id predicate.
+   * @param int $jurisdictionId
+   *   The root jurisdiction ID, or 0 for jurisdictionless nodes.
+   * @param array<string, mixed> $args
+   *   Query arguments to extend with :jid when needed.
+   *
+   * @return string
+   *   The SQL query.
+   */
+  protected function existingNodeRequestIdBaseSql(
+    string $select,
+    string $requestIdCondition,
+    int $jurisdictionId,
+    array &$args,
+  ): string {
+    if ($jurisdictionId > 0) {
+      $args[':jid'] = $jurisdictionId;
+      return "
+        WITH RECURSIVE jurisdiction_scope (id) AS (
+          SELECT :jid
+          UNION
+          SELECT gpj.entity_id
+          FROM {group__field_parent_jurisdiction} gpj
+          INNER JOIN jurisdiction_scope scope
+            ON scope.id = gpj.field_parent_jurisdiction_target_id
+          WHERE gpj.deleted = 0
+        )
+        $select
+        FROM {node_field_data} nfd
+        INNER JOIN {node__field_jurisdiction} nfj
+          ON nfj.entity_id = nfd.nid
+          AND nfj.deleted = 0
+        INNER JOIN jurisdiction_scope scope
+          ON scope.id = nfj.field_jurisdiction_target_id
+        WHERE nfd.type = :bundle
+          AND $requestIdCondition";
+    }
+
+    $sql = "
+      $select
+      FROM {node_field_data} nfd
+      LEFT JOIN {node__field_jurisdiction} nfj
+        ON nfj.entity_id = nfd.nid
+        AND nfj.deleted = 0
+      WHERE nfd.type = :bundle
+        AND $requestIdCondition";
+
+    return $sql . '
+        AND nfj.entity_id IS NULL';
+  }
+
+  /**
+   * Builds a broad LIKE pattern for same-format request IDs.
+   */
+  protected function requestIdLikePattern(string $date, string $delimiter, string $prefix): string {
+    $safeDate = $this->database->escapeLike($date);
+    $safeDelimiter = $this->database->escapeLike($delimiter);
+
+    if ($prefix !== '') {
+      return $this->database->escapeLike($prefix) . $safeDelimiter . '%' . $safeDelimiter . $safeDate;
+    }
+
+    return '%' . $safeDelimiter . $safeDate;
+  }
+
+  /**
+   * Extracts the numeric sequence from a visible request ID.
+   */
+  protected function extractSequenceFromRequestId(
+    string $requestId,
+    string $date,
+    string $delimiter,
+    string $prefix,
+  ): ?int {
+    $quotedDelimiter = preg_quote($delimiter, '/');
+    $quotedDate = preg_quote($date, '/');
+
+    if ($prefix !== '') {
+      $pattern = '/^' . preg_quote($prefix, '/') . $quotedDelimiter . '([1-9][0-9]*)' . $quotedDelimiter . $quotedDate . '$/';
+    }
+    else {
+      $pattern = '/^([1-9][0-9]*)' . $quotedDelimiter . $quotedDate . '$/';
+    }
+
+    if (!preg_match($pattern, $requestId, $matches)) {
+      return NULL;
+    }
+
+    return (int) $matches[1];
   }
 
   /**

@@ -8,10 +8,8 @@ field_name: field_archive_days
 entity_type: taxonomy_term
 type: integer
 settings:
-  min: 1
-  max: null
-  prefix: ''
-  suffix: ''
+  unsigned: false
+  size: normal
 module: core
 locked: false
 cardinality: 1

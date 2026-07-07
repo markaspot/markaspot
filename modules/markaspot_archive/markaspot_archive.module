@@ -7,6 +7,8 @@
 
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\State\StateInterface;
+use Drupal\markaspot_archive\Plugin\QueueWorker\ArchiveQueueWorker;
 
 /**
  * Implements hook_help().
@@ -40,6 +42,7 @@ function markaspot_archive_cron() {
   $interval = (int) $config->get('cron_interval');
   $state = \Drupal::state();
   $now = \Drupal::time()->getRequestTime();
+  $failed_nids = markaspot_archive_active_failed_nids($state, $now);
   if (!$always && $interval > 0) {
     $last_run = $state->get('markaspot_archive.last_run', 0);
     if (($now - $last_run) < $interval) {
@@ -58,17 +61,30 @@ function markaspot_archive_cron() {
   // Get the queue for the archive worker.
   $queue = \Drupal::queue('markaspot_archive_queue_worker');
   $count = 0;
+  $enqueued = [];
 
   foreach ($archivables as $archivable) {
+    $nid = (int) $archivable->id();
     // Check if the node is already archived.
-    if ($archivable->get('field_status')->target_id != $archived_status) {
+    if (
+      !isset($failed_nids[$nid])
+      && !isset($enqueued[$nid])
+      && $archivable->get('field_status')->target_id != $archived_status
+    ) {
       // Only enqueue nodes that are not archived.
-      $queue->createItem(['nid' => $archivable->id()]);
+      $queue->createItem([
+        'nid' => $nid,
+        'attempts' => 1,
+      ]);
+      $enqueued[$nid] = TRUE;
       $count++;
     }
   }
 
-  \Drupal::logger('markaspot_archive')->notice('Enqueued @count nodes for archiving.', ['@count' => $count]);
+  \Drupal::logger('markaspot_archive')->notice(
+    'Enqueued @count nodes for archiving.',
+    ['@count' => $count]
+  );
 }
 
 /**
@@ -82,35 +98,42 @@ function markaspot_archive_cron() {
  * @return \Drupal\Core\Entity\EntityInterface
  *   The modified node.
  */
-function markaspot_archive_anonymize(EntityInterface $archivable, array $anonymize_fields) {
-  foreach ($anonymize_fields as $field_name) {
-    if (!$archivable->hasField($field_name)) {
-      continue;
-    }
-    $items = $archivable->get($field_name);
-    if ($items->isEmpty()) {
-      continue;
-    }
-    $definition = $items->getFieldDefinition();
-    $type = $definition->getType();
-    $random = substr(md5(uniqid(mt_rand(), TRUE)), 0, 10);
-    switch ($type) {
-      case 'email':
-        $anon_value = $random . '@anonymized.off';
-        break;
+function markaspot_archive_anonymize(
+  EntityInterface $archivable,
+  array $anonymize_fields,
+) {
+  \Drupal::service('markaspot_archive.archive')->anonymize(
+    $archivable,
+    $anonymize_fields
+  );
+  return $archivable;
+}
 
-      case 'telephone':
-        $anon_value = '+49-0123459995555';
-        break;
-
-      default:
-        $anon_value = $random;
-    }
-    foreach ($items as $item) {
-      if (isset($item->value)) {
-        $item->value = $anon_value;
-      }
+/**
+ * Returns active queue failures and expires entries older than the retry TTL.
+ *
+ * @param \Drupal\Core\State\StateInterface $state
+ *   State service.
+ * @param int $now
+ *   Current request timestamp.
+ *
+ * @return array<int, int>
+ *   Failed node ids keyed by node id with their failure timestamp.
+ */
+function markaspot_archive_active_failed_nids(
+  StateInterface $state,
+  int $now,
+): array {
+  $stored = (array) $state->get(ArchiveQueueWorker::FAILED_NIDS_STATE, []);
+  $active = [];
+  $cutoff = $now - ArchiveQueueWorker::FAILED_NIDS_TTL;
+  foreach ($stored as $nid => $timestamp) {
+    if ((int) $timestamp >= $cutoff) {
+      $active[(int) $nid] = (int) $timestamp;
     }
   }
-  return $archivable;
+  if ($active != $stored) {
+    $state->set(ArchiveQueueWorker::FAILED_NIDS_STATE, $active);
+  }
+  return $active;
 }

@@ -9,6 +9,33 @@ use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\field\Entity\FieldConfig;
 
 /**
+ * Implements hook_requirements().
+ */
+function markaspot_archive_requirements($phase) {
+  $requirements = [];
+  if ($phase !== 'runtime') {
+    return $requirements;
+  }
+
+  $config = \Drupal::config('markaspot_archive.settings');
+  /** @var \Drupal\markaspot_archive\ArchiveServiceInterface $archive */
+  $archive = \Drupal::service('markaspot_archive.archive');
+  $fields = $archive->normalizeConfiguredFields(
+    (array) $config->get('anonymize_fields')
+  );
+  if ((bool) $config->get('anonymize') && $fields === []) {
+    $requirements['markaspot_archive_anonymize_fields'] = [
+      'title' => t('Mark-a-Spot Archive anonymization'),
+      'value' => t('No anonymization fields configured'),
+      'description' => t('Anonymization is enabled but no fields are configured; contact data will NOT be cleared.'),
+      'severity' => REQUIREMENT_WARNING,
+    ];
+  }
+
+  return $requirements;
+}
+
+/**
  * Adds an integer field 'field_archive_days' to the 'service_category' vocabulary.
  *
  * @return bool
@@ -98,4 +125,46 @@ function markaspot_archive_update_9002() {
     $config->set('cron_always_run', 0)->save();
   }
   return TRUE;
+}
+
+/**
+ * Migrates legacy numeric anonymize_fields config to explicit contact fields.
+ *
+ * Older installs stored numeric ids in anonymize_fields; the runtime used to
+ * expand them to a hard-coded field list. The expansion is gone, so numeric
+ * entries would silently disable anonymization. Address data intentionally
+ * stays out of the list: the report location is public operational data.
+ */
+function markaspot_archive_update_9003() {
+  $config = \Drupal::configFactory()->getEditable('markaspot_archive.settings');
+  $fields = (array) $config->get('anonymize_fields');
+  $has_numeric = FALSE;
+  $explicit = [];
+  foreach ($fields as $key => $value) {
+    if (is_numeric($key) && is_numeric($value)) {
+      $has_numeric = TRUE;
+      continue;
+    }
+    $name = is_numeric($key) ? (string) $value : (string) $key;
+    if ($name !== '') {
+      $explicit[$name] = $name;
+    }
+  }
+  if (!$has_numeric) {
+    return (string) t('No legacy numeric anonymize_fields entries found.');
+  }
+  $defaults = [
+    'field_e_mail',
+    'field_first_name',
+    'field_last_name',
+    'field_phone',
+    'field_notification',
+  ];
+  foreach ($defaults as $name) {
+    $explicit[$name] = $name;
+  }
+  $config->set('anonymize_fields', $explicit)->save();
+  return (string) t('Replaced legacy numeric anonymize_fields entries with explicit contact fields: @fields', [
+    '@fields' => implode(', ', array_keys($explicit)),
+  ]);
 }

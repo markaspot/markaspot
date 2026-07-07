@@ -19,5 +19,11 @@ default_value_callback: ''
 settings:
   available_countries: {}
   langcode_override: ''
-  field_overrides: {}
+  field_overrides:
+    sortingCode:
+      override: optional
+    dependentLocality:
+      override: optional
+    administrativeArea:
+      override: optional
 field_type: address

@@ -4,7 +4,12 @@ status_archivable:
 status_archived: '6'
 unpublish: 1
 anonymize: 1
-anonymize_fields: []
+anonymize_fields:
+  field_e_mail: field_e_mail
+  field_first_name: field_first_name
+  field_last_name: field_last_name
+  field_phone: field_phone
+  field_notification: field_notification
 ## Toggle automatic archiving on cron and its interval.
 cron_enable: 1
 cron_always_run: 0

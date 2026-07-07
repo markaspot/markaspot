@@ -1317,6 +1317,70 @@ function service_request_update_11020(): string {
 }
 
 /**
+ * Keeps country-dependent address subfields optional on service requests.
+ */
+function service_request_update_11021(): string {
+  $config = \Drupal::configFactory()
+    ->getEditable('field.field.node.service_request.field_address');
+
+  if ($config->isNew()) {
+    return 'field_address config not found.';
+  }
+
+  $overrides = $config->get('settings.field_overrides') ?: [];
+  if (!is_array($overrides)) {
+    $overrides = [];
+  }
+
+  $required_overrides = [
+    'sortingCode' => ['override' => 'optional'],
+    'dependentLocality' => ['override' => 'optional'],
+    'administrativeArea' => ['override' => 'optional'],
+  ];
+
+  $changed = FALSE;
+  foreach ($required_overrides as $key => $override) {
+    if (($overrides[$key]['override'] ?? NULL) !== 'optional') {
+      $overrides[$key] = $override;
+      $changed = TRUE;
+    }
+  }
+
+  if (!$changed) {
+    return 'Country-dependent field_address subfields already optional.';
+  }
+
+  $field_order = [
+    'givenName',
+    'additionalName',
+    'familyName',
+    'organization',
+    'addressLine1',
+    'addressLine2',
+    'postalCode',
+    'sortingCode',
+    'dependentLocality',
+    'locality',
+    'administrativeArea',
+  ];
+  $ordered_overrides = [];
+  foreach ($field_order as $key) {
+    if (array_key_exists($key, $overrides)) {
+      $ordered_overrides[$key] = $overrides[$key];
+    }
+  }
+  foreach ($overrides as $key => $override) {
+    if (!array_key_exists($key, $ordered_overrides)) {
+      $ordered_overrides[$key] = $override;
+    }
+  }
+
+  $config->set('settings.field_overrides', $ordered_overrides)->save(TRUE);
+
+  return 'Set field_address administrativeArea, dependentLocality, and sortingCode overrides to optional.';
+}
+
+/**
  * Loads profile update helpers from the parent install profile.
  */
 function _service_request_load_markaspot_profile_updates(): void {

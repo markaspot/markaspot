@@ -3,10 +3,9 @@ status: true
 dependencies:
   config:
     - field.storage.taxonomy_term.field_archive_days
+    - taxonomy.vocabulary.service_category
   module:
     - markaspot_archive
-  taxonomy_term:
-    - service_category
 id: taxonomy_term.service_category.field_archive_days
 field_name: field_archive_days
 entity_type: taxonomy_term
@@ -18,5 +17,9 @@ translatable: false
 default_value:
   - value: 30
 default_value_callback: ''
-settings: {  }
+settings:
+  min: 1
+  max: null
+  prefix: ''
+  suffix: ''
 field_type: integer

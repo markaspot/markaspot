@@ -1,0 +1,40 @@
+markaspot_archive.settings:
+  type: config_object
+  label: 'Mark-a-Spot Archive settings'
+  mapping:
+    tax_status:
+      type: string
+      label: 'Status vocabulary'
+    status_archivable:
+      type: sequence
+      label: 'Archivable status terms'
+      sequence:
+        type: string
+        label: 'Term ID'
+    status_archived:
+      type: string
+      label: 'Archived status term'
+    unpublish:
+      type: integer
+      label: 'Unpublish archived requests'
+    anonymize:
+      type: integer
+      label: 'Anonymize configured fields'
+    anonymize_fields:
+      type: sequence
+      label: 'Fields to anonymize'
+      sequence:
+        type: string
+        label: 'Field machine name'
+    cron_enable:
+      type: integer
+      label: 'Enable cron archiving'
+    cron_always_run:
+      type: integer
+      label: 'Always run on cron'
+    cron_interval:
+      type: integer
+      label: 'Cron interval'
+    default_days:
+      type: integer
+      label: 'Default archive period in days'
