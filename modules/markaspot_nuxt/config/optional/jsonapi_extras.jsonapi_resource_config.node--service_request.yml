@@ -164,6 +164,18 @@ resourceFields:
     publicName: field_approved
     enhancer:
       id: ''
+  field_assignee:
+    disabled: false
+    fieldName: field_assignee
+    publicName: field_assignee
+    enhancer:
+      id: ''
+  assignee_label:
+    disabled: false
+    fieldName: assignee_label
+    publicName: assignee_label
+    enhancer:
+      id: ''
   field_attachment:
     disabled: false
     fieldName: field_attachment

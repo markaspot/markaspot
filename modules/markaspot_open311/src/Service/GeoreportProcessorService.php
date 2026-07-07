@@ -16,7 +16,9 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\node\NodeInterface;
 use Drupal\user\Entity\User;
+use Drupal\user\UserInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -2244,6 +2246,18 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       if ($revisionCreated !== NULL) {
         $request['extended_attributes']['markaspot']['last_edited'] = $this->formatDateTime((int) $revisionCreated);
       }
+
+      $request['extended_attributes']['markaspot']['assignee'] = NULL;
+      if ($node->hasField('field_assignee') && !$node->get('field_assignee')->isEmpty()) {
+        $assignee = $node->get('field_assignee')->entity;
+        if ($assignee instanceof UserInterface
+          && \_markaspot_group_service_request_assignee_is_valid($node, $assignee)) {
+          $request['extended_attributes']['markaspot']['assignee'] = [
+            'uid' => (int) $assignee->id(),
+            'name' => $assignee->getDisplayName(),
+          ];
+        }
+      }
     }
 
     // Organisation and jurisdiction: visible to managers always,
@@ -2314,6 +2328,9 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       // We avoid using $node->access() as it triggers Group module's
       // buggy node access handler. Instead, we check manually.
       $permissions = $this->getNodePermissions($node, $this->currentUser);
+      if ($extendedRole === 'manager' && $node instanceof NodeInterface) {
+        $permissions['can_assign'] = \_markaspot_group_can_assign_service_request($node, $this->currentUser);
+      }
       $request['extended_attributes']['markaspot']['permissions'] = $permissions;
       // Keep backward compatibility with 'editable' flag.
       $request['extended_attributes']['markaspot']['editable'] = $permissions['update'];

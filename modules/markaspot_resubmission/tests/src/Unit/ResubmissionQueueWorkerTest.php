@@ -23,6 +23,8 @@ use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
+require_once dirname(__DIR__, 3) . '/src/Plugin/QueueWorker/ResubmissionQueueWorker.php';
+
 /**
  * Tests the resubmission queue worker recipient resolution.
  *
@@ -61,7 +63,7 @@ class ResubmissionQueueWorkerTest extends UnitTestCase {
   }
 
   /**
-   * Tests user scope logs and falls back to operational org scope.
+   * Tests user scope without an assignee falls back to operational org scope.
    *
    * @covers ::processItem
    * @covers ::resolveRecipient
@@ -73,7 +75,7 @@ class ResubmissionQueueWorkerTest extends UnitTestCase {
     $logger->expects($this->once())
       ->method('warning')
       ->with(
-        'user scope requested but Mark-a-Spot has no assignee field yet; falling back to org',
+        'user scope requested but service request @nid is unassigned; falling back to org',
         ['@nid' => 43]
       );
 
@@ -90,8 +92,40 @@ class ResubmissionQueueWorkerTest extends UnitTestCase {
 
     $worker->processItem(['nid' => 43]);
 
+    $this->assertSame(1, $worker->assigneeEmailCalls);
     $this->assertSame(0, $worker->groupFieldCalls);
     $this->assertSame(1, $worker->termFieldCalls);
+  }
+
+  /**
+   * Tests user scope uses the assigned user's email.
+   *
+   * @covers ::processItem
+   * @covers ::resolveRecipient
+   */
+  public function testUserScopeUsesAssigneeEmail(): void {
+    $node = $this->mockNode(46);
+    $logger = $this->createMock(LoggerChannelInterface::class);
+    $logger->expects($this->never())->method('warning');
+
+    $worker = $this->createWorker(
+      node: $node,
+      default_scope: ResubmissionReminder::REMINDER_SCOPE_USER,
+      group_module_enabled: TRUE,
+      group_email: 'group@example.com',
+      term_email: 'term@example.com',
+      logger: $logger,
+      expected_email: 'assignee@example.com',
+      expected_scope: ResubmissionReminder::REMINDER_SCOPE_USER,
+      assignee_email: 'assignee@example.com',
+      expect_group_module_check: FALSE,
+    );
+
+    $worker->processItem(['nid' => 46]);
+
+    $this->assertSame(1, $worker->assigneeEmailCalls);
+    $this->assertSame(0, $worker->groupFieldCalls);
+    $this->assertSame(0, $worker->termFieldCalls);
   }
 
   /**
@@ -242,6 +276,10 @@ class ResubmissionQueueWorkerTest extends UnitTestCase {
    *   The recipient expected in the event and audit call.
    * @param string $expected_scope
    *   The resolved scope expected in the audit call.
+   * @param string|null $assignee_email
+   *   The assignee resolver result.
+   * @param bool $expect_group_module_check
+   *   Whether markaspot_group should be checked.
    *
    * @return \Drupal\Tests\markaspot_resubmission\Unit\TestableResubmissionQueueWorker
    *   The testable queue worker.
@@ -255,6 +293,8 @@ class ResubmissionQueueWorkerTest extends UnitTestCase {
     LoggerChannelInterface $logger,
     string $expected_email,
     string $expected_scope,
+    ?string $assignee_email = NULL,
+    bool $expect_group_module_check = TRUE,
   ): TestableResubmissionQueueWorker {
     $config = $this->createMock(ImmutableConfig::class);
     $config->method('get')
@@ -289,7 +329,7 @@ class ResubmissionQueueWorkerTest extends UnitTestCase {
       ->with($node, $expected_email, 'sent', NULL, $expected_scope);
 
     $module_handler = $this->createMock(ModuleHandlerInterface::class);
-    $module_handler->expects($this->once())
+    $module_handler->expects($expect_group_module_check ? $this->once() : $this->never())
       ->method('moduleExists')
       ->with('markaspot_group')
       ->willReturn($group_module_enabled);
@@ -326,6 +366,7 @@ class ResubmissionQueueWorkerTest extends UnitTestCase {
     );
     $worker->groupEmail = $group_email;
     $worker->termEmail = $term_email;
+    $worker->assigneeEmail = $assignee_email;
 
     return $worker;
   }
@@ -368,6 +409,13 @@ class TestableResubmissionQueueWorker extends ResubmissionQueueWorker {
   public ?string $termEmail = NULL;
 
   /**
+   * The assignee email returned by the test adapter.
+   *
+   * @var string|null
+   */
+  public ?string $assigneeEmail = NULL;
+
+  /**
    * Number of group field resolver calls.
    *
    * @var int
@@ -380,6 +428,21 @@ class TestableResubmissionQueueWorker extends ResubmissionQueueWorker {
    * @var int
    */
   public int $termFieldCalls = 0;
+
+  /**
+   * Number of assignee email resolver calls.
+   *
+   * @var int
+   */
+  public int $assigneeEmailCalls = 0;
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function getAssigneeEmail($node) {
+    $this->assigneeEmailCalls++;
+    return $this->assigneeEmail;
+  }
 
   /**
    * {@inheritdoc}

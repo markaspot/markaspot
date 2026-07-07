@@ -52,6 +52,7 @@ class PasswordlessAuthController extends ControllerBase {
     'delete requests' => 'delete any service_request content',
     'split service requests' => 'split service requests',
     'administer markaspot mail texts' => 'administer markaspot mail texts',
+    'assign service requests' => 'assign service requests',
   ];
 
   /**

@@ -28,6 +28,8 @@ use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
+require_once dirname(__DIR__, 3) . '/src/Controller/TenantSettingsController.php';
+
 /**
  * Tests the TenantSettingsController.
  *
@@ -2243,6 +2245,145 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['dashboardRequestCreate']);
     $this->assertFalse($data['features']['operationsDashboard']);
     $this->assertFalse($data['capabilities']['operationsDashboard']);
+  }
+
+  /**
+   * Tests getFeatureSettings() exposes the non-patchable caseAssignment gate.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsExposesCaseAssignmentTierGate(): void {
+    $this->assertNotContains('caseAssignment', TenantSettingsController::SIMPLE_FEATURE_FLAGS);
+
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => 'starter',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['caseAssignment']);
+  }
+
+  /**
+   * Tests free tier disables caseAssignment.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsDisablesCaseAssignmentForFreeTier(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => 'free',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['caseAssignment']);
+  }
+
+  /**
+   * Tests empty field_tier keeps caseAssignment enabled.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsEnablesCaseAssignmentForEmptyTier(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => NULL,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['caseAssignment']);
+  }
+
+  /**
+   * Tests pro tier keeps caseAssignment enabled.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsEnablesCaseAssignmentForProTier(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => 'pro',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['caseAssignment']);
+  }
+
+  /**
+   * Tests heart tier keeps caseAssignment enabled.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsEnablesCaseAssignmentForHeartTier(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => 'heart',
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['caseAssignment']);
+  }
+
+  /**
+   * Tests missing field_tier keeps caseAssignment enabled.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsEnablesCaseAssignmentWhenTierFieldMissing(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['caseAssignment']);
+  }
+
+  /**
+   * Tests child jurisdiction caseAssignment inherits the root tier.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsUsesRootTierForCaseAssignment(): void {
+    $child = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => NULL,
+    ], 14);
+    $root = $this->createMockGroup([
+      'field_nuxt_config' => json_encode(['features' => []]),
+      'field_tier' => 'starter',
+    ], 10);
+    $this->hierarchyResolver->method('getRootJurisdictionId')
+      ->with(14)
+      ->willReturn(10);
+    $this->groupStorage->method('load')
+      ->willReturnCallback(static fn(int $id) => match ($id) {
+        14 => $child,
+        10 => $root,
+        default => NULL,
+      });
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertFalse($data['features']['caseAssignment']);
   }
 
   /**

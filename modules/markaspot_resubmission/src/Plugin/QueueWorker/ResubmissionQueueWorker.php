@@ -16,6 +16,8 @@ use Drupal\Core\Utility\Token;
 use Drupal\markaspot_resubmission\Entity\ResubmissionReminder;
 use Drupal\markaspot_resubmission\ReminderManager;
 use Drupal\markaspot_resubmission\Event\ResubmissionReminderEvent;
+use Drupal\node\NodeInterface;
+use Drupal\user\UserInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -253,7 +255,12 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
   protected function resolveRecipient($node) {
     $scope = $this->getEffectiveReminderScope();
     if ($scope === ResubmissionReminder::REMINDER_SCOPE_USER) {
-      $this->logger->warning('user scope requested but Mark-a-Spot has no assignee field yet; falling back to org', [
+      $recipient = $this->getAssigneeEmail($node);
+      if (!empty($recipient)) {
+        return [$recipient, $scope];
+      }
+
+      $this->logger->warning('user scope requested but service request @nid is unassigned; falling back to org', [
         '@nid' => $node->id(),
       ]);
       $scope = ResubmissionReminder::REMINDER_SCOPE_ORG;
@@ -269,6 +276,38 @@ class ResubmissionQueueWorker extends QueueWorkerBase implements ContainerFactor
     }
 
     return [$recipient, $scope];
+  }
+
+  /**
+   * Gets the email address of the assigned user.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The node.
+   *
+   * @return string|null
+   *   The email address or null if no assignee email is available.
+   */
+  protected function getAssigneeEmail($node) {
+    if (!$node->hasField('field_assignee') || $node->get('field_assignee')->isEmpty()) {
+      return NULL;
+    }
+
+    $assignee = $node->get('field_assignee')->entity;
+    if (!$assignee instanceof UserInterface || !$assignee->isActive()) {
+      return NULL;
+    }
+    if ($node instanceof NodeInterface) {
+      if (!function_exists('_markaspot_group_case_assignment_enabled_for_node')
+        || !function_exists('_markaspot_group_service_request_assignee_is_valid')) {
+        return NULL;
+      }
+      if (!_markaspot_group_case_assignment_enabled_for_node($node)
+        || !_markaspot_group_service_request_assignee_is_valid($node, $assignee)) {
+        return NULL;
+      }
+    }
+
+    return $assignee->getEmail();
   }
 
   /**

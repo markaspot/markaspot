@@ -1,0 +1,4 @@
+assign service requests:
+  title: 'Assign service requests'
+  description: 'staff may assign/reassign service requests to individual users'
+  restrict access: true

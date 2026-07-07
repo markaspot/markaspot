@@ -22,6 +22,19 @@ markaspot_group.admin_jurisdictions:
     _format: 'json'
     _auth: ['cookie']
 
+markaspot_group.request_assignees:
+  path: '/api/request-assignees/{node}'
+  defaults:
+    _controller: '\Drupal\markaspot_group\Controller\RequestAssigneesController::assignees'
+    _title: 'Service Request Assignees'
+  methods: [GET]
+  requirements:
+    _permission: 'assign service requests'
+    _entity_access: 'node.view'
+    _format: 'json'
+  options:
+    _auth: ['cookie']
+
 markaspot_group.member_update:
   path: '/api/group-members/{uid}'
   defaults:

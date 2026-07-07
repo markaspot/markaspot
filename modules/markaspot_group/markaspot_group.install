@@ -6,6 +6,8 @@
  */
 
 use Drupal\Component\Serialization\Yaml;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\user\Entity\Role;
 
 /**
@@ -4082,6 +4084,7 @@ function _markaspot_group_resolve_org_backfill_jurisdiction($org_group): ?\Drupa
  */
 function markaspot_group_install(): void {
   _markaspot_group_ensure_service_request_jurisdiction_fields();
+  _markaspot_group_install_grant_case_assignment_permission_to_staff_roles();
 
   // NOTE: field_organisation ("Department") is surfaced on the service_request
   // management form_mode by the profile hook_install
@@ -4660,6 +4663,116 @@ function markaspot_group_update_11936(): string {
   $config->set('settings.field_overrides', $ordered_overrides)->save(TRUE);
 
   return 'Set field_jurisdiction_address administrativeArea, dependentLocality, and sortingCode overrides to optional.';
+}
+
+/**
+ * Adds the optional per-user assignee field for service requests.
+ */
+function markaspot_group_update_11937(): string {
+  $created = [];
+  $storage = FieldStorageConfig::loadByName('node', 'field_assignee');
+  if (!$storage) {
+    $storage = FieldStorageConfig::create([
+      'field_name' => 'field_assignee',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'user',
+      ],
+      'cardinality' => 1,
+      'translatable' => TRUE,
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'public',
+        ],
+      ],
+    ]);
+    $storage->save();
+    $created[] = 'node.field_assignee storage';
+  }
+
+  if (!FieldConfig::loadByName('node', 'service_request', 'field_assignee')) {
+    FieldConfig::create([
+      'field_name' => 'field_assignee',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Assignee',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [
+        'handler' => 'default:user',
+        'handler_settings' => [
+          'include_anonymous' => FALSE,
+          'filter' => [
+            'type' => '_none',
+          ],
+          'sort' => [
+            'field' => 'name',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+        ],
+      ],
+    ])->save();
+    $created[] = 'node.service_request.field_assignee field';
+  }
+
+  $jsonapi_config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.node--service_request');
+  if (!$jsonapi_config->isNew()) {
+    $resource_fields = $jsonapi_config->get('resourceFields') ?: [];
+    $jsonapi_fields_changed = FALSE;
+    foreach (['field_assignee', 'assignee_label'] as $jsonapi_field_name) {
+      if (!isset($resource_fields[$jsonapi_field_name]) || ($resource_fields[$jsonapi_field_name]['disabled'] ?? TRUE)) {
+        $resource_fields[$jsonapi_field_name] = [
+          'disabled' => FALSE,
+          'fieldName' => $jsonapi_field_name,
+          'publicName' => $jsonapi_field_name,
+          'enhancer' => ['id' => ''],
+        ];
+        $jsonapi_fields_changed = TRUE;
+        $created[] = 'enabled ' . $jsonapi_field_name . ' on JSON:API node--service_request';
+      }
+    }
+    if ($jsonapi_fields_changed) {
+      $jsonapi_config->set('resourceFields', $resource_fields)->save(TRUE);
+    }
+  }
+
+  $granted_roles = _markaspot_group_install_grant_case_assignment_permission_to_staff_roles();
+  if ($granted_roles !== []) {
+    $created[] = 'granted assign service requests to ' . implode(', ', $granted_roles);
+  }
+
+  if ($created) {
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+    \Drupal::service('cache_tags.invalidator')->invalidateTags(['entity_field_info']);
+
+    return 'Created ' . implode(', ', $created) . '.';
+  }
+
+  return 'Service request assignee field already present.';
+}
+
+/**
+ * Grants case-assignment permission to built-in staff roles when present.
+ *
+ * @return string[]
+ *   Role IDs that were changed.
+ */
+function _markaspot_group_install_grant_case_assignment_permission_to_staff_roles(): array {
+  $changed = [];
+  foreach (['tenant_admin', 'moderator', 'editorial_board'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role instanceof Role || $role->hasPermission('assign service requests')) {
+      continue;
+    }
+
+    $role->grantPermission('assign service requests')->save();
+    $changed[] = $role_id;
+  }
+
+  return $changed;
 }
 
 /**

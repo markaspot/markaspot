@@ -608,6 +608,38 @@ final class TenantSettingsController extends ControllerBase {
   }
 
   /**
+   * Checks whether the jurisdiction tier may use case assignment.
+   */
+  private function canUseCaseAssignment(GroupInterface $group): bool {
+    $tier_group = $this->effectiveCaseAssignmentTierGroup($group);
+    if (!$tier_group->hasField('field_tier')) {
+      return TRUE;
+    }
+
+    if ($tier_group->get('field_tier')->isEmpty()) {
+      return TRUE;
+    }
+
+    return in_array((string) $tier_group->get('field_tier')->value, ['pro', 'heart'], TRUE);
+  }
+
+  /**
+   * Resolves the group whose tier controls case assignment.
+   */
+  private function effectiveCaseAssignmentTierGroup(GroupInterface $group): GroupInterface {
+    $root_id = $this->hierarchyResolver->getRootJurisdictionId((int) $group->id());
+    if ($root_id === NULL || $root_id === (int) $group->id()) {
+      return $group;
+    }
+
+    $root = $this->entityTypeManager()
+      ->getStorage('group')
+      ->load($root_id);
+
+    return $root instanceof GroupInterface ? $root : $group;
+  }
+
+  /**
    * Handles logo upload for a jurisdiction group entity.
    *
    * Accepts multipart/form-data with logo_light and/or logo_dark file fields.
@@ -1960,6 +1992,7 @@ final class TenantSettingsController extends ControllerBase {
         'dashboard' => $this->getBooleanFeatureValue($features, 'dashboard', TRUE),
         'dashboardRequestCreate' => $this->getBooleanFeatureValue($features, 'dashboardRequestCreate', TRUE),
         'operationsDashboard' => $operations_dashboard,
+        'caseAssignment' => $this->canUseCaseAssignment($group),
         'contactForm' => $features['contactForm'] ?? FALSE,
         'privacyBlockOnFlag' => $this->getBooleanFeatureValue($features, 'privacyBlockOnFlag', FALSE),
         'delegationNoteRequired' => $this->getBooleanFeatureValue($features, 'delegationNoteRequired', FALSE),

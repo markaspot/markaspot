@@ -435,6 +435,19 @@ class MarkASpotSettingsController extends ControllerBase {
       $settings['features']['mailTextEditor'] = FALSE;
     }
 
+    // Tier-gate: per-user case assignment (markaspot-ui#490). Computed from
+    // the workspace root tier, never tenant-togglable: pro/heart and untiered
+    // self-hosted installs get it, free/starter SaaS workspaces do not. The
+    // markaspot_group helper is the single source of truth for the gate; the
+    // same check guards field edit access and the candidates endpoint, so the
+    // flag here can never promise more than the backend enforces. This is the
+    // runtime flag the frontend reads (useFeatureFlags -> clientConfig
+    // .features); TenantSettingsController::getFeatureSettings mirrors it for
+    // the dashboard settings page only.
+    $settings['features']['caseAssignment'] = $tierGroup instanceof GroupInterface
+      && function_exists('_markaspot_group_case_assignment_enabled_for_jurisdiction')
+      && _markaspot_group_case_assignment_enabled_for_jurisdiction($tierGroup);
+
     // aiDuplicates capability flag. Requires the module, tenant AI processing,
     // and duplicate_detection.enabled = true in markaspot_ai.settings. When all
     // three conditions are met, the flag defaults to TRUE so existing

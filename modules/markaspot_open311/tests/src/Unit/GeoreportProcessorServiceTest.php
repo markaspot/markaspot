@@ -35,9 +35,13 @@ use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
 use Drupal\Tests\UnitTestCase;
 use GuzzleHttp\ClientInterface;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
+
+require_once dirname(__DIR__, 3) . '/src/Service/GeoreportProcessorService.php';
+require_once dirname(__DIR__, 4) . '/markaspot_group/markaspot_group.module';
 
 /**
  * Tests the GeoreportProcessorService.
@@ -2796,6 +2800,89 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   }
 
   /**
+   * Managers see the current assignee without leaking email or roles.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testAssigneeExposedToManager(): void {
+    $this->installStaticDrupalContainerForCaseAssignment();
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('id')->willReturn(9007);
+    $assignee->method('isActive')->willReturn(TRUE);
+    $assignee->method('getDisplayName')->willReturn('Anna Beispiel');
+    $jurisdiction = $this->mockJurisdictionGroup('pro');
+
+    $node = $this->createLastEditorNode(
+      nid: 4004,
+      authorName: 'Original Author',
+      revisionUserName: 'Editing Moderator',
+      revisionTimestamp: 1717500000,
+      assignee: $assignee,
+      jurisdiction: $jurisdiction,
+    );
+
+    $request = $this->processor->mapNodeToServiceRequest($node, 'manager', ['langcode' => 'en']);
+
+    $this->assertSame([
+      'uid' => 9007,
+      'name' => 'Anna Beispiel',
+    ], $request['extended_attributes']['markaspot']['assignee']);
+  }
+
+  /**
+   * Non-managers never receive assignee details.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testAssigneeHiddenFromNonManager(): void {
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('id')->willReturn(9007);
+    $assignee->method('getDisplayName')->willReturn('Anna Beispiel');
+
+    $node = $this->createLastEditorNode(
+      nid: 4005,
+      authorName: 'Original Author',
+      revisionUserName: 'Editing Moderator',
+      revisionTimestamp: 1717500000,
+      assignee: $assignee,
+    );
+
+    $request = $this->processor->mapNodeToServiceRequest($node, 'user', ['langcode' => 'en']);
+    $markaspot = $request['extended_attributes']['markaspot'] ?? [];
+    $this->assertArrayNotHasKey('assignee', $markaspot);
+  }
+
+  /**
+   * Manager permissions include can_assign when permission and tier allow it.
+   *
+   * @covers ::mapNodeToServiceRequest
+   */
+  public function testManagerPermissionsIncludeCanAssign(): void {
+    $this->installStaticDrupalContainerForCaseAssignment();
+    $this->currentUser->method('hasPermission')
+      ->with('assign service requests')
+      ->willReturn(TRUE);
+    $this->currentUser->method('id')->willReturn(99);
+    $this->currentUser->method('getRoles')->willReturn(['authenticated', 'administrator']);
+
+    $jurisdiction = $this->mockJurisdictionGroup('pro');
+    $node = $this->createLastEditorNode(
+      nid: 4006,
+      authorName: 'Original Author',
+      revisionUserName: 'Editing Moderator',
+      revisionTimestamp: 1717500000,
+      jurisdiction: $jurisdiction,
+    );
+
+    $request = $this->processor->mapNodeToServiceRequest($node, 'manager', [
+      'langcode' => 'en',
+      'extensions' => 'true',
+    ]);
+
+    $this->assertTrue($request['extended_attributes']['markaspot']['permissions']['can_assign']);
+  }
+
+  /**
    * Tests that a valid UUID for an imagelist attribute is accepted.
    */
   public function testValidateImagelistAttributesAcceptsValidUuid(): void {
@@ -3684,18 +3771,29 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
    * and the test stays focused on the revision attribution.
    *
    * @param int $nid
-   *   Node ID (also seeds the static cache key, so use a unique value per test).
+   *   Node ID. Also seeds the static cache key, so use a unique value per test.
    * @param string $authorName
    *   Display name returned for the node author (uid).
    * @param string|null $revisionUserName
    *   Display name for the revision user, or NULL to simulate a deleted user.
    * @param int $revisionTimestamp
    *   Revision creation timestamp.
+   * @param \Drupal\user\UserInterface|null $assignee
+   *   Assignee user, or NULL for unassigned requests.
+   * @param \Drupal\group\Entity\GroupInterface|null $jurisdiction
+   *   Jurisdiction group used for assignment permission checks.
    *
    * @return \Drupal\node\NodeInterface|\PHPUnit\Framework\MockObject\MockObject
    *   The node mock.
    */
-  protected function createLastEditorNode(int $nid, string $authorName, ?string $revisionUserName, int $revisionTimestamp): NodeInterface {
+  protected function createLastEditorNode(
+    int $nid,
+    string $authorName,
+    ?string $revisionUserName,
+    int $revisionTimestamp,
+    ?UserInterface $assignee = NULL,
+    ?GroupInterface $jurisdiction = NULL,
+  ): NodeInterface {
     // Field items the mapper reads unconditionally (no hasField guard).
     $emptyField = new class {
 
@@ -3735,6 +3833,31 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
 
     };
 
+    $entityField = function (?object $entity) {
+      return new class($entity) {
+
+        /**
+         * Referenced entity.
+         */
+        public ?object $entity;
+
+        /**
+         * Constructs the entity reference field stub.
+         */
+        public function __construct(?object $entity) {
+          $this->entity = $entity;
+        }
+
+        /**
+         * Field emptiness.
+         */
+        public function isEmpty(): bool {
+          return $this->entity === NULL;
+        }
+
+      };
+    };
+
     $scalarField = function (int|string $value) {
       return new class($value) {
 
@@ -3766,20 +3889,29 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $node->method('getTitle')->willReturn('Broken streetlight');
     $node->method('getOwner')->willReturn($author);
 
-    // Only uid and field_source are "present" optional fields; everything else
+    // Only explicitly stubbed optional fields are "present"; everything else
     // is absent so the mapper skips it (media, status notes, address, PII
     // fields, etc.).
+    $availableFields = ['uid', 'field_source'];
+    if ($assignee instanceof UserInterface) {
+      $availableFields[] = 'field_assignee';
+    }
+    if ($jurisdiction instanceof GroupInterface) {
+      $availableFields[] = 'field_jurisdiction';
+    }
     $node->method('hasField')
-      ->willReturnCallback(fn($name) => in_array($name, ['uid', 'field_source'], TRUE));
+      ->willReturnCallback(fn($name) => in_array($name, $availableFields, TRUE));
 
     $node->method('get')
-      ->willReturnCallback(function (string $name) use ($emptyField, $uidField, $scalarField) {
+      ->willReturnCallback(function (string $name) use ($emptyField, $uidField, $scalarField, $entityField, $assignee, $jurisdiction) {
         return match ($name) {
           'request_id' => $scalarField('REQ-' . uniqid()),
           'created' => $scalarField(1717400000),
           'changed' => $scalarField(1717450000),
           'uid' => $uidField,
           'field_source' => $scalarField('staff'),
+          'field_assignee' => $entityField($assignee),
+          'field_jurisdiction' => $entityField($jurisdiction),
           default => $emptyField,
         };
       });
@@ -3796,6 +3928,94 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $node->method('getRevisionCreationTime')->willReturn($revisionTimestamp);
 
     return $node;
+  }
+
+  /**
+   * Installs the static Drupal services used by markaspot_group helpers.
+   */
+  private function installStaticDrupalContainerForCaseAssignment(): void {
+    $container = new ContainerBuilder();
+    $container->set('config.factory', $this->configFactory);
+    $container->set('entity_type.manager', $this->entityTypeManager);
+    $container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
+    $container->set('database', new class {
+
+      /**
+       * Builds a select query stub for group membership checks.
+       */
+      public function select(string $table, string $alias): object {
+        return new class {
+
+          /**
+           * Adds a query condition.
+           */
+          public function condition(mixed ...$args): self {
+            return $this;
+          }
+
+          /**
+           * Converts the query to a count query.
+           */
+          public function countQuery(): self {
+            return $this;
+          }
+
+          /**
+           * Executes the query.
+           */
+          public function execute(): self {
+            return $this;
+          }
+
+          /**
+           * Returns the membership count.
+           */
+          public function fetchField(): int {
+            return 1;
+          }
+
+        };
+      }
+
+    });
+    \Drupal::setContainer($container);
+  }
+
+  /**
+   * Builds a jurisdiction group mock with a tier value.
+   */
+  private function mockJurisdictionGroup(?string $tier): GroupInterface {
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('14');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('hasField')
+      ->willReturnCallback(static fn(string $name): bool => $name === 'field_tier');
+    $group->method('get')
+      ->with('field_tier')
+      ->willReturn(new class($tier) {
+
+        /**
+         * Field scalar value.
+         */
+        public ?string $value;
+
+        /**
+         * Constructs the field item stub.
+         */
+        public function __construct(?string $value) {
+          $this->value = $value;
+        }
+
+        /**
+         * Field emptiness.
+         */
+        public function isEmpty(): bool {
+          return $this->value === NULL || $this->value === '';
+        }
+
+      });
+
+    return $group;
   }
 
   /**

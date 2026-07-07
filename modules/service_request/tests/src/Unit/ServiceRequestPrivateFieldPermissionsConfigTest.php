@@ -156,6 +156,9 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
       'field_request_attributes',
       'field_approved',
       // Staff-only dashboard / operational fields.
+      // field_assignee fails closed via markaspot_group_entity_field_access
+      // (not field_permissions custom) so JSON:API can serve it to staff.
+      'field_assignee',
       'field_attachment',
       'field_boilerplates_sp',
       'field_escalation',

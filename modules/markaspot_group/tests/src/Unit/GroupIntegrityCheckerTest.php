@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_group\Unit;
 
 use Drupal\Core\Database\Connection;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\Service\GroupIntegrityChecker;
 use Drupal\Tests\UnitTestCase;
@@ -17,6 +19,14 @@ use Drupal\Tests\UnitTestCase;
  * @group markaspot_group
  */
 class GroupIntegrityCheckerTest extends UnitTestCase {
+
+  /**
+   * {@inheritdoc}
+   */
+  protected function tearDown(): void {
+    \Drupal::unsetContainer();
+    parent::tearDown();
+  }
 
   /**
    * Tests that summary reports row counts for every integrity check.
@@ -232,6 +242,15 @@ class GroupIntegrityCheckerTest extends UnitTestCase {
    * Tests that expected org backfill applies field and relationship writes.
    */
   public function testAppliedExpectedOrganisationBackfillCountsWrites(): void {
+    // The apply path wraps writes in the service_request sync lock, which
+    // resolves \Drupal::lock() from the global container. Provide a minimal
+    // container so this test does not depend on leftovers from sibling tests.
+    $lock = $this->createMock(LockBackendInterface::class);
+    $lock->method('acquire')->willReturn(TRUE);
+    $container = new ContainerBuilder();
+    $container->set('lock', $lock);
+    \Drupal::setContainer($container);
+
     $connection = $this->createMock(Connection::class);
     $connection->expects($this->once())
       ->method('startTransaction')

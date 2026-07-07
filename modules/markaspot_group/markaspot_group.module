@@ -15,6 +15,10 @@ use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Database\Query\AlterableInterface;
 use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Entity\EntityStorageException;
+use Drupal\Core\Entity\EntityTypeInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\Core\Field\FieldDefinitionInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\Group;
@@ -22,11 +26,13 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupMembership as GroupMembershipEntity;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\Entity\ProtectedGroup;
+use Drupal\markaspot_group\Field\AssigneeLabelItemList;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\TenantAdminHelper;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
+use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
 
@@ -480,6 +486,159 @@ function markaspot_group_entity_type_alter(array &$entity_types): void {
   $entity_types['group']->addConstraint('OrgRootJurisdictionReference');
   $entity_types['group']->addConstraint('JurisdictionParentReference');
   $entity_types['group']->addConstraint('OrgParentReference');
+}
+
+/**
+ * Implements hook_entity_bundle_field_info().
+ */
+function markaspot_group_entity_bundle_field_info(EntityTypeInterface $entity_type, string $bundle, array $base_field_definitions): array {
+  if ($entity_type->id() !== 'node' || $bundle !== 'service_request') {
+    return [];
+  }
+
+  $fields['assignee_label'] = BaseFieldDefinition::create('string')
+    ->setLabel(t('Assignee label'))
+    ->setComputed(TRUE)
+    ->setClass(AssigneeLabelItemList::class)
+    ->setReadOnly(TRUE)
+    ->setTranslatable(FALSE);
+
+  return $fields;
+}
+
+/**
+ * Implements hook_entity_bundle_field_info_alter().
+ */
+function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTypeInterface $entity_type, string $bundle): void {
+  if ($entity_type->id() !== 'node' || $bundle !== 'service_request') {
+    return;
+  }
+
+  if (isset($fields['field_assignee'])) {
+    $fields['field_assignee']->addConstraint('ServiceRequestAssigneeMembership');
+  }
+}
+
+/**
+ * Implements hook_entity_field_access().
+ */
+function markaspot_group_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
+  if ($field_definition->getTargetEntityTypeId() !== 'node'
+    || $field_definition->getTargetBundle() !== 'service_request'
+    || !in_array($field_definition->getName(), ['field_assignee', 'assignee_label'], TRUE)) {
+    return AccessResult::neutral();
+  }
+
+  $field_name = $field_definition->getName();
+
+  if ($field_name === 'assignee_label' && $operation === 'edit') {
+    return AccessResult::forbidden('assignee_label is computed and read-only.');
+  }
+
+  $node = $items?->getEntity();
+  if (!$node instanceof NodeInterface || $node->bundle() !== 'service_request') {
+    return AccessResult::forbidden(sprintf('Service request context is required for %s access.', $field_name))
+      ->cachePerPermissions()
+      ->addCacheContexts(['user']);
+  }
+
+  if ($operation === 'view') {
+    return _markaspot_group_service_request_assignee_view_access($node, $account, $field_name);
+  }
+
+  if ($operation === 'edit') {
+    $jurisdiction = _markaspot_group_case_assignment_jurisdiction_group($node);
+    $scope_ids = _markaspot_group_case_assignment_scope_group_ids($node);
+    $allowed = $account->hasPermission('assign service requests')
+      && _markaspot_group_case_assignment_enabled_for_jurisdiction($jurisdiction)
+      && _markaspot_group_account_has_assignment_scope($account, $scope_ids);
+
+    $result = $allowed
+      ? AccessResult::allowed()
+      : AccessResult::forbidden('Only assignment managers on eligible tiers may edit field_assignee.');
+
+    $result = _markaspot_group_add_membership_cacheability($result, $account, $scope_ids)
+      ->cachePerPermissions()
+      ->addCacheableDependency($node);
+    if ($jurisdiction instanceof GroupInterface) {
+      $result->addCacheableDependency($jurisdiction);
+    }
+
+    return $result;
+  }
+
+  return AccessResult::neutral();
+}
+
+/**
+ * Builds the shared view access result for service request assignee fields.
+ */
+function _markaspot_group_service_request_assignee_view_access(NodeInterface $node, AccountInterface $account, string $field_name): AccessResult {
+  $jurisdiction_ids = _markaspot_group_case_assignment_jurisdiction_group_ids($node);
+  $scope_ids = _markaspot_group_case_assignment_scope_group_ids($node);
+  $is_jurisdiction_member = _markaspot_group_account_is_member_of_group_ids($account, $jurisdiction_ids);
+  $has_assignment_scope = $account->hasPermission('assign service requests')
+    && _markaspot_group_account_has_assignment_scope($account, $scope_ids);
+  $allowed = $is_jurisdiction_member || $has_assignment_scope;
+  $result = $allowed
+    ? AccessResult::allowed()
+    : AccessResult::forbidden(sprintf('Only request assignees managers or jurisdiction members may view %s.', $field_name));
+
+  $cache_group_ids = array_values(array_unique(array_merge($jurisdiction_ids, $scope_ids)));
+  $result = _markaspot_group_add_membership_cacheability($result, $account, $cache_group_ids)
+    ->cachePerPermissions()
+    ->addCacheableDependency($node);
+
+  if ($field_name === 'assignee_label' && $result->isAllowed()) {
+    $assignee = _markaspot_group_service_request_assignee_user($node);
+    if ($assignee instanceof UserInterface) {
+      $result->addCacheableDependency($assignee);
+    }
+  }
+
+  return $result;
+}
+
+/**
+ * Returns the assigned user for a service request when it can be loaded.
+ */
+function _markaspot_group_service_request_assignee_user(NodeInterface $node): ?UserInterface {
+  if (!$node->hasField('field_assignee') || $node->get('field_assignee')->isEmpty()) {
+    return NULL;
+  }
+
+  $assignee = $node->get('field_assignee')->entity;
+  return $assignee instanceof UserInterface ? $assignee : NULL;
+}
+
+/**
+ * Implements hook_jsonapi_entity_field_filter_access().
+ */
+function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInterface $field_definition, AccountInterface $account): AccessResult {
+  if ($field_definition->getTargetEntityTypeId() === 'node'
+    && $field_definition->getTargetBundle() === 'service_request'
+    && $field_definition->getName() === 'field_assignee') {
+    if ($account->hasPermission('assign service requests')) {
+      return AccessResult::allowed()
+        ->cachePerPermissions();
+    }
+
+    return AccessResult::forbidden('Only assignment managers may use field_assignee as a JSON:API filter.')
+      ->cachePerPermissions();
+  }
+
+  return AccessResult::neutral();
+}
+
+/**
+ * Implements hook_modules_installed().
+ */
+function markaspot_group_modules_installed(array $modules, bool $is_syncing): void {
+  if ($is_syncing || !array_intersect($modules, ['markaspot_group', 'service_request', 'markaspot_tenant_admin'])) {
+    return;
+  }
+
+  _markaspot_group_grant_case_assignment_permission_to_staff_roles();
 }
 
 /**
@@ -3060,6 +3219,287 @@ function _markaspot_group_node_jurisdiction_group(NodeInterface $node): ?GroupIn
     ->load($target_id);
 
   return _markaspot_group_is_jurisdiction_group($group) ? $group : NULL;
+}
+
+/**
+ * Checks whether case assignment is enabled for a service request.
+ */
+function _markaspot_group_case_assignment_enabled_for_node(NodeInterface $node): bool {
+  return _markaspot_group_case_assignment_enabled_for_jurisdiction(
+    _markaspot_group_case_assignment_jurisdiction_group($node),
+  );
+}
+
+/**
+ * Checks whether an account can assign a service request.
+ */
+function _markaspot_group_can_assign_service_request(NodeInterface $node, AccountInterface $account): bool {
+  return $account->hasPermission('assign service requests')
+    && _markaspot_group_case_assignment_enabled_for_node($node)
+    && _markaspot_group_account_has_assignment_scope(
+      $account,
+      _markaspot_group_case_assignment_scope_group_ids($node),
+    );
+}
+
+/**
+ * Grants case-assignment permission to built-in staff roles when present.
+ *
+ * @return string[]
+ *   Role IDs that were changed.
+ */
+function _markaspot_group_grant_case_assignment_permission_to_staff_roles(): array {
+  $changed = [];
+  foreach (['tenant_admin', 'moderator', 'editorial_board'] as $role_id) {
+    $role = Role::load($role_id);
+    if (!$role instanceof Role || $role->hasPermission('assign service requests')) {
+      continue;
+    }
+
+    $role->grantPermission('assign service requests')->save();
+    $changed[] = $role_id;
+  }
+
+  return $changed;
+}
+
+/**
+ * Resolves the jurisdiction group used for the case-assignment tier gate.
+ */
+function _markaspot_group_case_assignment_jurisdiction_group(NodeInterface $node): ?GroupInterface {
+  $jurisdiction = _markaspot_group_node_jurisdiction_group($node);
+  if ($jurisdiction instanceof GroupInterface) {
+    return _markaspot_group_effective_jurisdiction_group($jurisdiction);
+  }
+
+  foreach (_markaspot_group_service_request_organisation_groups($node) as $organisation) {
+    $jurisdiction = _markaspot_group_organisation_jurisdiction_group($organisation);
+    if ($jurisdiction instanceof GroupInterface) {
+      return $jurisdiction;
+    }
+  }
+
+  return NULL;
+}
+
+/**
+ * Checks whether a jurisdiction tier enables case assignment.
+ */
+function _markaspot_group_case_assignment_enabled_for_jurisdiction(?GroupInterface $jurisdiction): bool {
+  if (!$jurisdiction instanceof GroupInterface) {
+    return FALSE;
+  }
+
+  if (!$jurisdiction->hasField('field_tier') || $jurisdiction->get('field_tier')->isEmpty()) {
+    return TRUE;
+  }
+
+  return in_array((string) $jurisdiction->get('field_tier')->value, ['pro', 'heart'], TRUE);
+}
+
+/**
+ * Returns jurisdiction group IDs relevant to field_assignee view access.
+ *
+ * @return int[]
+ *   Jurisdiction group IDs, including the root jurisdiction when different.
+ */
+function _markaspot_group_case_assignment_jurisdiction_group_ids(NodeInterface $node): array {
+  $ids = [];
+  $direct_jurisdiction = _markaspot_group_node_jurisdiction_group($node);
+  if ($direct_jurisdiction instanceof GroupInterface) {
+    $ids[] = (int) $direct_jurisdiction->id();
+  }
+
+  $jurisdiction = _markaspot_group_case_assignment_jurisdiction_group($node);
+  if (!$jurisdiction instanceof GroupInterface) {
+    return array_values(array_unique(array_filter($ids)));
+  }
+
+  $ids[] = (int) $jurisdiction->id();
+  $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+    ->getRootJurisdictionId((int) $jurisdiction->id());
+  if ($root_id !== NULL) {
+    $ids[] = $root_id;
+  }
+
+  $ids = array_values(array_unique(array_filter($ids)));
+  sort($ids, SORT_NUMERIC);
+  return $ids;
+}
+
+/**
+ * Returns group IDs that grant scoped assignment rights for a request.
+ *
+ * @return int[]
+ *   Organisation and jurisdiction group IDs relevant to assignment.
+ */
+function _markaspot_group_case_assignment_scope_group_ids(NodeInterface $node): array {
+  $ids = _markaspot_group_case_assignment_jurisdiction_group_ids($node);
+  foreach (_markaspot_group_service_request_organisation_groups($node) as $organisation) {
+    $ids[] = (int) $organisation->id();
+  }
+
+  $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+  sort($ids, SORT_NUMERIC);
+  return $ids;
+}
+
+/**
+ * Resolves a jurisdiction to its root jurisdiction when configured.
+ */
+function _markaspot_group_effective_jurisdiction_group(GroupInterface $jurisdiction): GroupInterface {
+  $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+    ->getRootJurisdictionId((int) $jurisdiction->id());
+  if ($root_id === NULL || $root_id === (int) $jurisdiction->id()) {
+    return $jurisdiction;
+  }
+
+  $root = \Drupal::entityTypeManager()
+    ->getStorage('group')
+    ->load($root_id);
+
+  return _markaspot_group_is_jurisdiction_group($root) ? $root : $jurisdiction;
+}
+
+/**
+ * Checks whether an assignee is valid for a service request.
+ */
+function _markaspot_group_service_request_assignee_is_valid(NodeInterface $node, UserInterface $user): bool {
+  if ((int) $user->id() <= 0 || !$user->isActive()) {
+    return FALSE;
+  }
+
+  $organisation_groups = _markaspot_group_service_request_organisation_groups($node);
+  if ($organisation_groups !== []) {
+    $allowed_group_ids = [];
+    foreach ($organisation_groups as $organisation) {
+      $allowed_group_ids[] = (int) $organisation->id();
+      $jurisdiction = _markaspot_group_organisation_jurisdiction_group($organisation);
+      if ($jurisdiction instanceof GroupInterface) {
+        $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+          ->getRootJurisdictionId((int) $jurisdiction->id());
+        $allowed_group_ids[] = $root_id ?? (int) $jurisdiction->id();
+      }
+    }
+    return _markaspot_group_account_is_member_of_group_ids($user, $allowed_group_ids);
+  }
+
+  $jurisdiction = _markaspot_group_node_jurisdiction_group($node);
+  if (!$jurisdiction instanceof GroupInterface) {
+    return FALSE;
+  }
+
+  return _markaspot_group_account_is_member_of_group_ids(
+    $user,
+    _markaspot_group_case_assignment_jurisdiction_group_ids($node),
+  );
+}
+
+/**
+ * Loads organisation groups referenced by a service request.
+ *
+ * @return \Drupal\group\Entity\GroupInterface[]
+ *   Referenced organisation groups keyed by group ID.
+ */
+function _markaspot_group_service_request_organisation_groups(NodeInterface $node): array {
+  if (!$node->hasField('field_organisation') || $node->get('field_organisation')->isEmpty()) {
+    return [];
+  }
+
+  $groups = [];
+  foreach ($node->get('field_organisation')->referencedEntities() as $group) {
+    if ($group instanceof GroupInterface && $group->bundle() === _markaspot_group_get_org_group_type()) {
+      $groups[(int) $group->id()] = $group;
+    }
+  }
+
+  return $groups;
+}
+
+/**
+ * Resolves the parent/root jurisdiction for an organisation group.
+ */
+function _markaspot_group_organisation_jurisdiction_group(GroupInterface $organisation): ?GroupInterface {
+  if ($organisation->bundle() !== _markaspot_group_get_org_group_type()
+    || !$organisation->hasField('field_jurisdiction')
+    || $organisation->get('field_jurisdiction')->isEmpty()) {
+    return NULL;
+  }
+
+  $jurisdiction_id = (int) $organisation->get('field_jurisdiction')->target_id;
+  if ($jurisdiction_id <= 0) {
+    return NULL;
+  }
+
+  $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+    ->getRootJurisdictionId($jurisdiction_id);
+  $target_id = $root_id ?? $jurisdiction_id;
+  $group = \Drupal::entityTypeManager()
+    ->getStorage('group')
+    ->load($target_id);
+
+  return _markaspot_group_is_jurisdiction_group($group) ? $group : NULL;
+}
+
+/**
+ * Checks whether an account may manage assignment inside a request scope.
+ *
+ * @param int[] $group_ids
+ *   Organisation and jurisdiction group IDs to inspect.
+ */
+function _markaspot_group_account_has_assignment_scope(AccountInterface $account, array $group_ids): bool {
+  if ((int) $account->id() === 1 || in_array('administrator', $account->getRoles(), TRUE)) {
+    return TRUE;
+  }
+
+  return _markaspot_group_account_is_member_of_group_ids($account, $group_ids);
+}
+
+/**
+ * Checks whether an account is a member of any of the given groups.
+ *
+ * @param int[] $group_ids
+ *   Group IDs to inspect.
+ */
+function _markaspot_group_account_is_member_of_group_ids(AccountInterface $account, array $group_ids): bool {
+  $uid = (int) $account->id();
+  $group_ids = array_values(array_unique(array_filter(array_map('intval', $group_ids))));
+  if ($uid <= 0 || $group_ids === []) {
+    return FALSE;
+  }
+
+  try {
+    $count = \Drupal::database()
+      ->select('group_relationship_field_data', 'gr')
+      ->condition('gr.entity_id', $uid)
+      ->condition('gr.gid', $group_ids, 'IN')
+      ->condition('gr.plugin_id', 'group_membership')
+      ->countQuery()
+      ->execute()
+      ->fetchField();
+  }
+  catch (\Throwable) {
+    return FALSE;
+  }
+
+  return (int) $count > 0;
+}
+
+/**
+ * Adds cache metadata for group-membership-based field access.
+ *
+ * @param int[] $group_ids
+ *   Group IDs considered by the access check.
+ */
+function _markaspot_group_add_membership_cacheability(AccessResult $result, AccountInterface $account, array $group_ids): AccessResult {
+  $tags = ['group_relationship_list:plugin:group_membership:entity:' . $account->id()];
+  foreach (array_unique(array_filter(array_map('intval', $group_ids))) as $group_id) {
+    $tags[] = 'group_relationship_list:plugin:group_membership:group:' . $group_id;
+  }
+
+  return $result
+    ->addCacheContexts(['user'])
+    ->addCacheTags($tags);
 }
 
 /**
