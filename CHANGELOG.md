@@ -1,5 +1,22 @@
 # Changelog
 
+## [11.9.141](https://github.com/markaspot/markaspot/compare/11.9.140...11.9.141) (2026-07-07)
+
+### Features
+
+* accept comma-separated ids in georeport request index lookup ([c5edd78](https://github.com/markaspot/markaspot/commit/c5edd789448d65154085915369e320049b3dfd75))
+* add tenant text overrides settings endpoint ([99be87b](https://github.com/markaspot/markaspot/commit/99be87bed581059ca6e86f94ccd3cfba5b4f5a0e))
+
+### Bug Fixes
+
+* allow demo OTP multi-tenant override ([2f3fb46](https://github.com/markaspot/markaspot/commit/2f3fb469bc16eb6d7b2c1976c8f2fd8e43232e3f))
+* harden cacheability of jurisdiction-scoped taxonomy access ([7c20779](https://github.com/markaspot/markaspot/commit/7c207798c6cdee226b4e508643308103bf65f114))
+* scope taxonomy term visibility by jurisdiction membership ([255371a](https://github.com/markaspot/markaspot/commit/255371a454554f4ee990725176c0f8228b084734))
+
+### Refactoring
+
+* validate all media publication updates before saving ([1c98a97](https://github.com/markaspot/markaspot/commit/1c98a97923badd55d18a26682a3d558e9bcf0919))
+
 ## [11.9.140](https://github.com/markaspot/markaspot/compare/11.9.139...11.9.140) (2026-07-06)
 
 ### Features
