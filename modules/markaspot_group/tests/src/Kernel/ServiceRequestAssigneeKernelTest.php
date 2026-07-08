@@ -82,6 +82,11 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   private Node $request;
 
   /**
+   * The Drupal superuser (uid 1), reserved and excluded from candidates.
+   */
+  private UserInterface $superUser;
+
+  /**
    * Organisation member under test.
    */
   private UserInterface $orgMember;
@@ -172,6 +177,10 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->createField('node', 'service_request', 'field_internal_remark', 'entity_reference_revisions', ['target_type' => 'paragraph'], -1);
     $this->container->get('entity_field.manager')->clearCachedFieldDefinitions();
 
+    // Reserve uid 1 for the Drupal superuser: it is auto-joined to every group
+    // and must never surface as an assignment candidate. Creating it first
+    // keeps the real fixtures on uid >= 2, mirroring production.
+    $this->superUser = $this->createUser([], 'root', FALSE, ['mail' => 'root@example.test']);
     $this->orgMember = $this->createUser([], 'org-member', FALSE, ['mail' => 'org@example.test']);
     $this->parksMember = $this->createUser([], 'parks-member', FALSE, ['mail' => 'parks@example.test']);
     $this->multiOrgMember = $this->createUser([], 'multi-org-member', FALSE, ['mail' => 'multi-org@example.test']);
@@ -216,6 +225,9 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->parksOrganisation->addMember($this->parksMember);
     $this->parksOrganisation->addMember($this->multiOrgMember);
     $this->organisation->addMember($this->blockedOrgMember);
+    // The superuser is a member of the org too (mirrors the auto-join on group
+    // creation in production) but must be filtered out of the candidate list.
+    $this->organisation->addMember($this->superUser);
 
     $this->request = Node::create([
       'type' => 'service_request',
@@ -467,6 +479,10 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
         ],
       ],
     ], $data['candidates']);
+
+    // The superuser (uid 1) is an org member but must never be a candidate.
+    $candidate_uids = array_map(static fn(array $c): int => (int) $c['uid'], $data['candidates']);
+    $this->assertNotContains(1, $candidate_uids);
   }
 
   /**

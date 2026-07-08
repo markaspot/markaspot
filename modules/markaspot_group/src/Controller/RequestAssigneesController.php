@@ -108,7 +108,13 @@ final class RequestAssigneesController extends ControllerBase {
       ->execute()
       ->fetchCol();
 
-    $uids = array_values(array_unique(array_filter(array_map('intval', $uids))));
+    // Uid 1 is the Drupal superuser: auto-joined to every group at creation
+    // and a technical account, never a real case worker. Excluding it keeps
+    // the assignee list clean (it would otherwise appear in every org).
+    $uids = array_values(array_unique(array_filter(
+      array_map('intval', $uids),
+      static fn(int $uid): bool => $uid > 1,
+    )));
     if ($uids === []) {
       return;
     }
