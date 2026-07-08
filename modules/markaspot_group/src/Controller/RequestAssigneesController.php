@@ -88,7 +88,9 @@ final class RequestAssigneesController extends ControllerBase {
 
     return new JsonResponse([
       'current' => $this->currentAssignee($node),
+      'current_team' => $this->currentTeam($node),
       'candidates' => array_values($candidates),
+      'units' => $this->assignableUnits($node),
     ]);
   }
 
@@ -202,6 +204,42 @@ final class RequestAssigneesController extends ControllerBase {
       'uid' => (int) $assignee->id(),
       'label' => $assignee->getDisplayName(),
     ];
+  }
+
+  /**
+   * Builds the current assigned team response value.
+   */
+  private function currentTeam(NodeInterface $node): ?array {
+    $team = \_markaspot_group_service_request_assigned_team_group($node);
+    if (!$team instanceof GroupInterface || !\_markaspot_group_service_request_team_is_valid($node, $team)) {
+      return NULL;
+    }
+
+    return [
+      'id' => $team->uuid(),
+      'gid' => (int) $team->id(),
+      'label' => (string) $team->label(),
+      'code' => $this->organisationMetadataBuilder->build($team)['code'],
+    ];
+  }
+
+  /**
+   * Builds assignable organisation unit rows for the request jurisdiction.
+   *
+   * @return array<int, array<string, mixed>>
+   *   Assignable unit rows.
+   */
+  private function assignableUnits(NodeInterface $node): array {
+    $units = [];
+    foreach (\_markaspot_group_request_assignable_organisation_groups($node) as $organisation) {
+      $units[] = [
+        'id' => $organisation->uuid(),
+        'gid' => (int) $organisation->id(),
+        'label' => (string) $organisation->label(),
+      ] + $this->organisationMetadataBuilder->build($organisation);
+    }
+
+    return $units;
   }
 
   /**

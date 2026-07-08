@@ -170,6 +170,12 @@ resourceFields:
     publicName: field_assignee
     enhancer:
       id: ''
+  field_assigned_team:
+    disabled: false
+    fieldName: field_assigned_team
+    publicName: field_assigned_team
+    enhancer:
+      id: ''
   assignee_label:
     disabled: false
     fieldName: assignee_label

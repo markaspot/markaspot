@@ -4755,6 +4755,84 @@ function markaspot_group_update_11937(): string {
 }
 
 /**
+ * Adds the optional organisation-unit assignee field for service requests.
+ */
+function markaspot_group_update_11938(): string {
+  $created = [];
+  $storage = FieldStorageConfig::loadByName('node', 'field_assigned_team');
+  if (!$storage) {
+    $storage = FieldStorageConfig::create([
+      'field_name' => 'field_assigned_team',
+      'entity_type' => 'node',
+      'type' => 'entity_reference',
+      'settings' => [
+        'target_type' => 'group',
+      ],
+      'cardinality' => 1,
+      'translatable' => TRUE,
+      'third_party_settings' => [
+        'field_permissions' => [
+          'permission_type' => 'public',
+        ],
+      ],
+    ]);
+    $storage->save();
+    $created[] = 'node.field_assigned_team storage';
+  }
+
+  if (!FieldConfig::loadByName('node', 'service_request', 'field_assigned_team')) {
+    FieldConfig::create([
+      'field_name' => 'field_assigned_team',
+      'entity_type' => 'node',
+      'bundle' => 'service_request',
+      'label' => 'Assigned team',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'settings' => [
+        'handler' => 'default:group',
+        'handler_settings' => [
+          'target_bundles' => [
+            'org' => 'org',
+          ],
+          'sort' => [
+            'field' => 'label',
+            'direction' => 'ASC',
+          ],
+          'auto_create' => FALSE,
+          'auto_create_bundle' => '',
+        ],
+      ],
+    ])->save();
+    $created[] = 'node.service_request.field_assigned_team field';
+  }
+
+  $jsonapi_config = \Drupal::configFactory()
+    ->getEditable('jsonapi_extras.jsonapi_resource_config.node--service_request');
+  if (!$jsonapi_config->isNew()) {
+    $resource_fields = $jsonapi_config->get('resourceFields') ?: [];
+    if (!isset($resource_fields['field_assigned_team']) || ($resource_fields['field_assigned_team']['disabled'] ?? TRUE)) {
+      $resource_fields['field_assigned_team'] = [
+        'disabled' => FALSE,
+        'fieldName' => 'field_assigned_team',
+        'publicName' => 'field_assigned_team',
+        'enhancer' => ['id' => ''],
+      ];
+      $jsonapi_config->set('resourceFields', $resource_fields)->save(TRUE);
+      $created[] = 'enabled field_assigned_team on JSON:API node--service_request';
+    }
+  }
+
+  if ($created) {
+    \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+    \Drupal::service('cache_tags.invalidator')->invalidateTags(['entity_field_info']);
+
+    return 'Created ' . implode(', ', $created) . '.';
+  }
+
+  return 'Service request assigned team field already present.';
+}
+
+/**
  * Grants case-assignment permission to built-in staff roles when present.
  *
  * @return string[]

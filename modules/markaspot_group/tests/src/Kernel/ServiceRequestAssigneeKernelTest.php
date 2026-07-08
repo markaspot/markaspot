@@ -177,6 +177,7 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->createField('node', 'service_request', 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
     $this->createField('node', 'service_request', 'field_organisation', 'entity_reference', ['target_type' => 'group'], -1);
     $this->createField('node', 'service_request', 'field_assignee', 'entity_reference', ['target_type' => 'user']);
+    $this->createField('node', 'service_request', 'field_assigned_team', 'entity_reference', ['target_type' => 'group']);
     $this->createField('user', 'user', 'field_all_groups_member', 'boolean');
     ParagraphsType::create(['id' => 'internal_remark', 'label' => 'Internal remark'])->save();
     $this->createField('paragraph', 'internal_remark', 'field_internal_remark_text', 'text_long');
@@ -296,6 +297,18 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
       'field_organisation' => [$this->organisation->id()],
     ]);
     $this->assertTrue($unassigned->get('assignee_label')->isEmpty());
+
+    $teamAssigned = Node::create([
+      'type' => 'service_request',
+      'title' => 'Team assigned request',
+      'status' => 1,
+      'field_jurisdiction' => $this->jurisdiction->id(),
+      'field_organisation' => [$this->organisation->id()],
+      'field_assigned_team' => $this->parksOrganisation->id(),
+    ]);
+    $teamAssigned->save();
+    $teamAssigned = $this->reloadNode($teamAssigned);
+    $this->assertSame('Parks', $teamAssigned->get('assignee_label')->value);
   }
 
   /**
@@ -311,14 +324,18 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
    */
   public function testAssigneeEditAccessRequiresPermissionAndTier(): void {
     $this->assertFalse($this->request->get('field_assignee')->access('edit', $this->jurMember));
+    $this->assertFalse($this->request->get('field_assigned_team')->access('edit', $this->jurMember));
     $this->assertFalse($this->request->get('field_assignee')->access('edit', $this->foreignAssigner));
+    $this->assertFalse($this->request->get('field_assigned_team')->access('edit', $this->foreignAssigner));
     $this->assertTrue($this->request->get('field_assignee')->access('edit', $this->assigner));
+    $this->assertTrue($this->request->get('field_assigned_team')->access('edit', $this->assigner));
 
     $this->jurisdiction->set('field_tier', 'starter');
     $this->jurisdiction->save();
     $this->reloadRequest();
 
     $this->assertFalse($this->request->get('field_assignee')->access('edit', $this->assigner));
+    $this->assertFalse($this->request->get('field_assigned_team')->access('edit', $this->assigner));
   }
 
   /**
@@ -341,6 +358,47 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
 
     $this->request->set('field_assignee', NULL);
     $this->assertSame(0, $this->request->validate()->count());
+  }
+
+  /**
+   * Assigned team validation enforces request-jurisdiction scope.
+   */
+  public function testAssignedTeamConstraintRejectsForeignJurisdiction(): void {
+    $foreignJurisdiction = Group::create([
+      'type' => 'jur',
+      'label' => 'Foreign Jurisdiction',
+      'field_tier' => 'pro',
+    ]);
+    $foreignJurisdiction->save();
+    $foreignOrganisation = Group::create([
+      'type' => 'org',
+      'label' => 'Foreign Works',
+      'field_jurisdiction' => $foreignJurisdiction->id(),
+    ]);
+    $foreignOrganisation->save();
+
+    $jurisdictionMessage = 'The selected team must belong to the service request jurisdiction.';
+
+    // A team from a foreign jurisdiction triggers the jurisdiction constraint.
+    $this->request->set('field_assigned_team', $foreignOrganisation->id());
+    $foreignMessages = [];
+    foreach ($this->request->validate() as $violation) {
+      $foreignMessages[] = (string) $violation->getMessage();
+    }
+    $this->assertContains($jurisdictionMessage, $foreignMessages);
+
+    // A team from the request's own jurisdiction does NOT. This bare kernel
+    // setup installs no group view grants, so the orthogonal core
+    // ValidReference constraint fires for any *new* org reference (the handler
+    // returns no referenceable org groups) — field_organisation behaves
+    // identically, and production grants make both referenceable. We therefore
+    // assert on the jurisdiction constraint under test, not the total count.
+    $this->request->set('field_assigned_team', $this->parksOrganisation->id());
+    $validMessages = [];
+    foreach ($this->request->validate() as $violation) {
+      $validMessages[] = (string) $violation->getMessage();
+    }
+    $this->assertNotContains($jurisdictionMessage, $validMessages);
   }
 
   /**
@@ -392,21 +450,38 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   }
 
   /**
-   * JSON:API filter fallback access fails closed without entity context.
+   * JSON:API field_assigned_team filters fail closed without request context.
    */
-  public function testAssigneeFieldAccessWithoutItemsForJsonApiFilterFallbackIsForbidden(): void {
-    $field_definition = $this->request->get('field_assignee')->getFieldDefinition();
+  public function testAssignedTeamJsonApiFilterAccessFailsClosed(): void {
+    $field_definition = $this->request->get('field_assigned_team')->getFieldDefinition();
 
-    // Guards the JSON:API filter fallback path; field_permissions public would
-    // otherwise open it.
-    $access = markaspot_group_entity_field_access(
-      'view',
+    $access = markaspot_group_jsonapi_entity_field_filter_access(
       $field_definition,
-      new AnonymousUserSession(),
-      NULL,
+      $this->assigner,
     );
 
     $this->assertTrue($access->isForbidden());
+    $this->assertContains('user.permissions', $access->getCacheContexts());
+  }
+
+  /**
+   * JSON:API filter fallback access fails closed without entity context.
+   */
+  public function testAssigneeFieldAccessWithoutItemsForJsonApiFilterFallbackIsForbidden(): void {
+    foreach (['field_assignee', 'field_assigned_team'] as $field_name) {
+      $field_definition = $this->request->get($field_name)->getFieldDefinition();
+
+      // Guards the JSON:API filter fallback path; field_permissions public
+      // would otherwise open it.
+      $access = markaspot_group_entity_field_access(
+        'view',
+        $field_definition,
+        new AnonymousUserSession(),
+        NULL,
+      );
+
+      $this->assertTrue($access->isForbidden());
+    }
   }
 
   /**
@@ -426,6 +501,37 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->assertSame((int) $this->orgMember->id(), $data['current']['uid']);
     $this->assertSame($this->orgMember->uuid(), $data['current']['id']);
     $this->assertSame('org-member', $data['current']['label']);
+    $this->assertNull($data['current_team']);
+
+    $this->assertSame([
+      [
+        'id' => $this->parksOrganisation->uuid(),
+        'gid' => (int) $this->parksOrganisation->id(),
+        'label' => 'Parks',
+        'code' => '',
+        'level' => 1,
+        'path_labels' => ['Public Works'],
+        'child_count' => 1,
+      ],
+      [
+        'id' => $this->organisation->uuid(),
+        'gid' => (int) $this->organisation->id(),
+        'label' => 'Public Works',
+        'code' => '66',
+        'level' => 0,
+        'path_labels' => [],
+        'child_count' => 1,
+      ],
+      [
+        'id' => $this->trafficOrganisation->uuid(),
+        'gid' => (int) $this->trafficOrganisation->id(),
+        'label' => 'Traffic',
+        'code' => '',
+        'level' => 2,
+        'path_labels' => ['Public Works', 'Parks'],
+        'child_count' => 0,
+      ],
+    ], $data['units']);
 
     $this->assertSame([
       [
@@ -518,6 +624,56 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     // The superuser (uid 1) is an org member but must never be a candidate.
     $candidate_uids = array_map(static fn(array $c): int => (int) $c['uid'], $data['candidates']);
     $this->assertNotContains(1, $candidate_uids);
+
+    $teamRequest = $this->createServiceRequest($this->organisation);
+    $teamRequest->set('field_assigned_team', $this->parksOrganisation->id());
+    $teamRequest->save();
+    $teamRequest = $this->reloadNode($teamRequest);
+    $response = $controller->assignees($teamRequest);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame([
+      'id' => $this->parksOrganisation->uuid(),
+      'gid' => (int) $this->parksOrganisation->id(),
+      'label' => 'Parks',
+      'code' => '',
+    ], $data['current_team']);
+  }
+
+  /**
+   * Assigning a team clears the person assignment only.
+   */
+  public function testAssignedTeamClearsAssigneeAndKeepsOrganisation(): void {
+    $request = $this->createServiceRequest($this->organisation, $this->orgMember);
+
+    $request->set('field_assigned_team', $this->parksOrganisation->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $this->assertTrue($request->get('field_assignee')->isEmpty());
+    $this->assertSame((int) $this->parksOrganisation->id(), (int) $request->get('field_assigned_team')->target_id);
+    $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
+    $this->assertSame([(int) $this->organisation->id()], $this->organisationRelationshipIds($request));
+    $this->assertSame('Arbeit der Einheit Parks zugewiesen.', $this->latestInternalRemarkText($request));
+  }
+
+  /**
+   * Assigning a person clears the team assignment.
+   */
+  public function testAssigneeClearsAssignedTeam(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $request->set('field_assigned_team', $this->parksOrganisation->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $request->set('field_assignee', $this->orgMember->id());
+    $request->save();
+    $request = $this->reloadNode($request);
+
+    $this->assertSame((int) $this->orgMember->id(), (int) $request->get('field_assignee')->target_id);
+    $this->assertTrue($request->get('field_assigned_team')->isEmpty());
+    $this->assertSame([(int) $this->organisation->id()], $this->organisationIds($request));
+    $this->assertSame('Arbeit der Person org-member zugewiesen.', $this->latestInternalRemarkText($request));
   }
 
   /**

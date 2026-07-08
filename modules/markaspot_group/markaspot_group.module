@@ -517,6 +517,9 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
   if (isset($fields['field_assignee'])) {
     $fields['field_assignee']->addConstraint('ServiceRequestAssigneeMembership');
   }
+  if (isset($fields['field_assigned_team'])) {
+    $fields['field_assigned_team']->addConstraint('ServiceRequestAssignedTeamJurisdiction');
+  }
 }
 
 /**
@@ -525,7 +528,7 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
 function markaspot_group_entity_field_access(string $operation, FieldDefinitionInterface $field_definition, AccountInterface $account, ?FieldItemListInterface $items = NULL): AccessResult {
   if ($field_definition->getTargetEntityTypeId() !== 'node'
     || $field_definition->getTargetBundle() !== 'service_request'
-    || !in_array($field_definition->getName(), ['field_assignee', 'assignee_label'], TRUE)) {
+    || !in_array($field_definition->getName(), ['field_assignee', 'field_assigned_team', 'assignee_label'], TRUE)) {
     return AccessResult::neutral();
   }
 
@@ -555,7 +558,7 @@ function markaspot_group_entity_field_access(string $operation, FieldDefinitionI
 
     $result = $allowed
       ? AccessResult::allowed()
-      : AccessResult::forbidden('Only assignment managers on eligible tiers may edit field_assignee.');
+      : AccessResult::forbidden(sprintf('Only assignment managers on eligible tiers may edit %s.', $field_name));
 
     $result = _markaspot_group_add_membership_cacheability($result, $account, $scope_ids)
       ->cachePerPermissions()
@@ -594,6 +597,10 @@ function _markaspot_group_service_request_assignee_view_access(NodeInterface $no
     if ($assignee instanceof UserInterface) {
       $result->addCacheableDependency($assignee);
     }
+    $team = _markaspot_group_service_request_assigned_team_group($node);
+    if ($team instanceof GroupInterface) {
+      $result->addCacheableDependency($team);
+    }
   }
 
   return $result;
@@ -612,6 +619,18 @@ function _markaspot_group_service_request_assignee_user(NodeInterface $node): ?U
 }
 
 /**
+ * Returns the assigned team for a service request when it can be loaded.
+ */
+function _markaspot_group_service_request_assigned_team_group(NodeInterface $node): ?GroupInterface {
+  if (!$node->hasField('field_assigned_team') || $node->get('field_assigned_team')->isEmpty()) {
+    return NULL;
+  }
+
+  $team = $node->get('field_assigned_team')->entity;
+  return $team instanceof GroupInterface ? $team : NULL;
+}
+
+/**
  * Implements hook_jsonapi_entity_field_filter_access().
  */
 function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInterface $field_definition, AccountInterface $account): AccessResult {
@@ -623,7 +642,14 @@ function markaspot_group_jsonapi_entity_field_filter_access(FieldDefinitionInter
         ->cachePerPermissions();
     }
 
-    return AccessResult::forbidden('Only assignment managers may use field_assignee as a JSON:API filter.')
+    return AccessResult::forbidden(sprintf('Only assignment managers may use %s as a JSON:API filter.', $field_definition->getName()))
+      ->cachePerPermissions();
+  }
+
+  if ($field_definition->getTargetEntityTypeId() === 'node'
+    && $field_definition->getTargetBundle() === 'service_request'
+    && $field_definition->getName() === 'field_assigned_team') {
+    return AccessResult::forbidden('field_assigned_team JSON:API filters require request-scoped assignment access.')
       ->cachePerPermissions();
   }
 
@@ -733,6 +759,8 @@ function _markaspot_group_delete_blockers(GroupInterface $group, bool $include_r
   elseif ($group->bundle() === 'org') {
     $counts['service requests via field_organisation'] = _markaspot_group_count_node_field_reference('node__field_organisation', 'field_organisation_target_id', $group_id, 'service_request');
     $counts['service request revisions via field_organisation'] = _markaspot_group_count_node_field_reference('node_revision__field_organisation', 'field_organisation_target_id', $group_id, 'service_request');
+    $counts['service requests via field_assigned_team'] = _markaspot_group_count_node_field_reference('node__field_assigned_team', 'field_assigned_team_target_id', $group_id, 'service_request');
+    $counts['service request revisions via field_assigned_team'] = _markaspot_group_count_node_field_reference('node_revision__field_assigned_team', 'field_assigned_team_target_id', $group_id, 'service_request');
     $counts['other content via field_organisation'] = _markaspot_group_count_node_field_reference('node__field_organisation', 'field_organisation_target_id', $group_id, NULL, ['service_request']);
     $counts['other content revisions via field_organisation'] = _markaspot_group_count_node_field_reference('node_revision__field_organisation', 'field_organisation_target_id', $group_id, NULL, ['service_request']);
     $counts['category mappings via field_category_gid'] = _markaspot_group_count_reference('taxonomy_term__field_category_gid', 'field_category_gid_target_id', $group_id);
@@ -1352,6 +1380,10 @@ function markaspot_group_node_presave(NodeInterface $node): void {
     drupal_register_shutdown_function('_markaspot_group_release_service_request_sync_lock', (int) $node->id());
   }
 
+  _markaspot_group_apply_service_request_assignment_exclusivity($node);
+  _markaspot_group_add_assignment_audit_remark($node);
+  _markaspot_group_prepare_assigned_team_notification($node);
+
   // 2. Detect field_jurisdiction changes and schedule jur relationship sync.
   if (!$node->isNew() && $node->hasField('field_jurisdiction')) {
     $new_jur_id = !$node->get('field_jurisdiction')->isEmpty()
@@ -1652,6 +1684,104 @@ function _markaspot_group_field_target_changed(NodeInterface $node, string $fiel
   }
 
   return _markaspot_group_field_target_ids($node, $field_name) !== _markaspot_group_field_target_ids($node->original, $field_name);
+}
+
+/**
+ * Ensures person and team assignment remain mutually exclusive.
+ */
+function _markaspot_group_apply_service_request_assignment_exclusivity(NodeInterface $node): void {
+  if (!$node->hasField('field_assignee') || !$node->hasField('field_assigned_team')) {
+    return;
+  }
+
+  if ($node->get('field_assignee')->isEmpty() || $node->get('field_assigned_team')->isEmpty()) {
+    return;
+  }
+
+  $assignee_changed = _markaspot_group_field_target_changed($node, 'field_assignee');
+  $team_changed = _markaspot_group_field_target_changed($node, 'field_assigned_team');
+
+  if ($assignee_changed && !$team_changed) {
+    $node->set('field_assigned_team', NULL);
+    return;
+  }
+
+  $node->set('field_assignee', NULL);
+}
+
+/**
+ * Adds an internal audit remark for team assignment changes.
+ */
+function _markaspot_group_add_assignment_audit_remark(NodeInterface $node): void {
+  if (!$node->hasField('field_assignee') || !$node->hasField('field_assigned_team')) {
+    return;
+  }
+
+  if (_markaspot_group_field_target_changed($node, 'field_assigned_team')
+    && !$node->get('field_assigned_team')->isEmpty()) {
+    _markaspot_group_add_team_assignment_audit_remark($node);
+    return;
+  }
+
+  if (_markaspot_group_field_target_changed($node, 'field_assignee')
+    && $node->get('field_assignee')->isEmpty()
+    && !$node->get('field_assigned_team')->isEmpty()
+    && isset($node->original)
+    && $node->original instanceof NodeInterface
+    && $node->original->hasField('field_assignee')
+    && !$node->original->get('field_assignee')->isEmpty()
+    && $node->original->hasField('field_assigned_team')
+    && !$node->original->get('field_assigned_team')->isEmpty()) {
+    _markaspot_group_add_team_assignment_audit_remark($node);
+    return;
+  }
+
+  if (!_markaspot_group_field_target_changed($node, 'field_assignee')
+    || !$node->get('field_assigned_team')->isEmpty()
+    || $node->get('field_assignee')->isEmpty()
+    || !isset($node->original)
+    || !$node->original instanceof NodeInterface
+    || !$node->original->hasField('field_assigned_team')
+    || $node->original->get('field_assigned_team')->isEmpty()) {
+    return;
+  }
+
+  $assignee = _markaspot_group_service_request_assignee_user($node);
+  if ($assignee instanceof UserInterface) {
+    _markaspot_group_append_internal_remark_text($node, (string) t('Arbeit der Person @person zugewiesen.', [
+      '@person' => $assignee->getDisplayName(),
+    ]));
+  }
+}
+
+/**
+ * Adds the internal audit remark for the current assigned team.
+ */
+function _markaspot_group_add_team_assignment_audit_remark(NodeInterface $node): void {
+  $team = _markaspot_group_service_request_assigned_team_group($node);
+  if ($team instanceof GroupInterface) {
+    _markaspot_group_append_internal_remark_text($node, (string) t('Arbeit der Einheit @team zugewiesen.', [
+      '@team' => (string) $team->label(),
+    ]));
+  }
+}
+
+/**
+ * Marks a changed team assignment for post-save notification delivery.
+ */
+function _markaspot_group_prepare_assigned_team_notification(NodeInterface $node): void {
+  if (!$node->hasField('field_assigned_team') || $node->get('field_assigned_team')->isEmpty()) {
+    return;
+  }
+
+  if (!$node->isNew() && !_markaspot_group_field_target_changed($node, 'field_assigned_team')) {
+    return;
+  }
+
+  $team_id = (int) $node->get('field_assigned_team')->target_id;
+  if ($team_id > 0) {
+    $node->_markaspot_group_pending_assigned_team_notification = $team_id;
+  }
 }
 
 /**
@@ -1963,6 +2093,8 @@ function markaspot_group_node_insert(NodeInterface $node): void {
   if ($node->hasField('field_jurisdiction') && !$node->get('field_jurisdiction')->isEmpty()) {
     _markaspot_group_reconcile_service_request_relationships($node);
   }
+
+  _markaspot_group_notify_pending_assigned_team($node);
 }
 
 /**
@@ -1984,6 +2116,7 @@ function markaspot_group_node_update(NodeInterface $node): void {
 
   try {
     _markaspot_group_reconcile_service_request_relationships($node);
+    _markaspot_group_notify_pending_assigned_team($node);
   }
   finally {
     if (!empty($node->_markaspot_group_sync_lock_held)) {
@@ -3134,7 +3267,7 @@ function _markaspot_group_notify_service_request_org_relationship(GroupRelations
     return;
   }
 
-  _markaspot_group_notify_organisation_group($node, $group);
+  _markaspot_group_notify_organisation_group_once($node, $group);
 }
 
 /**
@@ -3234,8 +3367,50 @@ function _markaspot_group_notify_organisation(NodeInterface $node, ?array $organ
       continue;
     }
 
-    _markaspot_group_notify_organisation_group($node, $org_group);
+    _markaspot_group_notify_organisation_group_once($node, $org_group);
   }
+}
+
+/**
+ * Sends a pending team-assignment notification through the org mail path.
+ */
+function _markaspot_group_notify_pending_assigned_team(NodeInterface $node): void {
+  if (empty($node->_markaspot_group_pending_assigned_team_notification)) {
+    return;
+  }
+
+  $team_id = (int) $node->_markaspot_group_pending_assigned_team_notification;
+  unset($node->_markaspot_group_pending_assigned_team_notification);
+  if ($team_id <= 0 || !$node->hasField('field_assigned_team') || $node->get('field_assigned_team')->isEmpty()) {
+    return;
+  }
+
+  if ((int) $node->get('field_assigned_team')->target_id !== $team_id) {
+    return;
+  }
+
+  $team = _markaspot_group_service_request_assigned_team_group($node);
+  if ($team instanceof GroupInterface && _markaspot_group_service_request_team_is_valid($node, $team)) {
+    if (_markaspot_group_has_active_org_notification_eca()) {
+      return;
+    }
+    _markaspot_group_notify_organisation_group_once($node, $team);
+  }
+}
+
+/**
+ * Sends one organisation notification per service request and org per PHP request.
+ */
+function _markaspot_group_notify_organisation_group_once(NodeInterface $node, GroupInterface $org_group): void {
+  $sent =& drupal_static(__FUNCTION__, []);
+  $node_key = $node->id() ? (string) $node->id() : 'new:' . spl_object_id($node);
+  $key = $node_key . ':' . (int) $org_group->id();
+  if (isset($sent[$key])) {
+    return;
+  }
+
+  $sent[$key] = TRUE;
+  _markaspot_group_notify_organisation_group($node, $org_group);
 }
 
 /**
@@ -3591,6 +3766,70 @@ function _markaspot_group_service_request_assignee_is_valid(NodeInterface $node,
     $user,
     _markaspot_group_case_assignment_jurisdiction_group_ids($node),
   );
+}
+
+/**
+ * Checks whether an assigned team is valid for a service request.
+ */
+function _markaspot_group_service_request_team_is_valid(NodeInterface $node, GroupInterface $team): bool {
+  $jurisdiction_id = _markaspot_group_assignment_organisation_jurisdiction_id($node);
+
+  return $team->bundle() === _markaspot_group_get_org_group_type()
+    && _markaspot_group_org_group_matches_jurisdiction($team, $jurisdiction_id);
+}
+
+/**
+ * Loads all assignable organisation units for a request jurisdiction.
+ *
+ * @return \Drupal\group\Entity\GroupInterface[]
+ *   Organisation groups keyed by group ID.
+ */
+function _markaspot_group_request_assignable_organisation_groups(NodeInterface $node): array {
+  $jurisdiction_id = _markaspot_group_assignment_organisation_jurisdiction_id($node);
+  if ($jurisdiction_id === NULL) {
+    return [];
+  }
+
+  $jurisdiction_ids = [$jurisdiction_id];
+  $root_id = \Drupal::service('markaspot_group.hierarchy_resolver')
+    ->getRootJurisdictionId($jurisdiction_id);
+  if ($root_id !== NULL) {
+    $jurisdiction_ids[] = $root_id;
+  }
+  $jurisdiction_ids = array_values(array_unique(array_filter(array_map('intval', $jurisdiction_ids))));
+  if ($jurisdiction_ids === []) {
+    return [];
+  }
+
+  $group_ids = \Drupal::entityQuery('group')
+    ->accessCheck(FALSE)
+    ->condition('type', _markaspot_group_get_org_group_type())
+    ->condition('field_jurisdiction', $jurisdiction_ids, 'IN')
+    ->sort('label')
+    ->execute();
+  if ($group_ids === []) {
+    return [];
+  }
+
+  $groups = \Drupal::entityTypeManager()
+    ->getStorage('group')
+    ->loadMultiple($group_ids);
+
+  $organisations = [];
+  foreach ($groups as $group) {
+    if ($group instanceof GroupInterface && _markaspot_group_service_request_team_is_valid($node, $group)) {
+      $organisations[(int) $group->id()] = $group;
+    }
+  }
+
+  uasort($organisations, static function (GroupInterface $a, GroupInterface $b): int {
+    $label_compare = strcasecmp((string) $a->label(), (string) $b->label());
+    return $label_compare !== 0
+      ? $label_compare
+      : ((int) $a->id() <=> (int) $b->id());
+  });
+
+  return $organisations;
 }
 
 /**
