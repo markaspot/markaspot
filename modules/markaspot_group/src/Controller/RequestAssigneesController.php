@@ -74,6 +74,8 @@ final class RequestAssigneesController extends ControllerBase {
       }
     }
 
+    $this->addOrganisationMemberships($node, $candidates);
+
     usort($candidates, static function (array $a, array $b): int {
       $label_compare = strcasecmp((string) $a['label'], (string) $b['label']);
       return $label_compare !== 0
@@ -134,8 +136,40 @@ final class RequestAssigneesController extends ControllerBase {
         'uid' => $uid,
         'label' => $user->getDisplayName(),
         'scope' => $scope,
+        'organisations' => [],
       ];
     }
+  }
+
+  /**
+   * Adds request-jurisdiction-scoped organisation memberships to candidates.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   * @param array<int, array<string, mixed>> $candidates
+   *   Candidate map keyed by UID.
+   */
+  private function addOrganisationMemberships(NodeInterface $node, array &$candidates): void {
+    if ($candidates === []) {
+      return;
+    }
+
+    $organisations_by_uid = \_markaspot_group_organisation_groups_by_user_in_request_jurisdiction(
+      $node,
+      array_keys($candidates),
+    );
+
+    foreach ($candidates as $uid => &$candidate) {
+      $candidate['organisations'] = [];
+      foreach ($organisations_by_uid[(int) $uid] ?? [] as $organisation) {
+        $candidate['organisations'][] = [
+          'id' => $organisation->uuid(),
+          'gid' => (int) $organisation->id(),
+          'label' => $organisation->label(),
+        ];
+      }
+    }
+    unset($candidate);
   }
 
   /**

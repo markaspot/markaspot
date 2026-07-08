@@ -190,10 +190,7 @@ class EscalationService implements EscalationServiceInterface {
     $remarkText = trim($note) === ''
       ? (string) $this->t('Eskaliert an @jurisdiction.', ['@jurisdiction' => $jurGroup->label()])
       : $note;
-    $paragraph = $this->createInternalRemarkParagraph($remarkText, $node->language()->getId());
-
-    // Append to the node's field_internal_remark (unlimited cardinality).
-    $this->appendInternalRemark($node, $paragraph);
+    $this->appendInternalRemarkText($node, $remarkText);
 
     // Clear the organisation assignment.
     $node->set('field_organisation', NULL);
@@ -368,6 +365,14 @@ class EscalationService implements EscalationServiceInterface {
     }
 
     return $this->delegationNoteRequiredForJurisdiction($jurisdictionId);
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function appendInternalRemarkText(NodeInterface $node, string $text): void {
+    $paragraph = $this->createInternalRemarkParagraph($text, $node->language()->getId());
+    $this->appendInternalRemark($node, $paragraph);
   }
 
   /**
@@ -641,8 +646,7 @@ class EscalationService implements EscalationServiceInterface {
     $remarkText = trim($note) === ''
       ? (string) $this->t('Delegiert an @organisation.', ['@organisation' => $orgGroup->label()])
       : $note;
-    $paragraph = $this->createInternalRemarkParagraph($remarkText, $node->language()->getId());
-    $this->appendInternalRemark($node, $paragraph);
+    $this->appendInternalRemarkText($node, $remarkText);
 
     // Delegation is a deliberate reassignment: replaces ALL current orgs
     // with the single target org. This is by design, not a multi-value

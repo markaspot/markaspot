@@ -26,6 +26,10 @@ use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
+require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
+require_once dirname(__DIR__, 3) . '/src/Controller/MarkASpotSettingsController.php';
+
 /**
  * Tests the MarkASpotSettingsController.
  *
@@ -1523,6 +1527,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $data['features']['onboardingTour'] ?? TRUE,
       'onboardingTour must default FALSE outside SaaS mode'
     );
+    $this->assertFalse($data['features']['assignmentSyncsOrganisation'] ?? TRUE);
   }
 
   /**
@@ -1547,6 +1552,28 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $data['features']['onboardingTour'] ?? TRUE,
       'explicit onboardingTour=false must override the SaaS default'
     );
+  }
+
+  /**
+   * AssignmentSyncsOrganisation is exposed in the runtime feature response.
+   *
+   * @covers ::getMarkASpotSettings
+   */
+  public function testAssignmentSyncsOrganisationRuntimeFeatureIsNormalised(): void {
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => json_encode([
+        'features' => [
+          'assignmentSyncsOrganisation' => ['enabled' => TRUE],
+        ],
+      ]),
+    ], 1);
+    $this->groupStorage->method('load')->with(1)->willReturn($group);
+
+    $request = Request::create('/api/mark-a-spot-settings?jurisdiction=1', 'GET');
+    $response = $this->controller->getMarkASpotSettings($request);
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertTrue($data['features']['assignmentSyncsOrganisation']);
   }
 
   /**

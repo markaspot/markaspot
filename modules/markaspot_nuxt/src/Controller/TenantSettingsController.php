@@ -74,6 +74,7 @@ final class TenantSettingsController extends ControllerBase {
     'onboardingTour',
     'loginLink',
     'delegationNoteRequired',
+    'assignmentSyncsOrganisation',
   ];
 
   /**
@@ -1996,6 +1997,7 @@ final class TenantSettingsController extends ControllerBase {
         'contactForm' => $features['contactForm'] ?? FALSE,
         'privacyBlockOnFlag' => $this->getBooleanFeatureValue($features, 'privacyBlockOnFlag', FALSE),
         'delegationNoteRequired' => $this->getBooleanFeatureValue($features, 'delegationNoteRequired', FALSE),
+        'assignmentSyncsOrganisation' => $this->getBooleanFeatureValue($features, 'assignmentSyncsOrganisation', FALSE),
         // Guided onboarding tour (citizen report + dashboard walkthrough).
         // Default follows the operating mode: on for SaaS workspaces, off
         // for self-hosted/enterprise installs where it is opt-in via this

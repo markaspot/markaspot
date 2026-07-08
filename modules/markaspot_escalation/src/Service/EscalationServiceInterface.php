@@ -87,6 +87,16 @@ interface EscalationServiceInterface {
   public function isDelegationNoteRequired(NodeInterface $node): bool;
 
   /**
+   * Appends one internal audit remark without saving the node.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request node.
+   * @param string $text
+   *   The plain text internal remark.
+   */
+  public function appendInternalRemarkText(NodeInterface $node, string $text): void;
+
+  /**
    * Delegates a service request to a target organisation.
    *
    * Reassigns the request to a different organisation within or below the

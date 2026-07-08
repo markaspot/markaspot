@@ -28,6 +28,7 @@ use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/TenantSettingsController.php';
 
 /**
@@ -2029,6 +2030,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
         'aiProcessing' => ['enabled' => TRUE],
         'piiRedaction' => ['enabled' => FALSE],
         'privacyBlockOnFlag' => TRUE,
+        'assignmentSyncsOrganisation' => ['enabled' => TRUE],
         'forms' => [
           'allowParentCategorySelection' => TRUE,
         ],
@@ -2052,8 +2054,45 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertTrue($data['features']['aiProcessing']);
     $this->assertFalse($data['features']['piiRedaction']);
     $this->assertTrue($data['features']['privacyBlockOnFlag']);
+    $this->assertTrue($data['features']['assignmentSyncsOrganisation']);
     $this->assertTrue($data['features']['forms']['allowParentCategorySelection']);
     $this->assertTrue($data['capabilities']['operationsDashboard']);
+  }
+
+  /**
+   * Tests assignmentSyncsOrganisation defaults FALSE and can be patched.
+   *
+   * @covers ::getFeatureSettings
+   * @covers ::updateFeatureSettings
+   */
+  public function testAssignmentSyncsOrganisationFeatureRoundTrip(): void {
+    $storedNuxtConfig = json_encode(['features' => []]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $getRequest = Request::create('/api/tenant/14/features', 'GET');
+    $getResponse = $this->controller->getFeatureSettings($getRequest, '14');
+    $getData = json_decode($getResponse->getContent(), TRUE);
+
+    $this->assertEquals(200, $getResponse->getStatusCode());
+    $this->assertFalse($getData['features']['assignmentSyncsOrganisation']);
+
+    $patchRequest = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['assignmentSyncsOrganisation' => TRUE])
+    );
+    $patchResponse = $this->controller->updateFeatureSettings($patchRequest, '14');
+    $patchData = json_decode($patchResponse->getContent(), TRUE);
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $patchResponse->getStatusCode());
+    $this->assertTrue($patchData['features']['assignmentSyncsOrganisation']);
+    $this->assertTrue($updatedConfig['features']['assignmentSyncsOrganisation']);
   }
 
   /**

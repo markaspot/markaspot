@@ -379,8 +379,16 @@ class MarkASpotSettingsController extends ControllerBase {
       'dashboardRequestCreate' => TRUE,
       'operationsDashboard' => FALSE,
       'onboardingTour' => $onboarding_tour_default,
+      'assignmentSyncsOrganisation' => FALSE,
     ];
-    foreach (['aiProcessing', 'piiRedaction', 'dashboardRequestCreate', 'operationsDashboard', 'onboardingTour'] as $feature) {
+    foreach ([
+      'aiProcessing',
+      'piiRedaction',
+      'dashboardRequestCreate',
+      'operationsDashboard',
+      'onboardingTour',
+      'assignmentSyncsOrganisation',
+    ] as $feature) {
       $settings['features'][$feature] = $this->readBooleanFeatureFlag(
         $settings['features'][$feature] ?? NULL
       );
