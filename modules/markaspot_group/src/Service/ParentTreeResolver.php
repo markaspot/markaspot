@@ -454,6 +454,41 @@ class ParentTreeResolver {
   }
 
   /**
+   * Gets direct child IDs for the configured parent field.
+   *
+   * @param int $groupId
+   *   The parent group ID.
+   * @param string $rootWrongBundleOperation
+   *   Log operation for a wrong-bundle starting group.
+   * @param string $childWrongBundleOperation
+   *   Log operation for wrong-bundle child groups.
+   *
+   * @return int[]
+   *   Direct child IDs sorted by the field table order.
+   */
+  public function getChildIds(
+    int $groupId,
+    string $rootWrongBundleOperation,
+    string $childWrongBundleOperation,
+  ): array {
+    $group = $this->loadGroup($groupId);
+    if (!$group) {
+      $this->logMissingGroup($rootWrongBundleOperation, $groupId);
+      return [];
+    }
+    if (!$this->isAcceptedBundle($group)) {
+      $this->logWrongBundle($rootWrongBundleOperation, $groupId, $this->getBundle($group));
+      return [];
+    }
+
+    return array_keys($this->loadAcceptedChildGroups(
+      $this->loadChildIds($groupId),
+      $childWrongBundleOperation,
+      $group,
+    ));
+  }
+
+  /**
    * Recursively collects descendant IDs with cycle and depth guards.
    *
    * @param int $groupId

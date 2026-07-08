@@ -59,6 +59,20 @@ interface OrgHierarchyResolverInterface {
   public function getAncestorIds(int $groupId): array;
 
   /**
+   * Gets direct child org IDs.
+   *
+   * Unlike descendant traversal, this only returns direct children whose
+   * parent edge is valid for the org axis.
+   *
+   * @param int $groupId
+   *   The org group ID.
+   *
+   * @return int[]
+   *   Direct child org IDs, or an empty array on failure.
+   */
+  public function getChildIds(int $groupId): array;
+
+  /**
    * Checks whether an org group has a parent org reference.
    *
    * @param int $groupId

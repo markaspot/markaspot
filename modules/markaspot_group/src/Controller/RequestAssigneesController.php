@@ -8,6 +8,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\node\NodeInterface;
 use Drupal\user\UserInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -24,6 +25,7 @@ final class RequestAssigneesController extends ControllerBase {
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
     private readonly Connection $database,
+    private readonly OrganisationMetadataBuilder $organisationMetadataBuilder,
   ) {
     $this->entityTypeManager = $entityTypeManager;
   }
@@ -35,6 +37,7 @@ final class RequestAssigneesController extends ControllerBase {
     return new static(
       $container->get('entity_type.manager'),
       $container->get('database'),
+      $container->get('markaspot_group.organisation_metadata_builder'),
     );
   }
 
@@ -172,7 +175,7 @@ final class RequestAssigneesController extends ControllerBase {
           'id' => $organisation->uuid(),
           'gid' => (int) $organisation->id(),
           'label' => $organisation->label(),
-        ];
+        ] + $this->organisationMetadataBuilder->build($organisation);
       }
     }
     unset($candidate);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_nuxt\Unit;
 
 use Drupal\Core\Cache\CacheableJsonResponse;
+use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\Core\Cache\Context\CacheContextsManager;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
@@ -20,10 +21,17 @@ use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
+
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrgHierarchyResolverInterface.php';
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrganisationMetadataBuilder.php';
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
+require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
+require_once dirname(__DIR__, 3) . '/src/Controller/MarkASpotSettingsController.php';
 
 /**
  * Tests role-based filtering in the getOrganisations() endpoint.
@@ -64,6 +72,13 @@ class OrganisationsControllerTest extends UnitTestCase {
    * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
+   * The mocked organisation metadata builder.
+   *
+   * @var \Drupal\markaspot_group\Service\OrganisationMetadataBuilder|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected OrganisationMetadataBuilder $organisationMetadataBuilder;
 
   /**
    * The mocked group storage.
@@ -141,6 +156,13 @@ class OrganisationsControllerTest extends UnitTestCase {
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
     $this->hierarchyResolver->method('getRootJurisdictionId')
       ->willReturnCallback(fn(int $id) => $id);
+    $this->organisationMetadataBuilder = $this->createMock(OrganisationMetadataBuilder::class);
+    $this->organisationMetadataBuilder->method('build')->willReturn([
+      'code' => '',
+      'level' => 0,
+      'path_labels' => [],
+      'child_count' => 0,
+    ]);
 
     // Module handler: reports no modules installed.
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
@@ -168,6 +190,7 @@ class OrganisationsControllerTest extends UnitTestCase {
     $this->container->set('entity_type.manager', $this->entityTypeManager);
     $this->container->set('stream_wrapper_manager', $this->streamWrapperManager);
     $this->container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
+    $this->container->set('markaspot_group.organisation_metadata_builder', $this->organisationMetadataBuilder);
     $this->container->set('module_handler', $moduleHandler);
     $this->container->set('language_manager', $languageManager);
     $this->container->set('cache_contexts_manager', $cacheContextsManager);
@@ -194,6 +217,7 @@ class OrganisationsControllerTest extends UnitTestCase {
       $this->streamWrapperManager,
       $this->hierarchyResolver,
       new EnterpriseFeatureGate(),
+      $this->organisationMetadataBuilder,
     );
   }
 
@@ -405,6 +429,7 @@ class OrganisationsControllerTest extends UnitTestCase {
     $this->assertEquals(3, $data['count']);
     $this->assertEquals('uuid-alpha', $data['organisations'][0]['id']);
     $this->assertEquals('Org Alpha', $data['organisations'][0]['label']);
+    $this->assertEquals(100, $data['organisations'][0]['gid']);
     $this->assertEquals(100, $data['organisations'][0]['numericId']);
   }
 
@@ -534,6 +559,51 @@ class OrganisationsControllerTest extends UnitTestCase {
     $this->assertNull($data['organisations'][1]['orgCode']);
     $this->assertNull($data['organisations'][2]['parentOrgId']);
     $this->assertNull($data['organisations'][2]['orgCode']);
+  }
+
+  /**
+   * Tests organisation responses expose the shared picker metadata shape.
+   *
+   * @covers ::getOrganisations
+   */
+  public function testOrganisationResponseIncludesPickerMetadata(): void {
+    $account = $this->createMockUser(['authenticated', 'administrator'], 1);
+    $org = $this->createMockOrgGroup(100, 'Tiefbau', 'uuid-tiefbau', NULL, 90, '66');
+
+    $this->organisationMetadataBuilder = $this->createMock(OrganisationMetadataBuilder::class);
+    $this->organisationMetadataBuilder->expects($this->once())
+      ->method('build')
+      ->with($this->identicalTo($org), $this->isInstanceOf(CacheableMetadata::class))
+      ->willReturn([
+        'code' => '66',
+        'level' => 1,
+        'path_labels' => ['Dezernat Stadtraum'],
+        'child_count' => 2,
+      ]);
+    $controller = $this->createController($account);
+
+    $groupQuery = $this->createMockQuery([100]);
+    $this->groupStorage->method('getQuery')->willReturn($groupQuery);
+    $this->groupStorage->method('loadMultiple')
+      ->with([100])
+      ->willReturn([100 => $org]);
+
+    $request = Request::create('/api/organisations', 'GET');
+    $response = $controller->getOrganisations($request);
+
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertSame([
+      'id' => 'uuid-tiefbau',
+      'gid' => 100,
+      'numericId' => 100,
+      'label' => 'Tiefbau',
+      'parentOrgId' => 90,
+      'orgCode' => '66',
+      'code' => '66',
+      'level' => 1,
+      'path_labels' => ['Dezernat Stadtraum'],
+      'child_count' => 2,
+    ], $data['organisations'][0]);
   }
 
   /**

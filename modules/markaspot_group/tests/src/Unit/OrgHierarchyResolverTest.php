@@ -16,6 +16,10 @@ use Drupal\markaspot_group\Service\OrgHierarchyResolver;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
+require_once dirname(__DIR__, 3) . '/src/Service/OrgHierarchyResolverInterface.php';
+require_once dirname(__DIR__, 3) . '/src/Service/ParentTreeResolver.php';
+require_once dirname(__DIR__, 3) . '/src/Service/OrgHierarchyResolver.php';
+
 /**
  * Tests the OrgHierarchyResolver service.
  *
@@ -332,6 +336,22 @@ class OrgHierarchyResolverTest extends UnitTestCase {
       ]);
 
     $this->assertSame([20, 10], $this->resolver->getAncestorIds(30));
+  }
+
+  /**
+   * @covers ::getChildIds
+   */
+  public function testChildIdsReturnDirectValidChildren(): void {
+    $root = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($root);
+    $this->mockChildQuery([
+      10 => [20, 30],
+      20 => [40],
+    ]);
+
+    $this->assertSame([20, 30], $this->resolver->getChildIds(10));
   }
 
   /**

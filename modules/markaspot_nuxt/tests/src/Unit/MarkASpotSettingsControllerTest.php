@@ -19,6 +19,7 @@ use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
 use Drupal\Core\Site\Settings;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
@@ -26,6 +27,8 @@ use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrgHierarchyResolverInterface.php';
+require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrganisationMetadataBuilder.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
 require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/MarkASpotSettingsController.php';
@@ -65,6 +68,13 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
+   * The mocked organisation metadata builder.
+   *
+   * @var \Drupal\markaspot_group\Service\OrganisationMetadataBuilder|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected OrganisationMetadataBuilder $organisationMetadataBuilder;
 
   /**
    * The mocked group storage.
@@ -153,6 +163,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
     $this->hierarchyResolver->method('getRootJurisdictionId')
       ->willReturnCallback(fn(int $id) => $id);
+    $this->organisationMetadataBuilder = $this->createMock(OrganisationMetadataBuilder::class);
 
     // Module handler: reports no modules installed.
     $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
@@ -175,6 +186,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $container->set('entity_type.manager', $this->entityTypeManager);
     $container->set('stream_wrapper_manager', $this->streamWrapperManager);
     $container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
+    $container->set('markaspot_group.organisation_metadata_builder', $this->organisationMetadataBuilder);
     $container->set('module_handler', $this->moduleHandler);
     $container->set('language_manager', $languageManager);
     $container->set('cache_contexts_manager', $cacheContextsManager);
@@ -186,6 +198,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->streamWrapperManager,
       $this->hierarchyResolver,
       new EnterpriseFeatureGate(),
+      $this->organisationMetadataBuilder,
     );
   }
 
@@ -311,6 +324,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->streamWrapperManager,
       $this->hierarchyResolver,
       new EnterpriseFeatureGate(),
+      $this->organisationMetadataBuilder,
     );
 
     $request = Request::create('/api/mark-a-spot-settings', 'GET');
@@ -371,6 +385,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->streamWrapperManager,
       $hierarchyResolver,
       new EnterpriseFeatureGate(),
+      $this->organisationMetadataBuilder,
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
@@ -938,6 +953,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->streamWrapperManager,
       $hierarchyResolver,
       new EnterpriseFeatureGate(),
+      $this->organisationMetadataBuilder,
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');

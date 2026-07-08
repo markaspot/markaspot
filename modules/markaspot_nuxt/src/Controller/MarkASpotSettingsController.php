@@ -10,6 +10,7 @@ use Drupal\Core\Cache\CacheableJsonResponse;
 use Drupal\Core\Cache\CacheableMetadata;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
 use Symfony\Component\HttpFoundation\Request;
@@ -50,6 +51,13 @@ class MarkASpotSettingsController extends ControllerBase {
   protected EnterpriseFeatureGate $enterpriseFeatureGate;
 
   /**
+   * The organisation metadata builder.
+   *
+   * @var \Drupal\markaspot_group\Service\OrganisationMetadataBuilder
+   */
+  protected OrganisationMetadataBuilder $organisationMetadataBuilder;
+
+  /**
    * Constructs a MarkASpotSettingsController object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -62,6 +70,8 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The jurisdiction hierarchy resolver.
    * @param \Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate $enterprise_feature_gate
    *   The enterprise feature gate.
+   * @param \Drupal\markaspot_group\Service\OrganisationMetadataBuilder $organisation_metadata_builder
+   *   The organisation metadata builder.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -69,12 +79,14 @@ class MarkASpotSettingsController extends ControllerBase {
     StreamWrapperManagerInterface $stream_wrapper_manager,
     JurisdictionHierarchyResolverInterface $hierarchy_resolver,
     EnterpriseFeatureGate $enterprise_feature_gate,
+    OrganisationMetadataBuilder $organisation_metadata_builder,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
     $this->streamWrapperManager = $stream_wrapper_manager;
     $this->hierarchyResolver = $hierarchy_resolver;
     $this->enterpriseFeatureGate = $enterprise_feature_gate;
+    $this->organisationMetadataBuilder = $organisation_metadata_builder;
   }
 
   /**
@@ -86,7 +98,8 @@ class MarkASpotSettingsController extends ControllerBase {
       $container->get('config.factory'),
       $container->get('stream_wrapper_manager'),
       $container->get('markaspot_group.hierarchy_resolver'),
-      $container->get('markaspot_nuxt.enterprise_feature_gate')
+      $container->get('markaspot_nuxt.enterprise_feature_gate'),
+      $container->get('markaspot_group.organisation_metadata_builder')
     );
   }
 
@@ -1453,11 +1466,12 @@ class MarkASpotSettingsController extends ControllerBase {
     foreach ($groups as $group) {
       $organisation = [
         'id' => $group->uuid(),
+        'gid' => (int) $group->id(),
         'numericId' => (int) $group->id(),
         'label' => $group->label(),
         'parentOrgId' => $this->getOrganisationParentOrgId($group),
         'orgCode' => $this->getOrganisationCode($group),
-      ];
+      ] + $this->organisationMetadataBuilder->build($group, $cache_metadata);
 
       if ($jurisdiction_id !== NULL) {
         $jurisdictionId = $this->getOrganisationJurisdictionId($group);

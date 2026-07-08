@@ -91,6 +91,17 @@ class OrgHierarchyResolver implements OrgHierarchyResolverInterface {
   /**
    * {@inheritdoc}
    */
+  public function getChildIds(int $groupId): array {
+    return $this->treeResolver->getChildIds(
+      $groupId,
+      'load child organisations',
+      'load child organisation',
+    );
+  }
+
+  /**
+   * {@inheritdoc}
+   */
   public function isChildOrg(int $groupId): bool {
     return $this->treeResolver->hasValidParent(
       $groupId,

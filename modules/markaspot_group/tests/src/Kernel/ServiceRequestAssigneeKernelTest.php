@@ -168,6 +168,12 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     ]);
     $this->createField('group', 'jur', 'field_nuxt_config', 'text_long');
     $this->createField('group', 'org', 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
+    $this->createField('group', 'org', 'field_parent_org', 'entity_reference', ['target_type' => 'group']);
+    $this->createField('group', 'org', 'field_org_code', 'string', [
+      'max_length' => 16,
+      'is_ascii' => FALSE,
+      'case_sensitive' => FALSE,
+    ]);
     $this->createField('node', 'service_request', 'field_jurisdiction', 'entity_reference', ['target_type' => 'group']);
     $this->createField('node', 'service_request', 'field_organisation', 'entity_reference', ['target_type' => 'group'], -1);
     $this->createField('node', 'service_request', 'field_assignee', 'entity_reference', ['target_type' => 'user']);
@@ -203,18 +209,21 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
       'type' => 'org',
       'label' => 'Public Works',
       'field_jurisdiction' => $this->jurisdiction->id(),
+      'field_org_code' => '66',
     ]);
     $this->organisation->save();
     $this->parksOrganisation = Group::create([
       'type' => 'org',
       'label' => 'Parks',
       'field_jurisdiction' => $this->jurisdiction->id(),
+      'field_parent_org' => $this->organisation->id(),
     ]);
     $this->parksOrganisation->save();
     $this->trafficOrganisation = Group::create([
       'type' => 'org',
       'label' => 'Traffic',
       'field_jurisdiction' => $this->jurisdiction->id(),
+      'field_parent_org' => $this->parksOrganisation->id(),
     ]);
     $this->trafficOrganisation->save();
 
@@ -224,6 +233,7 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
     $this->organisation->addMember($this->multiOrgMember);
     $this->parksOrganisation->addMember($this->parksMember);
     $this->parksOrganisation->addMember($this->multiOrgMember);
+    $this->trafficOrganisation->addMember($this->multiOrgMember);
     $this->organisation->addMember($this->blockedOrgMember);
     // The superuser is a member of the org too (mirrors the auto-join on group
     // creation in production) but must be filtered out of the candidate list.
@@ -442,11 +452,28 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
             'id' => $this->parksOrganisation->uuid(),
             'gid' => (int) $this->parksOrganisation->id(),
             'label' => 'Parks',
+            'code' => '',
+            'level' => 1,
+            'path_labels' => ['Public Works'],
+            'child_count' => 1,
           ],
           [
             'id' => $this->organisation->uuid(),
             'gid' => (int) $this->organisation->id(),
             'label' => 'Public Works',
+            'code' => '66',
+            'level' => 0,
+            'path_labels' => [],
+            'child_count' => 1,
+          ],
+          [
+            'id' => $this->trafficOrganisation->uuid(),
+            'gid' => (int) $this->trafficOrganisation->id(),
+            'label' => 'Traffic',
+            'code' => '',
+            'level' => 2,
+            'path_labels' => ['Public Works', 'Parks'],
+            'child_count' => 0,
           ],
         ],
       ],
@@ -460,6 +487,10 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
             'id' => $this->organisation->uuid(),
             'gid' => (int) $this->organisation->id(),
             'label' => 'Public Works',
+            'code' => '66',
+            'level' => 0,
+            'path_labels' => [],
+            'child_count' => 1,
           ],
         ],
       ],
@@ -475,6 +506,10 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
             'id' => $this->parksOrganisation->uuid(),
             'gid' => (int) $this->parksOrganisation->id(),
             'label' => 'Parks',
+            'code' => '',
+            'level' => 1,
+            'path_labels' => ['Public Works'],
+            'child_count' => 1,
           ],
         ],
       ],
