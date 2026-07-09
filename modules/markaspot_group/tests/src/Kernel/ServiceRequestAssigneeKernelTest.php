@@ -658,6 +658,80 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
   }
 
   /**
+   * Team assignment sends one mail and unchanged saves do not send another.
+   */
+  public function testAssignedTeamNotificationIsSentOnce(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $this->clearCollectedMails();
+
+    $request->set('field_assigned_team', $this->trafficOrganisation->id());
+    $request->set('field_organisation', $this->trafficOrganisation->id());
+    $request->save();
+
+    $mails = $this->collectedMails();
+    $this->assertCount(1, $mails);
+    $this->assertSame('markaspot_group', $mails[0]['module']);
+    $this->assertSame('org_notification', $mails[0]['key']);
+    $this->assertSame('multi-org@example.test', $mails[0]['to']);
+
+    $request = $this->reloadNode($request);
+    $request->save();
+    $this->assertCount(1, $this->collectedMails());
+  }
+
+  /**
+   * Legacy ECA does not suppress team mail without responsibility sync.
+   */
+  public function testAssignedTeamNotificationWithEcaAndNoResponsibilitySync(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $this->clearCollectedMails();
+    $this->installLegacyOrganisationNotificationEca();
+
+    $request->set('field_assigned_team', $this->trafficOrganisation->id());
+    $request->save();
+
+    $mails = $this->collectedMails();
+    $this->assertCount(1, $mails);
+    $this->assertSame('multi-org@example.test', $mails[0]['to']);
+  }
+
+  /**
+   * Unrelated responsibility changes do not suppress assigned-team mail.
+   */
+  public function testAssignedTeamNotificationWithEcaAndDifferentOrganisation(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $this->clearCollectedMails();
+    $this->setAssignmentSyncsOrganisation(TRUE);
+    $this->installLegacyOrganisationNotificationEca();
+
+    $request->set('field_assigned_team', $this->trafficOrganisation->id());
+    $request->set('field_organisation', $this->parksOrganisation->id());
+    $request->save();
+
+    $mails = $this->collectedMails();
+    $this->assertCount(1, $mails);
+    $this->assertSame('multi-org@example.test', $mails[0]['to']);
+  }
+
+  /**
+   * Legacy ECA owns mail when assignment responsibility sync is enabled.
+   */
+  public function testAssignedTeamNotificationDefersToEcaWithResponsibilitySync(): void {
+    $request = $this->createServiceRequest($this->organisation);
+    $this->clearCollectedMails();
+    $this->setAssignmentSyncsOrganisation(TRUE);
+    $this->installLegacyOrganisationNotificationEca();
+
+    $request->set('field_assigned_team', $this->trafficOrganisation->id());
+    $request->set('field_organisation', $this->trafficOrganisation->id());
+    $request->save();
+
+    $this->assertSame([], $this->collectedMails());
+    $request = $this->reloadNode($request);
+    $this->assertSame([(int) $this->trafficOrganisation->id()], $this->organisationIds($request));
+  }
+
+  /**
    * Assigning a person clears the team assignment.
    */
   public function testAssigneeClearsAssignedTeam(): void {
@@ -838,6 +912,43 @@ final class ServiceRequestAssigneeKernelTest extends KernelTestBase {
       ->resetCache([(int) $this->jurisdiction->id()]);
     $this->jurisdiction = Group::load($this->jurisdiction->id());
     $this->assertInstanceOf(Group::class, $this->jurisdiction);
+  }
+
+  /**
+   * Clears mail collected by the kernel test mail backend.
+   */
+  private function clearCollectedMails(): void {
+    $this->container->get('state')->set('system.test_mail_collector', []);
+  }
+
+  /**
+   * Returns mail collected by the kernel test mail backend.
+   *
+   * @return array<int, array<string, mixed>>
+   *   Collected mail messages.
+   */
+  private function collectedMails(): array {
+    return $this->container->get('state')->get('system.test_mail_collector') ?? [];
+  }
+
+  /**
+   * Installs active legacy organisation notification config for the test.
+   */
+  private function installLegacyOrganisationNotificationEca(): void {
+    $config_name = 'eca.eca.legacy_org_notification';
+    $this->container->get('config.storage')->write($config_name, [
+      'status' => TRUE,
+      'actions' => [
+        [
+          'plugin' => 'service_request_sync_organisations',
+          'configuration' => [
+            'subject' => 'Assigned',
+            'message' => 'A request was assigned.',
+          ],
+        ],
+      ],
+    ]);
+    $this->container->get('config.factory')->reset($config_name);
   }
 
   /**

@@ -1349,6 +1349,84 @@ class EscalationServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests that jurisdiction escalation clears source assignment fields.
+   *
+   * @covers ::escalateRequest
+   */
+  public function testEscalateRequestToJurisdictionClearsAssignments(): void {
+    $target = $this->createMockGroup(20, 'jur', NULL, 'Target');
+    $relationship = $this->createMockRelationship($target);
+
+    $this->groupStorage->method('load')
+      ->with(20)
+      ->willReturn($target);
+    $this->relationshipStorage->method('loadByProperties')
+      ->willReturn([$relationship]);
+
+    $service = new class(
+      $this->entityTypeManager,
+      $this->hierarchyResolver,
+      $this->processor,
+      $this->currentUser,
+      $this->configFactory,
+      $this->time,
+      $this->logger,
+      $this->mailManager,
+      $this->orgHierarchyResolver,
+    ) extends EscalationService {
+
+      /**
+       * {@inheritdoc}
+       */
+      public function resolveEscalationTarget(NodeInterface $node): ?int {
+        return 20;
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      public function appendInternalRemarkText(NodeInterface $node, string $text): void {
+      }
+
+      /**
+       * {@inheritdoc}
+       */
+      protected function sendEscalationNotification($jurGroup, NodeInterface $node, string $note): void {
+      }
+
+    };
+    $service->setStringTranslation($this->getStringTranslationStub());
+
+    $sets = [];
+    $node = $this->createMock(NodeInterface::class);
+    $node->method('id')->willReturn(100);
+    $node->method('hasField')
+      ->willReturnCallback(static fn(string $name): bool => in_array($name, [
+        'field_assigned_team',
+        'field_assignee',
+        'field_jurisdiction',
+      ], TRUE));
+    $node->method('set')
+      ->willReturnCallback(static function (string $field, mixed $value) use (&$sets, $node): NodeInterface {
+        $sets[$field] = $value;
+        return $node;
+      });
+    $node->expects($this->once())
+      ->method('save')
+      ->willReturn(2);
+
+    $this->time->method('getRequestTime')->willReturn(1000);
+    $this->currentUser->method('id')->willReturn(5);
+
+    $service->escalateRequest($node, 20, 'Move request');
+
+    $this->assertNull($sets['field_organisation']);
+    $this->assertNull($sets['field_assigned_team']);
+    $this->assertNull($sets['field_assignee']);
+    $this->assertSame(['target_id' => 20], $sets['field_jurisdiction']);
+  }
+
+  /**
    * @covers ::resolveEscalationTarget
    */
   public function testResolveTargetReturnsCategoryOverride(): void {

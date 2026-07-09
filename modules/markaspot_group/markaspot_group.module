@@ -3373,6 +3373,10 @@ function _markaspot_group_notify_organisation(NodeInterface $node, ?array $organ
 
 /**
  * Sends a pending team-assignment notification through the org mail path.
+ *
+ * Legacy ECA processes only react to field_organisation changes. Suppress the
+ * direct team mail only when assignment-coupled responsibility sync is active
+ * and changed the organisation, because ECA then owns that notification.
  */
 function _markaspot_group_notify_pending_assigned_team(NodeInterface $node): void {
   if (empty($node->_markaspot_group_pending_assigned_team_notification)) {
@@ -3391,7 +3395,10 @@ function _markaspot_group_notify_pending_assigned_team(NodeInterface $node): voi
 
   $team = _markaspot_group_service_request_assigned_team_group($node);
   if ($team instanceof GroupInterface && _markaspot_group_service_request_team_is_valid($node, $team)) {
-    if (_markaspot_group_has_active_org_notification_eca()) {
+    if (_markaspot_group_assignment_syncs_organisation($node)
+      && _markaspot_group_field_target_changed($node, 'field_organisation')
+      && in_array((int) $team->id(), _markaspot_group_field_target_ids($node, 'field_organisation'), TRUE)
+      && _markaspot_group_has_active_org_notification_eca()) {
       return;
     }
     _markaspot_group_notify_organisation_group_once($node, $team);

@@ -192,8 +192,14 @@ class EscalationService implements EscalationServiceInterface {
       : $note;
     $this->appendInternalRemarkText($node, $remarkText);
 
-    // Clear the organisation assignment.
+    // Clear assignments that belong to the source jurisdiction.
     $node->set('field_organisation', NULL);
+    if ($node->hasField('field_assigned_team')) {
+      $node->set('field_assigned_team', NULL);
+    }
+    if ($node->hasField('field_assignee')) {
+      $node->set('field_assignee', NULL);
+    }
 
     // Set the escalation target to the new jurisdiction.
     $node->set('field_escalation', ['target_id' => $targetGroupId]);
