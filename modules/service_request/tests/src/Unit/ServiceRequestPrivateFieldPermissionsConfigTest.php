@@ -159,6 +159,9 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
       // field_assignee fails closed via markaspot_group_entity_field_access
       // (not field_permissions custom) so JSON:API can serve it to staff.
       'field_assignee',
+      // field_assigned_team is guarded by the same access hook (org-unit
+      // assignment) and is only ever exposed to assignment managers.
+      'field_assigned_team',
       'field_attachment',
       'field_boilerplates_sp',
       'field_escalation',

@@ -39,6 +39,10 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   protected function setUp(): void {
     parent::setUp();
     require_once dirname(__DIR__, 3) . '/markaspot_group.module';
+    // The org-notification "once" guard keeps a drupal_static keyed by
+    // node:org id. Under PHPUnit every method shares one process, so reset it
+    // to keep each test's notification expectations isolated.
+    drupal_static_reset();
   }
 
   /**
@@ -578,7 +582,7 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $this->assertStringContainsString("_markaspot_group_field_target_ids(\$node, 'field_organisation')", $source);
     $this->assertStringContainsString('$node_jurisdiction_id === NULL || !_markaspot_group_org_group_matches_jurisdiction($org_group, $node_jurisdiction_id)', $source);
     $this->assertStringContainsString('_markaspot_group_has_active_org_notification_eca()', $source);
-    $this->assertStringContainsString('_markaspot_group_notify_organisation_group($node, $group);', $source);
+    $this->assertStringContainsString('_markaspot_group_notify_organisation_group_once($node, $group);', $source);
     $this->assertStringContainsString("'node' => \$node,", $source);
     $this->assertStringContainsString("'organisation' => \$org_group,", $source);
   }
