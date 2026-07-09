@@ -1,5 +1,17 @@
 # Changelog
 
+## [11.9.144](https://github.com/markaspot/markaspot/compare/11.9.143...11.9.144) (2026-07-09)
+
+### Features
+
+* assign service requests to an organisation unit ([8c81ff7](https://github.com/markaspot/markaspot/commit/8c81ff7fac3d8b1dcc08e10b1a38deb823b7b845))
+* expose organisation code, level and path for the assignment picker ([b123f45](https://github.com/markaspot/markaspot/commit/b123f45fd0e9e5bb72e17077d128c895fa9e27e1))
+* optionally sync responsibility to the assignee organisation ([baab0c8](https://github.com/markaspot/markaspot/commit/baab0c88fda91c9860fbafe3ac4508790246ab70))
+
+### Bug Fixes
+
+* exclude the superuser from assignment candidates ([39c101e](https://github.com/markaspot/markaspot/commit/39c101eb6508ab77ed23b84bc6871b383a0dd93f))
+
 ## [11.9.143](https://github.com/markaspot/markaspot/compare/11.9.142...11.9.143) (2026-07-07)
 
 ### Features
