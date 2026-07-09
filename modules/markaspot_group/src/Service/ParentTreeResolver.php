@@ -110,6 +110,13 @@ class ParentTreeResolver {
   protected ?\Closure $edgeAccepts;
 
   /**
+   * Raw child group IDs keyed by parent group ID.
+   *
+   * @var array<int, int[]>
+   */
+  private array $childIdsByGroupId = [];
+
+  /**
    * Constructs a ParentTreeResolver.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entityTypeManager
@@ -552,13 +559,17 @@ class ParentTreeResolver {
    *   Raw child group IDs.
    */
   protected function loadChildIds(int $groupId): array {
+    if (array_key_exists($groupId, $this->childIdsByGroupId)) {
+      return $this->childIdsByGroupId[$groupId];
+    }
+
     $children = $this->database->select($this->parentTableName, 'p')
       ->fields('p', ['entity_id'])
       ->condition($this->parentColumnName, $groupId)
       ->execute()
       ->fetchCol();
 
-    return array_map('intval', $children);
+    return $this->childIdsByGroupId[$groupId] = array_map('intval', $children);
   }
 
   /**

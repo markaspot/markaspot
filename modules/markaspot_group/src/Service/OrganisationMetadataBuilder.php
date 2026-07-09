@@ -14,6 +14,20 @@ use Drupal\group\Entity\GroupInterface;
 class OrganisationMetadataBuilder {
 
   /**
+   * Built metadata keyed by organisation group ID.
+   *
+   * @var array<int, array{code: string, level: int, path_labels: string[], child_count: int}>
+   */
+  private array $metadataByGroupId = [];
+
+  /**
+   * Cacheability for built metadata keyed by organisation group ID.
+   *
+   * @var array<int, \Drupal\Core\Cache\CacheableMetadata>
+   */
+  private array $cacheabilityByGroupId = [];
+
+  /**
    * Constructs an OrganisationMetadataBuilder.
    */
   public function __construct(
@@ -33,8 +47,17 @@ class OrganisationMetadataBuilder {
    *   Metadata used by assignment and delegation pickers.
    */
   public function build(GroupInterface $organisation, ?CacheableMetadata $cacheMetadata = NULL): array {
+    $groupId = (int) $organisation->id();
+    if (array_key_exists($groupId, $this->metadataByGroupId)) {
+      $cacheMetadata?->addCacheableDependency($this->cacheabilityByGroupId[$groupId]);
+      return $this->metadataByGroupId[$groupId];
+    }
+
+    $builtCacheMetadata = new CacheableMetadata();
     if ($organisation->bundle() !== 'org') {
-      return [
+      $this->cacheabilityByGroupId[$groupId] = $builtCacheMetadata;
+      $cacheMetadata?->addCacheableDependency($builtCacheMetadata);
+      return $this->metadataByGroupId[$groupId] = [
         'code' => $this->getCode($organisation),
         'level' => 0,
         'path_labels' => [],
@@ -42,17 +65,21 @@ class OrganisationMetadataBuilder {
       ];
     }
 
-    $groupId = (int) $organisation->id();
     $ancestorIds = array_reverse($this->orgHierarchyResolver->getAncestorIds($groupId));
     $childIds = $this->orgHierarchyResolver->getChildIds($groupId);
-    $this->addCacheableGroupDependencies($childIds, $cacheMetadata);
+    $this->addCacheableGroupDependencies($childIds, $builtCacheMetadata);
 
-    return [
+    $metadata = [
       'code' => $this->getCode($organisation),
       'level' => count($ancestorIds),
-      'path_labels' => $this->loadLabels($ancestorIds, $cacheMetadata),
+      'path_labels' => $this->loadLabels($ancestorIds, $builtCacheMetadata),
       'child_count' => count($childIds),
     ];
+    $this->metadataByGroupId[$groupId] = $metadata;
+    $this->cacheabilityByGroupId[$groupId] = $builtCacheMetadata;
+    $cacheMetadata?->addCacheableDependency($builtCacheMetadata);
+
+    return $metadata;
   }
 
   /**

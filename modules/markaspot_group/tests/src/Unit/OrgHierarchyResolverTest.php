@@ -355,6 +355,30 @@ class OrgHierarchyResolverTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::getChildIds
+   */
+  public function testChildIdsAreMemoizedPerParent(): void {
+    $root = $this->createMockGroup(10);
+    $this->groupStorage->method('load')
+      ->with(10)
+      ->willReturn($root);
+
+    $statement = $this->createMock(StatementInterface::class);
+    $statement->method('fetchCol')->willReturn(['20', '30']);
+    $select = $this->createMock(Select::class);
+    $select->method('fields')->willReturnSelf();
+    $select->method('condition')->willReturnSelf();
+    $select->method('execute')->willReturn($statement);
+    $this->database->expects($this->once())
+      ->method('select')
+      ->with('group__field_parent_org', 'p')
+      ->willReturn($select);
+
+    $this->assertSame([20, 30], $this->resolver->getChildIds(10));
+    $this->assertSame([20, 30], $this->resolver->getChildIds(10));
+  }
+
+  /**
    * @covers ::isChildOrg
    */
   public function testIsChildOrgReflectsParentReference(): void {
