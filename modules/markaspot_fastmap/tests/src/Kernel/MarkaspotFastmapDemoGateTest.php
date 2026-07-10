@@ -130,6 +130,21 @@ class MarkaspotFastmapDemoGateTest extends KernelTestBase {
       'label' => 'Stripe subscription id',
     ])->save();
 
+    // field_stripe_customer_id on jur (string). A customer is created before
+    // checkout completes, so it must not by itself mark a demo as permanent.
+    FieldStorageConfig::create([
+      'field_name' => 'field_stripe_customer_id',
+      'entity_type' => 'group',
+      'type' => 'string',
+      'settings' => ['max_length' => 255],
+    ])->save();
+    FieldConfig::create([
+      'field_name' => 'field_stripe_customer_id',
+      'entity_type' => 'group',
+      'bundle' => 'jur',
+      'label' => 'Stripe customer id',
+    ])->save();
+
     // Roles used in the tests.
     Role::create(['id' => 'administrator', 'label' => 'Administrator', 'is_admin' => TRUE])->save();
 
@@ -146,6 +161,7 @@ class MarkaspotFastmapDemoGateTest extends KernelTestBase {
       'type' => 'jur',
       'label' => 'Demo Jur',
       'field_expiry_date' => time() + 5 * 86400,
+      'field_stripe_customer_id' => 'cus_pending_checkout',
       'field_stripe_subscription_id' => '',
     ]);
     $this->demoGroup->save();
@@ -175,6 +191,45 @@ class MarkaspotFastmapDemoGateTest extends KernelTestBase {
       $node->isPublished(),
       'New service_request in demo workspace must be set unpublished by the demo gate.'
     );
+  }
+
+  /**
+   * A Stripe customer without a subscription is still a demo workspace.
+   *
+   * The public settings payload drives the demo badge and the onboarding
+   * checklist. It must match the report publication gate exactly, otherwise
+   * a pending checkout appears active while all reports remain unpublished.
+   */
+  public function testPendingCheckoutIsNotPermanentInPublicSettings(): void {
+    $settings = ['jurisdiction' => []];
+
+    markaspot_fastmap_markaspot_nuxt_settings_alter($settings, $this->demoGroup);
+
+    $this->assertFalse($settings['jurisdiction']['is_permanent']);
+    $this->assertTrue($settings['jurisdiction']['has_stripe_customer']);
+  }
+
+  /**
+   * A completed checkout stays active even if its grace expiry is stale.
+   *
+   * The public settings payload, reminder loop, and deletion loop all use
+   * the same demo predicate. A valid subscription therefore wins over an
+   * old expiry timestamp and keeps the workspace safe from demo cleanup.
+   */
+  public function testSubscriptionWithStaleExpiryIsPermanent(): void {
+    $activatedGroup = Group::create([
+      'type' => 'jur',
+      'label' => 'Activated with stale expiry',
+      'field_expiry_date' => time() - 60,
+      'field_stripe_subscription_id' => 'sub_active',
+    ]);
+    $activatedGroup->save();
+
+    $settings = ['jurisdiction' => []];
+    markaspot_fastmap_markaspot_nuxt_settings_alter($settings, $activatedGroup);
+
+    $this->assertFalse(_markaspot_fastmap_workspace_in_demo_state($activatedGroup));
+    $this->assertTrue($settings['jurisdiction']['is_permanent']);
   }
 
   /**

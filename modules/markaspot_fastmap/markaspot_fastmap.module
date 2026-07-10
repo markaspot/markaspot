@@ -1050,19 +1050,18 @@ function markaspot_fastmap_markaspot_nuxt_settings_alter(array &$settings, $grou
     $settings['jurisdiction']['visibility'] = 'public';
   }
 
-  // Whether the workspace is permanent (not a demo with expiry).
-  // Permanent if: Stripe customer exists, OR no expiry date is set.
-  // Only workspaces with an explicit expiry_date are considered demo.
+  // Whether the workspace is permanent. This must use the same predicate as
+  // the report publication gate: a Stripe customer only proves that checkout
+  // started, not that a subscription activated the workspace.
   if ($group) {
-    $has_stripe = $group->hasField('field_stripe_customer_id') && !$group->get('field_stripe_customer_id')->isEmpty();
-    $has_expiry = $group->hasField('field_expiry_date') && !$group->get('field_expiry_date')->isEmpty();
-    $settings['jurisdiction']['is_permanent'] = $has_stripe || !$has_expiry;
+    $has_stripe_customer = $group->hasField('field_stripe_customer_id') && !$group->get('field_stripe_customer_id')->isEmpty();
+    $settings['jurisdiction']['is_permanent'] = !_markaspot_fastmap_workspace_in_demo_state($group);
     // Boolean signal that a Stripe customer is linked. Avoids leaking the
     // pseudonymous Stripe ID (PII under GDPR) through this public, cacheable
     // settings endpoint. The frontend useTierGating resolver only needs
     // truthiness to disambiguate enterprise workspaces from demo workspaces
     // in the tier=NULL state.
-    $settings['jurisdiction']['has_stripe_customer'] = $has_stripe;
+    $settings['jurisdiction']['has_stripe_customer'] = $has_stripe_customer;
   }
 
   // Workspace expiry timestamp (demo or checkout grace period).
@@ -1202,6 +1201,11 @@ function markaspot_fastmap_cron(): void {
       ->execute();
 
     foreach ($groupStorage->loadMultiple($reminderIds) as $group) {
+      // A successful subscription may briefly coexist with the checkout grace
+      // expiry. It is activated, so it must not receive a demo-expiry notice.
+      if (!_markaspot_fastmap_workspace_in_demo_state($group)) {
+        continue;
+      }
       $stateKey = 'markaspot_fastmap.demo_reminder_sent.' . $group->id();
       if (!$state->get($stateKey)) {
         // Resolve recipients: the workspace creator (tenant member) becomes the
@@ -1252,7 +1256,13 @@ function markaspot_fastmap_cron(): void {
 
     if (!empty($expiredIds)) {
       $provisioning = \Drupal::service('markaspot_fastmap.workspace_provisioning');
-      foreach ($expiredIds as $expiredGroupId) {
+      foreach ($groupStorage->loadMultiple($expiredIds) as $expiredGroupId => $group) {
+        // EntityQuery can only select by expiry. Recheck the canonical demo
+        // predicate before teardown so a persisted grace expiry never deletes
+        // an activated workspace with a valid Stripe subscription.
+        if (!_markaspot_fastmap_workspace_in_demo_state($group)) {
+          continue;
+        }
         $logger->notice('Auto-deleting expired demo workspace @id.', ['@id' => $expiredGroupId]);
         $state->delete('markaspot_fastmap.demo_reminder_sent.' . $expiredGroupId);
         $provisioning->teardownWorkspace((int) $expiredGroupId);
