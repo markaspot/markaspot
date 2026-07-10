@@ -2060,6 +2060,129 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests GET normalises the legacy classicReporting object to a boolean.
+   *
+   * Old tenant configs stored classicReporting with sub-options; emitting
+   * the raw object breaks the settings round-trip because the PATCH
+   * validation only accepts plain booleans.
+   *
+   * @covers ::getFeatureSettings
+   */
+  public function testGetFeatureSettingsNormalisesLegacyClassicReportingObject(): void {
+    $nuxtConfig = json_encode([
+      'features' => [
+        'classicReporting' => ['enabled' => TRUE, 'formFirst' => TRUE, 'bottomSheet' => TRUE],
+        'photoReporting' => ['enabled' => FALSE],
+        'statistics' => ['enabled' => TRUE],
+      ],
+    ]);
+    $group = $this->createMockGroup([
+      'field_nuxt_config' => $nuxtConfig,
+    ]);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $request = Request::create('/api/tenant/14/features', 'GET');
+    $response = $this->controller->getFeatureSettings($request, '14');
+
+    $this->assertEquals(200, $response->getStatusCode());
+    $data = json_decode($response->getContent(), TRUE);
+    $this->assertTrue($data['features']['classicReporting']);
+    $this->assertFalse($data['features']['photoReporting']);
+    $this->assertTrue($data['features']['statistics']);
+  }
+
+  /**
+   * Tests PATCH accepts the legacy object form and heals the stored value.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsAcceptsLegacyObjectAndHeals(): void {
+    $storedNuxtConfig = json_encode([
+      'features' => [
+        'classicReporting' => ['enabled' => TRUE, 'formFirst' => TRUE, 'bottomSheet' => TRUE],
+      ],
+    ]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $patchRequest = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['classicReporting' => ['enabled' => TRUE, 'formFirst' => TRUE, 'bottomSheet' => TRUE]])
+    );
+    $patchResponse = $this->controller->updateFeatureSettings($patchRequest, '14');
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $patchResponse->getStatusCode());
+    $this->assertTrue($updatedConfig['features']['classicReporting']);
+    $this->assertIsBool($updatedConfig['features']['classicReporting']);
+    // Legacy sub-options are dropped, not resurrected: formFirst has been
+    // runtime-dead inside classicReporting on 2.x, so healing must never
+    // flip the top-level flag as a save side effect.
+    $this->assertArrayNotHasKey('formFirst', $updatedConfig['features']);
+  }
+
+  /**
+   * Tests healing never touches an explicit top-level formFirst value.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsKeepsExplicitFormFirst(): void {
+    $storedNuxtConfig = json_encode(['features' => []]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $patchRequest = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'classicReporting' => ['enabled' => FALSE, 'formFirst' => TRUE],
+        'formFirst' => FALSE,
+      ])
+    );
+    $patchResponse = $this->controller->updateFeatureSettings($patchRequest, '14');
+    $updatedConfig = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertEquals(200, $patchResponse->getStatusCode());
+    $this->assertFalse($updatedConfig['features']['classicReporting']);
+    $this->assertFalse($updatedConfig['features']['formFirst']);
+  }
+
+  /**
+   * Tests PATCH still rejects non-boolean scalar flag values.
+   *
+   * @covers ::updateFeatureSettings
+   */
+  public function testUpdateFeatureSettingsRejectsNonBooleanScalar(): void {
+    $storedNuxtConfig = json_encode(['features' => []]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig);
+    $this->groupStorage->method('load')->with(14)->willReturn($group);
+
+    $patchRequest = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['classicReporting' => '1'])
+    );
+    $patchResponse = $this->controller->updateFeatureSettings($patchRequest, '14');
+
+    $this->assertEquals(422, $patchResponse->getStatusCode());
+    $data = json_decode($patchResponse->getContent(), TRUE);
+    $this->assertSame('classicReporting must be a boolean.', $data['error']);
+  }
+
+  /**
    * Tests assignmentSyncsOrganisation defaults FALSE and can be patched.
    *
    * @covers ::getFeatureSettings

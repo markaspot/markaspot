@@ -1973,28 +1973,33 @@ final class TenantSettingsController extends ControllerBase {
     return new JsonResponse([
       'jurisdiction_id' => (int) $group->id(),
       'features' => [
-        'photoReporting' => $features['photoReporting'] ?? TRUE,
-        'classicReporting' => $features['classicReporting'] ?? FALSE,
-        'voting' => $features['voting'] ?? FALSE,
-        'statistics' => $features['statistics'] ?? FALSE,
-        'following' => $features['following'] ?? FALSE,
-        'passwordless' => $features['passwordless'] ?? FALSE,
+        // All simple flags go through getBooleanFeatureValue(): legacy
+        // tenant configs still store some of them in the richer object
+        // form (e.g. classicReporting: {enabled, formFirst, bottomSheet})
+        // and the settings UI round-trips whatever we emit here, so raw
+        // passthrough breaks the PATCH validation with a 422.
+        'photoReporting' => $this->getBooleanFeatureValue($features, 'photoReporting', TRUE),
+        'classicReporting' => $this->getBooleanFeatureValue($features, 'classicReporting', FALSE),
+        'voting' => $this->getBooleanFeatureValue($features, 'voting', FALSE),
+        'statistics' => $this->getBooleanFeatureValue($features, 'statistics', FALSE),
+        'following' => $this->getBooleanFeatureValue($features, 'following', FALSE),
+        'passwordless' => $this->getBooleanFeatureValue($features, 'passwordless', FALSE),
         // Visibility of the citizen footer sign-in link; /auth/login itself
         // stays reachable regardless of this flag.
         'loginLink' => $this->getBooleanFeatureValue($features, 'loginLink', TRUE),
-        'aiAnalysis' => $features['aiAnalysis'] ?? FALSE,
+        'aiAnalysis' => $this->getBooleanFeatureValue($features, 'aiAnalysis', FALSE),
         'aiProcessing' => $this->getBooleanFeatureValue($features, 'aiProcessing', FALSE),
         'piiRedaction' => $this->getBooleanFeatureValue($features, 'piiRedaction', FALSE),
-        'feedback' => $features['feedback'] ?? FALSE,
+        'feedback' => $this->getBooleanFeatureValue($features, 'feedback', FALSE),
         'pwaInstallPrompt' => $this->getBooleanFeatureValue($features, 'pwaInstallPrompt', FALSE),
-        'objectId' => $features['objectId'] ?? FALSE,
-        'party' => $features['party'] ?? FALSE,
+        'objectId' => $this->getBooleanFeatureValue($features, 'objectId', FALSE),
+        'party' => $this->getBooleanFeatureValue($features, 'party', FALSE),
         'formFirst' => $this->getBooleanFeatureValue($features, 'formFirst', FALSE),
         'dashboard' => $this->getBooleanFeatureValue($features, 'dashboard', TRUE),
         'dashboardRequestCreate' => $this->getBooleanFeatureValue($features, 'dashboardRequestCreate', TRUE),
         'operationsDashboard' => $operations_dashboard,
         'caseAssignment' => $this->canUseCaseAssignment($group),
-        'contactForm' => $features['contactForm'] ?? FALSE,
+        'contactForm' => $this->getBooleanFeatureValue($features, 'contactForm', FALSE),
         'privacyBlockOnFlag' => $this->getBooleanFeatureValue($features, 'privacyBlockOnFlag', FALSE),
         'delegationNoteRequired' => $this->getBooleanFeatureValue($features, 'delegationNoteRequired', FALSE),
         'assignmentSyncsOrganisation' => $this->getBooleanFeatureValue($features, 'assignmentSyncsOrganisation', FALSE),
@@ -2049,6 +2054,21 @@ final class TenantSettingsController extends ControllerBase {
 
     if (!is_array($data)) {
       return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    // Accept the legacy object form for simple flags and normalise it to a
+    // plain boolean before validation: older tenant configs stored e.g.
+    // classicReporting as {enabled, formFirst, bottomSheet} and clients may
+    // round-trip that shape. Persisting afterwards writes the plain boolean,
+    // healing the stored config on the first save. Legacy sub-options
+    // (formFirst, bottomSheet) are dropped deliberately: they have been
+    // runtime-dead on 2.x (useFormFirstMode and the bottom sheet read their
+    // own top-level config), and resurrecting stale intent here would flip
+    // citizen-facing behaviour as a save side effect.
+    foreach (self::SIMPLE_FEATURE_FLAGS as $flag) {
+      if (array_key_exists($flag, $data) && is_array($data[$flag]) && is_bool($data[$flag]['enabled'] ?? NULL)) {
+        $data[$flag] = $data[$flag]['enabled'];
+      }
     }
 
     // Validate simple boolean feature flags.
