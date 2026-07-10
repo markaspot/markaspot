@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.145](https://github.com/markaspot/markaspot/compare/11.9.144...11.9.145) (2026-07-10)
+
+### Bug Fixes
+
+* align FastMap demo activation state ([92248e9](https://github.com/markaspot/markaspot/commit/92248e9c326afa58583a9a908ed4ce3a6b429939))
+
 ## [11.9.144](https://github.com/markaspot/markaspot/compare/11.9.143...11.9.144) (2026-07-09)
 
 ### Features
