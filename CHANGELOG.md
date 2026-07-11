@@ -1,5 +1,20 @@
 # Changelog
 
+## [11.9.146](https://github.com/markaspot/markaspot/compare/11.9.145...11.9.146) (2026-07-11)
+
+### Features
+
+* add configurable citizen terminology ([ae1a1ad](https://github.com/markaspot/markaspot/commit/ae1a1ad9de3ab094bd57c5b8bf93f6a51c3e60e7))
+
+### Bug Fixes
+
+* clear assignments on escalation and refine team mail suppression ([b08fa69](https://github.com/markaspot/markaspot/commit/b08fa694c923c9908ff60e726d7f1cfbc837ef95))
+* normalise legacy feature flag shapes in tenant settings ([49778da](https://github.com/markaspot/markaspot/commit/49778da8101a3ffe3d95f46ede5eaca60a9cae9e))
+
+### Performance
+
+* memoize organisation metadata and child id lookups ([55c41da](https://github.com/markaspot/markaspot/commit/55c41da361ce910a33fc18ad4b23bae14265025c))
+
 ## [11.9.145](https://github.com/markaspot/markaspot/compare/11.9.144...11.9.145) (2026-07-10)
 
 ### Bug Fixes
