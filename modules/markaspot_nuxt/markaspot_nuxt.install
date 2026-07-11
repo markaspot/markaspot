@@ -545,3 +545,142 @@ function markaspot_nuxt_update_11906(): string {
 
   return 'Disabled uid / revision_uid on node--service_request JSON:API resource.';
 }
+
+/**
+ * Backfill dashboard JSON:API resource configs for existing tenants.
+ *
+ * jsonapi_extras intentionally disables unconfigured resources on FastMap
+ * tenants. Optional config is installed for fresh sites, but Drupal does not
+ * retroactively install it for tenants that already had markaspot_nuxt. Seed
+ * only the resources needed by the request dashboard and its included data.
+ * Existing resource configs are left untouched so tenant-specific settings
+ * remain authoritative.
+ */
+function markaspot_nuxt_update_11907(): string {
+  if (!\Drupal::entityTypeManager()->hasDefinition('jsonapi_resource_config')) {
+    return 'Skipped dashboard JSON:API resource backfill: jsonapi_extras is not enabled on this tenant.';
+  }
+
+  $source = new FileStorage(__DIR__ . '/config/optional');
+  $configFactory = \Drupal::configFactory();
+  $moduleHandler = \Drupal::moduleHandler();
+  $storage = \Drupal::entityTypeManager()->getStorage('jsonapi_resource_config');
+  $entityFieldManager = \Drupal::service('entity_field.manager');
+  $hardenResourceFields = static function ($resource, string $entityTypeId, string $bundle, array $allowedFields) use ($entityFieldManager): bool {
+    $fields = $resource->get('resourceFields') ?? [];
+    $changed = FALSE;
+
+    foreach (array_keys($entityFieldManager->getFieldDefinitions($entityTypeId, $bundle)) as $fieldName) {
+      if (in_array($fieldName, $allowedFields, TRUE)) {
+        continue;
+      }
+      $field = [
+        'disabled' => TRUE,
+        'fieldName' => $fieldName,
+        'publicName' => $fieldName,
+        'enhancer' => ['id' => ''],
+      ];
+      if (($fields[$fieldName] ?? NULL) === $field) {
+        continue;
+      }
+      $fields[$fieldName] = $field;
+      $changed = TRUE;
+    }
+
+    if ($changed) {
+      $resource->set('resourceFields', $fields);
+    }
+
+    return $changed;
+  };
+  $hardeningPolicies = [
+    'group--jur' => ['group', 'jur', ['id', 'label']],
+    'paragraph--internal_remark' => ['paragraph', 'internal_remark', ['id', 'uuid', 'created', 'field_internal_remark_text', 'field_author']],
+    'taxonomy_term--service_provider_status' => ['taxonomy_term', 'service_provider_status', ['tid', 'status', 'name', 'weight']],
+    'node--boilerplate' => ['node', 'boilerplate', ['nid', 'title', 'body', 'field_jurisdiction', 'field_boilerplate_type', 'field_organisation']],
+  ];
+  $resourceIds = [
+    'node--service_request',
+    'group--jur',
+    'group--org',
+    'taxonomy_term--service_category',
+    'taxonomy_term--service_status',
+    'taxonomy_term--district',
+    'taxonomy_term--sublocality',
+    'media--request_image',
+    'file--file',
+    'paragraph--status',
+    'paragraph--internal_remark',
+    'taxonomy_term--service_provider',
+    'taxonomy_term--service_provider_status',
+    'node--boilerplate',
+    'user--user',
+  ];
+  $seeded = [];
+  $hardened = [];
+  $skipped = [];
+
+  foreach ($resourceIds as $resourceId) {
+    $existing = $storage->load($resourceId);
+    if ($existing) {
+      if (isset($hardeningPolicies[$resourceId])) {
+        [$entityTypeId, $bundle, $allowedFields] = $hardeningPolicies[$resourceId];
+        // Tighten legacy copies as well as newly seeded resources. These
+        // dashboard contracts deliberately expose only their allow-listed
+        // fields, including tenant-specific group and billing data.
+        if ($hardenResourceFields($existing, $entityTypeId, $bundle, $allowedFields)) {
+          $existing->save();
+          $hardened[] = $resourceId;
+        }
+      }
+      continue;
+    }
+
+    $configName = 'jsonapi_extras.jsonapi_resource_config.' . $resourceId;
+    $seed = $source->read($configName);
+    if ($seed === FALSE) {
+      $skipped[] = $resourceId . ' (source missing)';
+      continue;
+    }
+
+    foreach ($seed['dependencies']['module'] ?? [] as $module) {
+      if (!$moduleHandler->moduleExists($module)) {
+        $skipped[] = $resourceId . ' (module ' . $module . ' missing)';
+        continue 2;
+      }
+    }
+    foreach ($seed['dependencies']['config'] ?? [] as $dependency) {
+      if ($configFactory->get($dependency)->isNew()) {
+        $skipped[] = $resourceId . ' (config dependency missing)';
+        continue 2;
+      }
+    }
+
+    $resource = $storage->create($seed);
+    if (isset($hardeningPolicies[$resourceId])) {
+      [$entityTypeId, $bundle, $allowedFields] = $hardeningPolicies[$resourceId];
+      $hardenResourceFields($resource, $entityTypeId, $bundle, $allowedFields);
+    }
+
+    // Save through the config entity storage so jsonapi_extras rebuilds its
+    // route and resource-type caches immediately.
+    $resource->save();
+    $seeded[] = $resourceId;
+  }
+
+  if (!$seeded && !$hardened && !$skipped) {
+    return 'Dashboard JSON:API resource configs already exist.';
+  }
+
+  $message = $seeded
+    ? 'Seeded dashboard JSON:API resource configs: ' . implode(', ', $seeded) . '.'
+    : 'No dashboard JSON:API resource configs were seeded.';
+  if ($skipped) {
+    $message .= ' Skipped: ' . implode(', ', $skipped) . '.';
+  }
+  if ($hardened) {
+    $message .= ' Hardened existing resource configs: ' . implode(', ', $hardened) . '.';
+  }
+
+  return $message;
+}

@@ -52,7 +52,7 @@ class MarkaspotNuxtSettingsForm extends ConfigFormBase {
       '#type' => 'url',
       '#title' => $this->t('Frontend Base URL'),
       '#default_value' => $config->get('frontend_base_url') ?: '',
-      '#description' => $this->t('The base URL of your Nuxt frontend application (e.g., https://example.com:3001). When frontend URL generation is enabled, this configured value is used first for generic frontend links, confirmation links, the [markaspot_frontend:url] token, and notification tokens such as [node:markaspot_frontend_url]. If this field is disabled or empty, generic links use safe FRONTEND_BASE_URL only. Notification tokens then use safe FRONTEND_BASE_URL first, then MARKASPOT_MAIL_FRONTEND_BASE_URL.'),
+      '#description' => $this->t('The base URL of your Nuxt frontend application (e.g., https://example.com:3001). When frontend URL generation is enabled, this configured value is used for generic frontend links, confirmation links, and notification tokens such as [node:markaspot_frontend_url]. Generic links fall back to safe FRONTEND_BASE_URL when this field is disabled or empty. Notification links prefer the host-specific MARKASPOT_MAIL_FRONTEND_BASE_URL runtime setting, then use this configured value and safe FRONTEND_BASE_URL.'),
       '#placeholder' => 'https://example.com:3001',
     ];
 

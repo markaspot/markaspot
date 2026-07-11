@@ -26,6 +26,7 @@ use Drupal\group\GroupMembership;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_group\Controller\GroupInvitationController;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
@@ -414,6 +415,67 @@ class GroupInvitationControllerTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::invite
+   * @covers ::resolveInvitationFrontendBase
+   */
+  public function testInviteFailsClosedWithoutPublicFrontendBase(): void {
+    $group = $this->createGroup('jur');
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->expects($this->once())
+      ->method('load')
+      ->with(5)
+      ->willReturn($group);
+
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')
+      ->with('group')
+      ->willReturn($groupStorage);
+
+    $currentAccount = $this->createMock(AccountInterface::class);
+    $currentAccount->method('id')->willReturn(1);
+    $currentAccount->method('getRoles')->willReturn([]);
+
+    $database = $this->createMock(Connection::class);
+    $database->expects($this->never())->method('select');
+    $database->expects($this->never())->method('insert');
+
+    $controller = new GroupInvitationController(
+      $database,
+      $entityTypeManager,
+      $this->createMock(MailManagerInterface::class),
+      $this->createMock(ModuleHandlerInterface::class),
+      $this->createMock(LoggerInterface::class),
+      $this->createMock(GroupMembershipLoaderInterface::class),
+      $this->createMock(JurisdictionHierarchyResolverInterface::class),
+      $currentAccount,
+      $this->createMock(FloodInterface::class),
+      $this->createMock(LockBackendInterface::class),
+    );
+
+    $request = Request::create(
+      '/api/group-members/invite',
+      'POST',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([
+        'email' => 'invitee@example.com',
+        'group_id' => 5,
+        'roles' => [],
+      ])
+    );
+
+    $response = $controller->invite($request);
+
+    $this->assertSame(503, $response->getStatusCode());
+    $this->assertSame(
+      ['error' => 'Invitation email delivery is temporarily unavailable.'],
+      json_decode((string) $response->getContent(), TRUE)
+    );
+  }
+
+  /**
    * @covers ::listInvitations
    */
   public function testListInvitationsRejectsForeignGroupBeforeQueryingRows(): void {
@@ -514,14 +576,11 @@ class GroupInvitationControllerTest extends UnitTestCase {
    * @covers ::getEntityLabelForLangcode
    */
   public function testSendInvitationEmailUsesTranslatedGroupName(): void {
-    $frontendConfig = $this->createMock(ImmutableConfig::class);
-    $frontendConfig->method('get')->with('frontend_base_url')->willReturn('https://frontend.example');
     $siteConfig = $this->createMock(ImmutableConfig::class);
     $siteConfig->method('get')->with('name')->willReturn('CivicSpot');
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
     $configFactory->method('get')
       ->willReturnCallback(fn(string $name) => match ($name) {
-        'markaspot_nuxt.settings' => $frontendConfig,
         'system.site' => $siteConfig,
         default => $this->createMock(ImmutableConfig::class),
       });
@@ -551,7 +610,7 @@ class GroupInvitationControllerTest extends UnitTestCase {
         'de',
         $this->callback(static fn(array $params): bool => $params['group_name'] === 'Strassen'
           && $params['site_name'] === 'CivicSpot'
-          && $params['claim_url'] === 'https://frontend.example/auth/invite?token=abc123'
+          && $params['claim_url'] === 'https://civicspot.test.mark-a-spot.com/auth/invite?token=abc123'
           && $params['langcode'] === 'de'),
         NULL,
         TRUE,
@@ -581,8 +640,70 @@ class GroupInvitationControllerTest extends UnitTestCase {
       'abc123',
       $group,
       'de',
-      Request::create('https://drupal.example/api/group-members/invite'),
+      'https://civicspot.test.mark-a-spot.com/',
     );
+  }
+
+  /**
+   * @covers ::resolveInvitationFrontendBase
+   */
+  public function testResolveInvitationFrontendBaseUsesNotificationResolver(): void {
+    $frontendUrlService = $this->createMock(FrontendUrlService::class);
+    $frontendUrlService->expects($this->once())
+      ->method('getNotificationFrontendBaseUrl')
+      ->willReturn('https://civicspot.test.mark-a-spot.com/');
+
+    $controller = new GroupInvitationController(
+      $this->createMock(Connection::class),
+      $this->createMock(EntityTypeManagerInterface::class),
+      $this->createMock(MailManagerInterface::class),
+      $this->createMock(ModuleHandlerInterface::class),
+      $this->createMock(LoggerInterface::class),
+      $this->createMock(GroupMembershipLoaderInterface::class),
+      $this->createMock(JurisdictionHierarchyResolverInterface::class),
+      $this->createMock(AccountInterface::class),
+      $this->createMock(FloodInterface::class),
+      $this->createMock(LockBackendInterface::class),
+      NULL,
+      NULL,
+      $frontendUrlService,
+    );
+
+    $method = new \ReflectionMethod($controller, 'resolveInvitationFrontendBase');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame('https://civicspot.test.mark-a-spot.com', $method->invoke($controller));
+  }
+
+  /**
+   * @covers ::resolveInvitationFrontendBase
+   */
+  public function testResolveInvitationFrontendBaseRejectsHttp(): void {
+    $frontendUrlService = $this->createMock(FrontendUrlService::class);
+    $frontendUrlService->expects($this->once())
+      ->method('getNotificationFrontendBaseUrl')
+      ->willReturn('http://civicspot.test.mark-a-spot.com');
+
+    $controller = new GroupInvitationController(
+      $this->createMock(Connection::class),
+      $this->createMock(EntityTypeManagerInterface::class),
+      $this->createMock(MailManagerInterface::class),
+      $this->createMock(ModuleHandlerInterface::class),
+      $this->createMock(LoggerInterface::class),
+      $this->createMock(GroupMembershipLoaderInterface::class),
+      $this->createMock(JurisdictionHierarchyResolverInterface::class),
+      $this->createMock(AccountInterface::class),
+      $this->createMock(FloodInterface::class),
+      $this->createMock(LockBackendInterface::class),
+      NULL,
+      NULL,
+      $frontendUrlService,
+    );
+
+    $method = new \ReflectionMethod($controller, 'resolveInvitationFrontendBase');
+    $method->setAccessible(TRUE);
+
+    $this->assertNull($method->invoke($controller));
   }
 
   /**

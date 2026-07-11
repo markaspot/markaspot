@@ -43,10 +43,15 @@ class FrontendUrlService {
    *   The frontend base URL or NULL if not configured.
    */
   public function getNotificationFrontendBaseUrl(): ?string {
-    return $this->resolveFrontendBaseUrl([
-      'FRONTEND_BASE_URL',
-      'MARKASPOT_MAIL_FRONTEND_BASE_URL',
-    ]);
+    // A tenant's public runtime host is authoritative for mail. In particular,
+    // do not let an imported or shared frontend config send bearer links to a
+    // FastMap container host when this host-specific mail override is set.
+    $mail_frontend_base_url = $this->normalizeFrontendBaseUrl((string) getenv('MARKASPOT_MAIL_FRONTEND_BASE_URL'));
+    if ($mail_frontend_base_url !== NULL) {
+      return $mail_frontend_base_url;
+    }
+
+    return $this->resolveFrontendBaseUrl(['FRONTEND_BASE_URL']);
   }
 
   /**

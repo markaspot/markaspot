@@ -2,6 +2,7 @@ langcode: en
 status: true
 dependencies:
   config:
+    - field.field.node.boilerplate.field_organisation
     - field.field.node.boilerplate.field_boilerplate_type
     - field.field.node.boilerplate.field_jurisdiction
     - field.storage.node.field_boilerplate_type
@@ -19,55 +20,55 @@ resourceFields:
     enhancer:
       id: ''
   uuid:
-    disabled: false
+    disabled: true
     fieldName: uuid
     publicName: uuid
     enhancer:
       id: ''
   vid:
-    disabled: false
+    disabled: true
     fieldName: vid
     publicName: vid
     enhancer:
       id: ''
   langcode:
-    disabled: false
+    disabled: true
     fieldName: langcode
     publicName: langcode
     enhancer:
       id: ''
   type:
-    disabled: false
+    disabled: true
     fieldName: type
     publicName: type
     enhancer:
       id: ''
   revision_timestamp:
-    disabled: false
+    disabled: true
     fieldName: revision_timestamp
     publicName: revision_timestamp
     enhancer:
       id: ''
   revision_uid:
-    disabled: false
+    disabled: true
     fieldName: revision_uid
     publicName: revision_uid
     enhancer:
       id: ''
   revision_log:
-    disabled: false
+    disabled: true
     fieldName: revision_log
     publicName: revision_log
     enhancer:
       id: ''
   status:
-    disabled: false
+    disabled: true
     fieldName: status
     publicName: status
     enhancer:
       id: ''
   uid:
-    disabled: false
+    disabled: true
     fieldName: uid
     publicName: uid
     enhancer:
@@ -79,43 +80,43 @@ resourceFields:
     enhancer:
       id: ''
   created:
-    disabled: false
+    disabled: true
     fieldName: created
     publicName: created
     enhancer:
       id: ''
   changed:
-    disabled: false
+    disabled: true
     fieldName: changed
     publicName: changed
     enhancer:
       id: ''
   promote:
-    disabled: false
+    disabled: true
     fieldName: promote
     publicName: promote
     enhancer:
       id: ''
   sticky:
-    disabled: false
+    disabled: true
     fieldName: sticky
     publicName: sticky
     enhancer:
       id: ''
   default_langcode:
-    disabled: false
+    disabled: true
     fieldName: default_langcode
     publicName: default_langcode
     enhancer:
       id: ''
   revision_default:
-    disabled: false
+    disabled: true
     fieldName: revision_default
     publicName: revision_default
     enhancer:
       id: ''
   revision_translation_affected:
-    disabled: false
+    disabled: true
     fieldName: revision_translation_affected
     publicName: revision_translation_affected
     enhancer:
@@ -136,5 +137,11 @@ resourceFields:
     disabled: false
     fieldName: field_boilerplate_type
     publicName: field_boilerplate_type
+    enhancer:
+      id: ''
+  field_organisation:
+    disabled: false
+    fieldName: field_organisation
+    publicName: field_organisation
     enhancer:
       id: ''

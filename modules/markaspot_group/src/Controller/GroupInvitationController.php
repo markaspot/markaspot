@@ -22,6 +22,7 @@ use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 use Drupal\user\UserInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -96,6 +97,8 @@ class GroupInvitationController extends ControllerBase {
    *   The tier config service (from markaspot_fastmap), or NULL.
    * @param \Drupal\Core\Entity\EntityRepositoryInterface|null $entityRepository
    *   The entity repository service.
+   * @param \Drupal\markaspot_nuxt\Service\FrontendUrlService|null $frontendUrlService
+   *   The public frontend URL resolver, or NULL when markaspot_nuxt is absent.
    */
   public function __construct(
     protected readonly Connection $database,
@@ -110,6 +113,7 @@ class GroupInvitationController extends ControllerBase {
     protected readonly LockBackendInterface $lock,
     protected readonly ?object $tierConfigService = NULL,
     protected readonly ?EntityRepositoryInterface $entityRepository = NULL,
+    protected readonly ?FrontendUrlService $frontendUrlService = NULL,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->moduleHandler = $moduleHandler;
@@ -120,21 +124,26 @@ class GroupInvitationController extends ControllerBase {
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container): static {
+    $moduleHandler = $container->get('module_handler');
+
     return new static(
       $container->get('database'),
       $container->get('entity_type.manager'),
       $container->get('plugin.manager.mail'),
-      $container->get('module_handler'),
+      $moduleHandler,
       $container->get('logger.factory')->get('markaspot_group'),
       $container->get('group.membership_loader'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('current_user'),
       $container->get('flood'),
       $container->get('lock'),
-      $container->get('module_handler')->moduleExists('markaspot_fastmap')
+      $moduleHandler->moduleExists('markaspot_fastmap')
         ? $container->get('markaspot_fastmap.tier_config')
         : NULL,
       $container->get('entity.repository'),
+      $moduleHandler->moduleExists('markaspot_nuxt')
+        ? $container->get('markaspot_nuxt.frontend_url')
+        : NULL,
     );
   }
 
@@ -237,6 +246,16 @@ class GroupInvitationController extends ControllerBase {
       return new JsonResponse(['error' => $limitError], 409);
     }
 
+    // Invitations carry a bearer token. Never create one unless a validated
+    // public frontend URL is configured for the claim link.
+    $frontendBase = $this->resolveInvitationFrontendBase();
+    if ($frontendBase === NULL) {
+      $this->logger->error('Cannot create group invitation: no public frontend URL is configured for invitation emails.');
+      return new JsonResponse([
+        'error' => 'Invitation email delivery is temporarily unavailable.',
+      ], 503);
+    }
+
     // Check for duplicate pending invitation.
     $existing = $this->database->select('markaspot_group_invitations', 'i')
       ->fields('i', ['id'])
@@ -269,7 +288,7 @@ class GroupInvitationController extends ControllerBase {
 
     // Send invitation email.
     $langcode = $this->resolveInvitationLangcode($email);
-    $this->sendInvitationEmail($email, $token, $group, $langcode, $request);
+    $this->sendInvitationEmail($email, $token, $group, $langcode, $frontendBase);
 
     $this->logger->notice('User @admin invited @email to group @group (id=@gid).', [
       '@admin' => $currentAccount->getDisplayName(),
@@ -788,33 +807,17 @@ class GroupInvitationController extends ControllerBase {
    *   The group being invited to.
    * @param string $langcode
    *   The language code for the email.
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   The current request (used to determine frontend base URL).
+   * @param string $frontendBase
+   *   The validated public frontend base URL.
    */
   protected function sendInvitationEmail(
     string $email,
     string $token,
     GroupInterface $group,
     string $langcode,
-    Request $request,
+    string $frontendBase,
   ): void {
-    // Build the claim URL from server-side config only (never from request body
-    // to prevent open redirect / phishing via attacker-controlled URLs).
-    $frontendBase = $this->config('markaspot_nuxt.settings')->get('frontend_base_url') ?: '';
-    if (!$frontendBase) {
-      // Never derive the base URL from request headers (Origin/Referer/
-      // X-Forwarded-Host are all attacker-controllable and could inject
-      // a malicious domain into invitation emails). Fall back to the
-      // Drupal host only. Set markaspot_nuxt.settings:frontend_base_url
-      // for production deployments where the frontend URL differs.
-      $frontendBase = $request->getSchemeAndHttpHost();
-      $this->logger->warning(
-        'No frontend_base_url configured. Falling back to Drupal host @host for invitation email. Set frontend_base_url in markaspot_nuxt.settings.',
-        ['@host' => $frontendBase]
-      );
-    }
-
-    $claimUrl = rtrim($frontendBase, '/') . '/auth/invite?token=' . $token;
+    $claimUrl = rtrim($frontendBase, '/') . '/auth/invite?token=' . rawurlencode($token);
 
     $siteName = $this->config('system.site')->get('name') ?: 'Mark-a-Spot';
 
@@ -841,6 +844,25 @@ class GroupInvitationController extends ControllerBase {
         '@gid' => $group->id(),
       ]);
     }
+  }
+
+  /**
+   * Resolves the public frontend base URL for invitation claim links.
+   *
+   * @return string|null
+   *   A validated public URL, or NULL when invitations must fail closed.
+   */
+  protected function resolveInvitationFrontendBase(): ?string {
+    $frontendBase = $this->frontendUrlService?->getNotificationFrontendBaseUrl();
+    if (!is_string($frontendBase) || trim($frontendBase) === '') {
+      return NULL;
+    }
+
+    if (strtolower((string) parse_url($frontendBase, PHP_URL_SCHEME)) !== 'https') {
+      return NULL;
+    }
+
+    return rtrim($frontendBase, '/');
   }
 
   /**

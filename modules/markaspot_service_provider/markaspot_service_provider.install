@@ -7,6 +7,7 @@
 
 use Drupal\field\Entity\FieldConfig;
 use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\Core\Config\FileStorage;
 
 /**
  * Implements hook_install().
@@ -14,6 +15,7 @@ use Drupal\field\Entity\FieldStorageConfig;
 function markaspot_service_provider_install() {
   // Create service_provider vocabulary.
   _markaspot_service_provider_create_vocabulary();
+  _markaspot_service_provider_create_status_vocabulary();
 
   // Create all required fields.
   _markaspot_service_provider_create_field_service_provider();
@@ -24,6 +26,8 @@ function markaspot_service_provider_install() {
   _markaspot_service_provider_create_sp_organisation_field();
   _markaspot_service_provider_ensure_org_group_jsonapi();
   _markaspot_service_provider_ensure_sp_boilerplates_jsonapi();
+  _markaspot_service_provider_ensure_sp_organisation_jsonapi();
+  _markaspot_service_provider_ensure_sp_status_jsonapi();
   _markaspot_service_provider_ensure_management_form_mode();
   _markaspot_service_provider_remove_reassign_sp_from_management_form_mode();
   _markaspot_service_provider_remove_sp_fields_from_public_form_modes();
@@ -218,6 +222,31 @@ function _markaspot_service_provider_create_vocabulary() {
   else {
     \Drupal::logger('markaspot_service_provider')->notice('Service provider vocabulary already exists.');
   }
+}
+
+/**
+ * Create the service-provider status vocabulary before JSON:API seeding.
+ *
+ * Core installs optional module config only after hook_install(). The
+ * dashboard JSON:API resource has this vocabulary as a dependency, so create
+ * the same vocabulary here to make the initial install order deterministic.
+ */
+function _markaspot_service_provider_create_status_vocabulary() {
+  $vocabulary_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_vocabulary');
+  $vocabulary = $vocabulary_storage->load('service_provider_status');
+
+  if ($vocabulary) {
+    return;
+  }
+
+  $vocabulary_storage->create([
+    'vid' => 'service_provider_status',
+    'name' => 'Service Provider Status',
+    'description' => 'Status of a service provider job (in progress, completed, etc.).',
+    'weight' => 0,
+    'new_revision' => FALSE,
+  ])->save();
+  \Drupal::logger('markaspot_service_provider')->notice('Created service_provider_status taxonomy vocabulary.');
 }
 
 /**
@@ -1024,21 +1053,79 @@ function _markaspot_service_provider_ensure_sp_boilerplates_jsonapi() {
 }
 
 /**
- * Ensure field_organisation is exposed on the service_provider taxonomy resource.
+ * Loads or seeds a JSON:API resource config from markaspot_nuxt optional config.
+ *
+ * markaspot_nuxt is installed before an optional service-provider feature can
+ * create its vocabularies. Its optional resource config is therefore skipped
+ * during the first install. Seed it when the provider feature becomes
+ * available so the dashboard's direct taxonomy endpoints do not remain 404.
+ *
+ * @param string $resource_id
+ *   The JSON:API resource config ID.
+ * @param bool $created
+ *   Receives TRUE when this call created the resource config.
+ *
+ * @return object|null
+ *   The resource config entity, or NULL when its dependencies are unavailable.
+ */
+function _markaspot_service_provider_load_jsonapi_resource(string $resource_id, bool &$created = FALSE): ?object {
+  $created = FALSE;
+  $entity_type_manager = \Drupal::entityTypeManager();
+  if (!$entity_type_manager->hasDefinition('jsonapi_resource_config') || !\Drupal::moduleHandler()->moduleExists('markaspot_nuxt')) {
+    return NULL;
+  }
+
+  $storage = $entity_type_manager->getStorage('jsonapi_resource_config');
+  $resource = $storage->load($resource_id);
+  if ($resource) {
+    return $resource;
+  }
+
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_nuxt');
+  $source = new FileStorage($module_path . '/config/optional');
+  $seed = $source->read('jsonapi_extras.jsonapi_resource_config.' . $resource_id);
+  if ($seed === FALSE) {
+    return NULL;
+  }
+
+  $module_handler = \Drupal::moduleHandler();
+  foreach ($seed['dependencies']['module'] ?? [] as $module) {
+    if (!$module_handler->moduleExists($module)) {
+      return NULL;
+    }
+  }
+  $config_factory = \Drupal::configFactory();
+  foreach ($seed['dependencies']['config'] ?? [] as $dependency) {
+    if ($config_factory->get($dependency)->isNew()) {
+      return NULL;
+    }
+  }
+
+  $resource = $storage->create($seed);
+  $resource->save();
+  $created = TRUE;
+
+  return $resource;
+}
+
+/**
+ * Ensure provider organisation scope is exposed and provider mail stays private.
  *
  * Existing tenants installed the JSON:API resource config before #429 added
  * field_organisation, so the scoped provider fetch silently fell back to a
- * jurisdiction-wide list. Re-expose the field for them.
+ * jurisdiction-wide list. Re-expose the field for them, while explicitly
+ * disabling the provider mailbox that the frontend does not need.
  */
 function _markaspot_service_provider_ensure_sp_organisation_jsonapi() {
-  $config = \Drupal::configFactory()
-    ->getEditable('jsonapi_extras.jsonapi_resource_config.taxonomy_term--service_provider');
-  if ($config->isNew()) {
+  $created = FALSE;
+  $resource = _markaspot_service_provider_load_jsonapi_resource('taxonomy_term--service_provider', $created);
+  if (!$resource) {
     return FALSE;
   }
 
-  $resource_fields = $config->get('resourceFields') ?: [];
-  $existing_field = $resource_fields['field_organisation'] ?? [];
+  $resource_fields = $resource->get('resourceFields') ?: [];
+  $existing_organisation = $resource_fields['field_organisation'] ?? [];
+  $existing_email = $resource_fields['field_sp_email'] ?? [];
 
   $resource_fields['field_organisation'] = [
     'disabled' => FALSE,
@@ -1048,13 +1135,59 @@ function _markaspot_service_provider_ensure_sp_organisation_jsonapi() {
       'id' => '',
     ],
   ];
-  if ($existing_field === $resource_fields['field_organisation']) {
+  $resource_fields['field_sp_email'] = [
+    'disabled' => TRUE,
+    'fieldName' => 'field_sp_email',
+    'publicName' => 'field_sp_email',
+    'enhancer' => [
+      'id' => '',
+    ],
+  ];
+  if ($existing_organisation === $resource_fields['field_organisation'] && $existing_email === $resource_fields['field_sp_email']) {
+    return $created;
+  }
+
+  $resource->set('resourceFields', $resource_fields)->save();
+
+  return TRUE;
+}
+
+/**
+ * Ensure service-provider status JSON:API endpoint exists and is minimal.
+ */
+function _markaspot_service_provider_ensure_sp_status_jsonapi() {
+  $created = FALSE;
+  $resource = _markaspot_service_provider_load_jsonapi_resource('taxonomy_term--service_provider_status', $created);
+  if (!$resource) {
     return FALSE;
   }
 
-  $config->set('resourceFields', $resource_fields)->save(TRUE);
+  $resource_fields = $resource->get('resourceFields') ?: [];
+  $changed = FALSE;
+  foreach (array_keys(\Drupal::service('entity_field.manager')->getFieldDefinitions('taxonomy_term', 'service_provider_status')) as $field_name) {
+    if (in_array($field_name, ['tid', 'status', 'name', 'weight'], TRUE)) {
+      continue;
+    }
+    $field = [
+      'disabled' => TRUE,
+      'fieldName' => $field_name,
+      'publicName' => $field_name,
+      'enhancer' => [
+        'id' => '',
+      ],
+    ];
+    if (($resource_fields[$field_name] ?? NULL) === $field) {
+      continue;
+    }
+    $resource_fields[$field_name] = $field;
+    $changed = TRUE;
+  }
 
-  return TRUE;
+  if ($changed) {
+    $resource->set('resourceFields', $resource_fields)->save();
+  }
+
+  return $created || $changed;
 }
 
 /**
@@ -1349,4 +1482,19 @@ function markaspot_service_provider_update_9007() {
   }
 
   return t('field_organisation is already exposed on the service_provider taxonomy JSON:API resource.');
+}
+
+/**
+ * Keep service-provider contact mail private in existing JSON:API resources.
+ */
+function markaspot_service_provider_update_9008() {
+  _markaspot_service_provider_create_status_vocabulary();
+  $provider_changed = _markaspot_service_provider_ensure_sp_organisation_jsonapi();
+  $status_changed = _markaspot_service_provider_ensure_sp_status_jsonapi();
+
+  if ($provider_changed || $status_changed) {
+    return t('Ensured provider JSON:API resources expose organisation scope, keep provider contact mail private, and provide provider status options.');
+  }
+
+  return t('Provider JSON:API resources are already up to date.');
 }

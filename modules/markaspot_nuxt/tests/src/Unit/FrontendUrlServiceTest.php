@@ -170,12 +170,22 @@ final class FrontendUrlServiceTest extends UnitTestCase {
   /**
    * @covers ::getNotificationFrontendBaseUrl
    */
-  public function testFrontendEnvPrecedesMailFrontendEnvForNotifications(): void {
+  public function testMailFrontendEnvPrecedesConfiguredAndGenericFrontendForNotifications(): void {
     putenv('FRONTEND_BASE_URL=https://generic.example/');
     putenv('MARKASPOT_MAIL_FRONTEND_BASE_URL=https://mail.example/');
-    $service = $this->service(FALSE, '');
+    $service = $this->service(TRUE, 'https://fastmap.example/');
 
-    $this->assertSame('https://generic.example', $service->getNotificationFrontendBaseUrl());
+    $this->assertSame('https://mail.example', $service->getNotificationFrontendBaseUrl());
+  }
+
+  /**
+   * @covers ::getNotificationFrontendBaseUrl
+   */
+  public function testConfiguredFrontendRemainsNotificationFallbackWithoutMailOverride(): void {
+    putenv('FRONTEND_BASE_URL=https://generic.example/');
+    $service = $this->service(TRUE, 'https://configured.example/');
+
+    $this->assertSame('https://configured.example', $service->getNotificationFrontendBaseUrl());
   }
 
   /**
