@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.147](https://github.com/markaspot/markaspot/compare/11.9.146...11.9.147) (2026-07-11)
+
+### Bug Fixes
+
+* repair invitation links and dashboard JSONAPI resources ([db97a8c](https://github.com/markaspot/markaspot/commit/db97a8c6feec9a5666df3ba08971198fd7d0f3b0))
+
 ## [11.9.146](https://github.com/markaspot/markaspot/compare/11.9.145...11.9.146) (2026-07-11)
 
 ### Features
