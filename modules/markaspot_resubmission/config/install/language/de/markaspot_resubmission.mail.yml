@@ -1,20 +1,20 @@
 langcode: de
 resubmit_request:
-  subject: 'Erinnerung: [node:title]'
+  subject: 'Erinnerung: {{ citizen_term_singular_title }} [node:title]'
   body: |
     Guten Tag,
 
-    diese Meldung wurde vor mehr als 6 Wochen in unserem System erfasst und ist noch unbearbeitet:
+    Noch unbearbeitet im System: {{ citizen_term_singular_title }}. Der Vorgang wurde vor mehr als 6 Wochen erfasst:
 
     Titel: [node:title]
     Kategorie: [node:field_category:entity:name]
     Status: [node:field_status:entity:name]
-    Gemeldet am: [node:created:medium]
+    Erstellt am: [node:created:medium]
     Letzte Änderung: [node:changed:medium]
 
-    Link zur Meldung: [node:url]
+    Link: [node:url]
 
-    Bitte prüfen Sie den Status dieser Meldung und aktualisieren Sie diese entsprechend.
+    Bitte prüfen Sie den Status und aktualisieren Sie ihn entsprechend.
 
     Mit freundlichen Grüßen
     Ihr Mängelmelder-Team

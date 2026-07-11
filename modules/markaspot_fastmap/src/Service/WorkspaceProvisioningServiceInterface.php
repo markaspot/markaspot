@@ -17,7 +17,8 @@ interface WorkspaceProvisioningServiceInterface {
    *   template, language, boundary.
    *
    * @return array
-   *   Result with group_id, slug, name, url, categories count.
+   *   Result with group_id, slug, name, url, categories count, user_id and
+   *   the curated citizen-wording data used by the welcome-mail flow.
    *
    * @throws \RuntimeException
    *   When slug is already taken or entity creation fails.

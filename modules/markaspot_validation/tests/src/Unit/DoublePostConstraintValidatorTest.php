@@ -11,8 +11,13 @@ use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_validation\Plugin\Validation\Constraint\DoublePostConstraint;
 use Drupal\markaspot_validation\Plugin\Validation\Constraint\DoublePostConstraintValidator;
 use Drupal\Tests\UnitTestCase;
@@ -218,6 +223,116 @@ class DoublePostConstraintValidatorTest extends UnitTestCase {
   }
 
   /**
+   * Resolves the configured term only for human-readable duplicate text.
+   *
+   * @covers ::resolveCitizenWording
+   */
+  public function testResolvesConfiguredCitizenWordingForDuplicateMessage(): void {
+    $configField = new class {
+
+      /**
+       * The raw Nuxt wording config.
+       */
+      public string $value = '{"i18n":{"wording":"entry"}}';
+
+      /**
+       * Reports the field as populated.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('getUntranslated')->willReturnSelf();
+    $group->method('hasField')->with('field_nuxt_config')->willReturn(TRUE);
+    $group->method('get')->with('field_nuxt_config')->willReturn($configField);
+
+    $jurisdictionField = $this->createMock(EntityReferenceFieldItemListInterface::class);
+    $jurisdictionField->method('isEmpty')->willReturn(FALSE);
+    $jurisdictionField->method('referencedEntities')->willReturn([$group]);
+
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn('de');
+    $root = $this->createMock(ContentEntityInterface::class);
+    $root->method('hasField')->with('field_jurisdiction')->willReturn(TRUE);
+    $root->method('get')->with('field_jurisdiction')->willReturn($jurisdictionField);
+    $root->method('language')->willReturn($language);
+    $this->executionContext->method('getRoot')->willReturn($root);
+
+    $method = new \ReflectionMethod(DoublePostConstraintValidator::class, 'resolveCitizenWording');
+    $wording = $method->invoke($this->createValidator(new CitizenWordingResolver()));
+    $this->assertSame('Eintrag', $wording['singular']);
+  }
+
+  /**
+   * Uses the active content locale for a localized duplicate 422 detail.
+   *
+   * @covers ::resolveCitizenWording
+   * @covers ::resolveResponseLangcode
+   * @covers ::formatCitizenValidationMessage
+   */
+  public function testDuplicateMessageUsesCurrentContentLanguage(): void {
+    $configField = new class {
+
+      /**
+       * The raw Nuxt wording config.
+       */
+      public string $value = '{"i18n":{"wording":"entry"}}';
+
+      /**
+       * Reports the field as populated.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('getUntranslated')->willReturnSelf();
+    $group->method('hasField')->with('field_nuxt_config')->willReturn(TRUE);
+    $group->method('get')->with('field_nuxt_config')->willReturn($configField);
+
+    $jurisdictionField = $this->createMock(EntityReferenceFieldItemListInterface::class);
+    $jurisdictionField->method('isEmpty')->willReturn(FALSE);
+    $jurisdictionField->method('referencedEntities')->willReturn([$group]);
+
+    $nodeLanguage = $this->createMock(LanguageInterface::class);
+    $nodeLanguage->method('getId')->willReturn('en');
+    $root = $this->createMock(ContentEntityInterface::class);
+    $root->method('hasField')->with('field_jurisdiction')->willReturn(TRUE);
+    $root->method('get')->with('field_jurisdiction')->willReturn($jurisdictionField);
+    $root->method('language')->willReturn($nodeLanguage);
+    $this->executionContext->method('getRoot')->willReturn($root);
+
+    $validator = $this->createValidator(
+      new CitizenWordingResolver(),
+      $this->createLanguageManager('fr'),
+    );
+    $wordingMethod = new \ReflectionMethod(DoublePostConstraintValidator::class, 'resolveCitizenWording');
+    $wording = $wordingMethod->invoke($validator);
+
+    $this->assertSame('saisie', $wording['singular']);
+    $messageMethod = new \ReflectionMethod(DoublePostConstraintValidator::class, 'formatCitizenValidationMessage');
+    $this->assertSame(
+      'Doublon possible dans la même catégorie. Type : saisie. ID : 42. Distance : 10 m.',
+      $messageMethod->invoke($validator, CitizenWordingResolver::VALIDATION_DUPLICATE_VISIBLE, $wording, [
+        '@id' => '42',
+        '@radius' => '10',
+        '@unit' => 'm',
+      ]),
+    );
+    $this->assertStringContainsString(
+      'ID : &lt;42&gt;.',
+      $messageMethod->invoke($validator, CitizenWordingResolver::VALIDATION_DUPLICATE_VISIBLE, $wording, [
+        '@id' => '<42>',
+        '@radius' => '10',
+        '@unit' => 'm',
+      ]),
+    );
+  }
+
+  /**
    * Sets up the config for duplicate checking to be enabled.
    *
    * @param bool $hint
@@ -252,13 +367,15 @@ class DoublePostConstraintValidatorTest extends UnitTestCase {
    * @return \Drupal\markaspot_validation\Plugin\Validation\Constraint\DoublePostConstraintValidator
    *   The initialized validator.
    */
-  protected function createValidator(): DoublePostConstraintValidator {
+  protected function createValidator(?CitizenWordingResolver $citizenWordingResolver = NULL, ?LanguageManagerInterface $languageManager = NULL): DoublePostConstraintValidator {
     $validator = new DoublePostConstraintValidator(
       $this->time,
       $this->requestStack,
       $this->entityTypeManager,
       $this->configFactory,
       $this->account,
+      $citizenWordingResolver,
+      $languageManager,
     );
     $validator->initialize($this->executionContext);
     $validator->setStringTranslation($this->getStringTranslationStub());
@@ -342,6 +459,21 @@ class DoublePostConstraintValidatorTest extends UnitTestCase {
 
     $this->executionContext->method('getRoot')
       ->willReturn($entity);
+  }
+
+  /**
+   * Creates a language manager with a fixed active content locale.
+   */
+  protected function createLanguageManager(string $langcode): LanguageManagerInterface {
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn($langcode);
+
+    $languageManager = $this->createMock(LanguageManagerInterface::class);
+    $languageManager->method('getCurrentLanguage')
+      ->with(LanguageInterface::TYPE_CONTENT)
+      ->willReturn($language);
+
+    return $languageManager;
   }
 
 }

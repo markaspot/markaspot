@@ -246,3 +246,51 @@ msgstr "Privacidad"
 #: templates/mail-layout.html.twig
 msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
 msgstr "Este correo electrónico fue enviado automáticamente por @name a través de la plataforma Mark-a-Spot."
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title was resolved"
+msgstr "@wording_singular_title: tramitación finalizada"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Thank you for using the issue tracker. @wording_singular_title \"@title\" has been processed and is now marked as completed."
+msgstr "Gracias por usar el gestor de incidencias. @wording_singular_title \"@title\": tramitación finalizada."
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Feedback welcome for @wording_singular_title @id"
+msgstr "Se agradecen comentarios: @wording_singular_title @id"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title @id: feedback welcome"
+msgstr "@wording_singular_title @id: se agradecen comentarios"
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information needed: @wording_singular_title"
+msgstr "Se necesita más información: @wording_singular_title"
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information is needed: @wording_singular_title."
+msgstr "Para continuar, se necesita más información: @wording_singular_title."
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "Please clarify: @wording_singular_title"
+msgstr "Por favor, aclare: @wording_singular_title"
+
+#: markaspot_mail.module
+msgid "Update: @wording_singular_title"
+msgstr "Actualización: @wording_singular_title"
+
+#: markaspot_mail.module
+msgid "There is an update: @wording_singular_title. Please check the platform for details."
+msgstr "Hay una actualización: @wording_singular_title. Consulte la plataforma para ver los detalles."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Try it out: create your first test @wording_singular directly on the map."
+msgstr "Pruébelo: cree un elemento de prueba directamente en el mapa. Tipo: @wording_singular."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "A few demo @wording_plural are already in place. Edit or delete them anytime."
+msgstr "Ya hay contenido de demostración disponible. Demostración: @wording_plural. Puede editarlo o eliminarlo en cualquier momento."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgstr "Gestione los elementos entrantes en su panel. @wording_plural: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"

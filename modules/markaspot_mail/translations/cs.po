@@ -152,6 +152,18 @@ msgstr "Ověřit e-mail"
 msgid "Click to activate your @name workspace"
 msgstr "Kliknutím aktivujete pracovní prostor @name"
 
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Try it out: create your first test @wording_singular directly on the map."
+msgstr "Vyzkoušejte si to: vytvořte přímo na mapě svůj první zkušební @wording_singular."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "A few demo @wording_plural are already in place. Edit or delete them anytime."
+msgstr "Ukázkové @wording_plural jsou již k dispozici. Kdykoli je můžete upravit nebo odstranit."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgstr "Příchozí @wording_plural spravujte ve svém dashboardu: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo workspace \"@name\" expires soon"
 msgstr "Váš demo pracovní prostor \"@name\" brzy vyprší"
@@ -247,3 +259,39 @@ msgstr "Soukromí"
 #: templates/mail-layout.html.twig
 msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
 msgstr "Tento e-mail byl automaticky odeslán službou @name prostřednictvím platformy Mark-a-Spot."
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title was resolved"
+msgstr "@wording_singular_title: vyřízení dokončeno"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Thank you for using the issue tracker. @wording_singular_title \"@title\" has been processed and is now marked as completed."
+msgstr "Děkujeme, že používáte systém hlášení. @wording_singular_title \"@title\": zpracování bylo dokončeno."
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Feedback welcome for @wording_singular_title @id"
+msgstr "Uvítáme zpětnou vazbu: @wording_singular_title @id"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title @id: feedback welcome"
+msgstr "@wording_singular_title @id: uvítáme zpětnou vazbu"
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information needed: @wording_singular_title"
+msgstr "Je potřeba více informací: @wording_singular_title"
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information is needed: @wording_singular_title."
+msgstr "Pro vyřízení jsou potřeba další informace: @wording_singular_title."
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "Please clarify: @wording_singular_title"
+msgstr "Prosíme o upřesnění: @wording_singular_title"
+
+#: markaspot_mail.module
+msgid "Update: @wording_singular_title"
+msgstr "Aktualizace: @wording_singular_title"
+
+#: markaspot_mail.module
+msgid "There is an update: @wording_singular_title. Please check the platform for details."
+msgstr "K dispozici je aktualizace: @wording_singular_title. Podrobnosti najdete na platformě."

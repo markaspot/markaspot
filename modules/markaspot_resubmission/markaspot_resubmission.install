@@ -5,6 +5,7 @@
  * Install, update and uninstall functions for markaspot_resubmission module.
  */
 
+use Drupal\Component\Serialization\Yaml;
 use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Field\BaseFieldDefinition;
 use Drupal\field\Entity\FieldConfig;
@@ -323,6 +324,154 @@ function markaspot_resubmission_update_9006(): string {
   return $parts !== []
     ? implode(' ', $parts)
     : (string) t('Reminder scope field and settings already present.');
+}
+
+/**
+ * Adds runtime citizen-wording placeholders to untouched reminder templates.
+ *
+ * Existing active mail configuration must be migrated from the prior shipped
+ * report/Meldung templates, but only when it matches an exact known default.
+ * The German install update historically wrote both a config shape with and
+ * without langcode, so both are recognized and their original shape is kept.
+ * Tenant-authored subjects and bodies are never modified.
+ */
+function markaspot_resubmission_update_9007(): string {
+  $module_path = \Drupal::service('extension.list.module')->getPath('markaspot_resubmission');
+  $config_factory = \Drupal::configFactory();
+  $parts = [];
+
+  $replacement = _markaspot_resubmission_shipped_mail_template($module_path, 'en', TRUE);
+  $config = $config_factory->getEditable('markaspot_resubmission.mail');
+  if ($replacement === NULL || $config->isNew()) {
+    $parts[] = 'English reminder template unavailable; no change';
+  }
+  elseif ($config->getRawData() === _markaspot_resubmission_legacy_mail_template('en', TRUE)) {
+    $config->setData($replacement)->save();
+    $parts[] = 'English reminder template migrated';
+  }
+  elseif ($config->getRawData() === $replacement) {
+    $parts[] = 'English reminder template already current';
+  }
+  else {
+    $parts[] = 'English reminder template customized; preserved';
+  }
+
+  $language_manager = \Drupal::languageManager();
+  if (!in_array('de', array_keys($language_manager->getLanguages()), TRUE)) {
+    $parts[] = 'German reminder override unavailable; no change';
+    return implode('; ', $parts) . '.';
+  }
+
+  $replacement_with_langcode = _markaspot_resubmission_shipped_mail_template($module_path, 'de', TRUE);
+  if ($replacement_with_langcode === NULL) {
+    $parts[] = 'German shipped reminder template unavailable; no change';
+    return implode('; ', $parts) . '.';
+  }
+  $replacement_without_langcode = $replacement_with_langcode;
+  unset($replacement_without_langcode['langcode']);
+
+  $override = $language_manager->getLanguageConfigOverride('de', 'markaspot_resubmission.mail');
+  $current = $override->getRawData();
+  if ($current === _markaspot_resubmission_legacy_mail_template('de', TRUE)) {
+    $override->setData($replacement_with_langcode)->save();
+    $parts[] = 'German reminder template migrated';
+  }
+  elseif ($current === _markaspot_resubmission_legacy_mail_template('de', FALSE)) {
+    $override->setData($replacement_without_langcode)->save();
+    $parts[] = 'German reminder template migrated';
+  }
+  elseif ($current === $replacement_with_langcode || $current === $replacement_without_langcode) {
+    $parts[] = 'German reminder template already current';
+  }
+  else {
+    $parts[] = 'German reminder template customized or absent; preserved';
+  }
+
+  return implode('; ', $parts) . '.';
+}
+
+/**
+ * Reads a shipped resubmission mail config in base or override data shape.
+ *
+ * @return array<string, mixed>|null
+ *   The decoded config or NULL when the shipped file is unreadable.
+ */
+function _markaspot_resubmission_shipped_mail_template(string $module_path, string $langcode, bool $keep_langcode): ?array {
+  $path = $langcode === 'de'
+    ? $module_path . '/config/install/language/de'
+    : $module_path . '/config/install';
+  $data = (new FileStorage($path))->read('markaspot_resubmission.mail');
+  if (!is_array($data)) {
+    return NULL;
+  }
+  if (!$keep_langcode) {
+    unset($data['langcode']);
+  }
+  return $data;
+}
+
+/**
+ * Returns the exact templates shipped before update 9007.
+ *
+ * @return array<string, mixed>
+ *   Base config data or one of the two historical German override shapes.
+ */
+function _markaspot_resubmission_legacy_mail_template(string $langcode, bool $with_langcode): array {
+  $yaml = $langcode === 'de'
+    ? <<<'YAML'
+langcode: de
+resubmit_request:
+  subject: 'Erinnerung: [node:title]'
+  body: |
+    Guten Tag,
+
+    diese Meldung wurde vor mehr als 6 Wochen in unserem System erfasst und ist noch unbearbeitet:
+
+    Titel: [node:title]
+    Kategorie: [node:field_category:entity:name]
+    Status: [node:field_status:entity:name]
+    Gemeldet am: [node:created:medium]
+    Letzte Änderung: [node:changed:medium]
+
+    Link zur Meldung: [node:url]
+
+    Bitte prüfen Sie den Status dieser Meldung und aktualisieren Sie diese entsprechend.
+
+    Mit freundlichen Grüßen
+    Ihr Mängelmelder-Team
+
+YAML
+    : <<<'YAML'
+langcode: en
+resubmit_request:
+  subject: 'Reminder: [node:title]'
+  body: |
+    Hello,
+
+    This report was submitted more than 6 weeks ago and is still unprocessed in our system:
+
+    Title: [node:title]
+    Category: [node:field_category:entity:name]
+    Status: [node:field_status:entity:name]
+    Reported on: [node:created:medium]
+    Last changed: [node:changed:medium]
+
+    Link to report: [node:url]
+
+    Please review the status of this report and update it accordingly.
+
+    Best regards,
+    Your Issue Tracking Team
+
+YAML;
+  $data = Yaml::decode($yaml);
+  if (!is_array($data)) {
+    return [];
+  }
+  if (!$with_langcode) {
+    unset($data['langcode']);
+  }
+  return $data;
 }
 
 /**

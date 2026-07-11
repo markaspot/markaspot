@@ -7,6 +7,7 @@ namespace Drupal\markaspot_mail\Mail\Builder;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
@@ -14,6 +15,7 @@ use Drupal\markaspot_mail\Mail\MailContext;
 use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Service\MailBrandingService;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -60,6 +62,7 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
     private readonly ConfigFactoryInterface $configFactory,
     private readonly ConfigurableLanguageManagerInterface $languageManager,
     private readonly Token $token,
+    private readonly CitizenWordingResolver $citizenWordingResolver,
     private readonly LoggerInterface $logger,
   ) {}
 
@@ -87,7 +90,10 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
       return NULL;
     }
 
+    $jurisdiction = $this->resolveJurisdictionGroupFromNode($node);
     [$mode, $jurisdictionId] = $this->resolveJurisdictionFromNode($node);
+    $wording = $this->citizenWordingResolver->resolveMailTerms($jurisdiction, $ctx->langcode);
+    $usesCustomWording = $wording['preset'] !== CitizenWordingResolver::DEFAULT_PRESET;
 
     $requestId = $this->resolveRequestId($ctx, $node);
     $nodeTitle = (string) $node->label();
@@ -101,26 +107,45 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
     $ctaPath = ($slug !== '' ? '/' . $slug : '') . '/feedback/' . $uuid;
     $ctaUrl = $frontendBase . $ctaPath;
 
-    $headline = (string) $this->t('Your report was resolved', [], ['langcode' => $ctx->langcode]);
-    $intro = (string) $this->t('Thank you for using the issue tracker. Your report "@title" has been processed and is now marked as completed.', [
-      '@title' => $nodeTitle,
-    ], ['langcode' => $ctx->langcode]);
+    // Keep the established report sources for the default/invalid preset.
+    // Existing locale catalogs are keyed to them. Custom wording takes a
+    // grammar-neutral source path with an explicit tenant term instead.
+    $headline = $usesCustomWording
+      ? (string) $this->t('@wording_singular_title was resolved', [
+        '@wording_singular_title' => $wording['singular_title'],
+      ], ['langcode' => $ctx->langcode])
+      : (string) $this->t('Your report was resolved', [], ['langcode' => $ctx->langcode]);
+    $intro = $usesCustomWording
+      ? (string) $this->t('Thank you for using the issue tracker. @wording_singular_title "@title" has been processed and is now marked as completed.', [
+        '@wording_singular_title' => $wording['singular_title'],
+        '@title' => $nodeTitle,
+      ], ['langcode' => $ctx->langcode])
+      : (string) $this->t('Thank you for using the issue tracker. Your report "@title" has been processed and is now marked as completed.', [
+        '@title' => $nodeTitle,
+      ], ['langcode' => $ctx->langcode]);
     $bodyFeedback = (string) $this->t('Are you satisfied with the result, or is there still action needed from your perspective? We would greatly appreciate your feedback.', [], ['langcode' => $ctx->langcode]);
     $bodyReopen = (string) $this->t('If you believe your concern has not been fully addressed, you can also reopen the case through this link.', [], ['langcode' => $ctx->langcode]);
 
     $content = [
-      'preheader' => (string) $this->t('Feedback welcome on your report @id', ['@id' => $requestId], ['langcode' => $ctx->langcode]),
+      'preheader' => $usesCustomWording
+        ? (string) $this->t('Feedback welcome for @wording_singular_title @id', [
+          '@wording_singular_title' => $wording['singular_title'],
+          '@id' => $requestId,
+        ], ['langcode' => $ctx->langcode])
+        : (string) $this->t('Feedback welcome on your report @id', ['@id' => $requestId], ['langcode' => $ctx->langcode]),
       'headline' => $headline,
       'intro' => $intro,
       'body_blocks' => [$bodyFeedback, $bodyReopen],
       'cta_label' => (string) $this->t('Give feedback', [], ['langcode' => $ctx->langcode]),
       'cta_url' => $ctaUrl,
       'features_block' => [
-        [(string) $this->t('Report', [], ['langcode' => $ctx->langcode]) => '#' . $requestId],
+        ($usesCustomWording
+          ? $wording['singular_title']
+          : (string) $this->t('Report', [], ['langcode' => $ctx->langcode])) => '#' . $requestId,
       ],
     ];
 
-    $subject = $this->resolveSubject($node, $requestId, $ctx->langcode);
+    $subject = $this->resolveSubject($node, $requestId, $ctx->langcode, $wording, $jurisdiction);
 
     return new MailMessage(
       subject: $subject,
@@ -144,8 +169,19 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
    * Content sanitization (CR/LF/NUL strip against CWE-93 mail header
    * injection) is delegated to MailAlterHook::sanitizeHeaderValue() at
    * the $message['subject'] write site, not handled here.
+   *
+   * @param \Drupal\node\NodeInterface $node
+   *   The service request receiving feedback.
+   * @param string $requestId
+   *   Human-facing request identifier.
+   * @param string $langcode
+   *   Recipient language code.
+   * @param array{preset: string, locale: string, singular: string, plural: string, singular_title: string, plural_title: string} $wording
+   *   Locale-aware citizen terms resolved from the request jurisdiction.
+   * @param \Drupal\group\Entity\GroupInterface|null $jurisdiction
+   *   The valid jurisdiction group supplying wording config, if any.
    */
-  private function resolveSubject(NodeInterface $node, string $requestId, string $langcode): string {
+  private function resolveSubject(NodeInterface $node, string $requestId, string $langcode, array $wording, ?GroupInterface $jurisdiction): string {
     $template = '';
     $override = $this->languageManager
       ->getLanguageConfigOverride($langcode, 'markaspot_feedback.mail')
@@ -160,10 +196,21 @@ final class FeedbackRequestBuilder implements MailBuilderInterface {
       }
     }
     if ($template === '') {
+      if ($wording['preset'] !== CitizenWordingResolver::DEFAULT_PRESET) {
+        return (string) $this->t('@wording_singular_title @id: feedback welcome', [
+          '@wording_singular_title' => $wording['singular_title'],
+          '@id' => $requestId,
+        ], ['langcode' => $langcode]);
+      }
       return (string) $this->t('Your report @id: feedback welcome', [
         '@id' => $requestId,
       ], ['langcode' => $langcode]);
     }
+    $template = $this->citizenWordingResolver->replaceMailPlaceholders(
+      $template,
+      $jurisdiction,
+      $langcode,
+    );
     return (string) $this->token->replace($template, ['node' => $node], [
       'langcode' => $langcode,
       'clear' => TRUE,

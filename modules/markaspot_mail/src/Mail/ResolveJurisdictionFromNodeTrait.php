@@ -7,6 +7,7 @@ namespace Drupal\markaspot_mail\Mail;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\node\NodeInterface;
 
 /**
@@ -37,18 +38,32 @@ trait ResolveJurisdictionFromNodeTrait {
    *   Two-element array: [mode, jurisdictionId].
    */
   protected function resolveJurisdictionFromNode(?NodeInterface $node): array {
+    $jurisdiction = $this->resolveJurisdictionGroupFromNode($node);
+    return $jurisdiction === NULL
+      ? ['platform', NULL]
+      : ['jurisdiction', (int) $jurisdiction->id()];
+  }
+
+  /**
+   * Resolves the jurisdiction group itself from a service_request node.
+   *
+   * Builders that need a tenant-owned value in addition to the rendering
+   * mode, such as citizen wording, can use this helper instead of re-reading
+   * the entity reference with subtly different validity checks.
+   */
+  protected function resolveJurisdictionGroupFromNode(?NodeInterface $node): ?GroupInterface {
     if ($node === NULL || !$node->hasField('field_jurisdiction')) {
-      return ['platform', NULL];
+      return NULL;
     }
     $field = $node->get('field_jurisdiction');
     if (!$field instanceof EntityReferenceFieldItemListInterface || $field->isEmpty()) {
-      return ['platform', NULL];
+      return NULL;
     }
     $target = $field->referencedEntities()[0] ?? NULL;
-    if (!$this->isResolvedJurisdictionGroup($target)) {
-      return ['platform', NULL];
+    if (!$target instanceof GroupInterface || !$this->isResolvedJurisdictionGroup($target)) {
+      return NULL;
     }
-    return ['jurisdiction', (int) $target->id()];
+    return $target;
   }
 
   /**

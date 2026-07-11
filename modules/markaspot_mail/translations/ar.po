@@ -246,3 +246,51 @@ msgstr "الخصوصية"
 #: templates/mail-layout.html.twig
 msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
 msgstr "تم إرسال هذا البريد الإلكتروني تلقائيًا بواسطة @name عبر منصة Mark-a-Spot."
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title was resolved"
+msgstr "@wording_singular_title: تمت المعالجة"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Thank you for using the issue tracker. @wording_singular_title \"@title\" has been processed and is now marked as completed."
+msgstr "شكرًا لاستخدامك نظام الإبلاغ عن المشكلات. @wording_singular_title \"@title\": اكتملت المعالجة."
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Feedback welcome for @wording_singular_title @id"
+msgstr "نرحب بملاحظاتك حول @wording_singular_title @id"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title @id: feedback welcome"
+msgstr "@wording_singular_title @id: نرحب بملاحظاتك"
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information needed: @wording_singular_title"
+msgstr "مطلوب مزيد من المعلومات: @wording_singular_title"
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information is needed: @wording_singular_title."
+msgstr "تُطلب معلومات إضافية: @wording_singular_title."
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "Please clarify: @wording_singular_title"
+msgstr "يرجى التوضيح: @wording_singular_title"
+
+#: markaspot_mail.module
+msgid "Update: @wording_singular_title"
+msgstr "تحديث: @wording_singular_title"
+
+#: markaspot_mail.module
+msgid "There is an update: @wording_singular_title. Please check the platform for details."
+msgstr "هناك تحديث: @wording_singular_title. يرجى مراجعة المنصة للتفاصيل."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Try it out: create your first test @wording_singular directly on the map."
+msgstr "جرّب ذلك: أنشئ اختباراً مباشرة على الخريطة. النوع: @wording_singular."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "A few demo @wording_plural are already in place. Edit or delete them anytime."
+msgstr "يتوفر محتوى تجريبي بالفعل. العناصر التجريبية: @wording_plural. يمكنك تعديلها أو حذفها في أي وقت."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgstr "لوحة التحكم للعناصر الواردة: @wording_plural. <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"

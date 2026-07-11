@@ -5,3 +5,4 @@ core_version_requirement: ^10 || ^11
 package: 'Mark-a-Spot'
 dependencies:
   - drupal:options
+  - markaspot_nuxt

@@ -7,14 +7,21 @@ namespace Drupal\Tests\markaspot_validation\Unit;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\Config;
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_validation\Plugin\Validation\Constraint\MultipleReportsConstraint;
 use Drupal\markaspot_validation\Plugin\Validation\Constraint\MultipleReportsConstraintValidator;
+use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Context\ExecutionContextInterface;
@@ -54,6 +61,18 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
    * @var \Drupal\Core\Config\ConfigFactoryInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected ConfigFactoryInterface $configFactory;
+
+  /**
+   * The mocked Open311 settings config.
+   *
+   * @var \Drupal\Core\Config\ImmutableConfig|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected ImmutableConfig $open311Config;
+
+  /**
+   * The configured jurisdiction group bundle.
+   */
+  protected string $jurisdictionGroupType = 'jur';
 
   /**
    * The mocked current user.
@@ -103,6 +122,13 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
     $this->configFactory->method('getEditable')
       ->with('markaspot_validation.settings')
       ->willReturn($this->editableConfig);
+    $this->open311Config = $this->createMock(ImmutableConfig::class);
+    $this->open311Config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturnCallback(fn(string $key) => $key === 'jurisdiction_group_type' ? $this->jurisdictionGroupType : NULL);
+    $this->configFactory->method('get')
+      ->with('markaspot_open311.settings')
+      ->willReturn($this->open311Config);
   }
 
   /**
@@ -174,6 +200,83 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
 
     $field = $this->createFieldValue(6.9, 50.9);
     $this->createValidator()->validate($field, $this->constraint);
+  }
+
+  /**
+   * Uses the configured plural in the visible repeated-email 422 detail.
+   *
+   * @covers ::resolveCitizenLimitMessage
+   */
+  public function testViolationUsesConfiguredCitizenPlural(): void {
+    $this->editableConfig->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'multiple_reports' => 1,
+        'max_count' => 5,
+        default => NULL,
+      });
+    $this->account->method('hasPermission')->willReturn(FALSE);
+    $this->mockEntityQueryReturning(5);
+    $this->mockContextRootWithWording('test@example.com', 'entry', 'de');
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with($this->callback(static function (mixed $message): bool {
+        $detail = (string) $message;
+        return $detail === 'Das tägliche E-Mail-Kontingent ist erreicht. Einträge: 5. Bitte versuchen Sie es später erneut.';
+      }));
+
+    $field = $this->createFieldValue(6.9, 50.9);
+    $this->createValidator(new CitizenWordingResolver())->validate($field, $this->constraint);
+  }
+
+  /**
+   * Resolves wording through the configured jurisdiction group bundle.
+   *
+   * @covers ::resolveCitizenLimitMessage
+   */
+  public function testViolationUsesConfiguredJurisdictionGroupType(): void {
+    $this->editableConfig->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'multiple_reports' => 1,
+        'max_count' => 5,
+        default => NULL,
+      });
+    $this->jurisdictionGroupType = 'jurisdiction';
+    $this->account->method('hasPermission')->willReturn(FALSE);
+    $this->mockEntityQueryReturning(5);
+    $this->mockContextRootWithWording('test@example.com', 'contribution', 'de', 'jurisdiction');
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with('Das tägliche E-Mail-Kontingent ist erreicht. Beiträge: 5. Bitte versuchen Sie es später erneut.');
+
+    $field = $this->createFieldValue(6.9, 50.9);
+    $this->createValidator(new CitizenWordingResolver())->validate($field, $this->constraint);
+  }
+
+  /**
+   * Uses the active content locale rather than an unstamped node locale.
+   *
+   * @covers ::resolveResponseLangcode
+   */
+  public function testViolationUsesCurrentContentLanguage(): void {
+    $this->editableConfig->method('get')
+      ->willReturnCallback(fn(string $key) => match ($key) {
+        'multiple_reports' => 1,
+        'max_count' => 5,
+        default => NULL,
+      });
+    $this->account->method('hasPermission')->willReturn(FALSE);
+    $this->mockEntityQueryReturning(5);
+    $this->mockContextRootWithWording('test@example.com', 'entry', 'en');
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with('La limite quotidienne d’e-mail est atteinte. saisies : 5. Veuillez réessayer plus tard.');
+
+    $field = $this->createFieldValue(6.9, 50.9);
+    $this->createValidator(new CitizenWordingResolver(), $this->createLanguageManager('fr'))
+      ->validate($field, $this->constraint);
   }
 
   /**
@@ -289,13 +392,15 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
    * @return \Drupal\markaspot_validation\Plugin\Validation\Constraint\MultipleReportsConstraintValidator
    *   The initialized validator.
    */
-  protected function createValidator(): MultipleReportsConstraintValidator {
+  protected function createValidator(?CitizenWordingResolver $citizenWordingResolver = NULL, ?LanguageManagerInterface $languageManager = NULL): MultipleReportsConstraintValidator {
     $validator = new MultipleReportsConstraintValidator(
       $this->time,
       $this->requestStack,
       $this->entityTypeManager,
       $this->configFactory,
       $this->account,
+      $citizenWordingResolver,
+      $languageManager,
     );
     $validator->initialize($this->executionContext);
     $validator->setStringTranslation($this->getStringTranslationStub());
@@ -380,6 +485,62 @@ class MultipleReportsConstraintValidatorTest extends UnitTestCase {
 
     $this->executionContext->method('getRoot')
       ->willReturn($entity);
+  }
+
+  /**
+   * Mocks the root service request with its citizen terminology setting.
+   */
+  protected function mockContextRootWithWording(string $email, string $wording, string $langcode, string $groupType = 'jur'): void {
+    $emailField = $this->createMock(FieldItemListInterface::class);
+    $emailField->method('getValue')->willReturn([['value' => $email]]);
+
+    $configField = $this->createMock(FieldItemListInterface::class);
+    $configField->method('isEmpty')->willReturn(FALSE);
+    $configField->method('__get')
+      ->with('value')
+      ->willReturn(json_encode(['i18n' => ['wording' => $wording]]));
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('getEntityTypeId')->willReturn('group');
+    $group->method('bundle')->willReturn($groupType);
+    $group->method('getUntranslated')->willReturnSelf();
+    $group->method('hasField')->with('field_nuxt_config')->willReturn(TRUE);
+    $group->method('get')->with('field_nuxt_config')->willReturn($configField);
+
+    $jurisdictionField = $this->createMock(EntityReferenceFieldItemListInterface::class);
+    $jurisdictionField->method('isEmpty')->willReturn(FALSE);
+    $jurisdictionField->method('referencedEntities')->willReturn([$group]);
+
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn($langcode);
+
+    $entity = $this->createMock(NodeInterface::class);
+    $entity->method('hasField')
+      ->willReturnCallback(fn(string $field) => in_array($field, ['field_e_mail', 'field_jurisdiction'], TRUE));
+    $entity->method('get')
+      ->willReturnCallback(fn(string $field) => match ($field) {
+        'field_e_mail' => $emailField,
+        'field_jurisdiction' => $jurisdictionField,
+        default => NULL,
+      });
+    $entity->method('language')->willReturn($language);
+
+    $this->executionContext->method('getRoot')->willReturn($entity);
+  }
+
+  /**
+   * Creates a language manager with a fixed active content locale.
+   */
+  protected function createLanguageManager(string $langcode): LanguageManagerInterface {
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn($langcode);
+
+    $languageManager = $this->createMock(LanguageManagerInterface::class);
+    $languageManager->method('getCurrentLanguage')
+      ->with(LanguageInterface::TYPE_CONTENT)
+      ->willReturn($language);
+
+    return $languageManager;
   }
 
 }

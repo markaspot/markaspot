@@ -246,3 +246,51 @@ msgstr "Privatliv"
 #: templates/mail-layout.html.twig
 msgid "This e-mail was sent automatically by @name via the Mark-a-Spot platform."
 msgstr "Denne e-mail blev sendt automatisk af @name via Mark-a-Spot-platformen."
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title was resolved"
+msgstr "@wording_singular_title: behandlingen er afsluttet"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Thank you for using the issue tracker. @wording_singular_title \"@title\" has been processed and is now marked as completed."
+msgstr "Tak fordi du bruger fejlmelderen. @wording_singular_title \"@title\": behandlingen er afsluttet."
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Feedback welcome for @wording_singular_title @id"
+msgstr "Feedback ønskes: @wording_singular_title @id"
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title @id: feedback welcome"
+msgstr "@wording_singular_title @id: feedback ønskes"
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information needed: @wording_singular_title"
+msgstr "Flere oplysninger kræves: @wording_singular_title"
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information is needed: @wording_singular_title."
+msgstr "Der kræves flere oplysninger: @wording_singular_title."
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "Please clarify: @wording_singular_title"
+msgstr "Bedes uddybet: @wording_singular_title"
+
+#: markaspot_mail.module
+msgid "Update: @wording_singular_title"
+msgstr "Opdatering: @wording_singular_title"
+
+#: markaspot_mail.module
+msgid "There is an update: @wording_singular_title. Please check the platform for details."
+msgstr "Der er en opdatering: @wording_singular_title. Se platformen for detaljer."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Try it out: create your first test @wording_singular directly on the map."
+msgstr "Prøv det: Opret et testelement direkte på kortet. Type: @wording_singular."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "A few demo @wording_plural are already in place. Edit or delete them anytime."
+msgstr "Demoindhold er allerede tilgængeligt. Demo: @wording_plural. Du kan redigere eller slette det når som helst."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgstr "Administrer indgående elementer i dashboardet. @wording_plural: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"

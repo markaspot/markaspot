@@ -70,6 +70,12 @@ final class MailAlterHook {
       return;
     }
 
+    // A matched builder may still return NULL or throw, and branding/rendering
+    // can fail open to the original Drupal message. Sanitize that original
+    // header before any such early return so tokenized admin templates cannot
+    // carry CR/LF/NUL bytes to the mailer in the unbranded fallback path.
+    $message['subject'] = $this->sanitizeHeaderValue((string) ($message['subject'] ?? ''));
+
     $langcode = (string) ($message['langcode'] ?? 'en');
     $ctx = new MailContext(
       module: $module,

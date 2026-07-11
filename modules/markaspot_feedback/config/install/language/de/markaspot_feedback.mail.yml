@@ -1,12 +1,12 @@
 langcode: de
 feedback_request:
-  subject: 'Ihre Meldung [node:request_id] auf dem Mängelmelder: Feedback willkommen'
+  subject: '{{ citizen_term_singular_title }} [node:request_id]: Rückmeldung erbeten'
   body: |
     Sehr geehrte(r) Bürger/in,
 
     vielen Dank, dass Sie den Mängelmelder der Stadt Bonn genutzt haben.
 
-    Ihre Meldung "[node:title]" wurde bearbeitet und ist in unserem System als erledigt markiert. Bevor wir diesen Vorgang abschließen, möchten wir Sie um Ihr Feedback bitten.
+    {{ citizen_term_singular_title }} "[node:title]" wurde bearbeitet und ist in unserem System als erledigt markiert. Bevor wir diesen Vorgang abschließen, möchten wir Sie um Ihr Feedback bitten.
 
     Sind Sie mit dem Ergebnis zufrieden, oder besteht aus Ihrer Sicht noch Handlungsbedarf? Wir würden uns über Ihre Rückmeldung sehr freuen.
 

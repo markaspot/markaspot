@@ -12,6 +12,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Component\Serialization\Yaml;
 use Drupal\language\ConfigurableLanguageManagerInterface;
+use Drupal\markaspot_mail\Service\NotificationTextWordingMigrationGuard;
 use Drupal\user\Entity\Role;
 
 /**
@@ -310,6 +311,211 @@ function markaspot_mail_update_10007(): string {
   $role->grantPermission('administer markaspot mail texts');
   $role->save();
   return 'Granted administer markaspot mail texts to tenant_admin.';
+}
+
+/**
+ * Adds runtime citizen-wording placeholders to untouched mail defaults.
+ *
+ * NotificationTextBuilder replaces the explicit moustache placeholders in
+ * the current shipped templates with the wording selected for the request's
+ * jurisdiction. Existing sites already store a mutable
+ * markaspot_mail.texts config object, so changing config/install alone would
+ * leave them on the historic "report" copy. This update uses strict full
+ * array equality against the prior EN and DE shipped data. It therefore
+ * updates only known boilerplate and preserves every administrator-authored
+ * or ECA-migrated template exactly as it was.
+ */
+function markaspot_mail_update_10008(): string {
+  $configFactory = \Drupal::configFactory();
+  $modulePath = \Drupal::service('extension.list.module')->getPath('markaspot_mail');
+  $guard = new NotificationTextWordingMigrationGuard();
+  $results = [];
+
+  $updatedDefault = _markaspot_mail_read_notification_texts_file(
+    $modulePath . '/config/install/markaspot_mail.texts.yml',
+    TRUE,
+  );
+  $activeDefault = $configFactory->getEditable('markaspot_mail.texts');
+  if ($updatedDefault === NULL || $activeDefault->isNew()) {
+    $results[] = 'default notification texts unavailable; no change';
+  }
+  else {
+    $replacement = $guard->replacementForExactLegacyDefault(
+      $activeDefault->getRawData(),
+      _markaspot_mail_legacy_notification_texts('en'),
+      $updatedDefault,
+    );
+    if ($replacement !== NULL) {
+      $activeDefault->setData($replacement)->save();
+      $results[] = 'default notification texts migrated';
+    }
+    elseif ($activeDefault->getRawData() === $updatedDefault) {
+      $results[] = 'default notification texts already current';
+    }
+    else {
+      $results[] = 'default notification texts customized; preserved';
+    }
+  }
+
+  $languageManager = \Drupal::languageManager();
+  if (!$languageManager instanceof ConfigurableLanguageManagerInterface
+    || !in_array('de', array_keys($languageManager->getLanguages()), TRUE)) {
+    $results[] = 'German override unavailable; no change';
+    return implode('; ', $results) . '.';
+  }
+
+  $updatedGerman = _markaspot_mail_read_notification_texts_file(
+    $modulePath . '/config/install/language/de/markaspot_mail.texts.yml',
+    FALSE,
+  );
+  if ($updatedGerman === NULL) {
+    $results[] = 'German shipped notification texts unavailable; no change';
+    return implode('; ', $results) . '.';
+  }
+
+  $germanOverride = $languageManager->getLanguageConfigOverride('de', 'markaspot_mail.texts');
+  $replacement = $guard->replacementForExactLegacyDefault(
+    $germanOverride->getRawData(),
+    _markaspot_mail_legacy_notification_texts('de'),
+    $updatedGerman,
+  );
+  if ($replacement !== NULL) {
+    $germanOverride->setData($replacement)->save();
+    $results[] = 'German notification texts migrated';
+  }
+  elseif ($germanOverride->getRawData() === $updatedGerman) {
+    $results[] = 'German notification texts already current';
+  }
+  else {
+    $results[] = 'German notification texts customized or absent; preserved';
+  }
+
+  return implode('; ', $results) . '.';
+}
+
+/**
+ * Imports German custom-wording mail translations for existing tenants.
+ *
+ * The non-report Feedback, Resubmission, and notification-fallback sources
+ * are new $this->t() strings. Fresh module installs import module-local PO
+ * files automatically, but a tenant that already enabled markaspot_mail
+ * needs this explicit reimport after update 10008 introduces the runtime
+ * wording paths.
+ */
+function markaspot_mail_update_10009(): string {
+  return _markaspot_mail_import_shipped_translations();
+}
+
+/**
+ * Reads one current shipped notification-template data set from YAML.
+ *
+ * @param bool $keepLangcode
+ *   TRUE for the base config object, FALSE for a language override.
+ *
+ * @return array<string, mixed>|null
+ *   Decoded current shipped data, or NULL when the file is unreadable.
+ */
+function _markaspot_mail_read_notification_texts_file(string $path, bool $keepLangcode): ?array {
+  $contents = @file_get_contents($path);
+  $data = $contents === FALSE ? NULL : Yaml::decode($contents);
+  if (!is_array($data)) {
+    return NULL;
+  }
+  if (!$keepLangcode) {
+    unset($data['langcode']);
+  }
+  return $data;
+}
+
+/**
+ * Returns the historical notification templates used before update 10008.
+ *
+ * This frozen snapshot is deliberately kept in code rather than inferred
+ * from the current install YAML: exact comparison is the safety boundary
+ * that lets the update distinguish shipped defaults from authored templates.
+ *
+ * @return array<string, mixed>
+ *   The previous EN base config or DE language override data.
+ */
+function _markaspot_mail_legacy_notification_texts(string $langcode): array {
+  if ($langcode === 'de') {
+    return [
+      'report_confirmation' => [
+        'subject' => 'Ihre Meldung #[node:request_id] ist eingegangen',
+        'headline' => 'Wir haben Ihre Meldung erhalten',
+        'intro' => 'Ihre Meldung #[node:request_id] ist bei uns eingegangen.',
+        'body_blocks' => [
+          'Kategorie: [node:field_category:entity:name]',
+          '[node:initial_status_note]',
+        ],
+        'cta_label' => 'Meldung ansehen',
+        'preheader' => 'Wir haben Ihre Meldung erhalten und halten Sie auf dem Laufenden.',
+      ],
+      'status_open' => [
+        'subject' => 'Update zu Ihrer Meldung #[node:request_id]',
+        'headline' => 'Ihre Meldung wird bearbeitet',
+        'intro' => 'Vielen Dank für Ihre Meldung. Sie wurde an die zuständige Stelle weitergeleitet und wird nun bearbeitet.',
+        'body_blocks' => ['Sobald Ihre Meldung erledigt ist, erhalten Sie eine weitere Benachrichtigung.'],
+        'cta_label' => 'Meldung ansehen',
+        'preheader' => 'Ihre Meldung wird jetzt bearbeitet.',
+      ],
+      'status_closed' => [
+        'subject' => 'Ihre Meldung #[node:request_id] wurde erledigt',
+        'headline' => 'Ihre Meldung wurde erledigt',
+        'intro' => 'Gute Nachrichten! Ihre Meldung #[node:request_id] wurde erledigt.',
+        'body_blocks' => ['Bei einem dringenden Notfall oder einer unmittelbaren Gefahr wenden Sie sich bitte direkt an die Polizei (110) oder die Feuerwehr (112).'],
+        'cta_label' => 'Meldung ansehen',
+        'preheader' => 'Ihre Meldung wurde erledigt.',
+      ],
+      'status_not_responsible' => [
+        'subject' => 'Ihre Meldung #[node:request_id]: nicht in unserer Zuständigkeit',
+        'headline' => 'Wir sind nicht zuständig',
+        'intro' => 'Ihre Meldung #[node:request_id] wurde geprüft. Leider sind wir für diese Art von Anliegen nicht zuständig.',
+        'body_blocks' => ['Bei einem dringenden Notfall oder einer unmittelbaren Gefahr wenden Sie sich bitte direkt an die Polizei (110) oder die Feuerwehr (112).'],
+        'cta_label' => 'Meldung ansehen',
+        'preheader' => 'Wir sind für diese Meldung nicht zuständig.',
+      ],
+    ];
+  }
+
+  return [
+    'langcode' => 'en',
+    'report_confirmation' => [
+      'subject' => 'Your report #[node:request_id] has been received',
+      'headline' => 'We received your report',
+      'intro' => 'Your report #[node:request_id] has been received.',
+      'body_blocks' => [
+        'Category: [node:field_category:entity:name]',
+        '[node:initial_status_note]',
+      ],
+      'cta_label' => 'View your report',
+      'preheader' => 'We received your report and will keep you updated.',
+    ],
+    'status_open' => [
+      'subject' => 'Update on your report #[node:request_id]',
+      'headline' => 'Your report is being processed',
+      'intro' => 'Thank you for your report. It has been forwarded to the responsible department and is now being processed.',
+      'body_blocks' => ['You will receive another notification once it has been resolved.'],
+      'cta_label' => 'View your report',
+      'preheader' => 'Your report is now being processed.',
+    ],
+    'status_closed' => [
+      'subject' => 'Your report #[node:request_id] has been resolved',
+      'headline' => 'Your report has been resolved',
+      'intro' => 'Good news! Your report #[node:request_id] has been resolved.',
+      'body_blocks' => ['If your matter is an urgent emergency or poses an immediate threat, please contact the police (110) or the fire department (112) directly.'],
+      'cta_label' => 'View your report',
+      'preheader' => 'Your report has been resolved.',
+    ],
+    'status_not_responsible' => [
+      'subject' => 'Your report #[node:request_id]: not our responsibility',
+      'headline' => 'We are not responsible for this report',
+      'intro' => 'Your report #[node:request_id] has been reviewed. Unfortunately, we are not responsible for this type of request.',
+      'body_blocks' => ['If your matter is an urgent emergency or poses an immediate threat, please contact the police (110) or the fire department (112) directly.'],
+      'cta_label' => 'View your report',
+      'preheader' => 'We are not responsible for this report.',
+    ],
+  ];
 }
 
 /**

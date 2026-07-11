@@ -69,7 +69,8 @@ function markaspot_resubmission_mail($key, &$message, $params) {
   switch ($key) {
     case 'resubmit_request':
       // Validate required parameters.
-      if (empty($params['node'])) {
+      $node = $params['node'] ?? NULL;
+      if (!$node instanceof \Drupal\node\NodeInterface) {
         \Drupal::logger('markaspot_resubmission')->error('Missing node parameter in hook_mail() for key @key', ['@key' => $key]);
         return;
       }
@@ -84,9 +85,31 @@ function markaspot_resubmission_mail($key, &$message, $params) {
         $mail_config = \Drupal::config('markaspot_resubmission.mail')->get($key);
       }
 
+      if (!is_array($mail_config)) {
+        \Drupal::logger('markaspot_resubmission')->error('Missing mail configuration for key @key', ['@key' => $key]);
+        return;
+      }
+
+      /** @var \Drupal\markaspot_nuxt\Service\CitizenWordingResolver $wording_resolver */
+      $wording_resolver = \Drupal::service('markaspot_nuxt.citizen_wording_resolver');
+      $jurisdiction_type = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type');
+      $jurisdiction = $wording_resolver->resolveJurisdictionFromNode(
+        $node,
+        is_string($jurisdiction_type) ? $jurisdiction_type : 'jur',
+      );
+      foreach (['subject', 'body'] as $field) {
+        if (isset($mail_config[$field]) && is_string($mail_config[$field])) {
+          $mail_config[$field] = $wording_resolver->replaceMailPlaceholders(
+            $mail_config[$field],
+            $jurisdiction,
+            (string) $message['langcode'],
+          );
+        }
+      }
+
       // Replace tokens in subject and body.
       $token_service = \Drupal::token();
-      $token_data = ['node' => $params['node']];
+      $token_data = ['node' => $node];
 
       $message['from'] = \Drupal::config('system.site')->get('mail');
       $message['subject'] = $token_service->replace($mail_config['subject'], $token_data, ['langcode' => $message['langcode']]);

@@ -6,8 +6,11 @@ namespace Drupal\markaspot_mail_inbound\EventSubscriber;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Event\InboundRequestCreatedEvent;
 use Drupal\markaspot_mail_inbound\Service\InboundMailReplyService;
@@ -44,6 +47,7 @@ class MissingLocationAutoReplySubscriber implements EventSubscriberInterface {
     protected EntityTypeManagerInterface $entityTypeManager,
     protected InboundMailReplyService $replyService,
     protected LoggerChannelInterface $logger,
+    protected ?CitizenWordingResolver $citizenWordingResolver = NULL,
   ) {
   }
 
@@ -79,11 +83,14 @@ class MissingLocationAutoReplySubscriber implements EventSubscriberInterface {
       }
 
       $requestId = $this->resolveRequestId($node);
+      $term = $this->resolveCitizenTerm($node);
       $body = (string) $this->t(
-        "Thank you for your report. It has been registered@request_id and will be reviewed by our team.\n\nTo process it we still need the exact location. Please reply to this email with the address or a description of the place (street and house number, or a nearby landmark).",
+        "Thank you for your @term. It has been registered@request_id and will be reviewed by our team.\n\nTo process it we still need the exact location. Please reply to this email with the address or a description of the place (street and house number, or a nearby landmark).",
         [
+          '@term' => $term,
           '@request_id' => $requestId !== '' ? ' as ' . $requestId : '',
-        ]
+        ],
+        ['langcode' => $node->language()->getId()]
       );
 
       $this->replyService->sendReply(
@@ -129,6 +136,29 @@ class MissingLocationAutoReplySubscriber implements EventSubscriberInterface {
       return '#' . trim((string) $node->get('request_id')->value, '# ');
     }
     return '';
+  }
+
+  /**
+   * Resolves the configured citizen term for the promoted request.
+   */
+  protected function resolveCitizenTerm(NodeInterface $node): string {
+    if ($this->citizenWordingResolver === NULL
+      || !$node->hasField('field_jurisdiction')) {
+      return 'report';
+    }
+
+    $field = $node->get('field_jurisdiction');
+    if (!$field instanceof EntityReferenceFieldItemListInterface || $field->isEmpty()) {
+      return 'report';
+    }
+
+    $group = $field->referencedEntities()[0] ?? NULL;
+    if (!$group instanceof GroupInterface) {
+      return 'report';
+    }
+
+    $wording = $this->citizenWordingResolver->resolve($group, $node->language()->getId());
+    return $wording['singular'];
   }
 
 }

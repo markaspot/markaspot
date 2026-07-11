@@ -16,8 +16,14 @@ msgstr ""
 msgid "Your report was resolved"
 msgstr "Ihre Meldung wurde bearbeitet"
 
+msgid "@wording_singular_title was resolved"
+msgstr "@wording_singular_title wurde bearbeitet"
+
 msgid "Thank you for using the issue tracker. Your report \"@title\" has been processed and is now marked as completed."
 msgstr "Vielen Dank für Ihre Mitwirkung. Ihre Meldung „@title“ wurde bearbeitet und ist abgeschlossen."
+
+msgid "Thank you for using the issue tracker. @wording_singular_title \"@title\" has been processed and is now marked as completed."
+msgstr "Vielen Dank für Ihre Mitwirkung. @wording_singular_title „@title“ wurde bearbeitet und ist abgeschlossen."
 
 msgid "Are you satisfied with the result, or is there still action needed from your perspective? We would greatly appreciate your feedback."
 msgstr "Sind Sie mit dem Ergebnis zufrieden, oder besteht aus Ihrer Sicht weiterer Handlungsbedarf? Wir freuen uns über Ihre Rückmeldung."
@@ -31,8 +37,14 @@ msgstr "Feedback geben"
 msgid "Feedback welcome on your report @id"
 msgstr "Ihre Rückmeldung zur Meldung @id"
 
+msgid "Feedback welcome for @wording_singular_title @id"
+msgstr "Rückmeldung zu @wording_singular_title @id"
+
 msgid "Your report @id: feedback welcome"
 msgstr "Ihre Meldung @id: Rückmeldung erbeten"
+
+msgid "@wording_singular_title @id: feedback welcome"
+msgstr "@wording_singular_title @id: Rückmeldung erbeten"
 
 msgid "Report"
 msgstr "Meldung"
@@ -126,6 +138,18 @@ msgstr "E-Mail bestätigen"
 msgid "Click to activate your @name workspace"
 msgstr "Jetzt Ihren Arbeitsbereich @name aktivieren"
 
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Try it out: create your first test @wording_singular directly on the map."
+msgstr "Probieren Sie es aus: Erstellen Sie direkt auf der Karte Ihren ersten Test-@wording_singular."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "A few demo @wording_plural are already in place. Edit or delete them anytime."
+msgstr "Einige Demo-@wording_plural sind bereits vorhanden. Sie können sie jederzeit bearbeiten oder löschen."
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgstr "Verwalten Sie eingehende @wording_plural in Ihrem Dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+
 msgid "Your demo workspace \"@name\" expires soon"
 msgstr "Ihr Demo-Arbeitsbereich „@name“ läuft bald ab"
 
@@ -171,14 +195,29 @@ msgstr "Ihr Bestätigungscode: @code\n\nEr läuft in @minutes Minuten ab."
 msgid "Your report needs more information"
 msgstr "Ihre Meldung benötigt weitere Angaben"
 
+msgid "More information needed: @wording_singular_title"
+msgstr "Weitere Angaben benötigt: @wording_singular_title"
+
 msgid "We need more information about your report"
 msgstr "Wir benötigen weitere Angaben zu Ihrer Meldung"
+
+msgid "More information is needed: @wording_singular_title."
+msgstr "Weitere Angaben werden benötigt: @wording_singular_title."
 
 msgid "Please clarify your report"
 msgstr "Bitte Meldung ergänzen"
 
+msgid "Please clarify: @wording_singular_title"
+msgstr "Bitte ergänzen: @wording_singular_title"
+
 msgid "We need a bit more information to process your report."
 msgstr "Wir benötigen noch ein paar Angaben, um Ihre Meldung weiterzubearbeiten."
+
+msgid "Update: @wording_singular_title"
+msgstr "Update: @wording_singular_title"
+
+msgid "There is an update: @wording_singular_title. Please check the platform for details."
+msgstr "Es gibt ein Update: @wording_singular_title. Bitte prüfen Sie die Plattform für Details."
 
 msgid "Docs"
 msgstr "Dokumentation"

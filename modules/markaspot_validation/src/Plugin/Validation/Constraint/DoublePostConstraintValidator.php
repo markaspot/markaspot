@@ -10,7 +10,13 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\ContentEntityInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Field\EntityReferenceFieldItemListInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\Component\Utility\Html;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_validation\EventSubscriber\ViolationCauseResponseSubscriber;
 use AnthonyMartin\GeoLocation\GeoLocation as GeoLocation;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -69,6 +75,20 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
   protected $account;
 
   /**
+   * Resolves the tenant's citizen-facing terminology when Nuxt is enabled.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\CitizenWordingResolver|null
+   */
+  protected $citizenWordingResolver;
+
+  /**
+   * Resolves the active content language for JSON:API error details.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface|null
+   */
+  protected $languageManager;
+
+  /**
    * Constructs a DoublePostConstraintValidator object.
    *
    * @param \Drupal\Component\Datetime\TimeInterface $time
@@ -81,14 +101,20 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
    *   The configuration factory.
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The currently authenticated user.
+   * @param \Drupal\markaspot_nuxt\Service\CitizenWordingResolver|null $citizen_wording_resolver
+   *   The optional resolver for tenant-specific citizen terminology.
+   * @param \Drupal\Core\Language\LanguageManagerInterface|null $language_manager
+   *   The optional resolver for the active content language.
    */
-  public function __construct(TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, AccountInterface $account) {
+  public function __construct(TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, AccountInterface $account, ?CitizenWordingResolver $citizen_wording_resolver = NULL, ?LanguageManagerInterface $language_manager = NULL) {
     $this->time = $time;
     $this->requestStack = $request_stack;
     $this->entityTypeManager = $entity_type_manager;
     // Use get() for read-only access, not getEditable().
     $this->config = $config_factory->get('markaspot_validation.settings');
     $this->account = $account;
+    $this->citizenWordingResolver = $citizen_wording_resolver;
+    $this->languageManager = $language_manager;
   }
 
   /**
@@ -101,6 +127,10 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
       $container->get('entity_type.manager'),
       $container->get('config.factory'),
       $container->get('current_user'),
+      $container->has('markaspot_nuxt.citizen_wording_resolver')
+        ? $container->get('markaspot_nuxt.citizen_wording_resolver')
+        : NULL,
+      $container->get('language_manager'),
     );
   }
 
@@ -138,7 +168,8 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
     }
 
     // Build the duplicate info for response.
-    $duplicateInfo = $this->buildDuplicateInfo($nids, $config);
+    $wording = $this->resolveCitizenWording();
+    $duplicateInfo = $this->buildDuplicateInfo($nids, $config, $wording);
 
     // Structured payload surfaced to headless clients under the `meta` key
     // of the JSON:API error object. `setCause()` keeps it separate from
@@ -160,8 +191,22 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
     // lives on the admin Drupal form render path only, not in the API
     // response — `detail` in a JSON:API error object is plain text per spec.
     // Frontend clients build their own link from `meta.existing_report_url`.
-    $hardBlockSuffix = $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!');
-    $hintSuffix = $this->t('You can ignore this message by resubmitting. To help us, please compare the possible duplicate at the linked report.');
+    if ($wording === NULL) {
+      // Preserve the established detail when the optional Nuxt terminology
+      // service is unavailable outside a FastMap runtime.
+      $hardBlockSuffix = $this->t('We are grateful for your efforts and will soon review this location anyway. Thank you!');
+      $hintSuffix = $this->t('You can ignore this message by resubmitting. To help us, please compare the possible duplicate at the linked report.');
+    }
+    else {
+      $hardBlockSuffix = $this->formatCitizenValidationMessage(
+        CitizenWordingResolver::VALIDATION_DUPLICATE_BLOCK,
+        $wording,
+      );
+      $hintSuffix = $this->formatCitizenValidationMessage(
+        CitizenWordingResolver::VALIDATION_DUPLICATE_HINT,
+        $wording,
+      );
+    }
 
     $suffix = $isHintMode ? $hintSuffix : $hardBlockSuffix;
     $this->context->buildViolation((string) $duplicateInfo['message'] . ' ' . (string) $suffix)
@@ -223,6 +268,8 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
    *   Array of duplicate node IDs.
    * @param \Drupal\Core\Config\ImmutableConfig $config
    *   The module configuration.
+   * @param array{jurisdiction: \Drupal\group\Entity\GroupInterface|null, langcode: string, singular: string}|null $wording
+   *   The selected citizen terminology and response locale, if available.
    *
    * @return array
    *   Plain-text message plus request_id and absolute URL for JSON:API meta.
@@ -230,11 +277,14 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
    *   it, request_id and url are NULL to avoid leaking the identity of
    *   pending/archived reports via the 422 response.
    */
-  protected function buildDuplicateInfo(array $nids, ImmutableConfig $config): array {
+  protected function buildDuplicateInfo(array $nids, ImmutableConfig $config, ?array $wording = NULL): array {
     $nodes = $this->entityTypeManager->getStorage('node')->loadMultiple($nids);
     $node = reset($nodes);
 
-    $unit = $config->get('unit') === 'yards' ? 'yards' : 'meters';
+    $isYards = $config->get('unit') === 'yards';
+    $legacyUnit = $isYards ? 'yards' : 'meters';
+    // Symbols avoid leaking an English unit word into a localized template.
+    $unit = $isYards ? 'yd' : 'm';
 
     // Access check: a matched unpublished/archived node may be invisible to
     // the anonymous submitter, so do not include its URL or request_id in
@@ -245,11 +295,24 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
     if ($viewable) {
       $url = Url::fromRoute('entity.node.canonical', ['node' => $node->id()], ['absolute' => TRUE])->toString();
       $request_id = $this->duplicateNodeRequestId($node);
-      $message = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
-        '@id' => $request_id,
-        '@radius' => (string) ($config->get('radius') ?? ''),
-        '@unit' => $unit,
-      ]);
+      if ($wording !== NULL) {
+        $message = $this->formatCitizenValidationMessage(
+          CitizenWordingResolver::VALIDATION_DUPLICATE_VISIBLE,
+          $wording,
+          [
+            '@id' => $request_id,
+            '@radius' => (string) ($config->get('radius') ?? ''),
+            '@unit' => $unit,
+          ],
+        );
+      }
+      else {
+        $message = $this->t('We found a recently added report of the same category with ID @id within a radius of @radius @unit.', [
+          '@id' => $request_id,
+          '@radius' => (string) ($config->get('radius') ?? ''),
+          '@unit' => $legacyUnit,
+        ]);
+      }
       return [
         'message' => $message,
         'request_id' => $request_id,
@@ -257,14 +320,111 @@ class DoublePostConstraintValidator extends ConstraintValidator implements Conta
       ];
     }
 
-    return [
-      'message' => $this->t('We found a recently added report of the same category within a radius of @radius @unit.', [
+    if ($wording !== NULL) {
+      $message = $this->formatCitizenValidationMessage(
+        CitizenWordingResolver::VALIDATION_DUPLICATE_HIDDEN,
+        $wording,
+        [
+          '@radius' => (string) ($config->get('radius') ?? ''),
+          '@unit' => $unit,
+        ],
+      );
+    }
+    else {
+      $message = $this->t('We found a recently added report of the same category within a radius of @radius @unit.', [
         '@radius' => (string) ($config->get('radius') ?? ''),
-        '@unit' => $unit,
-      ]),
+        '@unit' => $legacyUnit,
+      ]);
+    }
+
+    return [
+      'message' => $message,
       'request_id' => NULL,
       'url' => NULL,
     ];
+  }
+
+  /**
+   * Resolves citizen terminology plus the active response language.
+   *
+   * JSON:API may create a node in the site default language while Nuxt sends
+   * a different request locale. TYPE_CONTENT therefore takes precedence over
+   * the entity language when the service is available.
+   *
+   * @return array{jurisdiction: \Drupal\group\Entity\GroupInterface|null, langcode: string, singular: string}|null
+   *   The selected wording, or NULL for the legacy no-resolver path.
+   */
+  protected function resolveCitizenWording(): ?array {
+    if ($this->citizenWordingResolver === NULL) {
+      return NULL;
+    }
+
+    $entity = $this->context->getRoot();
+    if (!$entity instanceof ContentEntityInterface) {
+      return NULL;
+    }
+
+    $jurisdiction = NULL;
+    if ($entity->hasField('field_jurisdiction')) {
+      $field = $entity->get('field_jurisdiction');
+      if ($field instanceof EntityReferenceFieldItemListInterface && !$field->isEmpty()) {
+        $group = $field->referencedEntities()[0] ?? NULL;
+        if ($group instanceof GroupInterface) {
+          $jurisdiction = $group;
+        }
+      }
+    }
+
+    $langcode = $this->resolveResponseLangcode($entity);
+    $terms = $this->citizenWordingResolver->resolve($jurisdiction, $langcode);
+
+    return [
+      'jurisdiction' => $jurisdiction,
+      'langcode' => $langcode,
+      'singular' => $terms['singular'],
+    ];
+  }
+
+  /**
+   * Formats a locale-complete duplicate-validation template safely.
+   *
+   * @param string $message_key
+   *   The shared citizen-validation template key.
+   * @param array{jurisdiction: \Drupal\group\Entity\GroupInterface|null, langcode: string, singular: string} $wording
+   *   The terminology and response locale resolved for this request.
+   * @param array<string, string> $arguments
+   *   Runtime values that must use Drupal's escaped @-placeholder handling.
+   */
+  protected function formatCitizenValidationMessage(string $message_key, array $wording, array $arguments = []): string {
+    if ($this->citizenWordingResolver === NULL) {
+      throw new \LogicException('Citizen wording is required for localized duplicate validation.');
+    }
+
+    $template = $this->citizenWordingResolver->formatValidationMessage(
+      $message_key,
+      $wording['jurisdiction'],
+      $wording['langcode'],
+    );
+
+    // Resolver templates are already locale-complete source strings.
+    // Escape remaining runtime values with the same safety semantics.
+    // This mirrors Drupal's @-placeholders without a dynamic t() call.
+    foreach ($arguments as $placeholder => $value) {
+      $arguments[$placeholder] = Html::escape($value);
+    }
+
+    return strtr($template, $arguments);
+  }
+
+  /**
+   * Resolves the active content language for JSON:API validation responses.
+   */
+  protected function resolveResponseLangcode(ContentEntityInterface $entity): string {
+    if ($this->languageManager !== NULL) {
+      return $this->languageManager->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)->getId();
+    }
+
+    return $entity->language()->getId();
   }
 
   /**

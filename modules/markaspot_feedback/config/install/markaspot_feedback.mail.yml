@@ -1,10 +1,10 @@
 langcode: en
 feedback_request:
-  subject: 'Your report [node:request_id] - Feedback welcome'
+  subject: 'Your {{ citizen_term_singular }} [node:request_id] - Feedback welcome'
   body: |
     Dear citizen,
 
-    Thank you for using the issue tracker. Your report "[node:title]" has been processed and marked as completed in our system. Before we close this case, we would like to ask for your feedback.
+    Thank you for using the issue tracker. {{ citizen_term_singular_title }} "[node:title]" has been processed and marked as completed in our system. Before we close this case, we would like to ask for your feedback.
 
     Are you satisfied with the result, or is there still action needed from your perspective? We would greatly appreciate your feedback.
 

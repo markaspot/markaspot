@@ -6,6 +6,8 @@ namespace Drupal\markaspot_mail\Mail\Builder;
 
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\Utility\Token;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
 use Drupal\markaspot_mail\Mail\MailContext;
@@ -41,6 +43,7 @@ final class ResubmissionRequestBuilder implements MailBuilderInterface {
   public function __construct(
     private readonly MailTextResolver $textResolver,
     private readonly Token $token,
+    private readonly CitizenWordingResolver $citizenWordingResolver,
     private readonly LoggerInterface $logger,
   ) {}
 
@@ -68,21 +71,40 @@ final class ResubmissionRequestBuilder implements MailBuilderInterface {
       return NULL;
     }
 
+    $jurisdiction = $this->resolveJurisdictionGroupFromNode($node);
     [$mode, $jurisdictionId] = $this->resolveJurisdictionFromNode($node);
+    $wording = $this->citizenWordingResolver->resolveMailTerms($jurisdiction, $ctx->langcode);
+    $usesCustomWording = $wording['preset'] !== CitizenWordingResolver::DEFAULT_PRESET;
 
-    $subject = $this->resolveFromConfig('subject', $node, $ctx->langcode)
-      ?: (string) $this->t('Your report needs more information', [], ['langcode' => $ctx->langcode]);
+    $subject = $this->resolveFromConfig('subject', $node, $jurisdiction, $ctx->langcode)
+      ?: ($usesCustomWording
+        ? (string) $this->t('More information needed: @wording_singular_title', [
+          '@wording_singular_title' => $wording['singular_title'],
+        ], ['langcode' => $ctx->langcode])
+        : (string) $this->t('Your report needs more information', [], ['langcode' => $ctx->langcode]));
 
-    $body = $this->resolveFromConfig('body', $node, $ctx->langcode);
+    $body = $this->resolveFromConfig('body', $node, $jurisdiction, $ctx->langcode);
     $paragraphs = $body !== '' ? $this->splitParagraphs($body) : [];
-    $intro = array_shift($paragraphs) ?? (string) $this->t('We need a bit more information to process your report.', [], ['langcode' => $ctx->langcode]);
+    $intro = array_shift($paragraphs) ?? ($usesCustomWording
+      ? (string) $this->t('More information is needed: @wording_singular_title.', [
+        '@wording_singular_title' => $wording['singular_title'],
+      ], ['langcode' => $ctx->langcode])
+      : (string) $this->t('We need a bit more information to process your report.', [], ['langcode' => $ctx->langcode]));
 
     return new MailMessage(
       subject: $subject,
       variant: 'card_transactional',
       content: [
-        'preheader' => (string) $this->t('We need more information about your report', [], ['langcode' => $ctx->langcode]),
-        'headline' => (string) $this->t('Please clarify your report', [], ['langcode' => $ctx->langcode]),
+        'preheader' => $usesCustomWording
+          ? (string) $this->t('More information needed: @wording_singular_title', [
+            '@wording_singular_title' => $wording['singular_title'],
+          ], ['langcode' => $ctx->langcode])
+          : (string) $this->t('We need more information about your report', [], ['langcode' => $ctx->langcode]),
+        'headline' => $usesCustomWording
+          ? (string) $this->t('Please clarify: @wording_singular_title', [
+            '@wording_singular_title' => $wording['singular_title'],
+          ], ['langcode' => $ctx->langcode])
+          : (string) $this->t('Please clarify your report', [], ['langcode' => $ctx->langcode]),
         'intro' => $intro,
         'body_blocks' => $paragraphs,
       ],
@@ -94,11 +116,16 @@ final class ResubmissionRequestBuilder implements MailBuilderInterface {
   /**
    * Reads a config template and runs Drupal token replacement.
    */
-  private function resolveFromConfig(string $key, NodeInterface $node, string $langcode): string {
+  private function resolveFromConfig(string $key, NodeInterface $node, ?GroupInterface $jurisdiction, string $langcode): string {
     $template = $this->textResolver->resolveField('markaspot_resubmission.mail', 'resubmit_request', $key, $langcode);
     if ($template === '') {
       return '';
     }
+    $template = $this->citizenWordingResolver->replaceMailPlaceholders(
+      $template,
+      $jurisdiction,
+      $langcode,
+    );
     return (string) $this->token->replace($template, ['node' => $node], [
       'langcode' => $langcode,
       'clear' => TRUE,

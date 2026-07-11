@@ -22,6 +22,7 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_ai\Service\AiClientService;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningService;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
@@ -411,6 +412,47 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn($groupId);
     $group->method('hasField')->willReturn(FALSE);
+    return $group;
+  }
+
+  /**
+   * Builds a group mock with a selected citizen wording preset.
+   */
+  protected function mockGroupWithWording(int $groupId, string $preset): GroupInterface {
+    $configField = new class ($preset) {
+
+      /**
+       * The raw tenant config consumed by CitizenWordingResolver.
+       */
+      public string $value;
+
+      /**
+       * Constructs the field value.
+       */
+      public function __construct(string $preset) {
+        $this->value = json_encode(['i18n' => ['wording' => $preset]], JSON_THROW_ON_ERROR);
+      }
+
+      /**
+       * Reports the field as populated.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn($groupId);
+    $group->method('getUntranslated')->willReturnSelf();
+    $group->method('hasField')->willReturnCallback(
+      static fn(string $field): bool => $field === 'field_nuxt_config',
+    );
+    $group->method('get')->willReturnCallback(
+      static fn(string $field): object => $field === 'field_nuxt_config'
+        ? $configField
+        : throw new \LogicException("Unexpected field {$field}"),
+    );
     return $group;
   }
 
@@ -1582,6 +1624,79 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
   }
 
   /**
+   * Tests static onboarding copy uses the configured citizen terminology.
+   *
+   * @covers ::renderStartPageTemplate
+   */
+  public function testStartPageTemplateUsesConfiguredWording(): void {
+    /** @var \Drupal\Core\Config\ConfigFactoryInterface $configFactory */
+    $configFactory = \Drupal::getContainer()->get('config.factory');
+    /** @var \Drupal\Component\Datetime\TimeInterface $time */
+    $time = \Drupal::getContainer()->get('datetime.time');
+    $service = new WorkspaceProvisioningService(
+      $this->entityTypeManager,
+      $this->database,
+      $this->logger,
+      $this->languageManager,
+      $configFactory,
+      $time,
+      $this->lock,
+      NULL,
+      new CitizenWordingResolver(),
+    );
+
+    $configField = new class {
+
+      /**
+       * The raw tenant config used by the resolver.
+       */
+      public string $value = '{"i18n":{"wording":"entry"}}';
+
+      /**
+       * Reports that the field contains a value.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('getUntranslated')->willReturnSelf();
+    $group->method('hasField')->with('field_nuxt_config')->willReturn(TRUE);
+    $group->method('get')->with('field_nuxt_config')->willReturn($configField);
+
+    $method = new \ReflectionMethod($service, 'renderStartPageTemplate');
+    $rendered = $method->invoke($service, $group, 'Demo Workspace', 'de');
+
+    $this->assertSame('Willkommen bei Demo Workspace', $rendered['title']);
+    $this->assertStringContainsString('Einträge', $rendered['body']);
+    $this->assertStringNotContainsString('Meldungen', $rendered['body']);
+
+    $czech = $method->invoke($service, $group, 'Demo Workspace', 'cs');
+    $this->assertStringContainsString('záznamy', $czech['body']);
+    $this->assertStringNotContainsString('občanská hlášení', $czech['body']);
+  }
+
+  /**
+   * Static fallback copy must not mix an English shell with a local term.
+   *
+   * @covers ::renderStartPageTemplate
+   * @covers ::buildFallbackDemoBody
+   */
+  public function testStaticFallbackCopyCoversEveryAllowedWorkspaceLanguage(): void {
+    $reflection = new \ReflectionClass(WorkspaceProvisioningService::class);
+    $allowed = $reflection->getConstant('ALLOWED_LANGS');
+    $startPageTemplates = $reflection->getConstant('START_PAGE_TEMPLATES');
+    $demoFallbacks = $reflection->getConstant('DEMO_FALLBACK_BOILERPLATE');
+
+    $this->assertIsArray($allowed);
+    $this->assertIsArray($startPageTemplates);
+    $this->assertIsArray($demoFallbacks);
+    $this->assertSame([], array_values(array_diff($allowed, array_keys($startPageTemplates))));
+    $this->assertSame([], array_values(array_diff($allowed, array_keys($demoFallbacks))));
+  }
+
+  /**
    * Tests createDemoRequests() never calls chat() without AI credentials.
    *
    * AiClientService retries failed requests up to 3x with exponential
@@ -1651,21 +1766,25 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     try {
       $configFactory = $this->buildConfigFactoryWithAiConfigured();
 
+      $capturedMessages = [];
       $aiClient = $this->createMock(AiClientService::class);
       $aiClient->expects($this->once())
         ->method('chat')
-        ->willReturn([
-          'choices' => [
-            [
-              'message' => [
-                'content' => json_encode([
-                  ['title' => 'Broken traffic light', 'body' => 'The traffic light has been dark since Monday.'],
-                  ['title' => 'Flooded underpass', 'body' => 'Heavy rain has flooded the pedestrian underpass.'],
-                ]),
+        ->willReturnCallback(static function (array $messages) use (&$capturedMessages): array {
+          $capturedMessages = $messages;
+          return [
+            'choices' => [
+              [
+                'message' => [
+                  'content' => json_encode([
+                    ['title' => 'Broken traffic light', 'body' => 'The traffic light has been dark since Monday.'],
+                    ['title' => 'Flooded underpass', 'body' => 'Heavy rain has flooded the pedestrian underpass.'],
+                  ]),
+                ],
               ],
             ],
-          ],
-        ]);
+          ];
+        });
 
       $service = new WorkspaceProvisioningService(
         $this->entityTypeManager,
@@ -1676,9 +1795,10 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         $this->createMock(TimeInterface::class),
         $this->lock,
         $aiClient,
+        new CitizenWordingResolver(),
       );
 
-      $group = $this->mockGroupWithNoMapFields(42);
+      $group = $this->mockGroupWithWording(42, 'entry');
       $categoryNames = [10 => 'Road Damage', 20 => 'Flood'];
       $this->mockCategoryTermsForDemoContent($categoryNames);
 
@@ -1692,7 +1812,7 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
         });
 
       $method = new \ReflectionMethod($service, 'createDemoRequests');
-      $method->invoke($service, ['name' => 'Test Workspace'], $group, array_keys($categoryNames), 42, 'en');
+      $method->invoke($service, ['name' => 'Test Workspace'], $group, array_keys($categoryNames), 42, 'de');
 
       $this->assertCount(2, $created);
       $this->assertEquals('Broken traffic light', $created[0]['title']);
@@ -1700,6 +1820,8 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
       $this->assertStringContainsString('[demo-content]', $created[0]['body']['value']);
       $this->assertEquals('Flooded underpass', $created[1]['title']);
       $this->assertStringContainsString('pedestrian underpass', $created[1]['body']['value']);
+      $this->assertStringContainsString('Eintrag', $capturedMessages[0]['content']);
+      $this->assertStringContainsString('Einträge', $capturedMessages[0]['content']);
     }
     finally {
       $this->restoreAiEnvVars($envBackup);

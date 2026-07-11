@@ -289,6 +289,14 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
     $langcode = $message['langcode'] ?? 'en';
     $template = _markaspot_fastmap_mail_template($key, $langcode);
 
+    if ($key === 'workspace_welcome') {
+      $template['body'] = _markaspot_fastmap_replace_default_welcome_wording(
+        $template['body'],
+        $langcode,
+        $params,
+      );
+    }
+
     // Both fields still missing after config + shipped-YAML fallback means
     // there is nothing sensible to send. Suppress delivery instead of
     // reaching strtr(NULL); MailManager checks $message['send'] and reports
@@ -348,6 +356,127 @@ function markaspot_fastmap_mail(string $key, array &$message, array $params): vo
 
     $message['body'][] = t('Create a permanent workspace anytime at https://civicspot.io');
   }
+}
+
+/**
+ * Replaces an untouched shipped welcome-mail tail with neutral local copy.
+ *
+ * Branded WorkspaceWelcomeBuilder handles the normal path. This narrow
+ * fallback is for installations where markaspot_mail is absent or unable to
+ * render. It only rewrites a body that is byte-identical to one of the
+ * shipped localized defaults, so any customer-authored template remains
+ * exactly as written. The selected plural term appears after a neutral label
+ * rather than being inserted into language-specific case or gender forms.
+ *
+ * @param string $body
+ *   The unresolved workspace_welcome body template.
+ * @param string $langcode
+ *   Mail recipient language code.
+ * @param array<string, mixed> $params
+ *   Mail parameters, including curated wording fields from FastMap.
+ *
+ * @return string
+ *   The safe dynamic body, or the original body for custom/default wording.
+ */
+function _markaspot_fastmap_replace_default_welcome_wording(string $body, string $langcode, array $params): string {
+  $preset = $params['wording_preset'] ?? NULL;
+  $templateLangcode = _markaspot_fastmap_shipped_welcome_body_langcode($body, $langcode);
+  if (!\Drupal\markaspot_nuxt\Service\CitizenWordingResolver::isSupportedPreset($preset)
+    || $preset === \Drupal\markaspot_nuxt\Service\CitizenWordingResolver::DEFAULT_PRESET
+    || $templateLangcode === NULL) {
+    return $body;
+  }
+
+  $plural = trim((string) ($params['wording_plural'] ?? ''));
+  if ($plural === '') {
+    return $body;
+  }
+
+  $paragraphs = preg_split('/\R{2,}/', trim($body));
+  if (!is_array($paragraphs) || count($paragraphs) < 2) {
+    return $body;
+  }
+
+  return implode("\n\n", [
+    ...array_slice($paragraphs, 0, 2),
+    strtr(_markaspot_fastmap_default_welcome_wording_tail($templateLangcode), [
+      '@wording_plural' => $plural,
+    ]),
+  ]);
+}
+
+/**
+ * Returns neutral, localized wording-aware copy for the fallback tail.
+ *
+ * The selected plural is only used as a stand-alone list value after a
+ * colon. This avoids inventing unreviewed grammatical forms for every
+ * language while keeping the selected citizen-facing label visible.
+ */
+function _markaspot_fastmap_default_welcome_wording_tail(string $langcode): string {
+  return match (strtolower(str_replace('_', '-', $langcode))) {
+    'ar' => "تجمع هذه الخريطة: @wording_plural.\n\nجرّبها الآن: أنشئ عنصراً تجريبياً مباشرة على الخريطة.\nمحتوى تجريبي متاح بالفعل ويمكنك تعديله أو حذفه في أي وقت.\n\nأدر العناصر الواردة من لوحة التحكم الخاصة بك:\n@workspace_url/dashboard",
+    'cs' => "Tato mapa shromažďuje: @wording_plural.\n\nVyzkoušejte si to: vytvořte zkušební položku přímo na mapě.\nUkázkový obsah je již k dispozici a můžete jej kdykoli upravit nebo smazat.\n\nSpravujte příchozí položky ve svém dashboardu:\n@workspace_url/dashboard",
+    'da' => "Denne kortløsning indsamler: @wording_plural.\n\nPrøv det: opret et testelement direkte på kortet.\nDemoindhold er allerede klar og kan redigeres eller slettes når som helst.\n\nAdministrer indgående elementer i dit dashboard:\n@workspace_url/dashboard",
+    'de', 'de-ls' => "Auf dieser Karte werden erfasst: @wording_plural.\n\nProbieren Sie es aus: Erstellen Sie direkt auf der Karte einen Testvorgang.\nDemo-Inhalte sind bereits vorhanden und können jederzeit bearbeitet oder gelöscht werden.\n\nVerwalten Sie eingehende Vorgänge in Ihrem Dashboard:\n@workspace_url/dashboard",
+    'es' => "Este mapa recopila: @wording_plural.\n\nPruébelo: cree un elemento de prueba directamente en el mapa.\nYa hay contenido de demostración disponible y puede editarlo o eliminarlo en cualquier momento.\n\nGestione los elementos entrantes desde su panel de control:\n@workspace_url/dashboard",
+    'fi' => "Tälle kartalle kerätään: @wording_plural.\n\nKokeile heti: luo testikohde suoraan kartalle.\nDemosisältöä on jo saatavilla, ja voit muokata tai poistaa sitä milloin tahansa.\n\nHallitse saapuvia kohteita hallintapaneelissasi:\n@workspace_url/dashboard",
+    'fr' => "Cette carte recueille : @wording_plural.\n\nEssayez-la : créez un élément de test directement sur la carte.\nDu contenu de démonstration est déjà disponible et peut être modifié ou supprimé à tout moment.\n\nGérez les éléments entrants depuis votre tableau de bord :\n@workspace_url/dashboard",
+    'hu' => "Ez a térkép a következőket gyűjti: @wording_plural.\n\nPróbálja ki: hozzon létre egy tesztelemet közvetlenül a térképen.\nDemótartalom már rendelkezésre áll, és bármikor szerkeszthető vagy törölhető.\n\nKezelje a beérkező elemeket az irányítópultján:\n@workspace_url/dashboard",
+    'it' => "Questa mappa raccoglie: @wording_plural.\n\nProvala subito: crea un elemento di prova direttamente sulla mappa.\nIl contenuto dimostrativo è già disponibile e può essere modificato o eliminato in qualsiasi momento.\n\nGestisci gli elementi in arrivo dalla tua dashboard:\n@workspace_url/dashboard",
+    'nb' => "Dette kartet samler inn: @wording_plural.\n\nPrøv det ut: opprett et testelement direkte på kartet.\nDemoinnhold er allerede tilgjengelig og kan redigeres eller slettes når som helst.\n\nAdministrer innkommende elementer i dashbordet ditt:\n@workspace_url/dashboard",
+    'nl' => "Deze kaart verzamelt: @wording_plural.\n\nProbeer het uit: maak rechtstreeks op de kaart een testitem.\nEr is al demo-inhoud beschikbaar die je op elk moment kunt bewerken of verwijderen.\n\nBeheer binnenkomende items in je dashboard:\n@workspace_url/dashboard",
+    'pl' => "Ta mapa zbiera: @wording_plural.\n\nWypróbuj ją: utwórz element testowy bezpośrednio na mapie.\nTreść demonstracyjna jest już dostępna i możesz ją w każdej chwili edytować lub usunąć.\n\nZarządzaj przychodzącymi elementami w swoim panelu:\n@workspace_url/dashboard",
+    'pt', 'pt-br' => "Este mapa recolhe: @wording_plural.\n\nExperimente: crie um item de teste diretamente no mapa.\nJá existe conteúdo de demonstração disponível, que pode editar ou eliminar a qualquer momento.\n\nGira os itens recebidos no seu painel:\n@workspace_url/dashboard",
+    'sv' => "Den här kartan samlar in: @wording_plural.\n\nProva den: skapa ett testobjekt direkt på kartan.\nDemoinnehåll finns redan tillgängligt och kan redigeras eller tas bort när som helst.\n\nHantera inkommande objekt i din instrumentpanel:\n@workspace_url/dashboard",
+    'tr' => "Bu harita şunları toplar: @wording_plural.\n\nHemen deneyin: doğrudan haritada bir test ögesi oluşturun.\nDemo içeriği zaten kullanılabilir durumdadır ve istediğiniz zaman düzenlenebilir veya silinebilir.\n\nGelen ögeleri panonuzdan yönetin:\n@workspace_url/dashboard",
+    'uk' => "Ця карта збирає: @wording_plural.\n\nСпробуйте: створіть тестовий елемент безпосередньо на карті.\nДемонстраційний вміст уже доступний, його можна будь-коли редагувати або видалити.\n\nКеруйте вхідними елементами у своїй панелі керування:\n@workspace_url/dashboard",
+    default => "This map collects: @wording_plural.\n\nTry it out: create a test item directly on the map.\nDemo content is already available. You can edit or delete it anytime.\n\nManage incoming items in your dashboard:\n@workspace_url/dashboard",
+  };
+}
+
+/**
+ * Identifies the locale of a shipped welcome-mail body.
+ *
+ * A template that differs by even one character is customer-owned and must
+ * not be changed automatically. The returned template locale makes the
+ * fallback tail agree with the language of the actual shipped body, including
+ * an English base body used when no language override exists.
+ *
+ * @param string $body
+ *   The unresolved workspace_welcome body template.
+ * @param string $langcode
+ *   Mail recipient language code.
+ *
+ * @return string|null
+ *   The matching shipped template locale, or NULL for customer-owned copy.
+ */
+function _markaspot_fastmap_shipped_welcome_body_langcode(string $body, string $langcode): ?string {
+  $cache = &drupal_static(__FUNCTION__, []);
+  $safeLangcode = strtolower(str_replace('_', '-', $langcode));
+  if (!isset($cache[$safeLangcode])) {
+    $modulePath = \Drupal::service('extension.list.module')->getPath('markaspot_fastmap');
+    $paths = [
+      'en' => $modulePath . '/config/install/markaspot_fastmap.mail.yml',
+    ];
+    if (preg_match('/^[a-z0-9-]+$/', $safeLangcode)) {
+      $localizedPath = $modulePath . '/config/install/language/' . $safeLangcode . '/markaspot_fastmap.mail.yml';
+      if (is_file($localizedPath)) {
+        $paths[$safeLangcode] = $localizedPath;
+      }
+    }
+
+    $cache[$safeLangcode] = [];
+    foreach ($paths as $templateLangcode => $path) {
+      $contents = is_file($path) ? file_get_contents($path) : FALSE;
+      $decoded = $contents === FALSE ? NULL : \Drupal\Component\Serialization\Yaml::decode($contents);
+      $candidate = is_array($decoded) ? ($decoded['workspace_welcome']['body'] ?? NULL) : NULL;
+      if (is_string($candidate) && $candidate !== '') {
+        $cache[$safeLangcode][$candidate] = $templateLangcode;
+      }
+    }
+  }
+
+  return $cache[$safeLangcode][$body] ?? NULL;
 }
 
 /**

@@ -11,6 +11,8 @@ use Drupal\markaspot_mail\Mail\MailMessage;
 use Drupal\markaspot_mail\Mail\ResolveJurisdictionFromNodeTrait;
 use Drupal\markaspot_mail\Service\MailBrandingService;
 use Drupal\markaspot_mail\Service\MailTextResolver;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\node\NodeInterface;
 use Psr\Log\LoggerInterface;
 
@@ -55,6 +57,7 @@ final class NotificationTextBuilder implements MailBuilderInterface {
   public function __construct(
     private readonly MailTextResolver $textResolver,
     private readonly MailBrandingService $branding,
+    private readonly CitizenWordingResolver $citizenWordingResolver,
     private readonly LoggerInterface $logger,
   ) {}
 
@@ -89,6 +92,11 @@ final class NotificationTextBuilder implements MailBuilderInterface {
     }
 
     $slots = $this->textResolver->resolve(self::CONFIG_NAME, $notificationKey, $ctx->langcode);
+    $slots = $this->replaceRuntimeWording(
+      $slots,
+      $this->resolveJurisdictionGroupFromNode($node),
+      $ctx->langcode,
+    );
     $slots = $this->textResolver->replaceTokens($slots, ['node' => $node], $ctx->langcode);
 
     if ($slots['subject'] === '') {
@@ -161,6 +169,44 @@ final class NotificationTextBuilder implements MailBuilderInterface {
       return $fromParams;
     }
     return substr($ctx->key, strlen(self::KEY_PREFIX));
+  }
+
+  /**
+   * Replaces opt-in terminology placeholders before Drupal tokens run.
+   *
+   * MailTextResolver uses clear=TRUE for node tokens. Replacing wording
+   * first keeps the moustache placeholders out of that clear path, while
+   * arbitrary admin-authored text is left exactly as supplied unless it
+   * intentionally contains one of the documented placeholders.
+   *
+   * @param array{subject: string, headline: string, intro: string, body_blocks: list<string>, cta_label: string, preheader: string} $slots
+   *   The resolved notification template slots.
+   * @param \Drupal\group\Entity\GroupInterface|null $jurisdiction
+   *   The node's valid jurisdiction group, if any.
+   * @param string $langcode
+   *   Recipient language code.
+   *
+   * @return array{subject: string, headline: string, intro: string, body_blocks: list<string>, cta_label: string, preheader: string}
+   *   The same slot shape with runtime wording values applied.
+   */
+  private function replaceRuntimeWording(array $slots, ?GroupInterface $jurisdiction, string $langcode): array {
+    foreach (['subject', 'headline', 'intro', 'cta_label', 'preheader'] as $slot) {
+      $slots[$slot] = $this->citizenWordingResolver->replaceMailPlaceholders(
+        $slots[$slot],
+        $jurisdiction,
+        $langcode,
+      );
+    }
+    $slots['body_blocks'] = array_map(
+      fn(string $block): string => $this->citizenWordingResolver->replaceMailPlaceholders(
+        $block,
+        $jurisdiction,
+        $langcode,
+      ),
+      $slots['body_blocks'],
+    );
+
+    return $slots;
   }
 
 }

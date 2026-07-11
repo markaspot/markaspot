@@ -22,6 +22,7 @@ use Drupal\Component\Utility\EmailValidator;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\BoundaryGeoJsonValidator;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
 use enshrined\svgSanitize\Sanitizer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -139,9 +140,10 @@ final class TenantSettingsController extends ControllerBase {
   /**
    * Curated wording preset IDs.
    *
-   * Must match WORDING_PRESET_IDS in the frontend (app/utils/i18nOverrides.ts).
+   * Kept as a public alias for existing callers. The resolver is the
+   * backend source of truth and stays aligned with the frontend contract.
    */
-  const WORDING_PRESETS = ['report', 'suggestion', 'entry', 'contribution'];
+  const WORDING_PRESETS = CitizenWordingResolver::PRESETS;
 
   /**
    * Maximum raw JSON body size for text override updates.
@@ -1450,9 +1452,9 @@ final class TenantSettingsController extends ControllerBase {
     // Optional curated wording preset (frontend merges the matching
     // i18n bundle at runtime; the backend only stores the choice).
     $wording = $data['wording'] ?? NULL;
-    if ($wording !== NULL && (!is_string($wording) || !in_array($wording, self::WORDING_PRESETS, TRUE))) {
+    if ($wording !== NULL && !CitizenWordingResolver::isSupportedPreset($wording)) {
       return new JsonResponse([
-        'error' => 'wording must be one of: ' . implode(', ', self::WORDING_PRESETS) . '.',
+        'error' => 'wording must be one of: ' . implode(', ', CitizenWordingResolver::PRESETS) . '.',
       ], 422);
     }
 

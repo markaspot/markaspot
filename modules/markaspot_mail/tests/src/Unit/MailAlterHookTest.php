@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Drupal\Tests\markaspot_mail\Unit;
 
 use Drupal\markaspot_mail\Mail\MailAttachment;
+use Drupal\markaspot_mail\Enum\MailType;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -20,13 +21,15 @@ use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 
 /**
- *
+ * Tests the central mail-alter dispatcher.
  */
 #[CoversClass(\Drupal\markaspot_mail\Hook\MailAlterHook::class)]
 #[Group('markaspot_mail')]
 final class MailAlterHookTest extends UnitTestCase {
 
   /**
+   * Prevents header injection through a builder-generated subject.
+   *
    * Regression guard for mail header injection (CWE-93) via Subject:. A
    * builder that naively interpolates user input (report title, display
    * name) into its subject could otherwise inject Bcc: / To: headers.
@@ -52,8 +55,49 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
+   * A throwing builder leaves the original mail unbranded, but not unsafe.
+   */
+  public function testAlterSanitizesOriginalSubjectWhenBuilderThrows(): void {
+    $builder = $this->createMock(MailBuilderInterface::class);
+    $builder->method('supports')->willReturn(TRUE);
+    $builder->method('getType')->willReturn(MailType::ECA_ESCALATION);
+    $builder->method('build')->willThrowException(new \RuntimeException('Builder failed.'));
+
+    $message = $this->buildMessage(subject: "Original\r\nBcc: attacker@example.com\0");
+    $this->buildHook($builder)->alter($message);
+
+    $this->assertSame('OriginalBcc: attacker@example.com', $message['subject']);
+    $this->assertStringNotContainsString("\r", $message['subject']);
+    $this->assertStringNotContainsString("\n", $message['subject']);
+    $this->assertStringNotContainsString("\0", $message['subject']);
+  }
+
+  /**
+   * A renderer failure preserves the unbranded mail with a safe subject.
+   */
+  public function testAlterSanitizesOriginalSubjectWhenRendererThrows(): void {
+    $builder = new RecordingStubBuilder(new MailMessage(
+      subject: 'Branded subject',
+      variant: 'card_transactional',
+      content: ['headline' => 'Hi'],
+    ));
+    $renderer = $this->createMock(MailHtmlRenderer::class);
+    $renderer->method('render')->willThrowException(new \RuntimeException('Renderer failed.'));
+
+    $message = $this->buildMessage(subject: "Original\r\nBcc: attacker@example.com\0");
+    $this->buildHook($builder, renderer: $renderer)->alter($message);
+
+    $this->assertSame('OriginalBcc: attacker@example.com', $message['subject']);
+    $this->assertStringNotContainsString("\r", $message['subject']);
+    $this->assertStringNotContainsString("\n", $message['subject']);
+    $this->assertStringNotContainsString("\0", $message['subject']);
+  }
+
+  /**
+   * Normalizes CRLF characters in the plaintext alternative.
+   *
    * _plain_alt ends up as a MIME text body, not a header, but we still
-   * normalize \r\n → \n as belt-and-suspenders defense against future
+   * normalize \r\n to \n as belt-and-suspenders defense against future
    * mailer plugins that might naively splice it next to headers.
    */
   public function testAlterNormalizesCrLfInPlainAlt(): void {
@@ -72,7 +116,7 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Skips hard-blocked modules.
    */
   public function testAlterSkipsBlocklistedModules(): void {
     $builder = new RecordingStubBuilder(new MailMessage(
@@ -92,7 +136,9 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
-   * System is no longer hard-blocklisted — individual keys are gated by
+   * Allows system mail only when a builder claims the key.
+   *
+   * System is no longer hard-blocklisted. Individual keys are gated by
    * builder supports(). A builder that does not claim a system:* key must
    * not be invoked, but a builder that does (EcaActionEmailBuilder for
    * system:action_send_email) gets the chance to brand.
@@ -113,7 +159,7 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
-   *
+   * Leaves unmatched mail untouched.
    */
   public function testAlterSkipsWhenRegistryHasNoMatch(): void {
     $hook = $this->buildHook(NULL);
@@ -144,6 +190,8 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
+   * Forwards builder-supplied attachments to the Drupal mail message.
+   *
    * Attachments on the MailMessage DTO reach $message['params'] in the
    * shape phpmailer_smtp::addAttachments() consumes (filename / filemime
    * / filepath keys). Without this wiring, MailMessage::$attachments
@@ -178,6 +226,8 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
+   * Preserves upstream attachments when adding builder-supplied ones.
+   *
    * If a module upstream of markaspot_mail already populated
    * $message['params']['attachments'], the hook appends — it doesn't
    * replace. Prevents regressions where a dual-attach module's payload
@@ -212,7 +262,9 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
-   * Empty attachments list leaves params.attachments untouched — a
+   * Avoids creating an empty attachment slot.
+   *
+   * Empty attachments list leaves params.attachments untouched. A
    * builder that opts out of attachments shouldn't implicitly create
    * an empty key that downstream logic might check with
    * array_key_exists() instead of !empty().
@@ -231,6 +283,8 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
+   * Replaces a pre-existing case-insensitive Reply-To header.
+   *
    * Symfony Mailer rejects duplicate Reply-To headers ("must be unique").
    * If MailManager or an upstream alter-hook seeded a lowercase reply-to,
    * our case-insensitive cleanup must remove it before we set our branded
@@ -257,9 +311,9 @@ final class MailAlterHookTest extends UnitTestCase {
   }
 
   /**
-   * Builds a MailAlterHook with mocked dependencies + a stub builder.
+   * Builds a MailAlterHook with mocked dependencies and a stub builder.
    */
-  private function buildHook(?MailBuilderInterface $builder, ?string $plainOverride = NULL): MailAlterHook {
+  private function buildHook(?MailBuilderInterface $builder, ?string $plainOverride = NULL, ?MailHtmlRenderer $renderer = NULL): MailAlterHook {
     $registry = new MailBuilderRegistry($builder === NULL ? [] : [$builder]);
 
     $branding = $this->createMock(MailBrandingService::class);
@@ -280,11 +334,13 @@ final class MailAlterHookTest extends UnitTestCase {
       'platform_footer' => [],
     ]);
 
-    $renderer = $this->createMock(MailHtmlRenderer::class);
-    $renderer->method('render')->willReturn([
-      'html' => '<p>rendered</p>',
-      'plain' => $plainOverride ?? "first line\r\nsecond line\rstill second",
-    ]);
+    if ($renderer === NULL) {
+      $renderer = $this->createMock(MailHtmlRenderer::class);
+      $renderer->method('render')->willReturn([
+        'html' => '<p>rendered</p>',
+        'plain' => $plainOverride ?? "first line\r\nsecond line\rstill second",
+      ]);
+    }
 
     $logger = $this->createMock(LoggerInterface::class);
 

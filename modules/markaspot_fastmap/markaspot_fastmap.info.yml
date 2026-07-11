@@ -5,6 +5,7 @@ type: module
 core_version_requirement: ^11
 dependencies:
   - markaspot_group
+  - markaspot_nuxt
   - markaspot_passwordless
   - field_permissions:field_permissions
   - drupal:group

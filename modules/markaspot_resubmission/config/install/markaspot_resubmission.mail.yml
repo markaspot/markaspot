@@ -1,20 +1,20 @@
 langcode: en
 resubmit_request:
-  subject: 'Reminder: [node:title]'
+  subject: 'Reminder: {{ citizen_term_singular_title }} [node:title]'
   body: |
     Hello,
 
-    This report was submitted more than 6 weeks ago and is still unprocessed in our system:
+    This {{ citizen_term_singular }} was submitted more than 6 weeks ago and is still unprocessed in our system:
 
     Title: [node:title]
     Category: [node:field_category:entity:name]
     Status: [node:field_status:entity:name]
-    Reported on: [node:created:medium]
+    Submitted on: [node:created:medium]
     Last changed: [node:changed:medium]
 
-    Link to report: [node:url]
+    Link to {{ citizen_term_singular }}: [node:url]
 
-    Please review the status of this report and update it accordingly.
+    Please review the status of this {{ citizen_term_singular }} and update it accordingly.
 
     Best regards,
     Your Issue Tracking Team

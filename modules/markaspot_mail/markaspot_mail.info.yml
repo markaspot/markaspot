@@ -9,5 +9,6 @@ dependencies:
   - drupal:file
   - drupal:media
   - group:group
+  - markaspot_nuxt
   - mailsystem:mailsystem
   - phpmailer_smtp:phpmailer_smtp

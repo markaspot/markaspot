@@ -81,11 +81,22 @@ function markaspot_mail_mail(string $key, array &$message, array $params): void 
   /** @var \Drupal\markaspot_mail\Service\MailTextResolver $resolver */
   $resolver = \Drupal::service('markaspot_mail.text_resolver');
   $slots = $resolver->resolve('markaspot_mail.texts', $notificationKey, $langcode);
+  $jurisdiction = _markaspot_mail_runtime_wording_jurisdiction($node);
+  $slots = _markaspot_mail_replace_runtime_wording_slots($slots, $jurisdiction, $langcode);
   $slots = $resolver->replaceTokens($slots, ['node' => $node], $langcode);
+
+  /** @var \Drupal\markaspot_nuxt\Service\CitizenWordingResolver $wordingResolver */
+  $wordingResolver = \Drupal::service('markaspot_nuxt.citizen_wording_resolver');
+  $wording = $wordingResolver->resolveMailTerms($jurisdiction, $langcode);
+  $usesCustomWording = $wording['preset'] !== \Drupal\markaspot_nuxt\Service\CitizenWordingResolver::DEFAULT_PRESET;
 
   $message['subject'] = $slots['subject'] !== ''
     ? $slots['subject']
-    : (string) t('Update on your report', [], ['langcode' => $langcode]);
+    : ($usesCustomWording
+      ? (string) t('Update: @wording_singular_title', [
+        '@wording_singular_title' => $wording['singular_title'],
+      ], ['langcode' => $langcode])
+      : (string) t('Update on your report', [], ['langcode' => $langcode]));
 
   $bodyParts = array_values(array_filter(
     [$slots['intro'], ...$slots['body_blocks']],
@@ -93,7 +104,78 @@ function markaspot_mail_mail(string $key, array &$message, array $params): void 
   ));
   $message['body'] = $bodyParts !== []
     ? $bodyParts
-    : [(string) t('There is an update on your report. Please check the platform for details.', [], ['langcode' => $langcode])];
+    : [
+      $usesCustomWording
+        ? (string) t('There is an update: @wording_singular_title. Please check the platform for details.', [
+          '@wording_singular_title' => $wording['singular_title'],
+        ], ['langcode' => $langcode])
+        : (string) t('There is an update on your report. Please check the platform for details.', [], ['langcode' => $langcode]),
+    ];
+}
+
+/**
+ * Replaces the opt-in terminology slots in notification mail templates.
+ *
+ * This mirrors NotificationTextBuilder for the unbranded hook_mail() fallback
+ * path. That path only becomes visible if branded rendering fails, but it
+ * must still never expose an unresolved placeholder in a citizen's inbox.
+ *
+ * @param array{subject: string, headline: string, intro: string, body_blocks: list<string>, cta_label: string, preheader: string} $slots
+ *   Resolved notification template slots.
+ * @param \Drupal\group\Entity\GroupInterface|null $jurisdiction
+ *   The request's valid jurisdiction group, if any.
+ * @param string $langcode
+ *   Recipient language code.
+ *
+ * @return array{subject: string, headline: string, intro: string, body_blocks: list<string>, cta_label: string, preheader: string}
+ *   Slots with deliberate runtime wording placeholders replaced.
+ */
+function _markaspot_mail_replace_runtime_wording_slots(array $slots, ?\Drupal\group\Entity\GroupInterface $jurisdiction, string $langcode): array {
+  /** @var \Drupal\markaspot_nuxt\Service\CitizenWordingResolver $wordingResolver */
+  $wordingResolver = \Drupal::service('markaspot_nuxt.citizen_wording_resolver');
+  foreach (['subject', 'headline', 'intro', 'cta_label', 'preheader'] as $slot) {
+    $slots[$slot] = $wordingResolver->replaceMailPlaceholders(
+      $slots[$slot],
+      $jurisdiction,
+      $langcode,
+    );
+  }
+  $slots['body_blocks'] = array_map(
+    static fn(string $block): string => $wordingResolver->replaceMailPlaceholders(
+      $block,
+      $jurisdiction,
+      $langcode,
+    ),
+    $slots['body_blocks'],
+  );
+
+  return $slots;
+}
+
+/**
+ * Finds the jurisdiction group whose wording config applies to a node.
+ *
+ * The procedural hook_mail() fallback cannot use
+ * ResolveJurisdictionFromNodeTrait, so it repeats its narrow validation: a
+ * referenced GroupInterface with the configured jurisdiction bundle only.
+ */
+function _markaspot_mail_runtime_wording_jurisdiction(\Drupal\node\NodeInterface $node): ?\Drupal\group\Entity\GroupInterface {
+  if (!$node->hasField('field_jurisdiction')) {
+    return NULL;
+  }
+  $field = $node->get('field_jurisdiction');
+  if (!$field instanceof \Drupal\Core\Field\EntityReferenceFieldItemListInterface || $field->isEmpty()) {
+    return NULL;
+  }
+  $target = $field->referencedEntities()[0] ?? NULL;
+  $configuredType = \Drupal::config('markaspot_open311.settings')->get('jurisdiction_group_type');
+  $jurisdictionType = is_string($configuredType) && $configuredType !== '' ? $configuredType : 'jur';
+  if (!$target instanceof \Drupal\group\Entity\GroupInterface
+    || $target->getEntityTypeId() !== 'group'
+    || $target->bundle() !== $jurisdictionType) {
+    return NULL;
+  }
+  return $target;
 }
 
 /**

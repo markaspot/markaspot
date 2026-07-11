@@ -27,6 +27,11 @@ use Psr\Log\LoggerInterface;
  *
  * Optional params:
  *   - site_name (string, defaults to "CivicSpot")
+ *   - wording_preset (string, one of report, suggestion, entry, contribution)
+ *   - wording_singular (string, used only with suggestion, entry, or
+ *     contribution presets)
+ *   - wording_plural (string, used only with suggestion, entry, or
+ *     contribution presets)
  *
  * Always platform mode: the recipient is a workspace owner on the
  * CivicSpot SaaS, not a citizen of any single jur group.
@@ -74,10 +79,48 @@ final class WorkspaceWelcomeBuilder implements MailBuilderInterface {
     if ($siteName === '') {
       $siteName = 'CivicSpot';
     }
+    $wordingPreset = $ctx->params['wording_preset'] ?? NULL;
+    $wordingPreset = is_string($wordingPreset) ? trim($wordingPreset) : '';
+    $wordingSingular = $ctx->params['wording_singular'] ?? NULL;
+    $wordingSingular = is_string($wordingSingular) ? trim($wordingSingular) : '';
+    $wordingPlural = $ctx->params['wording_plural'] ?? NULL;
+    $wordingPlural = is_string($wordingPlural) ? trim($wordingPlural) : '';
     $langcode = $ctx->langcode;
     $baseUrl = rtrim($workspaceUrl, '/');
     $dashboardUrl = $baseUrl . '/dashboard';
     $loginUrl = $baseUrl . '/auth/login';
+
+    // Preserve the established source strings where no custom term is given.
+    // Existing locale translations are keyed to these strings.
+    $customWordingPresets = [
+      'suggestion' => ['singular' => 'suggestion', 'plural' => 'suggestions'],
+      'entry' => ['singular' => 'entry', 'plural' => 'entries'],
+      'contribution' => ['singular' => 'contribution', 'plural' => 'contributions'],
+    ];
+    $customWording = $customWordingPresets[$wordingPreset] ?? NULL;
+    if ($customWording !== NULL) {
+      $wordingSingular = $wordingSingular !== '' ? $wordingSingular : $customWording['singular'];
+      $wordingPlural = $wordingPlural !== '' ? $wordingPlural : $customWording['plural'];
+    }
+
+    $testReportBlock = $customWording === NULL
+      ? (string) $this->t('Try it out: create your first test report directly on the map.', [], ['langcode' => $langcode])
+      : (string) $this->t('Try it out: create your first test @wording_singular directly on the map.', [
+        '@wording_singular' => $wordingSingular,
+      ], ['langcode' => $langcode]);
+    $demoReportsBlock = $customWording === NULL
+      ? (string) $this->t('A few demo reports are already in place. Edit or delete them anytime.', [], ['langcode' => $langcode])
+      : (string) $this->t('A few demo @wording_plural are already in place. Edit or delete them anytime.', [
+        '@wording_plural' => $wordingPlural,
+      ], ['langcode' => $langcode]);
+    $dashboardReportsBlock = $customWording === NULL
+      ? (string) $this->t('Manage incoming reports in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
+        ':url' => $dashboardUrl,
+      ], ['langcode' => $langcode])
+      : (string) $this->t('Manage incoming @wording_plural in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
+        '@wording_plural' => $wordingPlural,
+        ':url' => $dashboardUrl,
+      ], ['langcode' => $langcode]);
 
     $replacements = [
       '@site_name' => $siteName,
@@ -103,15 +146,13 @@ final class WorkspaceWelcomeBuilder implements MailBuilderInterface {
           '@name' => $workspaceName,
         ], ['langcode' => $langcode]),
         'body_blocks' => [
-          (string) $this->t('Try it out: create your first test report directly on the map.', [], ['langcode' => $langcode]),
-          (string) $this->t('A few demo reports are already in place. Edit or delete them anytime.', [], ['langcode' => $langcode]),
+          $testReportBlock,
+          $demoReportsBlock,
           // Anchor text deliberately repeats the URL: body_blocks render
           // |raw in the HTML card (clickable link), while the derived
           // text/plain part strip_tags()es the markup and must keep the
           // URL visible.
-          (string) $this->t('Manage incoming reports in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
-            ':url' => $dashboardUrl,
-          ], ['langcode' => $langcode]),
+          $dashboardReportsBlock,
           (string) $this->t('Log in anytime: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
             ':url' => $loginUrl,
           ], ['langcode' => $langcode]),

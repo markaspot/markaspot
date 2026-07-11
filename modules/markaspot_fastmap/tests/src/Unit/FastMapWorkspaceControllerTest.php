@@ -31,6 +31,8 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
+require_once dirname(__DIR__, 3) . '/markaspot_fastmap.module';
+
 /**
  * Tests the FastMapWorkspaceController.
  *
@@ -38,6 +40,21 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * @group markaspot_fastmap
  */
 class FastMapWorkspaceControllerTest extends UnitTestCase {
+
+  /**
+   * Keeps the plain hook_mail welcome fallback terminology-aware.
+   */
+  public function testWelcomeFallbackUsesNeutralLocalizedTermTail(): void {
+    $tail = strtr(
+      _markaspot_fastmap_default_welcome_wording_tail('de'),
+      ['@wording_plural' => 'Einträge'],
+    );
+
+    $this->assertStringContainsString('Auf dieser Karte werden erfasst: Einträge.', $tail);
+    $this->assertStringContainsString('Testvorgang', $tail);
+    $this->assertStringContainsString('@workspace_url/dashboard', $tail);
+    $this->assertStringNotContainsString('Meldung', $tail);
+  }
 
   /**
    * The mocked database connection.
@@ -884,6 +901,11 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
    * @covers ::verifyWorkspace
    */
   public function testVerifyWorkspaceSuccess(): void {
+    $this->workspaceBaseUrl = 'https://frontend.example/{slug}/dashboard';
+    $this->pushCurrentRequest([
+      'HTTP_ACCEPT' => 'application/json',
+      'HTTP_X_FASTMAP_RESPONSE_MODE' => 'json',
+    ]);
     $workspaceData = [
       'name' => 'Test Workspace',
       'slug' => 'test-ws',
@@ -932,7 +954,20 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
         'url' => '/test-ws',
         'categories' => 1,
         'user_id' => 7,
+        'wording' => [
+          'preset' => 'entry',
+          'locale' => 'en',
+          'singular' => 'entry',
+          'plural' => 'entries',
+        ],
       ]);
+
+    $mailArgs = NULL;
+    $this->mailManager->method('mail')
+      ->willReturnCallback(static function (...$args) use (&$mailArgs): array {
+        $mailArgs = $args;
+        return ['result' => TRUE];
+      });
 
     $response = $this->controller->verifyWorkspace(str_repeat('ef', 32));
 
@@ -945,6 +980,13 @@ class FastMapWorkspaceControllerTest extends UnitTestCase {
     $this->assertEquals('Test Workspace', $data['name']);
     $this->assertEquals('/test-ws', $data['url']);
     $this->assertEquals('provisioned', $data['status']);
+    $this->assertSame('markaspot_fastmap', $mailArgs[0] ?? NULL);
+    $this->assertSame('workspace_welcome', $mailArgs[1] ?? NULL);
+    $this->assertSame('user@example.com', $mailArgs[2] ?? NULL);
+    $this->assertSame('en', $mailArgs[3] ?? NULL);
+    $this->assertSame('entry', $mailArgs[4]['wording_preset'] ?? NULL);
+    $this->assertSame('entry', $mailArgs[4]['wording_singular'] ?? NULL);
+    $this->assertSame('entries', $mailArgs[4]['wording_plural'] ?? NULL);
     // A login_token should be present when provisioning succeeds.
     $this->assertArrayHasKey('login_token', $data);
     $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $data['login_token']);

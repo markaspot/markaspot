@@ -107,6 +107,7 @@ services:
       - '@config.factory'
       - '@language_manager'
       - '@token'
+      - '@markaspot_nuxt.citizen_wording_resolver'
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
@@ -172,6 +173,7 @@ services:
     arguments:
       - '@markaspot_mail.text_resolver'
       - '@token'
+      - '@markaspot_nuxt.citizen_wording_resolver'
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }
@@ -199,6 +201,7 @@ services:
     arguments:
       - '@markaspot_mail.text_resolver'
       - '@markaspot_mail.branding'
+      - '@markaspot_nuxt.citizen_wording_resolver'
       - '@logger.channel.markaspot_mail'
     tags:
       - { name: markaspot_mail.builder }

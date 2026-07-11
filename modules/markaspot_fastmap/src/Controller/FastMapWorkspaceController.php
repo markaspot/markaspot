@@ -16,12 +16,14 @@ use Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface;
 use Drupal\Core\Lock\LockBackendInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\markaspot_fastmap\Service\WorkspaceProvisioningServiceInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Drupal\Core\Routing\TrustedRedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Handles FastMap workspace creation with email verification.
@@ -50,17 +52,6 @@ class FastMapWorkspaceController extends ControllerBase {
    * HTML tags permitted in body fields after XSS filtering.
    */
   private const BODY_ALLOWED_TAGS = ['p', 'strong', 'em', 'a', 'br', 'ul', 'ol', 'li'];
-
-  /**
-   * Curated wording preset IDs accepted for optional workspace provisioning.
-   *
-   * Duplicated from
-   * \Drupal\markaspot_nuxt\Controller\TenantSettingsController::WORDING_PRESETS
-   * because markaspot_fastmap does not declare a dependency on
-   * markaspot_nuxt. Must be kept in sync with that constant and with
-   * WORDING_PRESET_IDS in the frontend (app/utils/i18nOverrides.ts).
-   */
-  private const WORDING_PRESETS = ['report', 'suggestion', 'entry', 'contribution'];
 
   /**
    * Workspace creation endpoint flood event name.
@@ -145,6 +136,11 @@ class FastMapWorkspaceController extends ControllerBase {
   protected LockBackendInterface $lock;
 
   /**
+   * The current request stack.
+   */
+  protected RequestStack $requestStack;
+
+  /**
    * The group membership loader (NULL if group module not installed).
    *
    * @var mixed|null
@@ -168,6 +164,7 @@ class FastMapWorkspaceController extends ControllerBase {
     $instance->keyValueExpirable = $container->get('keyvalue.expirable');
     $instance->flood = $container->get('flood');
     $instance->lock = $container->get('lock');
+    $instance->requestStack = $container->get('request_stack');
     if ($container->has('group.membership_loader')) {
       $instance->membershipLoader = $container->get('group.membership_loader');
     }
@@ -253,8 +250,9 @@ class FastMapWorkspaceController extends ControllerBase {
     // are silently dropped rather than rejected with a 4xx: this is a
     // cosmetic choice and onboarding must never fail because of it.
     $wording = NULL;
-    if (isset($data['wording']) && is_string($data['wording']) && in_array($data['wording'], self::WORDING_PRESETS, TRUE)) {
-      $wording = $data['wording'];
+    $wordingCandidate = $data['wording'] ?? NULL;
+    if (is_string($wordingCandidate) && CitizenWordingResolver::isSupportedPreset($wordingCandidate)) {
+      $wording = $wordingCandidate;
     }
 
     $slugLockName = $this->buildWorkspaceSlugLockName($slug);
@@ -621,7 +619,8 @@ class FastMapWorkspaceController extends ControllerBase {
         (string) ($workspaceData['email'] ?? ''),
         (string) (($workspaceData['language'] ?? '') ?: 'en'),
         $result['name'],
-        $result['slug']
+        $result['slug'],
+        is_array($result['wording'] ?? NULL) ? $result['wording'] : []
       );
 
       // Generate a short-lived one-time login token so the user is
@@ -710,7 +709,7 @@ class FastMapWorkspaceController extends ControllerBase {
    * Returns TRUE when verify should respond with JSON instead of redirecting.
    */
   private function wantsJsonVerifyResponse(): bool {
-    $request = \Drupal::request();
+    $request = $this->requestStack->getCurrentRequest();
     if (!$request) {
       return FALSE;
     }
@@ -1128,7 +1127,7 @@ class FastMapWorkspaceController extends ControllerBase {
    * mail plugin cannot escape into the outer catch block, which would
    * otherwise tear down the workspace that was just successfully created.
    */
-  private function sendWelcomeEmail(string $email, string $langcode, string $name, string $slug): void {
+  private function sendWelcomeEmail(string $email, string $langcode, string $name, string $slug, array $wording = []): void {
     try {
       $baseUrl = (string) $this->config('markaspot_fastmap.settings')->get('workspace_base_url');
       $workspaceUrl = _markaspot_fastmap_build_workspace_url($slug, $baseUrl);
@@ -1142,6 +1141,14 @@ class FastMapWorkspaceController extends ControllerBase {
         'workspace_name' => $name,
         'workspace_url' => $workspaceUrl,
         'site_name' => $siteName,
+        // The resolver only returns curated string constants. Validate the
+        // shape at this boundary anyway because this controller also accepts
+        // mocked provisioning results in tests.
+        'wording_preset' => CitizenWordingResolver::isSupportedPreset($wording['preset'] ?? NULL)
+          ? $wording['preset']
+          : CitizenWordingResolver::DEFAULT_PRESET,
+        'wording_singular' => is_string($wording['singular'] ?? NULL) ? $wording['singular'] : '',
+        'wording_plural' => is_string($wording['plural'] ?? NULL) ? $wording['plural'] : '',
       ];
 
       $result = $this->mailManager->mail('markaspot_fastmap', 'workspace_welcome', $email, $langcode, $params);

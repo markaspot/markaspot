@@ -7,7 +7,11 @@ use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
+use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Validator\Constraint;
@@ -64,11 +68,32 @@ class MultipleReportsConstraintValidator extends ConstraintValidator implements 
   protected $configFactory;
 
   /**
+   * The configuration factory used for the jurisdiction group type.
+   *
+   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   */
+  protected $configFactoryService;
+
+  /**
    * The current user.
    *
    * @var \Drupal\Core\Session\AccountInterface
    */
   protected $account;
+
+  /**
+   * Resolves tenant-specific citizen terminology for visible violations.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\CitizenWordingResolver|null
+   */
+  protected $citizenWordingResolver;
+
+  /**
+   * The active content-language resolver for JSON:API responses.
+   *
+   * @var \Drupal\Core\Language\LanguageManagerInterface|null
+   */
+  protected $languageManager;
 
   /**
    * Constructs a Validation object.
@@ -83,13 +108,20 @@ class MultipleReportsConstraintValidator extends ConstraintValidator implements 
    *   The configuration factory.
    * @param \Drupal\Core\Session\AccountInterface $account
    *   The currently authenticated user.
+   * @param \Drupal\markaspot_nuxt\Service\CitizenWordingResolver|null $citizen_wording_resolver
+   *   The optional resolver for tenant-specific citizen terminology.
+   * @param \Drupal\Core\Language\LanguageManagerInterface|null $language_manager
+   *   The optional resolver for the active content language.
    */
-  public function __construct(TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, AccountInterface $account) {
+  public function __construct(TimeInterface $time, RequestStack $request_stack, EntityTypeManagerInterface $entity_type_manager, ConfigFactoryInterface $config_factory, AccountInterface $account, ?CitizenWordingResolver $citizen_wording_resolver = NULL, ?LanguageManagerInterface $language_manager = NULL) {
     $this->time = $time;
     $this->requestStack = $request_stack;
     $this->entityTypeManager = $entity_type_manager;
+    $this->configFactoryService = $config_factory;
     $this->configFactory = $config_factory->getEditable('markaspot_validation.settings');
     $this->account = $account;
+    $this->citizenWordingResolver = $citizen_wording_resolver;
+    $this->languageManager = $language_manager;
   }
 
   /**
@@ -102,6 +134,10 @@ class MultipleReportsConstraintValidator extends ConstraintValidator implements 
       $container->get('entity_type.manager'),
       $container->get('config.factory'),
       $container->get('current_user'),
+      $container->has('markaspot_nuxt.citizen_wording_resolver')
+        ? $container->get('markaspot_nuxt.citizen_wording_resolver')
+        : NULL,
+      $container->get('language_manager'),
     );
   }
 
@@ -125,12 +161,64 @@ class MultipleReportsConstraintValidator extends ConstraintValidator implements 
 
     if ($nids >= $max_count) {
 
-      $message = $this->t('We have noticed that @count requests have already been reported using this email address within the last 24h. Please try again some other day.', [
-        '@count' => $nids,
-      ]);
+      $message = $this->resolveCitizenLimitMessage();
+      if ($message === NULL) {
+        $message = (string) $this->t('We have noticed that @count requests have already been reported using this email address within the last 24h. Please try again some other day.', [
+          '@count' => $nids,
+        ]);
+      }
+      else {
+        $message = strtr($message, ['@count' => (string) $nids]);
+      }
       $this->context->addViolation($message);
     }
 
+  }
+
+  /**
+   * Resolves a locale-correct limit detail for the validated service request.
+   *
+   * Stable technical constraint IDs intentionally keep their existing names.
+   * Only the human-readable 422 detail follows the tenant wording.
+   */
+  protected function resolveCitizenLimitMessage(): ?string {
+    if ($this->citizenWordingResolver === NULL) {
+      return NULL;
+    }
+
+    $entity = $this->context->getRoot();
+    if (!$entity instanceof NodeInterface) {
+      return NULL;
+    }
+
+    $groupType = trim((string) $this->configFactoryService
+      ->get('markaspot_open311.settings')
+      ->get('jurisdiction_group_type'));
+    $jurisdiction = $this->citizenWordingResolver->resolveJurisdictionFromNode(
+      $entity,
+      $groupType !== '' ? $groupType : 'jur',
+    );
+
+    return $this->citizenWordingResolver->formatValidationMessage(
+      CitizenWordingResolver::VALIDATION_EMAIL_DAILY_LIMIT,
+      $jurisdiction,
+      $this->resolveResponseLangcode($entity),
+    );
+  }
+
+  /**
+   * Resolves the active content language for a JSON:API validation response.
+   *
+   * A newly created service request may carry the site default language rather
+   * than Nuxt's request locale. TYPE_CONTENT follows the latter; the entity
+   * language is retained as a compatibility fallback for direct construction.
+   */
+  protected function resolveResponseLangcode(NodeInterface $entity): string {
+    if ($this->languageManager !== NULL) {
+      return $this->languageManager->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)->getId();
+    }
+
+    return $entity->language()->getId();
   }
 
   /**

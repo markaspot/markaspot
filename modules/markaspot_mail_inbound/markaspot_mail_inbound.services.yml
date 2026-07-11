@@ -91,6 +91,7 @@ services:
       - '@markaspot_mail_inbound.mailbox_resolver'
       - '@markaspot_mail_inbound.fidelity'
       - '@logger.channel.markaspot_mail_inbound'
+      - '@?markaspot_nuxt.citizen_wording_resolver'
 
   # Threads status notifications for email-origin citizens into their
   # original mail conversation; backs hook_mail_alter() (#482).
@@ -111,6 +112,7 @@ services:
       - '@entity_type.manager'
       - '@markaspot_mail_inbound.reply'
       - '@logger.channel.markaspot_mail_inbound'
+      - '@?markaspot_nuxt.citizen_wording_resolver'
     tags:
       - { name: event_subscriber }
 

@@ -19,7 +19,15 @@ msgid "Your report was resolved"
 msgstr ""
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title was resolved"
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Thank you for using the issue tracker. Your report \"@title\" has been processed and is now marked as completed."
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Thank you for using the issue tracker. @wording_singular_title \"@title\" has been processed and is now marked as completed."
 msgstr ""
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
@@ -39,7 +47,15 @@ msgid "Feedback welcome on your report @id"
 msgstr ""
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "Feedback welcome for @wording_singular_title @id"
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
 msgid "Your report @id: feedback welcome"
+msgstr ""
+
+#: src/Mail/Builder/FeedbackRequestBuilder.php
+msgid "@wording_singular_title @id: feedback welcome"
 msgstr ""
 
 #: src/Mail/Builder/FeedbackRequestBuilder.php
@@ -150,6 +166,18 @@ msgstr ""
 msgid "Click to activate your @name workspace"
 msgstr ""
 
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Try it out: create your first test @wording_singular directly on the map."
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "A few demo @wording_plural are already in place. Edit or delete them anytime."
+msgstr ""
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgstr ""
+
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo workspace \"@name\" expires soon"
 msgstr ""
@@ -211,7 +239,15 @@ msgid "Your report needs more information"
 msgstr ""
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information needed: @wording_singular_title"
+msgstr ""
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "We need more information about your report"
+msgstr ""
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "More information is needed: @wording_singular_title."
 msgstr ""
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
@@ -219,7 +255,19 @@ msgid "Please clarify your report"
 msgstr ""
 
 #: src/Mail/Builder/ResubmissionRequestBuilder.php
+msgid "Please clarify: @wording_singular_title"
+msgstr ""
+
+#: src/Mail/Builder/ResubmissionRequestBuilder.php
 msgid "We need a bit more information to process your report."
+msgstr ""
+
+#: markaspot_mail.module
+msgid "Update: @wording_singular_title"
+msgstr ""
+
+#: markaspot_mail.module
+msgid "There is an update: @wording_singular_title. Please check the platform for details."
 msgstr ""
 
 #: templates/mail-layout.html.twig

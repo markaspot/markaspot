@@ -8,24 +8,24 @@ one `.po` file per locale supported by the Mark-a-Spot frontend.
 
 | File              | Scope               | Status                        |
 |-------------------|---------------------|-------------------------------|
-| `markaspot_mail.pot` | Source strings (EN) | 44 messages, kept in sync by hand until `drush locale:check` is wired up |
+| `markaspot_mail.pot` | Source strings (EN) | 70 messages, kept in sync by hand until `drush locale:check` is wired up |
 | `de.po`              | German (primary)    | Fully translated (first-mover, Civic Patches in-house) |
-| `cs.po`              | Czech               | Fully translated |
-| `ar.po`              | Arabic              | Stub — msgstrs empty |
-| `da.po`              | Danish              | Stub — msgstrs empty |
-| `de-ls.po`           | German Leichte Sprache | Stub — msgstrs empty (sensitive register, recommend human translator) |
-| `es.po`              | Spanish             | Stub — msgstrs empty |
-| `fi.po`              | Finnish             | Stub — msgstrs empty |
-| `fr.po`              | French              | Stub — msgstrs empty |
-| `hu.po`              | Hungarian           | Stub — msgstrs empty |
-| `it.po`              | Italian             | Stub — msgstrs empty |
-| `nb.po`              | Norwegian Bokmål    | Stub — msgstrs empty |
-| `nl.po`              | Dutch               | Stub — msgstrs empty |
-| `pl.po`              | Polish              | Stub — msgstrs empty |
-| `pt.po`              | Portuguese          | Stub — msgstrs empty |
-| `sv.po`              | Swedish             | Stub — msgstrs empty |
-| `tr.po`              | Turkish             | Stub — msgstrs empty |
-| `uk.po`              | Ukrainian           | Stub — msgstrs empty |
+| `cs.po`              | Czech               | Custom-term mail path translated; broader catalog is partial |
+| `ar.po`              | Arabic              | Custom-term mail path translated; broader catalog is partial |
+| `da.po`              | Danish              | Custom-term mail path translated; broader catalog is partial |
+| `de-ls.po`           | German Leichte Sprache | Custom-term mail path translated in plain language; broader catalog is partial |
+| `es.po`              | Spanish             | Custom-term mail path translated; broader catalog is partial |
+| `fi.po`              | Finnish             | Custom-term mail path translated; broader catalog is partial |
+| `fr.po`              | French              | Custom-term mail path translated; broader catalog is partial |
+| `hu.po`              | Hungarian           | Custom-term mail path translated; broader catalog is partial |
+| `it.po`              | Italian             | Custom-term mail path translated; broader catalog is partial |
+| `nb.po`              | Norwegian Bokmål    | Custom-term mail path translated; broader catalog is partial |
+| `nl.po`              | Dutch               | Custom-term mail path translated; broader catalog is partial |
+| `pl.po`              | Polish              | Custom-term mail path translated; broader catalog is partial |
+| `pt.po`              | Portuguese          | Custom-term mail path translated; broader catalog is partial |
+| `sv.po`              | Swedish             | Custom-term mail path translated; broader catalog is partial |
+| `tr.po`              | Turkish             | Custom-term mail path translated; broader catalog is partial |
+| `uk.po`              | Ukrainian           | Custom-term mail path translated; broader catalog is partial |
 
 ## How Drupal picks these up
 
@@ -36,8 +36,9 @@ become available via `$this->t()` → `\Drupal::translation()->translate()`
 whenever the recipient's langcode matches.
 
 No manual import step needed. Enabling a new language on a live site
-runs the import automatically; extending a shipped `.po` later requires
-`drush locale:check` + `drush locale:update` or a module reinstall.
+runs the import automatically. Extending a shipped `.po` for existing
+tenants needs a module update hook that calls the shared importer, as
+`markaspot_mail_update_10009()` does for the runtime wording sources.
 
 ## Translator workflow
 
@@ -77,6 +78,21 @@ For each stub `.po` file:
 - **"Thank you for using the issue tracker. Your report ..."** reads
   slightly formal in English; DE translation uses the standard "Sie"
   register consistent with German municipal correspondence.
+
+## Runtime citizen-wording placeholders
+
+The shipped `markaspot_mail.texts` notification templates use these explicit
+runtime values when a jurisdiction selects a different citizen term:
+
+- `{{ citizen_term_singular }}` and `{{ citizen_term_singular_title }}`
+- `{{ citizen_term_plural }}` and `{{ citizen_term_plural_title }}`
+
+`NotificationTextBuilder` and its plaintext `hook_mail()` fallback replace
+them from the jurisdiction's `i18n.wording` setting before Drupal resolves
+`[node:*]` tokens. The update hook changes only active templates that exactly
+match the prior shipped EN or DE defaults. Existing operator-edited templates
+and ECA copy are never rewritten, but an operator can add one of these
+placeholders deliberately to a custom notification template.
 
 ## Config-level translations (separate from this directory)
 

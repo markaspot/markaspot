@@ -9,12 +9,15 @@ use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Plugin\Validation\Constraint\TierLimitConstraint;
 use Drupal\markaspot_fastmap\Plugin\Validation\Constraint\TierLimitConstraintValidator;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
@@ -133,6 +136,48 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       );
 
     $this->createValidator()->validate($node, $this->constraint);
+  }
+
+  /**
+   * Uses the configured citizen plural in a visible tier-limit violation.
+   *
+   * @covers ::resolveLimitMessage
+   */
+  public function testPublishLimitUsesConfiguredCitizenPlural(): void {
+    $node = $this->createPublishTransitionNode(1, wording: 'entry', langcode: 'de');
+    $this->mockRequestCount(50);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        'Das Veröffentlichungskontingent ist erreicht. Einträge: @limit. Heben Sie die Veröffentlichung bestehender Inhalte auf oder wählen Sie einen Tarif.',
+        ['@limit' => 50],
+      );
+
+    $this->createValidator(citizenWordingResolver: new CitizenWordingResolver())
+      ->validate($node, $this->constraint);
+  }
+
+  /**
+   * Uses the active content locale rather than an unstamped node locale.
+   *
+   * @covers ::resolveResponseLangcode
+   */
+  public function testPublishLimitUsesCurrentContentLanguage(): void {
+    $node = $this->createPublishTransitionNode(1, wording: 'entry', langcode: 'en');
+    $this->mockRequestCount(50);
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with(
+        'La limite de publication est atteinte. saisies : @limit. Dépubliez des éléments existants ou choisissez une formule.',
+        ['@limit' => 50],
+      );
+
+    $this->createValidator(
+      citizenWordingResolver: new CitizenWordingResolver(),
+      languageManager: $this->createLanguageManager('fr'),
+    )->validate($node, $this->constraint);
   }
 
   /**
@@ -871,6 +916,8 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
     ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
     int|false|null $boundaryJurisdictionId = NULL,
     string $jurisdictionGroupType = 'jur',
+    ?CitizenWordingResolver $citizenWordingResolver = NULL,
+    ?LanguageManagerInterface $languageManager = NULL,
   ): TierLimitConstraintValidator {
     $configFactory = $this->createConfigFactory($jurisdictionGroupType);
     if ($boundaryJurisdictionId !== NULL) {
@@ -923,6 +970,8 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
         $requestStack,
         $hierarchyResolver,
         $configFactory,
+        $citizenWordingResolver,
+        $languageManager,
       );
     }
     $validator->initialize($this->executionContext);
@@ -944,6 +993,21 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->willReturn($config);
 
     return $configFactory;
+  }
+
+  /**
+   * Creates a language manager with a fixed active content locale.
+   */
+  protected function createLanguageManager(string $langcode): LanguageManagerInterface {
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn($langcode);
+
+    $languageManager = $this->createMock(LanguageManagerInterface::class);
+    $languageManager->method('getCurrentLanguage')
+      ->with(LanguageInterface::TYPE_CONTENT)
+      ->willReturn($language);
+
+    return $languageManager;
   }
 
   /**
@@ -1010,9 +1074,19 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
    *   The tier value.
    * @param string $groupBundle
    *   The jurisdiction group bundle.
+   * @param string|null $wording
+   *   Optional tenant wording preset for the jurisdiction group.
+   * @param string $langcode
+   *   Content language used for the citizen-facing error detail.
    */
-  protected function createPublishTransitionNode(int $groupId, string $tier = 'free', string $groupBundle = 'jur'): NodeInterface {
-    $group = $this->createGroupMock($groupId, $tier, $groupBundle);
+  protected function createPublishTransitionNode(
+    int $groupId,
+    string $tier = 'free',
+    string $groupBundle = 'jur',
+    ?string $wording = NULL,
+    string $langcode = 'en',
+  ): NodeInterface {
+    $group = $this->createGroupMock($groupId, $tier, $groupBundle, $wording);
     $jurisdictionField = $this->createJurisdictionField($group);
 
     // Original node was unpublished.
@@ -1031,6 +1105,9 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->willReturn($jurisdictionField);
 
     $node->method('getOriginal')->willReturn($original);
+    $language = $this->createMock(LanguageInterface::class);
+    $language->method('getId')->willReturn($langcode);
+    $node->method('language')->willReturn($language);
 
     return $node;
   }
@@ -1101,12 +1178,12 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
   /**
    * Creates a mocked group entity.
    */
-  protected function createGroupMock(int $groupId, string $tier = 'free', string $bundle = 'jur'): GroupInterface {
+  protected function createGroupMock(int $groupId, string $tier = 'free', string $bundle = 'jur', ?string $wording = NULL): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
     $group->method('id')->willReturn($groupId);
     $group->method('bundle')->willReturn($bundle);
     $group->method('hasField')
-      ->willReturnCallback(fn(string $name) => $name === 'field_tier');
+      ->willReturnCallback(fn(string $name) => $name === 'field_tier' || ($name === 'field_nuxt_config' && $wording !== NULL));
 
     $tierField = $this->createMock(FieldItemListInterface::class);
     $tierField->method('isEmpty')->willReturn(FALSE);
@@ -1114,9 +1191,19 @@ class TierLimitConstraintValidatorTest extends UnitTestCase {
       ->with('value')
       ->willReturn($tier);
 
+    $configField = $this->createMock(FieldItemListInterface::class);
+    $configField->method('isEmpty')->willReturn($wording === NULL);
+    $configField->method('__get')
+      ->with('value')
+      ->willReturn($wording === NULL ? NULL : json_encode(['i18n' => ['wording' => $wording]]));
+
     $group->method('get')
-      ->with('field_tier')
-      ->willReturn($tierField);
+      ->willReturnCallback(fn(string $name) => match ($name) {
+        'field_tier' => $tierField,
+        'field_nuxt_config' => $configField,
+        default => NULL,
+      });
+    $group->method('getUntranslated')->willReturnSelf();
 
     return $group;
   }

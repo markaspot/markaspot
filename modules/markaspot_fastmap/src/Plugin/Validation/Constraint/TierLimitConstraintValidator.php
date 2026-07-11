@@ -7,10 +7,13 @@ namespace Drupal\markaspot_fastmap\Plugin\Validation\Constraint;
 use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Language\LanguageInterface;
+use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_validation\Plugin\Validation\Geo\GeoJsonBoundary;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -34,6 +37,8 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
     protected readonly ?RequestStack $requestStack = NULL,
     protected readonly ?JurisdictionHierarchyResolverInterface $hierarchyResolver = NULL,
     protected readonly ?ConfigFactoryInterface $configFactory = NULL,
+    protected readonly ?CitizenWordingResolver $citizenWordingResolver = NULL,
+    protected readonly ?LanguageManagerInterface $languageManager = NULL,
   ) {}
 
   /**
@@ -49,6 +54,10 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
         ? $container->get('markaspot_group.hierarchy_resolver')
         : NULL,
       $container->get('config.factory'),
+      $container->has('markaspot_nuxt.citizen_wording_resolver')
+        ? $container->get('markaspot_nuxt.citizen_wording_resolver')
+        : NULL,
+      $container->get('language_manager'),
     );
   }
 
@@ -140,10 +149,54 @@ class TierLimitConstraintValidator extends ConstraintValidator implements Contai
         default => 'monthlyLimitMessage',
       };
 
-      $this->context->addViolation($constraint->{$messageProperty}, [
+      $this->context->addViolation($this->resolveLimitMessage($constraint, $messageProperty, $group, $value), [
         '@limit' => $tierLimits['limit'],
       ]);
     }
+  }
+
+  /**
+   * Builds citizen-facing tier-limit copy for the selected terminology.
+   *
+   * Constraint properties retain their original default-report strings for
+   * integrations that construct the validator outside of the Nuxt runtime.
+   * FastMap itself requires markaspot_nuxt, so its normal 422 path uses the
+   * shared locale template for every selected wording preset.
+   */
+  protected function resolveLimitMessage(Constraint $constraint, string $messageProperty, GroupInterface $group, NodeInterface $node): string {
+    $defaultMessage = (string) $constraint->{$messageProperty};
+    if ($this->citizenWordingResolver === NULL) {
+      return $defaultMessage;
+    }
+
+    $messageKey = match ($messageProperty) {
+      'publishedLimitMessage' => CitizenWordingResolver::VALIDATION_TIER_PUBLISHED,
+      'totalLimitMessage' => CitizenWordingResolver::VALIDATION_TIER_TOTAL,
+      default => CitizenWordingResolver::VALIDATION_TIER_MONTHLY,
+    };
+
+    return $this->citizenWordingResolver->formatValidationMessage(
+      $messageKey,
+      $group,
+      $this->resolveResponseLangcode($node),
+    );
+  }
+
+  /**
+   * Resolves the language used by a headless validation response.
+   *
+   * JSON:API creates service requests without a submitted langcode, so an
+   * entity can retain the site default even when Nuxt forwarded a different
+   * active locale through Accept-Language. TYPE_CONTENT follows that request
+   * locale; the entity language remains a compatibility fallback for direct
+   * unit construction outside Drupal's service container.
+   */
+  protected function resolveResponseLangcode(NodeInterface $node): string {
+    if ($this->languageManager !== NULL) {
+      return $this->languageManager->getCurrentLanguage(LanguageInterface::TYPE_CONTENT)->getId();
+    }
+
+    return $node->language()->getId();
   }
 
   /**

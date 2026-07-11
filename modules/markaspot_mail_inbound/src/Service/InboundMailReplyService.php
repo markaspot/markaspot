@@ -11,6 +11,8 @@ use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 use Drupal\markaspot_mail_inbound\Util\MailTextUtils;
 use Symfony\Component\HttpFoundation\RequestStack;
@@ -81,6 +83,7 @@ class InboundMailReplyService {
     protected MailboxResolver $mailboxResolver,
     protected MailIntakeFidelity $fidelity,
     protected LoggerChannelInterface $logger,
+    protected ?CitizenWordingResolver $citizenWordingResolver = NULL,
   ) {
   }
 
@@ -208,7 +211,9 @@ class InboundMailReplyService {
   protected function buildMailParams(InboundMail $mail, string $body, string $outboundMessageId, string $key = self::KEY_TRIAGE_REPLY): array {
     $subject = $mail->getSubject() !== ''
       ? 'Re: ' . $mail->getSubject()
-      : (string) $this->t('Your report');
+      : (string) $this->t('Your @term', [
+        '@term' => $this->resolveCitizenTerm($mail),
+      ]);
 
     $headers = [
       'Message-ID' => '<' . $outboundMessageId . '>',
@@ -256,6 +261,35 @@ class InboundMailReplyService {
       'from' => $fromAddress,
       'jurisdiction_id' => $mail->getJurisdictionId(),
     ];
+  }
+
+  /**
+   * Resolves the selected citizen term for a conversation's jurisdiction.
+   *
+   * The return-channel uses the site's default language, matching the
+   * langcode passed to MailManager in sendReply().
+   */
+  protected function resolveCitizenTerm(InboundMail $mail): string {
+    if ($this->citizenWordingResolver === NULL || $mail->getJurisdictionId() <= 0) {
+      return 'report';
+    }
+
+    try {
+      $group = $this->entityTypeManager
+        ->getStorage('group')
+        ->load($mail->getJurisdictionId());
+    }
+    catch (\Throwable) {
+      return 'report';
+    }
+
+    if (!$group instanceof GroupInterface) {
+      return 'report';
+    }
+
+    $langcode = $this->languageManager->getDefaultLanguage()->getId();
+    $wording = $this->citizenWordingResolver->resolve($group, $langcode);
+    return $wording['singular'];
   }
 
   /**
