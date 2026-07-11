@@ -910,6 +910,26 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   }
 
   /**
+   * Boundary candidates are constrained before any relationship is created.
+   */
+  public function testSubJurisdictionBoundaryScanIsRootScoped(): void {
+    $source = file_get_contents(dirname(__DIR__, 3) . '/markaspot_group.module');
+    $start = strpos($source, 'function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|false');
+    $end = strpos($source, 'function _markaspot_group_set_jurisdiction_field', $start);
+    $functionSource = substr($source, $start, $end - $start);
+
+    $this->assertNotFalse($start);
+    $this->assertNotFalse($end);
+    $this->assertStringContainsString('_markaspot_group_boundary_scope_root($node)', $functionSource);
+    $this->assertStringContainsString('$hierarchy_resolver->getDescendantIds($scope_root_id)', $functionSource);
+    $scopeCondition = strpos($functionSource, '$group_query->condition($group_id_key, $candidate_ids, \'IN\')');
+    $relationshipWrite = strpos($functionSource, '$group->addRelationship($node, $plugin_id)');
+    $this->assertNotFalse($scopeCondition);
+    $this->assertNotFalse($relationshipWrite);
+    $this->assertLessThan($relationshipWrite, $scopeCondition);
+  }
+
+  /**
    * Installs the minimal Drupal container needed by notification helpers.
    */
   private function installNotificationContainer(

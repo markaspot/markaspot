@@ -1177,7 +1177,7 @@ class MarkASpotSettingsController extends ControllerBase {
    * jurisdiction group is created, updated, or deleted.
    *
    * @return \Drupal\Core\Cache\CacheableJsonResponse
-   *   List of jurisdictions with id, name, slug, and isDefault flag.
+   *   List of jurisdictions with id, rootId, name, slug, and isDefault flag.
    */
   public function getJurisdictions() {
     // Load group type setting from markaspot_open311 (supports legacy naming).
@@ -1222,6 +1222,11 @@ class MarkASpotSettingsController extends ControllerBase {
 
       $jurisdictions[] = [
         'id' => (int) $group->id(),
+        // A published child can legitimately inherit an unpublished root.
+        // Expose the authoritative numeric root without publishing the parent
+        // entity itself, so public clients do not have to reconstruct an
+        // incomplete hierarchy from parentId.
+        'rootId' => $this->hierarchyResolver->getRootJurisdictionId((int) $group->id()),
         'uuid' => $group->uuid(),
         'name' => $group->label(),
         'slug' => $slug,

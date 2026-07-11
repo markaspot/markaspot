@@ -71,9 +71,15 @@ class ValidLatLonConstraintValidatorTest extends UnitTestCase {
     $this->constraint = new ValidLatLonConstraint();
 
     $this->config = $this->createMock(ImmutableConfig::class);
-    $this->configFactory->method('get')
-      ->with('markaspot_validation.settings')
-      ->willReturn($this->config);
+    $open311Config = $this->createMock(ImmutableConfig::class);
+    $open311Config->method('get')
+      ->with('jurisdiction_group_type')
+      ->willReturn('jur');
+    $this->configFactory->method('get')->willReturnCallback(
+      fn(string $name): ImmutableConfig => $name === 'markaspot_open311.settings'
+        ? $open311Config
+        : $this->config,
+    );
   }
 
   /**
@@ -201,6 +207,155 @@ class ValidLatLonConstraintValidatorTest extends UnitTestCase {
       ->with($this->constraint->noValidViewboxMessage);
 
     $field = $this->createFieldValue(50.0, 50.0);
+    $this->createValidator()->validate($field, $this->constraint);
+  }
+
+  /**
+   * Submitted child jurisdiction wins over a root-scoped category on create.
+   *
+   * @covers ::validate
+   */
+  public function testNewEntityUsesSubmittedChildBoundaryBeforeCategoryRoot(): void {
+    $rootGroup = $this->groupWithBoundary(json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [
+        [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+      ],
+    ]));
+    $childGroup = $this->groupWithBoundary(json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [
+        [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]],
+      ],
+    ]), 1);
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')->willReturnMap([
+      [1, $rootGroup],
+      [2, $childGroup],
+    ]);
+    $this->setupEntityWithJurisdiction(
+      1,
+      $groupStorage,
+      submittedJurisdictionId: 2,
+    );
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with($this->constraint->noValidViewboxMessage);
+
+    // Inside the root polygon but outside the selected child's polygon.
+    $field = $this->createFieldValue(5.0, 5.0);
+    $this->createValidator()->validate($field, $this->constraint);
+  }
+
+  /**
+   * A child without geometry still inherits its canonical root boundary.
+   *
+   * @covers ::validate
+   */
+  public function testMissingChildBoundaryFallsBackToCanonicalRoot(): void {
+    $rootGroup = $this->groupWithBoundary(json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [
+        [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+      ],
+    ]));
+    $childGroup = $this->groupWithoutBoundary(1);
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')->willReturnMap([
+      [1, $rootGroup],
+      [2, $childGroup],
+    ]);
+    $this->setupEntityWithJurisdiction(
+      1,
+      $groupStorage,
+      submittedJurisdictionId: 2,
+    );
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with($this->constraint->noValidViewboxMessage);
+
+    $field = $this->createFieldValue(50.0, 50.0);
+    $this->createValidator()->validate($field, $this->constraint);
+  }
+
+  /**
+   * A sibling-owned shared category falls back to the submitted child's root.
+   *
+   * @covers ::validate
+   */
+  public function testSiblingCategoryCannotSelectSiblingBoundary(): void {
+    $rootGroup = $this->groupWithBoundary(json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [
+        [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+      ],
+    ]));
+    $submittedChild = $this->groupWithoutBoundary(1);
+    $siblingCategoryOwner = $this->groupWithBoundary(json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [
+        [[20, 20], [21, 20], [21, 21], [20, 21], [20, 20]],
+      ],
+    ]), 1);
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')->willReturnMap([
+      [1, $rootGroup],
+      [2, $submittedChild],
+      [3, $siblingCategoryOwner],
+    ]);
+    $this->setupEntityWithJurisdiction(
+      3,
+      $groupStorage,
+      submittedJurisdictionId: 2,
+    );
+
+    $this->executionContext->expects($this->never())
+      ->method('addViolation');
+
+    // Inside the shared root, but outside the category owner's sibling area.
+    $field = $this->createFieldValue(5.0, 5.0);
+    $this->createValidator()->validate($field, $this->constraint);
+  }
+
+  /**
+   * An edited jurisdiction field wins over the entity's old relationship.
+   *
+   * @covers ::validate
+   */
+  public function testEditedEntityUsesCurrentFieldBeforeOldRelationship(): void {
+    $rootGroup = $this->groupWithBoundary(json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [
+        [[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]],
+      ],
+    ]));
+    $newChild = $this->groupWithoutBoundary(1);
+    $oldChild = $this->groupWithBoundary(json_encode([
+      'type' => 'Polygon',
+      'coordinates' => [
+        [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]],
+      ],
+    ]), 1);
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')->willReturnMap([
+      [1, $rootGroup],
+      [2, $newChild],
+      [3, $oldChild],
+    ]);
+    $this->setupEntityWithJurisdiction(
+      1,
+      $groupStorage,
+      submittedJurisdictionId: 2,
+      relationshipJurisdictionId: 3,
+    );
+
+    $this->executionContext->expects($this->once())
+      ->method('addViolation')
+      ->with($this->constraint->noValidViewboxMessage);
+
+    $field = $this->createFieldValue(5.0, 5.0);
     $this->createValidator()->validate($field, $this->constraint);
   }
 
@@ -350,9 +505,7 @@ class ValidLatLonConstraintValidatorTest extends UnitTestCase {
    *   The group entity ID.
    */
   protected function mockJurisdictionWithoutBoundary(int $groupId): void {
-    $group = $this->createMock(ContentEntityInterface::class);
-    $group->method('hasField')
-      ->willReturnCallback(fn(string $name) => $name !== 'field_boundary');
+    $group = $this->groupWithoutBoundary();
 
     $groupStorage = $this->createMock(EntityStorageInterface::class);
     $groupStorage->method('load')
@@ -372,10 +525,16 @@ class ValidLatLonConstraintValidatorTest extends UnitTestCase {
    *   The target jurisdiction group ID.
    * @param \Drupal\Core\Entity\EntityStorageInterface $groupStorage
    *   The mocked group storage.
+   * @param int|null $submittedJurisdictionId
+   *   Optional jurisdiction carried directly by the new entity.
+   * @param int|null $relationshipJurisdictionId
+   *   Optional jurisdiction from an existing stored group relationship.
    */
   protected function setupEntityWithJurisdiction(
     int $jurisdictionId,
     EntityStorageInterface $groupStorage,
+    ?int $submittedJurisdictionId = NULL,
+    ?int $relationshipJurisdictionId = NULL,
   ): void {
     // Build a term with field_jurisdiction pointing to the group.
     $jurisdictionField = $this->createMock(FieldItemListInterface::class);
@@ -399,15 +558,26 @@ class ValidLatLonConstraintValidatorTest extends UnitTestCase {
       ->with('entity')
       ->willReturn($term);
 
-    // Build the validated entity (new, so no group relationship).
+    // Build the validated entity, optionally with an older relationship.
     $entity = $this->createMock(ContentEntityInterface::class);
-    $entity->method('isNew')->willReturn(TRUE);
+    $entity->method('isNew')->willReturn($relationshipJurisdictionId === NULL);
     $entity->method('hasField')
-      ->with('field_category')
-      ->willReturn(TRUE);
+      ->willReturnCallback(
+        static fn(string $name): bool => $name === 'field_category'
+          || ($name === 'field_jurisdiction' && $submittedJurisdictionId !== NULL),
+      );
+    $submittedJurisdictionField = $this->createMock(FieldItemListInterface::class);
+    $submittedJurisdictionField->method('isEmpty')
+      ->willReturn($submittedJurisdictionId === NULL);
+    $submittedJurisdictionField->method('__get')
+      ->with('target_id')
+      ->willReturn($submittedJurisdictionId);
     $entity->method('get')
-      ->with('field_category')
-      ->willReturn($categoryField);
+      ->willReturnCallback(
+        static fn(string $name): FieldItemListInterface => $name === 'field_jurisdiction'
+          ? $submittedJurisdictionField
+          : $categoryField,
+      );
 
     // Build a typed data root that wraps the entity.
     $root = new class ($entity) {
@@ -440,8 +610,32 @@ class ValidLatLonConstraintValidatorTest extends UnitTestCase {
 
     // Wire up entity type manager storages.
     $relationshipStorage = $this->createMock(EntityStorageInterface::class);
-    $relationshipStorage->method('loadByProperties')
-      ->willReturn([]);
+    if ($relationshipJurisdictionId === NULL) {
+      $relationshipStorage->method('loadByProperties')->willReturn([]);
+    }
+    else {
+      $relationshipGroup = $this->createMock(ContentEntityInterface::class);
+      $relationshipGroup->method('id')->willReturn($relationshipJurisdictionId);
+      $relationship = new class ($relationshipGroup) {
+
+        /**
+         * Constructs a relationship double.
+         */
+        public function __construct(
+          private readonly ContentEntityInterface $group,
+        ) {}
+
+        /**
+         * Returns the related group.
+         */
+        public function getGroup(): ContentEntityInterface {
+          return $this->group;
+        }
+
+      };
+      $relationshipStorage->method('loadByProperties')
+        ->willReturn([$relationship]);
+    }
 
     $this->entityTypeManager->method('getStorage')
       ->willReturnCallback(
@@ -451,6 +645,51 @@ class ValidLatLonConstraintValidatorTest extends UnitTestCase {
           default => $this->createMock(EntityStorageInterface::class),
         }
       );
+  }
+
+  /**
+   * Builds a jurisdiction group with a GeoJSON boundary.
+   */
+  protected function groupWithBoundary(string $geoJson, ?int $parentId = NULL): ContentEntityInterface {
+    return $this->jurisdictionGroup($geoJson, $parentId);
+  }
+
+  /**
+   * Builds a jurisdiction group without geometry.
+   */
+  protected function groupWithoutBoundary(?int $parentId = NULL): ContentEntityInterface {
+    return $this->jurisdictionGroup(NULL, $parentId);
+  }
+
+  /**
+   * Builds a jurisdiction group with an optional parent and boundary.
+   */
+  protected function jurisdictionGroup(?string $geoJson, ?int $parentId): ContentEntityInterface {
+    $boundaryField = $this->createMock(FieldItemListInterface::class);
+    $boundaryField->method('isEmpty')->willReturn($geoJson === NULL);
+    $boundaryField->method('__get')
+      ->with('value')
+      ->willReturn($geoJson);
+
+    $parentField = $this->createMock(FieldItemListInterface::class);
+    $parentField->method('isEmpty')->willReturn($parentId === NULL);
+    $parentField->method('__get')
+      ->with('target_id')
+      ->willReturn($parentId);
+
+    $group = $this->createMock(ContentEntityInterface::class);
+    $group->method('hasField')
+      ->willReturnCallback(
+        static fn(string $name): bool => $name === 'field_parent_jurisdiction'
+          || ($name === 'field_boundary' && $geoJson !== NULL),
+      );
+    $group->method('get')
+      ->willReturnCallback(
+        static fn(string $name): FieldItemListInterface => $name === 'field_parent_jurisdiction'
+          ? $parentField
+          : $boundaryField,
+      );
+    return $group;
   }
 
 }

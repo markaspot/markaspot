@@ -4,4 +4,7 @@ description: 'CAP 1.2 (Common Alerting Protocol) export for emergency citizen re
 package: 'Mark-a-Spot'
 core_version_requirement: ^10 || ^11
 dependencies:
+  - drupal:field
+  - drupal:node
+  - field_permissions:field_permissions
   - markaspot_emergency:markaspot_emergency

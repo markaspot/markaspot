@@ -5,6 +5,7 @@ markaspot_cap.alerts.index:
     _title: 'CAP Alert Feed'
   requirements:
     _cap_emergency_active: 'TRUE'
+    _permission: 'access emergency CAP feed'
   methods: [GET, HEAD]
 
 markaspot_cap.alerts.show:
@@ -14,4 +15,5 @@ markaspot_cap.alerts.show:
     _title: 'CAP Alert'
   requirements:
     _cap_emergency_active: 'TRUE'
+    _permission: 'access emergency CAP feed'
   methods: [GET, HEAD]

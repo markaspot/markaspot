@@ -1,18 +1,21 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\Tests\markaspot_cap\Unit;
 
+use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\Core\State\StateInterface;
 use Drupal\markaspot_cap\Access\EmergencyActiveAccessCheck;
+use Drupal\markaspot_emergency\Service\EmergencyModeService;
 use Drupal\Tests\UnitTestCase;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Route;
 
 /**
- * Tests the EmergencyActiveAccessCheck access checker.
- *
- * Verifies that the gate operates on State (not regex path matching) so
- * URL-encoded paths like '/api/c%61p/v1/alerts' cannot bypass the check.
+ * Tests jurisdiction-scoped CAP access.
  *
  * @group markaspot_cap
  * @coversDefaultClass \Drupal\markaspot_cap\Access\EmergencyActiveAccessCheck
@@ -20,64 +23,101 @@ use Symfony\Component\Routing\Route;
 class EmergencyActiveAccessCheckTest extends UnitTestCase {
 
   /**
+   * {@inheritdoc}
+   */
+  protected function setUp(): void {
+    parent::setUp();
+    $cacheContextsManager = $this->createMock(CacheContextsManager::class);
+    $cacheContextsManager->method('assertValidTokens')->willReturn(TRUE);
+    $container = new ContainerBuilder();
+    $container->set('cache_contexts_manager', $cacheContextsManager);
+    \Drupal::setContainer($container);
+  }
+
+  /**
    * @covers ::access
    */
-  public function testDeniesWhenEmergencyModeOff(): void {
-    $state = $this->createMock(StateInterface::class);
-    $state->method('get')
-      ->with('markaspot_emergency.status', 'off')
-      ->willReturn('off');
+  public function testDeniesWhenResolvedJurisdictionIsOff(): void {
+    $service = $this->createMock(EmergencyModeService::class);
+    $service->expects($this->once())
+      ->method('resolveRootJurisdictionId')
+      ->with('amsterdam')
+      ->willReturn(7);
+    $service->method('isActive')->with(7)->willReturn(FALSE);
 
-    $account = $this->createMock(AccountInterface::class);
-    $route = new Route('/api/cap/v1/alerts');
+    $result = $this->checker($service, 'amsterdam')->access(
+      new Route('/api/cap/v1/alerts'),
+      $this->createMock(AccountInterface::class),
+    );
 
-    $checker = new EmergencyActiveAccessCheck($state);
-    $result = $checker->access($route, $account);
-
-    // allowedIf(false) yields a neutral result; Drupal denies the request
-    // because the requirement '_cap_emergency_active: TRUE' is not satisfied.
     $this->assertFalse($result->isAllowed());
   }
 
   /**
    * @covers ::access
    */
-  public function testAllowsWhenEmergencyModeActive(): void {
-    $state = $this->createMock(StateInterface::class);
-    $state->method('get')
-      ->with('markaspot_emergency.status', 'off')
-      ->willReturn('active');
+  public function testAllowsOnlyResolvedActiveJurisdiction(): void {
+    $service = $this->createMock(EmergencyModeService::class);
+    $service->method('resolveRootJurisdictionId')->with('7')->willReturn(7);
+    $service->method('isActive')->with(7)->willReturn(TRUE);
 
-    $account = $this->createMock(AccountInterface::class);
-    $route = new Route('/api/cap/v1/alerts');
-
-    $checker = new EmergencyActiveAccessCheck($state);
-    $result = $checker->access($route, $account);
+    $result = $this->checker($service, '7')->access(
+      new Route('/api/cap/v1/alerts'),
+      $this->createMock(AccountInterface::class),
+    );
 
     $this->assertTrue($result->isAllowed());
+    $this->assertContains('markaspot_emergency:status:7', $result->getCacheTags());
+    $this->assertContains('url.query_args:jurisdiction_id', $result->getCacheContexts());
   }
 
   /**
-   * Verifies that the access result carries the emergency status cache tag.
-   *
-   * The check runs after routing, which normalizes percent-encoded paths.
-   * URL-encoding tricks therefore cannot bypass this route-level gate.
-   *
    * @covers ::access
    */
-  public function testAccessResultCarriesEmergencyCacheTag(): void {
-    $state = $this->createMock(StateInterface::class);
-    $state->method('get')
-      ->with('markaspot_emergency.status', 'off')
-      ->willReturn('active');
+  public function testInvalidOrMissingMultiTenantScopeFailsClosed(): void {
+    $service = $this->createMock(EmergencyModeService::class);
+    $service->method('resolveRootJurisdictionId')
+      ->willThrowException(new \InvalidArgumentException('jurisdiction required'));
 
-    $account = $this->createMock(AccountInterface::class);
-    $route = new Route('/api/cap/v1/alerts');
+    $result = $this->checker($service, NULL)->access(
+      new Route('/api/cap/v1/alerts'),
+      $this->createMock(AccountInterface::class),
+    );
 
-    $checker = new EmergencyActiveAccessCheck($state);
-    $result = $checker->access($route, $account);
+    $this->assertFalse($result->isAllowed());
+    $this->assertContains(EmergencyModeService::CACHE_TAG, $result->getCacheTags());
+  }
 
-    $this->assertContains('markaspot_emergency:status', $result->getCacheTags());
+  /**
+   * @covers ::access
+   */
+  public function testArrayJurisdictionFailsClosedBeforeServiceCall(): void {
+    $service = $this->createMock(EmergencyModeService::class);
+    $service->expects($this->never())->method('resolveRootJurisdictionId');
+    $request = Request::create('/api/cap/v1/alerts?jurisdiction_id[]=7');
+    $requestStack = new RequestStack();
+    $requestStack->push($request);
+    $checker = new EmergencyActiveAccessCheck($service, $requestStack);
+
+    $result = $checker->access(
+      new Route('/api/cap/v1/alerts'),
+      $this->createMock(AccountInterface::class),
+    );
+
+    $this->assertFalse($result->isAllowed());
+  }
+
+  /**
+   * Builds the checker with a current request.
+   */
+  private function checker(EmergencyModeService $service, ?string $jurisdiction): EmergencyActiveAccessCheck {
+    $request = Request::create('/api/cap/v1/alerts');
+    if ($jurisdiction !== NULL) {
+      $request->query->set('jurisdiction_id', $jurisdiction);
+    }
+    $requestStack = new RequestStack();
+    $requestStack->push($request);
+    return new EmergencyActiveAccessCheck($service, $requestStack);
   }
 
 }

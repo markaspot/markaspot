@@ -1,0 +1,24 @@
+langcode: en
+status: true
+dependencies:
+  config:
+    - field.storage.node.field_cap_publish
+    - node.type.service_request
+  enforced:
+    module:
+      - markaspot_cap
+id: node.service_request.field_cap_publish
+field_name: field_cap_publish
+entity_type: node
+bundle: service_request
+label: 'Publish as CAP alert'
+description: 'Staff approval required before this report can enter the CAP emergency feed.'
+required: false
+translatable: false
+default_value:
+  - value: 0
+default_value_callback: ''
+settings:
+  on_label: Approved
+  off_label: 'Not approved'
+field_type: boolean

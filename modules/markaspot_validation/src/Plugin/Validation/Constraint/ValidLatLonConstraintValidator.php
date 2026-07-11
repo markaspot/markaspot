@@ -17,7 +17,8 @@ use Symfony\Component\Validator\ConstraintValidator;
  *
  * Resolution order:
  * 1. Jurisdiction-specific GeoJSON boundary (from the jurisdiction group's
- *    field_boundary, resolved via group membership or category term).
+ *    field_boundary, resolved via group membership, the submitted entity
+ *    field, or the category term).
  * 2. Global WKT polygon from markaspot_validation.settings.wkt.
  * 3. No boundary configured: validation passes.
  */
@@ -70,9 +71,9 @@ class ValidLatLonConstraintValidator extends ConstraintValidator implements Cont
    *   TRUE if inside boundary or no boundary is configured.
    */
   private function isWithinBoundary(float $lng, float $lat): bool {
-    // 1. Try jurisdiction-specific GeoJSON boundary.
-    $jurisdictionId = $this->resolveJurisdiction();
-    if ($jurisdictionId) {
+    // 1. Try each jurisdiction boundary from most to least specific. A child
+    // without usable geometry falls back to its canonical root boundary.
+    foreach ($this->resolveJurisdictions() as $jurisdictionId) {
       $boundary = $this->loadJurisdictionBoundary($jurisdictionId);
       if ($boundary) {
         return $boundary->contains($lng, $lat);
@@ -86,39 +87,88 @@ class ValidLatLonConstraintValidator extends ConstraintValidator implements Cont
   /**
    * Resolves the jurisdiction ID from the validated entity.
    *
-   * Primary: entity -> group_relationship for service requests.
-   * Fallback: entity -> field_category -> term -> field_jurisdiction.
+   * Primary: entity -> field_jurisdiction from the current payload.
+   * Existing fallback: entity -> group_relationship.
+   * Last fallback: entity -> field_category -> term -> field_jurisdiction.
    *
-   * The group membership approach is preferred because it returns the actual
-   * assigned jurisdiction (e.g. a child district like "Stadsdeel Noord"),
-   * whereas the category-based fallback always points to the parent
-   * jurisdiction the category belongs to.
+   * Once an entity jurisdiction is known, its canonical root is the only
+   * fallback. Emergency categories are shared across that complete root tree,
+   * so a term owned by a sibling child must never select the sibling boundary.
    *
-   * New (unsaved) entities do not yet have a group_relationship, so the
-   * category-based fallback covers that case.
-   *
-   * @return int|null
-   *   The jurisdiction group ID, or NULL if not determinable.
+   * @return int[]
+   *   Ordered unique jurisdiction group IDs, most specific first.
    */
-  private function resolveJurisdiction(): ?int {
+  private function resolveJurisdictions(): array {
     $root = $this->context->getRoot();
     if (!method_exists($root, 'getEntity')) {
-      return NULL;
+      return [];
     }
 
     $entity = $root->getEntity();
     if (!$entity) {
+      return [];
+    }
+
+    $jurisdictionIds = [];
+    $primaryJurisdictionId = NULL;
+    // The current entity field is authoritative during creates and edits. A
+    // stored relationship can still point at the old child until after save.
+    $fieldGroupId = $this->resolveJurisdictionFromEntityField($entity);
+    if ($fieldGroupId !== NULL) {
+      $primaryJurisdictionId = $fieldGroupId;
+    }
+    else {
+      // Existing entities without the denormalized field can use membership.
+      $groupId = $this->resolveJurisdictionFromGroupRelationship($entity);
+      if ($groupId !== NULL) {
+        $primaryJurisdictionId = $groupId;
+      }
+    }
+
+    if ($primaryJurisdictionId !== NULL) {
+      $jurisdictionIds[] = $primaryJurisdictionId;
+      $rootJurisdictionId = $this->resolveRootJurisdictionId($primaryJurisdictionId);
+      if ($rootJurisdictionId !== NULL) {
+        $jurisdictionIds[] = $rootJurisdictionId;
+      }
+    }
+    else {
+      // Legacy entities without any direct or relationship jurisdiction can
+      // still derive their scope from the category and then its root.
+      $categoryJurisdictionId = $this->resolveJurisdictionFromCategory($entity);
+      if ($categoryJurisdictionId !== NULL) {
+        $jurisdictionIds[] = $categoryJurisdictionId;
+        $rootJurisdictionId = $this->resolveRootJurisdictionId($categoryJurisdictionId);
+        if ($rootJurisdictionId !== NULL) {
+          $jurisdictionIds[] = $rootJurisdictionId;
+        }
+      }
+    }
+
+    return array_values(array_unique($jurisdictionIds));
+  }
+
+  /**
+   * Resolves the jurisdiction directly from the submitted entity field.
+   *
+   * @param \Drupal\Core\Entity\ContentEntityInterface $entity
+   *   The entity being validated.
+   *
+   * @return int|null
+   *   The submitted jurisdiction group ID, or NULL when absent.
+   */
+  private function resolveJurisdictionFromEntityField(ContentEntityInterface $entity): ?int {
+    if (!$entity->hasField('field_jurisdiction')) {
       return NULL;
     }
 
-    // Primary: resolve via group membership (accurate for child jurisdictions).
-    $groupId = $this->resolveJurisdictionFromGroupRelationship($entity);
-    if ($groupId !== NULL) {
-      return $groupId;
+    $jurisdiction = $entity->get('field_jurisdiction');
+    if ($jurisdiction->isEmpty()) {
+      return NULL;
     }
 
-    // Fallback: resolve via category term chain (covers new/unsaved entities).
-    return $this->resolveJurisdictionFromCategory($entity);
+    $groupId = (int) $jurisdiction->target_id;
+    return $groupId > 0 ? $groupId : NULL;
   }
 
   /**
@@ -196,6 +246,47 @@ class ValidLatLonConstraintValidator extends ConstraintValidator implements Cont
     }
 
     return (int) $term->get('field_jurisdiction')->target_id;
+  }
+
+  /**
+   * Resolves a jurisdiction's canonical root without depending on Group APIs.
+   *
+   * The markaspot_group module depends on this validation module, so injecting
+   * hierarchy service here would create a module dependency cycle. Traverse
+   * the same parent field defensively with a cycle guard instead.
+   */
+  private function resolveRootJurisdictionId(int $jurisdictionId): ?int {
+    $storage = $this->entityTypeManager->getStorage('group');
+    $visited = [];
+    $currentId = $jurisdictionId;
+
+    while ($currentId > 0) {
+      if (isset($visited[$currentId])) {
+        return NULL;
+      }
+      $visited[$currentId] = TRUE;
+
+      $group = $storage->load($currentId);
+      if (!$group) {
+        return NULL;
+      }
+      if (!$group->hasField('field_parent_jurisdiction')) {
+        return $currentId;
+      }
+
+      $parent = $group->get('field_parent_jurisdiction');
+      if ($parent->isEmpty()) {
+        return $currentId;
+      }
+
+      $parentId = (int) $parent->target_id;
+      if ($parentId <= 0) {
+        return NULL;
+      }
+      $currentId = $parentId;
+    }
+
+    return NULL;
   }
 
   /**

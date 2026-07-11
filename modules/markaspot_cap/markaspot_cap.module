@@ -1,0 +1,68 @@
+<?php
+
+/**
+ * @file
+ * Mark-a-Spot CAP hooks.
+ */
+
+declare(strict_types=1);
+
+use Drupal\Core\Entity\Display\EntityFormDisplayInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Hook\Attribute\LegacyHook;
+use Drupal\markaspot_cap\Hook\CapEntityHooks;
+use Drupal\markaspot_cap\Support\CapApprovalReadiness;
+
+/**
+ * Implements hook_entity_form_display_alter().
+ *
+ * Drupal 10 invokes this bridge. Drupal 11 discovers CapEntityHooks directly
+ * and skips the wrapper through #[LegacyHook].
+ */
+#[LegacyHook]
+function markaspot_cap_entity_form_display_alter(
+  EntityFormDisplayInterface $form_display,
+  array $context = [],
+): void {
+  /** @var \Drupal\markaspot_cap\Hook\CapEntityHooks $hooks */
+  $hooks = \Drupal::service(CapEntityHooks::class);
+  $hooks->entityFormDisplayAlter($form_display, $context);
+}
+
+/**
+ * Implements hook_entity_insert().
+ */
+#[LegacyHook]
+function markaspot_cap_entity_insert(EntityInterface $entity): void {
+  /** @var \Drupal\markaspot_cap\Hook\CapEntityHooks $hooks */
+  $hooks = \Drupal::service(CapEntityHooks::class);
+  $hooks->entityInsert($entity);
+}
+
+/**
+ * Implements hook_entity_update().
+ */
+#[LegacyHook]
+function markaspot_cap_entity_update(EntityInterface $entity): void {
+  /** @var \Drupal\markaspot_cap\Hook\CapEntityHooks $hooks */
+  $hooks = \Drupal::service(CapEntityHooks::class);
+  $hooks->entityUpdate($entity);
+}
+
+/**
+ * Implements hook_entity_delete().
+ */
+#[LegacyHook]
+function markaspot_cap_entity_delete(EntityInterface $entity): void {
+  /** @var \Drupal\markaspot_cap\Hook\CapEntityHooks $hooks */
+  $hooks = \Drupal::service(CapEntityHooks::class);
+  $hooks->entityDelete($entity);
+}
+
+/**
+ * Implements hook_cron().
+ */
+#[LegacyHook]
+function markaspot_cap_cron(): void {
+  CapApprovalReadiness::refresh();
+}

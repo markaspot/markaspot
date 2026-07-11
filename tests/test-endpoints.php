@@ -209,12 +209,14 @@ if (!$module_handler->moduleExists('markaspot_emergency')) {
   skip_test('markaspot_emergency not enabled');
 }
 else {
-  // GET /api/emergency-mode/status.
-  [$code, $data] = http_get("$base/api/emergency-mode/status");
-  assert_equal(200, $code, 'GET /api/emergency-mode/status returns 200');
+  $emergency_suffix = $jur_id ? "?jurisdiction_id=$jur_id" : '';
+  // GET /api/emergency-mode/status for the selected root jurisdiction.
+  [$code, $data] = http_get("$base/api/emergency-mode/status$emergency_suffix");
+  assert_equal(200, $code, "GET /api/emergency-mode/status$emergency_suffix returns 200");
   assert_true(is_array($data), 'Emergency status returns object');
   if ($data) {
     assert_json_keys($data, [
+      'contract_version', 'jurisdiction_id', 'revision',
       'emergency_mode', 'status', 'mode_type', 'lite_ui',
       'available_categories', 'banner',
     ], 'Emergency status');
@@ -226,14 +228,8 @@ else {
     }
   }
 
-  // With jurisdiction_id.
-  if ($jur_id) {
-    [$code, $data] = http_get("$base/api/emergency-mode/status?jurisdiction_id=$jur_id");
-    assert_equal(200, $code, "GET /api/emergency-mode/status?jurisdiction_id=$jur_id returns 200");
-  }
-
   // GET /sos (HTML page)
-  [$code] = http_get("$base/sos", ['headers' => ['Accept' => 'text/html']]);
+  [$code] = http_get("$base/sos$emergency_suffix", ['headers' => ['Accept' => 'text/html']]);
   assert_true(in_array($code, [200, 301, 302, 303]), "GET /sos responds ($code)");
 }
 
@@ -581,7 +577,7 @@ else {
 }
 
 // ===========================================================================
-// 9. CAP Export API (public)
+// 9. CAP Export API (restricted)
 // ===========================================================================
 test_group('9. CAP Export API');
 
@@ -589,24 +585,12 @@ if (!$module_handler->moduleExists('markaspot_cap')) {
   skip_test('markaspot_cap not enabled');
 }
 else {
-  $emergency_status = \Drupal::state()->get('markaspot_emergency.status', 'off');
-  if ($emergency_status === 'off') {
-    [$code] = http_get("$base/api/cap/v1/alerts");
-    assert_equal(403, $code, 'GET /api/cap/v1/alerts returns 403 when emergency mode is inactive');
+  $cap_suffix = $jur_id ? "?jurisdiction_id=$jur_id" : '';
+  [$code] = http_get("$base/api/cap/v1/alerts$cap_suffix");
+  assert_equal(403, $code, 'GET /api/cap/v1/alerts returns 403 without the restricted CAP permission');
 
-    [$code] = http_get("$base/api/cap/v1/alerts/nonexistent");
-    assert_equal(403, $code, 'GET /api/cap/v1/alerts/{id} returns 403 when emergency mode is inactive');
-  }
-  else {
-    $cap_suffix = $jur_id ? "?jurisdiction_id=$jur_id" : '';
-    [$code, $data] = http_get("$base/api/cap/v1/alerts$cap_suffix");
-    assert_equal(200, $code, "GET /api/cap/v1/alerts$cap_suffix returns 200 when emergency mode is active");
-    assert_true(is_array($data), 'CAP alerts returns array');
-
-    // Single alert (non-existent ID).
-    [$code] = http_get("$base/api/cap/v1/alerts/nonexistent$cap_suffix");
-    assert_equal(404, $code, 'GET /api/cap/v1/alerts/{id} returns 404 for a nonexistent active alert');
-  }
+  [$code] = http_get("$base/api/cap/v1/alerts/nonexistent$cap_suffix");
+  assert_equal(403, $code, 'GET /api/cap/v1/alerts/{id} returns 403 without the restricted CAP permission');
 }
 
 // ===========================================================================
@@ -715,7 +699,7 @@ test_group('15. Response Consistency');
 // jurisdiction (feature-flag gate); organisations requires login.
 $stats_suffix = $jur_id ? "?jurisdiction=$jur_id" : '';
 $json_endpoints = [
-  '/api/emergency-mode/status' => '',
+  '/api/emergency-mode/status' => $jur_id ? "?jurisdiction_id=$jur_id" : '',
   '/stats/status' => $stats_suffix,
   '/api/mark-a-spot-settings' => '',
   '/api/jurisdictions' => '',
@@ -766,7 +750,8 @@ test_group('16. Cache Headers');
 // Emergency endpoint should have no-cache.
 if ($module_handler->moduleExists('markaspot_emergency')) {
   $http = \Drupal::httpClient();
-  $r = $http->get("$base/api/emergency-mode/status", ['http_errors' => FALSE]);
+  $emergency_suffix = $jur_id ? "?jurisdiction_id=$jur_id" : '';
+  $r = $http->get("$base/api/emergency-mode/status$emergency_suffix", ['http_errors' => FALSE]);
   $cc = $r->getHeader('Cache-Control')[0] ?? '';
   assert_true(str_contains($cc, 'no-cache') || str_contains($cc, 'no-store'), "Emergency status: Cache-Control contains no-cache (got: $cc)");
 }

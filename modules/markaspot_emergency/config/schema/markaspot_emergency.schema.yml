@@ -35,6 +35,9 @@ markaspot_emergency.settings:
               name:
                 type: label
                 label: 'Category name'
+              service_code:
+                type: string
+                label: 'Stable Open311 service code'
               icon:
                 type: string
                 label: 'Icon identifier'
@@ -44,6 +47,12 @@ markaspot_emergency.settings:
               weight:
                 type: integer
                 label: 'Sort weight'
+              modes:
+                type: sequence
+                label: 'Emergency modes'
+                sequence:
+                  type: string
+                  label: 'Mode identifier'
     auto_deactivate:
       type: mapping
       label: 'Auto-deactivation'
@@ -79,10 +88,26 @@ markaspot_emergency.settings:
           label: 'Unpublish non-selected categories'
         show_only_categories:
           type: sequence
-          label: 'Categories to keep published'
+          label: 'Deprecated scope-0 categories to keep published'
           sequence:
             type: integer
             label: 'Term ID'
+        jurisdictions:
+          type: sequence
+          label: 'Per-root maintenance categories'
+          sequence:
+            type: mapping
+            label: 'Root jurisdiction maintenance settings'
+            mapping:
+              root_id:
+                type: integer
+                label: 'Root jurisdiction ID'
+              show_only_categories:
+                type: sequence
+                label: 'Categories to keep published'
+                sequence:
+                  type: integer
+                  label: 'Term ID'
         force_redirect:
           type: boolean
           label: 'Force redirect in maintenance mode'

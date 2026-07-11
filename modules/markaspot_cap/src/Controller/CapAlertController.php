@@ -5,13 +5,18 @@ namespace Drupal\markaspot_cap\Controller;
 use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Entity\EntityFieldManagerInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Session\AccountProxyInterface;
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Component\Utility\UrlHelper;
 use Drupal\Component\Datetime\TimeInterface;
 use Drupal\markaspot_cap\Service\CapProcessorService;
+use Drupal\markaspot_cap\Service\CapFeedMutationTracker;
 use Drupal\markaspot_cap\Encoder\CapEncoder;
+use Drupal\markaspot_emergency\Service\EmergencyModeService;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\taxonomy\TermInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -24,10 +29,8 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * Provides CAP 1.2 XML export for service requests.
  * Only available when emergency mode is active (gated by CapFormatSubscriber).
  *
- * Jurisdiction scoping: when field_jurisdiction exists on service_request
- * nodes, the ?jurisdiction_id parameter is required (400 otherwise) and used
- * as a query condition. On single-tenant installs without that field the
- * parameter is accepted but silently ignored.
+ * Emergency state is scoped to the resolved root jurisdiction. Feed data keeps
+ * the concrete requested jurisdiction scope, including its descendants.
  */
 class CapAlertController extends ControllerBase {
 
@@ -86,9 +89,21 @@ class CapAlertController extends ControllerBase {
   protected CapEncoder $capEncoder;
 
   /**
-   * The state service.
+   * Jurisdiction-scoped emergency mode service.
    *
-   * @var \Drupal\Core\State\StateInterface
+   * @var \Drupal\markaspot_emergency\Service\EmergencyModeService
+   */
+  protected EmergencyModeService $emergencyService;
+
+  /**
+   * Canonical jurisdiction hierarchy resolver.
+   *
+   * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface
+   */
+  protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
+
+  /**
+   * Runtime readiness gate for the staff approval field.
    */
   protected StateInterface $state;
 
@@ -103,6 +118,8 @@ class CapAlertController extends ControllerBase {
     EntityFieldManagerInterface $entity_field_manager,
     CapProcessorService $cap_processor,
     CapEncoder $cap_encoder,
+    EmergencyModeService $emergency_service,
+    JurisdictionHierarchyResolverInterface $hierarchy_resolver,
     StateInterface $state,
   ) {
     $this->currentUser = $current_user;
@@ -115,6 +132,8 @@ class CapAlertController extends ControllerBase {
     $this->entityFieldManager = $entity_field_manager;
     $this->capProcessor = $cap_processor;
     $this->capEncoder = $cap_encoder;
+    $this->emergencyService = $emergency_service;
+    $this->hierarchyResolver = $hierarchy_resolver;
     $this->state = $state;
   }
 
@@ -130,7 +149,9 @@ class CapAlertController extends ControllerBase {
       $container->get('entity_field.manager'),
       $container->get('markaspot_cap.processor'),
       $container->get('markaspot_cap.encoder'),
-      $container->get('state')
+      $container->get('markaspot_emergency.service'),
+      $container->get('markaspot_group.hierarchy_resolver'),
+      $container->get('state'),
     );
   }
 
@@ -148,28 +169,25 @@ class CapAlertController extends ControllerBase {
    */
   public function index(Request $request): Response {
     $requestTime = $this->time->getRequestTime();
-    $parameters = UrlHelper::filterQueryParameters($request->query->all());
+    $parameters = $this->validateQueryParameters(
+      UrlHelper::filterQueryParameters($request->query->all()),
+    );
 
     $bundle = $this->config->get('bundle') ?? 'service_request';
 
-    // Resolve jurisdiction scoping.
-    $jurisdictionId = $this->resolveJurisdictionId($parameters, $bundle);
+    $context = $this->resolveEmergencyContext($parameters);
+    $modeState = $this->getActiveModeState($context['root_id']);
 
     $query = $this->entityTypeManager->getStorage('node')->getQuery()
       ->accessCheck(TRUE)
-      ->condition('changed', $requestTime, '<')
+      ->condition('changed', $requestTime, '<=')
       ->condition('type', $bundle);
 
-    // Apply jurisdiction scope when the field exists.
-    if ($jurisdictionId !== NULL) {
-      $query->condition('field_jurisdiction', $jurisdictionId);
-    }
+    $this->applyNodeJurisdictionScope($query, $bundle, $context['requested_id']);
+    $this->applyCapEligibilityScope($query, $bundle, $context['root_id']);
 
     // Only include requests created after emergency mode activation.
-    $activatedAt = $this->state->get('markaspot_emergency.activated_at');
-    if ($activatedAt) {
-      $query->condition('created', $activatedAt, '>=');
-    }
+    $query->condition('created', $modeState['activated_at'], '>=');
 
     // Clamp limit: min 1, max MAX_LIMIT (B5).
     $limit = isset($parameters['limit']) ? max(1, min((int) $parameters['limit'], self::MAX_LIMIT)) : self::MAX_LIMIT;
@@ -205,6 +223,9 @@ class CapAlertController extends ControllerBase {
       if (!empty($tids)) {
         $query->condition('field_status', $tids, 'IN');
       }
+      else {
+        $query->condition('field_status', [0], 'IN');
+      }
     }
 
     // Service code filter: use real vocabulary vid 'service_category'
@@ -213,13 +234,21 @@ class CapAlertController extends ControllerBase {
       $serviceCodes = explode(',', $parameters['service_code']);
       $categoryTids = [];
       foreach ($serviceCodes as $code) {
-        $tid = $this->mapServiceCodeToTaxonomy(trim($code));
-        if ($tid) {
-          $categoryTids[] = $tid;
+        $code = trim($code);
+        if ($code === '') {
+          continue;
         }
+        $categoryTids = array_merge(
+          $categoryTids,
+          $this->mapServiceCodeToTaxonomyIds($code, $context['root_id']),
+        );
       }
+      $categoryTids = array_values(array_unique($categoryTids));
       if (!empty($categoryTids)) {
         $query->condition('field_category', $categoryTids, 'IN');
+      }
+      else {
+        $query->condition('field_category', [0], 'IN');
       }
     }
 
@@ -233,15 +262,30 @@ class CapAlertController extends ControllerBase {
       }
     }
 
-    $siteUuid = (string) ($this->configFactory->get('system.site')->get('uuid') ?? '');
-    $encodeContext = $siteUuid
-      ? ['cap_feed_id' => 'urn:markaspot:cap:feed:' . $siteUuid]
-      : [];
+    $siteConfig = $this->configFactory->get('system.site');
+    $siteUuid = (string) ($siteConfig->get('uuid') ?? '');
+    $siteName = trim((string) ($siteConfig->get('name') ?? ''));
+    $feedUpdated = max(
+      (int) ($modeState['changed_at'] ?? $modeState['activated_at']),
+      (int) $this->state->get(CapFeedMutationTracker::stateKey($context['root_id']), 0),
+    );
+    $encodeContext = [
+      'cap_feed_author' => $siteName !== '' ? $siteName : 'Mark-a-Spot',
+      'cap_feed_updated' => gmdate('Y-m-d\TH:i:s\Z', $feedUpdated),
+    ];
+    if ($siteUuid !== '') {
+      $encodeContext['cap_feed_id'] = sprintf(
+        'urn:markaspot:cap:feed:%s:root-%d:scope-%d',
+        $siteUuid,
+        $context['root_id'],
+        $context['requested_id'],
+      );
+    }
 
     $xml = $this->capEncoder->encode($alerts, 'cap', $encodeContext);
 
     $response = new Response($xml);
-    $response->headers->set('Content-Type', 'application/cap+xml; charset=UTF-8');
+    $response->headers->set('Content-Type', 'application/atom+xml; charset=UTF-8');
     // PII may be present in the feed; prevent HTTP-layer caching (B1).
     $response->headers->set('Cache-Control', 'no-store');
     return $response;
@@ -265,17 +309,21 @@ class CapAlertController extends ControllerBase {
     $requestId = $this->getRequestId($id);
 
     $bundle = $this->config->get('bundle') ?? 'service_request';
-    $parameters = UrlHelper::filterQueryParameters($request->query->all());
-    $jurisdictionId = $this->resolveJurisdictionId($parameters, $bundle);
+    $parameters = $this->validateQueryParameters(
+      UrlHelper::filterQueryParameters($request->query->all()),
+    );
+    $context = $this->resolveEmergencyContext($parameters);
+    $modeState = $this->getActiveModeState($context['root_id']);
 
     $query = $this->entityTypeManager->getStorage('node')->getQuery()
       ->accessCheck(TRUE)
       ->condition('type', $bundle)
       ->condition('request_id', $requestId);
 
-    if ($jurisdictionId !== NULL) {
-      $query->condition('field_jurisdiction', $jurisdictionId);
-    }
+    $this->applyNodeJurisdictionScope($query, $bundle, $context['requested_id']);
+    $this->applyCapEligibilityScope($query, $bundle, $context['root_id']);
+
+    $query->condition('created', $modeState['activated_at'], '>=');
 
     $nids = $query->execute();
 
@@ -298,36 +346,139 @@ class CapAlertController extends ControllerBase {
   }
 
   /**
-   * Resolves the jurisdiction ID for the request.
+   * Resolves requested and root jurisdiction through the canonical service.
    *
-   * When the bundle has a field_jurisdiction field, the parameter is
-   * required -- a 400 is thrown if absent. On bundles without the field
-   * the parameter is accepted but NULL is returned (field ignored).
-   *
-   * @param array $parameters
-   *   Filtered query parameters.
-   * @param string $bundle
-   *   The node bundle to check.
-   *
-   * @return int|null
-   *   The jurisdiction ID, or NULL when not applicable.
-   *
-   * @throws \Symfony\Component\HttpKernel\Exception\BadRequestHttpException
-   *   When the field exists and the parameter is missing.
+   * @return array{requested_id: int, root_id: int}
+   *   The concrete request scope and emergency-state root scope.
    */
-  protected function resolveJurisdictionId(array $parameters, string $bundle): ?int {
+  private function resolveEmergencyContext(array $parameters): array {
+    $identifier = $parameters['jurisdiction_id'] ?? NULL;
+    if ($identifier !== NULL && !is_string($identifier) && !is_int($identifier)) {
+      throw new BadRequestHttpException('The jurisdiction_id parameter must be a scalar ID or slug.');
+    }
+    try {
+      return $this->emergencyService->resolveJurisdictionContext($identifier);
+    }
+    catch (\InvalidArgumentException $exception) {
+      throw new BadRequestHttpException($exception->getMessage(), $exception);
+    }
+  }
+
+  /**
+   * Validates and normalizes public CAP query values before typed operations.
+   *
+   * Symfony represents repeated bracket parameters as arrays. Passing those
+   * into strtotime(), explode(), or integer casts can otherwise produce a
+   * public TypeError/500 response.
+   *
+   * @return array<string, mixed>
+   *   Query parameters with supported scalar values normalized to strings.
+   */
+  private function validateQueryParameters(array $parameters): array {
+    $maxLengths = [
+      'jurisdiction_id' => 128,
+      'limit' => 10,
+      'page' => 10,
+      'offset' => 10,
+      'start_date' => 64,
+      'end_date' => 64,
+      'status' => 256,
+      'service_code' => 256,
+    ];
+    foreach ($maxLengths as $key => $maxLength) {
+      if (!array_key_exists($key, $parameters)) {
+        continue;
+      }
+      $value = $parameters[$key];
+      if (!is_string($value) && !is_int($value)) {
+        throw new BadRequestHttpException(sprintf('The %s parameter must be a scalar value.', $key));
+      }
+      $normalized = (string) $value;
+      if (strlen($normalized) > $maxLength) {
+        throw new BadRequestHttpException(sprintf('The %s parameter is too long.', $key));
+      }
+      if (in_array($key, ['limit', 'page', 'offset'], TRUE)
+        && !preg_match('/^\d+$/', $normalized)) {
+        throw new BadRequestHttpException(sprintf('The %s parameter must be a non-negative integer.', $key));
+      }
+      $numericMaximums = [
+        'limit' => self::MAX_LIMIT,
+        'page' => 10_000,
+        'offset' => 1_000_000,
+      ];
+      if (isset($numericMaximums[$key]) && (int) $normalized > $numericMaximums[$key]) {
+        throw new BadRequestHttpException(sprintf('The %s parameter exceeds the supported maximum.', $key));
+      }
+      if (in_array($key, ['status', 'service_code'], TRUE)) {
+        $values = array_filter(array_map('trim', explode(',', $normalized)), 'strlen');
+        if (count($values) > 20
+          || array_filter($values, static fn(string $item): bool => strlen($item) > 64) !== []) {
+          throw new BadRequestHttpException(sprintf('The %s filter contains too many or oversized values.', $key));
+        }
+        $normalized = implode(',', $values);
+      }
+      $parameters[$key] = $normalized;
+    }
+    return $parameters;
+  }
+
+  /**
+   * Applies the requested jurisdiction subtree to a node query.
+   */
+  private function applyNodeJurisdictionScope(QueryInterface $query, string $bundle, int $requestedId): void {
     $fields = $this->entityFieldManager->getFieldDefinitions('node', $bundle);
-    $hasField = isset($fields['field_jurisdiction']);
-
-    if (!$hasField) {
-      return NULL;
+    if (!isset($fields['field_jurisdiction'])) {
+      if ($requestedId > 0) {
+        $query->condition('nid', [0], 'IN');
+      }
+      return;
     }
 
-    if (empty($parameters['jurisdiction_id'])) {
-      throw new BadRequestHttpException('The jurisdiction_id parameter is required for multi-tenant installations.');
+    // Scope 0 is only valid on legacy installs without a jurisdiction field.
+    if ($requestedId <= 0) {
+      $query->condition('nid', [0], 'IN');
+      return;
     }
 
-    return (int) $parameters['jurisdiction_id'];
+    $nodeIds = array_values(array_unique(array_map(
+      'intval',
+      $this->hierarchyResolver->getNodeIdsInJurisdiction($requestedId),
+    )));
+    $query->condition('nid', $nodeIds !== [] ? $nodeIds : [0], 'IN');
+  }
+
+  /**
+   * Requires explicit staff approval and a category in the live root catalog.
+   */
+  private function applyCapEligibilityScope(QueryInterface $query, string $bundle, int $rootId): void {
+    if ($this->state->get('markaspot_cap.approval_field_ready') !== TRUE) {
+      $query->condition('nid', [0], 'IN');
+      return;
+    }
+
+    $fields = $this->entityFieldManager->getFieldDefinitions('node', $bundle);
+    if (!isset($fields['field_cap_publish'], $fields['field_category'])) {
+      $query->condition('nid', [0], 'IN');
+      return;
+    }
+
+    $query->condition('field_cap_publish', 1);
+    $categoryIds = array_values(array_map(
+      static fn(TermInterface $term): int => (int) $term->id(),
+      $this->emergencyService->getAvailableCategoryTerms($rootId),
+    ));
+    $query->condition('field_category', $categoryIds !== [] ? $categoryIds : [0], 'IN');
+  }
+
+  /**
+   * Reads one active mode snapshot or refuses to expose CAP data.
+   */
+  private function getActiveModeState(int $rootId): array {
+    $state = $this->emergencyService->getModeState($rootId);
+    if ($state['status'] !== 'active' || $state['activated_at'] === NULL) {
+      throw new NotFoundHttpException('CAP feed is unavailable outside an active emergency revision.');
+    }
+    return $state;
   }
 
   /**
@@ -382,29 +533,34 @@ class CapAlertController extends ControllerBase {
    *
    * @param string $serviceCode
    *   The service code value.
+   * @param int $rootJurisdictionId
+   *   The emergency-state root jurisdiction ID.
    *
-   * @return int|null
-   *   The taxonomy term ID or NULL.
+   * @return int[]
+   *   Matching taxonomy term IDs inside the selected root tree.
    */
-  private function mapServiceCodeToTaxonomy(string $serviceCode): ?int {
+  private function mapServiceCodeToTaxonomyIds(string $serviceCode, int $rootJurisdictionId): array {
     // Guard: only query field_service_code if it actually exists on the bundle.
     $fields = $this->entityFieldManager->getFieldDefinitions('taxonomy_term', 'service_category');
     if (!isset($fields['field_service_code'])) {
-      return NULL;
+      return [];
     }
 
-    $terms = $this->entityTypeManager->getStorage('taxonomy_term')
-      ->loadByProperties([
-        'vid' => 'service_category',
-        'field_service_code' => $serviceCode,
-      ]);
-
-    if (!empty($terms)) {
-      $term = reset($terms);
-      return (int) $term->id();
+    $query = $this->entityTypeManager->getStorage('taxonomy_term')->getQuery()
+      ->condition('vid', 'service_category')
+      ->condition('field_service_code', $serviceCode)
+      ->accessCheck(FALSE);
+    if ($rootJurisdictionId > 0) {
+      if (!isset($fields['field_jurisdiction'])) {
+        return [];
+      }
+      $jurisdictionIds = $this->hierarchyResolver->getTermJurisdictionIds($rootJurisdictionId);
+      if ($jurisdictionIds === []) {
+        return [];
+      }
+      $query->condition('field_jurisdiction', $jurisdictionIds, 'IN');
     }
-
-    return NULL;
+    return array_values(array_map('intval', $query->execute()));
   }
 
 }

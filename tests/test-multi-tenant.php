@@ -579,40 +579,25 @@ if (!\Drupal::moduleHandler()->moduleExists('markaspot_emergency')) {
   skip_test('markaspot_emergency not enabled');
 }
 else {
-  $ec = 'Drupal\markaspot_emergency\Controller\EmergencyModeController';
-  if (!class_exists($ec)) {
-    skip_test('Controller not found');
+  // Emergency mode service.
+  $emergency = \Drupal::service('markaspot_emergency.service');
+  $hierarchy = \Drupal::service('markaspot_group.hierarchy_resolver');
+  foreach ($jurs as $id => $j) {
+    $expected_root = $hierarchy->getRootJurisdictionId((int) $id);
+    $resolved_root = $emergency->resolveRootJurisdictionId((int) $id);
+    assert_equal($expected_root, $resolved_root, "Emergency {$j['label']}: resolves root jurisdiction");
+    $state = $emergency->getModeState((int) $id);
+    assert_equal($expected_root, $state['jurisdiction_id'], "Emergency {$j['label']}: state is root-scoped");
+    assert_true(is_int($state['revision']), "Emergency {$j['label']}: revision is integer");
   }
-  else {
-    $ctrl = \Drupal::classResolver()->getInstanceFromDefinition($ec);
 
-    // Check method signatures.
-    foreach ([
-      'getRegularPublishedTermIds',
-      'unpublishRegularCategories',
-      'createEmergencyCategories',
-      'restoreRegularCategories',
-    ] as $m) {
-      if (!method_exists($ctrl, $m)) {
-        skip_test("$m() not found");
-        continue;
-      }
-      $params = array_map(fn($p) => $p->getName(), (new \ReflectionMethod($ctrl, $m))->getParameters());
-      assert_true(in_array('jurisdictionId', $params), "Emergency $m() has jurisdictionId");
+  if (count($hierarchy->getAllRootJurisdictionIds()) > 1) {
+    try {
+      $emergency->resolveRootJurisdictionId(NULL);
+      assert_true(FALSE, 'Emergency unscoped multi-tenant resolution fails closed');
     }
-
-    // Read-only: getRegularPublishedTermIds per jurisdiction.
-    if (method_exists($ctrl, 'getRegularPublishedTermIds')) {
-      $ref = new \ReflectionMethod($ctrl, 'getRegularPublishedTermIds');
-      $ref->setAccessible(TRUE);
-
-      foreach ($jurs as $id => $j) {
-        $tids = $ref->invoke($ctrl, $id);
-        assert_equal($j['catCount'], count($tids), "Emergency {$j['label']}: {$j['catCount']} term IDs");
-      }
-
-      $tids_all = $ref->invoke($ctrl, NULL);
-      assert_equal($catN, count($tids_all), "Emergency NULL: $catN term IDs (fallback)");
+    catch (\InvalidArgumentException) {
+      assert_true(TRUE, 'Emergency unscoped multi-tenant resolution fails closed');
     }
   }
 }

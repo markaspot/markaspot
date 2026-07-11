@@ -1,0 +1,24 @@
+langcode: en
+status: true
+dependencies:
+  module:
+    - field_permissions
+    - node
+  enforced:
+    module:
+      - markaspot_cap
+third_party_settings:
+  field_permissions:
+    permission_type: custom
+id: node.field_cap_publish
+field_name: field_cap_publish
+entity_type: node
+type: boolean
+settings: {  }
+module: core
+locked: false
+cardinality: 1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

@@ -1,0 +1,130 @@
+<?php
+
+/**
+ * @file
+ * Install and update hooks for Mark-a-Spot CAP.
+ */
+
+use Drupal\Core\Utility\UpdateException;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
+use Drupal\markaspot_cap\Support\CapApprovalReadiness;
+
+/**
+ * Implements hook_install().
+ */
+function markaspot_cap_install(bool $is_syncing = FALSE): void {
+  $state = \Drupal::state();
+  $state->delete(CapApprovalReadiness::READY_STATE);
+  $state->set(CapApprovalReadiness::PENDING_STATE, TRUE);
+  $state->delete(CapApprovalReadiness::ERROR_STATE);
+  $state->delete(CapApprovalReadiness::BOOTSTRAP_AUDITED_STATE);
+  // ConfigImporter enables extensions before it imports their config entities.
+  // Leave CAP closed in that path; the cron hook revalidates after import.
+  if (!$is_syncing) {
+    CapApprovalReadiness::refresh();
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function markaspot_cap_uninstall(): void {
+  \Drupal::state()->delete(CapApprovalReadiness::READY_STATE);
+  \Drupal::state()->delete(CapApprovalReadiness::PENDING_STATE);
+  \Drupal::state()->delete(CapApprovalReadiness::ERROR_STATE);
+  \Drupal::state()->delete(CapApprovalReadiness::BOOTSTRAP_AUDITED_STATE);
+  $database = \Drupal::database();
+  $database->delete('key_value')
+    ->condition('collection', 'state')
+    ->condition('name', $database->escapeLike('markaspot_cap.feed_changed.') . '%', 'LIKE')
+    ->execute();
+}
+
+/**
+ * Adds the explicit staff-controlled CAP publication approval field.
+ */
+function markaspot_cap_update_11900(): string {
+  $state = \Drupal::state();
+  // New controller code can run before updb. Keep the feed empty until the
+  // approval field and any same-name legacy data have been proven safe.
+  $state->delete('markaspot_cap.approval_field_ready');
+  $storage = FieldStorageConfig::loadByName('node', 'field_cap_publish');
+  if (!$storage) {
+    $storage = FieldStorageConfig::create([
+      'field_name' => 'field_cap_publish',
+      'entity_type' => 'node',
+      'type' => 'boolean',
+      'module' => 'core',
+      'cardinality' => 1,
+      'translatable' => FALSE,
+      'settings' => [],
+      'third_party_settings' => [
+        'field_permissions' => ['permission_type' => 'custom'],
+      ],
+      'dependencies' => [
+        'enforced' => ['module' => ['markaspot_cap']],
+      ],
+    ]);
+  }
+  elseif ($storage->getType() !== 'boolean'
+    || $storage->getCardinality() !== 1
+    || $storage->isTranslatable()) {
+    throw new UpdateException('Existing node.field_cap_publish storage is incompatible. It must be a non-translatable single-value boolean field.');
+  }
+  $field = FieldConfig::loadByName('node', 'service_request', 'field_cap_publish');
+  if (!$field) {
+    $field = FieldConfig::create([
+      // The storage may be new and intentionally unsaved until all legacy
+      // preflight checks pass. Inject it so FieldConfig::postCreate() can
+      // validate the relationship without active-config lookup.
+      'field_storage' => $storage,
+      'bundle' => 'service_request',
+      'label' => 'Publish as CAP alert',
+      'description' => 'Staff approval required before this report can enter the CAP emergency feed.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+      'default_value' => [['value' => 0]],
+      'settings' => [
+        'on_label' => 'Approved',
+        'off_label' => 'Not approved',
+      ],
+      'dependencies' => [
+        'enforced' => ['module' => ['markaspot_cap']],
+      ],
+    ]);
+  }
+  elseif ($field->isTranslatable()) {
+    throw new UpdateException('Existing service_request.field_cap_publish must be non-translatable.');
+  }
+
+  CapApprovalReadiness::assertNoLegacyApprovalData();
+  CapApprovalReadiness::assertNoUnsafeApprovalRoleGrants();
+
+  $storage
+    ->setThirdPartySetting('field_permissions', 'permission_type', 'custom')
+    ->save();
+  // A compatible same-name field may predate this module. Never adopt a
+  // callback or a truthy default that auto-approves new citizen reports.
+  $field
+    ->setRequired(FALSE)
+    ->setDefaultValue([['value' => 0]])
+    ->set('default_value_callback', '')
+    ->save();
+
+  CapApprovalReadiness::markReady(TRUE);
+
+  return t('Added explicit staff approval for CAP alert publication.');
+}
+
+/**
+ * Migrates the legacy CAP default away from public dissemination.
+ */
+function markaspot_cap_update_11901(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_cap.settings');
+  if ($config->get('defaults.scope') !== 'Restricted') {
+    $config->set('defaults.scope', 'Restricted')->save();
+  }
+
+  return t('Changed the CAP default scope to Restricted.');
+}

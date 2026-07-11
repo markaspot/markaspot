@@ -269,6 +269,87 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Public child catalogs expose their root even when the parent is omitted.
+   *
+   * @covers ::getJurisdictions
+   */
+  public function testJurisdictionCatalogIncludesAuthoritativeRootId(): void {
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('condition')->willReturnSelf();
+    $query->method('sort')->willReturnSelf();
+    $query->method('execute')->willReturn([9]);
+    $this->groupStorage->method('getQuery')->willReturn($query);
+
+    $slug = new class {
+
+      /**
+       * Public field value.
+       */
+      public string $value = 'published-child';
+
+      /**
+       * Reports that the test field contains a value.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+    $parent = new class {
+
+      /**
+       * Referenced parent jurisdiction ID.
+       */
+      // phpcs:ignore Drupal.NamingConventions.ValidVariableName.LowerCamelName
+      public int $target_id = 7;
+
+      /**
+       * Reports that the test field contains a value.
+       */
+      public function isEmpty(): bool {
+        return FALSE;
+      }
+
+    };
+    $child = $this->createMock(GroupInterface::class);
+    $child->method('id')->willReturn('9');
+    $child->method('uuid')->willReturn('99999999-9999-4999-8999-999999999999');
+    $child->method('label')->willReturn('Published child');
+    $child->method('hasField')->willReturnCallback(
+      static fn(string $field): bool => in_array(
+        $field,
+        ['field_slug', 'field_parent_jurisdiction'],
+        TRUE,
+      ),
+    );
+    $child->method('get')->willReturnMap([
+      ['field_slug', $slug],
+      ['field_parent_jurisdiction', $parent],
+    ]);
+    $child->method('getCacheTags')->willReturn(['group:9']);
+    $child->method('getCacheMaxAge')->willReturn(-1);
+    $child->method('getCacheContexts')->willReturn([]);
+    $this->groupStorage->method('loadMultiple')->with([9])->willReturn([9 => $child]);
+    $hierarchyResolver = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchyResolver->method('getRootJurisdictionId')->with(9)->willReturn(7);
+    $controller = new MarkASpotSettingsController(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->streamWrapperManager,
+      $hierarchyResolver,
+      new EnterpriseFeatureGate(),
+      $this->organisationMetadataBuilder,
+    );
+
+    $data = json_decode($controller->getJurisdictions()->getContent(), TRUE);
+
+    $this->assertSame(9, $data['jurisdictions'][0]['id']);
+    $this->assertSame(7, $data['jurisdictions'][0]['rootId']);
+    $this->assertSame(7, $data['jurisdictions'][0]['parentId']);
+  }
+
+  /**
    * Tests getMarkASpotSettings() returns base config without jurisdiction.
    *
    * @covers ::getMarkASpotSettings

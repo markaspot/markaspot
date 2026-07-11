@@ -3,6 +3,11 @@
 # Node bundle to export as CAP alerts
 bundle: 'service_request'
 
+# Role IDs explicitly authorized to approve CAP publication. Each configured
+# role must have only `view field_cap_publish` and `edit field_cap_publish`.
+# An empty list keeps approval administrator-only.
+approval_roles: []
+
 # Sender identification (used as PII-safe senderName and areaDesc)
 sender:
   name: 'City Emergency Services'
@@ -12,7 +17,9 @@ defaults:
   category: 'Infra'
   urgency: 'Unknown'
   certainty: 'Observed'
-  scope: 'Public'
+  # Citizen report data is server-enforced as Restricted until a separate
+  # staff-curated and redacted CAP publication workflow is available.
+  scope: 'Restricted'
   msg_type: 'Alert'
 
 # Severity mapping for field_hazard_level (0=Unknown/Minor, 1=Minor, 2=Moderate, 3=Severe, 4=Extreme)

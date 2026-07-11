@@ -10,37 +10,53 @@ categories:
   restore_on_deactivation: true
   emergency_presets:
     - name: 'Injured Persons'
+      service_code: 'EMG-INJURED'
       icon: 'medical'
       color: '#FF0000'
       weight: 0
+      modes: ['disaster', 'crisis']
     - name: 'Blocked Roads'
+      service_code: 'EMG-ROADS'
       icon: 'road-barrier'
       color: '#FF6600'
       weight: 1
+      modes: ['disaster', 'crisis']
     - name: 'Shelter Needed'
+      service_code: 'EMG-SHELTER'
       icon: 'home'
       color: '#0066FF'
       weight: 2
+      modes: ['disaster', 'crisis']
     - name: 'Water/Food Needed'
+      service_code: 'EMG-SUPPLY'
       icon: 'water'
       color: '#00AA00'
       weight: 3
+      modes: ['disaster', 'crisis']
     - name: 'Missing Persons'
+      service_code: 'EMG-MISSING'
       icon: 'person'
       color: '#9900FF'
       weight: 4
+      modes: ['disaster', 'crisis']
     - name: 'Power Outage'
+      service_code: 'EMG-POWER'
       icon: 'power'
       color: '#FFCC00'
       weight: 5
+      modes: ['disaster', 'crisis']
     - name: 'Gas Leak'
+      service_code: 'EMG-GAS'
       icon: 'gas'
       color: '#FF3300'
       weight: 6
+      modes: ['disaster', 'crisis']
     - name: 'Building Damage'
+      service_code: 'EMG-BUILDING'
       icon: 'building'
       color: '#666666'
       weight: 7
+      modes: ['disaster', 'crisis']
 
 auto_deactivate:
   enabled: true
@@ -51,7 +67,6 @@ network_detection:
   auto_switch_threshold: '2g'
 
 allowed_urls:
-  - '/'
   - '/sos'
   - '/emergency'
   - '/api/emergency-mode/status'
@@ -59,6 +74,7 @@ allowed_urls:
 maintenance:
   unpublish_non_selected: false
   show_only_categories: []
+  jurisdictions: []
   force_redirect: false
   banner_text: ''
 

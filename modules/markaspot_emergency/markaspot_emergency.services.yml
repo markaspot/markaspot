@@ -8,6 +8,47 @@ services:
       - '@entity_field.manager'
       - '@current_user'
       - '@logger.factory'
+      - '@markaspot_group.hierarchy_resolver'
+      - '@lock'
+      - '@database'
+      - '@language_manager'
+      - '@serialization.phpserialize'
+
+  markaspot_emergency.entity_reference_selection_manager:
+    class: Drupal\markaspot_emergency\EntityReferenceSelection\EmergencySelectionPluginManager
+    decorates: plugin.manager.entity_reference_selection
+    arguments:
+      - '@markaspot_emergency.entity_reference_selection_manager.inner'
+      - '@request_stack'
+
+  markaspot_emergency.submission_idempotency_ledger:
+    class: Drupal\markaspot_emergency\Service\EmergencySubmissionIdempotencyLedger
+    arguments:
+      - '@database'
+      - '@datetime.time'
+
+  markaspot_emergency.submission_replay_responder:
+    class: Drupal\markaspot_emergency\Service\EmergencySubmissionReplayResponder
+    arguments:
+      - '@entity_type.manager'
+
+  Drupal\markaspot_emergency\Hook\EmergencyEntityHooks:
+    class: Drupal\markaspot_emergency\Hook\EmergencyEntityHooks
+    arguments:
+      - '@request_stack'
+      - '@markaspot_emergency.service'
+      - '@markaspot_emergency.submission_idempotency_ledger'
+    public: true
+
+  markaspot_emergency.submission_guard_subscriber:
+    class: Drupal\markaspot_emergency\EventSubscriber\EmergencySubmissionGuardSubscriber
+    arguments:
+      - '@markaspot_emergency.service'
+      - '@current_user'
+      - '@markaspot_emergency.submission_idempotency_ledger'
+      - '@markaspot_emergency.submission_replay_responder'
+    tags:
+      - { name: event_subscriber }
 
   # Backward-compat alias used by Form and legacy code; points to the controller
   # which now delegates to EmergencyModeService.
@@ -15,9 +56,7 @@ services:
     class: Drupal\markaspot_emergency\Controller\EmergencyModeController
     arguments:
       - '@config.factory'
-      - '@state'
-      - '@entity_type.manager'
       - '@current_user'
       - '@logger.factory'
       - '@markaspot_emergency.service'
-      - '@entity_field.manager'
+      - '@entity.repository'

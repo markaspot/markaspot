@@ -18,6 +18,16 @@ use Drupal\node\NodeInterface;
 class CapProcessorService {
 
   /**
+   * CAP scope enforced for citizen-originated reports.
+   */
+  private const RESTRICTED_SCOPE = 'Restricted';
+
+  /**
+   * Non-personal CAP restriction required for the restricted scope.
+   */
+  private const RESTRICTION = 'Operational emergency responders only';
+
+  /**
    * Radius (km) appended to every GPS circle element.
    */
   const CIRCLE_RADIUS_KM = 1;
@@ -93,15 +103,25 @@ class CapProcessorService {
     // CAP alert-level defaults from config, with built-in fallbacks.
     $defaults = (array) ($capConfig->get('defaults') ?: []);
     $msgType = $defaults['msg_type'] ?? 'Alert';
-    $scope = $defaults['scope'] ?? 'Public';
 
     $alert = [
       'identifier' => $node->get('request_id')->value,
       'sender' => $siteConfig->get('mail') ?? 'noreply@example.com',
       'sent' => $this->formatDateTime((int) $node->get('created')->value),
+      // Atom metadata is transport-only and is not serialized as a CAP node.
+      // Use changed time so later staff approval/content changes invalidate
+      // feed consumers while CAP `sent` retains its original event meaning.
+      '_atom_updated' => $this->formatDateTime(max(
+        (int) $node->get('created')->value,
+        $node->getChangedTime(),
+      )),
       'status' => 'Actual',
       'msgType' => $msgType,
-      'scope' => $scope,
+      // Citizen-originated reports may contain sensitive free text. Keep the
+      // CAP dissemination scope server-enforced until staff-curated, redacted
+      // CAP content exists as a separate workflow.
+      'scope' => self::RESTRICTED_SCOPE,
+      'restriction' => self::RESTRICTION,
       'info' => $this->buildInfoElement($node, $senderName, $defaults),
     ];
 
@@ -122,15 +142,19 @@ class CapProcessorService {
    *   CAP info structure.
    */
   private function buildInfoElement(NodeInterface $node, string $senderName, array $defaults = []): array {
+    $event = $node->get('field_category')->entity
+      ? $node->get('field_category')->entity->label()
+      : 'Unknown';
     $info = [
       'category' => $defaults['category'] ?? 'Other',
-      'event' => $node->get('field_category')->entity ? $node->get('field_category')->entity->label() : 'Unknown',
+      'event' => $event,
       'urgency' => $defaults['urgency'] ?? 'Expected',
       'severity' => $this->mapHazardLevelToSeverity($node, $defaults),
       'certainty' => $defaults['certainty'] ?? 'Observed',
       'effective' => $this->formatDateTime((int) $node->get('created')->value),
-      'headline' => $node->getTitle(),
-      'description' => $this->getDescription($node),
+      // Never use the citizen-supplied node title or body in CAP output. The
+      // category is maintained by staff and gives responders neutral context.
+      'headline' => sprintf('%s report', $event),
       // PII-safe: always comes from config, not from field_name.
       'senderName' => $senderName,
     ];
@@ -233,22 +257,6 @@ class CapProcessorService {
       return (string) $configMapping['default'];
     }
     return 'Minor';
-  }
-
-  /**
-   * Get description from node body (HTML stripped).
-   *
-   * @param \Drupal\node\NodeInterface $node
-   *   The service request node.
-   *
-   * @return string
-   *   Plain-text description.
-   */
-  private function getDescription(NodeInterface $node): string {
-    if ($node->hasField('body') && !$node->get('body')->isEmpty()) {
-      return strip_tags($node->get('body')->value);
-    }
-    return '';
   }
 
   /**

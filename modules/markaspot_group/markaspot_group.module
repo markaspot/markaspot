@@ -4375,13 +4375,34 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|fal
     return FALSE;
   }
 
-  // Load all jurisdiction groups with boundaries.
+  // Never let an overlapping boundary move an already scoped report into a
+  // different tenant root. The submitted field wins; legacy unscoped creates
+  // may derive one unambiguous root from their category or single-root site.
+  $scope_root_id = _markaspot_group_boundary_scope_root($node);
+  if ($scope_root_id === NULL) {
+    \Drupal::logger('markaspot_group')->warning(
+      'Skipped sub-jurisdiction boundary assignment for node @nid because no unambiguous root scope was available.',
+      ['@nid' => $node->id() ?: 'new']
+    );
+    return FALSE;
+  }
+
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy_resolver */
+  $hierarchy_resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $candidate_ids = $hierarchy_resolver->getDescendantIds($scope_root_id);
+  if ($candidate_ids === []) {
+    return FALSE;
+  }
+
+  // Load only boundary candidates inside the verified root tree.
   $group_storage = \Drupal::entityTypeManager()->getStorage('group');
-  $group_ids = $group_storage->getQuery()
+  $group_id_key = $group_storage->getEntityType()->getKey('id');
+  $group_query = $group_storage->getQuery()
     ->accessCheck(FALSE)
     ->condition('type', _markaspot_group_jurisdiction_group_type())
-    ->exists('field_boundary')
-    ->execute();
+    ->exists('field_boundary');
+  $group_query->condition($group_id_key, $candidate_ids, 'IN');
+  $group_ids = $group_query->execute();
 
   if (empty($group_ids)) {
     return FALSE;
@@ -4485,6 +4506,49 @@ function _markaspot_group_assign_sub_jurisdictions(NodeInterface $node): int|fal
 
   // Fallback: return first match if all are parents (shouldn't happen).
   return $matched_child_jur_ids[0];
+}
+
+/**
+ * Resolves the root that bounds automatic child-jurisdiction assignment.
+ */
+function _markaspot_group_boundary_scope_root(NodeInterface $node): ?int {
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $resolver */
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+
+  $submitted_jurisdiction_id = _markaspot_group_node_jurisdiction_id($node);
+  if ($submitted_jurisdiction_id !== NULL) {
+    return $resolver->getRootJurisdictionId($submitted_jurisdiction_id);
+  }
+
+  if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+    $category = $node->get('field_category')->entity;
+    if ($category instanceof TermInterface
+      && $category->hasField('field_jurisdiction')
+      && !$category->get('field_jurisdiction')->isEmpty()) {
+      $category_roots = [];
+      foreach ($category->get('field_jurisdiction')->getValue() as $item) {
+        $jurisdiction_id = (int) ($item['target_id'] ?? 0);
+        if ($jurisdiction_id <= 0) {
+          continue;
+        }
+        $root_id = $resolver->getRootJurisdictionId($jurisdiction_id);
+        if ($root_id !== NULL) {
+          $category_roots[] = $root_id;
+        }
+      }
+      $category_roots = array_values(array_unique($category_roots));
+      if (count($category_roots) === 1) {
+        return $category_roots[0];
+      }
+      return NULL;
+    }
+  }
+
+  $root_ids = array_values(array_unique(array_map(
+    'intval',
+    $resolver->getAllRootJurisdictionIds(),
+  )));
+  return count($root_ids) === 1 ? $root_ids[0] : NULL;
 }
 
 /**

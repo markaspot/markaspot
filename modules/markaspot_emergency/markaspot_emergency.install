@@ -2,192 +2,796 @@
 
 /**
  * @file
- * Install, update and uninstall functions for the Mark-a-Spot Emergency module.
+ * Install, update and uninstall functions for Mark-a-Spot Emergency.
  */
 
+use Drupal\Core\Utility\UpdateException;
+use Drupal\field\Entity\FieldConfig;
+use Drupal\field\Entity\FieldStorageConfig;
 use Drupal\markaspot_emergency\Service\EmergencyModeService;
+use Drupal\markaspot_emergency\Service\EmergencySubmissionIdempotencyLedger;
+
+/**
+ * Implements hook_schema().
+ */
+function markaspot_emergency_schema(): array {
+  return [
+    EmergencySubmissionIdempotencyLedger::TABLE => [
+      'description' => 'Bounded replay records for accepted emergency Lite submissions.',
+      'fields' => [
+        'idempotency_key' => [
+          'description' => 'Client-provided UUID, unique across the retained ledger.',
+          'type' => 'varchar',
+          'length' => 36,
+          'not null' => TRUE,
+        ],
+        'root_id' => [
+          'description' => 'Root jurisdiction ID pinned by the submission.',
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'revision' => [
+          'description' => 'Emergency mode revision pinned by the submission.',
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+        'request_hash' => [
+          'description' => 'SHA-256 fingerprint of the exact JSON:API document.',
+          'type' => 'varchar',
+          'length' => 64,
+          'not null' => TRUE,
+        ],
+        'node_uuid' => [
+          'description' => 'UUID of the persisted service request to replay.',
+          'type' => 'varchar',
+          'length' => 36,
+          'not null' => TRUE,
+        ],
+        'created' => [
+          'description' => 'Unix timestamp used for bounded retry retention.',
+          'type' => 'int',
+          'unsigned' => TRUE,
+          'not null' => TRUE,
+        ],
+      ],
+      'primary key' => ['idempotency_key'],
+      'indexes' => [
+        'scope' => ['root_id', 'revision'],
+        'expires' => ['created'],
+      ],
+    ],
+  ];
+}
 
 /**
  * Implements hook_install().
  */
-function markaspot_emergency_install() {
-  // Fields are created automatically from config/install.
-  // Clear any leftover runtime state from a previous install.
-  \Drupal::state()->delete(EmergencyModeService::STATE_STATUS);
-  \Drupal::state()->delete(EmergencyModeService::STATE_ACTIVATED_AT);
-  \Drupal::state()->delete(EmergencyModeService::STATE_ACTIVATED_BY);
-  \Drupal::state()->delete('markaspot_emergency.original_published_tids');
-
-  // Create emergency categories (unpublished by default) from presets.
-  $config = \Drupal::config('markaspot_emergency.settings');
-  $presets = $config->get('categories.emergency_presets');
-  $storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
-
-  if (!empty($presets)) {
-    $createdCount = 0;
-    foreach ($presets as $preset) {
-      $existing = $storage->loadByProperties([
-        'vid' => 'service_category',
-        'name' => $preset['name'],
-      ]);
-
-      if (empty($existing)) {
-        $term = $storage->create([
-          'vid' => 'service_category',
-          'name' => $preset['name'],
-          'status' => 0,
-          'field_emergency_category' => TRUE,
-          'weight' => $preset['weight'] ?? 0,
-        ]);
-
-        // Use the canonical field names; skip if field absent.
-        if ($term->hasField('field_category_icon') && !empty($preset['icon'])) {
-          $term->set('field_category_icon', $preset['icon']);
-        }
-        if ($term->hasField('field_category_hex') && !empty($preset['color'])) {
-          $term->set('field_category_hex', $preset['color']);
-        }
-
-        // Assign to first jurisdiction if the field exists (multi-tenant).
-        if ($term->hasField('field_jurisdiction')) {
-          $jids = \Drupal::entityTypeManager()
-            ->getStorage('group')
-            ->getQuery()
-            ->condition('type', 'jur')
-            ->range(0, 1)
-            ->accessCheck(FALSE)
-            ->execute();
-          if (!empty($jids)) {
-            $term->set('field_jurisdiction', reset($jids));
-          }
-        }
-
-        $term->save();
-        $createdCount++;
-      }
-    }
-
-    if ($createdCount > 0) {
-      \Drupal::messenger()->addMessage(t('Created @count emergency categories (unpublished).', [
-        '@count' => $createdCount,
-      ]));
-    }
+function markaspot_emergency_install(): void {
+  $state = \Drupal::state();
+  $state->delete(EmergencyModeService::STATE_STATUS);
+  $state->delete(EmergencyModeService::STATE_ACTIVATED_AT);
+  $state->delete(EmergencyModeService::STATE_ACTIVATED_BY);
+  $state->delete(EmergencyModeService::STATE_ACTIVE_INDEX);
+  $state->delete('markaspot_emergency.original_published_tids');
+  $database = \Drupal::database();
+  foreach ([
+    EmergencyModeService::STATE_PREFIX,
+    EmergencyModeService::STATE_POLICY_PREFIX,
+    'markaspot_emergency.original_published_tids',
+  ] as $prefix) {
+    $database->delete('key_value')
+      ->condition('collection', 'state')
+      ->condition('name', $database->escapeLike($prefix) . '%', 'LIKE')
+      ->execute();
   }
 
-  \Drupal::messenger()->addMessage(t('Mark-a-Spot Emergency module installed successfully.'));
-  \Drupal::messenger()->addMessage(t('Emergency categories can now be configured at /admin/config/markaspot/emergency'));
+  // Presets are deliberately created lazily after an operator selects a root
+  // jurisdiction. Choosing an arbitrary "first" tenant is unsafe.
+  \Drupal::messenger()->addStatus(t('Mark-a-Spot Emergency installed. Configure it at /admin/config/markaspot/emergency.'));
 }
 
 /**
  * Implements hook_uninstall().
- *
- * Fields are deleted automatically via dependencies.enforced.module in
- * config/install -- no manual deletion needed here.
  */
-function markaspot_emergency_uninstall() {
-  $storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
-
-  // Restore regular categories from State API snapshot before uninstalling.
+function markaspot_emergency_uninstall(): void {
+  /** @var \Drupal\markaspot_emergency\Service\EmergencyModeService $service */
+  $service = \Drupal::service('markaspot_emergency.service');
   $state = \Drupal::state();
-  $snapshotKey = 'markaspot_emergency.original_published_tids';
-  $snapshot = $state->get($snapshotKey, []);
-  if (!empty($snapshot)) {
-    $terms = $storage->loadMultiple($snapshot);
-    foreach ($terms as $term) {
-      if ($term) {
-        $term->set('status', 1);
-        $term->save();
+  $database = \Drupal::database();
+  $indexed_root_ids = $service->getActiveJurisdictionIds();
+  $legacy_status = (string) $state->get(EmergencyModeService::STATE_STATUS, 'off');
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy */
+  $hierarchy = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $available_root_ids = array_values(array_unique(array_map(
+    'intval',
+    $hierarchy->getAllRootJurisdictionIds(),
+  )));
+
+  // A module can be uninstalled after new code is deployed but before update
+  // hooks have converted legacy global State. Promote that single-site record
+  // first so normal locked deactivation restores its publication snapshot.
+  if ($legacy_status === 'active') {
+    $legacy_root_id = _markaspot_emergency_resolve_legacy_uninstall_root($available_root_ids);
+    $snapshot_prefix = 'markaspot_emergency.original_published_tids';
+    $snapshot_names = $database->select('key_value', 'kv')
+      ->fields('kv', ['name'])
+      ->condition('collection', 'state')
+      ->condition('name', $database->escapeLike($snapshot_prefix) . '%', 'LIKE')
+      ->execute()
+      ->fetchCol();
+    $legacy_snapshots = [];
+    foreach ($snapshot_names as $snapshot_name) {
+      $snapshot = $state->get((string) $snapshot_name);
+      if (is_array($snapshot)) {
+        $legacy_snapshots[(string) $snapshot_name] = $snapshot;
       }
     }
-    \Drupal::messenger()->addMessage(t('Restored @count regular categories to published status from emergency snapshot.', [
-      '@count' => count($terms),
-    ]));
-    $state->delete($snapshotKey);
+    try {
+      $legacy_snapshot = _markaspot_emergency_select_legacy_snapshot(
+        $legacy_snapshots,
+        $legacy_root_id,
+      );
+    }
+    catch (UpdateException $exception) {
+      throw new \RuntimeException(
+        'Cannot uninstall Mark-a-Spot Emergency while legacy snapshot State is ambiguous: ' . $exception->getMessage(),
+        0,
+        $exception,
+      );
+    }
+    if ($legacy_snapshot === NULL) {
+      throw new \RuntimeException('Cannot uninstall Mark-a-Spot Emergency while legacy emergency mode is active without a restore snapshot.');
+    }
+
+    $state_key = EmergencyModeService::STATE_PREFIX . $legacy_root_id;
+    $existing_record = $state->get($state_key);
+    if (is_array($existing_record)) {
+      $existing_snapshot = array_values(array_unique(array_map(
+        'intval',
+        (array) ($existing_record['snapshot'] ?? []),
+      )));
+      sort($existing_snapshot, SORT_NUMERIC);
+      if (($existing_record['status'] ?? 'off') !== 'active'
+        || $existing_snapshot !== $legacy_snapshot) {
+        throw new \RuntimeException('Cannot uninstall Mark-a-Spot Emergency while legacy and per-root runtime State disagree.');
+      }
+    }
+    else {
+      $config = \Drupal::config('markaspot_emergency.settings');
+      $state->set($state_key, [
+        'jurisdiction_id' => $legacy_root_id,
+        'status' => 'active',
+        'activated_at' => $state->get(EmergencyModeService::STATE_ACTIVATED_AT),
+        'activated_by' => $state->get(EmergencyModeService::STATE_ACTIVATED_BY),
+        'mode_type' => (string) ($config->get('emergency_mode.mode_type') ?: 'disaster'),
+        'force_redirect' => (bool) $config->get('emergency_mode.force_redirect'),
+        'lite_ui' => (bool) $config->get('emergency_mode.lite_ui'),
+        'revision' => 1,
+        'snapshot' => $legacy_snapshot,
+      ]);
+    }
+    $indexed_root_ids[] = $legacy_root_id;
+    $state->set(EmergencyModeService::STATE_ACTIVE_INDEX, array_values(array_unique(array_map(
+      'intval',
+      $indexed_root_ids,
+    ))));
   }
 
-  // Delete all emergency categories.
-  $emergencyTerms = $storage->loadByProperties([
-    'vid' => 'service_category',
-    'field_emergency_category' => TRUE,
-  ]);
-
-  if (!empty($emergencyTerms)) {
-    $storage->delete($emergencyTerms);
-    \Drupal::messenger()->addMessage(t('Deleted @count emergency categories.', [
-      '@count' => count($emergencyTerms),
-    ]));
+  $state_names = $database->select('key_value', 'kv')
+    ->fields('kv', ['name'])
+    ->condition('collection', 'state')
+    ->condition('name', $database->escapeLike(EmergencyModeService::STATE_PREFIX) . '%', 'LIKE')
+    ->execute()
+    ->fetchCol();
+  $state_records = [];
+  foreach ($state_names as $state_name) {
+    $state_records[(string) $state_name] = $state->get((string) $state_name);
   }
 
-  // Clear all runtime state keys.
+  foreach (_markaspot_emergency_active_root_ids_from_records(
+    $state_records,
+    $indexed_root_ids,
+    $legacy_status,
+    $available_root_ids,
+  ) as $root_id) {
+    try {
+      $service->deactivate($root_id);
+    }
+    catch (\Throwable $exception) {
+      // Never discard an orphaned restore snapshot merely to let uninstall
+      // continue. An operator must repair/recreate the root or recover the
+      // snapshot explicitly before removing the module.
+      throw new \RuntimeException(sprintf(
+        'Cannot uninstall Mark-a-Spot Emergency while root jurisdiction %d has an unrecoverable active snapshot: %s',
+        $root_id,
+        $exception->getMessage(),
+      ), 0, $exception);
+    }
+  }
+
+  // Service categories are content, not disposable module configuration.
+  // They may be referenced by historical reports or may have existed before
+  // this module adopted their stable service codes. Keep them on uninstall;
+  // Drupal removes the module-owned field/config objects separately.
   $state->delete(EmergencyModeService::STATE_STATUS);
   $state->delete(EmergencyModeService::STATE_ACTIVATED_AT);
   $state->delete(EmergencyModeService::STATE_ACTIVATED_BY);
-
-  // Delete the global snapshot key and all jurisdiction-scoped variants
-  // (e.g. 'markaspot_emergency.original_published_tids.7').
+  $state->delete(EmergencyModeService::STATE_ACTIVE_INDEX);
   $state->delete('markaspot_emergency.original_published_tids');
-  \Drupal::database()
-    ->delete('key_value')
-    ->condition('collection', 'state')
-    ->condition('name', 'markaspot_emergency.original_published_tids.%', 'LIKE')
-    ->execute();
+  foreach ([
+    EmergencyModeService::STATE_PREFIX,
+    EmergencyModeService::STATE_POLICY_PREFIX,
+    'markaspot_emergency.original_published_tids',
+  ] as $prefix) {
+    $database->delete('key_value')
+      ->condition('collection', 'state')
+      ->condition('name', $database->escapeLike($prefix) . '%', 'LIKE')
+      ->execute();
+  }
+}
 
-  \Drupal::messenger()->addMessage(t('Mark-a-Spot Emergency module uninstalled successfully.'));
+/**
+ * Adds mode assignments and migrates legacy emergency categories/state.
+ */
+function markaspot_emergency_update_11900(): string {
+  $state = \Drupal::state();
+  $legacy_status = (string) $state->get(EmergencyModeService::STATE_STATUS, 'off');
+  /** @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface $hierarchy */
+  $hierarchy = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $root_ids = array_values(array_unique(array_map('intval', $hierarchy->getAllRootJurisdictionIds())));
+  $group_storage = \Drupal::entityTypeManager()->getStorage('group');
+  $group_bundle_key = $group_storage->getEntityType()->getKey('bundle') ?: 'type';
+  $jurisdiction_group_type = (string) (\Drupal::config('markaspot_open311.settings')
+    ->get('jurisdiction_group_type') ?: 'jur');
+  $has_jurisdiction_groups = (bool) $group_storage->getQuery()
+    ->accessCheck(FALSE)
+    ->condition($group_bundle_key, $jurisdiction_group_type)
+    ->range(0, 1)
+    ->execute();
+  _markaspot_emergency_assert_root_discovery_safe($root_ids, $has_jurisdiction_groups);
+  $legacy_maintenance_ids = array_values(array_unique(array_map(
+    'intval',
+    (array) (\Drupal::config('markaspot_emergency.settings')->get('maintenance.show_only_categories') ?: []),
+  )));
+
+  if ($legacy_status === 'active' && count($root_ids) > 1) {
+    throw new UpdateException('Deactivate the legacy global emergency mode before updating a multi-tenant installation. Its category snapshot cannot be assigned safely to one jurisdiction.');
+  }
+  if ($legacy_maintenance_ids !== [] && count($root_ids) > 1) {
+    throw new UpdateException('Legacy maintenance categories cannot be assigned safely across multiple root jurisdictions. Clear or migrate maintenance.show_only_categories per root before updating.');
+  }
+
+  // Validate the only non-reconstructable runtime data before any schema or
+  // entity mutation. Field DDL may commit independently on some databases.
+  $root_id = $root_ids[0] ?? 0;
+  $legacy_snapshot = NULL;
+  if ($legacy_status === 'active') {
+    $snapshot_prefix = 'markaspot_emergency.original_published_tids';
+    $database = \Drupal::database();
+    $snapshot_names = $database->select('key_value', 'kv')
+      ->fields('kv', ['name'])
+      ->condition('collection', 'state')
+      ->condition('name', $database->escapeLike($snapshot_prefix) . '%', 'LIKE')
+      ->execute()
+      ->fetchCol();
+    $legacy_snapshots = [];
+    foreach ($snapshot_names as $snapshot_name) {
+      $value = $state->get((string) $snapshot_name);
+      if (is_array($value)) {
+        $legacy_snapshots[(string) $snapshot_name] = $value;
+      }
+    }
+    $legacy_snapshot = _markaspot_emergency_select_legacy_snapshot($legacy_snapshots, $root_id);
+    if ($legacy_snapshot === NULL) {
+      throw new UpdateException('The active legacy emergency mode has no category snapshot. Deactivate it before updating so deactivation cannot unpublish an unknown category set.');
+    }
+  }
+
+  $mode_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_emergency_modes');
+  if (!$mode_storage) {
+    $mode_storage = FieldStorageConfig::create([
+      'field_name' => 'field_emergency_modes',
+      'entity_type' => 'taxonomy_term',
+      'type' => 'list_string',
+      'module' => 'options',
+      'cardinality' => -1,
+      'translatable' => FALSE,
+      'settings' => [
+        'allowed_values' => [
+          'disaster' => 'Disaster',
+          'crisis' => 'Crisis',
+          'maintenance' => 'Maintenance',
+        ],
+      ],
+    ]);
+    $storage_dependencies = (array) $mode_storage->get('dependencies');
+    $storage_dependencies['enforced']['module'] = ['markaspot_emergency'];
+    $mode_storage
+      ->set('dependencies', $storage_dependencies)
+      ->save();
+  }
+  else {
+    $allowed_modes = (array) $mode_storage->getSetting('allowed_values');
+    if ($mode_storage->getType() !== 'list_string'
+      || $mode_storage->getCardinality() !== -1
+      || $mode_storage->isTranslatable()
+      || array_diff(EmergencyModeService::MODES, array_keys($allowed_modes)) !== []) {
+      throw new UpdateException('Existing field_emergency_modes storage is incompatible. It must be a non-translatable unlimited list_string containing disaster, crisis, and maintenance.');
+    }
+  }
+
+  $mode_field = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_emergency_modes');
+  if (!$mode_field) {
+    $mode_field = FieldConfig::create([
+      'field_name' => 'field_emergency_modes',
+      'entity_type' => 'taxonomy_term',
+      'bundle' => 'service_category',
+      'label' => 'Emergency modes',
+      'description' => 'Select the crisis profiles in which this category is available.',
+      'required' => FALSE,
+      'translatable' => FALSE,
+    ]);
+    $field_dependencies = (array) $mode_field->get('dependencies');
+    $field_dependencies['enforced']['module'] = ['markaspot_emergency'];
+    $mode_field
+      ->set('dependencies', $field_dependencies)
+      ->save();
+  }
+  elseif ($mode_field->isTranslatable()) {
+    throw new UpdateException('Existing service_category.field_emergency_modes must be non-translatable.');
+  }
+
+  \Drupal::service('entity_field.manager')->clearCachedFieldDefinitions();
+  $storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $preset_codes = [
+    'Injured Persons' => 'EMG-INJURED',
+    'Blocked Roads' => 'EMG-ROADS',
+    'Shelter Needed' => 'EMG-SHELTER',
+    'Water/Food Needed' => 'EMG-SUPPLY',
+    'Missing Persons' => 'EMG-MISSING',
+    'Power Outage' => 'EMG-POWER',
+    'Gas Leak' => 'EMG-GAS',
+    'Building Damage' => 'EMG-BUILDING',
+  ];
+  $all_ids = $storage->getQuery()
+    ->condition('vid', 'service_category')
+    ->accessCheck(FALSE)
+    ->execute();
+  $all_terms = $storage->loadMultiple($all_ids);
+  $legacy_terms = array_filter(
+    $all_terms,
+    static fn(mixed $term): bool => $term->hasField('field_emergency_category')
+      && (bool) $term->get('field_emergency_category')->getString(),
+  );
+  $term_root_scopes = static function (mixed $term) use ($hierarchy): array {
+    $jurisdiction_ids = [];
+    if ($term->hasField('field_jurisdiction')) {
+      $jurisdiction_ids = array_values(array_unique(array_filter(array_map(
+        static fn(array $item): int => (int) ($item['target_id'] ?? 0),
+        $term->get('field_jurisdiction')->getValue(),
+      ))));
+    }
+    if ($jurisdiction_ids === []) {
+      return [0];
+    }
+    $scopes = [];
+    foreach ($jurisdiction_ids as $jurisdiction_id) {
+      $scope = $hierarchy->getRootJurisdictionId($jurisdiction_id);
+      if ($scope === NULL) {
+        throw new UpdateException(sprintf(
+          'Service category %d references jurisdiction %d, whose root cannot be resolved.',
+          (int) $term->id(),
+          $jurisdiction_id,
+        ));
+      }
+      $scopes[] = (int) $scope;
+    }
+    $scopes = array_values(array_unique($scopes));
+    sort($scopes, SORT_NUMERIC);
+    return $scopes;
+  };
+
+  $preset_candidates = [];
+  foreach ($legacy_terms as $term) {
+    $name = $term->getName();
+    if (!isset($preset_codes[$name])) {
+      continue;
+    }
+    foreach ($term_root_scopes($term) as $scope_id) {
+      $candidate_key = $scope_id . ':' . $name;
+      $preset_candidates[$candidate_key][] = (int) $term->id();
+    }
+  }
+
+  $preset_code_owners = [];
+  foreach ($all_terms as $term) {
+    if (!$term->hasField('field_service_code')) {
+      continue;
+    }
+    $service_code = trim((string) $term->get('field_service_code')->getString());
+    if ($service_code === '' || !in_array($service_code, $preset_codes, TRUE)) {
+      continue;
+    }
+    foreach ($term_root_scopes($term) as $scope_id) {
+      $owner_key = $scope_id . ':' . $service_code;
+      $preset_code_owners[$owner_key][] = (int) $term->id();
+    }
+  }
+  foreach ($preset_code_owners as $owner_key => $owner_ids) {
+    if (count(array_unique($owner_ids)) > 1) {
+      throw new UpdateException(sprintf(
+        'Stable emergency service code %s is assigned to several categories in one root jurisdiction. Resolve the collision before updating.',
+        substr($owner_key, strpos($owner_key, ':') + 1),
+      ));
+    }
+  }
+
+  $code_assignments = [];
+  foreach ($legacy_terms as $term) {
+    $name = $term->getName();
+    if (!isset($preset_codes[$name]) || !$term->hasField('field_service_code')) {
+      continue;
+    }
+    $target_code = $preset_codes[$name];
+    $current_code = trim((string) $term->get('field_service_code')->getString());
+    if ($current_code !== '' && $current_code !== $target_code) {
+      throw new UpdateException(sprintf(
+        'Legacy emergency category %s already has conflicting service code %s. Resolve it before updating.',
+        $name,
+        $current_code,
+      ));
+    }
+    if ($current_code === $target_code) {
+      continue;
+    }
+    foreach ($term_root_scopes($term) as $scope_id) {
+      $candidate_key = $scope_id . ':' . $name;
+      if (count(array_unique($preset_candidates[$candidate_key] ?? [])) !== 1) {
+        throw new UpdateException(sprintf(
+          'Legacy emergency category %s is ambiguous in root jurisdiction %d. Resolve duplicate names before updating.',
+          $name,
+          $scope_id,
+        ));
+      }
+      $owner_key = $scope_id . ':' . $target_code;
+      $owners = array_values(array_unique($preset_code_owners[$owner_key] ?? []));
+      if ($owners !== [] && $owners !== [(int) $term->id()]) {
+        throw new UpdateException(sprintf(
+          'Stable emergency service code %s is already owned by another category in root jurisdiction %d.',
+          $target_code,
+          $scope_id,
+        ));
+      }
+    }
+    $code_assignments[(int) $term->id()] = $target_code;
+  }
+
+  $migrated = 0;
+  $coded = 0;
+  foreach ($legacy_terms as $term) {
+    $changed = FALSE;
+    if ($term->hasField('field_emergency_modes') && $term->get('field_emergency_modes')->isEmpty()) {
+      $term->set('field_emergency_modes', ['disaster', 'crisis']);
+      $migrated++;
+      $changed = TRUE;
+    }
+
+    $term_id = (int) $term->id();
+    if (isset($code_assignments[$term_id])) {
+      $term->set('field_service_code', $code_assignments[$term_id]);
+      $coded++;
+      $changed = TRUE;
+    }
+
+    if ($changed) {
+      $term->save();
+    }
+  }
+
+  if ($legacy_status === 'active') {
+    $config = \Drupal::config('markaspot_emergency.settings');
+    $record = [
+      'status' => 'active',
+      'activated_at' => $state->get(EmergencyModeService::STATE_ACTIVATED_AT),
+      'activated_by' => $state->get(EmergencyModeService::STATE_ACTIVATED_BY),
+      'mode_type' => (string) ($config->get('emergency_mode.mode_type') ?: 'disaster'),
+      'force_redirect' => (bool) $config->get('emergency_mode.force_redirect'),
+      'lite_ui' => (bool) $config->get('emergency_mode.lite_ui'),
+      'revision' => 1,
+      'snapshot' => $legacy_snapshot,
+    ];
+    $state->set(EmergencyModeService::STATE_PREFIX . $root_id, $record);
+    $state->set(EmergencyModeService::STATE_ACTIVE_INDEX, [$root_id]);
+  }
+
+  $state->delete(EmergencyModeService::STATE_STATUS);
+  $state->delete(EmergencyModeService::STATE_ACTIVATED_AT);
+  $state->delete(EmergencyModeService::STATE_ACTIVATED_BY);
+  $state->delete('markaspot_emergency.original_published_tids');
+  $database = \Drupal::database();
+  $legacy_snapshot_names = $database->select('key_value', 'kv')
+    ->fields('kv', ['name'])
+    ->condition('collection', 'state')
+    ->condition('name', $database->escapeLike('markaspot_emergency.original_published_tids') . '.%', 'LIKE')
+    ->execute()
+    ->fetchCol();
+  foreach ($legacy_snapshot_names as $legacy_snapshot_name) {
+    $state->delete((string) $legacy_snapshot_name);
+  }
+
+  $editable = \Drupal::configFactory()->getEditable('markaspot_emergency.settings');
+  foreach (['status', 'activated_at', 'activated_by', 'bypass_roles'] as $legacy_key) {
+    $editable->clear('emergency_mode.' . $legacy_key);
+  }
+  $editable->set('allowed_urls', array_values(array_filter(
+    (array) $editable->get('allowed_urls'),
+    static fn(mixed $path): bool => is_string($path) && $path !== '/',
+  )));
+  $presets = (array) $editable->get('categories.emergency_presets');
+  foreach ($presets as &$preset) {
+    if (!is_array($preset) || !isset($preset_codes[$preset['name'] ?? ''])) {
+      continue;
+    }
+    $preset['service_code'] = $preset_codes[$preset['name']];
+    $preset['modes'] = ['disaster', 'crisis'];
+  }
+  unset($preset);
+  $editable->set('categories.emergency_presets', $presets);
+
+  if ($legacy_maintenance_ids !== [] && count($root_ids) <= 1) {
+    $editable->set('maintenance.jurisdictions', [[
+      'root_id' => $root_ids[0] ?? 0,
+      'show_only_categories' => $legacy_maintenance_ids,
+    ]]);
+  }
+  $editable->clear('maintenance.show_only_categories');
+  $editable->save();
+
+  // Freeze the formerly global operational policy per existing root. Future
+  // form edits then affect only the explicitly selected tenant.
+  /** @var \Drupal\markaspot_emergency\Service\EmergencyModeService $emergency_service */
+  $emergency_service = \Drupal::service('markaspot_emergency.service');
+  foreach ($root_ids !== [] ? $root_ids : [0] as $policy_root_id) {
+    $policy_key = EmergencyModeService::STATE_POLICY_PREFIX . $policy_root_id;
+    if (!is_array($state->get($policy_key))) {
+      $policy = $emergency_service->getPolicy($policy_root_id);
+      $policy['presentation_version'] = 2;
+      $policy['maintenance']['banner_text_translations'] =
+        _markaspot_emergency_config_translation_map('maintenance.banner_text');
+      $policy['banner']['message_translations'] =
+        _markaspot_emergency_config_translation_map('banner.message');
+      $policy['banner']['title_translations'] =
+        _markaspot_emergency_config_translation_map('banner.title');
+      $state->set($policy_key, $policy);
+    }
+  }
+
+  // Delete the superseded field-based snapshot only after every reconstructable
+  // schema, content, State, and policy migration above has completed.
+  $old_instance = FieldConfig::loadByName('taxonomy_term', 'service_category', 'field_emergency_original_status');
+  if ($old_instance) {
+    $old_instance->delete();
+  }
+  $old_storage = FieldStorageConfig::loadByName('taxonomy_term', 'field_emergency_original_status');
+  if ($old_storage) {
+    $old_storage->delete();
+  }
+
+  return t('Added emergency mode assignments to @count legacy categories and backfilled @coded stable service codes.', [
+    '@count' => $migrated,
+    '@coded' => $coded,
+  ]);
+}
+
+/**
+ * Adds transactional, bounded emergency Lite idempotency storage.
+ */
+function markaspot_emergency_update_11901(): string {
+  $schema = \Drupal::database()->schema();
+  if (!$schema->tableExists(EmergencySubmissionIdempotencyLedger::TABLE)) {
+    $definitions = markaspot_emergency_schema();
+    $schema->createTable(
+      EmergencySubmissionIdempotencyLedger::TABLE,
+      $definitions[EmergencySubmissionIdempotencyLedger::TABLE],
+    );
+  }
+  return t('Added bounded transactional idempotency storage for Lite emergency submissions.');
+}
+
+/**
+ * Stops update 11900 before DDL when jurisdiction roots are malformed.
+ */
+function _markaspot_emergency_assert_root_discovery_safe(
+  array $root_ids,
+  bool $has_jurisdiction_groups,
+): void {
+  if ($root_ids === [] && $has_jurisdiction_groups) {
+    throw new UpdateException('Jurisdiction groups exist, but no root jurisdiction can be resolved. Repair the jurisdiction hierarchy before updating.');
+  }
+}
+
+/**
+ * Collects default and translated config text for policy State migration.
+ *
+ * @param string $key
+ *   Dotted configuration key containing presentation text.
+ *
+ * @return array<string, string>
+ *   Text keyed by normalized language code.
+ */
+function _markaspot_emergency_config_translation_map(string $key): array {
+  $config_name = 'markaspot_emergency.settings';
+  $config = \Drupal::config($config_name);
+  $language_manager = \Drupal::languageManager();
+  $default_langcode = strtolower($language_manager->getDefaultLanguage()->getId());
+  $translations = [];
+  $default_value = $config->getOriginal($key, FALSE);
+  if (is_scalar($default_value)) {
+    $translations[$default_langcode] = (string) $default_value;
+  }
+
+  if (method_exists($language_manager, 'getLanguageConfigOverride')) {
+    foreach (array_keys($language_manager->getLanguages()) as $langcode) {
+      $langcode = strtolower((string) $langcode);
+      if ($langcode === $default_langcode) {
+        continue;
+      }
+      $override = $language_manager->getLanguageConfigOverride($langcode, $config_name);
+      $value = $override->get($key);
+      if (is_scalar($value)) {
+        $translations[$langcode] = (string) $value;
+      }
+    }
+  }
+
+  ksort($translations);
+  return $translations;
+}
+
+/**
+ * Selects one exact legacy snapshot without guessing across scopes.
+ *
+ * @param array<string, array> $snapshots
+ *   Legacy State snapshots keyed by their complete State key.
+ * @param int $root_id
+ *   Root jurisdiction receiving the migrated state.
+ *
+ * @return int[]|null
+ *   Normalized TIDs, including an intentionally empty array, or NULL when no
+ *   snapshot exists.
+ *
+ * @throws \Drupal\Core\Utility\UpdateException
+ *   When a non-root scoped snapshot cannot safely restore the whole root.
+ */
+function _markaspot_emergency_select_legacy_snapshot(array $snapshots, int $root_id): ?array {
+  $prefix = 'markaspot_emergency.original_published_tids';
+  $exact_key = $prefix . '.' . $root_id;
+  $normalize = static function (array $ids): array {
+    $normalized = array_values(array_unique(array_map('intval', $ids)));
+    sort($normalized, SORT_NUMERIC);
+    return $normalized;
+  };
+  if (array_key_exists($exact_key, $snapshots)) {
+    $selected = $normalize($snapshots[$exact_key]);
+    foreach ($snapshots as $snapshot) {
+      if ($normalize($snapshot) !== $selected) {
+        throw new UpdateException('Several different legacy emergency snapshots exist for the same installation. Deactivate emergency mode before updating so no category publication state is guessed.');
+      }
+    }
+    return $selected;
+  }
+
+  $scoped = array_filter(
+    $snapshots,
+    static fn(string $key): bool => str_starts_with($key, $prefix . '.'),
+    ARRAY_FILTER_USE_KEY,
+  );
+  if ($scoped !== []) {
+    throw new UpdateException('A legacy emergency snapshot exists only for a non-root jurisdiction. Deactivate emergency mode before updating so sibling and root categories are not restored from an incomplete snapshot.');
+  }
+  if (array_key_exists($prefix, $snapshots)) {
+    return $normalize($snapshots[$prefix]);
+  }
+  return NULL;
+}
+
+/**
+ * Unions the active index with active per-root records found in State storage.
+ *
+ * @param array<string, mixed> $records
+ *   State records keyed by complete State key.
+ * @param int[] $indexed_root_ids
+ *   Roots reported by the maintained active index.
+ * @param string $legacy_status
+ *   Legacy global status when update hooks have not run yet.
+ * @param int[] $available_root_ids
+ *   Configured root jurisdictions for legacy single-site recovery.
+ *
+ * @return int[]
+ *   Sorted active roots, including records missing from a stale index.
+ */
+function _markaspot_emergency_active_root_ids_from_records(
+  array $records,
+  array $indexed_root_ids,
+  string $legacy_status = 'off',
+  array $available_root_ids = [],
+): array {
+  $root_ids = array_values(array_filter(array_map(
+    'intval',
+    $indexed_root_ids,
+  ), static fn(int $id): bool => $id >= 0));
+  if ($legacy_status === 'active') {
+    $root_ids[] = _markaspot_emergency_resolve_legacy_uninstall_root($available_root_ids);
+  }
+  foreach ($records as $name => $record) {
+    if (!str_starts_with($name, EmergencyModeService::STATE_PREFIX)
+      || !is_array($record)
+      || ($record['status'] ?? 'off') !== 'active') {
+      continue;
+    }
+    $suffix = substr($name, strlen(EmergencyModeService::STATE_PREFIX));
+    if (ctype_digit($suffix)) {
+      $root_ids[] = (int) $suffix;
+    }
+  }
+  $root_ids = array_values(array_unique($root_ids));
+  sort($root_ids, SORT_NUMERIC);
+  return $root_ids;
+}
+
+/**
+ * Resolves legacy global State only when it has one unambiguous root.
+ *
+ * @param int[] $available_root_ids
+ *   Configured root jurisdiction IDs.
+ *
+ * @return int
+ *   The sole root ID, or scope 0 for a site without jurisdiction groups.
+ */
+function _markaspot_emergency_resolve_legacy_uninstall_root(array $available_root_ids): int {
+  $root_ids = array_values(array_unique(array_filter(array_map(
+    'intval',
+    $available_root_ids,
+  ), static fn(int $id): bool => $id > 0)));
+  sort($root_ids, SORT_NUMERIC);
+  if (count($root_ids) > 1) {
+    throw new UpdateException('Legacy global emergency State cannot be restored safely across several root jurisdictions. Run the update recovery or deactivate the mode before uninstalling.');
+  }
+  return $root_ids[0] ?? 0;
 }
 
 /**
  * Implements hook_requirements().
- *
- * Reads runtime status from State API (not Config) so it is accurate even
- * after a deploy that resets config/sync.
  */
-function markaspot_emergency_requirements($phase) {
-  $requirements = [];
+function markaspot_emergency_requirements($phase): array {
+  if ($phase !== 'runtime') {
+    return [];
+  }
 
-  if ($phase === 'runtime') {
-    /** @var \Drupal\markaspot_emergency\Service\EmergencyModeService $service */
-    $service = \Drupal::service('markaspot_emergency.service');
-    $isActive = $service->isActive();
-
-    if ($isActive) {
-      $config = \Drupal::config('markaspot_emergency.settings');
-      $activatedAt = $service->getActivatedAt();
-      $activatedByUid = $service->getActivatedBy();
-      $activatedBy = $activatedByUid
-        ? \Drupal::entityTypeManager()->getStorage('user')->load($activatedByUid)
-        : NULL;
-
-      $requirements['markaspot_emergency_status'] = [
-        'title' => t('Emergency Mode'),
-        'value' => t('ACTIVE'),
-        'severity' => REQUIREMENT_WARNING,
-        'description' => t('Emergency mode is currently active. Activated @time by @user. Manage at /admin/config/markaspot/emergency', [
-          '@time' => $activatedAt ? \Drupal::service('date.formatter')->format($activatedAt) : t('Unknown'),
-          '@user' => $activatedBy ? $activatedBy->getDisplayName() : t('Unknown'),
-        ]),
-      ];
-
-      $autoDeactivate = $config->get('auto_deactivate.enabled');
-      $duration = (int) $config->get('auto_deactivate.duration');
-
-      if ($autoDeactivate && $activatedAt && $duration) {
-        $deactivateTime = $activatedAt + ($duration * 3600);
-        if ($deactivateTime > time()) {
-          $requirements['markaspot_emergency_status']['description'] .= t(' Auto-deactivation scheduled for @time.', [
-            '@time' => \Drupal::service('date.formatter')->format($deactivateTime),
-          ]);
-        }
-      }
-    }
-    else {
-      $requirements['markaspot_emergency_status'] = [
+  /** @var \Drupal\markaspot_emergency\Service\EmergencyModeService $service */
+  $service = \Drupal::service('markaspot_emergency.service');
+  $active_ids = $service->getActiveJurisdictionIds();
+  if ($active_ids === []) {
+    return [
+      'markaspot_emergency_status' => [
         'title' => t('Emergency Mode'),
         'value' => t('Inactive'),
         'severity' => REQUIREMENT_OK,
-        'description' => t('Emergency mode is not active. Configure at /admin/config/markaspot/emergency'),
-      ];
-    }
+        'description' => t('No jurisdiction currently has an active emergency mode.'),
+      ],
+    ];
   }
 
-  return $requirements;
+  return [
+    'markaspot_emergency_status' => [
+      'title' => t('Emergency Mode'),
+      'value' => t('ACTIVE'),
+      'severity' => REQUIREMENT_WARNING,
+      'description' => t('Active for root jurisdiction IDs: @ids. Manage at /admin/config/markaspot/emergency.', [
+        '@ids' => implode(', ', $active_ids),
+      ]),
+    ],
+  ];
 }

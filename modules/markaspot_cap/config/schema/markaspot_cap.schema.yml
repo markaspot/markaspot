@@ -5,6 +5,12 @@ markaspot_cap.settings:
     bundle:
       type: string
       label: 'Node bundle'
+    approval_roles:
+      type: sequence
+      label: 'CAP approval role IDs'
+      sequence:
+        type: string
+        label: 'Role ID'
     sender:
       type: mapping
       label: 'Sender identification'

@@ -1,0 +1,4 @@
+access emergency CAP feed:
+  title: 'Access emergency CAP feed'
+  description: 'View restricted CAP exports with staff-maintained metadata and coarsened locations.'
+  restrict access: true

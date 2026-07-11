@@ -5,11 +5,13 @@ core_version_requirement: ^10 || ^11
 package: 'Mark-a-Spot'
 dependencies:
   - drupal:field
+  - drupal:options
   - drupal:taxonomy
   - drupal:rest
   - drupal:serialization
   - drupal:user
   - markaspot:markaspot_open311
+  - markaspot:markaspot_group
 configure: markaspot_emergency.settings
 interface translation project: markaspot_emergency
 interface translation server pattern: modules/markaspot_emergency/translations/%language.po

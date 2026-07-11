@@ -1,0 +1,26 @@
+langcode: en
+status: true
+dependencies:
+  enforced:
+    module:
+      - markaspot_emergency
+  module:
+    - options
+    - taxonomy
+id: taxonomy_term.field_emergency_modes
+field_name: field_emergency_modes
+entity_type: taxonomy_term
+type: list_string
+settings:
+  allowed_values:
+    disaster: Disaster
+    crisis: Crisis
+    maintenance: Maintenance
+  allowed_values_function: ''
+module: options
+locked: false
+cardinality: -1
+translatable: false
+indexes: {  }
+persist_with_no_fields: false
+custom_storage: false

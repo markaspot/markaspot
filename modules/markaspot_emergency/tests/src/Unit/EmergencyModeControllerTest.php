@@ -4,14 +4,16 @@ namespace Drupal\Tests\markaspot_emergency\Unit;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
-use Drupal\Core\Entity\EntityFieldManagerInterface;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Cache\Context\CacheContextsManager;
+use Drupal\Core\DependencyInjection\ContainerBuilder;
+use Drupal\Core\Entity\EntityRepositoryInterface;
+use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\Core\State\StateInterface;
 use Drupal\markaspot_emergency\Controller\EmergencyModeController;
 use Drupal\markaspot_emergency\Service\EmergencyModeService;
+use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -38,20 +40,6 @@ class EmergencyModeControllerTest extends UnitTestCase {
   protected $configFactory;
 
   /**
-   * Mocked state service.
-   *
-   * @var \Drupal\Core\State\StateInterface|\PHPUnit\Framework\MockObject\MockObject
-   */
-  protected $state;
-
-  /**
-   * Mocked entity type manager.
-   *
-   * @var \Drupal\Core\Entity\EntityTypeManagerInterface|\PHPUnit\Framework\MockObject\MockObject
-   */
-  protected $entityTypeManager;
-
-  /**
    * Mocked current user.
    *
    * @var \Drupal\Core\Session\AccountInterface|\PHPUnit\Framework\MockObject\MockObject
@@ -73,11 +61,11 @@ class EmergencyModeControllerTest extends UnitTestCase {
   protected $emergencyService;
 
   /**
-   * Mocked entity field manager.
+   * Mocked entity repository.
    *
-   * @var \Drupal\Core\Entity\EntityFieldManagerInterface|\PHPUnit\Framework\MockObject\MockObject
+   * @var \Drupal\Core\Entity\EntityRepositoryInterface|\PHPUnit\Framework\MockObject\MockObject
    */
-  protected $entityFieldManager;
+  protected $entityRepository;
 
   /**
    * {@inheritdoc}
@@ -85,13 +73,44 @@ class EmergencyModeControllerTest extends UnitTestCase {
   protected function setUp(): void {
     parent::setUp();
 
+    $cacheContextsManager = $this->createMock(CacheContextsManager::class);
+    $cacheContextsManager->method('assertValidTokens')->willReturn(TRUE);
+    $container = new ContainerBuilder();
+    $container->set('cache_contexts_manager', $cacheContextsManager);
+    $container->set('string_translation', $this->getStringTranslationStub());
+    \Drupal::setContainer($container);
+
     $this->configFactory = $this->createMock(ConfigFactoryInterface::class);
-    $this->state = $this->createMock(StateInterface::class);
-    $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->currentUser = $this->createMock(AccountInterface::class);
     $this->logger = $this->createMock(LoggerChannelInterface::class);
     $this->emergencyService = $this->createMock(EmergencyModeService::class);
-    $this->entityFieldManager = $this->createMock(EntityFieldManagerInterface::class);
+    $this->emergencyService->method('getPolicy')->willReturn([
+      'mode_type' => 'disaster',
+      'force_redirect' => TRUE,
+      'lite_ui' => TRUE,
+      'unpublish_regular' => TRUE,
+      'auto_deactivate' => ['enabled' => TRUE, 'duration' => 72],
+      'allowed_urls' => ['/sos'],
+      'network_detection' => ['enabled' => TRUE, 'auto_switch_threshold' => '2g'],
+      'maintenance' => [
+        'unpublish_non_selected' => FALSE,
+        'show_only_categories' => [],
+        'force_redirect' => FALSE,
+        'banner_text' => '',
+      ],
+      'banner' => [
+        'enabled' => FALSE,
+        'message' => '',
+        'level' => 'info',
+        'title' => '',
+        'display_conditions' => [
+          'emergency_mode_only' => FALSE,
+          'maintenance_mode' => TRUE,
+          'always_visible' => FALSE,
+        ],
+      ],
+    ]);
+    $this->entityRepository = $this->createMock(EntityRepositoryInterface::class);
 
     $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
     $loggerFactory->method('get')
@@ -100,12 +119,10 @@ class EmergencyModeControllerTest extends UnitTestCase {
 
     $this->controller = new EmergencyModeController(
       $this->configFactory,
-      $this->state,
-      $this->entityTypeManager,
       $this->currentUser,
       $loggerFactory,
       $this->emergencyService,
-      $this->entityFieldManager,
+      $this->entityRepository,
     );
   }
 
@@ -141,6 +158,139 @@ class EmergencyModeControllerTest extends UnitTestCase {
     $response = $this->controller->deactivate($request);
 
     $this->assertEquals(403, $response->getStatusCode());
+  }
+
+  /**
+   * @covers ::getStatus
+   */
+  public function testStatusIncludesScopedVersionedContract(): void {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnMap([
+      ['allowed_urls', ['/sos']],
+      ['banner', ['enabled' => FALSE]],
+    ]);
+    $this->configFactory->method('get')
+      ->with('markaspot_emergency.settings')
+      ->willReturn($config);
+    $this->emergencyService->method('resolveRootJurisdictionId')->willReturn(7);
+    $this->emergencyService->method('getModeState')->willReturn([
+      'jurisdiction_id' => 7,
+      'status' => 'active',
+      'activated_at' => 1_700_000_000,
+      'activated_by' => 1,
+      'mode_type' => 'crisis',
+      'force_redirect' => TRUE,
+      'lite_ui' => TRUE,
+      'revision' => 4,
+      'snapshot' => [1, 2],
+    ]);
+    $this->emergencyService->method('getAvailableCategoryTerms')->willReturn([]);
+    $this->currentUser->method('hasPermission')->willReturn(FALSE);
+
+    $response = $this->controller->getStatus(Request::create(
+      '/api/emergency-mode/status?jurisdiction_id=demo',
+    ));
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(2, $data['contract_version']);
+    $this->assertSame(7, $data['jurisdiction_id']);
+    $this->assertSame(4, $data['revision']);
+    $this->assertSame('crisis', $data['mode_type']);
+    $this->assertSame([], $data['available_categories']);
+    $contexts = $response->getCacheableMetadata()->getCacheContexts();
+    $this->assertContains('languages:language_content', $contexts);
+    $this->assertContains('languages:language_interface', $contexts);
+  }
+
+  /**
+   * @covers ::getStatus
+   */
+  public function testStatusRejectsArrayJurisdiction(): void {
+    $this->emergencyService->expects($this->never())->method('resolveRootJurisdictionId');
+
+    $response = $this->controller->getStatus(Request::create(
+      '/api/emergency-mode/status?jurisdiction_id[]=7',
+    ));
+
+    $this->assertSame(400, $response->getStatusCode());
+  }
+
+  /**
+   * @covers ::getStatus
+   */
+  public function testStatusUsesContextTranslationAndNullableServiceCode(): void {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')->willReturnMap([
+      ['allowed_urls', ['/', '/sos']],
+      ['banner', ['enabled' => FALSE]],
+    ]);
+    $this->configFactory->method('get')->willReturn($config);
+    $this->emergencyService->method('resolveRootJurisdictionId')->willReturn(7);
+    $this->emergencyService->method('getModeState')->willReturn([
+      'status' => 'active',
+      'mode_type' => 'disaster',
+      'lite_ui' => TRUE,
+      'force_redirect' => TRUE,
+      'revision' => 1,
+      'snapshot' => [],
+    ]);
+
+    $original = $this->createMock(TermInterface::class);
+    $translated = $this->createMock(TermInterface::class);
+    $translated->method('id')->willReturn(11);
+    $translated->method('uuid')->willReturn('category-uuid');
+    $translated->method('label')->willReturn('Verletzte Personen');
+    $translated->method('getWeight')->willReturn(0);
+    $translated->method('hasField')->willReturn(FALSE);
+    $this->emergencyService->method('getAvailableCategoryTerms')->willReturn([$original]);
+    $this->entityRepository->expects($this->once())
+      ->method('getTranslationFromContext')
+      ->with($original)
+      ->willReturn($translated);
+    $this->currentUser->method('hasPermission')->willReturn(FALSE);
+
+    $response = $this->controller->getStatus(Request::create(
+      '/api/emergency-mode/status?jurisdiction_id=7',
+    ));
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame('Verletzte Personen', $data['available_categories'][0]['label']);
+    $this->assertNull($data['available_categories'][0]['service_code']);
+    $this->assertTrue($data['available_categories'][0]['lite_compatible']);
+    $this->assertSame(['/sos'], $data['allowed_urls']);
+  }
+
+  /**
+   * Required variable service attributes make a category unavailable to Lite.
+   *
+   * @covers ::getStatus
+   */
+  public function testCategoryContractMarksRequiredServiceAttributesAsLiteIncompatible(): void {
+    $definition = $this->createMock(FieldItemListInterface::class);
+    $definition->method('isEmpty')->willReturn(FALSE);
+    $definition->method('__get')->with('value')->willReturn(json_encode([
+      'attributes' => [[
+        'code' => 'lamp_id',
+        'variable' => TRUE,
+        'required' => TRUE,
+      ]],
+    ], JSON_THROW_ON_ERROR));
+
+    $term = $this->createMock(TermInterface::class);
+    $term->method('id')->willReturn(11);
+    $term->method('uuid')->willReturn('category-uuid');
+    $term->method('label')->willReturn('Street light');
+    $term->method('getWeight')->willReturn(0);
+    $term->method('hasField')->willReturnCallback(
+      static fn(string $name): bool => $name === 'field_service_definition',
+    );
+    $term->method('get')->with('field_service_definition')->willReturn($definition);
+    $this->entityRepository->method('getTranslationFromContext')->with($term)->willReturn($term);
+
+    $method = new \ReflectionMethod($this->controller, 'mapCategory');
+    $mapped = $method->invoke($this->controller, $term);
+
+    $this->assertFalse($mapped['lite_compatible']);
   }
 
   /**
@@ -211,6 +361,46 @@ class EmergencyModeControllerTest extends UnitTestCase {
 
     $this->assertNotNull($result);
     $this->assertEquals('Maintenance in progress.', $result['message']);
+  }
+
+  /**
+   * Maintenance fallback must disappear as soon as runtime State is off.
+   *
+   * @covers ::getBannerData
+   */
+  public function testInactiveMaintenanceStateDoesNotKeepBannerVisible(): void {
+    $config = $this->createMock(ImmutableConfig::class);
+    $config->method('get')
+      ->willReturnMap([
+        ['banner', [
+          'enabled' => TRUE,
+          'message' => '',
+          'level' => 'info',
+          'display_conditions' => ['maintenance_mode' => TRUE],
+        ]],
+        ['maintenance.banner_text', 'Maintenance in progress.'],
+      ]);
+
+    $result = $this->controller->getBannerData($config, FALSE, 'maintenance');
+
+    $this->assertNull($result);
+  }
+
+  /**
+   * The SOS render array is invalidated with the selected runtime State.
+   *
+   * @covers ::sosRedirect
+   */
+  public function testSosPageCarriesJurisdictionEmergencyCacheability(): void {
+    $this->emergencyService->method('resolveRootJurisdictionId')->willReturn(7);
+    $this->emergencyService->method('isActive')->with(7)->willReturn(TRUE);
+
+    $build = $this->controller->sosRedirect(Request::create('/sos?jurisdiction_id=7'));
+
+    $this->assertContains(EmergencyModeService::CACHE_TAG, $build['#cache']['tags']);
+    $this->assertContains(EmergencyModeService::cacheTag(7), $build['#cache']['tags']);
+    $this->assertContains('url.query_args:jurisdiction_id', $build['#cache']['contexts']);
+    $this->assertSame(5, $build['#cache']['max-age']);
   }
 
   /**

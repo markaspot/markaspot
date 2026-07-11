@@ -9,10 +9,13 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\markaspot_cap\Encoder\CapEncoder;
 use Drupal\markaspot_cap\Service\CapProcessorService;
 use Drupal\node\NodeInterface;
 use Drupal\taxonomy\TermInterface;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 /**
  * Tests the CapProcessorService.
@@ -22,8 +25,8 @@ use Drupal\Tests\UnitTestCase;
  * GPS coordinates are coarsened to 2 decimal places.
  *
  * @group markaspot_cap
- * @coversDefaultClass \Drupal\markaspot_cap\Service\CapProcessorService
  */
+#[CoversClass(CapProcessorService::class)]
 class CapProcessorServiceTest extends UnitTestCase {
 
   /**
@@ -104,14 +107,13 @@ class CapProcessorServiceTest extends UnitTestCase {
 
   /**
    * Tests a basic CAP alert conversion with minimal node data.
-   *
-   * @covers ::nodeToCapAlert
    */
   public function testNodeToCapAlertBasicStructure(): void {
     $node = $this->createCapNode([
       'request_id' => 'SR-001',
       'title' => 'Pothole on Main Street',
       'created' => 1700000000,
+      'changed' => 1700003600,
       'category_label' => 'Roads',
       'body' => 'Large pothole near intersection.',
       'langcode' => 'en',
@@ -123,16 +125,21 @@ class CapProcessorServiceTest extends UnitTestCase {
     $this->assertEquals('admin@example.com', $alert['sender']);
     $this->assertEquals('Actual', $alert['status']);
     $this->assertEquals('Alert', $alert['msgType']);
-    $this->assertEquals('Public', $alert['scope']);
+    $this->assertEquals('Restricted', $alert['scope']);
+    $this->assertEquals(
+      'Operational emergency responders only',
+      $alert['restriction'],
+    );
 
     // Verify sent timestamp is ISO 8601.
     $this->assertEquals('2023-11-14T22:13:20Z', $alert['sent']);
+    $this->assertEquals('2023-11-14T23:13:20Z', $alert['_atom_updated']);
 
     // Verify info element.
     $info = $alert['info'];
     $this->assertEquals('Roads', $info['event']);
-    $this->assertEquals('Pothole on Main Street', $info['headline']);
-    $this->assertEquals('Large pothole near intersection.', $info['description']);
+    $this->assertEquals('Roads report', $info['headline']);
+    $this->assertArrayNotHasKey('description', $info);
     // senderName comes from CAP config, not from a reporter field.
     $this->assertEquals('City Services', $info['senderName']);
     $this->assertEquals('en', $info['language']);
@@ -143,11 +150,8 @@ class CapProcessorServiceTest extends UnitTestCase {
 
   /**
    * Tests field_hazard_level to CAP severity mapping.
-   *
-   * @covers ::nodeToCapAlert
-   *
-   * @dataProvider hazardLevelSeverityProvider
    */
+  #[DataProvider('hazardLevelSeverityProvider')]
   public function testHazardLevelToSeverityMapping(?int $hazardLevel, string $expectedSeverity): void {
     $node = $this->createCapNode([
       'request_id' => 'SR-002',
@@ -184,8 +188,6 @@ class CapProcessorServiceTest extends UnitTestCase {
    *
    * GPS coordinates must be coarsened to 2 decimal places (~1 km grid).
    * areaDesc uses site/config name, NOT the street address.
-   *
-   * @covers ::nodeToCapAlert
    */
   public function testNodeToCapAlertWithGeolocation(): void {
     $node = $this->createCapNode([
@@ -210,8 +212,6 @@ class CapProcessorServiceTest extends UnitTestCase {
 
   /**
    * Tests that missing geolocation does not produce area element.
-   *
-   * @covers ::nodeToCapAlert
    */
   public function testNodeToCapAlertWithoutGeolocation(): void {
     $node = $this->createCapNode([
@@ -227,21 +227,37 @@ class CapProcessorServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests fallback description when body is empty.
-   *
-   * @covers ::nodeToCapAlert
+   * Citizen free text is never emitted to the restricted CAP feed.
    */
-  public function testNodeToCapAlertEmptyDescription(): void {
+  public function testNodeToCapAlertDoesNotExposeCitizenTitleOrBody(): void {
     $node = $this->createCapNode([
       'request_id' => 'SR-005',
-      'title' => 'No body',
+      'title' => 'Jane Example, 1 Main Street',
       'created' => 1700000000,
-      'category_label' => 'Test',
+      'category_label' => 'Flooding',
+      'body' => 'Call Jane on 01234 56789 at 1 Main Street.',
       'langcode' => 'en',
     ]);
 
     $alert = $this->service->nodeToCapAlert($node);
-    $this->assertEquals('', $alert['info']['description']);
+    $this->assertSame('Flooding report', $alert['info']['headline']);
+    $this->assertArrayNotHasKey('description', $alert['info']);
+
+    $xml = (new CapEncoder())->encode($alert, 'cap', [
+      'cap_feed_id' => 'urn:markaspot:cap:feed:test',
+    ]);
+    $this->assertStringContainsString('<restriction>Operational emergency responders only</restriction>', $xml);
+    $this->assertStringNotContainsString('Jane Example', $xml);
+    $this->assertStringNotContainsString('01234 56789', $xml);
+    $this->assertStringNotContainsString('1 Main Street', $xml);
+
+    $atomXml = (new CapEncoder())->encode([$alert], 'cap', [
+      'cap_feed_id' => 'urn:markaspot:cap:feed:test',
+    ]);
+    $this->assertStringContainsString('<title>Flooding report</title>', $atomXml);
+    $this->assertStringNotContainsString('Jane Example', $atomXml);
+    $this->assertStringNotContainsString('01234 56789', $atomXml);
+    $this->assertStringNotContainsString('1 Main Street', $atomXml);
   }
 
   /**
@@ -249,8 +265,6 @@ class CapProcessorServiceTest extends UnitTestCase {
    *
    * This is a GDPR/PII requirement: the reporter's name must not appear in
    * the anonymously-accessible CAP feed.
-   *
-   * @covers ::nodeToCapAlert
    */
   public function testNodeToCapAlertSenderNameFromConfig(): void {
     $node = $this->createCapNode([
@@ -268,8 +282,6 @@ class CapProcessorServiceTest extends UnitTestCase {
 
   /**
    * Tests that unknown category falls back to 'Unknown'.
-   *
-   * @covers ::nodeToCapAlert
    */
   public function testNodeToCapAlertNoCategoryEntity(): void {
     $node = $this->createCapNode([
@@ -285,11 +297,9 @@ class CapProcessorServiceTest extends UnitTestCase {
   }
 
   /**
-   * Tests that HTML is stripped from body text.
-   *
-   * @covers ::nodeToCapAlert
+   * A body cannot become CAP text even when it contains safe-looking markup.
    */
-  public function testNodeToCapAlertStripsHtmlFromBody(): void {
+  public function testNodeToCapAlertOmitsCitizenBodyRegardlessOfMarkup(): void {
     $node = $this->createCapNode([
       'request_id' => 'SR-008',
       'title' => 'HTML body',
@@ -300,12 +310,9 @@ class CapProcessorServiceTest extends UnitTestCase {
     ]);
 
     $alert = $this->service->nodeToCapAlert($node);
-    $this->assertEquals('A pothole issue.', $alert['info']['description']);
+    $this->assertArrayNotHasKey('description', $alert['info']);
+    $this->assertSame('Test report', $alert['info']['headline']);
   }
-
-  // ===========================================================================
-  // Helper methods.
-  // ===========================================================================
 
   /**
    * Creates a mock node for CAP processing.
@@ -328,6 +335,7 @@ class CapProcessorServiceTest extends UnitTestCase {
   protected function createCapNode(array $config): NodeInterface {
     $node = $this->createMock(NodeInterface::class);
     $node->method('getTitle')->willReturn($config['title']);
+    $node->method('getChangedTime')->willReturn($config['changed'] ?? $config['created']);
 
     // Language.
     $language = $this->createMock(LanguageInterface::class);

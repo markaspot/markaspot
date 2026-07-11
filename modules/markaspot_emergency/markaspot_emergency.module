@@ -6,6 +6,10 @@
  */
 
 use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\Display\EntityFormDisplayInterface;
+use Drupal\Core\Hook\Attribute\LegacyHook;
+use Drupal\markaspot_emergency\Hook\EmergencyEntityHooks;
 
 /**
  * Implements hook_help().
@@ -33,6 +37,42 @@ function markaspot_emergency_help($route_name, RouteMatchInterface $route_match)
 }
 
 /**
+ * Implements hook_entity_form_display_alter().
+ *
+ * The service_category form display is owned by service_request. Applying the
+ * widget at runtime makes the mode list configurable without replacing or
+ * deleting that shared display on uninstall.
+ */
+function markaspot_emergency_entity_form_display_alter(EntityFormDisplayInterface $form_display, array $context): void {
+  if ($form_display->getTargetEntityTypeId() !== 'taxonomy_term'
+    || $form_display->getTargetBundle() !== 'service_category') {
+    return;
+  }
+
+  $form_display->setComponent('field_emergency_modes', [
+    'type' => 'options_buttons',
+    'weight' => 15,
+    'region' => 'content',
+    'settings' => [],
+    'third_party_settings' => [],
+  ]);
+  $form_display->removeComponent('field_emergency_category');
+}
+
+/**
+ * Implements hook_entity_presave().
+ *
+ * Drupal 10 invokes this compatibility bridge. Drupal 11 discovers the native
+ * attribute hook and skips this wrapper through #[LegacyHook].
+ */
+#[LegacyHook]
+function markaspot_emergency_entity_presave(EntityInterface $entity): void {
+  /** @var \Drupal\markaspot_emergency\Hook\EmergencyEntityHooks $hooks */
+  $hooks = \Drupal::service(EmergencyEntityHooks::class);
+  $hooks->entityPresave($entity);
+}
+
+/**
  * Implements hook_cron().
  *
  * Checks for auto-deactivation of emergency mode. Status is read from State
@@ -42,22 +82,48 @@ function markaspot_emergency_cron() {
   /** @var \Drupal\markaspot_emergency\Service\EmergencyModeService $service */
   $service = \Drupal::service('markaspot_emergency.service');
 
-  if (!$service->isActive()) {
-    return;
+  try {
+    /** @var \Drupal\markaspot_emergency\Service\EmergencySubmissionIdempotencyLedger $ledger */
+    $ledger = \Drupal::service('markaspot_emergency.submission_idempotency_ledger');
+    $ledger->purgeExpired();
+  }
+  catch (\Throwable $exception) {
+    \Drupal::logger('markaspot_emergency')->error(
+      'Failed to purge expired emergency submission idempotency records: @message',
+      ['@message' => $exception->getMessage()],
+    );
   }
 
-  $config = \Drupal::config('markaspot_emergency.settings');
-  $autoDeactivate = $config->get('auto_deactivate.enabled');
-  $duration = (int) $config->get('auto_deactivate.duration');
-  $activatedAt = $service->getActivatedAt();
+  foreach ($service->getActiveJurisdictionIds() as $rootId) {
+    try {
+      $policy = $service->getPolicy($rootId);
+      $autoDeactivate = $policy['auto_deactivate']['enabled'];
+      $duration = $policy['auto_deactivate']['duration'];
+      if (!$autoDeactivate || $duration <= 0) {
+        continue;
+      }
 
-  if ($autoDeactivate && $activatedAt && $duration) {
-    $deactivateTime = $activatedAt + ($duration * 3600);
-    if (time() >= $deactivateTime) {
-      $service->deactivate();
+      $activatedAt = $service->getActivatedAt($rootId);
+      if ($activatedAt === NULL || time() < $activatedAt + ($duration * 3600)) {
+        continue;
+      }
+
+      $service->deactivate($rootId);
       \Drupal::logger('markaspot_emergency')->notice(
-        'Emergency mode auto-deactivated after @hours hours.',
-        ['@hours' => $duration]
+        'Emergency mode auto-deactivated for root jurisdiction @jurisdiction after @hours hours.',
+        [
+          '@jurisdiction' => $rootId,
+          '@hours' => $duration,
+        ]
+      );
+    }
+    catch (\Throwable $exception) {
+      \Drupal::logger('markaspot_emergency')->error(
+        'Failed to auto-deactivate root jurisdiction @jurisdiction: @message',
+        [
+          '@jurisdiction' => $rootId,
+          '@message' => $exception->getMessage(),
+        ]
       );
     }
   }

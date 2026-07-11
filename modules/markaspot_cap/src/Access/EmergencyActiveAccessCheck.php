@@ -1,58 +1,57 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Drupal\markaspot_cap\Access;
 
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Routing\Access\AccessInterface;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\Core\State\StateInterface;
+use Drupal\markaspot_emergency\Service\EmergencyModeService;
+use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Route;
 
 /**
- * Access checker that grants access only when emergency mode is active.
- *
- * Gating on the route prevents URL-decoding bypass attacks: Drupal normalizes
- * the path before routing, so '/api/c%61p/v1/alerts' resolves to the same
- * route as '/api/cap/v1/alerts' and hits this check. A regex on the raw
- * path-info would miss the percent-encoded variant.
- *
- * Register as service tag 'access_check' with applies_to
- * '_cap_emergency_active'.
+ * Allows CAP feeds only for the explicitly resolved active jurisdiction.
  */
 class EmergencyActiveAccessCheck implements AccessInterface {
 
   /**
-   * The state service.
-   *
-   * @var \Drupal\Core\State\StateInterface
+   * Constructs the CAP access checker.
    */
-  protected StateInterface $state;
+  public function __construct(
+    protected EmergencyModeService $emergencyService,
+    protected RequestStack $requestStack,
+  ) {}
 
   /**
-   * Constructor.
-   *
-   * @param \Drupal\Core\State\StateInterface $state
-   *   The state service.
-   */
-  public function __construct(StateInterface $state) {
-    $this->state = $state;
-  }
-
-  /**
-   * Checks access.
-   *
-   * @param \Symfony\Component\Routing\Route $route
-   *   The route to check access for.
-   * @param \Drupal\Core\Session\AccountInterface $account
-   *   The currently logged in account.
-   *
-   * @return \Drupal\Core\Access\AccessResultInterface
-   *   The access result, cacheable on the emergency status tag.
+   * Checks jurisdiction-scoped emergency state.
    */
   public function access(Route $route, AccountInterface $account) {
-    $emergencyStatus = (string) $this->state->get('markaspot_emergency.status', 'off');
-    return AccessResult::allowedIf($emergencyStatus === 'active')
-      ->addCacheTags(['markaspot_emergency:status']);
+    $request = $this->requestStack->getCurrentRequest();
+    try {
+      $parameters = $request?->query->all() ?? [];
+      $identifier = $parameters['jurisdiction_id'] ?? NULL;
+      if ($identifier !== NULL && !is_string($identifier) && !is_int($identifier)) {
+        throw new \InvalidArgumentException('The jurisdiction_id parameter must be a scalar ID or slug.');
+      }
+      $rootId = $this->emergencyService->resolveRootJurisdictionId(
+        $identifier,
+      );
+      $isActive = $this->emergencyService->isActive($rootId);
+    }
+    catch (\InvalidArgumentException | \RuntimeException) {
+      return AccessResult::forbidden('A valid jurisdiction_id is required.')
+        ->addCacheTags([EmergencyModeService::CACHE_TAG])
+        ->addCacheContexts(['url.query_args:jurisdiction_id']);
+    }
+
+    return AccessResult::allowedIf($isActive)
+      ->addCacheTags([
+        EmergencyModeService::CACHE_TAG,
+        EmergencyModeService::cacheTag($rootId),
+      ])
+      ->addCacheContexts(['url.query_args:jurisdiction_id']);
   }
 
 }

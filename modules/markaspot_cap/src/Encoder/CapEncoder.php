@@ -51,6 +51,11 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
   const CAP_NAMESPACE = 'urn:oasis:names:tc:emergency:cap:1.2';
 
   /**
+   * Atom 1.0 namespace.
+   */
+  const ATOM_NAMESPACE = 'http://www.w3.org/2005/Atom';
+
+  /**
    * {@inheritdoc}
    */
   public function encode(mixed $data, string $format, array $context = []): string {
@@ -137,7 +142,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
       // Single alert - build directly under root.
       $this->buildAlertElements($parentNode, $data);
     }
-    elseif (isset($data[0]) && is_array($data[0])) {
+    elseif ($data === [] || (isset($data[0]) && is_array($data[0]))) {
       // Multiple alerts - create Atom feed wrapper.
       $this->buildAtomFeed($parentNode, $data);
     }
@@ -155,17 +160,24 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
     $dom = $parentNode->ownerDocument;
     $dom->removeChild($parentNode);
 
-    $feed = $dom->createElementNS('http://www.w3.org/2005/Atom', 'feed');
+    $feed = $dom->createElementNS(self::ATOM_NAMESPACE, 'feed');
     $feed->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:cap', self::CAP_NAMESPACE);
     $dom->appendChild($feed);
 
     $this->appendAtomElement($feed, 'title', 'CAP Alert Feed');
-    $this->appendAtomElement($feed, 'updated', gmdate('Y-m-d\TH:i:s\Z'));
+    $this->appendAtomElement($feed, 'updated', $this->resolveFeedUpdated($alerts));
     // Feed IRI is unique per installation. Callers pass 'cap_feed_id' in the
     // encode context (e.g. 'urn:markaspot:cap:feed:<site-uuid>'). Fall back to
     // the module-namespace IRI when the context key is absent.
     $feedId = $this->context['cap_feed_id'] ?? 'urn:markaspot:cap:feed';
     $this->appendAtomElement($feed, 'id', $feedId);
+    $author = $dom->createElementNS(self::ATOM_NAMESPACE, 'author');
+    $feed->appendChild($author);
+    $this->appendAtomElement(
+      $author,
+      'name',
+      (string) ($this->context['cap_feed_author'] ?? 'Mark-a-Spot'),
+    );
 
     foreach ($alerts as $alertData) {
       if (isset($alertData['identifier'])) {
@@ -183,15 +195,24 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   The alert data.
    */
   private function buildAtomEntry(\DOMNode $feed, array $alertData) {
-    $entry = $this->dom->createElement('entry');
+    $entry = $this->dom->createElementNS(self::ATOM_NAMESPACE, 'entry');
     $feed->appendChild($entry);
 
     // Deterministic entry ID based on the alert identifier (not random).
-    $this->appendAtomElement($entry, 'id', 'urn:markaspot:cap:alert:' . $alertData['identifier']);
+    $feedId = $this->context['cap_feed_id'] ?? 'urn:markaspot:cap:feed';
+    $this->appendAtomElement(
+      $entry,
+      'id',
+      $feedId . ':alert:' . rawurlencode((string) $alertData['identifier']),
+    );
     $this->appendAtomElement($entry, 'title', $alertData['info']['headline'] ?? 'Alert ' . $alertData['identifier']);
-    $this->appendAtomElement($entry, 'updated', $alertData['sent'] ?? gmdate('Y-m-d\TH:i:s\Z'));
+    $this->appendAtomElement(
+      $entry,
+      'updated',
+      $this->normalizeTimestamp($alertData['_atom_updated'] ?? $alertData['sent'] ?? NULL),
+    );
 
-    $content = $this->dom->createElement('content');
+    $content = $this->dom->createElementNS(self::ATOM_NAMESPACE, 'content');
     $content->setAttribute('type', 'application/cap+xml');
     $entry->appendChild($content);
 
@@ -211,10 +232,61 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   Element value.
    */
   private function appendAtomElement(\DOMNode $node, string $name, string $value) {
-    $element = $this->dom->createElement($name);
+    $element = $this->dom->createElementNS(self::ATOM_NAMESPACE, $name);
     // DOM escapes text content automatically; no htmlspecialchars() needed.
     $element->appendChild($this->dom->createTextNode($value));
     $node->appendChild($element);
+  }
+
+  /**
+   * Returns a stable Atom feed update timestamp.
+   *
+   * The latest alert timestamp wins. An activation timestamp supplied by the
+   * controller keeps an empty feed stable; the epoch is the deterministic
+   * standalone encoder fallback.
+   */
+  private function resolveFeedUpdated(array $alerts): string {
+    $timestamps = [];
+    $contextUpdated = $this->timestampValue($this->context['cap_feed_updated'] ?? NULL);
+    if ($contextUpdated !== NULL) {
+      $timestamps[] = $contextUpdated;
+    }
+    foreach ($alerts as $alert) {
+      if (!is_array($alert)) {
+        continue;
+      }
+      $timestamp = $this->timestampValue($alert['_atom_updated'] ?? $alert['sent'] ?? NULL);
+      if ($timestamp !== NULL) {
+        $timestamps[] = $timestamp;
+      }
+    }
+
+    if ($timestamps !== []) {
+      return gmdate('Y-m-d\TH:i:s\Z', max($timestamps));
+    }
+
+    return '1970-01-01T00:00:00Z';
+  }
+
+  /**
+   * Normalizes one optional timestamp for Atom output.
+   */
+  private function normalizeTimestamp(mixed $value): string {
+    $timestamp = $this->timestampValue($value);
+    return $timestamp !== NULL
+      ? gmdate('Y-m-d\TH:i:s\Z', $timestamp)
+      : '1970-01-01T00:00:00Z';
+  }
+
+  /**
+   * Parses one scalar timestamp without PHP coercion warnings.
+   */
+  private function timestampValue(mixed $value): ?int {
+    if (!is_scalar($value)) {
+      return NULL;
+    }
+    $timestamp = strtotime((string) $value);
+    return $timestamp !== FALSE ? $timestamp : NULL;
   }
 
   /**
@@ -274,7 +346,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   The info data.
    */
   private function buildInfoElement(\DOMNode $parentNode, array $info) {
-    $infoNode = $this->dom->createElement('info');
+    $infoNode = $this->createCapElement($parentNode, 'info');
     $parentNode->appendChild($infoNode);
 
     $requiredElements = ['category', 'event', 'urgency', 'severity', 'certainty'];
@@ -337,7 +409,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   The parameter data.
    */
   private function buildParameterElement(\DOMNode $parentNode, array $param) {
-    $paramNode = $this->dom->createElement('parameter');
+    $paramNode = $this->createCapElement($parentNode, 'parameter');
     $parentNode->appendChild($paramNode);
 
     if (isset($param['valueName'])) {
@@ -357,7 +429,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   The resource data.
    */
   private function buildResourceElement(\DOMNode $parentNode, array $resource) {
-    $resourceNode = $this->dom->createElement('resource');
+    $resourceNode = $this->createCapElement($parentNode, 'resource');
     $parentNode->appendChild($resourceNode);
 
     foreach (['resourceDesc', 'mimeType', 'size', 'uri', 'derefUri', 'digest'] as $element) {
@@ -376,7 +448,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   The area data.
    */
   private function buildAreaElement(\DOMNode $parentNode, array $area) {
-    $areaNode = $this->dom->createElement('area');
+    $areaNode = $this->createCapElement($parentNode, 'area');
     $parentNode->appendChild($areaNode);
 
     if (isset($area['areaDesc'])) {
@@ -406,7 +478,7 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    *   The geocode data.
    */
   private function buildGeocodeElement(\DOMNode $parentNode, array $geocode) {
-    $geocodeNode = $this->dom->createElement('geocode');
+    $geocodeNode = $this->createCapElement($parentNode, 'geocode');
     $parentNode->appendChild($geocodeNode);
 
     if (isset($geocode['valueName'])) {
@@ -433,10 +505,23 @@ class CapEncoder implements EncoderInterface, DecoderInterface {
    */
   private function appendElement(\DOMNode $node, string $name, $value) {
     if (is_scalar($value)) {
-      $element = $this->dom->createElement($name);
+      $element = $this->createCapElement($node, $name);
       $element->appendChild($this->dom->createTextNode((string) $value));
       $node->appendChild($element);
     }
+  }
+
+  /**
+   * Creates a CAP element using the namespace prefix visible to its parent.
+   *
+   * Single-alert documents use CAP as their default namespace. Atom feeds
+   * declare the conventional `cap` prefix. Looking up that prefix keeps both
+   * serializations compact while assigning the same namespace URI in the DOM.
+   */
+  private function createCapElement(\DOMNode $parent, string $name): \DOMElement {
+    $prefix = $parent->lookupPrefix(self::CAP_NAMESPACE);
+    $qualifiedName = $prefix ? $prefix . ':' . $name : $name;
+    return $this->dom->createElementNS(self::CAP_NAMESPACE, $qualifiedName);
   }
 
   /**

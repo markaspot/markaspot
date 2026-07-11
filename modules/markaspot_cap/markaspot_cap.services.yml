@@ -12,14 +12,43 @@ services:
       - '@state'
       - '@entity_field.manager'
 
+  markaspot_cap.feed_state_store:
+    class: Drupal\markaspot_cap\Service\CapFeedStateStore
+    arguments:
+      - '@database'
+      - '@serialization.phpserialize'
+      - '@state'
+
+  markaspot_cap.feed_mutation_tracker:
+    class: Drupal\markaspot_cap\Service\CapFeedMutationTracker
+    arguments:
+      - '@state'
+      - '@datetime.time'
+      - '@markaspot_group.hierarchy_resolver'
+      - '@lock'
+      - '@markaspot_cap.feed_state_store'
+      - '@database'
+
+  Drupal\markaspot_cap\Hook\CapEntityHooks:
+    class: Drupal\markaspot_cap\Hook\CapEntityHooks
+    arguments:
+      - '@markaspot_cap.feed_mutation_tracker'
+    public: true
+
   markaspot_cap.format_subscriber:
     class: Drupal\markaspot_cap\EventSubscriber\CapFormatSubscriber
+    tags:
+      - { name: event_subscriber }
+
+  markaspot_cap.approval_readiness_config_subscriber:
+    class: Drupal\markaspot_cap\EventSubscriber\CapApprovalReadinessConfigSubscriber
     tags:
       - { name: event_subscriber }
 
   markaspot_cap.emergency_active_access_check:
     class: Drupal\markaspot_cap\Access\EmergencyActiveAccessCheck
     arguments:
-      - '@state'
+      - '@markaspot_emergency.service'
+      - '@request_stack'
     tags:
       - { name: access_check, applies_to: _cap_emergency_active }
