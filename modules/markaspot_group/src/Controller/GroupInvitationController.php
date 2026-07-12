@@ -230,6 +230,7 @@ class GroupInvitationController extends ControllerBase {
       $roles = $this->storageJurisdictionRoleIds($roles);
     }
     $roles = MembershipRoleNormalizer::normalize($roles, $group->bundle());
+    $roles = $this->ensureBaseMemberRole($roles, $group);
 
     // Validate roles against permitted set to prevent privilege escalation.
     if (!empty($roles)) {
@@ -522,6 +523,7 @@ class GroupInvitationController extends ControllerBase {
         $roles = $this->storageJurisdictionRoleIds($roles);
       }
       $roles = MembershipRoleNormalizer::normalize($roles, $group->bundle());
+      $roles = $this->ensureBaseMemberRole($roles, $group);
       $langcode = $this->languageManager()->getCurrentLanguage()->getId();
 
       $emailLockName = $this->buildUserEmailLockName($email);
@@ -649,6 +651,36 @@ class GroupInvitationController extends ControllerBase {
     }
 
     return $slug !== '' ? $slug : NULL;
+  }
+
+  /**
+   * Ensures every jurisdiction invitation carries the base member role.
+   *
+   * Jurisdiction memberships require their individual member role to gain the
+   * group permissions that the invite flow promises. Organisation groups use
+   * their automatic insider role instead, so no role is added to them.
+   * Functional roles remain opt-in and are handled by the normalizer above.
+   *
+   * @param string[] $roles
+   *   Normalized, user-selected role IDs.
+   * @param \Drupal\group\Entity\GroupInterface $group
+   *   The target group.
+   *
+   * @return string[]
+   *   The role IDs to persist on the membership.
+   */
+  protected function ensureBaseMemberRole(array $roles, GroupInterface $group): array {
+    if (!$this->isJurisdictionGroup($group)) {
+      return $roles;
+    }
+
+    $member_role = $group->bundle() . '-member';
+    if (in_array($member_role, $roles, TRUE)) {
+      return $roles;
+    }
+
+    array_unshift($roles, $member_role);
+    return $roles;
   }
 
   /**

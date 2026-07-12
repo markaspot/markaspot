@@ -4997,3 +4997,100 @@ function _markaspot_group_update_root_admin_group_types(): array {
     'org',
   ]));
 }
+
+/**
+ * Restores the jurisdiction member role for invitation-created memberships.
+ *
+ * Earlier FastMap jurisdiction invitation requests could persist an empty roles
+ * array. The claim succeeded, but the resulting group relationship had no
+ * permission to view the group's service requests. Restrict this repair to
+ * claimed, empty-role jurisdiction invitations so intentionally managed
+ * memberships outside the invite flow are not changed.
+ */
+function markaspot_group_update_11939(): string {
+  $database = \Drupal::database();
+  if (!$database->schema()->tableExists('markaspot_group_invitations')) {
+    return 'Skipped invitation member-role repair because the invitations table is absent.';
+  }
+
+  $rows = $database->select('markaspot_group_invitations', 'i')
+    ->fields('i', ['email', 'group_id', 'roles'])
+    ->isNotNull('claimed')
+    ->execute()
+    ->fetchAll();
+
+  $entity_type_manager = \Drupal::entityTypeManager();
+  $group_storage = $entity_type_manager->getStorage('group');
+  $user_storage = $entity_type_manager->getStorage('user');
+  $group_role_storage = $entity_type_manager->getStorage('group_role');
+  $repaired = 0;
+  $skipped = 0;
+  $failed = 0;
+
+  foreach ($rows as $row) {
+    $invitation_roles = json_decode((string) $row->roles, TRUE);
+    if (!is_array($invitation_roles) || $invitation_roles !== []) {
+      continue;
+    }
+
+    $group = $group_storage->load((int) $row->group_id);
+    $users = $user_storage->loadByProperties(['mail' => (string) $row->email]);
+    $user = reset($users);
+    if (!$group instanceof \Drupal\group\Entity\GroupInterface || !$user instanceof \Drupal\user\UserInterface) {
+      $skipped++;
+      continue;
+    }
+    if ($group->bundle() !== _markaspot_group_update_jurisdiction_group_type()) {
+      continue;
+    }
+
+    $member = $group->getMember($user);
+    if (!$member) {
+      $skipped++;
+      continue;
+    }
+
+    $relationship = $member->getGroupRelationship();
+    if (!$relationship->hasField('group_roles')) {
+      $skipped++;
+      continue;
+    }
+
+    $current_role_ids = array_values(array_filter(
+      array_column($relationship->get('group_roles')->getValue(), 'target_id'),
+      'is_string'
+    ));
+    if ($current_role_ids !== []) {
+      continue;
+    }
+
+    $member_role_id = $group->bundle() . '-member';
+    if (!$group_role_storage->load($member_role_id)) {
+      $skipped++;
+      continue;
+    }
+
+    try {
+      $relationship->set('group_roles', [['target_id' => $member_role_id]]);
+      $relationship->save();
+      $repaired++;
+    }
+    catch (\Throwable $e) {
+      $failed++;
+      \Drupal::logger('markaspot_group')->error('Failed to restore the base member role on group @gid: @message', [
+        '@gid' => $group->id(),
+        '@message' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  if ($failed > 0) {
+    throw new \RuntimeException(sprintf('Failed to repair %d invitation-created member role(s).', $failed));
+  }
+
+  return sprintf(
+    'Restored the jurisdiction member role for %d invitation-created membership(s); skipped %d.',
+    $repaired,
+    $skipped,
+  );
+}

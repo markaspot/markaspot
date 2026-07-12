@@ -170,6 +170,31 @@ class GroupInvitationControllerTest extends UnitTestCase {
   }
 
   /**
+   * @covers ::ensureBaseMemberRole
+   */
+  public function testEmptyInvitationRolesReceiveTheBaseMemberRole(): void {
+    $controller = $this->getMockBuilder(GroupInvitationController::class)
+      ->disableOriginalConstructor()
+      ->getMock();
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('bundle')->willReturn('jur');
+
+    $method = new \ReflectionMethod($controller, 'ensureBaseMemberRole');
+    $method->setAccessible(TRUE);
+
+    $this->assertSame(['jur-member'], $method->invoke($controller, [], $group));
+    $this->assertSame(
+      ['jur-member', 'jur-moderator'],
+      $method->invoke($controller, ['jur-moderator'], $group)
+    );
+    $this->assertSame(['jur-member'], $method->invoke($controller, ['jur-member'], $group));
+
+    $org_group = $this->createMock(GroupInterface::class);
+    $org_group->method('bundle')->willReturn('org');
+    $this->assertSame([], $method->invoke($controller, [], $org_group));
+  }
+
+  /**
    * @covers ::claimInvitation
    */
   public function testClaimInvitationReturnsTooManyRequestsWhenFlooded(): void {
