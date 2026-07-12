@@ -8,6 +8,7 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_mail_inbound\Entity\InboundMail;
 
 /**
@@ -20,7 +21,7 @@ use Drupal\markaspot_mail_inbound\Entity\InboundMail;
  *
  * Gate order (a miss at any step -> status=skipped, not failed):
  *   1. Module setting ai_suggestions_enabled (default TRUE)
- *   2. Tenant features.aiAnalysis via FeatureFlagChecker
+ *   2. Effective tenant features.aiAnalysis via FeatureScopeResolver
  *   3. Token budget via TokenTrackingService::checkLimit()
  *   4. Service availability (vision or AI client present)
  *
@@ -90,8 +91,8 @@ class MailCategorySuggestionService {
    *   Optional markaspot_ai.client service (@?).
    * @param object|null $tokenTracking
    *   Optional markaspot_ai.token_tracking service (@?).
-   * @param object|null $featureFlagChecker
-   *   Optional markaspot_nuxt.feature_flag_checker service (@?).
+   * @param object|null $featureScopeResolver
+   *   Optional markaspot_nuxt.feature_scope_resolver service (@?).
    */
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManager,
@@ -102,7 +103,7 @@ class MailCategorySuggestionService {
     protected ?object $imageProcessingService = NULL,
     protected ?object $aiClient = NULL,
     protected ?object $tokenTracking = NULL,
-    protected ?object $featureFlagChecker = NULL,
+    protected ?object $featureScopeResolver = NULL,
   ) {
   }
 
@@ -708,9 +709,9 @@ class MailCategorySuggestionService {
   /**
    * Checks whether the tenant's features.aiAnalysis flag is enabled.
    *
-   * Uses the FeatureFlagChecker when available. When the service is absent the
-   * flag defaults to TRUE (the vision controller's convention: unconfigured
-   * tenants get the feature).
+   * Uses the FeatureScopeResolver when available. When the service is absent
+   * the flag defaults to TRUE (the vision controller's convention:
+   * unconfigured tenants get the feature).
    *
    * @param int $jurId
    *   The jurisdiction group id (0 = no jurisdiction assigned).
@@ -720,7 +721,7 @@ class MailCategorySuggestionService {
    *   degradation).
    */
   protected function isTenantAiEnabled(int $jurId): bool {
-    if ($this->featureFlagChecker === NULL || !method_exists($this->featureFlagChecker, 'isEnabled')) {
+    if ($this->featureScopeResolver === NULL || !method_exists($this->featureScopeResolver, 'isEnabledEffective')) {
       return TRUE;
     }
     $group = NULL;
@@ -733,7 +734,10 @@ class MailCategorySuggestionService {
       }
     }
     // Mirror vision controller: default TRUE (unconfigured tenants get it).
-    return (bool) $this->featureFlagChecker->isEnabled('features.aiAnalysis', $group, TRUE);
+    if (!$group instanceof GroupInterface) {
+      return TRUE;
+    }
+    return (bool) $this->featureScopeResolver->isEnabledEffective('aiAnalysis', $group, TRUE);
   }
 
   /**

@@ -14,6 +14,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
 use Psr\Log\LoggerInterface;
@@ -123,6 +124,8 @@ class EscalationService implements EscalationServiceInterface {
    *   The mail manager.
    * @param \Drupal\markaspot_group\Service\OrgHierarchyResolverInterface $orgHierarchyResolver
    *   The organisation hierarchy resolver.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver|null $featureScopeResolver
+   *   The effective feature scope resolver.
    */
   public function __construct(
     EntityTypeManagerInterface $entityTypeManager,
@@ -134,6 +137,7 @@ class EscalationService implements EscalationServiceInterface {
     LoggerInterface $logger,
     MailManagerInterface $mailManager,
     OrgHierarchyResolverInterface $orgHierarchyResolver,
+    protected ?FeatureScopeResolver $featureScopeResolver = NULL,
   ) {
     $this->entityTypeManager = $entityTypeManager;
     $this->hierarchyResolver = $hierarchyResolver;
@@ -400,24 +404,15 @@ class EscalationService implements EscalationServiceInterface {
 
     $jurisdiction = $this->entityTypeManager->getStorage('group')
       ->load($jurisdictionId);
-    if (!$this->isJurisdictionGroup($jurisdiction)
-        || !$jurisdiction->hasField('field_nuxt_config')
-        || $jurisdiction->get('field_nuxt_config')->isEmpty()) {
+    if (!$this->isJurisdictionGroup($jurisdiction) || $this->featureScopeResolver === NULL) {
       $cache[$jurisdictionId] = FALSE;
       return FALSE;
     }
-
-    $decoded = json_decode(
-      (string) $jurisdiction->get('field_nuxt_config')->value,
-      TRUE
+    $cache[$jurisdictionId] = $this->featureScopeResolver->isEnabledEffective(
+      'delegationNoteRequired',
+      $jurisdiction,
+      FALSE,
     );
-    if (!is_array($decoded)) {
-      $cache[$jurisdictionId] = FALSE;
-      return FALSE;
-    }
-
-    $cache[$jurisdictionId] =
-      ($decoded['features']['delegationNoteRequired'] ?? FALSE) === TRUE;
     return $cache[$jurisdictionId];
   }
 

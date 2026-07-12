@@ -24,8 +24,10 @@ use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\JurisdictionScopeValidator;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_open311\Exception\GeoreportException;
 use Drupal\markaspot_open311\Service\GeoreportProcessorService;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_open311\Service\SearchApiQueryService;
 use Drupal\markaspot_open311\Traits\LanguageNegotiationTrait;
 use Drupal\markaspot_validation\Service\BoundaryValidator;
@@ -200,6 +202,8 @@ final class GeoreportRequestIndexResource extends ResourceBase {
    *   The jurisdiction scope validator.
    * @param \Drupal\markaspot_validation\Service\BoundaryValidator $boundary_validator
    *   The boundary validator.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver|null $featureScopeResolver
+   *   The effective feature scope resolver.
    */
   public function __construct(
     array $configuration,
@@ -221,6 +225,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
     ?object $workspace_visibility = NULL,
     ?JurisdictionScopeValidator $jurisdiction_scope_validator = NULL,
     ?BoundaryValidator $boundary_validator = NULL,
+    protected ?FeatureScopeResolver $featureScopeResolver = NULL,
   ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $serializer_formats, $logger);
     $this->currentUser = $current_user;
@@ -262,7 +267,8 @@ final class GeoreportRequestIndexResource extends ResourceBase {
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->has('markaspot_fastmap.workspace_visibility') ? $container->get('markaspot_fastmap.workspace_visibility') : NULL,
       $container->get('markaspot_group.jurisdiction_scope_validator'),
-      $container->get('markaspot_validation.boundary_validator')
+      $container->get('markaspot_validation.boundary_validator'),
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
     );
   }
 
@@ -1088,6 +1094,7 @@ final class GeoreportRequestIndexResource extends ResourceBase {
 
     // Make sure it's a content entity.
     if ($node instanceof ContentEntityInterface) {
+      $this->enforceAnonymousPrivacyMediaBlock($node, $request_data);
       $validation = $this->validate($node);
       if ($validation === TRUE) {
         // Determine initial status (jurisdiction-aware).
@@ -1135,6 +1142,39 @@ final class GeoreportRequestIndexResource extends ResourceBase {
           $service_request['service_requests']['request']['service_request_id'] = $request_id;
         }
         return $service_request;
+      }
+    }
+  }
+
+  /**
+   * Rejects anonymous citizen reports containing privacy-flagged media.
+   */
+  private function enforceAnonymousPrivacyMediaBlock(ContentEntityInterface $node, array $requestData): void {
+    if (!$this->currentUser->isAnonymous() || $this->featureScopeResolver === NULL) {
+      return;
+    }
+
+    $jurisdictionId = isset($requestData['jurisdiction_id'])
+      ? (int) $requestData['jurisdiction_id']
+      : 0;
+    $jurisdiction = $jurisdictionId > 0
+      ? $this->entityTypeManager->getStorage('group')->load($jurisdictionId)
+      : NULL;
+    if (!$jurisdiction instanceof GroupInterface
+      || !$this->featureScopeResolver->isEnabledEffective('privacyBlockOnFlag', $jurisdiction, FALSE)
+      || !$node->hasField('field_request_media')
+      || $node->get('field_request_media')->isEmpty()) {
+      return;
+    }
+
+    foreach ($node->get('field_request_media')->referencedEntities() as $media) {
+      if ($media->hasField('field_ai_privacy_flag')
+        && !$media->get('field_ai_privacy_flag')->isEmpty()
+        && (bool) $media->get('field_ai_privacy_flag')->value) {
+        throw new GeoreportException(
+          'This report cannot be submitted anonymously because an attached image was flagged for privacy review.',
+          400,
+        );
       }
     }
   }
@@ -1309,8 +1349,8 @@ final class GeoreportRequestIndexResource extends ResourceBase {
    * Return only the query parameters that target allowlisted node fields.
    *
    * Each accepted entry is normalised so the caller can branch on shape:
-   *   - string value  → single-equality filter ($query->condition($f, $v, '=')).
-   *   - array  value  → multi-value IN filter ($query->condition($f, $v, 'IN')).
+   *   - string value: single-equality filter.
+   *   - array value: multi-value IN filter.
    *
    * Two channels yield a multi-value array:
    *   1. comma-separated string (e.g. ?field_district=148,149) — frontend

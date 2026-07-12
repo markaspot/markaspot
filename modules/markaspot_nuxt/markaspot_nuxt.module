@@ -17,6 +17,7 @@ use Drupal\Core\Access\AccessResultInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\user\UserInterface;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 
 /**
  * Implements hook_entity_presave().
@@ -107,6 +108,37 @@ function markaspot_nuxt_node_presave(NodeInterface $node): void {
   if ($node->bundle() !== 'service_request' || !$node->isNew()) {
     return;
   }
+
+  // JSON:API is the current citizen frontend create path. Restrict this
+  // request-level gate to anonymous JSON:API creates so staff intake, mail
+  // promotion, imports, and other entity save paths remain unchanged.
+  $request = \Drupal::service('request_stack')->getCurrentRequest();
+  $route = $request?->attributes->get('_route');
+  if (is_string($route)
+    && str_starts_with($route, 'jsonapi.node--service_request.collection.post')
+    && \Drupal::currentUser()->isAnonymous()) {
+    /** @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $checker */
+    $checker = \Drupal::service('markaspot_nuxt.feature_flag_checker');
+    $jurisdiction = $checker->resolveJurisdictionForNode($node);
+    if ($jurisdiction instanceof GroupInterface) {
+      /** @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $resolver */
+      $resolver = \Drupal::service('markaspot_nuxt.feature_scope_resolver');
+      if ($resolver->isEnabledEffective('privacyBlockOnFlag', $jurisdiction, FALSE)
+        && $node->hasField('field_request_media')
+        && !$node->get('field_request_media')->isEmpty()) {
+        foreach ($node->get('field_request_media')->referencedEntities() as $media) {
+          if ($media->hasField('field_ai_privacy_flag')
+            && !$media->get('field_ai_privacy_flag')->isEmpty()
+            && (bool) $media->get('field_ai_privacy_flag')->value) {
+            throw new BadRequestHttpException(
+              'This report cannot be submitted anonymously because an attached image was flagged for privacy review.'
+            );
+          }
+        }
+      }
+    }
+  }
+
   if (!$node->hasField('field_gdpr')) {
     return;
   }

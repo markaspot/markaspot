@@ -11,7 +11,6 @@ use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\Core\Site\Settings;
 use Drupal\Core\StreamWrapper\PublicStream;
 use Drupal\Core\StreamWrapper\StreamWrapperManager;
 use Drupal\Core\StreamWrapper\StreamWrapperManagerInterface;
@@ -23,6 +22,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\BoundaryGeoJsonValidator;
 use Drupal\markaspot_nuxt\Service\CitizenWordingResolver;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use CommerceGuys\Addressing\Country\CountryRepositoryInterface;
 use enshrined\svgSanitize\Sanitizer;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -76,6 +76,7 @@ final class TenantSettingsController extends ControllerBase {
     'loginLink',
     'delegationNoteRequired',
     'assignmentSyncsOrganisation',
+    'moderation',
   ];
 
   /**
@@ -290,6 +291,13 @@ final class TenantSettingsController extends ControllerBase {
   protected JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * The effective feature scope resolver.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver
+   */
+  protected FeatureScopeResolver $featureScopeResolver;
+
+  /**
    * The email validator.
    *
    * @var \Drupal\Component\Utility\EmailValidator
@@ -313,6 +321,7 @@ final class TenantSettingsController extends ControllerBase {
     FileRepositoryInterface $file_repository,
     AccountInterface $current_user,
     JurisdictionHierarchyResolverInterface $hierarchy_resolver,
+    FeatureScopeResolver $feature_scope_resolver,
     EmailValidator $email_validator,
     ?CountryRepositoryInterface $country_repository,
   ) {
@@ -322,6 +331,7 @@ final class TenantSettingsController extends ControllerBase {
     $this->fileRepository = $file_repository;
     $this->currentUser = $current_user;
     $this->hierarchyResolver = $hierarchy_resolver;
+    $this->featureScopeResolver = $feature_scope_resolver;
     $this->emailValidator = $email_validator;
     $this->countryRepository = $country_repository;
   }
@@ -337,6 +347,7 @@ final class TenantSettingsController extends ControllerBase {
       $container->get('file.repository'),
       $container->get('current_user'),
       $container->get('markaspot_group.hierarchy_resolver'),
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
       $container->get('email.validator'),
       $container->has('address.country_repository')
         ? $container->get('address.country_repository')
@@ -576,38 +587,10 @@ final class TenantSettingsController extends ControllerBase {
   }
 
   /**
-   * Reads generic form feature flags from canonical and legacy config paths.
-   *
-   * Features.forms is the canonical path written by the dashboard. Top-level
-   * forms is kept as a read-only fallback for older JSON UI tenant configs.
-   * Explicit features.forms values win.
-   *
-   * @param array $config
-   *   Decoded field_nuxt_config.
-   *
-   * @return array
-   *   Merged form feature settings.
-   */
-  private function getFormFeatureSettings(array $config): array {
-    $legacy_forms = is_array($config['forms'] ?? NULL) ? $config['forms'] : [];
-    $feature_forms = is_array($config['features']['forms'] ?? NULL) ? $config['features']['forms'] : [];
-
-    return array_replace($legacy_forms, $feature_forms);
-  }
-
-  /**
    * Checks whether the jurisdiction tier may use Operations Overview.
    */
   private function canUseOperationsDashboard(GroupInterface $group): bool {
-    if (!$group->hasField('field_tier')) {
-      return TRUE;
-    }
-
-    if ($group->get('field_tier')->isEmpty()) {
-      return FALSE;
-    }
-
-    return in_array((string) $group->get('field_tier')->value, ['pro', 'heart'], TRUE);
+    return $this->featureScopeResolver->canUseTierGatedFeatures($group);
   }
 
   /**
@@ -1963,14 +1946,16 @@ final class TenantSettingsController extends ControllerBase {
       return new JsonResponse(['error' => 'Jurisdiction not found.'], 404);
     }
 
-    $config = $this->getNuxtConfig($group);
-
-    $features = $config['features'] ?? [];
-    $forms = $this->getFormFeatureSettings($config);
-    $operations_dashboard = $this->getBooleanFeatureValue($features, 'operationsDashboard', FALSE);
-    if (!$this->canUseOperationsDashboard($group)) {
-      $operations_dashboard = FALSE;
-    }
+    $features = $this->featureScopeResolver->resolveEffectiveFeatures($group);
+    $forms = is_array($features['forms'] ?? NULL) ? $features['forms'] : [];
+    $editable = array_keys(array_filter(
+      FeatureScopeResolver::SCOPE_MAP,
+      fn(string $scope, string $key): bool => $this->featureScopeResolver->isEditable($key, $group),
+      ARRAY_FILTER_USE_BOTH,
+    ));
+    $root_id = $this->hierarchyResolver->getRootJurisdictionId((int) $group->id());
+    $is_tenant_root = $root_id === NULL || $root_id === (int) $group->id();
+    $tier_capability = $this->canUseOperationsDashboard($group);
 
     return new JsonResponse([
       'jurisdiction_id' => (int) $group->id(),
@@ -1985,6 +1970,7 @@ final class TenantSettingsController extends ControllerBase {
         'voting' => $this->getBooleanFeatureValue($features, 'voting', FALSE),
         'statistics' => $this->getBooleanFeatureValue($features, 'statistics', FALSE),
         'following' => $this->getBooleanFeatureValue($features, 'following', FALSE),
+        'moderation' => $this->getBooleanFeatureValue($features, 'moderation', FALSE),
         'passwordless' => $this->getBooleanFeatureValue($features, 'passwordless', FALSE),
         // Visibility of the citizen footer sign-in link; /auth/login itself
         // stays reachable regardless of this flag.
@@ -1999,7 +1985,7 @@ final class TenantSettingsController extends ControllerBase {
         'formFirst' => $this->getBooleanFeatureValue($features, 'formFirst', FALSE),
         'dashboard' => $this->getBooleanFeatureValue($features, 'dashboard', TRUE),
         'dashboardRequestCreate' => $this->getBooleanFeatureValue($features, 'dashboardRequestCreate', TRUE),
-        'operationsDashboard' => $operations_dashboard,
+        'operationsDashboard' => $this->getBooleanFeatureValue($features, 'operationsDashboard', FALSE),
         'caseAssignment' => $this->canUseCaseAssignment($group),
         'contactForm' => $this->getBooleanFeatureValue($features, 'contactForm', FALSE),
         'privacyBlockOnFlag' => $this->getBooleanFeatureValue($features, 'privacyBlockOnFlag', FALSE),
@@ -2009,7 +1995,7 @@ final class TenantSettingsController extends ControllerBase {
         // Default follows the operating mode: on for SaaS workspaces, off
         // for self-hosted/enterprise installs where it is opt-in via this
         // flag (see MailBrandingService for the operating-mode pattern).
-        'onboardingTour' => $this->getBooleanFeatureValue($features, 'onboardingTour', Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas'),
+        'onboardingTour' => $this->getBooleanFeatureValue($features, 'onboardingTour', FALSE),
         'emergency' => ['enabled' => $features['emergency']['enabled'] ?? FALSE],
         'funFacts' => ['enabled' => $features['funFacts']['enabled'] ?? FALSE],
         'search' => ['enabled' => $features['search']['enabled'] ?? TRUE],
@@ -2020,11 +2006,20 @@ final class TenantSettingsController extends ControllerBase {
         ],
       ],
       'capabilities' => [
-        // Authoritative tier gate for the Operations Overview toggle. The
-        // frontend reads this instead of re-deriving tier rules, so the
-        // settings switch can never diverge from the backend enforcement
-        // (updateFeatureSettings scrubs the flag to FALSE when not permitted).
-        'operationsDashboard' => $this->canUseOperationsDashboard($group),
+        // Authoritative tier gates. The frontend reads these instead of
+        // re-deriving tier rules, so the settings switches can never diverge
+        // from the backend enforcement (updateFeatureSettings scrubs the
+        // flags to FALSE when not permitted). aiAnalysis is available in
+        // every tier (budget-capped, not gated); the key stays in the
+        // response for contract stability.
+        'operationsDashboard' => $tier_capability,
+        'aiAnalysis' => TRUE,
+        'aiProcessing' => $tier_capability,
+      ],
+      'scopes' => [
+        'flags' => FeatureScopeResolver::SCOPE_MAP,
+        'isTenantRoot' => $is_tenant_root,
+        'editable' => $editable,
       ],
     ]);
   }
@@ -2056,6 +2051,30 @@ final class TenantSettingsController extends ControllerBase {
 
     if (!is_array($data)) {
       return new JsonResponse(['error' => 'Invalid JSON body.'], 400);
+    }
+
+    // Silently discard flags outside the writable scope of this request.
+    foreach (FeatureScopeResolver::SCOPE_MAP as $key => $scope) {
+      if ($this->featureScopeResolver->isEditable($key, $group)) {
+        continue;
+      }
+      if (str_starts_with($key, 'forms.')) {
+        $form_key = substr($key, strlen('forms.'));
+        unset($data['forms'][$form_key]);
+        continue;
+      }
+      unset($data[$key]);
+    }
+
+    // Never persist an un-entitled TRUE for tier-gated flags. The read side
+    // scrubs the effective value anyway, but a stored TRUE would silently
+    // self-activate on a later tier or operating-mode change.
+    if (!$this->featureScopeResolver->canUseTierGatedFeatures($group)) {
+      foreach (FeatureScopeResolver::TIER_GATED as $tier_key) {
+        if (($data[$tier_key] ?? NULL) === TRUE || (is_array($data[$tier_key] ?? NULL) && ($data[$tier_key]['enabled'] ?? NULL) === TRUE)) {
+          $data[$tier_key] = FALSE;
+        }
+      }
     }
 
     // Accept the legacy object form for simple flags and normalise it to a
@@ -2102,10 +2121,6 @@ final class TenantSettingsController extends ControllerBase {
           return new JsonResponse(['error' => "forms.$flag must be a boolean."], 422);
         }
       }
-    }
-
-    if (($data['operationsDashboard'] ?? FALSE) === TRUE && !$this->canUseOperationsDashboard($group)) {
-      $data['operationsDashboard'] = FALSE;
     }
 
     // Read-modify-write: load existing config, update only the features key.

@@ -684,3 +684,125 @@ function markaspot_nuxt_update_11907(): string {
 
   return $message;
 }
+
+/**
+ * Migrates root jurisdiction platform flags into central configuration.
+ */
+function markaspot_nuxt_update_11908(): string {
+  // Per-flag defaults mirror the previous per-jurisdiction effective
+  // behaviour (FeatureScopeResolver::DEFAULTS). Roots that never stored a
+  // flag contribute this default, so a default-on flag like loginLink
+  // cannot flip off fleet-wide just because nobody ever touched the toggle.
+  $flag_defaults = [
+    'passwordless' => FALSE,
+    'loginLink' => TRUE,
+    'piiRedaction' => FALSE,
+    'privacyBlockOnFlag' => FALSE,
+  ];
+  $seeded = [];
+  // privacyNotice keeps a tri-state: NULL (no operator decision) preserves
+  // the legacy behaviour (disclosure visible, GDPR coupling off). Only an
+  // explicit stored value on a root jurisdiction is migrated.
+  $privacy_notice = NULL;
+  $resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  $storage = \Drupal::entityTypeManager()->getStorage('group');
+
+  $normalize = static function (mixed $value): ?bool {
+    if (is_array($value)) {
+      $value = $value['enabled'] ?? NULL;
+    }
+    // Legacy tenant configs store loose scalars ('1', '0', 'false').
+    if (is_string($value)) {
+      return !in_array(strtolower($value), ['false', '0', ''], TRUE);
+    }
+    if (is_int($value)) {
+      return $value !== 0;
+    }
+    return is_bool($value) ? $value : NULL;
+  };
+
+  foreach ($resolver->getAllRootJurisdictionIds() as $root_id) {
+    $group = $storage->load($root_id);
+    $features = [];
+    if ($group && $group->hasField('field_nuxt_config') && !$group->get('field_nuxt_config')->isEmpty()) {
+      $decoded = json_decode((string) $group->get('field_nuxt_config')->value, TRUE);
+      $features = is_array($decoded['features'] ?? NULL) ? $decoded['features'] : [];
+    }
+    foreach ($flag_defaults as $key => $default) {
+      $value = $normalize($features[$key] ?? NULL);
+      // Roots that never stored the flag contribute their previous
+      // effective default, so a default-on flag like loginLink cannot
+      // flip off fleet-wide just because nobody ever touched the toggle.
+      $effective = $value ?? $default;
+      $seeded[$key] = ($seeded[$key] ?? FALSE) || $effective;
+    }
+    $privacy_value = $normalize($features['privacyNotice'] ?? NULL);
+    if ($privacy_value !== NULL) {
+      $privacy_notice = ($privacy_notice ?? FALSE) || $privacy_value;
+    }
+  }
+
+  // Installations without any root jurisdiction keep the flag defaults.
+  $seeded += $flag_defaults;
+
+  if (\Drupal\Core\Site\Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas') {
+    $seeded['passwordless'] = TRUE;
+  }
+  $seeded['privacyNotice'] = $privacy_notice;
+  $seeded['onboardingTour'] = NULL;
+
+  \Drupal::configFactory()
+    ->getEditable('markaspot_nuxt.settings')
+    ->set('platform_features', $seeded)
+    ->save();
+
+  // Audit: sub-jurisdiction opt-outs on tenant-scope flags are overridden
+  // by the root value from now on. Log them so operators can see which
+  // formerly effective FALSE values (privacy-relevant for the AI flags)
+  // stop applying with the scope split.
+  $tenant_keys = [
+    'aiAnalysis',
+    'aiProcessing',
+    'operationsDashboard',
+    'assignmentSyncsOrganisation',
+    'delegationNoteRequired',
+    'dashboard',
+    'dashboardRequestCreate',
+  ];
+  $group_ids = \Drupal::entityQuery('group')
+    ->condition('type', 'jur')
+    ->accessCheck(FALSE)
+    ->execute();
+  foreach ($storage->loadMultiple($group_ids) as $group) {
+    $root_id = $resolver->getRootJurisdictionId((int) $group->id());
+    if ($root_id === NULL || $root_id === (int) $group->id()) {
+      continue;
+    }
+    if (!$group->hasField('field_nuxt_config') || $group->get('field_nuxt_config')->isEmpty()) {
+      continue;
+    }
+    $decoded = json_decode((string) $group->get('field_nuxt_config')->value, TRUE);
+    $features = is_array($decoded['features'] ?? NULL) ? $decoded['features'] : [];
+    $root = $storage->load($root_id);
+    $root_features = [];
+    if ($root && $root->hasField('field_nuxt_config') && !$root->get('field_nuxt_config')->isEmpty()) {
+      $root_decoded = json_decode((string) $root->get('field_nuxt_config')->value, TRUE);
+      $root_features = is_array($root_decoded['features'] ?? NULL) ? $root_decoded['features'] : [];
+    }
+    foreach ($tenant_keys as $key) {
+      if ($normalize($features[$key] ?? NULL) === FALSE
+        && $normalize($root_features[$key] ?? NULL) === TRUE) {
+        \Drupal::logger('markaspot_nuxt')->warning(
+          'Scope split: sub-jurisdiction @sub had @flag explicitly disabled, but the tenant root @root enables it. The root value now applies.',
+          [
+            '@sub' => $group->id(),
+            '@flag' => $key,
+            '@root' => $root_id,
+          ]
+        );
+      }
+    }
+  }
+
+  return t('Seeded platform feature flags from root jurisdictions.');
+}

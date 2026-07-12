@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Drupal\markaspot_ai\Controller;
 
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembershipLoaderInterface;
 use Drupal\markaspot_ai\Service\NodeAnalysisService;
 use Drupal\markaspot_ai\Service\SentimentService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -55,6 +57,13 @@ class SentimentController extends ControllerBase {
   protected ?JurisdictionHierarchyResolverInterface $hierarchyResolver;
 
   /**
+   * The effective feature scope resolver.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver|null
+   */
+  protected ?FeatureScopeResolver $featureScopeResolver;
+
+  /**
    * Constructs a SentimentController object.
    *
    * @param \Drupal\markaspot_ai\Service\SentimentService $sentiment_service
@@ -65,17 +74,21 @@ class SentimentController extends ControllerBase {
    *   The group membership loader.
    * @param \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|null $hierarchy_resolver
    *   The jurisdiction hierarchy resolver.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver|null $feature_scope_resolver
+   *   The effective feature scope resolver.
    */
   public function __construct(
     SentimentService $sentiment_service,
     NodeAnalysisService $node_analysis_service,
     GroupMembershipLoaderInterface $membership_loader,
     ?JurisdictionHierarchyResolverInterface $hierarchy_resolver = NULL,
+    ?FeatureScopeResolver $feature_scope_resolver = NULL,
   ) {
     $this->sentimentService = $sentiment_service;
     $this->nodeAnalysisService = $node_analysis_service;
     $this->membershipLoader = $membership_loader;
     $this->hierarchyResolver = $hierarchy_resolver;
+    $this->featureScopeResolver = $feature_scope_resolver;
   }
 
   /**
@@ -88,7 +101,8 @@ class SentimentController extends ControllerBase {
       $container->get('group.membership_loader'),
       $container->has('markaspot_group.hierarchy_resolver')
         ? $container->get('markaspot_group.hierarchy_resolver')
-        : NULL
+        : NULL,
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
     );
   }
 
@@ -414,7 +428,10 @@ class SentimentController extends ControllerBase {
       ->getStorage('group')
       ->load($jurisdiction_id);
 
-    return _markaspot_ai_is_feature_enabled_for_jurisdiction($group, 'aiProcessing');
+    if (!$group instanceof GroupInterface || $this->featureScopeResolver === NULL) {
+      return FALSE;
+    }
+    return $this->featureScopeResolver->isEnabledEffective('aiProcessing', $group, FALSE);
   }
 
   /**

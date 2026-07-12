@@ -3910,6 +3910,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       $this->fileSystem->prepareDirectory($directoryPath, FileSystemInterface::CREATE_DIRECTORY);
 
       foreach ($urls as $url) {
+        $privacyFlagged = $this->isExistingMediaUrlPrivacyFlagged(trim($url));
         $destination = $directoryPath . basename($url);
 
         if (strstr($url, 'http')) {
@@ -3922,7 +3923,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
               $file->save();
 
               if ($this->moduleHandler->moduleExists('markaspot_media')) {
-                $media = $this->createMediaEntity('request_image', $file);
+                $media = $this->createMediaEntity('request_image', $file, $privacyFlagged);
                 $mediaUrls[] = [
                   'target_id' => $media->id(),
                   'alt' => 'Open311 File',
@@ -3961,6 +3962,8 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    *   The media bundle.
    * @param \Drupal\file\Entity\File $file
    *   The file object.
+   * @param bool $privacyFlagged
+   *   Whether the source media was flagged for privacy review.
    *
    * @return \Drupal\media\MediaInterface
    *   The created media entity.
@@ -3968,7 +3971,7 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
    * @throws \Drupal\Core\Entity\EntityStorageException
    *   If there is an error saving the media entity.
    */
-  private function createMediaEntity(string $bundle, File $file): MediaInterface {
+  private function createMediaEntity(string $bundle, File $file, bool $privacyFlagged = FALSE): MediaInterface {
     $media = $this->entityTypeManager->getStorage('media')->create([
       'bundle' => $bundle,
       'uid' => $this->currentUser->id(),
@@ -3979,11 +3982,52 @@ class GeoreportProcessorService implements GeoreportProcessorServiceInterface {
       ],
     ]);
 
+    if ($privacyFlagged && $media->hasField('field_ai_privacy_flag')) {
+      $media->set('field_ai_privacy_flag', TRUE);
+    }
+
     $media->setName('media:' . $bundle . ':' . $media->uuid())
-      ->setPublished(TRUE)
+      ->setPublished(!$privacyFlagged)
       ->save();
 
     return $media;
+  }
+
+  /**
+   * Checks whether a local media URL belongs to privacy-flagged media.
+   */
+  private function isExistingMediaUrlPrivacyFlagged(string $url): bool {
+    $submittedPath = parse_url($url, PHP_URL_PATH);
+    if (!is_string($submittedPath) || $submittedPath === '') {
+      return FALSE;
+    }
+    $filename = basename(rawurldecode($submittedPath));
+    $submittedHost = parse_url($url, PHP_URL_HOST);
+    $files = $this->entityTypeManager->getStorage('file')
+      ->loadByProperties(['filename' => $filename]);
+
+    foreach ($files as $file) {
+      $existingUrl = $this->fileUrlGenerator->generateAbsoluteString($file->getFileUri());
+      $existingPath = parse_url($existingUrl, PHP_URL_PATH);
+      $existingHost = parse_url($existingUrl, PHP_URL_HOST);
+      if (!is_string($existingPath)
+        || (is_string($submittedHost) && is_string($existingHost)
+          && strcasecmp($submittedHost, $existingHost) !== 0)
+        || rawurldecode($existingPath) !== rawurldecode($submittedPath)) {
+        continue;
+      }
+      $media = $this->entityTypeManager->getStorage('media')->loadByProperties([
+        'field_media_image.target_id' => $file->id(),
+      ]);
+      foreach ($media as $item) {
+        if ($item->hasField('field_ai_privacy_flag')
+          && !$item->get('field_ai_privacy_flag')->isEmpty()
+          && (bool) $item->get('field_ai_privacy_flag')->value) {
+          return TRUE;
+        }
+      }
+    }
+    return FALSE;
   }
 
   /**

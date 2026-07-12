@@ -13,6 +13,7 @@ use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -58,6 +59,13 @@ class MarkASpotSettingsController extends ControllerBase {
   protected OrganisationMetadataBuilder $organisationMetadataBuilder;
 
   /**
+   * The effective feature scope resolver.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver
+   */
+  protected FeatureScopeResolver $featureScopeResolver;
+
+  /**
    * Constructs a MarkASpotSettingsController object.
    *
    * @param \Drupal\Core\Entity\EntityTypeManagerInterface $entity_type_manager
@@ -72,6 +80,8 @@ class MarkASpotSettingsController extends ControllerBase {
    *   The enterprise feature gate.
    * @param \Drupal\markaspot_group\Service\OrganisationMetadataBuilder $organisation_metadata_builder
    *   The organisation metadata builder.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $feature_scope_resolver
+   *   The effective feature scope resolver.
    */
   public function __construct(
     EntityTypeManagerInterface $entity_type_manager,
@@ -80,6 +90,7 @@ class MarkASpotSettingsController extends ControllerBase {
     JurisdictionHierarchyResolverInterface $hierarchy_resolver,
     EnterpriseFeatureGate $enterprise_feature_gate,
     OrganisationMetadataBuilder $organisation_metadata_builder,
+    FeatureScopeResolver $feature_scope_resolver,
   ) {
     $this->entityTypeManager = $entity_type_manager;
     $this->configFactory = $config_factory;
@@ -87,6 +98,7 @@ class MarkASpotSettingsController extends ControllerBase {
     $this->hierarchyResolver = $hierarchy_resolver;
     $this->enterpriseFeatureGate = $enterprise_feature_gate;
     $this->organisationMetadataBuilder = $organisation_metadata_builder;
+    $this->featureScopeResolver = $feature_scope_resolver;
   }
 
   /**
@@ -99,7 +111,8 @@ class MarkASpotSettingsController extends ControllerBase {
       $container->get('stream_wrapper_manager'),
       $container->get('markaspot_group.hierarchy_resolver'),
       $container->get('markaspot_nuxt.enterprise_feature_gate'),
-      $container->get('markaspot_group.organisation_metadata_builder')
+      $container->get('markaspot_group.organisation_metadata_builder'),
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
     );
   }
 
@@ -280,6 +293,7 @@ class MarkASpotSettingsController extends ControllerBase {
           'navigation',
           'filters',
           'forms',
+          'fields',
           'privacy',
           'i18n',
           'groupTypes',
@@ -358,6 +372,18 @@ class MarkASpotSettingsController extends ControllerBase {
       }
     }
 
+    if ($group instanceof GroupInterface) {
+      $settings['features'] = $this->featureScopeResolver->resolveEffectiveFeatures($group);
+      // The GDPR consent requirement only couples to an EXPLICIT operator
+      // decision. An unset platform flag keeps the legacy behaviour: the
+      // disclosure stays visible (NULL resolves to enabled) without newly
+      // forcing the consent checkbox on every install.
+      $privacy_notice_required = $this->featureScopeResolver
+        ->isPlatformFeatureExplicitlyEnabled('privacyNotice');
+      $configured_gdpr_required = (bool) ($settings['fields']['field_gdpr']['required'] ?? FALSE);
+      $settings['fields']['field_gdpr']['required'] = $configured_gdpr_required || $privacy_notice_required;
+    }
+
     // Enforce feature flags based on installed modules.
     // If a module is not installed, force the feature to FALSE regardless
     // of what field_nuxt_config says. This prevents the frontend from
@@ -414,10 +440,6 @@ class MarkASpotSettingsController extends ControllerBase {
           $settings['features'][$feature] = FALSE;
         }
       }
-    }
-
-    if ($group instanceof GroupInterface && !$this->canUseOperationsDashboard($group)) {
-      $settings['features']['operationsDashboard'] = FALSE;
     }
 
     // Enterprise-gate: mail text editor. Self-hosted jurisdictions (no
@@ -1597,21 +1619,6 @@ class MarkASpotSettingsController extends ControllerBase {
     }
 
     $settings['features']['forms'] = array_replace($legacy_forms, $feature_forms);
-  }
-
-  /**
-   * Checks whether the jurisdiction tier may expose Operations Overview.
-   */
-  private function canUseOperationsDashboard(GroupInterface $group): bool {
-    if (!$group->hasField('field_tier')) {
-      return TRUE;
-    }
-
-    if ($group->get('field_tier')->isEmpty()) {
-      return FALSE;
-    }
-
-    return in_array((string) $group->get('field_tier')->value, ['pro', 'heart'], TRUE);
   }
 
   /**

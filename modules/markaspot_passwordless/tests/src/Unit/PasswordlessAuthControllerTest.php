@@ -21,7 +21,7 @@ use Drupal\Core\Session\SessionConfigurationInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRoleInterface;
 use Drupal\language\ConfigurableLanguageManagerInterface;
-use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
 use Drupal\markaspot_passwordless\Service\OtpService;
@@ -29,6 +29,9 @@ use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/Service/FeatureScopeResolver.php';
+require_once dirname(__DIR__, 3) . '/src/Controller/PasswordlessAuthController.php';
 
 /**
  * Tests the PasswordlessAuthController.
@@ -101,9 +104,9 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   /**
    * Mocked feature flag checker.
    *
-   * @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker|\PHPUnit\Framework\MockObject\MockObject
+   * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver|\PHPUnit\Framework\MockObject\MockObject
    */
-  protected $featureFlagChecker;
+  protected $featureScopeResolver;
 
   /**
    * {@inheritdoc}
@@ -118,9 +121,9 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->sessionConfiguration = $this->createMock(SessionConfigurationInterface::class);
     $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
     $this->languageManager = $this->createMock(LanguageManagerInterface::class);
-    $this->featureFlagChecker = $this->createMock(FeatureFlagChecker::class);
+    $this->featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
     // Default: passwordless feature enabled so tests hit the logic under test.
-    $this->featureFlagChecker->method('isEnabled')->willReturn(TRUE);
+    $this->featureScopeResolver->method('isPlatformFeatureEnabled')->willReturn(TRUE);
 
     // Default passwordless config.
     $passwordlessConfig = $this->createMock(ImmutableConfig::class);
@@ -136,11 +139,16 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       ->willReturnMap([
         ['jurisdiction_group_type', 'jur'],
       ]);
+    $nuxtConfig = $this->createMock(ImmutableConfig::class);
+    $nuxtConfig->method('get')
+      ->with('platform_features.passwordless')
+      ->willReturn(TRUE);
 
     $this->configFactory->method('get')
       ->willReturnMap([
         ['markaspot_passwordless.settings', $passwordlessConfig],
         ['markaspot_open311.settings', $open311Config],
+        ['markaspot_nuxt.settings', $nuxtConfig],
       ]);
 
     // Default: all flood checks pass.
@@ -182,7 +190,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         $configFactory,
         $this->sessionConfiguration,
         $this->keyValueExpirable,
-        $this->featureFlagChecker,
+        $this->featureScopeResolver,
         $entityRepository,
         $frontendUrlService,
         $memberships,
@@ -195,7 +203,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
           ConfigFactoryInterface $config_factory,
           SessionConfigurationInterface $session_configuration,
           KeyValueExpirableFactoryInterface $key_value_expirable,
-          FeatureFlagChecker $feature_flag_checker,
+          FeatureScopeResolver $feature_scope_resolver,
           ?EntityRepositoryInterface $entityRepository,
           ?FrontendUrlService $frontendUrlService,
           private readonly array $testMemberships,
@@ -207,7 +215,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
             $config_factory,
             $session_configuration,
             $key_value_expirable,
-            $feature_flag_checker,
+            $feature_scope_resolver,
             $entityRepository,
             $frontendUrlService,
           );
@@ -230,7 +238,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $configFactory,
       $this->sessionConfiguration,
       $this->keyValueExpirable,
-      $this->featureFlagChecker,
+      $this->featureScopeResolver,
       $entityRepository,
       $frontendUrlService,
     );
@@ -249,7 +257,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   public function testRequestCodeDisabledByFeatureFlag(): void {
     $this->setPasswordlessFlag(FALSE);
 
-    $request = new Request([], [], [], [], [], [], '{"email":"user@example.com"}');
+    $request = new Request([], [], [], [], [], [], '{"email":"user@example.com","jurisdiction_id":42}');
     $response = $this->controller->requestCode($request);
 
     $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
@@ -659,7 +667,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   public function testVerifyCodeDisabledByFeatureFlag(): void {
     $this->setPasswordlessFlag(FALSE);
 
-    $request = new Request([], [], [], [], [], [], '{"email":"user@example.com","code":"123456"}');
+    $request = new Request([], [], [], [], [], [], '{"email":"user@example.com","code":"123456","jurisdiction_id":42}');
     $response = $this->controller->verifyCode($request);
 
     $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
@@ -1285,7 +1293,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->sessionConfiguration,
       $this->keyValueExpirable,
-      $this->featureFlagChecker,
+      $this->featureScopeResolver,
       NULL,
       $frontendUrl,
     );
@@ -1326,7 +1334,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->sessionConfiguration,
       $this->keyValueExpirable,
-      $this->featureFlagChecker,
+      $this->featureScopeResolver,
       NULL,
       $frontendUrl,
     );
@@ -1357,7 +1365,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->sessionConfiguration,
       $this->keyValueExpirable,
-      $this->featureFlagChecker,
+      $this->featureScopeResolver,
       NULL,
       $frontendUrl,
     );
@@ -1595,7 +1603,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->configFactory,
       $this->sessionConfiguration,
       $this->keyValueExpirable,
-      $this->featureFlagChecker,
+      $this->featureScopeResolver,
     );
   }
 
@@ -1645,8 +1653,17 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
    * cases must swap the default-TRUE mock for a fresh FALSE stub.
    */
   protected function setPasswordlessFlag(bool $enabled): void {
-    $this->featureFlagChecker = $this->createMock(FeatureFlagChecker::class);
-    $this->featureFlagChecker->method('isEnabled')->willReturn($enabled);
+    $this->featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+    $this->featureScopeResolver->method('isPlatformFeatureEnabled')->willReturn($enabled);
+    $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('42');
+    $group->method('bundle')->willReturn('jur');
+    $group->method('isPublished')->willReturn(TRUE);
+    $groupStorage = $this->createMock(EntityStorageInterface::class);
+    $groupStorage->method('load')->with(42)->willReturn($group);
+    $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
+    $entityTypeManager->method('getStorage')->with('group')->willReturn($groupStorage);
+    \Drupal::getContainer()->set('entity_type.manager', $entityTypeManager);
     $this->recreateController();
   }
 

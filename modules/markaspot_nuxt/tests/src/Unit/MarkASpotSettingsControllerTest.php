@@ -23,6 +23,7 @@ use Drupal\markaspot_group\Service\OrganisationMetadataBuilder;
 use Drupal\markaspot_nuxt\Controller\MarkASpotSettingsController;
 use Drupal\Core\Site\Settings;
 use Drupal\markaspot_nuxt\Service\EnterpriseFeatureGate;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
@@ -31,6 +32,7 @@ require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrgHierarchyRes
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Service/OrganisationMetadataBuilder.php';
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
 require_once dirname(__DIR__, 3) . '/src/Service/EnterpriseFeatureGate.php';
+require_once dirname(__DIR__, 3) . '/src/Service/FeatureScopeResolver.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/MarkASpotSettingsController.php';
 
 /**
@@ -105,6 +107,11 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   protected MarkASpotSettingsController $controller;
 
   /**
+   * The effective feature resolver used by the controller.
+   */
+  protected FeatureScopeResolver $featureScopeResolver;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -164,6 +171,11 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $this->hierarchyResolver->method('getRootJurisdictionId')
       ->willReturnCallback(fn(int $id) => $id);
     $this->organisationMetadataBuilder = $this->createMock(OrganisationMetadataBuilder::class);
+    $this->featureScopeResolver = new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $this->configFactory,
+      $this->hierarchyResolver,
+    );
 
     // Module handler: reports no modules installed.
     $this->moduleHandler = $this->createMock(ModuleHandlerInterface::class);
@@ -199,6 +211,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->hierarchyResolver,
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
+      $this->featureScopeResolver,
     );
   }
 
@@ -340,6 +353,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $hierarchyResolver,
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
+      new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
     );
 
     $data = json_decode($controller->getJurisdictions()->getContent(), TRUE);
@@ -406,6 +420,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $this->hierarchyResolver,
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
+      new FeatureScopeResolver($this->entityTypeManager, $configFactory, $this->hierarchyResolver),
     );
 
     $request = Request::create('/api/mark-a-spot-settings', 'GET');
@@ -467,6 +482,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $hierarchyResolver,
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
+      new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
@@ -914,7 +930,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
    *
    * @covers ::getMarkASpotSettings
    */
-  public function testOperationsDashboardForcedFalseForEmptyFastMapTier(): void {
+  public function testOperationsDashboardAllowedForEmptySelfHostedTier(): void {
     $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
     $moduleHandler->method('moduleExists')
       ->willReturnCallback(static fn(string $module): bool => $module === 'markaspot_dashboard');
@@ -940,7 +956,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
 
     $data = json_decode($response->getContent(), TRUE);
     $this->assertSame(TRUE, $data['features']['dashboard']);
-    $this->assertSame(FALSE, $data['features']['operationsDashboard']);
+    $this->assertSame(TRUE, $data['features']['operationsDashboard']);
   }
 
   /**
@@ -1035,6 +1051,7 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
       $hierarchyResolver,
       new EnterpriseFeatureGate(),
       $this->organisationMetadataBuilder,
+      new FeatureScopeResolver($this->entityTypeManager, $this->configFactory, $hierarchyResolver),
     );
 
     $request = Request::create('/api/mark-a-spot-settings?jurisdiction=14', 'GET');
@@ -1628,14 +1645,14 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * An explicit field_nuxt_config value wins over the operating-mode default.
+   * A jurisdiction value cannot override the platform onboarding default.
    *
    * @covers ::getMarkASpotSettings
    */
-  public function testOnboardingTourExplicitConfigWinsOverModeDefault(): void {
+  public function testOnboardingTourJurisdictionConfigCannotOverridePlatform(): void {
     new Settings(['markaspot_operating_mode' => 'saas']);
 
-    // SaaS mode would default TRUE, but the tenant explicitly disabled it.
+    // The stale jurisdiction value is dead data after platform scoping.
     $group = $this->createMockGroup([
       'field_nuxt_config' => json_encode(['features' => ['onboardingTour' => FALSE]]),
     ], 1);
@@ -1645,9 +1662,9 @@ class MarkASpotSettingsControllerTest extends UnitTestCase {
     $response = $this->controller->getMarkASpotSettings($request);
     $data = json_decode($response->getContent(), TRUE);
 
-    $this->assertFalse(
-      $data['features']['onboardingTour'] ?? TRUE,
-      'explicit onboardingTour=false must override the SaaS default'
+    $this->assertTrue(
+      $data['features']['onboardingTour'] ?? FALSE,
+      'jurisdiction onboardingTour=false must not override the SaaS default'
     );
   }
 

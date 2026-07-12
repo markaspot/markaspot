@@ -16,6 +16,7 @@ use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_escalation\Service\EscalationService;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_group\Service\OrgHierarchyResolverInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_open311\Service\GeoreportProcessorServiceInterface;
 use Drupal\node\NodeInterface;
 use Drupal\paragraphs\Entity\Paragraph;
@@ -54,6 +55,13 @@ class EscalationServiceTest extends UnitTestCase {
    * @var \Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface|\PHPUnit\Framework\MockObject\MockObject
    */
   protected $hierarchyResolver;
+
+  /**
+   * Mocked effective feature scope resolver.
+   *
+   * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $featureScopeResolver;
 
   /**
    * Mocked organisation hierarchy resolver.
@@ -189,6 +197,7 @@ class EscalationServiceTest extends UnitTestCase {
         ['markaspot_open311.settings', $this->open311Config],
       ]);
 
+    $this->featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
     $this->service = new EscalationService(
       $this->entityTypeManager,
       $this->hierarchyResolver,
@@ -199,6 +208,7 @@ class EscalationServiceTest extends UnitTestCase {
       $this->logger,
       $this->mailManager,
       $this->orgHierarchyResolver,
+      $this->featureScopeResolver,
     );
   }
 
@@ -848,6 +858,13 @@ class EscalationServiceTest extends UnitTestCase {
       ->method('load')
       ->with(10)
       ->willReturn($jurGroup);
+
+    // The policy is resolved through the effective scope resolver (tenant
+    // scope) and cached per jurisdiction: two calls, one resolver lookup.
+    $this->featureScopeResolver->expects($this->once())
+      ->method('isEnabledEffective')
+      ->with('delegationNoteRequired', $jurGroup, FALSE)
+      ->willReturn(TRUE);
 
     $this->assertTrue($this->service->isDelegationNoteRequired($node));
     $this->assertTrue($this->service->isDelegationNoteRequired($node));

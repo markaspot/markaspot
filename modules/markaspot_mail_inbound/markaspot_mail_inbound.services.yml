@@ -143,4 +143,4 @@ services:
       - '@?markaspot_vision.image_processing'
       - '@?markaspot_ai.client'
       - '@?markaspot_ai.token_tracking'
-      - '@?markaspot_nuxt.feature_flag_checker'
+      - '@?markaspot_nuxt.feature_scope_resolver'

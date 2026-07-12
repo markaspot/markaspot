@@ -8,4 +8,5 @@ dependencies:
   - drupal:field
   - drupal:options
   - markaspot_open311:markaspot_open311
+  - markaspot_nuxt:markaspot_nuxt
 configure: markaspot_ai.settings

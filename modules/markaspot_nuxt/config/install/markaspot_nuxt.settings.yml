@@ -13,3 +13,10 @@ fallback_attribution: ''
 zoom_initial: 13
 center_lat: 0
 center_lng: 0
+platform_features:
+  passwordless: null
+  loginLink: true
+  piiRedaction: false
+  privacyBlockOnFlag: false
+  privacyNotice: null
+  onboardingTour: null

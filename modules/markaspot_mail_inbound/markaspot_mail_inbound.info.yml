@@ -5,6 +5,7 @@ package: Mark-a-Spot
 core_version_requirement: ^10.3 || ^11
 configure: markaspot_mail_inbound.settings
 dependencies:
+  - markaspot:markaspot_nuxt
   - drupal:node
   - drupal:taxonomy
   - drupal:media

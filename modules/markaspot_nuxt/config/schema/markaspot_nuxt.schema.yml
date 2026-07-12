@@ -49,3 +49,28 @@ markaspot_nuxt.settings:
     center_lng:
       type: float
       label: 'Center Longitude'
+    platform_features:
+      type: mapping
+      label: 'Platform feature flags'
+      mapping:
+        passwordless:
+          type: boolean
+          nullable: true
+          label: 'Passwordless authentication'
+        loginLink:
+          type: boolean
+          label: 'Citizen login link'
+        piiRedaction:
+          type: boolean
+          label: 'PII redaction'
+        privacyBlockOnFlag:
+          type: boolean
+          label: 'Block privacy-flagged anonymous submissions'
+        privacyNotice:
+          type: boolean
+          nullable: true
+          label: 'Require privacy notice consent'
+        onboardingTour:
+          type: boolean
+          nullable: true
+          label: 'Onboarding tour override'

@@ -17,7 +17,7 @@ use Drupal\Core\Session\SessionConfigurationInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
-use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -100,9 +100,9 @@ class PasswordlessAuthController extends ControllerBase {
   /**
    * The feature flag checker.
    *
-   * @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker
+   * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver
    */
-  protected FeatureFlagChecker $featureFlagChecker;
+  protected FeatureScopeResolver $featureScopeResolver;
 
   /**
    * Constructs a PasswordlessAuthController object.
@@ -119,8 +119,8 @@ class PasswordlessAuthController extends ControllerBase {
    *   The session configuration.
    * @param \Drupal\Core\KeyValueStore\KeyValueExpirableFactoryInterface $key_value_expirable
    *   The expirable key-value store factory.
-   * @param \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $feature_flag_checker
-   *   The feature flag checker.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $feature_scope_resolver
+   *   The effective feature scope resolver.
    * @param \Drupal\Core\Entity\EntityRepositoryInterface|null $entityRepository
    *   The entity repository service.
    * @param \Drupal\markaspot_nuxt\Service\FrontendUrlService|null $frontendUrlService
@@ -133,7 +133,7 @@ class PasswordlessAuthController extends ControllerBase {
     ConfigFactoryInterface $config_factory,
     SessionConfigurationInterface $session_configuration,
     KeyValueExpirableFactoryInterface $key_value_expirable,
-    FeatureFlagChecker $feature_flag_checker,
+    FeatureScopeResolver $feature_scope_resolver,
     protected ?EntityRepositoryInterface $entityRepository = NULL,
     protected ?FrontendUrlService $frontendUrlService = NULL,
   ) {
@@ -143,7 +143,7 @@ class PasswordlessAuthController extends ControllerBase {
     $this->configFactory = $config_factory;
     $this->sessionConfiguration = $session_configuration;
     $this->keyValueExpirable = $key_value_expirable;
-    $this->featureFlagChecker = $feature_flag_checker;
+    $this->featureScopeResolver = $feature_scope_resolver;
   }
 
   /**
@@ -157,7 +157,7 @@ class PasswordlessAuthController extends ControllerBase {
       $container->get('config.factory'),
       $container->get('session_configuration'),
       $container->get('keyvalue.expirable'),
-      $container->get('markaspot_nuxt.feature_flag_checker'),
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
       $container->get('entity.repository'),
       $container->get('markaspot_nuxt.frontend_url'),
     );
@@ -218,24 +218,21 @@ class PasswordlessAuthController extends ControllerBase {
   }
 
   /**
-   * Checks whether passwordless auth is enabled for the jurisdiction.
+   * Checks whether passwordless auth is enabled on this installation.
    *
-   * Reads features.passwordless from field_nuxt_config. Default is FALSE
-   * (schema default), matching the frontend
-   * useFeatureFlags().passwordlessEnabled and the dashboard writer.
+   * Passwordless login is a platform-scope flag: it is read from the central
+   * platform_features configuration regardless of the requested jurisdiction.
+   * An unset (NULL) value derives from the operating mode (saas => enabled).
    *
    * @param int $jurisdictionId
-   *   The resolved jurisdiction group ID, or 0 for unscoped requests.
+   *   The resolved jurisdiction group ID, or 0 for unscoped requests. Kept
+   *   for signature stability; the platform flag ignores it.
    *
    * @return \Symfony\Component\HttpFoundation\JsonResponse|null
    *   A 403 response when the request is rejected, NULL otherwise.
    */
   protected function assertPasswordlessEnabled(int $jurisdictionId): ?JsonResponse {
-    $jurisdiction = $jurisdictionId
-      ? $this->entityTypeManager()->getStorage('group')->load($jurisdictionId)
-      : NULL;
-
-    if (!$this->featureFlagChecker->isEnabled('features.passwordless', $jurisdiction, FALSE)) {
+    if (!$this->featureScopeResolver->isPlatformFeatureEnabled('passwordless')) {
       return new JsonResponse([
         'error' => $this->t('Passwordless authentication is disabled for this jurisdiction.'),
       ], Response::HTTP_FORBIDDEN);

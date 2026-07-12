@@ -8,7 +8,7 @@ use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\KeyValueStore\KeyValueStoreInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_vision\Controller\ImageProcessingController;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
@@ -18,6 +18,9 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
+
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/Service/FeatureScopeResolver.php';
+require_once dirname(__DIR__, 3) . '/src/Controller/ImageProcessingController.php';
 
 /**
  * Tests security hardening of the ImageProcessingController.
@@ -106,10 +109,8 @@ class ImageProcessingControllerTest extends UnitTestCase {
     $this->mediaStorage = $this->createMock(EntityStorageInterface::class);
     $this->nodeStorage = $this->createMock(EntityStorageInterface::class);
 
-    // FeatureFlagChecker is final; instantiate the real service. With no
-    // jurisdiction context available in these unit tests, isEnabled() returns
-    // the caller's $default, and the controller defaults aiAnalysis to TRUE.
-    $featureFlagChecker = new FeatureFlagChecker();
+    $featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+    $featureScopeResolver->method('isEnabledEffective')->willReturn(TRUE);
 
     // Default: node query returns no results (no parent nodes).
     $nodeQuery = $this->createMock(QueryInterface::class);
@@ -135,7 +136,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
       $this->imageProcessingService,
       $loggerFactory,
       $this->flood,
-      $featureFlagChecker,
+      $featureScopeResolver,
       $this->mediaAnalysisAccessGuard,
     );
 
@@ -275,6 +276,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests requests above the rate limit are rejected.
    */
   public function testRateLimitExceededReturns429(): void {
     $this->flood->method('isAllowed')
@@ -291,6 +293,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests accepted requests register a rate-limit event.
    */
   public function testRateLimitRegistersEachRequest(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -306,6 +309,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests rate limiting uses the request client IP.
    */
   public function testRateLimitUsesClientIp(): void {
     $this->flood->expects($this->once())
@@ -320,6 +324,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests missing media IDs are rejected.
    */
   public function testMissingMediaIdsReturns400(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -333,6 +338,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests non-array media IDs are rejected.
    */
   public function testNonArrayMediaIdsReturns400(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -344,6 +350,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests empty media ID arrays are rejected.
    */
   public function testEmptyMediaIdsReturns400(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -355,6 +362,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests more than five media IDs are rejected.
    */
   public function testTooManyMediaIdsReturns400(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -371,6 +379,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests exactly five media IDs are accepted.
    */
   public function testExactlyFiveMediaIdsAllowed(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -389,6 +398,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests inaccessible media are filtered from analysis.
    */
   public function testMediaWithoutViewAccessIsFiltered(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -404,6 +414,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests authorized media can be saved without view access.
    */
   public function testMediaWithoutUpdateAccessStillSaves(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -436,6 +447,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests unauthorized media are rejected before processing.
    */
   public function testUnauthorizedMediaReturns403BeforeProcessing(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -454,6 +466,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests every loaded media entity is processed.
    */
   public function testAllLoadedMediaIsProcessed(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -495,6 +508,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests processing exceptions return a generic client error.
    */
   public function testExceptionReturnsGenericError(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -512,6 +526,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests processing exceptions retain details in server logs.
    */
   public function testExceptionLogsDetailedMessage(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -533,6 +548,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests successful analysis decodes the service result.
    */
   public function testSuccessfulAnalysisReturnsDecodedResult(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -570,6 +586,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests successful analysis includes blur handling metadata.
    */
   public function testSuccessfulAnalysisReturnsBlurHandlingMetadata(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);
@@ -1298,6 +1315,7 @@ class ImageProcessingControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests malformed JSON request bodies are rejected.
    */
   public function testInvalidJsonBody(): void {
     $this->flood->method('isAllowed')->willReturn(TRUE);

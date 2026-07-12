@@ -15,12 +15,15 @@ use Drupal\Core\State\StateInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_ai\Service\EmbeddingService;
 use Drupal\markaspot_ai\Service\TokenTrackingService;
+use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 
 require_once __DIR__ . '/../../../markaspot_ai.module';
+require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/Service/FeatureScopeResolver.php';
 
 /**
  * Tests markaspot_ai tenant and backfill gates.
@@ -83,7 +86,7 @@ final class FeatureGateTest extends UnitTestCase {
 
     $this->setGroupStorage($this->buildGroup(json_encode([
       'features' => ['piiRedaction' => TRUE],
-    ])));
+    ])), platformFeatures: ['piiRedaction' => TRUE]);
     $this->assertTrue(_markaspot_ai_is_feature_enabled_for_node(
       $this->buildNode(42),
       'piiRedaction'
@@ -188,7 +191,11 @@ final class FeatureGateTest extends UnitTestCase {
   /**
    * Installs a mock group storage in the Drupal container.
    */
-  private function setGroupStorage(?GroupInterface $group, bool $duplicateDetectionEnabled = TRUE): void {
+  private function setGroupStorage(
+    ?GroupInterface $group,
+    bool $duplicateDetectionEnabled = TRUE,
+    array $platformFeatures = [],
+  ): void {
     $groupStorage = $this->createMock(EntityStorageInterface::class);
     $groupStorage->method('load')->willReturnCallback(
       static fn(int|string $id): ?GroupInterface => (string) $id === '42' ? $group : NULL,
@@ -199,18 +206,36 @@ final class FeatureGateTest extends UnitTestCase {
       ->with('group')
       ->willReturn($groupStorage);
 
-    $config = $this->createMock(ImmutableConfig::class);
-    $config->method('get')->willReturnCallback(
+    $aiConfig = $this->createMock(ImmutableConfig::class);
+    $aiConfig->method('get')->willReturnCallback(
       static fn(string $key): mixed => $key === 'duplicate_detection.enabled'
         ? $duplicateDetectionEnabled
         : NULL,
     );
+    $nuxtConfig = $this->createMock(ImmutableConfig::class);
+    $nuxtConfig->method('get')
+      ->with('platform_features')
+      ->willReturn($platformFeatures);
     $configFactory = $this->createMock(ConfigFactoryInterface::class);
-    $configFactory->method('get')->willReturn($config);
+    $configFactory->method('get')->willReturnCallback(
+      static fn(string $name): ImmutableConfig => $name === 'markaspot_nuxt.settings'
+        ? $nuxtConfig
+        : $aiConfig,
+    );
 
     $container = new ContainerBuilder();
     $container->set('entity_type.manager', $entityTypeManager);
     $container->set('config.factory', $configFactory);
+    $hierarchy = $this->createMock(JurisdictionHierarchyResolverInterface::class);
+    $hierarchy->method('getRootJurisdictionId')->willReturn(42);
+    $container->set('markaspot_nuxt.feature_scope_resolver', new FeatureScopeResolver(
+      $entityTypeManager,
+      $configFactory,
+      $hierarchy,
+    ));
+    $loggerFactory = $this->createMock(LoggerChannelFactoryInterface::class);
+    $loggerFactory->method('get')->willReturn($this->createMock(LoggerInterface::class));
+    $container->set('logger.factory', $loggerFactory);
     \Drupal::setContainer($container);
   }
 
@@ -238,6 +263,8 @@ final class FeatureGateTest extends UnitTestCase {
    */
   private function buildGroup(?string $json): GroupInterface {
     $group = $this->createMock(GroupInterface::class);
+    $group->method('id')->willReturn('42');
+    $group->method('isDefaultTranslation')->willReturn(TRUE);
     $group->method('getUntranslated')->willReturnSelf();
     $group->method('hasField')
       ->willReturnCallback(static fn(string $field): bool => $field === 'field_nuxt_config' && $json !== NULL);

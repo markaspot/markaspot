@@ -11,7 +11,8 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Drupal\markaspot_fastmap\Service\TierConfigService;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
-use Drupal\markaspot_nuxt\Service\FeatureFlagChecker;
+use Drupal\group\Entity\GroupInterface;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_vision\Service\ImageProcessingService;
 use Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard;
 
@@ -53,9 +54,9 @@ class ImageProcessingController extends ControllerBase {
   /**
    * The feature flag checker.
    *
-   * @var \Drupal\markaspot_nuxt\Service\FeatureFlagChecker
+   * @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver
    */
-  protected FeatureFlagChecker $featureFlagChecker;
+  protected FeatureScopeResolver $featureScopeResolver;
 
   /**
    * Guards media analysis access for anonymous upload flows.
@@ -73,8 +74,8 @@ class ImageProcessingController extends ControllerBase {
    *   The logger factory.
    * @param \Drupal\Core\Flood\FloodInterface $flood
    *   The flood service.
-   * @param \Drupal\markaspot_nuxt\Service\FeatureFlagChecker $feature_flag_checker
-   *   The feature flag checker.
+   * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $feature_scope_resolver
+   *   The effective feature scope resolver.
    * @param \Drupal\markaspot_vision\Service\MediaAnalysisAccessGuard $media_analysis_access_guard
    *   Guards access to media analysis.
    * @param \Drupal\markaspot_fastmap\Service\TierConfigService|null $tier_config
@@ -84,14 +85,14 @@ class ImageProcessingController extends ControllerBase {
     ImageProcessingService $image_processing_service,
     LoggerChannelFactoryInterface $logger_factory,
     FloodInterface $flood,
-    FeatureFlagChecker $feature_flag_checker,
+    FeatureScopeResolver $feature_scope_resolver,
     MediaAnalysisAccessGuard $media_analysis_access_guard,
     ?TierConfigService $tier_config = NULL,
   ) {
     $this->imageProcessingService = $image_processing_service;
     $this->logger = $logger_factory->get('markaspot_vision');
     $this->flood = $flood;
-    $this->featureFlagChecker = $feature_flag_checker;
+    $this->featureScopeResolver = $feature_scope_resolver;
     $this->mediaAnalysisAccessGuard = $media_analysis_access_guard;
     $this->tierConfig = $tier_config;
   }
@@ -105,7 +106,7 @@ class ImageProcessingController extends ControllerBase {
       $container->get('markaspot_vision.image_processing'),
       $container->get('logger.factory'),
       $container->get('flood'),
-      $container->get('markaspot_nuxt.feature_flag_checker'),
+      $container->get('markaspot_nuxt.feature_scope_resolver'),
       $container->get('markaspot_vision.media_analysis_access_guard'),
       $container->has('markaspot_fastmap.tier_config')
         ? $container->get('markaspot_fastmap.tier_config')
@@ -148,7 +149,8 @@ class ImageProcessingController extends ControllerBase {
     $jurisdictionForFlag = $jurisdictionIdForFlag
       ? $this->entityTypeManager()->getStorage('group')->load($jurisdictionIdForFlag)
       : NULL;
-    if (!$this->featureFlagChecker->isEnabled('features.aiAnalysis', $jurisdictionForFlag, TRUE)) {
+    if ($jurisdictionForFlag instanceof GroupInterface
+      && !$this->featureScopeResolver->isEnabledEffective('aiAnalysis', $jurisdictionForFlag, TRUE)) {
       return new JsonResponse([
         'error' => $this->t('AI analysis is disabled for this jurisdiction.'),
       ], 403);

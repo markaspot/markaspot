@@ -19,6 +19,7 @@ use Psr\Log\LoggerInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\File\FileUrlGeneratorInterface;
 use Drupal\Core\File\FileSystemInterface;
+use Drupal\file\FileInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\media\MediaInterface;
 use Drupal\Core\KeyValueStore\KeyValueMemoryFactory;
@@ -139,6 +140,13 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
   protected $mediaStorage;
 
   /**
+   * Mocked file storage.
+   *
+   * @var \Drupal\Core\Entity\EntityStorageInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $fileStorage;
+
+  /**
    * In-memory keyvalue factory backing the manual media publication store.
    *
    * @var \Drupal\Core\KeyValueStore\KeyValueMemoryFactory
@@ -170,6 +178,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
     $this->termStorage = $this->createMock(EntityStorageInterface::class);
     $this->mediaStorage = $this->createMock(EntityStorageInterface::class);
+    $this->fileStorage = $this->createMock(EntityStorageInterface::class);
     $this->relationshipStorage = $this->createMock(EntityStorageInterface::class);
 
     $this->entityTypeManager->method('getStorage')
@@ -178,6 +187,7 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
         ['group', $this->groupStorage],
         ['taxonomy_term', $this->termStorage],
         ['media', $this->mediaStorage],
+        ['file', $this->fileStorage],
         ['group_relationship', $this->relationshipStorage],
       ]);
 
@@ -257,6 +267,44 @@ class GeoreportProcessorServiceTest extends UnitTestCase {
       $this->logger,
       $this->keyValueFactory = new KeyValueMemoryFactory(),
     );
+  }
+
+  /**
+   * Tests canonical local media URLs retain privacy screening state.
+   *
+   * @covers ::isExistingMediaUrlPrivacyFlagged
+   */
+  public function testExistingMediaUrlPrivacyFlagIsDetected(): void {
+    $file = $this->createMock(FileInterface::class);
+    $file->method('id')->willReturn(7);
+    $file->method('getFileUri')->willReturn('public://requests/photo.jpg');
+    $this->fileStorage->method('loadByProperties')
+      ->with(['filename' => 'photo.jpg'])
+      ->willReturn([$file]);
+    $this->fileUrlGenerator->method('generateAbsoluteString')
+      ->with('public://requests/photo.jpg')
+      ->willReturn('https://example.test/sites/default/files/requests/photo.jpg');
+
+    $flag = $this->createMock(FieldItemListInterface::class);
+    $flag->method('isEmpty')->willReturn(FALSE);
+    $flag->method('__get')->with('value')->willReturn(TRUE);
+    $media = $this->createMock(MediaInterface::class);
+    $media->method('hasField')->with('field_ai_privacy_flag')->willReturn(TRUE);
+    $media->method('get')->with('field_ai_privacy_flag')->willReturn($flag);
+    $this->mediaStorage->method('loadByProperties')
+      ->with(['field_media_image.target_id' => 7])
+      ->willReturn([$media]);
+
+    $method = new \ReflectionMethod($this->processor, 'isExistingMediaUrlPrivacyFlagged');
+
+    $this->assertTrue($method->invoke(
+      $this->processor,
+      'https://example.test/sites/default/files/requests/photo.jpg',
+    ));
+    $this->assertFalse($method->invoke(
+      $this->processor,
+      'https://external.test/sites/default/files/requests/photo.jpg',
+    ));
   }
 
   /**

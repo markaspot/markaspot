@@ -5,6 +5,7 @@ package: Mark-a-Spot
 core_version_requirement: ^10 || ^11
 
 dependencies:
+  - markaspot:markaspot_nuxt
   - markaspot_group
   - markaspot_open311
   - drupal:paragraphs

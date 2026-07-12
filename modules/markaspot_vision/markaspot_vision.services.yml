@@ -19,7 +19,7 @@ services:
       - '@markaspot_vision.image_processing'
       - '@logger.factory'
       - '@flood'
-      - '@markaspot_nuxt.feature_flag_checker'
+      - '@markaspot_nuxt.feature_scope_resolver'
       - '@markaspot_vision.media_analysis_access_guard'
     tags:
       - { name: controller.service_arguments }

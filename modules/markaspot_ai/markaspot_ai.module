@@ -526,7 +526,9 @@ function _markaspot_ai_is_ai_enabled_for_node(NodeInterface $node): bool {
  */
 function _markaspot_ai_is_duplicate_detection_enabled_for_node(NodeInterface $node): bool {
   $group = _markaspot_ai_load_jurisdiction_for_node($node);
-  if (!_markaspot_ai_is_feature_enabled_for_jurisdiction($group, 'aiProcessing')) {
+  if (!$group instanceof GroupInterface
+    || !\Drupal::service('markaspot_nuxt.feature_scope_resolver')
+      ->isEnabledEffective('aiProcessing', $group, FALSE)) {
     return FALSE;
   }
 
@@ -558,10 +560,13 @@ function _markaspot_ai_is_duplicate_detection_enabled_for_node(NodeInterface $no
  */
 function _markaspot_ai_is_feature_enabled_for_node(NodeInterface $node, string $feature): bool {
   try {
-    return _markaspot_ai_is_feature_enabled_for_jurisdiction(
-      _markaspot_ai_load_jurisdiction_for_node($node),
-      $feature
-    );
+    $jurisdiction = _markaspot_ai_load_jurisdiction_for_node($node);
+    if (!$jurisdiction instanceof GroupInterface) {
+      return FALSE;
+    }
+    /** @var \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $resolver */
+    $resolver = \Drupal::service('markaspot_nuxt.feature_scope_resolver');
+    return $resolver->isEnabledEffective($feature, $jurisdiction, FALSE);
   }
   catch (\Exception $e) {
     \Drupal::logger('markaspot_ai')->warning('Failed to check feature @feature for node @nid: @message', [

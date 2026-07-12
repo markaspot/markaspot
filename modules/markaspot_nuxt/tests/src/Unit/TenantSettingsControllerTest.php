@@ -24,12 +24,14 @@ use Drupal\group\Entity\GroupInterface;
 use Drupal\group\GroupMembership;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
 use Drupal\markaspot_nuxt\Controller\TenantSettingsController;
+use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\Tests\UnitTestCase;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
 require_once dirname(__DIR__, 4) . '/markaspot_group/src/Trait/JurisdictionIdResolverTrait.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/TenantSettingsController.php';
+require_once dirname(__DIR__, 3) . '/src/Service/FeatureScopeResolver.php';
 
 /**
  * Tests the TenantSettingsController.
@@ -153,6 +155,11 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $container->set('file.repository', $this->fileRepository);
     $container->set('current_user', $this->currentUser);
     $container->set('markaspot_group.hierarchy_resolver', $this->hierarchyResolver);
+    $container->set('markaspot_nuxt.feature_scope_resolver', new FeatureScopeResolver(
+      $this->entityTypeManager,
+      $configFactory,
+      $this->hierarchyResolver,
+    ));
     $container->set('email.validator', $emailValidator);
     $container->set('cache_contexts_manager', $cacheContextsManager);
     $container->set('cache.group_memberships_chained', $this->membershipCache);
@@ -2053,7 +2060,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertTrue($data['features']['operationsDashboard']);
     $this->assertTrue($data['features']['aiProcessing']);
     $this->assertFalse($data['features']['piiRedaction']);
-    $this->assertTrue($data['features']['privacyBlockOnFlag']);
+    $this->assertFalse($data['features']['privacyBlockOnFlag']);
     $this->assertTrue($data['features']['assignmentSyncsOrganisation']);
     $this->assertTrue($data['features']['forms']['allowParentCategorySelection']);
     $this->assertTrue($data['capabilities']['operationsDashboard']);
@@ -2235,7 +2242,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests getFeatureSettings() returns an explicit loginLink FALSE.
+   * Tests getFeatureSettings() ignores a jurisdiction loginLink override.
    *
    * Hides the footer sign-in link while /auth/login stays reachable.
    *
@@ -2249,7 +2256,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $request = Request::create('/api/tenant/14/features', 'GET');
     $response = $this->controller->getFeatureSettings($request, '14');
     $data = json_decode($response->getContent(), TRUE);
-    $this->assertFalse($data['features']['loginLink']);
+    $this->assertTrue($data['features']['loginLink']);
   }
 
   /**
@@ -2379,7 +2386,7 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
-   * Tests getFeatureSettings() fail-closes Operations Overview for demo tier.
+   * Tests empty tiers remain enabled on self-hosted installations.
    *
    * @covers ::getFeatureSettings
    */
@@ -2405,8 +2412,8 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['features']['dashboard']);
     $this->assertFalse($data['features']['dashboardRequestCreate']);
-    $this->assertFalse($data['features']['operationsDashboard']);
-    $this->assertFalse($data['capabilities']['operationsDashboard']);
+    $this->assertTrue($data['features']['operationsDashboard']);
+    $this->assertTrue($data['capabilities']['operationsDashboard']);
   }
 
   /**
@@ -2630,8 +2637,8 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $updatedConfig = json_decode($storedNuxtConfig, TRUE);
-    $this->assertFalse($data['features']['operationsDashboard']);
-    $this->assertFalse($updatedConfig['features']['operationsDashboard']);
+    $this->assertTrue($data['features']['operationsDashboard']);
+    $this->assertTrue($updatedConfig['features']['operationsDashboard']);
   }
 
   /**
@@ -2716,6 +2723,80 @@ class TenantSettingsControllerTest extends UnitTestCase {
     $this->assertFalse($data['features']['forms']['allowParentCategorySelection']);
     $this->assertFalse($updatedConfig['features']['forms']['allowParentCategorySelection']);
     $this->assertTrue($updatedConfig['features']['forms']['customFutureFlag']);
+  }
+
+  /**
+   * Tests the feature scope PATCH scrub matrix.
+   *
+   * @dataProvider featureScopePatchProvider
+   * @covers ::updateFeatureSettings
+   */
+  public function testFeatureScopePatchMatrix(
+    string $key,
+    int $rootId,
+    mixed $requested,
+    bool $expectedStored,
+  ): void {
+    $storedNuxtConfig = json_encode(['features' => [$key => FALSE]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE, 14);
+    $this->groupStorage->method('load')->willReturn($group);
+    $this->hierarchyResolver->method('getRootJurisdictionId')->willReturn($rootId);
+    $request = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode([$key => $requested]),
+    );
+
+    $response = $this->controller->updateFeatureSettings($request, '14');
+    $stored = json_decode($storedNuxtConfig, TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertSame($expectedStored, $stored['features'][$key]);
+  }
+
+  /**
+   * Provides platform, tenant-root, tenant-child, and jurisdiction writes.
+   */
+  public static function featureScopePatchProvider(): array {
+    return [
+      'platform ignored before validation' => ['privacyBlockOnFlag', 14, 'invalid', FALSE],
+      'tenant child ignored' => ['delegationNoteRequired', 1, TRUE, FALSE],
+      'tenant root stored' => ['delegationNoteRequired', 14, TRUE, TRUE],
+      'jurisdiction stored' => ['moderation', 1, TRUE, TRUE],
+    ];
+  }
+
+  /**
+   * Tests moderation survives PATCH and is returned by GET.
+   *
+   * @covers ::updateFeatureSettings
+   * @covers ::getFeatureSettings
+   */
+  public function testModerationRoundTrip(): void {
+    $storedNuxtConfig = json_encode(['features' => ['moderation' => FALSE]]);
+    $group = $this->createMutableNuxtConfigGroup($storedNuxtConfig, TRUE, 14);
+    $this->groupStorage->method('load')->willReturn($group);
+    $this->hierarchyResolver->method('getRootJurisdictionId')->willReturn(14);
+    $request = Request::create(
+      '/api/tenant/14/features',
+      'PATCH',
+      [],
+      [],
+      [],
+      ['CONTENT_TYPE' => 'application/json'],
+      json_encode(['moderation' => TRUE]),
+    );
+
+    $response = $this->controller->updateFeatureSettings($request, '14');
+    $data = json_decode($response->getContent(), TRUE);
+
+    $this->assertSame(200, $response->getStatusCode());
+    $this->assertTrue($data['features']['moderation']);
+    $this->assertTrue(json_decode($storedNuxtConfig, TRUE)['features']['moderation']);
   }
 
   /**
