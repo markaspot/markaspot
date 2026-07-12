@@ -164,6 +164,9 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
       'field_assigned_team',
       'field_attachment',
       'field_boilerplates_sp',
+      // CAP publication approval is a staff-only field with explicit
+      // field_permissions custom access in markaspot_cap.
+      'field_cap_publish',
       'field_escalation',
       'field_hazard_category',
       'field_hazard_level',
@@ -202,6 +205,7 @@ class ServiceRequestPrivateFieldPermissionsConfigTest extends UnitTestCase {
     $fields = [
       'field_attachment',
       'field_boilerplates_sp',
+      'field_cap_publish',
       'field_escalation',
       'field_hazard_category',
       'field_hazard_level',
