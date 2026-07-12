@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.149](https://github.com/markaspot/markaspot/compare/11.9.148...11.9.149) (2026-07-12)
+
+### Features
+
+* **nuxt:** gate tier fallback and org toggles by edition ([b568bb3](https://github.com/markaspot/markaspot/commit/b568bb3dba03bf6782a2f006d4fb7373d51554ee))
+
 ## [11.9.148](https://github.com/markaspot/markaspot/compare/11.9.147...11.9.148) (2026-07-12)
 
 ### Features
