@@ -2601,9 +2601,9 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
    * Tests default status terms for an Italian workspace (#358).
    *
    * Covers the reported bug: a workspace created with language=it must
-   * receive the two default status terms in Italian as their primary
+   * receive the three default status terms in Italian as their primary
    * language, with English added as a secondary translation. Prior to the
-   * fix the terms were stored with langcode=it but name="Created"/"Done",
+   * fix the terms were stored with langcode=it but English names,
    * so the Italian (Default) tab in the admin rendered English labels.
    *
    * @covers ::provisionWorkspace
@@ -2624,17 +2624,21 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     $creates = $record->creates;
     $translations = $record->translations;
 
-    // Two default status terms created, both with langcode=it and
+    // Three default status terms created, all with langcode=it and
     // Italian primary names.
-    $this->assertCount(2, $creates, 'Two default status terms should be created.');
+    $this->assertCount(3, $creates, 'Three default status terms should be created.');
 
     $this->assertSame('it', $creates[0]['langcode']);
     $this->assertSame('Creato', $creates[0]['name']);
     $this->assertSame('initial', $creates[0]['mapping']);
 
     $this->assertSame('it', $creates[1]['langcode']);
-    $this->assertSame('Completato', $creates[1]['name']);
-    $this->assertSame('closed', $creates[1]['mapping']);
+    $this->assertSame('In lavorazione', $creates[1]['name']);
+    $this->assertSame('open', $creates[1]['mapping']);
+
+    $this->assertSame('it', $creates[2]['langcode']);
+    $this->assertSame('Completato', $creates[2]['name']);
+    $this->assertSame('closed', $creates[2]['mapping']);
 
     // Each default status term gets an English translation added.
     $firstTermTranslations = array_values(array_filter(
@@ -2651,7 +2655,15 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     ));
     $enSecond = array_values(array_filter($secondTermTranslations, fn($t) => $t['lang'] === 'en'));
     $this->assertCount(1, $enSecond);
-    $this->assertSame('Done', $enSecond[0]['name']);
+    $this->assertSame('In progress', $enSecond[0]['name']);
+
+    $thirdTermTranslations = array_values(array_filter(
+      $translations,
+      fn($t) => $t['term_id'] === $creates[2]['term_id'],
+    ));
+    $enThird = array_values(array_filter($thirdTermTranslations, fn($t) => $t['lang'] === 'en'));
+    $this->assertCount(1, $enThird);
+    $this->assertSame('Done', $enThird[0]['name']);
 
     // Italian must NOT be added as a secondary translation when it is
     // already the primary langcode (would trigger a duplicate-translation
@@ -2685,7 +2697,12 @@ class WorkspaceProvisioningServiceTest extends UnitTestCase {
     ]));
 
     $creates = $record->creates;
-    $this->assertCount(2, $creates, "Two default status terms should be created for locale {$locale}.");
+    $this->assertCount(3, $creates, "Three default status terms should be created for locale {$locale}.");
+    $this->assertSame(
+      ['initial', 'open', 'closed'],
+      array_column($creates, 'mapping'),
+      "Default statuses must cover every public Open311 mapping for locale {$locale}.",
+    );
 
     foreach ($creates as $create) {
       $this->assertNotSame('', $create['name'], "Status term for locale {$locale} must have a non-empty name.");
