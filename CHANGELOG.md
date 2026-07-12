@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.150](https://github.com/markaspot/markaspot/compare/11.9.149...11.9.150) (2026-07-12)
+
+### Bug Fixes
+
+* **group:** assign member roles to invitations ([2e5b189](https://github.com/markaspot/markaspot/commit/2e5b189de7c4e7765f602d484ddea2640d67a042))
+
 ## [11.9.149](https://github.com/markaspot/markaspot/compare/11.9.148...11.9.149) (2026-07-12)
 
 ### Features
