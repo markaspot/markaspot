@@ -58,6 +58,11 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $this->assertTrue($features['aiProcessing']);
     $this->assertFalse($features['dashboard']);
     $this->assertFalse($features['photoReporting']);
+    // Regression: no stored aiAnalysis anywhere must resolve to TRUE. The
+    // resolver materialises every key, and the citizen frontend treated a
+    // missing key as enabled, so a FALSE default would silently disable
+    // photo AI for every tenant that never touched the toggle.
+    $this->assertTrue($features['aiAnalysis']);
     $this->assertFalse($features['loginLink']);
     $this->assertTrue($features['passwordless']);
     $this->assertFalse($features['onboardingTour']);

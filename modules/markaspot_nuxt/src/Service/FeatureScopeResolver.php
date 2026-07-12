@@ -67,7 +67,12 @@ class FeatureScopeResolver {
     'statistics' => FALSE,
     'pwaInstallPrompt' => FALSE,
     'moderation' => FALSE,
-    'aiAnalysis' => FALSE,
+    // Default ON: photo analysis ships in every edition (incl. OSS) and the
+    // citizen frontend always treated a missing key as enabled. The resolver
+    // materialises every key explicitly, so a FALSE default here would
+    // silently switch photo AI off for every tenant that never stored the
+    // flag. Costs are capped by the markaspot_ai budgets, not by this flag.
+    'aiAnalysis' => TRUE,
     'aiProcessing' => FALSE,
     'operationsDashboard' => FALSE,
     'assignmentSyncsOrganisation' => FALSE,
