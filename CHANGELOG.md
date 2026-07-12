@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.148](https://github.com/markaspot/markaspot/compare/11.9.147...11.9.148) (2026-07-12)
+
+### Features
+
+* **emergency:** add scoped crisis mode and CAP guard ([a94681b](https://github.com/markaspot/markaspot/commit/a94681b0e17a0603d359cc3896b91ff85ae97cb9))
+* **fastmap:** add default in-progress workflow state ([9999c71](https://github.com/markaspot/markaspot/commit/9999c71a6b71f001cb4c7211325965d4c9055de4))
+* **nuxt:** enforce platform, tenant and jurisdiction scopes for feature flags ([499fe1d](https://github.com/markaspot/markaspot/commit/499fe1d7ca275f1c45a8404fb1ac83a8da34db69))
+
+### Bug Fixes
+
+* **group:** authorize cross-jurisdiction report re-homing ([068bd7c](https://github.com/markaspot/markaspot/commit/068bd7c69812ad16758209fcd47fdfd340a3a431))
+* **nuxt:** keep photo AI enabled by default across feature scopes ([5f31c0c](https://github.com/markaspot/markaspot/commit/5f31c0c16b554e793382bc2a84721442847b7b93))
+
 ## [11.9.147](https://github.com/markaspot/markaspot/compare/11.9.146...11.9.147) (2026-07-11)
 
 ### Bug Fixes
