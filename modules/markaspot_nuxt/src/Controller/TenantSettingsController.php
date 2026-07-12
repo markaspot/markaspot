@@ -2015,6 +2015,9 @@ final class TenantSettingsController extends ControllerBase {
         'operationsDashboard' => $tier_capability,
         'aiAnalysis' => TRUE,
         'aiProcessing' => $tier_capability,
+        // Edition gate: org-coupled toggles are hidden entirely where no
+        // organisation groups exist (SaaS has no org management).
+        'organisations' => $this->featureScopeResolver->hasOrganisationFeatures(),
       ],
       'scopes' => [
         'flags' => FeatureScopeResolver::SCOPE_MAP,

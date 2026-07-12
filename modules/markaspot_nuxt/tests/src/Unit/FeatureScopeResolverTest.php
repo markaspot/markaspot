@@ -8,6 +8,8 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -186,6 +188,34 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   }
 
   /**
+   * Tests that the fastmap module marks a SaaS install for tierless roots.
+   *
+   * A misconfigured SaaS container (operating mode not set) must not fall
+   * back to "everything allowed" for tierless demo workspaces.
+   *
+   * @covers ::canUseTierGatedFeatures
+   */
+  public function testTierlessRootWithFastmapStaysGated(): void {
+    new Settings(['markaspot_operating_mode' => 'self_hosted']);
+    $root = $this->createGroup(1, ['field_nuxt_config' => '{}']);
+
+    $this->assertFalse($this->createResolver($root, [], TRUE)->canUseTierGatedFeatures($root));
+    $this->assertTrue($this->createResolver($root, [], FALSE)->canUseTierGatedFeatures($root));
+  }
+
+  /**
+   * Tests the data-driven organisation edition gate.
+   *
+   * @covers ::hasOrganisationFeatures
+   */
+  public function testHasOrganisationFeatures(): void {
+    $root = $this->createGroup(1, ['field_nuxt_config' => '{}']);
+
+    $this->assertFalse($this->createResolver($root, [], NULL, [])->hasOrganisationFeatures());
+    $this->assertTrue($this->createResolver($root, [], NULL, ['2'])->hasOrganisationFeatures());
+  }
+
+  /**
    * Tests the privacyNotice tri-state platform semantics.
    *
    * @covers ::isPlatformFeatureEnabled
@@ -215,9 +245,15 @@ final class FeatureScopeResolverTest extends UnitTestCase {
   /**
    * Creates a resolver whose root lookup returns the supplied group.
    */
-  private function createResolver(GroupInterface $root, array $platformFeatures = []): FeatureScopeResolver {
+  private function createResolver(GroupInterface $root, array $platformFeatures = [], ?bool $fastmapInstalled = NULL, array $orgGroupIds = []): FeatureScopeResolver {
+    $query = $this->createMock(QueryInterface::class);
+    $query->method('condition')->willReturnSelf();
+    $query->method('accessCheck')->willReturnSelf();
+    $query->method('range')->willReturnSelf();
+    $query->method('execute')->willReturn($orgGroupIds);
     $storage = $this->createMock(EntityStorageInterface::class);
     $storage->method('load')->willReturn($root);
+    $storage->method('getQuery')->willReturn($query);
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')->with('group')->willReturn($storage);
     $config = $this->createMock(ImmutableConfig::class);
@@ -226,8 +262,15 @@ final class FeatureScopeResolverTest extends UnitTestCase {
     $configFactory->method('get')->with('markaspot_nuxt.settings')->willReturn($config);
     $hierarchy = $this->createMock(JurisdictionHierarchyResolverInterface::class);
     $hierarchy->method('getRootJurisdictionId')->willReturn(1);
+    $moduleHandler = NULL;
+    if ($fastmapInstalled !== NULL) {
+      $moduleHandler = $this->createMock(ModuleHandlerInterface::class);
+      $moduleHandler->method('moduleExists')
+        ->with('markaspot_fastmap')
+        ->willReturn($fastmapInstalled);
+    }
 
-    return new FeatureScopeResolver($entityTypeManager, $configFactory, $hierarchy);
+    return new FeatureScopeResolver($entityTypeManager, $configFactory, $hierarchy, $moduleHandler);
   }
 
   /**

@@ -13,6 +13,7 @@ use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Entity\Query\QueryInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\File\FileExists;
 use Drupal\Core\File\FileSystemInterface;
@@ -118,6 +119,14 @@ class TenantSettingsControllerTest extends UnitTestCase {
     parent::setUp();
 
     $this->groupStorage = $this->createMock(EntityStorageInterface::class);
+    // The feature scope resolver probes for organisation groups via an
+    // entity query (edition gate for org-coupled toggles).
+    $orgQuery = $this->createMock(QueryInterface::class);
+    $orgQuery->method('condition')->willReturnSelf();
+    $orgQuery->method('accessCheck')->willReturnSelf();
+    $orgQuery->method('range')->willReturnSelf();
+    $orgQuery->method('execute')->willReturn(['2']);
+    $this->groupStorage->method('getQuery')->willReturn($orgQuery);
     $this->groupRelationshipStorage = $this->createMock(EntityStorageInterface::class);
     $this->entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $this->entityTypeManager->method('getStorage')

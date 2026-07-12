@@ -6,6 +6,7 @@ namespace Drupal\markaspot_nuxt\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
+use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
@@ -123,6 +124,7 @@ class FeatureScopeResolver {
     private readonly EntityTypeManagerInterface $entityTypeManager,
     private readonly ConfigFactoryInterface $configFactory,
     private readonly JurisdictionHierarchyResolverInterface $hierarchyResolver,
+    private readonly ?ModuleHandlerInterface $moduleHandler = NULL,
   ) {}
 
   /**
@@ -278,7 +280,34 @@ class FeatureScopeResolver {
     if ($root->hasField('field_tier') && !$root->get('field_tier')->isEmpty()) {
       return in_array((string) $root->get('field_tier')->value, ['pro', 'heart'], TRUE);
     }
-    return Settings::get('markaspot_operating_mode', 'self_hosted') !== 'saas';
+    // No tier recorded: only genuine enterprise/self-hosted installs get the
+    // full feature set. The fastmap module marks the workspace-SaaS platform
+    // even when the operating-mode environment variable is missing, so a
+    // misconfigured SaaS container cannot fall back to "everything allowed"
+    // (tierless demo workspaces must stay on the free gate).
+    if (Settings::get('markaspot_operating_mode', 'self_hosted') === 'saas') {
+      return FALSE;
+    }
+    return $this->moduleHandler === NULL
+      || !$this->moduleHandler->moduleExists('markaspot_fastmap');
+  }
+
+  /**
+   * Checks whether this installation uses organisation groups at all.
+   *
+   * Organisation management only exists in enterprise/self-hosted setups;
+   * the SaaS platform has no org creation or administration. The check is
+   * data-driven (are there any org groups?) instead of relying on the
+   * operating-mode environment, so the dashboard never offers org-coupled
+   * toggles that have nothing to act on.
+   */
+  public function hasOrganisationFeatures(): bool {
+    $ids = $this->entityTypeManager->getStorage('group')->getQuery()
+      ->condition('type', 'org')
+      ->accessCheck(FALSE)
+      ->range(0, 1)
+      ->execute();
+    return $ids !== [];
   }
 
   /**

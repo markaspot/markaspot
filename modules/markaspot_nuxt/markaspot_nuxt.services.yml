@@ -9,7 +9,7 @@ services:
     class: Drupal\markaspot_nuxt\Service\FeatureFlagChecker
   markaspot_nuxt.feature_scope_resolver:
     class: Drupal\markaspot_nuxt\Service\FeatureScopeResolver
-    arguments: ['@entity_type.manager', '@config.factory', '@markaspot_group.hierarchy_resolver']
+    arguments: ['@entity_type.manager', '@config.factory', '@markaspot_group.hierarchy_resolver', '@module_handler']
   markaspot_nuxt.citizen_wording_resolver:
     class: Drupal\markaspot_nuxt\Service\CitizenWordingResolver
   markaspot_nuxt.feature_flag_access_check:
