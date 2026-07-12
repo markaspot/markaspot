@@ -35,6 +35,7 @@ use Drupal\taxonomy\TermInterface;
 use Drupal\user\Entity\Role;
 use Drupal\user\Entity\User;
 use Drupal\user\UserInterface;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 /**
  * Implements hook_mail().
@@ -519,6 +520,12 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
   }
   if (isset($fields['field_assigned_team'])) {
     $fields['field_assigned_team']->addConstraint('ServiceRequestAssignedTeamJurisdiction');
+  }
+  // Reject re-homing an existing report into a jurisdiction the user does not
+  // manage, on validated write paths (JSON:API/REST/form) with a clean 422.
+  // The presave guard remains the backstop for saves that skip validation.
+  if (isset($fields['field_jurisdiction'])) {
+    $fields['field_jurisdiction']->addConstraint('ServiceRequestJurisdictionAuthz');
   }
 }
 
@@ -1386,6 +1393,19 @@ function markaspot_group_node_presave(NodeInterface $node): void {
 
   // 2. Detect field_jurisdiction changes and schedule jur relationship sync.
   if (!$node->isNew() && $node->hasField('field_jurisdiction')) {
+    // Security: every jurisdiction newly added to an existing report must be
+    // one the current user manages. Without this guard a staff user of one
+    // tenant could PATCH field_jurisdiction (JSON:API exposes the field with
+    // no field-level access check) to repoint their report into a foreign
+    // tenant they do not manage, publishing content under that tenant's name.
+    // The field is multi-value, so the full target set is compared: appending
+    // a foreign jurisdiction behind the unchanged own one must not slip past
+    // a first-delta-only check. Citizen intake (isNew) and internal syncs
+    // (is_syncing, handled above) never reach this branch.
+    if (_markaspot_group_unauthorized_jurisdiction_target($node, \Drupal::currentUser()) !== NULL) {
+      throw new AccessDeniedHttpException('You are not authorized to move this report into the selected jurisdiction.');
+    }
+
     $new_jur_id = !$node->get('field_jurisdiction')->isEmpty()
       ? (int) $node->get('field_jurisdiction')->target_id
       : NULL;
@@ -1623,6 +1643,136 @@ function _markaspot_group_node_jurisdiction_id(NodeInterface $node): ?int {
   }
 
   return (int) $node->get('field_jurisdiction')->target_id;
+}
+
+/**
+ * Checks whether a user may place service requests into a jurisdiction.
+ *
+ * User 1 and Drupal administrators bypass; otherwise the account must hold a
+ * service-request-managing group role (tenant_admin or editorial) in the
+ * target jurisdiction or in an ancestor jurisdiction whose hierarchy (self +
+ * descendants) contains it. This is broader than
+ * TenantSettingsController::accessCheck, which authorizes tenant_admin only:
+ * editorial is included here because it also carries create/update
+ * service_request permission and legitimately reassigns reports within its
+ * managed subtree. Roles with view-only access (moderator, member,
+ * org_member) are intentionally excluded and cannot re-home a report.
+ *
+ * Used to gate re-homing an existing report to a different jurisdiction, so a
+ * staff user of one tenant cannot repoint a report into a foreign tenant they
+ * do not manage. Creation of new reports (citizen intake) is not affected;
+ * only cross-jurisdiction moves of existing reports pass through here.
+ *
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The acting user account.
+ * @param int $jurisdiction_id
+ *   The target jurisdiction group ID.
+ *
+ * @return bool
+ *   TRUE if the account may manage service requests in that jurisdiction.
+ */
+function _markaspot_group_user_can_manage_jurisdiction(AccountInterface $account, int $jurisdiction_id): bool {
+  // User 1 (superadmin) and Drupal administrators bypass all checks; this also
+  // covers programmatic contexts (drush, migrations) that run as user 1.
+  if ((int) $account->id() === 1 || in_array('administrator', $account->getRoles(), TRUE)) {
+    return TRUE;
+  }
+
+  $user = User::load($account->id());
+  if (!$user) {
+    return FALSE;
+  }
+
+  // Group roles that may create or update service requests in a jurisdiction.
+  // The dual entries cover installs with a non-default jurisdiction group type
+  // as well as the canonical 'jur' role IDs, mirroring accessCheck.
+  $group_type = _markaspot_group_jurisdiction_group_type();
+  $manage_roles = array_values(array_unique([
+    $group_type . '-tenant_admin',
+    'jur-tenant_admin',
+    $group_type . '-editorial',
+    'jur-editorial',
+  ]));
+
+  $hierarchy_resolver = \Drupal::service('markaspot_group.hierarchy_resolver');
+  foreach (GroupMembershipEntity::loadByUser($user, $manage_roles) as $membership) {
+    $group = $membership->getGroup();
+    if (!_markaspot_group_is_jurisdiction_group($group)) {
+      continue;
+    }
+    // getDescendantIds() is self-inclusive, so a direct membership on the
+    // target jurisdiction also matches. Expanding descendants never grants
+    // access to a jurisdiction outside the user's managed subtree.
+    $scope_ids = $hierarchy_resolver->getDescendantIds((int) $group->id());
+    if (in_array($jurisdiction_id, $scope_ids, TRUE)) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+/**
+ * Finds a jurisdiction the user may not move a report into, if any.
+ *
+ * Shared predicate for the presave guard and the ServiceRequestJurisdictionAuthz
+ * constraint. Compares the full submitted jurisdiction target set against the
+ * persisted one; every newly added target must be manageable by the account.
+ * field_jurisdiction has unbounded cardinality, so comparing only the first
+ * delta would let an attacker append a foreign jurisdiction behind the
+ * unchanged own one and bypass the check. New reports (citizen intake) and
+ * unchanged sets pass.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service request node (carries the pending values).
+ * @param \Drupal\Core\Session\AccountInterface $account
+ *   The acting account.
+ *
+ * @return int|null
+ *   The first newly added jurisdiction the account may not manage, or NULL if
+ *   the move (if any) is fully authorized.
+ */
+function _markaspot_group_unauthorized_jurisdiction_target(NodeInterface $node, AccountInterface $account): ?int {
+  // Citizen intake sets the initial jurisdiction; only re-homing is gated.
+  if ($node->isNew()) {
+    return NULL;
+  }
+
+  $new_ids = _markaspot_group_field_target_ids($node, 'field_jurisdiction');
+
+  // Compare against the persisted set so unchanged saves (e.g. a title edit)
+  // never trip the check. $node->original is only populated during save; when
+  // validating stand-alone (JSON:API/REST run validation before save) load the
+  // unchanged entity.
+  $original = $node->original ?? \Drupal::entityTypeManager()
+    ->getStorage('node')
+    ->loadUnchanged($node->id());
+  $original_ids = $original instanceof NodeInterface
+    ? _markaspot_group_field_target_ids($original, 'field_jurisdiction')
+    : [];
+
+  foreach (array_diff($new_ids, $original_ids) as $added) {
+    if (!_markaspot_group_user_can_manage_jurisdiction($account, (int) $added)) {
+      return (int) $added;
+    }
+  }
+
+  return NULL;
+}
+
+/**
+ * Checks whether a report's pending jurisdiction change is authorized.
+ *
+ * Backing logic for the ServiceRequestJurisdictionAuthz field constraint.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service request node being validated (carries the pending value).
+ *
+ * @return bool
+ *   TRUE if the move is allowed (or there is no move), FALSE otherwise.
+ */
+function _markaspot_group_service_request_jurisdiction_move_authorized(NodeInterface $node): bool {
+  return _markaspot_group_unauthorized_jurisdiction_target($node, \Drupal::currentUser()) === NULL;
 }
 
 /**
