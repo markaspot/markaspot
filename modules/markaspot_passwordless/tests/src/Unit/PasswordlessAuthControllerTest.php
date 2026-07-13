@@ -18,11 +18,13 @@ use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRoleInterface;
 use Drupal\language\ConfigurableLanguageManagerInterface;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
+use Drupal\markaspot_passwordless\Service\BreakGlassOtpServiceInterface;
 use Drupal\markaspot_passwordless\Controller\PasswordlessAuthController;
 use Drupal\markaspot_passwordless\Service\OtpService;
 use Drupal\Tests\UnitTestCase;
@@ -31,6 +33,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 require_once dirname(__DIR__, 4) . '/markaspot_nuxt/src/Service/FeatureScopeResolver.php';
+require_once dirname(__DIR__, 3) . '/src/Service/BreakGlassOtpServiceInterface.php';
 require_once dirname(__DIR__, 3) . '/src/Controller/PasswordlessAuthController.php';
 
 /**
@@ -109,6 +112,20 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
   protected $featureScopeResolver;
 
   /**
+   * Mocked Core state service.
+   *
+   * @var \Drupal\Core\State\StateInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $state;
+
+  /**
+   * Mocked recovery-only OTP service.
+   *
+   * @var \Drupal\markaspot_passwordless\Service\BreakGlassOtpServiceInterface|\PHPUnit\Framework\MockObject\MockObject
+   */
+  protected $breakGlassOtp;
+
+  /**
    * {@inheritdoc}
    */
   protected function setUp(): void {
@@ -122,8 +139,13 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->keyValueExpirable = $this->createMock(KeyValueExpirableFactoryInterface::class);
     $this->languageManager = $this->createMock(LanguageManagerInterface::class);
     $this->featureScopeResolver = $this->createMock(FeatureScopeResolver::class);
+    $this->state = $this->createMock(StateInterface::class);
+    $this->breakGlassOtp = $this->createMock(BreakGlassOtpServiceInterface::class);
     // Default: passwordless feature enabled so tests hit the logic under test.
     $this->featureScopeResolver->method('isPlatformFeatureEnabled')->willReturn(TRUE);
+    $this->state->method('get')
+      ->with('system.maintenance_mode', FALSE)
+      ->willReturn(FALSE);
 
     // Default passwordless config.
     $passwordlessConfig = $this->createMock(ImmutableConfig::class);
@@ -191,6 +213,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         $this->sessionConfiguration,
         $this->keyValueExpirable,
         $this->featureScopeResolver,
+        $this->state,
+        $this->breakGlassOtp,
         $entityRepository,
         $frontendUrlService,
         $memberships,
@@ -204,6 +228,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
           SessionConfigurationInterface $session_configuration,
           KeyValueExpirableFactoryInterface $key_value_expirable,
           FeatureScopeResolver $feature_scope_resolver,
+          StateInterface $state,
+          BreakGlassOtpServiceInterface $break_glass_otp,
           ?EntityRepositoryInterface $entityRepository,
           ?FrontendUrlService $frontendUrlService,
           private readonly array $testMemberships,
@@ -216,6 +242,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
             $session_configuration,
             $key_value_expirable,
             $feature_scope_resolver,
+            $state,
+            $break_glass_otp,
             $entityRepository,
             $frontendUrlService,
           );
@@ -239,6 +267,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->sessionConfiguration,
       $this->keyValueExpirable,
       $this->featureScopeResolver,
+      $this->state,
+      $this->breakGlassOtp,
       $entityRepository,
       $frontendUrlService,
     );
@@ -256,11 +286,172 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
    */
   public function testRequestCodeDisabledByFeatureFlag(): void {
     $this->setPasswordlessFlag(FALSE);
+    $this->breakGlassOtp->expects($this->never())->method('requestCode');
 
     $request = new Request([], [], [], [], [], [], '{"email":"user@example.com","jurisdiction_id":42}');
     $response = $this->controller->requestCode($request);
 
     $this->assertEquals(Response::HTTP_FORBIDDEN, $response->getStatusCode());
+  }
+
+  /**
+   * Core maintenance switches the route to recovery OTP.
+   *
+   * This runs before the normal passwordless feature flag and never reaches
+   * normal auto-registration.
+   *
+   * @covers ::requestCode
+   * @covers ::requestBreakGlassCode
+   */
+  public function testMaintenanceUsesBreakGlassOtpWhenNormalPasswordlessIsDisabled(): void {
+    $this->setPasswordlessFlag(FALSE);
+    $this->setMaintenanceMode(TRUE);
+    $this->otpService->expects($this->never())->method('requestCode');
+    $this->breakGlassOtp->expects($this->once())
+      ->method('requestCode')
+      ->with('operator@example.com', '')
+      ->willReturn([
+        'success' => TRUE,
+        'message' => 'If the account is eligible, a verification code has been sent.',
+        'expiresIn' => 600,
+      ]);
+
+    $response = $this->controller->requestCode(
+      new Request([], [], [], [], [], [], '{"email":"operator@example.com","jurisdiction_id":"not-used"}'),
+    );
+
+    self::assertSame(Response::HTTP_OK, $response->getStatusCode());
+    self::assertSame([
+      'success' => TRUE,
+      'message' => 'If the account is eligible, a verification code has been sent.',
+      'expiresIn' => 600,
+    ], json_decode((string) $response->getContent(), TRUE));
+  }
+
+  /**
+   * Maintenance request Flood buckets canonicalize case and surrounding space.
+   *
+   * @covers ::requestCode
+   * @covers ::requestBreakGlassCode
+   * @covers ::canonicalizeBreakGlassFloodEmail
+   */
+  public function testMaintenanceRequestCanonicalizesEmailFloodIdentifier(): void {
+    $this->setMaintenanceMode(TRUE);
+    $this->breakGlassOtp->expects($this->once())
+      ->method('requestCode')
+      ->with('Operator@Example.COM', '')
+      ->willReturn([
+        'success' => TRUE,
+        'message' => 'If the account is eligible, a verification code has been sent.',
+        'expiresIn' => 600,
+      ]);
+
+    $this->flood = $this->createMock(FloodInterface::class);
+    $allowed_calls = [
+      ['passwordless.break_glass.request', 3, 3600, 'break_glass:operator@example.com'],
+      ['passwordless.break_glass.request.ip', 10, 3600, '203.0.113.10'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('isAllowed')
+      ->willReturnCallback(static function (string $event, int $threshold, int $window, string $identifier) use (&$allowed_calls): bool {
+        self::assertSame(array_shift($allowed_calls), [$event, $threshold, $window, $identifier]);
+        return TRUE;
+      });
+    $register_calls = [
+      ['passwordless.break_glass.request', 3600, 'break_glass:operator@example.com'],
+      ['passwordless.break_glass.request.ip', 3600, '203.0.113.10'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('register')
+      ->willReturnCallback(static function (string $event, int $window, string $identifier) use (&$register_calls): void {
+        self::assertSame(array_shift($register_calls), [$event, $window, $identifier]);
+      });
+    $this->recreateController();
+
+    $response = $this->controller->requestCode(Request::create(
+      '/api/auth/request-code',
+      'POST',
+      [],
+      [],
+      [],
+      ['REMOTE_ADDR' => '203.0.113.10'],
+      '{"email":" Operator@Example.COM "}',
+    ));
+
+    self::assertSame(Response::HTTP_OK, $response->getStatusCode());
+  }
+
+  /**
+   * Noneligible recovery attempts receive the generic invalid-code result.
+   *
+   * They cannot fall through to the normal OTP verifier.
+   *
+   * @covers ::verifyCode
+   * @covers ::verifyBreakGlassCode
+   */
+  public function testMaintenanceNoneligibleVerificationStaysGeneric(): void {
+    $this->setMaintenanceMode(TRUE);
+    $this->otpService->expects($this->never())->method('verifyCode');
+    $this->breakGlassOtp->expects($this->once())
+      ->method('verifyCode')
+      ->with('noneligible@example.com', '123456')
+      ->willReturn(NULL);
+
+    $response = $this->controller->verifyCode(
+      new Request([], [], [], [], [], [], '{"email":"noneligible@example.com","code":"123456"}'),
+    );
+
+    self::assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
+    self::assertSame(['error' => 'Invalid verification code'], json_decode((string) $response->getContent(), TRUE));
+  }
+
+  /**
+   * Maintenance verification Flood buckets use the same canonical email key.
+   *
+   * @covers ::verifyCode
+   * @covers ::verifyBreakGlassCode
+   * @covers ::canonicalizeBreakGlassFloodEmail
+   */
+  public function testMaintenanceVerificationCanonicalizesEmailFloodIdentifier(): void {
+    $this->setMaintenanceMode(TRUE);
+    $this->breakGlassOtp->expects($this->once())
+      ->method('verifyCode')
+      ->with('Operator@Example.COM', '123456')
+      ->willReturn(NULL);
+
+    $this->flood = $this->createMock(FloodInterface::class);
+    $allowed_calls = [
+      ['passwordless.break_glass.verify.lockout', 5, 900, 'break_glass:operator@example.com:203.0.113.10'],
+      ['passwordless.break_glass.verify.backoff', 3, 60, 'break_glass:operator@example.com:203.0.113.10'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('isAllowed')
+      ->willReturnCallback(static function (string $event, int $threshold, int $window, string $identifier) use (&$allowed_calls): bool {
+        self::assertSame(array_shift($allowed_calls), [$event, $threshold, $window, $identifier]);
+        return TRUE;
+      });
+    $register_calls = [
+      ['passwordless.break_glass.verify.lockout', 900, 'break_glass:operator@example.com:203.0.113.10'],
+      ['passwordless.break_glass.verify.backoff', 60, 'break_glass:operator@example.com:203.0.113.10'],
+    ];
+    $this->flood->expects($this->exactly(2))
+      ->method('register')
+      ->willReturnCallback(static function (string $event, int $window, string $identifier) use (&$register_calls): void {
+        self::assertSame(array_shift($register_calls), [$event, $window, $identifier]);
+      });
+    $this->recreateController();
+
+    $response = $this->controller->verifyCode(Request::create(
+      '/api/auth/verify-code',
+      'POST',
+      [],
+      [],
+      [],
+      ['REMOTE_ADDR' => '203.0.113.10'],
+      '{"email":" Operator@Example.COM ","code":"123456"}',
+    ));
+
+    self::assertSame(Response::HTTP_UNAUTHORIZED, $response->getStatusCode());
   }
 
   /**
@@ -1164,6 +1355,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertFalse($data['authenticated']);
+    $this->assertFalse($data['maintenance_access']);
   }
 
   /**
@@ -1183,6 +1375,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
         ['administer site configuration', FALSE],
         ['triage inbound mail', TRUE],
         ['delete any service_request content', FALSE],
+        ['access site in maintenance mode', TRUE],
       ]);
 
     $tosField = $this->createMock(FieldItemListInterface::class);
@@ -1210,6 +1403,7 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $this->assertEquals(200, $response->getStatusCode());
     $data = json_decode($response->getContent(), TRUE);
     $this->assertTrue($data['authenticated']);
+    $this->assertTrue($data['maintenance_access']);
     $this->assertSame('alice-user-uuid', $data['user']['uuid']);
     $this->assertSame(['triage inbound mail'], $data['user']['permissions']);
     $this->assertTrue($data['user']['tos_accepted']);
@@ -1294,6 +1488,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->sessionConfiguration,
       $this->keyValueExpirable,
       $this->featureScopeResolver,
+      $this->state,
+      $this->breakGlassOtp,
       NULL,
       $frontendUrl,
     );
@@ -1335,6 +1531,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->sessionConfiguration,
       $this->keyValueExpirable,
       $this->featureScopeResolver,
+      $this->state,
+      $this->breakGlassOtp,
       NULL,
       $frontendUrl,
     );
@@ -1366,6 +1564,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->sessionConfiguration,
       $this->keyValueExpirable,
       $this->featureScopeResolver,
+      $this->state,
+      $this->breakGlassOtp,
       NULL,
       $frontendUrl,
     );
@@ -1604,6 +1804,8 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
       $this->sessionConfiguration,
       $this->keyValueExpirable,
       $this->featureScopeResolver,
+      $this->state,
+      $this->breakGlassOtp,
     );
   }
 
@@ -1664,6 +1866,17 @@ class PasswordlessAuthControllerTest extends UnitTestCase {
     $entityTypeManager = $this->createMock(EntityTypeManagerInterface::class);
     $entityTypeManager->method('getStorage')->with('group')->willReturn($groupStorage);
     \Drupal::getContainer()->set('entity_type.manager', $entityTypeManager);
+    $this->recreateController();
+  }
+
+  /**
+   * Rebuilds the controller with a fixed Core maintenance-mode state.
+   */
+  protected function setMaintenanceMode(bool $enabled): void {
+    $this->state = $this->createMock(StateInterface::class);
+    $this->state->method('get')
+      ->with('system.maintenance_mode', FALSE)
+      ->willReturn($enabled);
     $this->recreateController();
   }
 

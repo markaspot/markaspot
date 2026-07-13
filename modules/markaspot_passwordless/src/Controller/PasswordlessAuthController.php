@@ -14,12 +14,15 @@ use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Routing\TrustedRedirectResponse;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Session\SessionConfigurationInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\group\Entity\GroupMembership;
 use Drupal\markaspot_group\MembershipRoleNormalizer;
 use Drupal\markaspot_group\Trait\JurisdictionIdResolverTrait;
 use Drupal\markaspot_nuxt\Service\FeatureScopeResolver;
 use Drupal\markaspot_nuxt\Service\FrontendUrlService;
+use Drupal\markaspot_passwordless\Service\BreakGlassOtpServiceInterface;
 use Drupal\markaspot_passwordless\Service\OtpService;
+use Drupal\user\UserInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\RedirectResponse;
@@ -121,6 +124,10 @@ class PasswordlessAuthController extends ControllerBase {
    *   The expirable key-value store factory.
    * @param \Drupal\markaspot_nuxt\Service\FeatureScopeResolver $feature_scope_resolver
    *   The effective feature scope resolver.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   The Core state service containing the global maintenance switch.
+   * @param \Drupal\markaspot_passwordless\Service\BreakGlassOtpServiceInterface $breakGlassOtp
+   *   The recovery-only OTP service used while Core maintenance is active.
    * @param \Drupal\Core\Entity\EntityRepositoryInterface|null $entityRepository
    *   The entity repository service.
    * @param \Drupal\markaspot_nuxt\Service\FrontendUrlService|null $frontendUrlService
@@ -134,6 +141,8 @@ class PasswordlessAuthController extends ControllerBase {
     SessionConfigurationInterface $session_configuration,
     KeyValueExpirableFactoryInterface $key_value_expirable,
     FeatureScopeResolver $feature_scope_resolver,
+    private readonly StateInterface $state,
+    private readonly BreakGlassOtpServiceInterface $breakGlassOtp,
     protected ?EntityRepositoryInterface $entityRepository = NULL,
     protected ?FrontendUrlService $frontendUrlService = NULL,
   ) {
@@ -158,6 +167,8 @@ class PasswordlessAuthController extends ControllerBase {
       $container->get('session_configuration'),
       $container->get('keyvalue.expirable'),
       $container->get('markaspot_nuxt.feature_scope_resolver'),
+      $container->get('state'),
+      $container->get('markaspot_passwordless.break_glass_otp'),
       $container->get('entity.repository'),
       $container->get('markaspot_nuxt.frontend_url'),
     );
@@ -257,6 +268,14 @@ class PasswordlessAuthController extends ControllerBase {
     $data = json_decode($request->getContent(), TRUE);
     if (!is_array($data)) {
       $data = [];
+    }
+
+    // Core maintenance turns normal OTP into a narrow recovery path. This
+    // branch intentionally runs before tenant resolution and the passwordless
+    // feature flag: recovery is installation-wide and must work even if a
+    // tenant has normal passwordless login disabled.
+    if ($this->isCoreMaintenanceModeActive()) {
+      return $this->requestBreakGlassCode($data, $request);
     }
 
     $jurisdiction_id = $this->resolveJurisdictionPayload($data);
@@ -362,6 +381,13 @@ class PasswordlessAuthController extends ControllerBase {
       $data = [];
     }
 
+    // A recovery code is deliberately not a normal passwordless code. It is
+    // accepted only while Core maintenance is still active and the dedicated
+    // service repeats the current account eligibility check before login.
+    if ($this->isCoreMaintenanceModeActive()) {
+      return $this->verifyBreakGlassCode($data, $request);
+    }
+
     $jurisdiction_id = $this->resolveJurisdictionPayload($data);
     if ($jurisdiction_id === FALSE) {
       return new JsonResponse([
@@ -460,6 +486,151 @@ class PasswordlessAuthController extends ControllerBase {
   }
 
   /**
+   * Handles the public recovery-code request while Core is in maintenance.
+   *
+   * The result is intentionally identical for eligible, blocked, missing, and
+   * nonexempt accounts. Only the dedicated service decides whether mail is
+   * actually sent, which prevents the endpoint from becoming an account or
+   * permission oracle.
+   *
+   * @param array<string, mixed> $data
+   *   The decoded request payload.
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming HTTP request.
+   */
+  protected function requestBreakGlassCode(array $data, Request $request): JsonResponse {
+    if (empty($data['email'])) {
+      return new JsonResponse([
+        'error' => 'Email is required',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
+    $email = trim((string) $data['email']);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      return new JsonResponse([
+        'error' => 'Invalid email format',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
+    $config = $this->configFactory->get('markaspot_passwordless.settings');
+    $request_limit_per_email = $config->get('request_limit_per_email') ?? 3;
+    $request_limit_per_ip = $config->get('request_limit_per_ip') ?? 10;
+    $flood_email = $this->canonicalizeBreakGlassFloodEmail($email);
+    $email_identifier = 'break_glass:' . $flood_email;
+    $ip = $request->getClientIp() ?: 'unknown';
+
+    if (!$this->flood->isAllowed('passwordless.break_glass.request', $request_limit_per_email, 3600, $email_identifier)) {
+      return new JsonResponse([
+        'error' => 'Too many code requests. Please try again in an hour.',
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+    if (!$this->flood->isAllowed('passwordless.break_glass.request.ip', $request_limit_per_ip, 3600, $ip)) {
+      return new JsonResponse([
+        'error' => 'Too many requests from your location. Please try again later.',
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+
+    $langcode = !empty($data['langcode']) ? trim((string) $data['langcode']) : '';
+    $result = $this->breakGlassOtp->requestCode($email, $langcode);
+    $this->flood->register('passwordless.break_glass.request', 3600, $email_identifier);
+    $this->flood->register('passwordless.break_glass.request.ip', 3600, $ip);
+
+    return new JsonResponse($result);
+  }
+
+  /**
+   * Handles recovery-code verification while Core is in maintenance.
+   *
+   * @param array<string, mixed> $data
+   *   The decoded request payload.
+   * @param \Symfony\Component\HttpFoundation\Request $request
+   *   The incoming HTTP request.
+   */
+  protected function verifyBreakGlassCode(array $data, Request $request): JsonResponse {
+    if (empty($data['email']) || empty($data['code'])) {
+      return new JsonResponse([
+        'error' => 'Email and code are required',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
+    $email = trim((string) $data['email']);
+    $code = trim((string) $data['code']);
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      return new JsonResponse([
+        'error' => 'Invalid email format',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+    if (!preg_match('/^\d{6}$/', $code)) {
+      return new JsonResponse([
+        'error' => 'Invalid code format',
+      ], Response::HTTP_BAD_REQUEST);
+    }
+
+    $config = $this->configFactory->get('markaspot_passwordless.settings');
+    $verify_lockout_attempts = $config->get('verify_lockout_attempts') ?? 5;
+    $verify_lockout_duration = $config->get('verify_lockout_duration') ?? 900;
+    $ip = $request->getClientIp() ?: 'unknown';
+    $flood_email = $this->canonicalizeBreakGlassFloodEmail($email);
+    $identifier = 'break_glass:' . $flood_email . ':' . $ip;
+
+    if (!$this->flood->isAllowed('passwordless.break_glass.verify.lockout', $verify_lockout_attempts, $verify_lockout_duration, $identifier)) {
+      $minutes = ceil($verify_lockout_duration / 60);
+      return new JsonResponse([
+        'error' => "Too many failed attempts. Account temporarily locked. Please try again in {$minutes} minutes.",
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+    if (!$this->flood->isAllowed('passwordless.break_glass.verify.backoff', 3, 60, $identifier)) {
+      return new JsonResponse([
+        'error' => 'Too many attempts. Please wait a moment before trying again.',
+      ], Response::HTTP_TOO_MANY_REQUESTS);
+    }
+
+    $user = $this->breakGlassOtp->verifyCode($email, $code);
+    if ($user === NULL) {
+      $this->flood->register('passwordless.break_glass.verify.lockout', $verify_lockout_duration, $identifier);
+      $this->flood->register('passwordless.break_glass.verify.backoff', 60, $identifier);
+      return new JsonResponse([
+        'error' => 'Invalid verification code',
+      ], Response::HTTP_UNAUTHORIZED);
+    }
+
+    $this->flood->clear('passwordless.break_glass.verify.lockout', $identifier);
+    $this->flood->clear('passwordless.break_glass.verify.backoff', $identifier);
+    $this->completeBreakGlassLogin($user);
+
+    return new JsonResponse([
+      'success' => TRUE,
+      'message' => 'Authentication successful',
+      'user' => $this->buildAuthUserPayload($user, $user),
+    ]);
+  }
+
+  /**
+   * Starts the normal Drupal session after recovery authorization succeeded.
+   */
+  protected function completeBreakGlassLogin(UserInterface $user): void {
+    user_login_finalize($user);
+  }
+
+  /**
+   * Returns whether Drupal Core's global maintenance switch is currently on.
+   */
+  protected function isCoreMaintenanceModeActive(): bool {
+    return (bool) $this->state->get('system.maintenance_mode', FALSE);
+  }
+
+  /**
+   * Canonicalizes the email portion of maintenance-only Flood identifiers.
+   *
+   * This remains deliberately separate from the normal OTP flow. Core
+   * maintenance is a global recovery path, so differently cased variants of
+   * the same address must not create separate per-email Flood buckets.
+   */
+  private function canonicalizeBreakGlassFloodEmail(string $email): string {
+    return mb_strtolower(trim($email));
+  }
+
+  /**
    * Logout endpoint.
    *
    * POST /api/auth/logout.
@@ -533,12 +704,18 @@ class PasswordlessAuthController extends ControllerBase {
 
       return new JsonResponse([
         'authenticated' => TRUE,
+        // Keep the frontend aligned with Drupal Core's exact exemption
+        // semantics. It is intentionally a capability, not a role check:
+        // installations may grant the Core permission to operational staff
+        // such as editorial_board without allowing them to toggle maintenance.
+        'maintenance_access' => $account->hasPermission('access site in maintenance mode'),
         'user' => $this->buildAuthUserPayload($account, $user),
       ]);
     }
 
     return new JsonResponse([
       'authenticated' => FALSE,
+      'maintenance_access' => FALSE,
     ]);
   }
 

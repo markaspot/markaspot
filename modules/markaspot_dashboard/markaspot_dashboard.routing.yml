@@ -174,6 +174,53 @@ markaspot_dashboard.admin_signups:
   options:
     _format: 'json'
 
+# Global Drupal maintenance switch. The public GET is deliberately tiny so
+# Nuxt can render a central maintenance screen even while Core blocks regular
+# JSON:API/Open311 traffic. PATCH remains a cookie + CSRF protected platform
+# operation and both routes opt out of Core's blanket maintenance response so
+# the platform can always switch the installation back on.
+markaspot_dashboard.platform_maintenance_status:
+  path: '/api/platform/maintenance'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\PlatformMaintenanceController::status'
+    _title: 'Platform maintenance status'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'
+  options:
+    _format: 'json'
+    _maintenance_access: TRUE
+    no_cache: 'TRUE'
+
+markaspot_dashboard.platform_maintenance_access:
+  path: '/api/platform/maintenance/access'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\PlatformMaintenanceController::accessStatus'
+    _title: 'Platform maintenance access status'
+  methods: [GET]
+  requirements:
+    _access: 'TRUE'
+  options:
+    _auth: ['cookie']
+    _format: 'json'
+    _maintenance_access: TRUE
+    no_cache: 'TRUE'
+
+markaspot_dashboard.platform_maintenance_update:
+  path: '/api/platform/maintenance'
+  defaults:
+    _controller: '\Drupal\markaspot_dashboard\Controller\PlatformMaintenanceController::update'
+    _title: 'Update platform maintenance mode'
+  methods: [PATCH]
+  requirements:
+    _custom_access: '\Drupal\markaspot_dashboard\Controller\PlatformMaintenanceController::access'
+    _csrf_request_header_token: 'TRUE'
+  options:
+    _auth: ['cookie']
+    _format: 'json'
+    _maintenance_access: TRUE
+    no_cache: 'TRUE'
+
 # Split service request into a linked sibling (#512). Mutations follow the
 # markaspot_group CSRF convention (_csrf_request_header_token + cookie auth);
 # jurisdiction membership on the queried node is re-checked in the

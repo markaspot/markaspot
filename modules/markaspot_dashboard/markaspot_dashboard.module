@@ -12,6 +12,22 @@ use Drupal\Core\Field\FieldDefinitionInterface;
 use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\node\NodeInterface;
+use Symfony\Component\Routing\RouteCollection;
+
+/**
+ * Implements hook_route_alter().
+ *
+ * The maintenance switch itself is dashboard-owned and must always retain the
+ * Core CSRF-token endpoint, even on installations that do not enable the
+ * optional passwordless module. Without this exemption the cookie + CSRF
+ * protected PATCH route cannot bring the installation back online.
+ */
+function markaspot_dashboard_route_alter(RouteCollection $collection): void {
+  $route = $collection->get('system.csrftoken');
+  if ($route) {
+    $route->setOption('_maintenance_access', TRUE);
+  }
+}
 
 /**
  * Implements hook_entity_access().
