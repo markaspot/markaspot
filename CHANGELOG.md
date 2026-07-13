@@ -1,5 +1,15 @@
 # Changelog
 
+## [11.9.151](https://github.com/markaspot/markaspot/compare/11.9.150...11.9.151) (2026-07-13)
+
+### Features
+
+* **maintenance:** add global core maintenance mode ([ede6bdb](https://github.com/markaspot/markaspot/commit/ede6bdbc881133fe91795465bf6572d333ce1f40))
+
+### Bug Fixes
+
+* replace typescript-only mapbox type packages rejected by composer 2.10.2 ([ae2358f](https://github.com/markaspot/markaspot/commit/ae2358fddfe1cc44a51b0bc0379070429e7a30cd))
+
 ## [11.9.150](https://github.com/markaspot/markaspot/compare/11.9.149...11.9.150) (2026-07-12)
 
 ### Bug Fixes
