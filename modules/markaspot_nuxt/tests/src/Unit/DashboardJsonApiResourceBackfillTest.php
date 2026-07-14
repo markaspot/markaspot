@@ -44,10 +44,11 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
 
     $this->assertIsString($install);
     $this->assertStringContainsString('function markaspot_nuxt_update_11907(): string', $install);
+    $this->assertStringContainsString('function markaspot_nuxt_update_11909(): string', $install);
     $this->assertStringContainsString("hasDefinition('jsonapi_resource_config')", $install);
     $this->assertStringContainsString('$resource = $storage->create($seed);', $install);
     $this->assertStringContainsString('$hardeningPolicies = [', $install);
-    $this->assertStringContainsString("'group--jur' => ['group', 'jur', ['id', 'label']]", $install);
+    $this->assertStringContainsString("'group--jur' => ['group', 'jur', ['id', 'label', 'field_slug']]", $install);
 
     foreach (self::RESOURCE_IDS as $resourceId) {
       $this->assertStringContainsString("'" . $resourceId . "'", $install);
@@ -71,6 +72,7 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
 
     $this->assertFalse($config['resourceFields']['id']['disabled']);
     $this->assertFalse($config['resourceFields']['label']['disabled']);
+    $this->assertFalse($config['resourceFields']['field_slug']['disabled']);
     $this->assertTrue($config['resourceFields']['field_jurisdiction_e_mail']['disabled']);
     $this->assertTrue($config['resourceFields']['field_jurisdiction_address']['disabled']);
     $this->assertTrue($config['resourceFields']['field_nuxt_config']['disabled']);
@@ -171,6 +173,10 @@ final class DashboardJsonApiResourceBackfillTest extends UnitTestCase {
       }
 
       $this->assertArrayHasKey($fieldName, $resourceFields);
+      if ($fieldName === 'field_slug') {
+        $this->assertFalse($resourceFields[$fieldName]['disabled']);
+        continue;
+      }
       $this->assertTrue($resourceFields[$fieldName]['disabled']);
     }
   }
