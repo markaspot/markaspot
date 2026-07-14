@@ -527,6 +527,9 @@ function markaspot_group_entity_bundle_field_info_alter(array &$fields, EntityTy
   if (isset($fields['field_assigned_team'])) {
     $fields['field_assigned_team']->addConstraint('ServiceRequestAssignedTeamJurisdiction');
   }
+  if (isset($fields['field_organisation'])) {
+    $fields['field_organisation']->addConstraint('ServiceRequestSingleOrganisation');
+  }
   // Reject re-homing an existing report into a jurisdiction the user does not
   // manage, on validated write paths (JSON:API/REST/form) with a clean 422.
   // The presave guard remains the backstop for saves that skip validation.

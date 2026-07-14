@@ -9,6 +9,9 @@ markaspot_group.settings:
       type: integer
       label: 'Default jurisdiction ID'
       nullable: true
+    single_organisation_assignment:
+      type: boolean
+      label: 'Restrict service requests to a single organisation'
 
 markaspot_group.mail:
   type: config_object

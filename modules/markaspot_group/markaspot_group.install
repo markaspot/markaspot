@@ -5094,3 +5094,41 @@ function markaspot_group_update_11939(): string {
     $skipped,
   );
 }
+
+/**
+ * Adds the optional single organisation assignment setting.
+ */
+function markaspot_group_update_11940(): string {
+  $config = \Drupal::configFactory()->getEditable('markaspot_group.settings');
+  if (array_key_exists('single_organisation_assignment', $config->getRawData())) {
+    return 'The single organisation assignment setting already exists.';
+  }
+
+  $has_multiple_assignments = FALSE;
+  $database = \Drupal::database();
+  $schema = $database->schema();
+  $table = 'node__field_organisation';
+  if ($schema->tableExists($table)) {
+    $query = $database->select($table, 'fo');
+    $query->addField('fo', 'entity_id');
+    if ($schema->fieldExists($table, 'bundle')) {
+      $query->condition('bundle', 'service_request');
+    }
+    if ($schema->fieldExists($table, 'deleted')) {
+      $query->condition('deleted', 0);
+    }
+    $query->groupBy('entity_id');
+    $query->having('COUNT(*) > 1');
+    $query->range(0, 1);
+    $has_multiple_assignments = $query->execute()->fetchField() !== FALSE;
+  }
+
+  $single_organisation_assignment = !$has_multiple_assignments;
+  $config->set('single_organisation_assignment', $single_organisation_assignment)->save();
+
+  if ($has_multiple_assignments) {
+    return 'Seeded single_organisation_assignment to FALSE because existing service requests use multiple organisation assignments.';
+  }
+
+  return 'Seeded single_organisation_assignment to TRUE because no existing service request has multiple organisation assignments.';
+}

@@ -1,2 +1,3 @@
 jurisdiction_field_strategy: most_specific
 default_jurisdiction_id: null
+single_organisation_assignment: true
