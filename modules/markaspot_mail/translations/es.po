@@ -87,9 +87,17 @@ msgstr "su organización"
 msgid "Request #@request_id assigned to @organisation"
 msgstr "La incidencia #@request_id se ha asignado a @organisation"
 
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id assigned to you"
+msgstr "La incidencia #@request_id se le ha asignado"
+
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "This request has been assigned to your organisation for processing."
 msgstr "Esta incidencia se ha asignado a su organización para su tramitación."
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "This request has been assigned to you for processing."
+msgstr "Esta incidencia se le ha asignado para su tramitación."
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Description: @description"
@@ -114,6 +122,10 @@ msgstr "Organización"
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Request #@request_id was assigned to @organisation"
 msgstr "La incidencia #@request_id se ha asignado a @organisation"
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id was assigned to you"
+msgstr "La incidencia #@request_id se le ha asignado"
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "A citizen request is ready for review."

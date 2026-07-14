@@ -88,9 +88,17 @@ msgstr "vaší organizaci"
 msgid "Request #@request_id assigned to @organisation"
 msgstr "Podnět č. @request_id byl přiřazen organizaci @organisation"
 
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id assigned to you"
+msgstr "Podnět č. @request_id vám byl přiřazen"
+
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "This request has been assigned to your organisation for processing."
 msgstr "Tento podnět byl přiřazen vaší organizaci ke zpracování."
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "This request has been assigned to you for processing."
+msgstr "Tento podnět vám byl přiřazen ke zpracování."
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Description: @description"
@@ -115,6 +123,10 @@ msgstr "Organizace"
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Request #@request_id was assigned to @organisation"
 msgstr "Podnět č. @request_id byl přiřazen organizaci @organisation"
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id was assigned to you"
+msgstr "Podnět č. @request_id vám byl přiřazen"
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "A citizen request is ready for review."

@@ -102,8 +102,16 @@ msgstr ""
 msgid "Request #@request_id assigned to @organisation"
 msgstr ""
 
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id assigned to you"
+msgstr ""
+
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "This request has been assigned to your organisation for processing."
+msgstr ""
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "This request has been assigned to you for processing."
 msgstr ""
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
@@ -128,6 +136,10 @@ msgstr ""
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Request #@request_id was assigned to @organisation"
+msgstr ""
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id was assigned to you"
 msgstr ""
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php

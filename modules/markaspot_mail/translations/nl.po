@@ -87,9 +87,17 @@ msgstr "uw organisatie"
 msgid "Request #@request_id assigned to @organisation"
 msgstr "Melding #@request_id is toegewezen aan @organisation"
 
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id assigned to you"
+msgstr "Melding #@request_id is aan u toegewezen"
+
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "This request has been assigned to your organisation for processing."
 msgstr "Deze melding is toegewezen aan uw organisatie voor verwerking."
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "This request has been assigned to you for processing."
+msgstr "Deze melding is aan u toegewezen voor verwerking."
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Description: @description"
@@ -114,6 +122,10 @@ msgstr "Organisatie"
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Request #@request_id was assigned to @organisation"
 msgstr "Melding #@request_id is toegewezen aan @organisation"
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id was assigned to you"
+msgstr "Melding #@request_id is aan u toegewezen"
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "A citizen request is ready for review."

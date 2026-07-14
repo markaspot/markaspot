@@ -87,9 +87,17 @@ msgstr "szervezete"
 msgid "Request #@request_id assigned to @organisation"
 msgstr "A(z) #@request_id számú bejelentés hozzá lett rendelve ehhez: @organisation"
 
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id assigned to you"
+msgstr "A(z) #@request_id számú bejelentést Önhöz rendelték"
+
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "This request has been assigned to your organisation for processing."
 msgstr "Ez a bejelentés feldolgozásra hozzá lett rendelve az Ön szervezetéhez."
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "This request has been assigned to you for processing."
+msgstr "Ezt a bejelentést feldolgozásra Önhöz rendelték."
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Description: @description"
@@ -114,6 +122,10 @@ msgstr "Szervezet"
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Request #@request_id was assigned to @organisation"
 msgstr "A(z) #@request_id számú bejelentés hozzá lett rendelve ehhez: @organisation"
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id was assigned to you"
+msgstr "A(z) #@request_id számú bejelentést Önhöz rendelték"
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "A citizen request is ready for review."

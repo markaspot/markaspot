@@ -87,9 +87,17 @@ msgstr "Twojej organizacji"
 msgid "Request #@request_id assigned to @organisation"
 msgstr "Zgłoszenie #@request_id zostało przypisane do @organisation"
 
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id assigned to you"
+msgstr "Zgłoszenie #@request_id zostało Ci przypisane"
+
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "This request has been assigned to your organisation for processing."
 msgstr "To zgłoszenie zostało przypisane Twojej organizacji do obsługi."
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "This request has been assigned to you for processing."
+msgstr "To zgłoszenie zostało Ci przypisane do obsługi."
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Description: @description"
@@ -114,6 +122,10 @@ msgstr "Organizacja"
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Request #@request_id was assigned to @organisation"
 msgstr "Zgłoszenie #@request_id zostało przypisane do @organisation"
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id was assigned to you"
+msgstr "Zgłoszenie #@request_id zostało Ci przypisane"
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "A citizen request is ready for review."

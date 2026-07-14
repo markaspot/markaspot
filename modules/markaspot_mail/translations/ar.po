@@ -87,9 +87,17 @@ msgstr "مؤسستك"
 msgid "Request #@request_id assigned to @organisation"
 msgstr "تم تعيين البلاغ رقم @request_id إلى @organisation"
 
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id assigned to you"
+msgstr "تم تعيين البلاغ رقم @request_id إليك"
+
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "This request has been assigned to your organisation for processing."
 msgstr "تم تعيين هذا البلاغ إلى مؤسستك للمعالجة."
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "This request has been assigned to you for processing."
+msgstr "تم تعيين هذا البلاغ إليك للمعالجة."
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Description: @description"
@@ -114,6 +122,10 @@ msgstr "المؤسسة"
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Request #@request_id was assigned to @organisation"
 msgstr "تم تعيين البلاغ رقم @request_id إلى @organisation"
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id was assigned to you"
+msgstr "تم تعيين البلاغ رقم @request_id إليك"
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "A citizen request is ready for review."

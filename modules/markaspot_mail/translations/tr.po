@@ -87,9 +87,17 @@ msgstr "kuruluşunuz"
 msgid "Request #@request_id assigned to @organisation"
 msgstr "@request_id numaralı bildirim @organisation kuruluşuna atandı"
 
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id assigned to you"
+msgstr "@request_id numaralı bildirim size atandı"
+
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "This request has been assigned to your organisation for processing."
 msgstr "Bu bildirim işlenmek üzere kuruluşunuza atandı."
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "This request has been assigned to you for processing."
+msgstr "Bu bildirim işlenmek üzere size atandı."
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Description: @description"
@@ -114,6 +122,10 @@ msgstr "Kuruluş"
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "Request #@request_id was assigned to @organisation"
 msgstr "@request_id numaralı bildirim @organisation kuruluşuna atandı"
+
+#: src/Mail/Builder/AssigneeNotificationBuilder.php
+msgid "Request #@request_id was assigned to you"
+msgstr "@request_id numaralı bildirim size atandı"
 
 #: src/Mail/Builder/GroupOrgNotificationBuilder.php
 msgid "A citizen request is ready for review."
