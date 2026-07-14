@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.153](https://github.com/markaspot/markaspot/compare/11.9.151...11.9.153) (2026-07-14)
+
+### Bug Fixes
+
+* drop invalid composer replace entries rejected by packagist ([d1f06e0](https://github.com/markaspot/markaspot/commit/d1f06e0c66d67bd4214b3e95a12ce11170400866))
+* restore field_slug filterability on group jur jsonapi resource ([48ebdf6](https://github.com/markaspot/markaspot/commit/48ebdf68d5a72818c00f4c51c4fa1f07db38749b))
+
 ## [11.9.151](https://github.com/markaspot/markaspot/compare/11.9.150...11.9.151) (2026-07-13)
 
 ### Features
