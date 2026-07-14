@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.154](https://github.com/markaspot/markaspot/compare/11.9.153...11.9.154) (2026-07-14)
+
+### Bug Fixes
+
+* enforce strict json schema for vision structured output ([4497582](https://github.com/markaspot/markaspot/commit/44975821a593a09541f28cad45b43a43446c15d9))
+
 ## [11.9.153](https://github.com/markaspot/markaspot/compare/11.9.151...11.9.153) (2026-07-14)
 
 ### Bug Fixes
