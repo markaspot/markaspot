@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.152](https://github.com/markaspot/markaspot/compare/11.9.151...11.9.152) (2026-07-14)
+
+### Bug Fixes
+
+* restore field_slug filterability on group jur jsonapi resource ([3575127](https://github.com/markaspot/markaspot/commit/3575127e0aa617f0c87fcb6782e546ec3c85b49c))
+
 ## [11.9.151](https://github.com/markaspot/markaspot/compare/11.9.150...11.9.151) (2026-07-13)
 
 ### Features
