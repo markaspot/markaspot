@@ -1,0 +1,4 @@
+markaspot_mail.texts_form:
+  title: 'Mail texts'
+  route_name: markaspot_mail.texts_form
+  base_route: markaspot_mail.texts_form
