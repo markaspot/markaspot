@@ -264,6 +264,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $this->assertEquals('gpt-4o', $payload['model']);
     $this->assertArrayHasKey('response_format', $payload);
     $this->assertEquals('json_schema', $payload['response_format']['type']);
+    $this->assertTrue($payload['response_format']['json_schema']['strict']);
     $this->assertEquals(0.7, $payload['temperature']);
     $this->assertEquals(300, $payload['max_tokens']);
   }
@@ -300,6 +301,7 @@ class ImageProcessingServiceTest extends UnitTestCase {
     $this->assertContains('alt_text', $required);
     $this->assertContains('hazard_flag', $required);
     $this->assertContains('hazard_level', $required);
+    $this->assertContains('hazard_category', $required);
     $this->assertContains('hazard_issues', $required);
     $this->assertContains('privacy_flag', $required);
     $this->assertContains('privacy_issues', $required);

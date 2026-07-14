@@ -739,6 +739,7 @@ class ImageProcessingService {
         'type' => 'json_schema',
         'json_schema' => [
           'name' => 'vision_response',
+          'strict' => TRUE,
           'schema' => [
             'type' => 'object',
             'properties' => [
@@ -800,6 +801,7 @@ class ImageProcessingService {
               'alt_text',
               'hazard_flag',
               'hazard_level',
+              'hazard_category',
               'hazard_issues',
               'privacy_flag',
               'privacy_issues',
