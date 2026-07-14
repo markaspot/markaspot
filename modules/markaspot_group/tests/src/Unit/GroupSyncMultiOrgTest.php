@@ -4,6 +4,9 @@ namespace Drupal\Tests\markaspot_group\Unit;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Database\Query\SelectInterface;
+use Drupal\Core\Database\StatementInterface;
 use Drupal\Core\DependencyInjection\ContainerBuilder;
 use Drupal\Core\Entity\EntityStorageInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -11,10 +14,12 @@ use Drupal\Core\Field\FieldItemListInterface;
 use Drupal\Core\Language\LanguageInterface;
 use Drupal\Core\Language\LanguageManagerInterface;
 use Drupal\Core\Mail\MailManagerInterface;
+use Drupal\Core\Session\AccountInterface;
 use Drupal\Component\Utility\EmailValidatorInterface;
 use Drupal\group\Entity\GroupInterface;
 use Drupal\group\Entity\GroupRelationshipInterface;
 use Drupal\markaspot_group\Service\JurisdictionHierarchyResolverInterface;
+use Drupal\node\Entity\Node;
 use Drupal\node\NodeInterface;
 use Drupal\Tests\UnitTestCase;
 use Drupal\user\UserInterface;
@@ -669,6 +674,121 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
   }
 
   /**
+   * Tests insert assignment sends once to an active assignee.
+   */
+  public function testAssigneeInsertSendsOneNotification(): void {
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('id')->willReturn(42);
+    $assignee->method('isActive')->willReturn(TRUE);
+    $assignee->method('getEmail')->willReturn('assignee@example.test');
+    $assignee->method('getPreferredLangcode')->with(FALSE)->willReturn('de');
+    $node = $this->serviceRequestNode(organisationId: 0, assignee: $assignee);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->once())
+      ->method('mail')
+      ->with(
+        'markaspot_group',
+        'assignee_notification',
+        'assignee@example.test',
+        'de',
+        $this->callback(static fn(array $params): bool =>
+          ($params['node'] ?? NULL) === $node
+          && ($params['assignee'] ?? NULL) === $assignee
+          && str_contains((string) ($params['subject'] ?? ''), 'REQ-1')
+          && str_contains((string) ($params['message'] ?? ''), 'Category: Radbuegel')
+          && str_contains((string) ($params['message'] ?? ''), 'Location: Teststrasse 1')
+          && str_contains((string) ($params['message'] ?? ''), 'Description: A short body')
+        ),
+      )
+      ->willReturn(['result' => TRUE]);
+    $actingUser = $this->createMock(AccountInterface::class);
+    $actingUser->method('id')->willReturn(99);
+    $this->installNotificationContainer($mailManager, currentUser: $actingUser, isGroupMember: TRUE);
+
+    _markaspot_group_notify_assignee_once($node, TRUE);
+    _markaspot_group_notify_assignee_once($node, TRUE);
+  }
+
+  /**
+   * Tests changing the assignee on update sends exactly once.
+   */
+  public function testAssigneeUpdateSendsOnceWhenTargetChanges(): void {
+    $originalAssignee = $this->createMock(UserInterface::class);
+    $originalAssignee->method('id')->willReturn(41);
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('id')->willReturn(42);
+    $assignee->method('isActive')->willReturn(TRUE);
+    $assignee->method('getEmail')->willReturn('assignee@example.test');
+    $assignee->method('getPreferredLangcode')->with(FALSE)->willReturn('en');
+    $original = $this->serviceRequestNode(organisationId: 0, assignee: $originalAssignee);
+    $node = $this->serviceRequestNode(organisationId: 0, assignee: $assignee, original: $original);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->once())->method('mail')->willReturn(['result' => TRUE]);
+    $actingUser = $this->createMock(AccountInterface::class);
+    $actingUser->method('id')->willReturn(99);
+    $this->installNotificationContainer($mailManager, currentUser: $actingUser, isGroupMember: TRUE);
+
+    _markaspot_group_notify_assignee_once($node);
+    _markaspot_group_notify_assignee_once($node);
+  }
+
+  /**
+   * Tests an unchanged assignee on update sends no notification.
+   */
+  public function testAssigneeUpdateSkipsUnchangedTarget(): void {
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('id')->willReturn(42);
+    $original = $this->serviceRequestNode(organisationId: 0, assignee: $assignee);
+    $node = $this->serviceRequestNode(organisationId: 0, assignee: $assignee, original: $original);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->never())->method('mail');
+    $this->installNotificationContainer($mailManager);
+
+    _markaspot_group_notify_assignee_once($node);
+  }
+
+  /**
+   * Tests self-assignment does not send a notification.
+   */
+  public function testAssigneeNotificationSkipsActingUser(): void {
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('id')->willReturn(42);
+    $assignee->method('isActive')->willReturn(TRUE);
+    $assignee->method('getEmail')->willReturn('assignee@example.test');
+    $node = $this->serviceRequestNode(assignee: $assignee);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->never())->method('mail');
+    $actingUser = $this->createMock(AccountInterface::class);
+    $actingUser->method('id')->willReturn(42);
+    $this->installNotificationContainer($mailManager, currentUser: $actingUser);
+
+    _markaspot_group_notify_assignee($node);
+  }
+
+  /**
+   * Tests an assignee outside the request scope receives no notification.
+   */
+  public function testAssigneeNotificationRejectsForeignUser(): void {
+    $assignee = $this->createMock(UserInterface::class);
+    $assignee->method('id')->willReturn(42);
+    $assignee->method('isActive')->willReturn(TRUE);
+    $assignee->method('getEmail')->willReturn('foreign@example.test');
+    $node = $this->serviceRequestNode(organisationId: 0, assignee: $assignee);
+
+    $mailManager = $this->createMock(MailManagerInterface::class);
+    $mailManager->expects($this->never())->method('mail');
+    $actingUser = $this->createMock(AccountInterface::class);
+    $actingUser->method('id')->willReturn(99);
+    $this->installNotificationContainer($mailManager, currentUser: $actingUser, isGroupMember: FALSE);
+
+    _markaspot_group_notify_assignee($node);
+  }
+
+  /**
    * Tests org relationship mail falls back to active group members.
    */
   public function testOrgRelationshipFallsBackToActiveMemberEmails(): void {
@@ -936,6 +1056,8 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     MailManagerInterface $mailManager,
     array $ecaConfigs = [],
     ?EntityTypeManagerInterface $entityTypeManager = NULL,
+    ?AccountInterface $currentUser = NULL,
+    ?bool $isGroupMember = NULL,
   ): void {
     $requestStack = new RequestStack();
     $requestStack->push(Request::create('https://dashboard.example.test'));
@@ -978,6 +1100,20 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $container->set('email.validator', $emailValidator);
     $container->set('markaspot_group.hierarchy_resolver', $hierarchyResolver);
     $container->set('language_manager', $languageManager);
+    if ($currentUser !== NULL) {
+      $container->set('current_user', $currentUser);
+    }
+    if ($isGroupMember !== NULL) {
+      $query = $this->createMock(SelectInterface::class);
+      $query->method('condition')->willReturnSelf();
+      $query->method('countQuery')->willReturnSelf();
+      $statement = $this->createMock(StatementInterface::class);
+      $statement->method('fetchField')->willReturn($isGroupMember ? 1 : 0);
+      $query->method('execute')->willReturn($statement);
+      $database = $this->createMock(Connection::class);
+      $database->method('select')->willReturn($query);
+      $container->set('database', $database);
+    }
     if ($entityTypeManager !== NULL) {
       $container->set('entity_type.manager', $entityTypeManager);
     }
@@ -991,6 +1127,8 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     int $jurisdictionId = 1,
     int $organisationId = 100,
     ?GroupInterface $jurisdictionGroup = NULL,
+    ?UserInterface $assignee = NULL,
+    ?NodeInterface $original = NULL,
   ): NodeInterface {
     $jurisdictionGroup ??= $this->jurisdictionGroup(id: $jurisdictionId);
 
@@ -1013,14 +1151,25 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
           'entity' => $jurisdictionGroup,
         ],
       ),
-      'field_organisation' => $this->field([['target_id' => $organisationId]]),
+      'field_organisation' => $this->field(
+        $organisationId > 0 ? [['target_id' => $organisationId]] : [],
+      ),
       'request_id' => $this->field([['value' => 'REQ-1']], ['value' => 'REQ-1']),
       'field_category' => $this->field([['target_id' => 9]], ['entity' => $category]),
       'field_address' => $this->field([['value' => 'Teststrasse 1']], ['value' => 'Teststrasse 1']),
       'body' => $this->field([['value' => 'A short body']], ['value' => 'A short body']),
     ];
+    if ($assignee !== NULL) {
+      $fields['field_assignee'] = $this->field(
+        [['target_id' => $assignee->id()]],
+        [
+          'target_id' => $assignee->id(),
+          'entity' => $assignee,
+        ],
+      );
+    }
 
-    $node = $this->createMock(NodeInterface::class);
+    $node = $this->createMock(Node::class);
     $node->method('bundle')->willReturn('service_request');
     $node->method('id')->willReturn(123);
     $node->method('label')->willReturn('Fixture request');
@@ -1028,6 +1177,10 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
       ->willReturnCallback(static fn(string $fieldName): bool => array_key_exists($fieldName, $fields));
     $node->method('get')
       ->willReturnCallback(static fn(string $fieldName): FieldItemListInterface => $fields[$fieldName]);
+    $node->method('__isset')
+      ->willReturnCallback(static fn(string $property): bool => $property === 'original' && $original !== NULL);
+    $node->method('__get')
+      ->willReturnCallback(static fn(string $property): ?NodeInterface => $property === 'original' ? $original : NULL);
     return $node;
   }
 

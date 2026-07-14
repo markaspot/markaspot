@@ -116,6 +116,14 @@ final class MailSampleContextProvider {
 
     $node = $this->findSampleServiceRequestNode();
     if ($node !== NULL) {
+      $samples[MailType::ECA_ASSIGNEE_NOTIFICATION->value] = new MailContext(
+        module: 'markaspot_group',
+        key: 'assignee_notification',
+        langcode: $langcode,
+        params: ['node' => $node],
+        to: 'assignee@example.com',
+      );
+
       $samples[MailType::ECA_FEEDBACK->value] = new MailContext(
         module: 'markaspot_feedback',
         key: 'feedback_request',

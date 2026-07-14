@@ -25,6 +25,7 @@ enum MailType: string {
   case ECA_MODERATION = 'eca_moderation';
   case ECA_GROUP_INVITATION = 'eca_group_invitation';
   case ECA_GROUP_ORG_NOTIFICATION = 'eca_group_org_notification';
+  case ECA_ASSIGNEE_NOTIFICATION = 'eca_assignee_notification';
 
   // ECA-driven action_send_email_action workflows (Stage 2c). Catches
   // everything the ECA editor fires via Drupal core's EmailAction plugin

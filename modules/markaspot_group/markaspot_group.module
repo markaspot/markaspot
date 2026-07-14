@@ -41,6 +41,12 @@ use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
  * Implements hook_mail().
  */
 function markaspot_group_mail(string $key, array &$message, array $params): void {
+  if ($key === 'assignee_notification') {
+    $message['subject'] = (string) ($params['subject'] ?? 'A service request was assigned to you');
+    $message['body'][] = (string) ($params['message'] ?? 'A service request has been assigned to you.');
+    return;
+  }
+
   if ($key === 'org_notification') {
     $message['subject'] = (string) ($params['subject'] ?? 'A service request was assigned to your organisation');
     $message['body'][] = (string) ($params['message'] ?? 'A service request has been assigned to your organisation.');
@@ -2245,6 +2251,7 @@ function markaspot_group_node_insert(NodeInterface $node): void {
   }
 
   _markaspot_group_notify_pending_assigned_team($node);
+  _markaspot_group_notify_assignee_once($node, TRUE);
 }
 
 /**
@@ -2267,6 +2274,7 @@ function markaspot_group_node_update(NodeInterface $node): void {
   try {
     _markaspot_group_reconcile_service_request_relationships($node);
     _markaspot_group_notify_pending_assigned_team($node);
+    _markaspot_group_notify_assignee_once($node);
   }
   finally {
     if (!empty($node->_markaspot_group_sync_lock_held)) {
@@ -3571,6 +3579,90 @@ function _markaspot_group_notify_organisation_group_once(NodeInterface $node, Gr
 }
 
 /**
+ * Sends one assignee notification per service request and user per PHP request.
+ *
+ * @param \Drupal\node\NodeInterface $node
+ *   The service request node.
+ * @param bool $is_insert
+ *   TRUE when called for a newly inserted node.
+ */
+function _markaspot_group_notify_assignee_once(NodeInterface $node, bool $is_insert = FALSE): void {
+  if (!$node->hasField('field_assignee') || $node->get('field_assignee')->isEmpty()) {
+    return;
+  }
+  if (!$is_insert && !_markaspot_group_field_target_changed($node, 'field_assignee')) {
+    return;
+  }
+
+  $assignee_id = (int) $node->get('field_assignee')->target_id;
+  if ($assignee_id <= 0) {
+    return;
+  }
+
+  $sent =& drupal_static(__FUNCTION__, []);
+  $node_key = $node->id() ? (string) $node->id() : 'new:' . spl_object_id($node);
+  $key = $node_key . ':' . $assignee_id;
+  if (isset($sent[$key])) {
+    return;
+  }
+
+  $sent[$key] = TRUE;
+  _markaspot_group_notify_assignee($node);
+}
+
+/**
+ * Sends the person assignment email to the referenced assignee.
+ */
+function _markaspot_group_notify_assignee(NodeInterface $node): void {
+  if (!$node->hasField('field_assignee') || $node->get('field_assignee')->isEmpty()) {
+    return;
+  }
+
+  $assignee = $node->get('field_assignee')->entity;
+  if (!$assignee instanceof UserInterface) {
+    return;
+  }
+
+  $assignee_id = (int) $assignee->id();
+  if ($assignee_id <= 0 || (int) \Drupal::currentUser()->id() === $assignee_id) {
+    return;
+  }
+
+  if (!_markaspot_group_service_request_assignee_is_valid($node, $assignee)) {
+    return;
+  }
+
+  $email = _markaspot_group_normalize_notification_email((string) $assignee->getEmail());
+  if ($email === NULL) {
+    return;
+  }
+
+  $langcode = $assignee->getPreferredLangcode(FALSE);
+  if ($langcode === '') {
+    $langcode = \Drupal::languageManager()->getDefaultLanguage()->getId();
+  }
+
+  /** @var \Drupal\Core\Mail\MailManagerInterface $mail_manager */
+  $mail_manager = \Drupal::service('plugin.manager.mail');
+  $fallback_message = _markaspot_group_build_assignee_notification_fallback($node);
+  $result = $mail_manager->mail('markaspot_group', 'assignee_notification', $email, $langcode, [
+    'subject' => $fallback_message['subject'],
+    'message' => $fallback_message['message'],
+    'node' => $node,
+    'assignee' => $assignee,
+  ]);
+  if (($result['result'] ?? FALSE) !== TRUE) {
+    \Drupal::logger('markaspot_group')->error(
+      'Failed to send assignee notification to user @uid on node @nid.',
+      [
+        '@uid' => $assignee_id,
+        '@nid' => $node->id(),
+      ]
+    );
+  }
+}
+
+/**
  * Sends the organisation assignment email to one organisation group.
  *
  * @param \Drupal\node\NodeInterface $node
@@ -3636,38 +3728,14 @@ function _markaspot_group_notify_organisation_group(NodeInterface $node, GroupIn
  *   Fallback mail subject and body.
  */
 function _markaspot_group_build_organisation_notification_fallback(NodeInterface $node, GroupInterface $org_group): array {
-  $request_id = _markaspot_group_sanitize_for_email(
-    (string) ($node->hasField('request_id') && !$node->get('request_id')->isEmpty()
-      ? $node->get('request_id')->getString()
-      : $node->id())
-  );
+  $context = _markaspot_group_build_assignment_notification_context($node);
+  $request_id = $context['request_id'];
   $organisation = _markaspot_group_sanitize_for_email((string) $org_group->label());
-  $category = '';
-  if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
-    $category_entity = $node->get('field_category')->entity ?? NULL;
-    if (is_object($category_entity) && method_exists($category_entity, 'label')) {
-      $category = _markaspot_group_sanitize_for_email((string) $category_entity->label());
-    }
-  }
-  $address = _markaspot_group_sanitize_for_email(
-    (string) ($node->hasField('field_address') && !$node->get('field_address')->isEmpty()
-      ? $node->get('field_address')->getString()
-      : '')
-  );
-  $description = _markaspot_group_sanitize_for_email(
-    (string) ($node->hasField('body') && !$node->get('body')->isEmpty()
-      ? $node->get('body')->getString()
-      : '')
-  );
+  $category = $context['category'];
+  $address = $context['address'];
+  $description = $context['description'];
 
-  $edit_url = '';
-  try {
-    $edit_url = \Drupal\Core\Url::fromRoute('entity.node.edit_form', ['node' => $node->id()], ['absolute' => TRUE])->toString();
-  }
-  catch (\Throwable) {
-    // Keep the fallback mail sendable even in CLI or partially bootstrapped
-    // contexts where route generation is not available.
-  }
+  $edit_url = _markaspot_group_assignment_notification_edit_url($node);
 
   $lines = [
     'Hello,',
@@ -3699,6 +3767,94 @@ function _markaspot_group_build_organisation_notification_fallback(NodeInterface
     'subject' => 'Request #' . $request_id . ' assigned to ' . ($organisation !== '' ? $organisation : 'your organisation'),
     'message' => implode("\n", $lines),
   ];
+}
+
+/**
+ * Builds the plain fallback mail body for assignee notifications.
+ *
+ * @return array{subject: string, message: string}
+ *   Fallback mail subject and body.
+ */
+function _markaspot_group_build_assignee_notification_fallback(NodeInterface $node): array {
+  $context = _markaspot_group_build_assignment_notification_context($node);
+  $lines = [
+    'Hello,',
+    '',
+    'A citizen request has been assigned to you.',
+    '',
+    'Request: #' . $context['request_id'],
+  ];
+  if ($context['category'] !== '') {
+    $lines[] = 'Category: ' . $context['category'];
+  }
+  if ($context['address'] !== '') {
+    $lines[] = 'Location: ' . $context['address'];
+  }
+  if ($context['description'] !== '') {
+    $lines[] = 'Description: ' . $context['description'];
+  }
+  $edit_url = _markaspot_group_assignment_notification_edit_url($node);
+  if ($edit_url !== '') {
+    $lines[] = '';
+    $lines[] = 'Open request: ' . $edit_url;
+  }
+  $lines[] = '';
+  $lines[] = 'This is an automatically generated email and cannot be replied to.';
+
+  return [
+    'subject' => 'Request #' . $context['request_id'] . ' assigned to you',
+    'message' => implode("\n", $lines),
+  ];
+}
+
+/**
+ * Builds sanitized request fields shared by assignment fallback mails.
+ *
+ * @return array{request_id: string, category: string, address: string, description: string}
+ *   Sanitized request context.
+ */
+function _markaspot_group_build_assignment_notification_context(NodeInterface $node): array {
+  $request_id = _markaspot_group_sanitize_for_email(
+    (string) ($node->hasField('request_id') && !$node->get('request_id')->isEmpty()
+      ? $node->get('request_id')->getString()
+      : $node->id())
+  );
+  $category = '';
+  if ($node->hasField('field_category') && !$node->get('field_category')->isEmpty()) {
+    $category_entity = $node->get('field_category')->entity ?? NULL;
+    if (is_object($category_entity) && method_exists($category_entity, 'label')) {
+      $category = _markaspot_group_sanitize_for_email((string) $category_entity->label());
+    }
+  }
+
+  return [
+    'request_id' => $request_id,
+    'category' => $category,
+    'address' => _markaspot_group_sanitize_for_email(
+      (string) ($node->hasField('field_address') && !$node->get('field_address')->isEmpty()
+        ? $node->get('field_address')->getString()
+        : '')
+    ),
+    'description' => _markaspot_group_sanitize_for_email(
+      (string) ($node->hasField('body') && !$node->get('body')->isEmpty()
+        ? $node->get('body')->getString()
+        : '')
+    ),
+  ];
+}
+
+/**
+ * Builds the administrative request URL used by assignment fallback mails.
+ */
+function _markaspot_group_assignment_notification_edit_url(NodeInterface $node): string {
+  try {
+    return \Drupal\Core\Url::fromRoute('entity.node.edit_form', ['node' => $node->id()], ['absolute' => TRUE])->toString();
+  }
+  catch (\Throwable) {
+    // Keep the fallback mail sendable even in CLI or partially bootstrapped
+    // contexts where route generation is not available.
+    return '';
+  }
 }
 
 /**
