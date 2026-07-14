@@ -594,7 +594,7 @@ function markaspot_nuxt_update_11907(): string {
     return $changed;
   };
   $hardeningPolicies = [
-    'group--jur' => ['group', 'jur', ['id', 'label']],
+    'group--jur' => ['group', 'jur', ['id', 'label', 'field_slug']],
     'paragraph--internal_remark' => ['paragraph', 'internal_remark', ['id', 'uuid', 'created', 'field_internal_remark_text', 'field_author']],
     'taxonomy_term--service_provider_status' => ['taxonomy_term', 'service_provider_status', ['tid', 'status', 'name', 'weight']],
     'node--boilerplate' => ['node', 'boilerplate', ['nid', 'title', 'body', 'field_jurisdiction', 'field_boilerplate_type', 'field_organisation']],
@@ -805,4 +805,35 @@ function markaspot_nuxt_update_11908(): string {
   }
 
   return t('Seeded platform feature flags from root jurisdictions.');
+}
+
+/**
+ * Re-enables the jurisdiction slug on existing JSON:API resources.
+ */
+function markaspot_nuxt_update_11909(): string {
+  $entityTypeManager = \Drupal::entityTypeManager();
+  if (!$entityTypeManager->hasDefinition('jsonapi_resource_config')) {
+    return 'Skipped group--jur field_slug update: jsonapi_extras is not enabled on this tenant.';
+  }
+
+  $resource = $entityTypeManager
+    ->getStorage('jsonapi_resource_config')
+    ->load('group--jur');
+  if (!$resource) {
+    return 'Skipped group--jur field_slug update: JSON:API resource does not exist.';
+  }
+
+  $fields = $resource->get('resourceFields') ?? [];
+  if (!isset($fields['field_slug'])) {
+    return 'Skipped group--jur field_slug update: field_slug is not configured.';
+  }
+  if (empty($fields['field_slug']['disabled'])) {
+    return 'group--jur field_slug is already enabled.';
+  }
+
+  $fields['field_slug']['disabled'] = FALSE;
+  $resource->set('resourceFields', $fields);
+  $resource->save();
+
+  return 'Enabled field_slug on the group--jur JSON:API resource.';
 }

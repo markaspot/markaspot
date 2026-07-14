@@ -273,7 +273,7 @@ resourceFields:
     enhancer:
       id: ''
   field_slug:
-    disabled: true
+    disabled: false
     fieldName: field_slug
     publicName: field_slug
     enhancer:
