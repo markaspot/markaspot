@@ -2811,8 +2811,8 @@ final class TenantSettingsController extends ControllerBase {
         if ($value !== strip_tags($value)) {
           return 'field_email_footer must not contain HTML tags.';
         }
-        if (mb_strlen($value) > 1000) {
-          return 'field_email_footer must not exceed 1000 characters.';
+        if (mb_strlen($value) > 2000) {
+          return 'field_email_footer must not exceed 2000 characters.';
         }
         return NULL;
 

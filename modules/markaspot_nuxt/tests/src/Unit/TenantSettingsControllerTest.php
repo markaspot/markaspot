@@ -1387,6 +1387,38 @@ class TenantSettingsControllerTest extends UnitTestCase {
   }
 
   /**
+   * Tests legal mail footers can use the string_long field's practical size.
+   *
+   * @covers ::updateGeneralSettings
+   */
+  public function testValidateFieldValueAllowsLongPlainTextEmailFooter(): void {
+    $method = new \ReflectionMethod($this->controller, 'validateFieldValue');
+    $method->setAccessible(TRUE);
+
+    $this->assertNull($method->invoke(
+      $this->controller,
+      'field_email_footer',
+      str_repeat('a', 2000),
+    ));
+    $this->assertSame(
+      'field_email_footer must not exceed 2000 characters.',
+      $method->invoke(
+        $this->controller,
+        'field_email_footer',
+        str_repeat('a', 2001),
+      ),
+    );
+    $this->assertSame(
+      'field_email_footer must not contain HTML tags.',
+      $method->invoke(
+        $this->controller,
+        'field_email_footer',
+        '<strong>Footer</strong>',
+      ),
+    );
+  }
+
+  /**
    * C-1 regression.
    *
    * Tenant PATCH without field_visibility cannot clobber a concurrent admin
