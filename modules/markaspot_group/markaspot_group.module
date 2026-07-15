@@ -1379,6 +1379,10 @@ function markaspot_group_node_presave(NodeInterface $node): void {
     return;
   }
 
+  // Validation-aware writes already receive a field violation. Keep the same
+  // invariant for programmatic and internal saves that skip validation.
+  _markaspot_group_enforce_single_organisation_assignment($node);
+
   // 1. Correct initial status for jurisdiction-aware multi-tenant setups.
   _markaspot_group_presave_service_request_status($node);
 
@@ -1832,6 +1836,48 @@ function _markaspot_group_field_target_ids(NodeInterface $node, string $field_na
   ));
   sort($ids);
   return array_values($ids);
+}
+
+/**
+ * Checks whether service requests are restricted to one organisation.
+ */
+function _markaspot_group_single_organisation_assignment_enabled(): bool {
+  return \Drupal::config('markaspot_group.settings')
+    ->get('single_organisation_assignment') === TRUE;
+}
+
+/**
+ * Rejects multiple organisation values on saves that skip field validation.
+ */
+function _markaspot_group_enforce_single_organisation_assignment(NodeInterface $node): void {
+  if (!_markaspot_group_single_organisation_assignment_enabled()
+    || count(_markaspot_group_field_target_ids($node, 'field_organisation')) <= 1) {
+    return;
+  }
+
+  throw new EntityStorageException(sprintf(
+    'Service request %s cannot be assigned to more than one organisation.',
+    $node->id() ? (string) $node->id() : 'new',
+  ));
+}
+
+/**
+ * Rejects multi-org relationship reconciliation in single-org mode.
+ *
+ * @param int[] $organisation_ids
+ *   Organisation group IDs that would be reconciled.
+ * @param int $node_id
+ *   The service request node ID.
+ */
+function _markaspot_group_assert_single_organisation_ids(array $organisation_ids, int $node_id): void {
+  if (!_markaspot_group_single_organisation_assignment_enabled() || count($organisation_ids) <= 1) {
+    return;
+  }
+
+  throw new EntityStorageException(sprintf(
+    'Service request %d cannot reconcile more than one organisation.',
+    $node_id,
+  ));
 }
 
 /**
@@ -2318,6 +2364,7 @@ function _markaspot_group_reconcile_service_request_relationships(NodeInterface|
       $desired_org_ids = $fresh->hasField('field_organisation')
         ? _markaspot_group_field_target_ids($fresh, 'field_organisation')
         : [];
+      _markaspot_group_assert_single_organisation_ids($desired_org_ids, (int) $fresh->id());
       $desired_org_ids = _markaspot_group_filter_org_ids_by_jurisdiction(
         $desired_org_ids,
         $desired_jur_id,
@@ -3001,8 +3048,35 @@ function _markaspot_group_sync_relationship_to_field(GroupRelationshipInterface 
           return;
         }
 
-        // Append the group if not already present.
-        if (!in_array($group_id, $current_ids, TRUE)) {
+        if (_markaspot_group_single_organisation_assignment_enabled()) {
+          _markaspot_group_assert_single_organisation_ids($current_ids, (int) $entity->id());
+          if ($current_ids !== [] && !in_array($group_id, $current_ids, TRUE)) {
+            \Drupal::logger('markaspot_group')->warning(
+              'Rejected competing organisation relationship @rid for node @nid because single-org assignment is enabled.',
+              [
+                '@rid' => $relationship->id() ?? 'new',
+                '@nid' => $entity->id(),
+              ]
+            );
+            $relationship->delete();
+            return;
+          }
+
+          if ($current_ids === []) {
+            $entity->set('field_organisation', ['target_id' => $group_id]);
+            $entity->save();
+
+            \Drupal::logger('markaspot_group')->notice(
+              'Set group @group as field_organisation on node @nid (synced from relationship).',
+              [
+                '@nid' => $entity->id(),
+                '@group' => $group->label(),
+              ]
+            );
+          }
+        }
+        // Append the group if not already present in multi-org mode.
+        elseif (!in_array($group_id, $current_ids, TRUE)) {
           $current_ids[] = $group_id;
           $entity->set('field_organisation', array_map(static fn(int $id) => ['target_id' => $id], $current_ids));
           $entity->save();

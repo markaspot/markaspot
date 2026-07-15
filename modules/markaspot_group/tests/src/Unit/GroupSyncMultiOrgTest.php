@@ -1459,4 +1459,29 @@ class GroupSyncMultiOrgTest extends UnitTestCase {
     $this->assertEquals([1, 2], $updatedIds);
   }
 
+  /**
+   * Single-org inverse sync rejects a competing relationship.
+   */
+  public function testSingleOrgRelationshipInsertRejectsCompetingRelationship(): void {
+    $source = file_get_contents(dirname(__DIR__, 3) . '/markaspot_group.module');
+
+    $sync_pos = strpos($source, 'function _markaspot_group_sync_relationship_to_field(');
+    $single_pos = strpos($source, '_markaspot_group_single_organisation_assignment_enabled()', $sync_pos);
+    $guard_pos = strpos($source, '$current_ids !== [] && !in_array($group_id, $current_ids, TRUE)', $single_pos);
+    $delete_pos = strpos($source, '$relationship->delete();', $guard_pos);
+    $empty_pos = strpos($source, 'if ($current_ids === [])', $delete_pos);
+    $set_pos = strpos($source, '$entity->set(\'field_organisation\', [\'target_id\' => $group_id]);', $empty_pos);
+
+    $this->assertNotFalse($sync_pos);
+    $this->assertNotFalse($single_pos);
+    $this->assertNotFalse($guard_pos);
+    $this->assertNotFalse($delete_pos);
+    $this->assertNotFalse($empty_pos);
+    $this->assertNotFalse($set_pos);
+    $this->assertLessThan($guard_pos, $single_pos);
+    $this->assertLessThan($delete_pos, $guard_pos);
+    $this->assertLessThan($empty_pos, $delete_pos);
+    $this->assertLessThan($set_pos, $empty_pos);
+  }
+
 }
