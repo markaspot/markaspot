@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.158](https://github.com/markaspot/markaspot/compare/11.9.157...11.9.158) (2026-07-15)
+
+### Bug Fixes
+
+* **maintenance:** expose public tenant branding during outages ([070f309](https://github.com/markaspot/markaspot/commit/070f309bf39c1a30a019c92cd6920c8255d530f0))
+
 ## [11.9.157](https://github.com/markaspot/markaspot/compare/11.9.156...11.9.157) (2026-07-15)
 
 ### Bug Fixes
