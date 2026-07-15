@@ -304,5 +304,13 @@ msgid "A few demo @wording_plural are already in place. Edit or delete them anyt
 msgstr "Já existe conteúdo de demonstração disponível. Demonstração: @wording_plural. Pode editá-lo ou eliminá-lo a qualquer momento."
 
 #: src/Mail/Builder/WorkspaceWelcomeBuilder.php
-msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
-msgstr "Gira os itens recebidos no seu painel. @wording_plural: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgid "Manage incoming @wording_plural in your dashboard:"
+msgstr "Gira os itens recebidos no seu painel. @wording_plural:"
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming reports in your dashboard:"
+msgstr "Gira as ocorrências recebidas no seu painel:"
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Log in anytime:"
+msgstr "Inicie sessão a qualquer momento:"

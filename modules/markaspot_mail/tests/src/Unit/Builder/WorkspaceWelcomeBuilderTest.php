@@ -73,6 +73,23 @@ final class WorkspaceWelcomeBuilderTest extends UnitTestCase {
   }
 
   /**
+   * Rejects non-web workspace URL schemes before they reach mail links.
+   */
+  public function testBuildReturnsNullWhenWorkspaceUrlIsUnsafe(): void {
+    $logger = $this->createMock(LoggerInterface::class);
+    $logger->expects($this->exactly(3))->method('warning');
+    $builder = $this->buildBuilder(logger: $logger);
+
+    foreach (['javascript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'ftp://example.test/workspace'] as $workspaceUrl) {
+      $ctx = $this->buildContext([
+        'workspace_name' => 'Unsafe workspace',
+        'workspace_url' => $workspaceUrl,
+      ]);
+      $this->assertNull($builder->build($ctx));
+    }
+  }
+
+  /**
    * Tests the happy path: CTA plus dashboard/login URLs in the body.
    */
   public function testBuildProducesPlatformMailWithCtaAndDashboardLoginLinks(): void {
@@ -107,6 +124,28 @@ final class WorkspaceWelcomeBuilderTest extends UnitTestCase {
   }
 
   /**
+   * Escapes visible dashboard and login URLs before rendering raw mail HTML.
+   */
+  public function testBuildEscapesVisibleDashboardAndLoginLinks(): void {
+    $msg = $this->buildBuilder()->build($this->buildContext([
+      'workspace_name' => 'Escaped links',
+      'workspace_url' => 'https://example.test/workspace&tenant=1',
+    ]));
+
+    $this->assertNotNull($msg);
+    $this->assertStringNotContainsString('workspace&tenant=1', $msg->content['body_blocks'][2]);
+    $this->assertStringNotContainsString('workspace&tenant=1', $msg->content['body_blocks'][3]);
+    $this->assertStringContainsString(
+      'https://example.test/workspace&amp;tenant=1/dashboard',
+      $msg->content['body_blocks'][2],
+    );
+    $this->assertStringContainsString(
+      'https://example.test/workspace&amp;tenant=1/auth/login',
+      $msg->content['body_blocks'][3],
+    );
+  }
+
+  /**
    * Keeps the legacy fallback body copy when no wording terms are supplied.
    */
   public function testBuildKeepsDefaultFallbackWordingWithoutOptionalTerms(): void {
@@ -137,7 +176,7 @@ final class WorkspaceWelcomeBuilderTest extends UnitTestCase {
         return match ($source) {
           'Try it out: create your first test report directly on the map.' => 'Erstelle deinen ersten Testbericht direkt auf der Karte.',
           'A few demo reports are already in place. Edit or delete them anytime.' => 'Ein paar Demo-Meldungen sind bereits vorhanden.',
-          'Manage incoming reports in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>' => 'Verwalte eingehende Meldungen im Dashboard.',
+          'Manage incoming reports in your dashboard:' => 'Verwalte eingehende Meldungen im Dashboard:',
           default => $source,
         };
       },
@@ -155,14 +194,14 @@ final class WorkspaceWelcomeBuilderTest extends UnitTestCase {
     $this->assertSame([
       'Erstelle deinen ersten Testbericht direkt auf der Karte.',
       'Ein paar Demo-Meldungen sind bereits vorhanden.',
-      'Verwalte eingehende Meldungen im Dashboard.',
+      'Verwalte eingehende Meldungen im Dashboard: <a href="https://localized-wording.civicspot.io/dashboard" style="color:#2563eb; text-decoration:underline;">https://localized-wording.civicspot.io/dashboard</a>',
     ], array_slice($msg->content['body_blocks'], 0, 3));
     $this->assertContains('Try it out: create your first test report directly on the map.', $translatedSources);
     $this->assertContains('A few demo reports are already in place. Edit or delete them anytime.', $translatedSources);
-    $this->assertContains('Manage incoming reports in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', $translatedSources);
+    $this->assertContains('Manage incoming reports in your dashboard:', $translatedSources);
     $this->assertNotContains('Try it out: create your first test @wording_singular directly on the map.', $translatedSources);
     $this->assertNotContains('A few demo @wording_plural are already in place. Edit or delete them anytime.', $translatedSources);
-    $this->assertNotContains('Manage incoming @wording_plural in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', $translatedSources);
+    $this->assertNotContains('Manage incoming @wording_plural in your dashboard:', $translatedSources);
   }
 
   /**
@@ -190,8 +229,8 @@ final class WorkspaceWelcomeBuilderTest extends UnitTestCase {
     $this->assertNotNull($msg);
     $this->assertSame('Try it out: create your first test report directly on the map.', $msg->content['body_blocks'][0]);
     $this->assertSame('A few demo reports are already in place. Edit or delete them anytime.', $msg->content['body_blocks'][1]);
-    $this->assertContains('Manage incoming reports in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', $translatedSources);
-    $this->assertNotContains('Manage incoming @wording_plural in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', $translatedSources);
+    $this->assertContains('Manage incoming reports in your dashboard:', $translatedSources);
+    $this->assertNotContains('Manage incoming @wording_plural in your dashboard:', $translatedSources);
   }
 
   /**

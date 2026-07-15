@@ -159,8 +159,16 @@ msgid "A few demo @wording_plural are already in place. Edit or delete them anyt
 msgstr "Einige Demo-@wording_plural sind bereits vorhanden. Sie können sie jederzeit bearbeiten oder löschen."
 
 #: src/Mail/Builder/WorkspaceWelcomeBuilder.php
-msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
-msgstr "Verwalten Sie eingehende @wording_plural in Ihrem Dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgid "Manage incoming @wording_plural in your dashboard:"
+msgstr "Verwalten Sie eingehende @wording_plural in Ihrem Dashboard:"
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming reports in your dashboard:"
+msgstr "Eingehende Meldungen im Dashboard verwalten:"
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Log in anytime:"
+msgstr "Jederzeit anmelden:"
 
 msgid "Your demo workspace \"@name\" expires soon"
 msgstr "Ihr Demo-Arbeitsbereich „@name“ läuft bald ab"

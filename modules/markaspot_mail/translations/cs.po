@@ -173,8 +173,16 @@ msgid "A few demo @wording_plural are already in place. Edit or delete them anyt
 msgstr "Ukázkové @wording_plural jsou již k dispozici. Kdykoli je můžete upravit nebo odstranit."
 
 #: src/Mail/Builder/WorkspaceWelcomeBuilder.php
-msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
-msgstr "Příchozí @wording_plural spravujte ve svém dashboardu: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgid "Manage incoming @wording_plural in your dashboard:"
+msgstr "Příchozí @wording_plural spravujte ve svém dashboardu:"
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming reports in your dashboard:"
+msgstr "Spravujte příchozí hlášení ve svém dashboardu:"
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Log in anytime:"
+msgstr "Přihlaste se kdykoli:"
 
 #: src/Mail/Builder/DemoExpiryReminderBuilder.php
 msgid "Your demo workspace \"@name\" expires soon"

@@ -419,6 +419,17 @@ function markaspot_mail_update_10010(): string {
 }
 
 /**
+ * Re-imports workspace mail labels without HTML inside translated strings.
+ *
+ * Locale rejects placeholder URLs in translated href attributes. Existing
+ * tenants that already ran update 10010 therefore need one clean re-import
+ * after the link markup moved into WorkspaceWelcomeBuilder.
+ */
+function markaspot_mail_update_10011(): string {
+  return _markaspot_mail_import_shipped_translations();
+}
+
+/**
  * Reads one current shipped notification-template data set from YAML.
  *
  * @param bool $keepLangcode
@@ -637,11 +648,20 @@ function _markaspot_mail_import_shipped_translations(): string {
       ], $options);
     }
     catch (\Throwable $e) {
-      \Drupal::logger('markaspot_mail')->warning('Failed to import markaspot_mail translations for @langcode: @message', [
-        '@langcode' => $langcode,
-        '@message' => $e->getMessage(),
-      ]);
-      continue;
+      throw new \RuntimeException(sprintf(
+        'Failed to import markaspot_mail translations for %s: %s',
+        $langcode,
+        $e->getMessage(),
+      ), 0, $e);
+    }
+
+    $skips = (int) ($report['skips'] ?? 0);
+    if ($skips > 0) {
+      throw new \RuntimeException(sprintf(
+        'Rejected %d unsafe or malformed markaspot_mail translation(s) for %s.',
+        $skips,
+        $langcode,
+      ));
     }
 
     $changed = (int) ($report['additions'] ?? 0) + (int) ($report['updates'] ?? 0);

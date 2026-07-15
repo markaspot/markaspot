@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Drupal\markaspot_mail\Mail\Builder;
 
+use Drupal\Component\Utility\Html;
+use Drupal\Component\Utility\UrlHelper;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\markaspot_mail\Enum\MailType;
 use Drupal\markaspot_mail\Mail\MailBuilderInterface;
@@ -70,8 +72,13 @@ final class WorkspaceWelcomeBuilder implements MailBuilderInterface {
   public function build(MailContext $ctx): ?MailMessage {
     $workspaceName = trim((string) ($ctx->params['workspace_name'] ?? ''));
     $workspaceUrl = trim((string) ($ctx->params['workspace_url'] ?? ''));
-    if ($workspaceName === '' || $workspaceUrl === '') {
-      $this->logger->warning('workspace_welcome: missing workspace_name or workspace_url, skipping branded render.');
+    $workspaceScheme = strtolower((string) parse_url($workspaceUrl, PHP_URL_SCHEME));
+    if ($workspaceName === ''
+      || $workspaceUrl === ''
+      || !UrlHelper::isValid($workspaceUrl, TRUE)
+      || !in_array($workspaceScheme, ['http', 'https'], TRUE)
+      || UrlHelper::stripDangerousProtocols($workspaceUrl) !== $workspaceUrl) {
+      $this->logger->warning('workspace_welcome: missing or invalid workspace_name/workspace_url, skipping branded render.');
       return NULL;
     }
 
@@ -113,14 +120,14 @@ final class WorkspaceWelcomeBuilder implements MailBuilderInterface {
       : (string) $this->t('A few demo @wording_plural are already in place. Edit or delete them anytime.', [
         '@wording_plural' => $wordingPlural,
       ], ['langcode' => $langcode]);
-    $dashboardReportsBlock = $customWording === NULL
-      ? (string) $this->t('Manage incoming reports in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
-        ':url' => $dashboardUrl,
-      ], ['langcode' => $langcode])
-      : (string) $this->t('Manage incoming @wording_plural in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
+    $dashboardReportsLabel = $customWording === NULL
+      ? (string) $this->t('Manage incoming reports in your dashboard:', [], ['langcode' => $langcode])
+      : (string) $this->t('Manage incoming @wording_plural in your dashboard:', [
         '@wording_plural' => $wordingPlural,
-        ':url' => $dashboardUrl,
       ], ['langcode' => $langcode]);
+    $dashboardReportsBlock = $dashboardReportsLabel . ' ' . $this->visibleLink($dashboardUrl);
+    $loginBlock = (string) $this->t('Log in anytime:', [], ['langcode' => $langcode]);
+    $loginBlock .= ' ' . $this->visibleLink($loginUrl);
 
     $replacements = [
       '@site_name' => $siteName,
@@ -153,15 +160,21 @@ final class WorkspaceWelcomeBuilder implements MailBuilderInterface {
           // text/plain part strip_tags()es the markup and must keep the
           // URL visible.
           $dashboardReportsBlock,
-          (string) $this->t('Log in anytime: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>', [
-            ':url' => $loginUrl,
-          ], ['langcode' => $langcode]),
+          $loginBlock,
         ],
         'cta_label' => (string) $this->t('Open your workspace', [], ['langcode' => $langcode]),
         'cta_url' => $workspaceUrl,
       ],
       mode: 'platform',
     );
+  }
+
+  /**
+   * Builds a clickable link whose URL remains visible in the plain-text part.
+   */
+  private function visibleLink(string $url): string {
+    $escapedUrl = Html::escape($url);
+    return '<a href="' . $escapedUrl . '" style="color:#2563eb; text-decoration:underline;">' . $escapedUrl . '</a>';
   }
 
   /**

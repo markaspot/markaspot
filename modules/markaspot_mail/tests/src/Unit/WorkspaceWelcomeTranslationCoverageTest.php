@@ -20,7 +20,9 @@ final class WorkspaceWelcomeTranslationCoverageTest extends UnitTestCase {
   private const REQUIRED_MSGIDS = [
     'Try it out: create your first test @wording_singular directly on the map.',
     'A few demo @wording_plural are already in place. Edit or delete them anytime.',
-    'Manage incoming @wording_plural in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>',
+    'Manage incoming @wording_plural in your dashboard:',
+    'Manage incoming reports in your dashboard:',
+    'Log in anytime:',
   ];
 
   /**
@@ -33,10 +35,11 @@ final class WorkspaceWelcomeTranslationCoverageTest extends UnitTestCase {
     'A few demo @wording_plural are already in place. Edit or delete them anytime.' => [
       '@wording_plural' => 1,
     ],
-    'Manage incoming @wording_plural in your dashboard: <a href=":url" style="color:#2563eb; text-decoration:underline;">:url</a>' => [
+    'Manage incoming @wording_plural in your dashboard:' => [
       '@wording_plural' => 1,
-      ':url' => 2,
     ],
+    'Manage incoming reports in your dashboard:' => [],
+    'Log in anytime:' => [],
   ];
 
   /**

@@ -304,5 +304,13 @@ msgid "A few demo @wording_plural are already in place. Edit or delete them anyt
 msgstr "Demoinnehåll finns redan tillgängligt. Demo: @wording_plural. Du kan redigera eller ta bort det när som helst."
 
 #: src/Mail/Builder/WorkspaceWelcomeBuilder.php
-msgid "Manage incoming @wording_plural in your dashboard: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
-msgstr "Hantera inkommande objekt i din instrumentpanel. @wording_plural: <a href=\":url\" style=\"color:#2563eb; text-decoration:underline;\">:url</a>"
+msgid "Manage incoming @wording_plural in your dashboard:"
+msgstr "Hantera inkommande objekt i din instrumentpanel. @wording_plural:"
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Manage incoming reports in your dashboard:"
+msgstr "Hantera inkommande rapporter i din instrumentpanel:"
+
+#: src/Mail/Builder/WorkspaceWelcomeBuilder.php
+msgid "Log in anytime:"
+msgstr "Logga in när som helst:"
