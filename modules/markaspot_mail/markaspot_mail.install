@@ -407,6 +407,18 @@ function markaspot_mail_update_10009(): string {
 }
 
 /**
+ * Imports shared mail-layout labels for existing tenant databases.
+ *
+ * Some long-lived tenants enabled Locale or their German language after an
+ * earlier translation-import hook had already run. Re-import the complete
+ * shipped catalog so legal footer labels such as "Legal notice" and
+ * "Privacy" do not fall back to English in otherwise German mail.
+ */
+function markaspot_mail_update_10010(): string {
+  return _markaspot_mail_import_shipped_translations();
+}
+
+/**
  * Reads one current shipped notification-template data set from YAML.
  *
  * @param bool $keepLangcode

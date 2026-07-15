@@ -215,9 +215,16 @@ final class MailSampleContextProvider {
     if (!$this->entityTypeManager->hasDefinition('node')) {
       return NULL;
     }
-    $nodes = $this->entityTypeManager->getStorage('node')
-      ->loadByProperties(['type' => 'service_request']);
-    $node = reset($nodes) ?: NULL;
+    $storage = $this->entityTypeManager->getStorage('node');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'service_request')
+      ->range(0, 1)
+      ->execute();
+    if (!is_array($ids) || $ids === []) {
+      return NULL;
+    }
+    $node = $storage->load(reset($ids));
     return $node instanceof NodeInterface ? $node : NULL;
   }
 
@@ -228,9 +235,16 @@ final class MailSampleContextProvider {
     if (!$this->entityTypeManager->hasDefinition('group')) {
       return NULL;
     }
-    $groups = $this->entityTypeManager->getStorage('group')
-      ->loadByProperties(['type' => 'org']);
-    $group = reset($groups) ?: NULL;
+    $storage = $this->entityTypeManager->getStorage('group');
+    $ids = $storage->getQuery()
+      ->accessCheck(FALSE)
+      ->condition('type', 'org')
+      ->range(0, 1)
+      ->execute();
+    if (!is_array($ids) || $ids === []) {
+      return NULL;
+    }
+    $group = $storage->load(reset($ids));
     return $group instanceof GroupInterface ? $group : NULL;
   }
 
