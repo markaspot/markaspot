@@ -1,5 +1,18 @@
 # Changelog
 
+## [11.9.155](https://github.com/markaspot/markaspot/compare/11.9.154...11.9.155) (2026-07-15)
+
+### Features
+
+* notify assignee by mail on per user assignment ([4bd94c4](https://github.com/markaspot/markaspot/commit/4bd94c4a68d32412577d1de0a0aaf3e3936c9845))
+* optional single organisation assignment for service requests ([70919d7](https://github.com/markaspot/markaspot/commit/70919d7541812333aa7a355e64d72304fa1f0385))
+
+### Bug Fixes
+
+* add assignee notification mail translations across locales ([75277a6](https://github.com/markaspot/markaspot/commit/75277a636b8b0526c4d2045367df0f66cab2c69a))
+* expose translate tab on the mail texts form ([ee8c6a1](https://github.com/markaspot/markaspot/commit/ee8c6a1aad97b18fa585270edea21425ebe2126f))
+* **group:** enforce single organisation assignment ([9bb8367](https://github.com/markaspot/markaspot/commit/9bb8367734b281270efb3e6c408d40fbf4029ca9))
+
 ## [11.9.154](https://github.com/markaspot/markaspot/compare/11.9.153...11.9.154) (2026-07-14)
 
 ### Bug Fixes
