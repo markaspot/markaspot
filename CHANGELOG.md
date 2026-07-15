@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.157](https://github.com/markaspot/markaspot/compare/11.9.156...11.9.157) (2026-07-15)
+
+### Bug Fixes
+
+* **mail:** keep localized links deploy-safe ([06441e6](https://github.com/markaspot/markaspot/commit/06441e6ed13f9f2e06f265a278ecb63cfce330b0))
+
 ## [11.9.156](https://github.com/markaspot/markaspot/compare/11.9.155...11.9.156) (2026-07-15)
 
 ### Bug Fixes
