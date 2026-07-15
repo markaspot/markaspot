@@ -1,5 +1,12 @@
 # Changelog
 
+## [11.9.156](https://github.com/markaspot/markaspot/compare/11.9.155...11.9.156) (2026-07-15)
+
+### Bug Fixes
+
+* **mail:** keep tenant render gates scalable ([207333d](https://github.com/markaspot/markaspot/commit/207333dd4c76c2485f63773c0cf5823e6884397b))
+* **nuxt:** allow complete tenant mail footers ([065bbed](https://github.com/markaspot/markaspot/commit/065bbed9bb80e034b0ed3d86715cd2b1e4a894f1))
+
 ## [11.9.155](https://github.com/markaspot/markaspot/compare/11.9.154...11.9.155) (2026-07-15)
 
 ### Features
