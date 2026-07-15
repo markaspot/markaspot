@@ -10,6 +10,7 @@ use Drupal\Core\Controller\ControllerBase;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\State\StateInterface;
+use Drupal\markaspot_dashboard\Service\MaintenanceBrandingResolverInterface;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -19,9 +20,10 @@ use Symfony\Component\HttpFoundation\Response;
  * Exposes the global Drupal maintenance switch to the platform dashboard.
  *
  * The status endpoint is deliberately public and contains only the boolean
- * state needed for a frontend maintenance page. State changes remain limited
- * to uid 1 and the site-wide administrator role. Jurisdiction memberships,
- * including tenant_admin, never grant this installation-wide capability.
+ * state plus the same minimal public tenant branding that citizens normally
+ * receive. State changes remain limited to uid 1 and the site-wide
+ * administrator role. Jurisdiction memberships, including tenant_admin,
+ * never grant this installation-wide capability.
  */
 final class PlatformMaintenanceController extends ControllerBase {
 
@@ -32,6 +34,7 @@ final class PlatformMaintenanceController extends ControllerBase {
     private readonly StateInterface $state,
     private readonly AccountInterface $currentAccount,
     private readonly LoggerChannelInterface $logger,
+    private readonly ?MaintenanceBrandingResolverInterface $brandingResolver = NULL,
   ) {
   }
 
@@ -43,19 +46,30 @@ final class PlatformMaintenanceController extends ControllerBase {
       $container->get('state'),
       $container->get('current_user'),
       $container->get('logger.channel.markaspot_dashboard'),
+      $container->get('markaspot_dashboard.maintenance_branding_resolver'),
     );
   }
 
   /**
    * GET /api/platform/maintenance.
    *
-   * Public frontend callers only need to know whether they should render the
-   * maintenance experience. Do not add operator, tenant, or timing data here.
+   * Public frontend callers need the state plus cold-start-safe branding.
+   * Do not add operator identity, tenant-internal fields, or timing data here.
    */
-  public function status(): JsonResponse {
-    return $this->noStoreResponse([
-      'maintenance' => (bool) $this->state->get('system.maintenance_mode', FALSE),
-    ]);
+  public function status(?Request $request = NULL): JsonResponse {
+    $maintenance = (bool) $this->state->get('system.maintenance_mode', FALSE);
+    $payload = [
+      'maintenance' => $maintenance,
+    ];
+    if ($maintenance) {
+      $branding = $this->brandingResolver?->resolve(
+        $request?->query->getString('jurisdiction') ?: NULL,
+      );
+      if ($branding !== NULL) {
+        $payload['branding'] = $branding;
+      }
+    }
+    return $this->noStoreResponse($payload);
   }
 
   /**
@@ -136,7 +150,7 @@ final class PlatformMaintenanceController extends ControllerBase {
    * State API values do not provide cache tags. A stale maintenance status is
    * operationally worse than one extra tiny request, so never cache it.
    *
-   * @param array<string, bool|string> $payload
+   * @param array<string, mixed> $payload
    *   The response data.
    * @param int $status
    *   The HTTP status code.

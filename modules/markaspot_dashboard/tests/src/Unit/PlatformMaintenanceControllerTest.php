@@ -8,6 +8,7 @@ use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\markaspot_dashboard\Controller\PlatformMaintenanceController;
+use Drupal\markaspot_dashboard\Service\MaintenanceBrandingResolverInterface;
 use Drupal\Tests\UnitTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpFoundation\Request;
@@ -17,6 +18,7 @@ use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\Yaml\Yaml;
 
 require_once dirname(__DIR__, 3) . '/src/Controller/PlatformMaintenanceController.php';
+require_once dirname(__DIR__, 3) . '/src/Service/MaintenanceBrandingResolverInterface.php';
 require_once dirname(__DIR__, 3) . '/markaspot_dashboard.module';
 
 /**
@@ -42,6 +44,53 @@ class PlatformMaintenanceControllerTest extends UnitTestCase {
     self::assertSame(Response::HTTP_OK, $response->getStatusCode());
     self::assertSame(['maintenance' => TRUE], json_decode((string) $response->getContent(), TRUE));
     self::assertSame('no-store, private', $response->headers->get('Cache-Control'));
+  }
+
+  /**
+   * @covers ::status
+   */
+  public function testStatusIncludesOnlyResolvedPublicBranding(): void {
+    $state = $this->createMock(StateInterface::class);
+    $state->method('get')->willReturn(TRUE);
+    $branding = [
+      'tenantName' => 'Mängelmelder',
+      'logoLight' => '/sites/default/files/wbd-light.svg',
+      'logoDark' => '/sites/default/files/wbd-dark.svg',
+      'defaultLocale' => 'de',
+    ];
+    $resolver = $this->createMock(MaintenanceBrandingResolverInterface::class);
+    $resolver->expects($this->once())
+      ->method('resolve')
+      ->with('1')
+      ->willReturn($branding);
+
+    $response = $this->controller($state, brandingResolver: $resolver)->status(
+      Request::create('/api/platform/maintenance?jurisdiction=1'),
+    );
+
+    self::assertSame([
+      'maintenance' => TRUE,
+      'branding' => $branding,
+    ], json_decode((string) $response->getContent(), TRUE));
+  }
+
+  /**
+   * @covers ::status
+   */
+  public function testInactiveStatusSkipsBrandingResolution(): void {
+    $state = $this->createMock(StateInterface::class);
+    $state->method('get')->willReturn(FALSE);
+    $resolver = $this->createMock(MaintenanceBrandingResolverInterface::class);
+    $resolver->expects($this->never())->method('resolve');
+
+    $response = $this->controller($state, brandingResolver: $resolver)->status(
+      Request::create('/api/platform/maintenance?jurisdiction=1'),
+    );
+
+    self::assertSame(
+      ['maintenance' => FALSE],
+      json_decode((string) $response->getContent(), TRUE),
+    );
   }
 
   /**
@@ -236,13 +285,14 @@ class PlatformMaintenanceControllerTest extends UnitTestCase {
     StateInterface $state,
     ?AccountInterface $account = NULL,
     ?LoggerChannelInterface $logger = NULL,
+    ?MaintenanceBrandingResolverInterface $brandingResolver = NULL,
   ): PlatformMaintenanceController {
     if ($account === NULL) {
       $account = $this->createMock(AccountInterface::class);
       $account->method('isAuthenticated')->willReturn(FALSE);
     }
     $logger ??= $this->createMock(LoggerChannelInterface::class);
-    return new PlatformMaintenanceController($state, $account, $logger);
+    return new PlatformMaintenanceController($state, $account, $logger, $brandingResolver);
   }
 
 }

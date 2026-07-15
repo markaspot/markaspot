@@ -1,4 +1,10 @@
 services:
+  markaspot_dashboard.maintenance_branding_resolver:
+    class: Drupal\markaspot_dashboard\Service\MaintenanceBrandingResolver
+    arguments:
+      - '@entity_type.manager'
+      - '@config.factory'
+
   markaspot_dashboard.metrics_calculator:
     class: Drupal\markaspot_dashboard\Service\MetricsCalculatorService
     arguments:
