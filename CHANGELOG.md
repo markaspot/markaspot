@@ -1,5 +1,11 @@
 # Changelog
 
+## [11.9.160](https://github.com/markaspot/markaspot/compare/11.9.159...11.9.160) (2026-07-16)
+
+### Bug Fixes
+
+* **mail:** normalize generated public URLs ([24a0322](https://github.com/markaspot/markaspot/commit/24a03223))
+
 ## [11.9.159](https://github.com/markaspot/markaspot/compare/11.9.158...11.9.159) (2026-07-16)
 
 ### Bug Fixes
