@@ -6,6 +6,7 @@ services:
       - '@config.storage'
       - '%install_profile%'
       - '@logger.channel.markaspot'
+      - '@extension.list.profile'
     tags:
       - { name: event_subscriber }
 

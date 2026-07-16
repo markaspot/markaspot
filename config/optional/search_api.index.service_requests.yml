@@ -6,11 +6,13 @@ dependencies:
     - field.storage.node.body
     - field.storage.node.field_category
     - field.storage.node.field_e_mail
+    - field.storage.node.field_jurisdiction
     - field.storage.node.field_organisation
     - field.storage.node.field_status
     - field.storage.node.field_geolocation
     - search_api.server.database
   module:
+    - markaspot_request_id
     - node
     - search_api
   enforced: {  }
@@ -131,6 +133,14 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.field_organisation
+  field_jurisdiction:
+    label: Jurisdiction
+    datasource_id: 'entity:node'
+    property_path: field_jurisdiction
+    type: integer
+    dependencies:
+      config:
+        - field.storage.node.field_jurisdiction
   field_status:
     label: Status
     datasource_id: 'entity:node'
@@ -210,6 +220,14 @@ field_settings:
     dependencies:
       config:
         - field.storage.node.field_address
+  request_id:
+    label: 'Request ID'
+    datasource_id: 'entity:node'
+    property_path: request_id
+    type: string
+    dependencies:
+      module:
+        - markaspot_request_id
   sorting_code:
     label: 'Address » The sorting code.'
     datasource_id: 'entity:node'

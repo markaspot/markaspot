@@ -7,6 +7,14 @@ services:
     class: Drupal\markaspot_ui\ToolbarBuilder
     arguments: ['@module_handler', '@extension.list.module', '@router.route_provider']
 
+  markaspot_ui.management_access_gate:
+    class: Drupal\markaspot_ui\Service\ManagementAccessGate
+    arguments: ['@current_user']
+
+  markaspot_ui.management_form_display_switcher:
+    class: Drupal\markaspot_ui\Service\ManagementFormDisplaySwitcher
+    arguments: ['@current_user', '@entity_type.manager', '@current_route_match', '@markaspot_ui.management_access_gate']
+
   markaspot_ui.node_form_access_subscriber:
     class: Drupal\markaspot_ui\EventSubscriber\NodeFormAccessSubscriber
     arguments: ['@current_user', '@current_route_match']

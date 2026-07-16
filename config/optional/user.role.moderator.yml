@@ -12,6 +12,7 @@ dependencies:
     - markaspot_fastmap
     - markaspot_notification
     - markaspot_open311
+    - markaspot_ui
     - markaspot_validation
     - media
     - node
@@ -191,5 +192,6 @@ permissions:
   - 'view own field_status_notes'
   - 'view own unpublished content'
   - 'view own unpublished media'
+  - 'use service request management form'
   - 'view the administration theme'
   - 'view unpublished paragraphs'

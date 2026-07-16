@@ -6,10 +6,12 @@ namespace Drupal\markaspot\EventSubscriber;
 
 use Drupal\Core\Config\ConfigEvents;
 use Drupal\Core\Config\ExtensionInstallStorage;
+use Drupal\Core\Config\FileStorage;
 use Drupal\Core\Config\InstallStorage;
 use Drupal\Core\Config\StorageInterface;
 use Drupal\Core\Config\StorageTransformEvent;
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\Extension\ProfileExtensionList;
 use Drupal\Core\Installer\InstallerKernel;
 use Drupal\Core\Site\Settings;
 use Psr\Log\LoggerInterface;
@@ -179,6 +181,14 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
   private const MAIL_TEXTS_CONFIG = 'markaspot_mail.texts';
 
   /**
+   * Profile-managed config updated before a subsequent full config import.
+   */
+  private const MANAGEMENT_PACKAGE_CONFIG = [
+    'search_api.index.service_requests',
+    'views.view.management',
+  ];
+
+  /**
    * Runtime opt-in for API-key entity preservation.
    */
   private const PRESERVE_RUNTIME_API_KEYS_SETTING = 'markaspot_preserve_runtime_api_keys';
@@ -215,12 +225,15 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
    *   profile-less site.
    * @param \Psr\Log\LoggerInterface $logger
    *   Logger channel for non-fatal degradation diagnostics.
+   * @param \Drupal\Core\Extension\ProfileExtensionList|null $profileExtensionList
+   *   Locates config shipped by the active installation profile.
    */
   public function __construct(
     private readonly ModuleExtensionList $moduleExtensionList,
     private readonly StorageInterface $activeStorage,
     private readonly string|false|null $installProfile,
     private readonly LoggerInterface $logger,
+    private readonly ?ProfileExtensionList $profileExtensionList = NULL,
   ) {}
 
   /**
@@ -260,6 +273,7 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
 
       $this->protectRequiredModules($importStorage);
       $this->protectShippedConfig($importStorage);
+      $this->protectManagementPackageConfig($importStorage);
       $this->protectMailTexts($importStorage);
       $this->protectRuntimeApiKeys($importStorage);
       // Run AFTER protectShippedConfig so any view re-injected from active is
@@ -345,6 +359,48 @@ final class ProfileConfigGuardSubscriber implements EventSubscriberInterface {
         continue;
       }
       $importStorage->write($name, $data);
+    }
+  }
+
+  /**
+   * Keeps profile management config updatedb just installed during deploy.
+   *
+   * The management View and its Search API index are profile-owned contracts.
+   * Their update hook runs before the full config import in `drush deploy`.
+   * A stale tenant sync copy would otherwise immediately overwrite the active
+   * update, even though protectShippedConfig() already prevents deletions.
+   * The profile's shipped definitions therefore win for these two narrowly
+   * scoped config objects. Active UUID metadata is retained so the transformed
+   * import updates the existing config entities instead of replacing them.
+   *
+   * @param \Drupal\Core\Config\StorageInterface $importStorage
+   *   The mutable import storage.
+   */
+  private function protectManagementPackageConfig(StorageInterface $importStorage): void {
+    // Sites that intentionally customize and export the management view can
+    // opt out via settings.php: $settings['markaspot_manage_management_view']
+    // = FALSE; — mirroring the PRESERVE_API_KEYS opt-in pattern.
+    if (!Settings::get('markaspot_manage_management_view', TRUE)) {
+      return;
+    }
+    if (!$this->profileExtensionList || !is_string($this->installProfile) || $this->installProfile === '') {
+      return;
+    }
+
+    $profilePath = $this->profileExtensionList->getPath($this->installProfile);
+    $source = new FileStorage($profilePath . '/config/optional');
+    foreach (self::MANAGEMENT_PACKAGE_CONFIG as $name) {
+      $shippedData = $source->read($name);
+      $activeData = $this->activeStorage->read($name);
+      if (!is_array($shippedData) || !is_array($activeData)) {
+        continue;
+      }
+      foreach (['uuid', '_core'] as $preservedKey) {
+        if (isset($activeData[$preservedKey]) && !isset($shippedData[$preservedKey])) {
+          $shippedData[$preservedKey] = $activeData[$preservedKey];
+        }
+      }
+      $importStorage->write($name, $shippedData);
     }
   }
 
